@@ -1,3 +1,4 @@
+import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { createReadStream } from "node:fs";
 import {
@@ -8,20 +9,74 @@ import {
   readFile,
   readdir,
   realpath,
-  rename,
   rm,
   stat,
 } from "node:fs/promises";
 import { basename, dirname, extname, isAbsolute, join, relative, resolve } from "node:path";
 import { normalize as normalizePosix } from "node:path/posix";
-import { setTimeout as delay } from "node:timers/promises";
 import * as zlib from "node:zlib";
 
 import { inspectPublicReadModel } from "./livemap-read-model.mjs";
+import {
+  CREATE_NEW_DIRECTORY_COMPLETION_FILE,
+  CREATE_NEW_DIRECTORY_COMPLETION_SCHEMA,
+  assertCreateNewTarget,
+  publishDirectoryCreateNew,
+  verifyCreateNewDirectoryCompletion,
+} from "./create-new-output.mjs";
+import { validateMapAssetNoticeBindings, validateMapAssetNotices } from "./map-asset-notices.mjs";
+import { validateStaticMapQuality } from "./static-map-quality.mjs";
 import { inspectTrainMapProjection } from "./train-map-projection.mjs";
+import { validateOperationalInfrastructureV2NativeReceipt } from "../region-import/materialize-operational-infrastructure-v2.mjs";
+import {
+  GERMANY_OPERATIONAL_INTEGRATED_PRODUCER_KIND,
+  germanyOperationalProvenanceSha256,
+  validateGermanyOperationalProvenance,
+} from "../region-import/germany/operational-infrastructure-v2-execution-pins.mjs";
+import {
+  operationalBuildAuthoritySha256,
+  validateOperationalBuildAuthority,
+} from "../region-import/germany/operational-build-authority.mjs";
 
 const SHA256 = /^[a-f0-9]{64}$/;
 const SAFE_ID = /^[a-z0-9](?:[a-z0-9._-]{0,126}[a-z0-9])?$/;
+const PACKAGE_PLAN_V1 = "zugfolge-map-package-plan/v1";
+const PACKAGE_PLAN_V2 = "zugfolge-map-package-plan/v2";
+const STATIC_MAP_PACKAGE_PLAN_V2 = "zugfolge-static-map-package-plan/v2";
+const PACKAGE_SPEC_V1 = "zugfolge-map-package-spec/v1";
+const PACKAGE_SPEC_V2 = "zugfolge-map-package-spec/v2";
+const STATIC_MAP_PACKAGE_SPEC_V2 = "zugfolge-static-map-package-spec/v2";
+const PACKAGE_MANIFEST_V1 = "zugfolge-map-package/v1";
+const PACKAGE_MANIFEST_V2 = "zugfolge-map-package/v2";
+const STATIC_MAP_PACKAGE_MANIFEST_V2 = "zugfolge-static-map-package/v2";
+const ANNUAL_PACKAGE_VERSION = /^(?<year>20\d{2})\.(?<patch>[1-9]\d*)$/u;
+const STATIC_ANNUAL_PACKAGE_VERSION = /^(?<year>20\d{2})\.(?<patch>[1-9]\d*)-v2-unsigned$/u;
+const LEGACY_DELIVERY_V2_VERSIONS = new Set(["2026.1", "2026.3", "2026.4"]);
+const PROVENANCE_DELIVERY_V2_VERSION = "2026.5";
+const ANNUAL_PACKAGE_SCHEMAS = new Set([
+  PACKAGE_PLAN_V1,
+  PACKAGE_PLAN_V2,
+  PACKAGE_SPEC_V1,
+  PACKAGE_SPEC_V2,
+  PACKAGE_MANIFEST_V1,
+  PACKAGE_MANIFEST_V2,
+]);
+const STATIC_ANNUAL_PACKAGE_SCHEMAS = new Set([
+  STATIC_MAP_PACKAGE_PLAN_V2,
+  STATIC_MAP_PACKAGE_SPEC_V2,
+  STATIC_MAP_PACKAGE_MANIFEST_V2,
+]);
+const STATIC_MAP_RELEASE_SCHEMA_V2 = "zugfolge-static-map-release/v2";
+const DELIVERY_RELEASE_SCHEMA_V2 = "zugfolge-map-delivery-release/v2";
+const OPERATIONAL_INFRASTRUCTURE_KIND = "operational-infrastructure-v2";
+const MOVEMENT_ROUTE_TEMPLATES_KIND = "movement-route-templates-v2";
+const TIMETABLE_TRANSFER_DEMANDS_KIND = "timetable-transfer-demands-v2";
+const RELEASE_ARTIFACT_AUXILIARY_KINDS = new Set([
+  OPERATIONAL_INFRASTRUCTURE_KIND,
+  MOVEMENT_ROUTE_TEMPLATES_KIND,
+  TIMETABLE_TRANSFER_DEMANDS_KIND,
+]);
+export const OPERATIONAL_INFRASTRUCTURE_V2_VALIDATOR_ENV = "ZUGFOLGE_INFRA_RELEASE_VALIDATOR_PATH";
 const SECRET_KEY = /(api[_-]?key|authorization|cookie|credential|password|private[_-]?key|secret|token)/i;
 const SECRET_VALUE = /(?:api[_-]?key|authorization|credential|password|private[_-]?key|secret|token)\s*[=:]/i;
 const APN_REFERENCE = /(?:^|[\s/_.-])apn(?:$|[\s/_.-])/i;
@@ -34,7 +89,7 @@ const MAX_PACKAGE_MANIFEST_BYTES = 16 * 1024 * 1024;
 const MAX_IN_MEMORY_PUBLIC_JSON_BYTES = 32 * 1024 * 1024;
 const AUXILIARY_KINDS = new Set([
   "style", "glyph", "sprite", "release-manifest", "source-manifest", "quality-manifest",
-  "read-model", "train-map-projection",
+  "read-model", "train-map-projection", ...RELEASE_ARTIFACT_AUXILIARY_KINDS,
 ]);
 const PRIVATE_READ_MODEL_KEY = /(account(?:id)?|e-?mail|fixedcost|owneroperator|password|personnel|private|secret|token)/i;
 const RAW_SECRET_KEY = /"(?:api[_-]?key|authorization|cookie|credential|password|private[_-]?key|secret|token)"\s*:/i;
@@ -63,6 +118,30 @@ function invariant(condition, message) {
 
 function isMissing(error) {
   return error !== null && typeof error === "object" && error.code === "ENOENT";
+}
+
+function requiresCreateNewDirectoryCompletion(schema, version) {
+  const versionContract = STATIC_ANNUAL_PACKAGE_SCHEMAS.has(schema)
+    ? STATIC_ANNUAL_PACKAGE_VERSION
+    : ANNUAL_PACKAGE_SCHEMAS.has(schema)
+      ? ANNUAL_PACKAGE_VERSION
+      : undefined;
+  if (versionContract === undefined) return true;
+  const parsed = versionContract.exec(version);
+  if (parsed === null) return true;
+  const year = Number.parseInt(parsed.groups.year, 10);
+  const patch = Number.parseInt(parsed.groups.patch, 10);
+  return year > 2026 || (year === 2026 && patch >= 5);
+}
+
+async function optionalCreateNewDirectoryCompletion(root, expected) {
+  try {
+    await lstat(join(root, CREATE_NEW_DIRECTORY_COMPLETION_FILE));
+  } catch (error) {
+    if (isMissing(error)) return undefined;
+    throw error;
+  }
+  return verifyCreateNewDirectoryCompletion(root, expected);
 }
 
 function validateId(value, label) {
@@ -102,12 +181,110 @@ function sameStrings(left, right) {
   return left.length === right.length && left.every((value, index) => value === right[index]);
 }
 
+function isStaticMapPackageSchema(schema) {
+  return [
+    STATIC_MAP_PACKAGE_PLAN_V2,
+    STATIC_MAP_PACKAGE_SPEC_V2,
+    STATIC_MAP_PACKAGE_MANIFEST_V2,
+  ].includes(schema);
+}
+
+function isMapRuntimeV2PackageSchema(schema) {
+  return isStaticMapPackageSchema(schema) || [
+    PACKAGE_PLAN_V2,
+    PACKAGE_SPEC_V2,
+    PACKAGE_MANIFEST_V2,
+  ].includes(schema);
+}
+
+function isAssetNoticePackageSchema(schema) {
+  return isStaticMapPackageSchema(schema) || [PACKAGE_SPEC_V2, PACKAGE_MANIFEST_V2].includes(schema);
+}
+
+export function germanyOperationalDeliveryV2Generation(version, label = "Delivery-v2-Paketversion") {
+  invariant(typeof version === "string", `${label} fehlt.`);
+  if (version === PROVENANCE_DELIVERY_V2_VERSION) return "integrated-provenance-v2";
+  if (LEGACY_DELIVERY_V2_VERSIONS.has(version)) return "legacy-v1";
+  throw new Error(`${label} ist nicht als Deutschland-Delivery-v2-Version freigegeben.`);
+}
+
+export function validateGermanyOperationalDeliveryV2Pair(version, releaseId, label = "Delivery-v2") {
+  const generation = germanyOperationalDeliveryV2Generation(version, `${label}.packageVersion`);
+  invariant(releaseId === `infra-deutschland-${version}`, `${label} bindet Paketversion und InfraRelease-ID nicht exakt.`);
+  return generation;
+}
+
+function validateOperationalProvenanceSource(value, schema, version, label = "operationalProvenanceSource") {
+  if (![PACKAGE_PLAN_V2, PACKAGE_SPEC_V2].includes(schema)) {
+    invariant(value === undefined, `${label} ist ausschließlich im integrierten Operational-v2-Paketvertrag zulässig.`);
+    return undefined;
+  }
+  const generation = germanyOperationalDeliveryV2Generation(version);
+  if (generation === "legacy-v1") {
+    invariant(value === undefined, `${label} ist fuer bekannte Legacy-Delivery-v2-Versionen nicht zulaessig.`);
+    return undefined;
+  }
+  invariant(value !== null && typeof value === "object" && !Array.isArray(value), `${label} fehlt im aktuellen Deutschland-Operational-v2-Vertrag.`);
+  invariant(Object.keys(value).sort().join(",") === "publicationReceiptFile", `${label} besitzt unerwartete oder fehlende Felder.`);
+  validatePortableRelativePath(value.publicationReceiptFile, `${label}.publicationReceiptFile`);
+  invariant(
+    value.publicationReceiptFile.endsWith("/operational-infrastructure-v2.publication-receipt.json"),
+    `${label} muss das typisierte Operational-v2-Publication-Receipt benennen.`,
+  );
+  return value;
+}
+
+function validateOperationalAuthoritySource(value, schema, version, label = "operationalAuthoritySource") {
+  if (![PACKAGE_PLAN_V2, PACKAGE_SPEC_V2].includes(schema)) {
+    invariant(value === undefined, `${label} ist ausschließlich im aktuellen integrierten Operational-v2-Paketvertrag zulässig.`);
+    return undefined;
+  }
+  const generation = germanyOperationalDeliveryV2Generation(version);
+  if (generation === "legacy-v1") {
+    invariant(value === undefined, `${label} ist fuer bekannte Legacy-Delivery-v2-Versionen nicht zulaessig.`);
+    return undefined;
+  }
+  invariant(value !== null && typeof value === "object" && !Array.isArray(value),
+    `${label} fehlt im aktuellen Deutschland-Operational-v2-Vertrag.`);
+  invariant(Object.keys(value).sort().join(",") === "buildEvidenceSpecFile",
+    `${label} besitzt unerwartete oder fehlende Felder.`);
+  validatePortableRelativePath(value.buildEvidenceSpecFile, `${label}.buildEvidenceSpecFile`);
+  invariant(
+    value.buildEvidenceSpecFile === "tools/tiles/map-release-build-evidence.annual-2026.5.spec.json",
+    `${label} muss die exakte aktuelle Build-Evidence-v3-Spezifikation benennen.`,
+  );
+  return value;
+}
+
+function validateStaticMapClaims(claims, label = "claims") {
+  invariant(claims !== null && typeof claims === "object" && !Array.isArray(claims), `${label} fehlt.`);
+  invariant(
+    Object.keys(claims).sort().join(",") === "operationalInfraRelease,productionActivationEligible,signatureStatus",
+    `${label} muss den exakten fail-closed Kartenrelease-Vertrag tragen.`,
+  );
+  invariant(claims.operationalInfraRelease === false, `${label}.operationalInfraRelease muss false sein.`);
+  invariant(claims.productionActivationEligible === false, `${label}.productionActivationEligible muss false sein.`);
+  invariant(claims.signatureStatus === "unsigned", `${label}.signatureStatus muss unsigned sein.`);
+  return claims;
+}
+
+function validateStaticMapCutover(cutover, label = "cutover") {
+  invariant(cutover !== null && typeof cutover === "object" && !Array.isArray(cutover), `${label} fehlt.`);
+  invariant(
+    Object.keys(cutover).sort().join(",") === "javascriptOperationalFallback,legacyTrainMapProjection,trainPositionEstimates,waypointFallback",
+    `${label} muss den exakten harten Karten-Cutover tragen.`,
+  );
+  invariant(Object.values(cutover).every((value) => value === false), `${label} muss Legacy-Projektion, Waypoints, Estimates und JavaScript-Fallback vollstaendig abschalten.`);
+  return cutover;
+}
+
 function expectedLayersForKind(kind) {
   return kind === "basemap" ? BASEMAP_VECTOR_LAYERS : INFRASTRUCTURE_VECTOR_LAYERS;
 }
 
-function validateRuntimeContract(runtime, artifacts, auxiliaryFiles) {
-  invariant(runtime?.schema === "zugfolge-map-runtime/v1", "Kartenpaket braucht einen Runtime-Pfadvertrag.");
+function validateRuntimeContract(runtime, artifacts, auxiliaryFiles, packageSchema) {
+  const expectedRuntimeSchema = isMapRuntimeV2PackageSchema(packageSchema) ? "zugfolge-map-runtime/v2" : "zugfolge-map-runtime/v1";
+  invariant(runtime?.schema === expectedRuntimeSchema, `Kartenpaket ${packageSchema} braucht den Runtime-Pfadvertrag ${expectedRuntimeSchema}.`);
   validateSameOriginRuntimePath(runtime.publicBasePath, "runtime.publicBasePath");
   validateSameOriginRuntimePath(runtime.basemapStyleUrl, "runtime.basemapStyleUrl");
   validateSameOriginRuntimePath(runtime.infrastructurePmtilesUrl, "runtime.infrastructurePmtilesUrl");
@@ -182,6 +359,61 @@ function assertNoInternalEvidenceDetails(value, path = "publicManifest") {
   }
 }
 
+function assertNoZugfolgeV1Schemas(value, path = "publicManifest") {
+  if (Array.isArray(value)) {
+    value.forEach((entry, index) => assertNoZugfolgeV1Schemas(entry, `${path}[${index}]`));
+    return;
+  }
+  if (value !== null && typeof value === "object") {
+    for (const [key, entry] of Object.entries(value)) {
+      if (key === "schema" && typeof entry === "string") {
+        invariant(!/^zugfolge-[^"\s]+\/v1$/i.test(entry), `${path}.${key} darf in einem statischen Karten-v2-Paket kein Zugfolge-v1-Schema tragen.`);
+      }
+      assertNoZugfolgeV1Schemas(entry, `${path}.${key}`);
+    }
+  }
+}
+
+function validateStaticAuxiliaryJson(contract, descriptor, value) {
+  if (auxiliaryMediaType(descriptor) !== "application/json") return;
+  const operationalReleaseId = contract.releaseId
+    ?? contract.auxiliaryFiles?.find(({ kind }) => kind === OPERATIONAL_INFRASTRUCTURE_KIND)?.infraReleaseId;
+  if (isStaticMapPackageSchema(contract.schema)) {
+    invariant(value !== undefined, `${descriptor.id} ist fuer die vollstaendige Zugfolge-v1-Schemapruefung zu gross.`);
+    assertNoZugfolgeV1Schemas(value, descriptor.id);
+    if (descriptor.kind === "quality-manifest") validateStaticMapQuality(value, { releaseId: contract.releaseId });
+  }
+  if (descriptor.kind === "source-manifest") {
+    if (isStaticMapPackageSchema(contract.schema)) {
+      invariant(value?.schema === "zugfolge-static-map-sources/v3", `${descriptor.id} muss das oeffentliche Sources-v3-Manifest mit Asset-Notices sein.`);
+      invariant(SHA256.test(value.assetInventoryPlanSha256), `${descriptor.id} besitzt keinen Cache-Inventarplan-SHA fuer die Assets.`);
+      validateMapAssetNotices(value.assetNotices);
+    } else if ([PACKAGE_SPEC_V2, PACKAGE_MANIFEST_V2].includes(contract.schema)) {
+      invariant(value?.schema === "zugfolge-map-delivery-sources/v2", `${descriptor.id} muss das Delivery-Sources-v2-Manifest mit Asset-Notices sein.`);
+      invariant(SHA256.test(value.assetInventoryPlanSha256), `${descriptor.id} besitzt keinen Cache-Inventarplan-SHA fuer die Assets.`);
+      validateMapAssetNotices(value.assetNotices);
+    }
+  }
+  if (descriptor.kind === MOVEMENT_ROUTE_TEMPLATES_KIND) {
+    invariant(
+      value === undefined || (value?.schema === MOVEMENT_ROUTE_TEMPLATES_KIND && value.infraReleaseId === operationalReleaseId),
+      `${descriptor.id} ist kein releasegebundenes Movement-Route-Templates-v2-Artefakt.`,
+    );
+  }
+  if (descriptor.kind === TIMETABLE_TRANSFER_DEMANDS_KIND) {
+    invariant(
+      value === undefined || (value?.schema === "zugfolge-timetable-transfer-demands/v2" && value.infraReleaseId === operationalReleaseId),
+      `${descriptor.id} ist kein releasegebundenes Timetable-Transfer-Demands-v2-Artefakt.`,
+    );
+  }
+}
+
+function validateStaticAssetBindings(contract, sources) {
+  if (!isAssetNoticePackageSchema(contract.schema)) return;
+  invariant(sources !== undefined, "Kartenpaket v2 besitzt kein lesbares Sources-Manifest mit Asset-Notices.");
+  validateMapAssetNoticeBindings(sources.assetNotices, contract.auxiliaryFiles);
+}
+
 function auxiliaryMediaType(descriptor) {
   if (descriptor.kind === "glyph") return "application/x-protobuf";
   if (descriptor.kind === "sprite" && descriptor.installPath.endsWith(".png")) return "image/png";
@@ -190,8 +422,16 @@ function auxiliaryMediaType(descriptor) {
 }
 
 function validateAuxiliaryExtension(descriptor) {
-  if (["style", "release-manifest", "source-manifest", "quality-manifest"].includes(descriptor.kind)) {
+  if ([
+    "style", "release-manifest", "source-manifest", "quality-manifest",
+    ...RELEASE_ARTIFACT_AUXILIARY_KINDS,
+  ].includes(descriptor.kind)) {
     invariant(descriptor.sourceFile.endsWith(".json") && descriptor.installPath.endsWith(".json"), `${descriptor.id} muss eine JSON-Datei sein.`);
+    if (descriptor.kind === OPERATIONAL_INFRASTRUCTURE_KIND) {
+      invariant(descriptor.installPath === "operational-infrastructure-v2.json", `${descriptor.id} muss als operational-infrastructure-v2.json in der Releasewurzel liegen.`);
+      validateId(descriptor.infraReleaseId, `${descriptor.id}.infraReleaseId`);
+      invariant(SHA256.test(descriptor.stateHash), `${descriptor.id} besitzt keinen kanonischen Operational-v2-Zustandshash.`);
+    }
   } else if (descriptor.kind === "glyph") {
     invariant(descriptor.sourceFile.endsWith(".pbf") && descriptor.installPath.endsWith(".pbf"), `${descriptor.id} muss ein lokales PBF-Glyphenpaket sein.`);
   } else if (descriptor.kind === "sprite") {
@@ -211,7 +451,7 @@ function validateAuxiliaryExtension(descriptor) {
   }
 }
 
-function validateAuxiliaryComposition(auxiliaryFiles) {
+function validateAuxiliaryComposition(auxiliaryFiles, schema) {
   invariant(Array.isArray(auxiliaryFiles) && auxiliaryFiles.length >= 6, "Vollständiges Kartenpaket braucht Style, Glyphen, Sprites und öffentliche Manifeste.");
   const count = (kind) => auxiliaryFiles.filter((entry) => entry.kind === kind).length;
   for (const kind of ["style", "release-manifest", "source-manifest", "quality-manifest"]) {
@@ -221,7 +461,19 @@ function validateAuxiliaryComposition(auxiliaryFiles) {
   invariant(auxiliaryFiles.some((entry) => entry.kind === "sprite" && entry.installPath.endsWith(".png")), "Kartenpaket braucht mindestens eine lokale Sprite-PNG-Datei.");
   invariant(auxiliaryFiles.some((entry) => entry.kind === "sprite" && entry.installPath.endsWith(".json")), "Kartenpaket braucht mindestens eine lokale Sprite-JSON-Datei.");
   invariant(count("read-model") === 1, "Vollständiges Kartenpaket braucht genau ein öffentliches ReadModel.");
-  invariant(count("train-map-projection") === 1, "Vollständiges Kartenpaket braucht genau eine eigenständige Zugpositionsprojektion.");
+  if ([PACKAGE_SPEC_V2, PACKAGE_MANIFEST_V2].includes(schema)) {
+    invariant(count(OPERATIONAL_INFRASTRUCTURE_KIND) === 1, "Operational-v2-Kartenpaket braucht genau eine statische operational-infrastructure-v2.json.");
+    invariant(count(MOVEMENT_ROUTE_TEMPLATES_KIND) === 1, "Operational-v2-Kartenpaket braucht genau ein Movement-Route-Templates-v2-Artefakt.");
+    invariant(count(TIMETABLE_TRANSFER_DEMANDS_KIND) === 1, "Operational-v2-Kartenpaket braucht genau ein Timetable-Transfer-Demands-v2-Artefakt.");
+    invariant(count("train-map-projection") === 0, "Operational-v2-Kartenpaket darf keine weltgebundene Zugpositionsprojektion als Paketvoraussetzung führen.");
+  } else if (isStaticMapPackageSchema(schema)) {
+    invariant(count(OPERATIONAL_INFRASTRUCTURE_KIND) === 0, "Statischer Kartenrelease darf kein Operational-v2-Artefakt vortaeuschen.");
+    invariant(count(MOVEMENT_ROUTE_TEMPLATES_KIND) === 0 && count(TIMETABLE_TRANSFER_DEMANDS_KIND) === 0, "Statischer Kartenrelease darf keine Operational-v2-Bewegungsartefakte enthalten.");
+    invariant(count("train-map-projection") === 0, "Statischer Kartenrelease darf keine Legacy-Zugpositionsprojektion enthalten.");
+  } else {
+    invariant(count("train-map-projection") === 1, "Legacy-Kartenpaket braucht genau eine eigenständige Zugpositionsprojektion.");
+    invariant(count(OPERATIONAL_INFRASTRUCTURE_KIND) === 0, "Statische Operational-v2-Infrastruktur verlangt den expliziten Paketvertrag v2.");
+  }
 }
 
 function sqliteAuxiliaryKind(descriptor) {
@@ -270,7 +522,7 @@ export function serializeMapPackageManifest(manifest) {
 }
 
 export function validateMapPackageSpec(spec) {
-  invariant(spec?.schema === "zugfolge-map-package-spec/v1", "Unbekanntes Kartenpaket-Schema.");
+  invariant([PACKAGE_SPEC_V1, PACKAGE_SPEC_V2, STATIC_MAP_PACKAGE_SPEC_V2].includes(spec?.schema), "Unbekanntes Kartenpaket-Schema.");
   assertNoPrivateMetadata(spec);
   const normalized = {
     ...spec,
@@ -282,9 +534,18 @@ export function validateMapPackageSpec(spec) {
   };
   validateId(normalized.packageId, "Paket-ID");
   validateId(normalized.version, "Paketversion");
+  if (isStaticMapPackageSchema(normalized.schema)) {
+    validateId(normalized.releaseId, "Kartenrelease-ID");
+    validateStaticMapClaims(normalized.claims);
+    validateStaticMapCutover(normalized.cutover);
+  } else {
+    invariant(normalized.releaseId === undefined && normalized.claims === undefined && normalized.cutover === undefined, "Infra-/Legacy-Paketvertraege duerfen keine statischen Kartenrelease-Claims einschleusen.");
+  }
+  validateOperationalProvenanceSource(normalized.operationalProvenanceSource, normalized.schema, normalized.version);
+  validateOperationalAuthoritySource(normalized.operationalAuthoritySource, normalized.schema, normalized.version);
   invariant(Number.isSafeInteger(normalized.partBytes) && normalized.partBytes > 0 && normalized.partBytes < MAX_MAP_PACKAGE_PART_BYTES, "Teilgröße muss positiv und kleiner als 2 GiB sein.");
   invariant(Array.isArray(normalized.artifacts) && normalized.artifacts.length === 2, "Kartenpaket braucht genau zwei PMTiles-Artefakte.");
-  validateAuxiliaryComposition(normalized.auxiliaryFiles);
+  validateAuxiliaryComposition(normalized.auxiliaryFiles, normalized.schema);
 
   const ids = new Set();
   const installPaths = new Set();
@@ -300,6 +561,9 @@ export function validateMapPackageSpec(spec) {
     if (artifact.expectedBytes !== undefined || artifact.expectedSha256 !== undefined) {
       invariant(Number.isSafeInteger(artifact.expectedBytes) && artifact.expectedBytes > PMTILES_HEADER_BYTES && SHA256.test(artifact.expectedSha256), `${artifact.id} besitzt keinen vollständigen erwarteten Byte-SHA-Beleg.`);
     }
+    if (isStaticMapPackageSchema(normalized.schema)) {
+      invariant(Number.isSafeInteger(artifact.expectedBytes) && artifact.expectedBytes > PMTILES_HEADER_BYTES && SHA256.test(artifact.expectedSha256), `${artifact.id} muss im statischen Kartenrelease bytegenau gepinnt sein.`);
+    }
     invariant(sameStrings(artifact.expectedVectorLayers, expectedLayersForKind(artifact.kind)), `${artifact.id} muss exakt den festgelegten ${artifact.kind}-Layervertrag enthalten.`);
   }
   for (const auxiliary of normalized.auxiliaryFiles) {
@@ -311,8 +575,19 @@ export function validateMapPackageSpec(spec) {
     if (auxiliary.expectedBytes !== undefined || auxiliary.expectedSha256 !== undefined) {
       invariant(Number.isSafeInteger(auxiliary.expectedBytes) && auxiliary.expectedBytes > 0 && SHA256.test(auxiliary.expectedSha256), `${auxiliary.id} besitzt keinen vollständigen erwarteten Byte-SHA-Beleg.`);
     }
+    if (isStaticMapPackageSchema(normalized.schema) && [
+      "style", "release-manifest", "source-manifest", "quality-manifest", "read-model",
+    ].includes(auxiliary.kind)) {
+      invariant(Number.isSafeInteger(auxiliary.expectedBytes) && auxiliary.expectedBytes > 0 && SHA256.test(auxiliary.expectedSha256), `${auxiliary.id} muss im statischen Kartenrelease bytegenau gepinnt sein.`);
+    }
+    if (RELEASE_ARTIFACT_AUXILIARY_KINDS.has(auxiliary.kind)) {
+      invariant(
+        Number.isSafeInteger(auxiliary.expectedBytes) && auxiliary.expectedBytes > 0 && SHA256.test(auxiliary.expectedSha256),
+        `${auxiliary.id} braucht den aus dem InfraRelease-Inventar abgeleiteten Byte-SHA-Beleg.`,
+      );
+    }
   }
-  validateRuntimeContract(normalized.runtime, normalized.artifacts, normalized.auxiliaryFiles);
+  validateRuntimeContract(normalized.runtime, normalized.artifacts, normalized.auxiliaryFiles, normalized.schema);
   return normalized;
 }
 
@@ -328,7 +603,64 @@ async function assertContainedDirectory(root, portablePath, label) {
   invariant(metadata.isDirectory() && !metadata.isSymbolicLink(), `${label} muss ein reguläres Verzeichnis sein.`);
 }
 
-async function inventoryAuxiliaryTree(sourceRoot, tree) {
+async function resolveSourceRoots(sourceRootOrRoots) {
+  const requestedRoots = Array.isArray(sourceRootOrRoots) ? sourceRootOrRoots : [sourceRootOrRoots];
+  invariant(requestedRoots.length > 0, "Mindestens eine Kartenpaket-Quellwurzel ist erforderlich.");
+  const roots = [];
+  const seen = new Set();
+  for (const [index, requestedRoot] of requestedRoots.entries()) {
+    invariant(typeof requestedRoot === "string" && requestedRoot.length > 0, `Quellwurzel[${index}] fehlt.`);
+    const requested = resolve(requestedRoot);
+    const metadata = await lstat(requested);
+    invariant(metadata.isDirectory() && !metadata.isSymbolicLink(), `Quellwurzel[${index}] muss ein reguläres Verzeichnis ohne symbolischen Link sein.`);
+    const root = await realpath(requested);
+    const key = process.platform === "win32" ? root.toLowerCase() : root;
+    invariant(!seen.has(key), `Quellwurzel[${index}] ist doppelt.`);
+    seen.add(key);
+    roots.push(root);
+  }
+  return roots;
+}
+
+async function resolveUniqueSourceEntry(sourceRoots, portablePath, label, expectedKind) {
+  validatePortableRelativePath(portablePath, label);
+  const matches = [];
+  for (const root of sourceRoots) {
+    let current = root;
+    let missing = false;
+    const parts = portablePath.split("/");
+    for (const [index, part] of parts.entries()) {
+      current = join(current, part);
+      let metadata;
+      try {
+        metadata = await lstat(current);
+      } catch (error) {
+        if (isMissing(error)) {
+          missing = true;
+          break;
+        }
+        throw error;
+      }
+      invariant(!metadata.isSymbolicLink(), `${label} darf in keiner Quellwurzel einen symbolischen Link enthalten.`);
+      if (index < parts.length - 1) invariant(metadata.isDirectory(), `${label} besitzt einen nicht auflösbaren Zwischenpfad.`);
+    }
+    if (missing) continue;
+    const actual = await realpath(current);
+    const remainder = relative(root, actual);
+    invariant(remainder !== "" && !remainder.startsWith("..") && !isAbsolute(remainder), `${label} verlässt seine Quellwurzel.`);
+    const metadata = await lstat(actual);
+    invariant(
+      expectedKind === "file" ? metadata.isFile() : metadata.isDirectory(),
+      `${label} muss ${expectedKind === "file" ? "eine reguläre Datei" : "ein reguläres Verzeichnis"} sein.`,
+    );
+    matches.push(actual);
+  }
+  invariant(matches.length > 0, `${label} fehlt in allen Quellwurzeln.`);
+  invariant(matches.length === 1, `${label} ist in mehreren Quellwurzeln vorhanden und deshalb mehrdeutig.`);
+  return matches[0];
+}
+
+async function inventoryAuxiliaryTree(sourceRoots, tree) {
   validateId(tree.idPrefix, "Hilfsbaum-ID-Präfix");
   invariant(["glyph", "sprite"].includes(tree.kind), `${tree.idPrefix} darf nur Glyphen oder Sprites inventarisieren.`);
   invariant(tree.visibility === "public", `${tree.idPrefix} muss ausdrücklich öffentlich sein.`);
@@ -343,8 +675,12 @@ async function inventoryAuxiliaryTree(sourceRoot, tree) {
   }
   invariant(expectedInventory.size > 0, `${tree.idPrefix}.expectedInventory ist leer.`);
   invariant(Object.keys(tree).sort().join(",") === "expectedInventory,idPrefix,installDirectory,kind,sourceDirectory,visibility", `${tree.idPrefix} enthält unerwartete Felder.`);
-  await assertContainedDirectory(sourceRoot, tree.sourceDirectory, `${tree.idPrefix}.sourceDirectory`);
-  const sourceDirectory = resolveContained(sourceRoot, tree.sourceDirectory, `${tree.idPrefix}.sourceDirectory`);
+  const sourceDirectory = await resolveUniqueSourceEntry(
+    sourceRoots,
+    tree.sourceDirectory,
+    `${tree.idPrefix}.sourceDirectory`,
+    "directory",
+  );
   const files = [];
   const observedInventory = new Map();
 
@@ -383,36 +719,106 @@ async function inventoryAuxiliaryTree(sourceRoot, tree) {
 }
 
 export async function expandMapPackagePlan(plan, sourceRoot) {
-  invariant(plan?.schema === "zugfolge-map-package-plan/v1", "Unbekanntes Kartenpaket-Plan-Schema.");
+  invariant([PACKAGE_PLAN_V1, PACKAGE_PLAN_V2, STATIC_MAP_PACKAGE_PLAN_V2].includes(plan?.schema), "Unbekanntes Kartenpaket-Plan-Schema.");
   assertNoPrivateMetadata(plan);
+  validateOperationalProvenanceSource(plan.operationalProvenanceSource, plan.schema, plan.version);
+  validateOperationalAuthoritySource(plan.operationalAuthoritySource, plan.schema, plan.version);
   invariant(Array.isArray(plan.auxiliaryFiles), "Kartenpaket-Plan braucht direkte Hilfsdateien.");
   invariant(Array.isArray(plan.auxiliaryTrees) && plan.auxiliaryTrees.length > 0, "Kartenpaket-Plan braucht lokale Glyphen-/Sprite-Verzeichnisse.");
-  const resolvedSourceRoot = await realpath(resolve(sourceRoot));
+  const resolvedSourceRoots = await resolveSourceRoots(sourceRoot);
+  if (plan.schema === STATIC_MAP_PACKAGE_PLAN_V2) {
+    const releaseDescriptors = plan.auxiliaryFiles.filter(({ kind }) => kind === "release-manifest");
+    invariant(releaseDescriptors.length === 1, "Statischer Kartenplan braucht genau einen Releasevertrag fuer die Completion-Bindung.");
+    const releasePath = await resolveUniqueSourceEntry(
+      resolvedSourceRoots,
+      releaseDescriptors[0].sourceFile,
+      "Static-Map-Releasevertrag",
+      "file",
+    );
+    const planSha256 = createHash("sha256").update(`${JSON.stringify(sortedValue(plan), null, 2)}\n`, "utf8").digest("hex");
+    await verifyCreateNewDirectoryCompletion(dirname(releasePath), {
+      kind: "static-map-release",
+      bindingSha256: planSha256,
+    });
+  }
   const expandedTrees = [];
   for (const tree of [...plan.auxiliaryTrees].sort((left, right) => String(left.idPrefix).localeCompare(String(right.idPrefix), "en"))) {
-    expandedTrees.push(...await inventoryAuxiliaryTree(resolvedSourceRoot, tree));
+    expandedTrees.push(...await inventoryAuxiliaryTree(resolvedSourceRoots, tree));
+  }
+  const directAuxiliaryFiles = [];
+  for (const descriptor of plan.auxiliaryFiles) {
+    if (!RELEASE_ARTIFACT_AUXILIARY_KINDS.has(descriptor?.kind)) {
+      directAuxiliaryFiles.push(descriptor);
+      continue;
+    }
+    invariant(plan.schema === PACKAGE_PLAN_V2, "Operational-v2-Releaseartefakte verlangen den Paketplan v2.");
+    const { artifactInventory, ...portableDescriptor } = descriptor;
+    validatePortableRelativePath(artifactInventory, `${descriptor.id}.artifactInventory`);
+    const inventoryPath = await resolveUniqueSourceEntry(
+      resolvedSourceRoots,
+      artifactInventory,
+      `${descriptor.id}.artifactInventory`,
+      "file",
+    );
+    const inventory = JSON.parse(await readFile(inventoryPath, "utf8"));
+    invariant(inventory?.schema === "zugfolge-infra-release-artifacts/v2" && Array.isArray(inventory.artifacts), `${descriptor.id} bindet kein Operational-v2-Artefaktinventar.`);
+    const bindings = inventory.artifacts.filter((entry) => entry?.kind === descriptor.kind);
+    invariant(bindings.length === 1, `InfraRelease-Artefaktinventar muss genau ein ${descriptor.kind}-Artefakt enthalten.`);
+    const binding = bindings[0];
+    invariant(binding.id === descriptor.id && binding.file === descriptor.installPath, `${descriptor.id} weicht vom Operational-v2-Inventar ab.`);
+    invariant(Number.isSafeInteger(binding.bytes) && binding.bytes > 0 && SHA256.test(binding.sha256), `${descriptor.id} besitzt keine vollständige Bytebindung.`);
+    if (descriptor.kind === OPERATIONAL_INFRASTRUCTURE_KIND) {
+      invariant(typeof binding.infraReleaseId === "string" && SHA256.test(binding.stateHash) && binding.sha256 !== binding.stateHash, `${descriptor.id} besitzt keine vollständige Byte-/Zustandsbindung.`);
+    }
+    directAuxiliaryFiles.push({
+      ...portableDescriptor,
+      ...(descriptor.kind === OPERATIONAL_INFRASTRUCTURE_KIND
+        ? { infraReleaseId: binding.infraReleaseId, stateHash: binding.stateHash }
+        : {}),
+      expectedBytes: binding.bytes,
+      expectedSha256: binding.sha256,
+    });
   }
   const spec = {
-    schema: "zugfolge-map-package-spec/v1",
+    schema: plan.schema === PACKAGE_PLAN_V2
+      ? PACKAGE_SPEC_V2
+      : plan.schema === STATIC_MAP_PACKAGE_PLAN_V2
+        ? STATIC_MAP_PACKAGE_SPEC_V2
+        : PACKAGE_SPEC_V1,
     packageId: plan.packageId,
     version: plan.version,
+    ...(plan.schema === STATIC_MAP_PACKAGE_PLAN_V2 ? { releaseId: plan.releaseId, claims: plan.claims, cutover: plan.cutover } : {}),
     ...(plan.partBytes === undefined ? {} : { partBytes: plan.partBytes }),
     runtime: plan.runtime,
+    ...(plan.schema === PACKAGE_PLAN_V2 && plan.operationalProvenanceSource !== undefined
+      ? { operationalProvenanceSource: plan.operationalProvenanceSource }
+      : {}),
+    ...(plan.schema === PACKAGE_PLAN_V2 && plan.operationalAuthoritySource !== undefined
+      ? { operationalAuthoritySource: plan.operationalAuthoritySource }
+      : {}),
     artifacts: plan.artifacts,
-    auxiliaryFiles: [...plan.auxiliaryFiles, ...expandedTrees],
+    auxiliaryFiles: [...directAuxiliaryFiles, ...expandedTrees],
   };
   return validateMapPackageSpec(spec);
 }
 
 export function validateMapPackageManifest(manifest) {
-  invariant(manifest?.schema === "zugfolge-map-package/v1", "Unbekanntes Kartenpaket-Manifest.");
+  invariant([PACKAGE_MANIFEST_V1, PACKAGE_MANIFEST_V2, STATIC_MAP_PACKAGE_MANIFEST_V2].includes(manifest?.schema), "Unbekanntes Kartenpaket-Manifest.");
   assertNoPrivateMetadata(manifest);
   validateId(manifest.packageId, "Paket-ID");
   validateId(manifest.version, "Paketversion");
+  if (manifest.schema === PACKAGE_MANIFEST_V2) germanyOperationalDeliveryV2Generation(manifest.version);
+  if (isStaticMapPackageSchema(manifest.schema)) {
+    validateId(manifest.releaseId, "Kartenrelease-ID");
+    validateStaticMapClaims(manifest.claims);
+    validateStaticMapCutover(manifest.cutover);
+  } else {
+    invariant(manifest.releaseId === undefined && manifest.claims === undefined && manifest.cutover === undefined, "Infra-/Legacy-Paketmanifeste duerfen keine statischen Kartenrelease-Claims einschleusen.");
+  }
   invariant(manifest.format === "directory-parts", "Unbekanntes Kartenpaket-Format.");
   invariant(Number.isSafeInteger(manifest.partBytes) && manifest.partBytes > 0 && manifest.partBytes < MAX_MAP_PACKAGE_PART_BYTES, "Ungültige Teilgröße im Manifest.");
   invariant(Array.isArray(manifest.artifacts) && manifest.artifacts.length === 2, "Kartenpaket-Manifest braucht genau zwei PMTiles-Artefakte.");
-  validateAuxiliaryComposition(manifest.auxiliaryFiles);
+  validateAuxiliaryComposition(manifest.auxiliaryFiles, manifest.schema);
 
   const descriptorIds = new Set();
   const installPaths = new Set();
@@ -443,8 +849,11 @@ export function validateMapPackageManifest(manifest) {
     invariant(auxiliary.mediaType === auxiliaryMediaType(auxiliary), `${auxiliary.id} hat einen unerwarteten Medientyp.`);
     validateAuxiliaryExtension({ ...auxiliary, sourceFile: auxiliary.installPath });
     validateManifestParts(auxiliary, manifest, partPaths, "", 0);
+    if (auxiliary.kind === OPERATIONAL_INFRASTRUCTURE_KIND) {
+      invariant(auxiliary.sha256 !== auxiliary.stateHash, `${auxiliary.id} setzt Byte- und Zustandshash unzulässig gleich.`);
+    }
   }
-  validateRuntimeContract(manifest.runtime, manifest.artifacts, manifest.auxiliaryFiles);
+  validateRuntimeContract(manifest.runtime, manifest.artifacts, manifest.auxiliaryFiles, manifest.schema);
   return manifest;
 }
 
@@ -456,6 +865,87 @@ async function hashFile(path) {
     bytes += chunk.length;
   }
   return { bytes, sha256: hash.digest("hex") };
+}
+
+export function createOperationalInfrastructureV2ExecutableVerifier(executablePath) {
+  invariant(typeof executablePath === "string" && executablePath.trim() !== "", "Pfad zum nativen Operational-v2-Validator fehlt.");
+  invariant(isAbsolute(executablePath.trim()), "Pfad zum nativen Operational-v2-Validator muss absolut sein.");
+  const executable = resolve(executablePath.trim());
+  return async (candidatePath, expectedReleaseId) => {
+    await assertRegularFile(executable, "Nativer Operational-v2-Validator");
+    const result = spawnSync(executable, [
+      "validate-operational-infrastructure-v2",
+      resolve(candidatePath),
+      expectedReleaseId,
+    ], {
+      encoding: "utf8",
+      windowsHide: true,
+      shell: false,
+    });
+    if (result.error !== undefined) {
+      throw new Error(`Nativer Operational-v2-Validator konnte nicht gestartet werden: ${result.error.message}`);
+    }
+    if (result.status !== 0) {
+      throw new Error(`Native Operational-v2-Dateipruefung fehlgeschlagen:\n${result.stderr}\n${result.stdout}`);
+    }
+    const line = result.stdout.trim().split(/\r?\n/u).at(-1);
+    let receipt;
+    try {
+      receipt = JSON.parse(line);
+    } catch {
+      throw new Error("Nativer Operational-v2-Validator lieferte kein JSON-Receipt.");
+    }
+    return validateOperationalInfrastructureV2NativeReceipt(receipt, expectedReleaseId);
+  };
+}
+
+function requireOperationalInfrastructureV2Verifier(schema, validateOperationalInfrastructure) {
+  if ([PACKAGE_SPEC_V2, PACKAGE_MANIFEST_V2].includes(schema)) {
+    invariant(
+      typeof validateOperationalInfrastructure === "function",
+      `Operational-v2-Kartenpakete verlangen einen nativen Dateiverifier; fuer die CLI muss ${OPERATIONAL_INFRASTRUCTURE_V2_VALIDATOR_ENV} auf das gebaute zugfolge-infra-release-Binary zeigen.`,
+    );
+  }
+}
+
+async function verifyOperationalInfrastructureV2File(path, binding, validateOperationalInfrastructure) {
+  invariant(
+    binding?.kind === OPERATIONAL_INFRASTRUCTURE_KIND
+      && typeof binding.infraReleaseId === "string"
+      && Number.isSafeInteger(binding.bytes)
+      && SHA256.test(binding.sha256)
+      && SHA256.test(binding.stateHash),
+    "Operational-v2-Dateipruefung besitzt keine vollstaendige Release-, Byte- und Zustandsbindung.",
+  );
+  invariant(typeof validateOperationalInfrastructure === "function", "Nativer Operational-v2-Dateiverifier fehlt.");
+  await assertRegularFile(path, binding.id);
+  const before = await hashFile(path);
+  const nativeReceipt = validateOperationalInfrastructureV2NativeReceipt(
+    await validateOperationalInfrastructure(path, binding.infraReleaseId),
+    binding.infraReleaseId,
+  );
+  const after = await hashFile(path);
+  invariant(
+    before.bytes === after.bytes && before.sha256 === after.sha256,
+    `${binding.id} aenderte sich waehrend der nativen Operational-v2-Dateipruefung.`,
+  );
+  invariant(
+    after.bytes === binding.bytes && after.sha256 === binding.sha256,
+    `${binding.id} weicht waehrend der nativen Operational-v2-Dateipruefung von seiner Paketbindung ab.`,
+  );
+  invariant(
+    nativeReceipt.sourceBytes === after.bytes && nativeReceipt.sourceSha256 === after.sha256,
+    `${binding.id}: nativer Receipt ist nicht an die geprueften Quelldateibytes gebunden.`,
+  );
+  invariant(
+    nativeReceipt.bytes === after.bytes && nativeReceipt.sha256 === after.sha256,
+    `${binding.id}: Quelldatei entspricht nicht exakt den nativ kanonisierten Operational-v2-Bytes.`,
+  );
+  invariant(
+    nativeReceipt.stateHash === binding.stateHash,
+    `${binding.id}: nativer Operational-v2-Zustandshash weicht von der Releasebindung ab.`,
+  );
+  return nativeReceipt;
 }
 
 async function assertRegularFile(path, label) {
@@ -639,6 +1129,7 @@ async function inspectPmtiles(readRange, fileBytes, label) {
   }
   invariant(metadata !== null && typeof metadata === "object" && !Array.isArray(metadata), `${label}: PMTiles-Metadaten müssen ein Objekt sein.`);
   assertNoPrivateMetadata(metadata, `${label}.metadata`);
+  assertNoInternalEvidenceDetails(metadata, `${label}.metadata`);
   invariant(Array.isArray(metadata.vector_layers) && metadata.vector_layers.length > 0, `${label}: PMTiles-Metadaten enthalten keine Vektorlayer.`);
   const layerIds = new Set();
   for (const layer of metadata.vector_layers) {
@@ -718,19 +1209,6 @@ async function writeDurableFile(path, buffer) {
   }
 }
 
-async function atomicDirectoryRename(source, destination) {
-  for (let attempt = 0; ; attempt += 1) {
-    try {
-      await rename(source, destination);
-      return;
-    } catch (error) {
-      const retryable = error !== null && typeof error === "object" && ["EACCES", "EBUSY", "EPERM"].includes(error.code);
-      if (!retryable || attempt >= 5) throw error;
-      await delay(25 * (2 ** attempt));
-    }
-  }
-}
-
 function assertNoExternalStyleUrls(value, allowedPmtilesUrl, path = "style") {
   if (Array.isArray(value)) {
     value.forEach((entry, index) => assertNoExternalStyleUrls(entry, allowedPmtilesUrl, `${path}[${index}]`));
@@ -781,6 +1259,136 @@ export function validateRuntimeStyle(style, contract) {
   return style;
 }
 
+export function validatePublicMapPackageJson(value, label = "Oeffentliches Kartenartefakt") {
+  invariant(value !== null && typeof value === "object" && !Array.isArray(value), `${label} muss ein JSON-Objekt sein.`);
+  assertNoPrivateMetadata(value, label);
+  assertNoInternalEvidenceDetails(value, label);
+  return value;
+}
+
+export function validateStaticMapReleaseDocument(value, contract) {
+  validatePublicMapPackageJson(value, "Statischer Kartenrelease");
+  invariant(value.schema === STATIC_MAP_RELEASE_SCHEMA_V2, "Statischer Kartenrelease besitzt ein unbekanntes Schema.");
+  invariant(value.releaseId === contract.releaseId, "Statischer Kartenrelease gehoert zu einer anderen Release-ID.");
+  invariant(value.status === "unsigned", "Statischer Kartenrelease muss ausdruecklich unsigned bleiben.");
+  invariant(
+    JSON.stringify(sortedValue(value.claims)) === JSON.stringify(sortedValue(contract.claims)),
+    "Statischer Kartenrelease und Paketmanifest tragen verschiedene Claims.",
+  );
+  validateStaticMapClaims(value.claims, "Statischer Kartenrelease.claims");
+  validateStaticMapCutover(value.cutover, "Statischer Kartenrelease.cutover");
+  invariant(JSON.stringify(sortedValue(value.cutover)) === JSON.stringify(sortedValue(contract.cutover)), "Statischer Kartenrelease und Paketmanifest tragen verschiedene Cutover-Vertraege.");
+  invariant(Array.isArray(value.artifacts) && value.artifacts.length >= 6, "Statischer Kartenrelease besitzt kein vollstaendiges bytegenaues Artefaktinventar.");
+  let previousId = "";
+  const requiredKinds = new Set(["basemap", "infrastructure", "style", "read-model", "quality-manifest", "source-manifest"]);
+  const observedKinds = new Set();
+  for (const [index, artifact] of value.artifacts.entries()) {
+    validateId(artifact?.id, `Statischer Kartenrelease.artifacts[${index}].id`);
+    invariant(artifact.id.localeCompare(previousId, "en") > 0, "Statisches Kartenrelease-Inventar muss stabil nach ID sortiert sein.");
+    invariant(typeof artifact.kind === "string" && requiredKinds.has(artifact.kind), `${artifact.id} besitzt eine unerwartete Kartenrelease-Art.`);
+    invariant(!observedKinds.has(artifact.kind), `Statischer Kartenrelease enthaelt ${artifact.kind} doppelt.`);
+    validatePortableRelativePath(artifact.installPath, `${artifact.id}.installPath`);
+    invariant(Number.isSafeInteger(artifact.bytes) && artifact.bytes > 0 && SHA256.test(artifact.sha256), `${artifact.id} besitzt keinen Byte-SHA-Beleg.`);
+    invariant(Object.keys(artifact).sort().join(",") === "bytes,id,installPath,kind,sha256", `${artifact.id} besitzt unerwartete Inventarfelder.`);
+    previousId = artifact.id;
+    observedKinds.add(artifact.kind);
+  }
+  invariant(observedKinds.size === requiredKinds.size && [...requiredKinds].every((kind) => observedKinds.has(kind)), "Statischer Kartenrelease bindet PMTiles, Style, ReadModel, Qualitaet und Quellen nicht vollstaendig.");
+  invariant(
+    Object.keys(value).sort().join(",") === "artifacts,claims,cutover,releaseId,schema,status",
+    "Statischer Kartenrelease besitzt unerwartete Felder.",
+  );
+  return value;
+}
+
+function validateStaticMapReleaseBinding(contract, releaseDocument) {
+  if (!isStaticMapPackageSchema(contract.schema)) return;
+  validateStaticMapReleaseDocument(releaseDocument, contract);
+  const packaged = [...contract.artifacts, ...contract.auxiliaryFiles]
+    .filter(({ kind }) => ["basemap", "infrastructure", "style", "read-model", "quality-manifest", "source-manifest"].includes(kind))
+    .map(({ id, kind, installPath, bytes, sha256, expectedBytes, expectedSha256 }) => ({
+      id,
+      kind,
+      installPath,
+      bytes: bytes ?? expectedBytes,
+      sha256: sha256 ?? expectedSha256,
+    }))
+    .sort((left, right) => left.id.localeCompare(right.id, "en"));
+  invariant(
+    JSON.stringify(sortedValue(packaged)) === JSON.stringify(sortedValue(releaseDocument.artifacts)),
+    "Statischer Kartenrelease weicht von den tatsaechlich gepackten Byte-SHA-Bindungen ab.",
+  );
+}
+
+function validateDeliveryV2PackageBinding(contract, releaseDocument) {
+  if (![PACKAGE_SPEC_V2, PACKAGE_MANIFEST_V2].includes(contract.schema)) return;
+  invariant(releaseDocument?.schema === DELIVERY_RELEASE_SCHEMA_V2, "Integriertes Operational-v2-Paket braucht genau einen Delivery-v2-Releasevertrag.");
+  const generation = validateGermanyOperationalDeliveryV2Pair(
+    contract.version,
+    releaseDocument.releaseId,
+    "Delivery-v2-Paketbindung",
+  );
+  invariant(
+    releaseDocument.packageId === contract.packageId
+      && releaseDocument.packageVersion === contract.version
+      && releaseDocument.bindings?.packageManifestSchema === PACKAGE_MANIFEST_V2,
+    "Delivery-v2 und integriertes Paket besitzen verschiedene Paketidentitaeten oder Schemas.",
+  );
+  const packaged = [...contract.artifacts, ...contract.auxiliaryFiles]
+    .filter(({ kind }) => !["release-manifest", "source-manifest"].includes(kind))
+    .map(({ id, kind, installPath, bytes, sha256, infraReleaseId, stateHash }) => ({
+      id,
+      kind,
+      installPath,
+      ...(kind === OPERATIONAL_INFRASTRUCTURE_KIND ? { infraReleaseId, stateHash } : {}),
+      bytes,
+      sha256,
+    }))
+    .sort((left, right) => left.id.localeCompare(right.id, "en"));
+  invariant(
+    JSON.stringify(sortedValue(packaged)) === JSON.stringify(sortedValue(releaseDocument.artifacts)),
+    "Delivery-v2-Artefakte weichen vom tatsaechlich gepackten Operational-v2-Inventar ab.",
+  );
+  const sources = contract.auxiliaryFiles.filter(({ kind }) => kind === "source-manifest");
+  const quality = contract.auxiliaryFiles.filter(({ kind }) => kind === "quality-manifest");
+  const operational = contract.auxiliaryFiles.filter(({ kind }) => kind === OPERATIONAL_INFRASTRUCTURE_KIND);
+  invariant(
+    sources.length === 1
+      && quality.length === 1
+      && operational.length === 1
+      && releaseDocument.bindings?.sourcesSha256 === sources[0].sha256
+      && releaseDocument.bindings?.qualitySha256 === quality[0].sha256,
+    "Delivery-v2 bindet nicht die tatsaechlich gepackten Sources-/Quality-Bytes.",
+  );
+  invariant(
+    operational[0].infraReleaseId === releaseDocument.releaseId
+      && SHA256.test(operational[0].stateHash)
+      && SHA256.test(releaseDocument.bindings?.infraReleaseHash)
+      && SHA256.test(releaseDocument.bindings?.mapReleaseHash),
+    "Delivery-v2 bindet nicht denselben Operational-v2-Zustand oder keine Infra-/Kartenrelease-Hashes.",
+  );
+  if (generation === "integrated-provenance-v2") {
+    const provenance = validateGermanyOperationalProvenance(releaseDocument.operationalProvenance);
+    const authority = validateOperationalBuildAuthority(releaseDocument.operationalAuthority);
+    invariant(
+      provenance.producerKind === GERMANY_OPERATIONAL_INTEGRATED_PRODUCER_KIND
+        && provenance.releaseEvidenceEligible === true
+        && provenance.productionActivationEligible === true
+        && releaseDocument.bindings?.operationalProvenanceSha256 === germanyOperationalProvenanceSha256(provenance)
+        && releaseDocument.bindings?.operationalAuthoritySha256 === operationalBuildAuthoritySha256(authority),
+      "Delivery-v2-Paket bindet keine atomar integrierte Provenienz und Operational-Build-Authority.",
+    );
+  } else {
+    invariant(
+      !Object.hasOwn(releaseDocument, "operationalProvenance")
+        && !Object.hasOwn(releaseDocument.bindings ?? {}, "operationalProvenanceSha256")
+        && !Object.hasOwn(releaseDocument, "operationalAuthority")
+        && !Object.hasOwn(releaseDocument.bindings ?? {}, "operationalAuthoritySha256"),
+      "Legacy-Delivery-v2-Paket darf keine aktuelle Operational-v2-Provenienz oder Build-Authority tragen.",
+    );
+  }
+}
+
 function createAuxiliaryContentValidator(descriptor) {
   const mediaType = auxiliaryMediaType(descriptor);
   const isJson = mediaType === "application/json";
@@ -803,7 +1411,7 @@ function createAuxiliaryContentValidator(descriptor) {
     if (descriptor.kind === "read-model") {
       invariant(!RAW_PRIVATE_READ_MODEL_KEY.test(combined), `${descriptor.id} enthält kein rein öffentliches ReadModel.`);
     }
-    if (["release-manifest", "source-manifest", "quality-manifest", "read-model", "train-map-projection"].includes(descriptor.kind)) {
+    if (["release-manifest", "source-manifest", "quality-manifest", "read-model", "train-map-projection", OPERATIONAL_INFRASTRUCTURE_KIND].includes(descriptor.kind)) {
       invariant(!RAW_INTERNAL_EVIDENCE_DETAIL_KEY.test(combined), `${descriptor.id} darf keine interne Evidenzkennung oder deren Hash ausliefern.`);
     }
     if (combined.includes("\\u") || combined.includes("\\U")) sawUnicodeEscape = true;
@@ -868,7 +1476,7 @@ function createAuxiliaryContentValidator(descriptor) {
             throw new Error(`${descriptor.id} ist kein gültiges JSON.`);
           }
           assertNoPrivateMetadata(jsonValue, descriptor.id);
-          if (["release-manifest", "source-manifest", "quality-manifest", "read-model", "train-map-projection"].includes(descriptor.kind)) {
+          if (["release-manifest", "source-manifest", "quality-manifest", "read-model", "train-map-projection", OPERATIONAL_INFRASTRUCTURE_KIND].includes(descriptor.kind)) {
             assertNoInternalEvidenceDetails(jsonValue, descriptor.id);
           }
           if (descriptor.kind === "read-model") assertNoPrivateReadModel(jsonValue, descriptor.id);
@@ -938,6 +1546,9 @@ async function splitPortableFile(sourcePath, temporaryPackageRoot, descriptor, p
     kind: descriptor.kind,
     installPath: descriptor.installPath,
     ...(pmtiles ? {} : { visibility: "public", mediaType: validatedContent.mediaType }),
+    ...(!pmtiles && descriptor.kind === OPERATIONAL_INFRASTRUCTURE_KIND
+      ? { infraReleaseId: descriptor.infraReleaseId, stateHash: descriptor.stateHash }
+      : {}),
     ...(pmtiles ? {
       vectorLayers: pmtilesInspection.vectorLayerIds,
       minZoom: pmtilesInspection.header.minZoom,
@@ -966,44 +1577,81 @@ async function splitAuxiliaryFile(sourcePath, temporaryPackageRoot, descriptor, 
   return split;
 }
 
-export async function packMapPackage(spec, sourceRoot, outputDirectory) {
+function requireIntegratedV2PackPins(spec) {
+  if (spec.schema !== PACKAGE_SPEC_V2) return;
+  invariant(
+    [...spec.artifacts, ...spec.auxiliaryFiles].every(({ expectedBytes, expectedSha256 }) => (
+      Number.isSafeInteger(expectedBytes) && expectedBytes > 0 && SHA256.test(expectedSha256)
+    )),
+    "Integriertes Operational-v2-Paket darf nur aus einem vollstaendig expandierten und bytegenau gepinnten Paketvertrag gebaut werden.",
+  );
+}
+
+export async function packMapPackage(
+  spec,
+  sourceRoot,
+  outputDirectory,
+  { validateOperationalInfrastructure } = {},
+) {
   const normalizedSpec = validateMapPackageSpec(spec);
-  const resolvedSourceRoot = await realpath(resolve(sourceRoot));
+  requireIntegratedV2PackPins(normalizedSpec);
+  requireOperationalInfrastructureV2Verifier(normalizedSpec.schema, validateOperationalInfrastructure);
+  const resolvedSourceRoots = await resolveSourceRoots(sourceRoot);
   const packageOutput = resolve(outputDirectory);
-  try {
-    await lstat(packageOutput);
-    throw new Error(`Ausgabepfad existiert bereits: ${packageOutput}.`);
-  } catch (error) {
-    if (!isMissing(error)) throw error;
-  }
+  await assertCreateNewTarget(packageOutput, "Kartenpaket-Ausgabeziel");
 
   const outputParent = dirname(packageOutput);
   await mkdir(outputParent, { recursive: true });
   const temporaryRoot = await mkdtemp(join(outputParent, `.${basename(packageOutput)}.tmp-`));
-  let completed = false;
   try {
     await mkdir(join(temporaryRoot, "parts"), { recursive: false });
     const artifacts = [];
     for (const descriptor of [...normalizedSpec.artifacts].sort((left, right) => left.id.localeCompare(right.id, "en"))) {
-      await assertContainedRegularFile(resolvedSourceRoot, descriptor.sourceFile, `${descriptor.id}.sourceFile`);
-      const sourcePath = resolveContained(resolvedSourceRoot, descriptor.sourceFile, `${descriptor.id}.sourceFile`);
+      const sourcePath = await resolveUniqueSourceEntry(
+        resolvedSourceRoots,
+        descriptor.sourceFile,
+        `${descriptor.id}.sourceFile`,
+        "file",
+      );
       const split = await splitArtifact(sourcePath, temporaryRoot, descriptor, normalizedSpec.partBytes);
       artifacts.push(split.entry);
     }
     const auxiliaryFiles = [];
     let runtimeStyle;
+    let staticReleaseDocument;
+    let staticSourcesDocument;
     for (const descriptor of [...normalizedSpec.auxiliaryFiles].sort((left, right) => left.id.localeCompare(right.id, "en"))) {
-      await assertContainedRegularFile(resolvedSourceRoot, descriptor.sourceFile, `${descriptor.id}.sourceFile`);
-      const sourcePath = resolveContained(resolvedSourceRoot, descriptor.sourceFile, `${descriptor.id}.sourceFile`);
+      const sourcePath = await resolveUniqueSourceEntry(
+        resolvedSourceRoots,
+        descriptor.sourceFile,
+        `${descriptor.id}.sourceFile`,
+        "file",
+      );
       const split = await splitAuxiliaryFile(sourcePath, temporaryRoot, descriptor, normalizedSpec.partBytes);
+      validateStaticAuxiliaryJson(normalizedSpec, descriptor, split.validatedContent.jsonValue);
+      if (descriptor.kind === OPERATIONAL_INFRASTRUCTURE_KIND) {
+        await verifyOperationalInfrastructureV2File(sourcePath, split.entry, validateOperationalInfrastructure);
+      }
       auxiliaryFiles.push(split.entry);
       if (descriptor.kind === "style") runtimeStyle = split.validatedContent.jsonValue;
+      if (descriptor.kind === "release-manifest") staticReleaseDocument = split.validatedContent.jsonValue;
+      if (descriptor.kind === "source-manifest") staticSourcesDocument = split.validatedContent.jsonValue;
     }
+    validateStaticAssetBindings({ ...normalizedSpec, auxiliaryFiles }, staticSourcesDocument);
     validateRuntimeStyle(runtimeStyle, normalizedSpec);
+    validateStaticMapReleaseBinding({ ...normalizedSpec, artifacts, auxiliaryFiles }, staticReleaseDocument);
+    validateDeliveryV2PackageBinding({ ...normalizedSpec, artifacts, auxiliaryFiles }, staticReleaseDocument);
     const manifest = {
-      schema: "zugfolge-map-package/v1",
+      schema: normalizedSpec.schema === PACKAGE_SPEC_V2
+        ? PACKAGE_MANIFEST_V2
+        : normalizedSpec.schema === STATIC_MAP_PACKAGE_SPEC_V2
+          ? STATIC_MAP_PACKAGE_MANIFEST_V2
+          : PACKAGE_MANIFEST_V1,
       packageId: normalizedSpec.packageId,
       version: normalizedSpec.version,
+      ...(normalizedSpec.schema === STATIC_MAP_PACKAGE_SPEC_V2
+        ? { releaseId: normalizedSpec.releaseId, claims: normalizedSpec.claims, cutover: normalizedSpec.cutover }
+        : {}),
       format: "directory-parts",
       partBytes: normalizedSpec.partBytes,
       runtime: normalizedSpec.runtime,
@@ -1014,19 +1662,23 @@ export async function packMapPackage(spec, sourceRoot, outputDirectory) {
     const manifestSha256 = createHash("sha256").update(manifestText).digest("hex");
     await writeDurableFile(join(temporaryRoot, "manifest.json"), Buffer.from(manifestText, "utf8"));
     await writeDurableFile(join(temporaryRoot, "manifest.sha256"), Buffer.from(`${manifestSha256}  manifest.json\n`, "ascii"));
-    await atomicDirectoryRename(temporaryRoot, packageOutput);
-    completed = true;
+    await publishDirectoryCreateNew(temporaryRoot, packageOutput, {
+      schema: CREATE_NEW_DIRECTORY_COMPLETION_SCHEMA,
+      kind: "map-package",
+      bindingSha256: manifestSha256,
+    }, "Kartenpaket-Ausgabeziel");
     return { packageRoot: packageOutput, manifest, manifestSha256 };
   } finally {
-    if (!completed) await rm(temporaryRoot, { recursive: true, force: true });
+    await rm(temporaryRoot, { recursive: true, force: true });
   }
 }
 
-async function readAndValidateManifest(packageRoot) {
+async function readAndValidateManifest(packageRoot, { requireCompletion = false } = {}) {
   const requestedRoot = resolve(packageRoot);
   const rootMetadata = await lstat(requestedRoot);
   invariant(rootMetadata.isDirectory() && !rootMetadata.isSymbolicLink(), "Kartenpaketwurzel muss ein reguläres Verzeichnis sein.");
   const root = await realpath(requestedRoot);
+  const completion = await optionalCreateNewDirectoryCompletion(root, { kind: "map-package" });
   const manifestPath = resolveContained(root, "manifest.json", "Manifestpfad");
   const checksumPath = resolveContained(root, "manifest.sha256", "Manifest-Prüfsummenpfad");
   const [manifestMetadata, checksumMetadata] = await Promise.all([
@@ -1045,8 +1697,15 @@ async function readAndValidateManifest(packageRoot) {
     throw new Error("manifest.json ist kein gültiges JSON.");
   }
   validateMapPackageManifest(manifest);
+  invariant(
+    (!requireCompletion && !requiresCreateNewDirectoryCompletion(manifest.schema, manifest.version)) || completion !== undefined,
+    "Aktuelles Kartenpaket ist unvollstaendig: create-new-Completion-Marker fehlt.",
+  );
+  if (completion !== undefined) {
+    invariant(completion.completion.bindingSha256 === expectedManifestSha256, "Kartenpaket-Completion-Marker bindet nicht das Manifest.");
+  }
   invariant(manifestBuffer.toString("utf8") === serializeMapPackageManifest(manifest), "manifest.json ist nicht kanonisch serialisiert.");
-  return { root, manifest, manifestSha256: expectedManifestSha256 };
+  return { root, manifest, manifestSha256: expectedManifestSha256, completion };
 }
 
 async function readArtifactRange(packageRoot, artifact, start, length) {
@@ -1078,9 +1737,10 @@ async function readArtifactRange(packageRoot, artifact, start, length) {
   return output;
 }
 
-async function readAndValidatePackageLayout(packageRoot) {
-  const result = await readAndValidateManifest(packageRoot);
+async function readAndValidatePackageLayout(packageRoot, options) {
+  const result = await readAndValidateManifest(packageRoot, options);
   await assertExactFileInventory(result.root, [
+    ...(result.completion === undefined ? [] : [CREATE_NEW_DIRECTORY_COMPLETION_FILE]),
     "manifest.json",
     "manifest.sha256",
     ...result.manifest.artifacts.flatMap((artifact) => artifact.parts.map((part) => part.path)),
@@ -1130,26 +1790,62 @@ async function verifyPackagedFileParts(packageRoot, artifact, { auxiliary = fals
   }
 }
 
-export async function verifyMapPackage(packageRoot) {
+async function verifyMapPackageContents(packageRoot, validateOperationalInfrastructure, requireNativeOperationalValidation) {
   const result = await readAndValidatePackageLayout(packageRoot);
+  if (requireNativeOperationalValidation) {
+    requireOperationalInfrastructureV2Verifier(result.manifest.schema, validateOperationalInfrastructure);
+  }
   for (const artifact of result.manifest.artifacts) {
     await verifyPackagedFileParts(result.root, artifact);
   }
   let runtimeStyle;
+  let staticReleaseDocument;
+  let staticSourcesDocument;
   const sqliteAuxiliaries = result.manifest.auxiliaryFiles.filter(sqliteAuxiliaryKind);
-  const temporaryRoot = sqliteAuxiliaries.length === 0 ? undefined : await mkdtemp(join(dirname(result.root), ".sqlite-auxiliary-verifying-"));
+  const operationalAuxiliary = result.manifest.auxiliaryFiles.find(({ kind }) => kind === OPERATIONAL_INFRASTRUCTURE_KIND);
+  const validateOperational = typeof validateOperationalInfrastructure === "function";
+  const temporaryRoot = sqliteAuxiliaries.length === 0 && (!validateOperational || operationalAuxiliary === undefined)
+    ? undefined
+    : await mkdtemp(join(dirname(result.root), ".map-auxiliary-verifying-"));
   try {
     for (const auxiliary of result.manifest.auxiliaryFiles) {
-      const sqlitePath = sqliteAuxiliaries.includes(auxiliary) ? join(temporaryRoot, `${auxiliary.id}.sqlite`) : undefined;
-      const validated = await verifyPackagedFileParts(result.root, auxiliary, { auxiliary: true, materializePath: sqlitePath });
+      const materializePath = sqliteAuxiliaries.includes(auxiliary)
+        ? join(temporaryRoot, `${auxiliary.id}.sqlite`)
+        : auxiliary.kind === OPERATIONAL_INFRASTRUCTURE_KIND && validateOperational
+          ? join(temporaryRoot, "operational-infrastructure-v2.json")
+          : undefined;
+      const validated = await verifyPackagedFileParts(result.root, auxiliary, { auxiliary: true, materializePath });
+      validateStaticAuxiliaryJson(result.manifest, auxiliary, validated.jsonValue);
+      const sqlitePath = sqliteAuxiliaries.includes(auxiliary) ? materializePath : undefined;
       if (sqlitePath !== undefined) await inspectSqliteAuxiliary(sqlitePath, auxiliary);
+      if (auxiliary.kind === OPERATIONAL_INFRASTRUCTURE_KIND && validateOperational) {
+        await verifyOperationalInfrastructureV2File(materializePath, auxiliary, validateOperationalInfrastructure);
+      }
       if (auxiliary.kind === "style") runtimeStyle = validated.jsonValue;
+      if (auxiliary.kind === "release-manifest") staticReleaseDocument = validated.jsonValue;
+      if (auxiliary.kind === "source-manifest") staticSourcesDocument = validated.jsonValue;
     }
   } finally {
     if (temporaryRoot !== undefined) await rm(temporaryRoot, { recursive: true, force: true });
   }
+  validateStaticAssetBindings(result.manifest, staticSourcesDocument);
   validateRuntimeStyle(runtimeStyle, result.manifest);
+  validateStaticMapReleaseBinding(result.manifest, staticReleaseDocument);
+  validateDeliveryV2PackageBinding(result.manifest, staticReleaseDocument);
   return result;
+}
+
+export async function verifyMapPackage(packageRoot, { validateOperationalInfrastructure } = {}) {
+  return verifyMapPackageContents(packageRoot, validateOperationalInfrastructure, true);
+}
+
+/**
+ * Vollstaendige asynchrone Transport-, Inventar- und Inhaltspruefung fuer den
+ * Game-Stagingpfad. Die eine autoritative Operational-v2-Semantikpruefung
+ * folgt dort separat ueber den gepinnten, begrenzten execFile-Adapter.
+ */
+export async function verifyMapPackageTransport(packageRoot) {
+  return verifyMapPackageContents(packageRoot, undefined, false);
 }
 
 async function assemblePackagedFile(packageRoot, installTemporaryRoot, artifact, { auxiliary = false } = {}) {
@@ -1185,8 +1881,24 @@ async function assemblePackagedFile(packageRoot, installTemporaryRoot, artifact,
   }
 }
 
-async function verifyInstalledPackage(installRoot, manifest, manifestSha256) {
-  const root = await realpath(resolve(installRoot));
+async function verifyInstalledPackage(
+  installRoot,
+  manifest,
+  manifestSha256,
+  validateOperationalInfrastructure,
+) {
+  const requestedRoot = resolve(installRoot);
+  const requestedMetadata = await lstat(requestedRoot);
+  invariant(requestedMetadata.isDirectory() && !requestedMetadata.isSymbolicLink(), "Installationsziel muss ein regulaeres Verzeichnis sein.");
+  const root = await realpath(requestedRoot);
+  const completion = await optionalCreateNewDirectoryCompletion(root, {
+    kind: "map-package-installation",
+    bindingSha256: manifestSha256,
+  });
+  invariant(
+    !requiresCreateNewDirectoryCompletion(manifest.schema, manifest.version) || completion !== undefined,
+    "Aktuelle Karteninstallation ist unvollstaendig: create-new-Completion-Marker fehlt.",
+  );
   const installedManifestPath = resolveContained(root, ".zugfolge-map-package.json", "Installiertes Manifest");
   const installedManifestMetadata = await assertContainedRegularFile(root, ".zugfolge-map-package.json", "Installiertes Manifest");
   invariant(installedManifestMetadata.size > 0 && installedManifestMetadata.size <= MAX_PACKAGE_MANIFEST_BYTES, "Installiertes Manifest hat eine unzulässige Größe.");
@@ -1194,49 +1906,111 @@ async function verifyInstalledPackage(installRoot, manifest, manifestSha256) {
   invariant(createHash("sha256").update(installedManifest).digest("hex") === manifestSha256, "Installiertes Kartenpaket gehört zu einer anderen Version.");
   invariant(installedManifest === serializeMapPackageManifest(manifest), "Installiertes Kartenpaket hat ein abweichendes Manifest.");
   await assertExactFileInventory(root, [
+    ...(completion === undefined ? [] : [CREATE_NEW_DIRECTORY_COMPLETION_FILE]),
     ".zugfolge-map-package.json",
     ...manifest.artifacts.map((artifact) => artifact.installPath),
     ...manifest.auxiliaryFiles.map((auxiliary) => auxiliary.installPath),
   ], "Installiertes Kartenpaket");
+  let runtimeStyle;
+  let staticReleaseDocument;
+  let staticSourcesDocument;
   for (const artifact of [...manifest.artifacts, ...manifest.auxiliaryFiles]) {
     const artifactPath = resolveContained(root, artifact.installPath, `${artifact.id}.installPath`);
     await assertContainedRegularFile(root, artifact.installPath, artifact.installPath);
     const observed = await hashFile(artifactPath);
     invariant(observed.bytes === artifact.bytes && observed.sha256 === artifact.sha256, `Installiertes Artefakt ${artifact.id} ist beschädigt.`);
     if (sqliteAuxiliaryKind(artifact)) await inspectSqliteAuxiliary(artifactPath, artifact);
+    if (artifact.kind === OPERATIONAL_INFRASTRUCTURE_KIND) {
+      await verifyOperationalInfrastructureV2File(artifactPath, artifact, validateOperationalInfrastructure);
+    }
+    if (
+      AUXILIARY_KINDS.has(artifact.kind)
+        && auxiliaryMediaType(artifact) === "application/json"
+        && (
+          artifact.kind === "style"
+            || isStaticMapPackageSchema(manifest.schema)
+            || ([PACKAGE_MANIFEST_V2].includes(manifest.schema) && ["release-manifest", "source-manifest"].includes(artifact.kind))
+        )
+    ) {
+      const metadata = await lstat(artifactPath);
+      invariant(metadata.size <= MAX_IN_MEMORY_PUBLIC_JSON_BYTES, `${artifact.id} ist fuer die vollstaendige Zugfolge-v1-Schemapruefung zu gross.`);
+      let value;
+      try {
+        value = JSON.parse(await readFile(artifactPath, "utf8"));
+      } catch {
+        throw new Error(`${artifact.id} ist kein gueltiges JSON.`);
+      }
+      validateStaticAuxiliaryJson(manifest, artifact, value);
+      if (artifact.kind === "style") runtimeStyle = value;
+      if (artifact.kind === "release-manifest") staticReleaseDocument = value;
+      if (artifact.kind === "source-manifest") staticSourcesDocument = value;
+    }
   }
+  validateStaticAssetBindings(manifest, staticSourcesDocument);
+  validateRuntimeStyle(runtimeStyle, manifest);
+  validateStaticMapReleaseBinding(manifest, staticReleaseDocument);
+  validateDeliveryV2PackageBinding(manifest, staticReleaseDocument);
 }
 
-export async function installMapPackage(packageRoot, installDirectory) {
+export async function verifyInstalledMapPackage(
+  packageRoot,
+  installDirectory,
+  { validateOperationalInfrastructure } = {},
+) {
   const verified = await readAndValidatePackageLayout(packageRoot);
+  requireOperationalInfrastructureV2Verifier(verified.manifest.schema, validateOperationalInfrastructure);
   const destination = resolve(installDirectory);
-  try {
-    const destinationMetadata = await lstat(destination);
-    invariant(destinationMetadata.isDirectory() && !destinationMetadata.isSymbolicLink(), "Installationsziel muss ein reguläres Verzeichnis sein.");
-    await verifyInstalledPackage(destination, verified.manifest, verified.manifestSha256);
-    return { status: "reused", installRoot: destination, manifest: verified.manifest };
-  } catch (error) {
-    if (!isMissing(error)) throw error;
-  }
+  await verifyInstalledPackage(
+    destination,
+    verified.manifest,
+    verified.manifestSha256,
+    validateOperationalInfrastructure,
+  );
+  return { status: "verified", installRoot: destination, manifest: verified.manifest };
+}
+
+export async function installMapPackage(
+  packageRoot,
+  installDirectory,
+  { validateOperationalInfrastructure } = {},
+) {
+  const destination = resolve(installDirectory);
+  await assertCreateNewTarget(destination, "Kartenpaket-Installationsziel");
+  const verified = await readAndValidatePackageLayout(packageRoot, { requireCompletion: true });
+  requireOperationalInfrastructureV2Verifier(verified.manifest.schema, validateOperationalInfrastructure);
 
   const destinationParent = dirname(destination);
   await mkdir(destinationParent, { recursive: true });
   const parentRoot = await realpath(destinationParent);
   const temporaryRoot = await mkdtemp(join(parentRoot, `.${basename(destination)}.installing-`));
-  let completed = false;
   try {
     for (const artifact of verified.manifest.artifacts) {
       await assemblePackagedFile(verified.root, temporaryRoot, artifact);
     }
     let runtimeStyle;
+    let staticReleaseDocument;
+    let staticSourcesDocument;
     for (const auxiliary of verified.manifest.auxiliaryFiles) {
       const validated = await assemblePackagedFile(verified.root, temporaryRoot, auxiliary, { auxiliary: true });
+      validateStaticAuxiliaryJson(verified.manifest, auxiliary, validated.jsonValue);
       if (auxiliary.kind === "style") runtimeStyle = validated.jsonValue;
+      if (auxiliary.kind === "release-manifest") staticReleaseDocument = validated.jsonValue;
+      if (auxiliary.kind === "source-manifest") staticSourcesDocument = validated.jsonValue;
       if (sqliteAuxiliaryKind(auxiliary)) {
         await inspectSqliteAuxiliary(resolveContained(temporaryRoot, auxiliary.installPath, `${auxiliary.id}.installPath`), auxiliary);
       }
+      if (auxiliary.kind === OPERATIONAL_INFRASTRUCTURE_KIND) {
+        await verifyOperationalInfrastructureV2File(
+          resolveContained(temporaryRoot, auxiliary.installPath, `${auxiliary.id}.installPath`),
+          auxiliary,
+          validateOperationalInfrastructure,
+        );
+      }
     }
+    validateStaticAssetBindings(verified.manifest, staticSourcesDocument);
     validateRuntimeStyle(runtimeStyle, verified.manifest);
+    validateStaticMapReleaseBinding(verified.manifest, staticReleaseDocument);
+    validateDeliveryV2PackageBinding(verified.manifest, staticReleaseDocument);
     const manifestText = serializeMapPackageManifest(verified.manifest);
     await writeDurableFile(join(temporaryRoot, ".zugfolge-map-package.json"), Buffer.from(manifestText, "utf8"));
     await assertExactFileInventory(temporaryRoot, [
@@ -1244,10 +2018,13 @@ export async function installMapPackage(packageRoot, installDirectory) {
       ...verified.manifest.artifacts.map((artifact) => artifact.installPath),
       ...verified.manifest.auxiliaryFiles.map((auxiliary) => auxiliary.installPath),
     ], "Temporäre Karteninstallation");
-    await atomicDirectoryRename(temporaryRoot, destination);
-    completed = true;
+    await publishDirectoryCreateNew(temporaryRoot, destination, {
+      schema: CREATE_NEW_DIRECTORY_COMPLETION_SCHEMA,
+      kind: "map-package-installation",
+      bindingSha256: verified.manifestSha256,
+    }, "Kartenpaket-Installationsziel");
     return { status: "installed", installRoot: destination, manifest: verified.manifest };
   } finally {
-    if (!completed) await rm(temporaryRoot, { recursive: true, force: true });
+    await rm(temporaryRoot, { recursive: true, force: true });
   }
 }

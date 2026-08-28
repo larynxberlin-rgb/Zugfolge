@@ -1,14 +1,16 @@
 // zugfolge:quelle=gtfs-de-rv
 import { createHash } from "node:crypto";
 import { createReadStream, createWriteStream } from "node:fs";
-import { mkdtemp, open, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, open, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, dirname, extname, join, resolve } from "node:path";
 import { pipeline } from "node:stream/promises";
 import { InflateRaw } from "node:zlib";
 import { DatabaseSync } from "node:sqlite";
 
+import { gtfsJourneyChainId } from "../../packages/gtfs/dist/index.js";
 import { assertNormalizedScheduleTimeContract } from "../region-import/regional-release-contract.mjs";
+import { assertCreateNewTargets, publishFilesCreateNew } from "./create-new-output.mjs";
 
 export const LIVEMAP_READ_MODEL_APPLICATION_ID = 0x5a554746;
 export const LIVEMAP_READ_MODEL_USER_VERSION = 3;
@@ -546,18 +548,6 @@ function parseServiceTime(value) {
   return hours * 3_600 + minutes * 60 + seconds;
 }
 
-function canonicalJson(value) {
-  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`;
-  if (value !== null && typeof value === "object") {
-    return `{${Object.entries(value).sort(([left], [right]) => left.localeCompare(right)).map(([key, item]) => `${JSON.stringify(key)}:${canonicalJson(item)}`).join(",")}}`;
-  }
-  return JSON.stringify(value);
-}
-
-function journeyChainId(identity) {
-  return `jc-${createHash("sha256").update(canonicalJson(identity)).digest("hex").slice(0, 24)}`;
-}
-
 function categoryForRoute(routeShortName) {
   const value = String(routeShortName ?? "").trim().toUpperCase();
   if (value.startsWith("S")) return "S-Bahn";
@@ -773,8 +763,7 @@ async function buildGtfsFoundation(database, directory, spec, stations, schedule
   for await (const row of csvRows(join(directory, "trips.txt"))) {
     const route = routes.get(row.route_id);
     if (route === undefined || !activeServices.has(row.service_id)) continue;
-    const trainId = journeyChainId({
-      worldId: spec.worldId,
+    const trainId = gtfsJourneyChainId({
       regionId: spec.gtfs.trainIdentity.regionId,
       releaseId: gtfsReleaseId,
       sourceTripId: row.trip_id,
@@ -1059,45 +1048,68 @@ export async function inspectPublicReadModel(path) {
 export async function buildLivemapReadModel(spec, outputPath) {
   const scheduleTime = validateSpec(spec);
   const resolvedOutput = resolve(outputPath);
-  await rm(resolvedOutput, { force: true });
-  const database = createDatabase(resolvedOutput);
-  let build;
+  const resolvedReport = `${resolvedOutput}.report.json`;
+  await assertCreateNewTargets([
+    { path: resolvedOutput, label: "Livemap-ReadModel-Ziel" },
+    { path: resolvedReport, label: "Livemap-ReadModel-Reportziel" },
+  ]);
+  const outputParent = dirname(resolvedOutput);
+  await mkdir(outputParent, { recursive: true });
+  const temporaryRoot = await mkdtemp(join(outputParent, `.${basename(resolvedOutput)}.building-`));
+  const temporaryOutput = join(temporaryRoot, basename(resolvedOutput));
+  const temporaryReport = `${temporaryOutput}.report.json`;
   try {
-    const metadata = database.prepare("INSERT INTO metadata (key, value) VALUES (?, ?)");
-    metadata.run("schema", "zugfolge-livemap-read-model-sqlite/v2");
-    metadata.run("world_id", spec.worldId);
-    metadata.run("infrastructure_release_id", spec.infrastructureReleaseId);
-    metadata.run("gtfs_service_date", spec.gtfs.serviceDate);
-    metadata.run("world_epoch", scheduleTime.worldEpoch);
-    metadata.run("time_zone", scheduleTime.timeZone);
-    metadata.run("service_start_offset_s", String(scheduleTime.serviceStartOffsetS));
-    metadata.run("repeat_every_s", String(scheduleTime.repeatEveryS));
-    database.prepare("INSERT INTO world_config (world_id, infrastructure_release_id, config_json) VALUES (?, ?, ?)")
-      .run(spec.worldId, spec.infrastructureReleaseId, JSON.stringify(spec.config));
+    const database = createDatabase(temporaryOutput);
+    let build;
+    try {
+      const metadata = database.prepare("INSERT INTO metadata (key, value) VALUES (?, ?)");
+      metadata.run("schema", "zugfolge-livemap-read-model-sqlite/v2");
+      metadata.run("world_id", spec.worldId);
+      metadata.run("infrastructure_release_id", spec.infrastructureReleaseId);
+      metadata.run("gtfs_service_date", spec.gtfs.serviceDate);
+      metadata.run("world_epoch", scheduleTime.worldEpoch);
+      metadata.run("time_zone", scheduleTime.timeZone);
+      metadata.run("service_start_offset_s", String(scheduleTime.serviceStartOffsetS));
+      metadata.run("repeat_every_s", String(scheduleTime.repeatEveryS));
+      database.prepare("INSERT INTO world_config (world_id, infrastructure_release_id, config_json) VALUES (?, ?, ?)")
+        .run(spec.worldId, spec.infrastructureReleaseId, JSON.stringify(spec.config));
 
-    const stations = await readStationsForMatching(spec.inputDirectory);
-    const objects = await ingestObjects(database, spec.inputDirectory, spec.worldId, spec.infrastructureReleaseId);
-    const timetable = await withGtfsDirectory(spec.gtfs.archive, (directory) => buildGtfsFoundation(database, directory, spec, stations, scheduleTime));
-    database.exec("DROP TABLE gtfs_calls; VACUUM;");
-    build = { objects, timetable };
+      const stations = await readStationsForMatching(spec.inputDirectory);
+      const objects = await ingestObjects(database, spec.inputDirectory, spec.worldId, spec.infrastructureReleaseId);
+      const timetable = await withGtfsDirectory(spec.gtfs.archive, (directory) => buildGtfsFoundation(database, directory, spec, stations, scheduleTime));
+      database.exec("DROP TABLE gtfs_calls; VACUUM;");
+      build = { objects, timetable };
+    } finally {
+      database.close();
+    }
+
+    const inspection = await inspectPublicReadModel(temporaryOutput);
+    const file = await stat(temporaryOutput);
+    const artifactSha256 = await sha256File(temporaryOutput);
+    const report = Object.freeze({
+      schema: LIVEMAP_READ_MODEL_REPORT_SCHEMA,
+      artifact: { file: basename(resolvedOutput), bytes: file.size, sha256: artifactSha256 },
+      binding: { worldId: spec.worldId, infrastructureReleaseId: spec.infrastructureReleaseId },
+      objectLayers: build.objects.counts,
+      objectKinds: build.objects.countsByKind,
+      timetable: build.timetable,
+      inspection,
+    });
+    const reportHandle = await open(temporaryReport, "wx", 0o600);
+    try {
+      await reportHandle.writeFile(`${JSON.stringify(report, null, 2)}\n`, "utf8");
+      await reportHandle.sync();
+    } finally {
+      await reportHandle.close();
+    }
+    await publishFilesCreateNew([
+      { stagedPath: temporaryReport, outputPath: resolvedReport, label: "Livemap-ReadModel-Reportziel" },
+      { stagedPath: temporaryOutput, outputPath: resolvedOutput, label: "Livemap-ReadModel-Ziel" },
+    ]);
+    return report;
   } finally {
-    database.close();
+    await rm(temporaryRoot, { recursive: true, force: true });
   }
-
-  const inspection = await inspectPublicReadModel(resolvedOutput);
-  const file = await stat(resolvedOutput);
-  const artifactSha256 = await sha256File(resolvedOutput);
-  const report = Object.freeze({
-    schema: LIVEMAP_READ_MODEL_REPORT_SCHEMA,
-    artifact: { file: basename(resolvedOutput), bytes: file.size, sha256: artifactSha256 },
-    binding: { worldId: spec.worldId, infrastructureReleaseId: spec.infrastructureReleaseId },
-    objectLayers: build.objects.counts,
-    objectKinds: build.objects.countsByKind,
-    timetable: build.timetable,
-    inspection,
-  });
-  await writeFile(`${resolvedOutput}.report.json`, `${JSON.stringify(report, null, 2)}\n`, "utf8");
-  return report;
 }
 
 export async function buildLivemapReadModelFromSpec(specPath, outputPath) {

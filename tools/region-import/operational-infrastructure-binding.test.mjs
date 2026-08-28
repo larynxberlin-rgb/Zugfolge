@@ -3,6 +3,7 @@ import test from "node:test";
 
 import {
   assertOperationalInfrastructureV2ReleaseBinding,
+  operationalInfrastructureV2Binding,
   operationalInfrastructureV2StateHash,
   OPERATIONAL_INFRASTRUCTURE_V2_SCHEMA,
 } from "./operational-infrastructure-binding.mjs";
@@ -20,10 +21,17 @@ function infrastructure() {
       "edge-1": [{ edgeOffsetMm: 0 }, { edgeOffsetMm: 1_000 }],
     },
     routeVersions: { "route-1": { id: "route-1", templateId: "template-1" } },
-    interlockingRoutes: { "template-1": { routeTemplateId: "template-1" } },
+    interlockingRoutes: {
+      "template-1": {
+        routeTemplateId: "template-1",
+        pathResources: ["block-1"],
+        overlapResources: ["overlap-1"],
+        flankResources: ["flank-1"],
+      },
+    },
     signals: ["signal-1"],
     switches: [],
-    blockResources: ["block-1"],
+    blockResources: ["block-1", "overlap-1", "flank-1"],
     platformIntervals: {},
     regionBoundaries: [],
     rzueLayoutId: "rzue-1",
@@ -31,45 +39,40 @@ function infrastructure() {
 }
 
 function fixture() {
-  const infraRelease = infrastructure();
+  const staticInfrastructure = infrastructure();
+  const infraReleaseManifest = {
+    releaseId: RELEASE_ID,
+    artifacts: [{
+      bytes: 1_024,
+      file: "operational-infrastructure-v2.json",
+      id: "operational-infrastructure-fixture",
+      infraReleaseId: RELEASE_ID,
+      kind: OPERATIONAL_INFRASTRUCTURE_V2_SCHEMA,
+      sha256: "1".repeat(64),
+      stateHash: operationalInfrastructureV2StateHash(staticInfrastructure),
+    }],
+  };
   return {
     initialization: {
       schemaVersion: "zugfolge-operational-simulation-initialize/v2",
       worldId: WORLD_ID,
       regionId: REGION_ID,
       nowMs: 0,
-      infraRelease,
+      protectionModeSelectionPolicy: "zugfolge-protection-mode-selection/conservative-v1",
+      infraRelease: operationalInfrastructureV2Binding(infraReleaseManifest),
       vehicleTypes: [],
       vehicles: [],
       formations: [],
       trains: [],
     },
-    infraReleaseManifest: {
-      releaseId: RELEASE_ID,
-      artifacts: [{
-        bytes: 1_024,
-        file: "operational-infrastructure-v2.json",
-        infraReleaseId: RELEASE_ID,
-        kind: OPERATIONAL_INFRASTRUCTURE_V2_SCHEMA,
-        sha256: "1".repeat(64),
-        stateHash: operationalInfrastructureV2StateHash(infraRelease),
-      }],
-    },
+    infraReleaseManifest,
     expectedWorldId: WORLD_ID,
     expectedRegionId: REGION_ID,
   };
 }
 
-test("bindet ausschliesslich die statische Operational-v2-Infrastruktur kanonisch", () => {
+test("bindet ausschliesslich eine kompakte Referenz auf die statische Operational-v2-Infrastruktur", () => {
   const value = fixture();
-  const reordered = {
-    ...value.initialization.infraRelease,
-    directedEdges: { "edge-1": 1_000, "edge-2": 2_000 },
-  };
-  assert.equal(
-    operationalInfrastructureV2StateHash(reordered),
-    operationalInfrastructureV2StateHash(value.initialization.infraRelease),
-  );
   assert.doesNotThrow(() => assertOperationalInfrastructureV2ReleaseBinding(value));
 
   const changedDynamicInitialization = {
@@ -89,7 +92,7 @@ test("weist falsche Release-ID, Hashes und doppelte statische Bindungen fail-clo
       ...value,
       initialization: {
         ...value.initialization,
-        infraRelease: { ...value.initialization.infraRelease, id: "infra-foreign" },
+        infraRelease: { ...value.initialization.infraRelease, infraReleaseId: "infra-foreign" },
       },
     }),
     /InfraRelease-ID-Bindung/,
@@ -102,8 +105,25 @@ test("weist falsche Release-ID, Hashes und doppelte statische Bindungen fail-clo
         artifacts: [{ ...value.infraReleaseManifest.artifacts[0], stateHash: "0".repeat(64) }],
       },
     }),
-    /Kanonischer Zustandshash/,
+    /bytegenau/,
   );
+  for (const [field, replacement] of [
+    ["bytes", 1_025],
+    ["sha256", "2".repeat(64)],
+    ["stateHash", "3".repeat(64)],
+    ["file", "../operational-infrastructure-v2.json"],
+  ]) {
+    assert.throws(
+      () => assertOperationalInfrastructureV2ReleaseBinding({
+        ...value,
+        initialization: {
+          ...value.initialization,
+          infraRelease: { ...value.initialization.infraRelease, [field]: replacement },
+        },
+      }),
+      /bytegenau|unvollstaendig/,
+    );
+  }
   assert.throws(
     () => assertOperationalInfrastructureV2ReleaseBinding({
       ...value,
@@ -113,6 +133,16 @@ test("weist falsche Release-ID, Hashes und doppelte statische Bindungen fail-clo
       },
     }),
     /InfraRelease-ID-Bindung/,
+  );
+  assert.throws(
+    () => assertOperationalInfrastructureV2ReleaseBinding({
+      ...value,
+      infraReleaseManifest: {
+        ...value.infraReleaseManifest,
+        artifacts: [{ ...value.infraReleaseManifest.artifacts[0], id: "" }],
+      },
+    }),
+    /keine getrennte kanonische Byte- und Zustandsbindung/,
   );
   assert.throws(
     () => assertOperationalInfrastructureV2ReleaseBinding({

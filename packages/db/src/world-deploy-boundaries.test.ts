@@ -1,19 +1,23 @@
 import { PGlite } from "@electric-sql/pglite";
 import { drizzle } from "drizzle-orm/pglite";
 import { migrate } from "drizzle-orm/pglite/migrator";
+import { eq } from "drizzle-orm";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { MIGRATIONS_FOLDER } from "./migrations.js";
 import { alphaWorldProfiles } from "./schema/alpha.js";
 import {
+  gameAdminRequests,
   globalAdminAuditEvents,
   odooCommandQueue,
   odooProjectionOutbox,
 } from "./schema/commerce.js";
+import { domainEvents } from "./schema/domain-events.js";
 import { worlds } from "./schema/worlds.js";
 import * as schema from "./schema/index.js";
 
 const UNKNOWN_WORLD = "77777777-7777-4777-8777-777777777777";
+const CLOSE_WORLD = "66666666-6666-4666-8666-666666666666";
 const GLOBAL_SCOPE = "00000000-0000-0000-0000-000000000000";
 const NOW = new Date("2026-08-12T10:00:00.000Z");
 
@@ -114,6 +118,185 @@ describe("Migration 0023 pre-world Odoo-DB-Grenzen", () => {
         auditScope: "global",
         gameAuditEventId: `global-admin-audit:${audit!.id}`,
       },
+    ))).resolves.toBeDefined();
+  });
+
+  it("erlaubt global-admin world_close nur mit exakt abgeschlossener Zielwelt- und Auditbindung", async () => {
+    await db.insert(worlds).values([
+      {
+        id: CLOSE_WORLD,
+        name: "Abgeschlossene Zielwelt",
+        schedulePeriodWeeks: 4,
+        epoch: NOW,
+        worldKind: "public",
+        rankingStatus: "ranked",
+        lifecycleStatus: "active",
+      },
+      {
+        // Der reservierte Projektionsscope darf selbst dann keine generische
+        // Welt-Ausnahme erhalten, wenn ein Altzustand diese UUID als Welt
+        // enthaelt.
+        id: GLOBAL_SCOPE,
+        name: "Unzulaessige Sentinel-Welt",
+        schedulePeriodWeeks: 4,
+        epoch: NOW,
+        worldKind: "private",
+        rankingStatus: "unranked",
+        lifecycleStatus: "active",
+      },
+    ]);
+    await db.insert(alphaWorldProfiles).values({
+      worldId: CLOSE_WORLD,
+      profileKind: "public",
+      regionId: "mitteldeutschland-b",
+      regionVariant: "B",
+      worldSeed: 1n,
+      accelerationFactor: 1,
+      infraReleaseHash: "a".repeat(64),
+      timetableReleaseHash: "b".repeat(64),
+      fleetReleaseHash: "c".repeat(64),
+      economyReleaseHash: "d".repeat(64),
+      blueprint: { region: "B" },
+      blueprintHash: "e".repeat(64),
+      periodCount: 1,
+      currentPeriod: 0,
+      state: "archived",
+      startedAtS: 0,
+      closingAtS: 10,
+      archivedAtS: 10,
+      finalStateHash: "f".repeat(64),
+    });
+    const correlationId = "world-close-global-result";
+    const [command] = await db.insert(odooCommandQueue).values({
+      eventId: "world-close-global-result-event",
+      worldId: CLOSE_WORLD,
+      commandType: "admin.world_close",
+      actorReference: "odoo-admin",
+      payload: {
+        kind: "admin.world_close",
+        actionType: "world_close",
+        riskClass: "high",
+        worldId: CLOSE_WORLD,
+        requestedAtS: 10,
+      },
+      correlationId,
+      status: "completed",
+      receivedAt: NOW,
+      processedAt: NOW,
+    }).returning({ id: odooCommandQueue.id });
+    const [adminRequest] = await db.insert(gameAdminRequests).values({
+      worldId: CLOSE_WORLD,
+      commandId: command!.id,
+      actionType: "world_close",
+      riskClass: "high",
+      requesterReference: "requester",
+      approverReference: "approver",
+      reason: "Vier-Augen-Weltabschluss",
+      effectPreview: {},
+      state: "completed",
+      correlationId,
+      changedAt: NOW,
+    }).returning({ id: gameAdminRequests.id });
+    await db.insert(domainEvents).values({
+      worldId: CLOSE_WORLD,
+      sequence: 1,
+      eventType: "alpha.world-archived",
+      payload: {
+        adminRequestId: adminRequest!.id,
+        finalStateHash: "f".repeat(64),
+        evidenceHash: "a".repeat(64),
+        replayHash: "b".repeat(64),
+      },
+      occurredAt: NOW,
+    });
+    const [audit] = await db.insert(domainEvents).values({
+      worldId: CLOSE_WORLD,
+      sequence: 2,
+      eventType: "admin.action-audited",
+      payload: {
+        adminRequestId: adminRequest!.id,
+        actionType: "world_close",
+        correlationId,
+        outcome: "completed",
+      },
+      occurredAt: NOW,
+    }).returning({ id: domainEvents.id });
+    await db.update(gameAdminRequests).set({ gameAuditEventId: audit!.id })
+      .where(eq(gameAdminRequests.id, adminRequest!.id));
+
+    const exactPayload = {
+      finalStateHash: "f".repeat(64),
+      evidenceHash: "a".repeat(64),
+      replayHash: "b".repeat(64),
+      archivedAtS: 10,
+      outcome: "accepted",
+      state: "completed",
+      authoritative: true,
+      projectionScope: "global-admin",
+      actionType: "world_close",
+      targetWorldId: CLOSE_WORLD,
+      adminRequestId: adminRequest!.id,
+      gameAuditEventId: audit!.id,
+    };
+    await expect(db.insert(odooProjectionOutbox).values(outbox(
+      GLOBAL_SCOPE,
+      "admin.command.result",
+      correlationId,
+      { ...exactPayload, finalStateHash: "0".repeat(64) },
+    ))).rejects.toThrow();
+    await expect(db.insert(odooProjectionOutbox).values(outbox(
+      GLOBAL_SCOPE,
+      "admin.command.result",
+      correlationId,
+      { ...exactPayload, evidenceHash: "0".repeat(64) },
+    ))).rejects.toThrow();
+    await expect(db.insert(odooProjectionOutbox).values(outbox(
+      GLOBAL_SCOPE,
+      "admin.command.result",
+      correlationId,
+      { ...exactPayload, evidenceHash: "g".repeat(64) },
+    ))).rejects.toThrow();
+    await expect(db.insert(odooProjectionOutbox).values(outbox(
+      GLOBAL_SCOPE,
+      "admin.command.result",
+      correlationId,
+      { ...exactPayload, replayHash: "0".repeat(64) },
+    ))).rejects.toThrow();
+    await expect(db.insert(odooProjectionOutbox).values(outbox(
+      GLOBAL_SCOPE,
+      "admin.command.result",
+      correlationId,
+      { ...exactPayload, replayHash: "B".repeat(64) },
+    ))).rejects.toThrow();
+    await expect(db.insert(odooProjectionOutbox).values(outbox(
+      GLOBAL_SCOPE,
+      "admin.command.result",
+      correlationId,
+      { ...exactPayload, archivedAtS: -1 },
+    ))).rejects.toThrow();
+    await expect(db.insert(odooProjectionOutbox).values(outbox(
+      GLOBAL_SCOPE,
+      "admin.command.result",
+      correlationId,
+      { ...exactPayload, archivedAtS: "10" },
+    ))).rejects.toThrow();
+    await expect(db.insert(odooProjectionOutbox).values(outbox(
+      GLOBAL_SCOPE,
+      "admin.command.result",
+      correlationId,
+      { ...exactPayload, adminRequestId: "55555555-5555-4555-8555-555555555555" },
+    ))).rejects.toThrow();
+    await expect(db.insert(odooProjectionOutbox).values(outbox(
+      GLOBAL_SCOPE,
+      "admin.command.result",
+      correlationId,
+      { ...exactPayload, projectionScope: "world" },
+    ))).rejects.toThrow();
+    await expect(db.insert(odooProjectionOutbox).values(outbox(
+      GLOBAL_SCOPE,
+      "admin.command.result",
+      correlationId,
+      exactPayload,
     ))).resolves.toBeDefined();
   });
 

@@ -1562,6 +1562,32 @@ export class LivemapRegistry {
     }
     return { feedCount, staleFeeds };
   }
+
+  expectedFreshness(
+    expectedWorldIds: readonly string[],
+    maximumAgeMs: number,
+    now = this.#now(),
+  ): { readonly feedCount: number; readonly staleFeeds: number; readonly missingFeeds: number } {
+    const expected = new Set(expectedWorldIds);
+    let feedCount = 0;
+    let staleFeeds = 0;
+    let missingFeeds = 0;
+    for (const worldId of expected) {
+      const entry = this.#feeds.get(worldId);
+      if (entry === undefined || !entry.initialized) {
+        missingFeeds += 1;
+        continue;
+      }
+      feedCount += 1;
+      if (
+        entry.feed.lastPublishedAtMs === undefined
+        || now - entry.feed.lastPublishedAtMs > maximumAgeMs
+      ) {
+        staleFeeds += 1;
+      }
+    }
+    return { feedCount, staleFeeds, missingFeeds };
+  }
 }
 
 export function createLivemapHealthCheck(
@@ -1569,16 +1595,30 @@ export function createLivemapHealthCheck(
   maximumAgeMs = 60_000,
   now: () => number = Date.now,
   isExpectedFresh: (worldId: string, nowMs: number) => boolean = () => true,
+  expectedFreshWorldIds?: (nowMs: number) => readonly string[],
 ): HealthCheck {
   return {
     name: "livemap-freshness",
     async check() {
       const nowMs = now();
-      const snapshots = registry.freshness(
-        maximumAgeMs,
-        nowMs,
-        (worldId) => isExpectedFresh(worldId, nowMs),
-      );
+      const snapshots = expectedFreshWorldIds === undefined
+        ? { ...registry.freshness(
+            maximumAgeMs,
+            nowMs,
+            (worldId) => isExpectedFresh(worldId, nowMs),
+          ), missingFeeds: 0 }
+        : registry.expectedFreshness(
+            expectedFreshWorldIds(nowMs),
+            maximumAgeMs,
+            nowMs,
+          );
+      if (snapshots.missingFeeds > 0) {
+        return {
+          status: "down",
+          code: "livemap_missing",
+          detail: `${snapshots.missingFeeds}/${snapshots.feedCount + snapshots.missingFeeds} erwartete Feeds fehlen`,
+        };
+      }
       if (snapshots.staleFeeds > 0) {
         return {
           status: "degraded",

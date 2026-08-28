@@ -1,11 +1,10 @@
-import hashlib
-import json
 import re
 
 from odoo import api, fields, models
 from odoo.exceptions import AccessError, ValidationError
 
 from .admin_request import validate_serialized_starting_capital_policy
+from .canonical_json import canonical_sha256
 from .rfc3339 import rfc3339_utc
 
 
@@ -128,7 +127,6 @@ class ZugfolgeWorldProjection(models.Model):
         body = payload.get("payload")
         if not isinstance(world_id, str) or not isinstance(body, dict):
             raise ValidationError("Unvollstaendige Game-Projektion.")
-        body_json = json.dumps(body, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
         if "profileKind" in body and body.get("profileKind") not in ("public", "tutorial", "private", "test"):
             raise ValidationError("Game-Weltprojektion besitzt kein gueltiges Weltprofil.")
         for hash_name in ("blueprintHash", "deploymentHash"):
@@ -190,7 +188,7 @@ class ZugfolgeWorldProjection(models.Model):
             "drill_down": telemetry.get("drillDown", {}),
             "telemetry": telemetry,
             "authoritative_event_url": body.get("authoritativeEventUrl"),
-            "payload_hash": hashlib.sha256(body_json.encode("utf-8")).hexdigest(),
+            "payload_hash": canonical_sha256(body),
         }
         record = self.search([("world_id", "=", world_id)], limit=1)
         previous_deployment_hash = record.deployment_hash if record else False

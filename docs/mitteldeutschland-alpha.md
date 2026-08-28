@@ -213,15 +213,10 @@ pnpm build
 node tools/region-import/materialize-operational-infrastructure-v2.mjs REGIONAL_OPERATIONAL_INFRASTRUCTURE_CANDIDATE infra-mitteldeutschland-b-2026.2 ARTIFACT_ROOT/operational-infrastructure-v2.json
 node tools/region-import/build-infra-release.mjs tools/region-import/releases/mitteldeutschland-b-2026.2.build.json SOURCE_ROOT ARTIFACT_ROOT ARTIFACT_ROOT/infra-mitteldeutschland-b-2026.2.unsigned.json
 node tools/region-import/sign-release.mjs ARTIFACT_ROOT/infra-mitteldeutschland-b-2026.2.unsigned.json PRIVATE_KEY zugfolge-alpha-2026 ARTIFACT_ROOT/infra-mitteldeutschland-b-2026.2.release.json
-node tools/region-import/build-alpha-world.mjs ARTIFACT_ROOT/gtfs-region-20260810-v2.json ARTIFACT_ROOT/operational-network.json FLEET_CATALOG ARTIFACT_ROOT/infra-mitteldeutschland-b-2026.2.release.json tools/region-import/specifications/economy-release-alpha-2026.1.json ARTIFACT_ROOT/alpha-world-deployment.2026.2.json PUBLIC_ODOO_CONFIG ARTIFACT_ROOT/operational-simulation-v2.json
-```
-
-Die gezeigte Form bleibt ausschließlich für einen Legacy-Authority-v1-Katalog
-zulässig. Ein Authority-v2-Katalog muss aus demselben Compilerlauf stammen und
-übergibt dessen fünf zusätzlichen Beweise am Ende des Aufrufs:
-
-```sh
-node tools/region-import/build-alpha-world.mjs ARTIFACT_ROOT/gtfs-region-20260810-v2.json ARTIFACT_ROOT/operational-network.json FLEET_AUTHORITY_WRAPPER_V1 ARTIFACT_ROOT/infra-mitteldeutschland-b-2026.2.release.json tools/region-import/specifications/economy-release-alpha-2026.1.json ARTIFACT_ROOT/alpha-world-deployment.2026.2.json PUBLIC_ODOO_CONFIG ARTIFACT_ROOT/operational-simulation-v2.json VEHICLE_COMPILE_RECEIPT_V4 OPERATIONAL_VEHICLE_INVENTORY_V2 VEHICLE_SOURCE_CATALOG_V2 VEHICLE_WORLD_SEED_V3 VEHICLE_COMPILED_CATALOG_V3
+node tools/region-import/build-alpha-world-configuration.mjs ALPHA_WORLD_IDENTITY INFRA_RELEASE_WRAPPER BUILD_CONFIG
+node tools/region-import/build-alpha-fleet-migration-contract.mjs FLEET_MIGRATION_SPECIFICATION BUILD_CONFIG ARTIFACT_ROOT/gtfs-region-20260810-v2.json LEGACY_ALPHA_DEPLOYMENT tools/region-import/specifications/economy-release-alpha-2026.1.json INFRA_RELEASE_WRAPPER FLEET_MIGRATION_CONTRACT
+node tools/region-import/migrate-alpha-fleet-v1-to-v2.mjs FLEET_MIGRATION_CONTRACT BUILD_CONFIG ARTIFACT_ROOT/gtfs-region-20260810-v2.json LEGACY_ALPHA_DEPLOYMENT tools/region-import/specifications/economy-release-alpha-2026.1.json INFRA_RELEASE_WRAPPER TIMETABLE_ROUTES_V2 VEHICLE_MIGRATION_OUTPUT_DIRECTORY
+node tools/region-import/build-alpha-world.mjs BUILD_CONFIG ARTIFACT_ROOT/gtfs-region-20260810-v2.json FLEET_AUTHORITY_WRAPPER_V2 INFRA_RELEASE_WRAPPER tools/region-import/specifications/economy-release-alpha-2026.1.json ARTIFACT_ROOT/alpha-world-deployment.2026.3.json PUBLIC_ODOO_CONFIG ARTIFACT_ROOT/operational-infrastructure-v2.json TIMETABLE_ROUTES_V2 VEHICLE_COMPILE_RECEIPT_V4 OPERATIONAL_VEHICLE_INVENTORY_V2 VEHICLE_SOURCE_CATALOG_V2 VEHICLE_WORLD_SEED_V3 VEHICLE_COMPILED_CATALOG_V3
 ```
 
 Der Builder kompiliert Source und Seed in einem frischen temporären Verzeichnis
@@ -230,7 +225,14 @@ Artefakten, bindet EconomyRelease, Fleet Authority, Blueprint-Fleet-Hash sowie
 Fleet- und Operational-Formationen und schreibt Receipt, Inventory und die
 Hashes der tatsächlich gelesenen Compiler-Eingabedateien vor der bestehenden
 Deployment-Signatur in `vehicleCatalogBinding`. Fehlende oder gemischte
-v1/v2-Eingaben brechen den Build ab.
+v1/v2-Eingaben brechen den Build ab. `operational-network.json` ist weder
+Argument noch Provenienz des v2-Weltbuilds; Weglängen, Fahrstraßen und
+Konfliktbindung stammen aus dem signierten Timetable-Routenartefakt und dem
+Operational-v2-Zustandshash.
+Auch Fleet-Probe und Operational-Preflight laufen ausschließlich im eindeutigen
+Staging-Verzeichnis; das Deployment erscheint erst nach allen Folgeprüfungen
+atomar create-new. Der Migrationssatz wird ebenso als ein gemeinsames
+Verzeichnis publiziert, sodass ein Compilerfehler keinen Retry blockiert.
 
 Vor `build-infra-release.mjs` muss
 `ARTIFACT_ROOT/operational-infrastructure-v2.json` als reines statisches

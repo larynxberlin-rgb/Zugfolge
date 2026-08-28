@@ -1,16 +1,21 @@
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { createReadStream } from "node:fs";
+import { mkdir, mkdtemp, open, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
 import { buildReleaseArtifactInventory, readReleaseArtifactSpec } from "./release-artifacts.mjs";
-import { operationalInfrastructureV2StateHash } from "../operational-infrastructure-binding.mjs";
+import {
+  canonicalOperationalInfrastructureV2Json,
+  operationalInfrastructureV2StateHash,
+} from "../operational-infrastructure-binding.mjs";
 import { materializeOperationalInfrastructureV2 } from "../materialize-operational-infrastructure-v2.mjs";
 
-function operationalInfrastructure() {
+function operationalInfrastructure(id = "infra-deutschland-2026.2") {
   return {
-    id: "infra-deutschland-2026.2",
+    id,
     directedEdges: { "edge-1": 1_000 },
     edgeGeometries: {
       "edge-1": [
@@ -33,7 +38,8 @@ function operationalInfrastructure() {
           blockIds: ["block-1"],
           speedLimitMmps: 20_000,
           gradientPerMille: 0,
-          requiredProtectionSystems: ["pzb"],
+          availableProtectionSystems: ["pzb"],
+          simultaneouslyRequiredProtectionSystems: [],
         }],
       },
     },
@@ -44,16 +50,17 @@ function operationalInfrastructure() {
         signalId: "signal-1",
         movementKind: "train",
         pathResources: ["block-1"],
-        overlapResources: [],
-        flankResources: [],
+        overlapResources: ["overlap-1"],
+        flankResources: ["flank-1"],
         switchPositions: {},
+        authorityStartRouteMm: 0,
         authorityEndRouteMm: 1_000,
         releaseAfterTailRouteMm: 1_000,
       },
     },
     signals: ["signal-1"],
     switches: [],
-    blockResources: ["block-1"],
+    blockResources: ["block-1", "flank-1", "overlap-1"],
     platformIntervals: {},
     regionBoundaries: [],
     rzueLayoutId: "rzue-layout-1",
@@ -74,9 +81,33 @@ function v2Spec() {
 }
 
 async function validateOperationalInfrastructure(path, expectedReleaseId) {
-  const infrastructure = JSON.parse(await readFile(path, "utf8"));
-  assert.equal(infrastructure.id, expectedReleaseId);
-  return { stateHash: operationalInfrastructureV2StateHash(infrastructure) };
+  const source = await readFile(path);
+  const infrastructure = JSON.parse(source);
+  const canonical = Buffer.from(`${canonicalOperationalInfrastructureV2Json(infrastructure)}\n`, "utf8");
+  return {
+    schema: "operational-infrastructure-v2",
+    infraReleaseId: expectedReleaseId,
+    sourceBytes: source.length,
+    sourceSha256: createHash("sha256").update(source).digest("hex"),
+    bytes: canonical.length,
+    sha256: createHash("sha256").update(canonical).digest("hex"),
+    stateHash: operationalInfrastructureV2StateHash(infrastructure),
+    validationMode: "native-streaming-redb-v1",
+  };
+}
+
+function canonicalOperationalBytes(infrastructure) {
+  return Buffer.from(`${canonicalOperationalInfrastructureV2Json(infrastructure)}\n`, "utf8");
+}
+
+async function streamedProof(path) {
+  const hash = createHash("sha256");
+  let bytes = 0;
+  for await (const chunk of createReadStream(path)) {
+    hash.update(chunk);
+    bytes += chunk.length;
+  }
+  return { bytes, sha256: hash.digest("hex") };
 }
 
 function buildV2Inventory(spec, root) {
@@ -97,10 +128,23 @@ test("inventarisiert Releaseartefakte bytegenau und stabil sortiert", async () =
   assert.equal(result.artifacts[0].sha256, "ca978112ca1bbdcafac231b39a23dc4da786eff8147c4e72b9807785afee48bb");
 });
 
+test("der signierte Jahresrelease 2026.2 behält exakt seinen historischen v1-Artefaktvertrag", async () => {
+  const spec = await readReleaseArtifactSpec(new URL("./release-artifacts.annual-2026.2.json", import.meta.url));
+  assert.deepEqual(spec, {
+    schema: "zugfolge-infra-release-artifact-spec/v1",
+    artifacts: [
+      { id: "infra-deutschland-2026.2", kind: "infrastructure", sourceFile: "var/derived/germany-2026.2/map-release/infra-deutschland-2026.2.pmtiles", file: "infra-deutschland-2026.2.pmtiles" },
+      { id: "livemap-read-model-2026.2", kind: "read-model", sourceFile: "var/derived/germany-2026.2/map-release/public/read-model.sqlite", file: "read-model.sqlite" },
+      { id: "livemap-train-map-projection-2026.2", kind: "train-map-projection", sourceFile: "var/derived/germany-2026.2/map-release/public/train-map-projection.sqlite", file: "train-map-projection.sqlite" },
+      { id: "quality-report-2026.2", kind: "quality-report", sourceFile: "var/derived/germany-2026.2/map-release/public/quality.json", file: "quality.json" },
+    ],
+  });
+});
+
 test("inventarisiert statische Operational-v2-Infrastruktur mit getrenntem Byte- und Zustandshash", async () => {
   const root = await mkdtemp(join(tmpdir(), "zugfolge-operational-infrastructure-"));
   try {
-    await writeFile(join(root, "operational-infrastructure-v2.json"), `${JSON.stringify(operationalInfrastructure(), null, 2)}\n`);
+    await writeFile(join(root, "operational-infrastructure-v2.json"), canonicalOperationalBytes(operationalInfrastructure()));
     const result = await buildV2Inventory(v2Spec(), root);
     assert.equal(result.schema, "zugfolge-infra-release-artifacts/v2");
     assert.deepEqual(result.artifacts.map(({ id, kind, file }) => ({ id, kind, file })), [{
@@ -117,17 +161,49 @@ test("inventarisiert statische Operational-v2-Infrastruktur mit getrenntem Byte-
   }
 });
 
+test("inventarisiert mehr als 64 MiB erst mit vollständigem nativen Streaming-Receipt", async () => {
+  const root = await mkdtemp(join(tmpdir(), "zugfolge-operational-infrastructure-streaming-"));
+  try {
+    const path = join(root, "operational-infrastructure-v2.json");
+    const handle = await open(path, "w");
+    try {
+      await handle.truncate(64 * 1024 * 1024 + 1);
+    } finally {
+      await handle.close();
+    }
+    const result = await buildReleaseArtifactInventory(v2Spec(), root, {
+      validateOperationalInfrastructure: async (candidatePath, expectedReleaseId) => {
+        const source = await streamedProof(candidatePath);
+        return {
+          schema: "operational-infrastructure-v2",
+          infraReleaseId: expectedReleaseId,
+          sourceBytes: source.bytes,
+          sourceSha256: source.sha256,
+          bytes: source.bytes,
+          sha256: source.sha256,
+          stateHash: "f".repeat(64),
+          validationMode: "native-streaming-redb-v1",
+        };
+      },
+    });
+    assert.ok(result.artifacts[0].bytes > 64 * 1024 * 1024);
+    assert.equal(result.artifacts[0].stateHash, "f".repeat(64));
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test("Jahresspezifikation wird erst nach Materialisierung und nativer Candidate-Validierung grün", async () => {
   const root = await mkdtemp(join(tmpdir(), "zugfolge-operational-infrastructure-annual-"));
   try {
-    const spec = await readReleaseArtifactSpec(new URL("./release-artifacts.annual-2026.2.json", import.meta.url));
-    const derivedRoot = join(root, "var", "derived", "germany-2026.2");
-    const mapReleaseRoot = join(derivedRoot, "map-release");
+    const spec = await readReleaseArtifactSpec(new URL("./release-artifacts.annual-2026.3.json", import.meta.url));
+    const derivedRoot = join(root, "var", "derived", "germany-2026.3");
+    const mapReleaseRoot = join(derivedRoot, "map-release-free-v2");
     await mkdir(join(mapReleaseRoot, "public"), { recursive: true });
     await Promise.all([
-      writeFile(join(mapReleaseRoot, "infra-deutschland-2026.2.pmtiles"), "pmtiles"),
+      writeFile(join(mapReleaseRoot, "infra-deutschland-2026.3.pmtiles"), "pmtiles"),
       writeFile(join(mapReleaseRoot, "public", "read-model.sqlite"), "SQLite read model"),
-      writeFile(join(mapReleaseRoot, "public", "quality.json"), "{}\n"),
+      writeFile(join(derivedRoot, "operational-infrastructure-quality.json"), "{}\n"),
     ]);
     await assert.rejects(
       buildV2Inventory(spec, root),
@@ -135,17 +211,17 @@ test("Jahresspezifikation wird erst nach Materialisierung und nativer Candidate-
     );
 
     const candidatePath = join(root, "candidate.json");
-    await writeFile(candidatePath, JSON.stringify(operationalInfrastructure()));
+    await writeFile(candidatePath, JSON.stringify(operationalInfrastructure("infra-deutschland-2026.3")));
     await materializeOperationalInfrastructureV2({
       candidatePath,
-      expectedReleaseId: "infra-deutschland-2026.2",
+      expectedReleaseId: "infra-deutschland-2026.3",
       outputPath: join(derivedRoot, "operational-infrastructure-v2.json"),
     });
     const inventory = await buildV2Inventory(spec, root);
     const operational = inventory.artifacts.find(({ kind }) => kind === "operational-infrastructure-v2");
     assert.equal(inventory.artifacts.length, 4);
     assert.equal(operational?.file, "operational-infrastructure-v2.json");
-    assert.equal(operational?.infraReleaseId, "infra-deutschland-2026.2");
+    assert.equal(operational?.infraReleaseId, "infra-deutschland-2026.3");
     assert.notEqual(operational?.sha256, operational?.stateHash);
     assert.equal(inventory.artifacts.some(({ kind }) => kind === "train-map-projection"), false);
   } finally {
@@ -165,7 +241,7 @@ test("weist weltbezogene, doppelte und manuell gehashte Operational-v2-Artefakte
       /weltbezogene Felder/,
     );
 
-    await writeFile(join(root, "operational-infrastructure-v2.json"), JSON.stringify(operationalInfrastructure()));
+    await writeFile(join(root, "operational-infrastructure-v2.json"), canonicalOperationalBytes(operationalInfrastructure()));
     const dynamicProjection = v2Spec();
     dynamicProjection.artifacts.push({
       id: "world-train-projection",
@@ -204,14 +280,40 @@ test("weist weltbezogene, doppelte und manuell gehashte Operational-v2-Artefakte
 
     await assert.rejects(
       buildReleaseArtifactInventory(v2Spec(), root, {
-        validateOperationalInfrastructure: async (path) => {
+        validateOperationalInfrastructure: async (path, expectedReleaseId) => {
+          const receipt = await validateOperationalInfrastructure(path, expectedReleaseId);
           const infrastructure = JSON.parse(await readFile(path, "utf8"));
           await writeFile(path, `${JSON.stringify(infrastructure, null, 2)}\n`);
-          return { stateHash: operationalInfrastructureV2StateHash(infrastructure) };
+          return receipt;
         },
       }),
       /änderte sich während der nativen Operational-v2-Validierung/,
     );
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("verwirft manipulierte Inventar-Receipts für Release-ID, Zustand, Quelle und kanonische Ausgabe", async () => {
+  const root = await mkdtemp(join(tmpdir(), "zugfolge-operational-infrastructure-receipt-negative-"));
+  try {
+    const path = join(root, "operational-infrastructure-v2.json");
+    await writeFile(path, canonicalOperationalBytes(operationalInfrastructure()));
+    const cases = [
+      [(receipt) => ({ ...receipt, infraReleaseId: "infra-deutschland-foreign" }), /Schema-, Release- und Modusbindung/u],
+      [(receipt) => ({ ...receipt, stateHash: "0".repeat(64) }), /Kanonisierung .* auseinander/u],
+      [(receipt) => ({ ...receipt, sourceSha256: "0".repeat(64) }), /inventarisierten Quellbytes/u],
+      [(receipt) => ({ ...receipt, sha256: "0".repeat(64) }), /kanonischen Ausgabe-Bytes/u],
+    ];
+    for (const [mutate, expectedError] of cases) {
+      await assert.rejects(
+        buildReleaseArtifactInventory(v2Spec(), root, {
+          validateOperationalInfrastructure: async (candidatePath, expectedReleaseId) =>
+            mutate(await validateOperationalInfrastructure(candidatePath, expectedReleaseId)),
+        }),
+        expectedError,
+      );
+    }
   } finally {
     await rm(root, { recursive: true, force: true });
   }

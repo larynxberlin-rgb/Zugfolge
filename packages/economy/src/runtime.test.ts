@@ -23,7 +23,7 @@ import { loadEconomyWorldState, persistEconomyTransition } from "./state-store.j
 import { announceTender, startEconomyWorld, submitBid, submitMobilizationReference } from "./workflow.js";
 
 const WORLD = "55555555-5555-4555-8555-555555555555";
-const ARCHIVED_WORLD = "11111111-1111-4111-8111-111111111111";
+const FAILING_WORLD = "11111111-1111-4111-8111-111111111111";
 const CASH_WRITER_ACCOUNT = "66666666-6666-4666-8666-666666666666";
 const CASH_WRITER_OPERATOR = "77777777-7777-4777-8777-777777777777";
 const OPEN = 100;
@@ -194,13 +194,12 @@ describe("restart-sicherer Economy-Scheduler", () => {
     expect(await createEconomySchedulerHealthCheck(restartedMonitor, 30_000, () => worldInstant(OPERATING + 20).getTime()).check()).toMatchObject({ status: "ok", code: "scheduler_current" });
   });
 
-  it("holt archivierte Outbox-Altlasten nach und isoliert ihren Fehler von aktiven Welten", async () => {
+  it("isoliert den Outbox-Fehler einer aktiven Welt von allen anderen aktiven Welten", async () => {
     await db.insert(worlds).values({
-      id: ARCHIVED_WORLD,
-      name: "Archivierte Tutorialwelt",
+      id: FAILING_WORLD,
+      name: "Fehlerhafte zweite Welt",
       schedulePeriodWeeks: 3,
       epoch: worldInstant(0),
-      lifecycleStatus: "archived",
       worldKind: "private",
       rankingStatus: "unranked",
     });
@@ -214,10 +213,10 @@ describe("restart-sicherer Economy-Scheduler", () => {
     });
     await db.insert(economyOutbox).values([
       {
-        worldId: ARCHIVED_WORLD,
-        effectId: "archived-notice",
+        worldId: FAILING_WORLD,
+        effectId: "failing-notice",
         effectType: "notice",
-        payload: notice(ARCHIVED_WORLD),
+        payload: notice(FAILING_WORLD),
         occurredAt: worldInstant(1),
         enqueuedAt: worldInstant(2),
       },
@@ -233,7 +232,7 @@ describe("restart-sicherer Economy-Scheduler", () => {
     const delivered: string[] = [];
     const failingAdapters = {
       async sendNotice(value: ReturnType<typeof notice>) {
-        if (value.worldId === ARCHIVED_WORLD) throw new Error("archived adapter failure");
+        if (value.worldId === FAILING_WORLD) throw new Error("secondary adapter failure");
         delivered.push(value.worldId);
       },
       postJournal: vi.fn(async () => undefined),
@@ -242,9 +241,9 @@ describe("restart-sicherer Economy-Scheduler", () => {
     };
     const monitor = new EconomySchedulerMonitor(WORLD_EPOCH_MS);
 
-    await expect(runEconomySchedulerCycle(db, worldInstant(3), failingAdapters, monitor)).rejects.toThrow("archived adapter failure");
+    await expect(runEconomySchedulerCycle(db, worldInstant(3), failingAdapters, monitor)).rejects.toThrow("secondary adapter failure");
     expect(delivered).toEqual([WORLD]);
-    expect((await db.select().from(economyOutbox).where(eq(economyOutbox.worldId, ARCHIVED_WORLD)))[0]).toMatchObject({ processedAt: null, attempts: 1 });
+    expect((await db.select().from(economyOutbox).where(eq(economyOutbox.worldId, FAILING_WORLD)))[0]).toMatchObject({ processedAt: null, attempts: 1 });
     expect((await db.select().from(economyOutbox).where(eq(economyOutbox.worldId, WORLD)))[0]?.processedAt).toEqual(worldInstant(3));
 
     const recoverySend = vi.fn(async () => undefined);
@@ -252,8 +251,8 @@ describe("restart-sicherer Economy-Scheduler", () => {
       ...failingAdapters,
       sendNotice: recoverySend,
     }, monitor)).resolves.toMatchObject({ worlds: 0, transitions: 0, effects: 1 });
-    expect(recoverySend).toHaveBeenCalledWith(expect.objectContaining({ worldId: ARCHIVED_WORLD }));
-    expect((await db.select().from(economyOutbox).where(eq(economyOutbox.worldId, ARCHIVED_WORLD)))[0]).toMatchObject({
+    expect(recoverySend).toHaveBeenCalledWith(expect.objectContaining({ worldId: FAILING_WORLD }));
+    expect((await db.select().from(economyOutbox).where(eq(economyOutbox.worldId, FAILING_WORLD)))[0]).toMatchObject({
       processedAt: worldInstant(4),
       attempts: 1,
       lastErrorCode: null,

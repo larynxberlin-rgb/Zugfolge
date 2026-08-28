@@ -1,0 +1,325 @@
+name: Operational Validator Rebuild Evidence
+
+on:
+  workflow_dispatch:
+    inputs:
+      preserved_validator_asset_id:
+        description: Numerische Asset-ID eines privaten GitHub-Draft-Releases; dessen Bytes werden vollstaendig per Annual-SHA-256 geprueft.
+        required: true
+        type: string
+      runner_image:
+        description: Frisches GitHub-hosted Windows-Abbild.
+        options:
+          - windows-2025
+          - windows-2022
+        required: true
+        default: windows-2025
+        type: choice
+
+permissions:
+  attestations: write
+  contents: read
+  id-token: write
+
+concurrency:
+  group: operational-validator-rebuild-evidence-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  rebuild:
+    name: Anchored Windows rebuild and Sigstore provenance
+    runs-on: ${{ inputs.runner_image }}
+    timeout-minutes: 90
+    env:
+      ZUGFOLGE_REBUILD_RUNNER_IMAGE: ${{ inputs.runner_image }}
+    steps:
+      - name: Checkout exact protected commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Install exact Node runtime
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          check-latest: false
+          node-version: 24.19.0
+
+      - name: Validate workflow trust root
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if ($env:GITHUB_REPOSITORY -cne 'larynxberlin-rgb/Zugfolge') { throw 'Falsches Repository.' }
+          if ($env:GITHUB_EVENT_NAME -cne 'workflow_dispatch') { throw 'Falsches Workflow-Ereignis.' }
+          if ($env:GITHUB_REF -cne 'refs/heads/main' -or $env:GITHUB_REF_PROTECTED -cne 'true') { throw 'Der Rebuild muss auf geschuetztem main laufen.' }
+          if ($env:RUNNER_ENVIRONMENT -cne 'github-hosted' -or $env:RUNNER_OS -cne 'Windows' -or $env:RUNNER_ARCH -cne 'X64') { throw 'Der Rebuild benoetigt einen frischen GitHub-hosted Windows-x64-Runner.' }
+          if ($env:ZUGFOLGE_REBUILD_RUNNER_IMAGE -notin @('windows-2025', 'windows-2022')) { throw 'Nicht gepinntes Windows-Runner-Abbild.' }
+          if ((node --version) -cne 'v24.19.0') { throw 'Node-Runtime driftet von 24.19.0.' }
+
+      - name: Materialize Annual-pinned source, vendor, toolchain and helper inputs
+        shell: powershell
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          PRESERVED_VALIDATOR_ASSET_ID: ${{ inputs.preserved_validator_asset_id }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $specPath = Join-Path $env:GITHUB_WORKSPACE 'tools\region-import\germany\operational-validator-rebuild.annual-2026.5.json'
+          $spec = Get-Content -LiteralPath $specPath -Raw | ConvertFrom-Json
+          if ($env:PRESERVED_VALIDATOR_ASSET_ID -cnotmatch '^[1-9][0-9]*$') { throw 'Preserved-Validator-Asset-ID muss numerisch sein.' }
+          $toolchainOutput = $spec.toolchain.root
+          $toolchainParent = Split-Path -Parent $toolchainOutput
+          $toolchainId = '1.94.1-x86_64-pc-windows-gnu'
+          $preparation = Join-Path $env:RUNNER_TEMP 'zugfolge-operational-validator-rebuild-preparation'
+          $sourceRoot = Join-Path $preparation 'source'
+          $vendorRoot = Join-Path $preparation 'vendor-root'
+          if ((Test-Path -LiteralPath $preparation) -or (Test-Path -LiteralPath $toolchainOutput)) { throw 'Create-new Vorbereitungswurzel kollidiert.' }
+          New-Item -ItemType Directory -Path $preparation | Out-Null
+          New-Item -ItemType Directory -Path $vendorRoot | Out-Null
+          New-Item -ItemType Directory -Path (Join-Path $vendorRoot '.cargo') | Out-Null
+          New-Item -ItemType Directory -Path (Join-Path $env:GITHUB_WORKSPACE 'var\derived\germany-2026.5\toolchain') -Force | Out-Null
+
+          $preservedPath = Join-Path $env:GITHUB_WORKSPACE ($spec.binaries.preserved.file -replace '/', '\')
+          if (Test-Path -LiteralPath $preservedPath) { throw 'Preserved-Validator-Ausgabe kollidiert.' }
+          $preservedAssetUrl = "https://api.github.com/repos/larynxberlin-rgb/Zugfolge/releases/assets/$($env:PRESERVED_VALIDATOR_ASSET_ID)"
+          & (Join-Path $env:SystemRoot 'System32\curl.exe') `
+            --fail --silent --show-error --location --max-redirs 3 `
+            --proto '=https' --proto-redir '=https' `
+            --header 'Accept: application/octet-stream' `
+            --header "Authorization: Bearer $($env:GITHUB_TOKEN)" `
+            --header 'X-GitHub-Api-Version: 2022-11-28' `
+            --output $preservedPath $preservedAssetUrl
+          if ($LASTEXITCODE -ne 0) { throw 'Privates Preserved-Validator-Asset konnte nicht geladen werden.' }
+
+          $sourceArchive = Join-Path $env:GITHUB_WORKSPACE ($spec.source.archive.file -replace '/', '\')
+          if (Test-Path -LiteralPath $sourceArchive) { throw 'Source-TAR-Ausgabe kollidiert.' }
+          git archive --format=tar --output=$sourceArchive $spec.source.commit
+          if ($LASTEXITCODE -ne 0) { throw 'git archive fuer den preparation-only Annual-Input scheiterte.' }
+          git worktree add --detach $sourceRoot $spec.source.commit
+          if ($LASTEXITCODE -ne 0) { throw 'Preparation-only Source-Worktree scheiterte.' }
+
+          rustup set auto-self-update disable
+          if ($LASTEXITCODE -ne 0) { throw 'rustup auto-self-update konnte nicht deaktiviert werden.' }
+          rustup toolchain install $toolchainId --profile minimal
+          if ($LASTEXITCODE -ne 0) { throw 'Annual-gepinnte Rust-Toolchain konnte nicht vorbereitet werden.' }
+          $cargoPath = rustup which --toolchain $toolchainId cargo
+          if ($LASTEXITCODE -ne 0 -or [String]::IsNullOrWhiteSpace($cargoPath)) { throw 'Preparation-only Cargo-Pfad fehlt.' }
+          $cargoPath = $cargoPath.Trim()
+          & $cargoPath vendor --locked --versioned-dirs (Join-Path $vendorRoot 'vendor') --manifest-path (Join-Path $sourceRoot 'Cargo.toml') | Out-Null
+          if ($LASTEXITCODE -ne 0) { throw 'cargo vendor fuer den Annual-gepinnten Dependency-Input scheiterte.' }
+
+          $cargoConfig = [Text.Encoding]::UTF8.GetBytes("[source.crates-io]`nreplace-with = `"vendored-sources`"`n`n[source.vendored-sources]`ndirectory = `"vendor`"`n")
+          $cargoConfigPath = Join-Path $vendorRoot '.cargo\config.toml'
+          $cargoConfigHandle = [IO.FileStream]::new($cargoConfigPath, [IO.FileMode]::CreateNew, [IO.FileAccess]::Write, [IO.FileShare]::None)
+          try { $cargoConfigHandle.Write($cargoConfig, 0, $cargoConfig.Length); $cargoConfigHandle.Flush($true) } finally { $cargoConfigHandle.Dispose() }
+
+          $vendorArchive = Join-Path $env:GITHUB_WORKSPACE ($spec.source.vendor.archive.file -replace '/', '\')
+          node tools/region-import/germany/prepare-operational-validator-rebuild-inputs.mjs vendor-tar $vendorRoot $vendorArchive
+          if ($LASTEXITCODE -ne 0) { throw 'Deterministisches Cargo-Vendor-TAR scheiterte.' }
+
+          $installedToolchain = Split-Path -Parent (Split-Path -Parent $cargoPath)
+          New-Item -ItemType Directory -Path $toolchainParent -Force | Out-Null
+          Copy-Item -LiteralPath $installedToolchain -Destination $toolchainOutput -Recurse
+          $toolchainManifest = Join-Path $env:GITHUB_WORKSPACE ($spec.toolchain.manifest.file -replace '/', '\')
+          node tools/region-import/germany/prepare-operational-validator-rebuild-inputs.mjs toolchain-manifest $toolchainOutput 'rust-1.94.1-x86_64-pc-windows-gnu-complete-tree-v1' $toolchainManifest
+          if ($LASTEXITCODE -ne 0) { throw 'Vollstaendiges Toolchain-Manifest scheiterte.' }
+
+          $helperPath = Join-Path $env:GITHUB_WORKSPACE ($spec.toolchain.anchor.helperAssembly.file -replace '/', '\')
+          $helperParityRoot = Join-Path $preparation 'helper-parity'
+          New-Item -ItemType Directory -Path $helperParityRoot | Out-Null
+          $helperParity = Join-Path $helperParityRoot 'operational-windows-anchor-helper.dll'
+          node tools/region-import/germany/build-operational-validator-windows-anchor-helper.mjs $helperParity
+          if ($LASTEXITCODE -ne 0) { throw 'Deterministischer Helper-Paritaetsbuild scheiterte.' }
+          $helperItem = Get-Item -LiteralPath $helperPath
+          $helperParityItem = Get-Item -LiteralPath $helperParity
+          $helperHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $helperPath).Hash
+          $helperParityHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $helperParity).Hash
+          if ($helperItem.Length -ne $helperParityItem.Length -or $helperHash -cne $helperParityHash) { throw 'Tracked Helper-Assembly driftet vom deterministischen Builder.' }
+
+          function Assert-Proof([string] $path, $proof, [string] $label) {
+            $item = Get-Item -LiteralPath $path
+            $hash = (Get-FileHash -Algorithm SHA256 -LiteralPath $path).Hash.ToLowerInvariant()
+            if ($item.Length -ne [Int64]$proof.bytes -or $hash -cne [string]$proof.sha256) { throw "$label driftet vom Annual-Pin." }
+          }
+          Assert-Proof $preservedPath $spec.binaries.preserved 'Preserved Validator'
+          Assert-Proof $sourceArchive $spec.source.archive 'Source-TAR'
+          Assert-Proof $vendorArchive $spec.source.vendor.archive 'Vendor-TAR'
+          Assert-Proof $toolchainManifest $spec.toolchain.manifest 'Toolchain-Manifest'
+          Assert-Proof $helperPath $spec.toolchain.anchor.helperAssembly 'Helper-Assembly'
+
+      - name: Run materializer through held System32 PowerShell bundle launcher
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          node tools/region-import/germany/run-operational-validator-rebuild-workflow.mjs materialize `
+            tools/region-import/germany/operational-infrastructure-v2-execution-pins.annual-2026.5.json `
+            tools/region-import/germany/operational-infrastructure-v2-direct-system-launch.annual-2026.5.json `
+            tools/region-import/germany/operational-validator-rebuild.annual-2026.5.json `
+            var/derived/germany-2026.5/toolchain/zugfolge-infra-release-rebuild-evidence.json
+          if ($LASTEXITCODE -ne 0) { throw 'Gehaltene Rebuild-v3-Runnerphase scheiterte.' }
+
+      - name: Materialize held Annual executor plan and start evidence
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $spec = Get-Content -LiteralPath 'tools/region-import/germany/operational-validator-rebuild.annual-2026.5.json' -Raw | ConvertFrom-Json
+          $contract = $spec.authority.annualExecutorPlan
+          if ($contract.arguments.Count -ne 4 -or $contract.arguments[0] -cne 'plan') { throw 'Annual-Executor-Planargumente driften von der Rebuild-v3-Spec.' }
+          node tools/region-import/germany/run-operational-validator-rebuild-workflow.mjs annual-plan `
+            tools/region-import/germany/operational-infrastructure-v2-execution-pins.annual-2026.5.json `
+            $contract.directContractFile `
+            $contract.arguments[1] `
+            $contract.arguments[2] `
+            $contract.arguments[3] `
+            $contract.planFile `
+            $contract.startEvidenceFile
+          if ($LASTEXITCODE -ne 0) { throw 'Gehaltene Annual-Plan-/Executor-Startbeleg-Phase scheiterte.' }
+          $startEvidence = Get-Content -LiteralPath $contract.startEvidenceFile -Raw | ConvertFrom-Json
+          if ($startEvidence.schema -cne $contract.startEvidenceSchema) { throw 'Annual-Executor-Startbeleg besitzt ein falsches Schema.' }
+          if ($startEvidence.job.timeoutMilliseconds -ne $contract.timeoutMilliseconds -or
+              $startEvidence.job.mode -cne 'windows-kill-on-job-close-root-exit-bounded-io-v1') { throw 'Annual-Executor-Startbeleg driftet vom festen Prozessvertrag.' }
+          if ($startEvidence.exit.code -ne 0 -or $null -ne $startEvidence.exit.signal) { throw 'Annual-Executor-Startbeleg bindet keinen erfolgreichen eindeutigen Exit.' }
+          if (($startEvidence.invocation.arguments -join "`n") -cne ($contract.arguments -join "`n") -or
+              $startEvidence.invocation.command -cne 'plan' -or
+              $startEvidence.invocation.phase -cne 'materialize-annual-plan-evidence-v1') { throw 'Annual-Executor-Startbeleg bindet andere Planargumente.' }
+          if ($startEvidence.plan.file -cne $contract.planFile -or
+              $startEvidence.directContract.file -cne $contract.directContractFile) { throw 'Annual-Executor-Startbeleg bindet falschen Plan oder Direct-Contract.' }
+          if ($startEvidence.trustedExecutor.file -cne $spec.binaries.preserved.file -or
+              $startEvidence.trustedExecutor.bytes -ne $spec.binaries.preserved.bytes -or
+              $startEvidence.trustedExecutor.sha256 -cne $spec.binaries.preserved.sha256 -or
+              $startEvidence.trustedExecutor.buildCommit -cne $spec.source.commit) { throw 'Annual-Executor-Startbeleg bindet nicht den preserved Executor.' }
+          if ($startEvidence.runner.anchorHelper.file -cne $spec.toolchain.anchor.helperAssembly.file -or
+              $startEvidence.runner.anchorHelper.bytes -ne $spec.toolchain.anchor.helperAssembly.bytes -or
+              $startEvidence.runner.anchorHelper.sha256 -cne $spec.toolchain.anchor.helperAssembly.sha256) { throw 'Annual-Executor-Startbeleg bindet nicht dieselbe Helper-Assembly.' }
+          function Assert-AnnualCompletion([string] $artifactRelativeFile) {
+            if ($artifactRelativeFile -notmatch '^[A-Za-z0-9._@+-]+(?:/[A-Za-z0-9._@+-]+)*$') {
+              throw 'Annual-Completion erhielt keinen sicheren relativen Artefaktpfad.'
+            }
+            $artifactPath = Join-Path $env:GITHUB_WORKSPACE ($artifactRelativeFile -replace '/', '\')
+            $completionRelativeFile = "$artifactRelativeFile.zugfolge-complete.json"
+            $completionPath = Join-Path $env:GITHUB_WORKSPACE ($completionRelativeFile -replace '/', '\')
+            if (-not [IO.File]::Exists($artifactPath) -or -not [IO.File]::Exists($completionPath)) {
+              throw "Annual-create-new-Paar ist unvollstaendig: $artifactRelativeFile"
+            }
+            $artifactInfo = [IO.FileInfo]::new($artifactPath)
+            $artifactSha = (Get-FileHash -LiteralPath $artifactPath -Algorithm SHA256).Hash.ToLowerInvariant()
+            $expectedText = "{`n  `"artifact`": {`n    `"bytes`": $($artifactInfo.Length),`n    `"file`": `"$artifactRelativeFile`",`n    `"sha256`": `"$artifactSha`"`n  },`n  `"schema`": `"zugfolge-germany-annual-create-new-artifact-completion/v1`"`n}`n"
+            $expectedBytes = [Text.UTF8Encoding]::new($false).GetBytes($expectedText)
+            $actualBytes = [IO.File]::ReadAllBytes($completionPath)
+            if ([Convert]::ToBase64String($actualBytes) -cne [Convert]::ToBase64String($expectedBytes)) {
+              throw "Annual-Completion ist nicht bytekanonisch oder bindet fremde Bytes: $completionRelativeFile"
+            }
+            return $completionRelativeFile
+          }
+          $planCompletion = Assert-AnnualCompletion $contract.planFile
+          $startEvidenceCompletion = Assert-AnnualCompletion $contract.startEvidenceFile
+          if ($planCompletion -cne "$($contract.planFile).zugfolge-complete.json" -or
+              $startEvidenceCompletion -cne "$($contract.startEvidenceFile).zugfolge-complete.json") {
+            throw 'Annual-Completion-Pfade driften vom festen create-new-Vertrag.'
+          }
+
+      - name: Resolve exact spec-bound evidence paths
+        id: evidence-paths
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $specFile = 'tools/region-import/germany/operational-validator-rebuild.annual-2026.5.json'
+          $spec = Get-Content -LiteralPath $specFile -Raw | ConvertFrom-Json
+          $subjects = @($spec.authority.attestation.subjects)
+          $expectedSubjects = @(
+            $spec.binaries.rebuilt.file
+            $spec.provenance.file
+            $spec.receipt.file
+            $spec.binaries.preserved.file
+            $spec.authority.annualExecutorPlan.directContractFile
+            $spec.authority.annualExecutorPlan.planFile
+            "$($spec.authority.annualExecutorPlan.planFile).zugfolge-complete.json"
+            $spec.authority.annualExecutorPlan.startEvidenceFile
+            "$($spec.authority.annualExecutorPlan.startEvidenceFile).zugfolge-complete.json"
+          )
+          if (($subjects -join "`n") -cne ($expectedSubjects -join "`n")) { throw 'Attestation-Subjects driften von der Annual-Spec.' }
+          $artifactPaths = @(
+            $specFile
+            $spec.producer.bundle.file
+            $spec.producer.entrypoint.file
+            $spec.producer.executionPins.file
+            $spec.producer.implementation.file
+            $spec.toolchain.anchor.helperAssembly.file
+            $spec.binaries.preserved.file
+            $spec.source.archive.file
+            $spec.source.vendor.archive.file
+            $spec.toolchain.manifest.file
+            $subjects
+            $spec.authority.attestation.bundleFile
+          ) | Select-Object -Unique
+          function Set-MultilineOutput([string] $name, [string[]] $values) {
+            $unsafe = @($values | Where-Object { [String]::IsNullOrWhiteSpace($_) -or $_ -match '(^|/|\\)\.\.($|/|\\)' -or [IO.Path]::IsPathRooted($_) })
+            if ($values.Count -eq 0 -or $unsafe.Count -ne 0) {
+              throw "$name enthaelt keinen vollstaendig sicheren Spec-Dateisatz."
+            }
+            $delimiter = "ZUGFOLGE_$([Guid]::NewGuid().ToString('N'))"
+            $text = "$name<<$delimiter`n$($values -join "`n")`n$delimiter`n"
+            [IO.File]::AppendAllText($env:GITHUB_OUTPUT, $text, [Text.UTF8Encoding]::new($false))
+          }
+          Set-MultilineOutput 'subjects' $subjects
+          Set-MultilineOutput 'artifact_paths' $artifactPaths
+          Set-MultilineOutput 'authority_paths' (@(
+            $specFile
+            $subjects
+            $spec.authority.attestation.bundleFile
+          ) | Select-Object -Unique)
+
+      - name: Generate GitHub Sigstore build provenance
+        id: attest
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4
+        with:
+          subject-path: ${{ steps.evidence-paths.outputs.subjects }}
+
+      - name: Persist and verify the exact Sigstore bundle
+        shell: powershell
+        env:
+          CREATED_ATTESTATION_BUNDLE: ${{ steps.attest.outputs.bundle-path }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $spec = Get-Content -LiteralPath 'tools/region-import/germany/operational-validator-rebuild.annual-2026.5.json' -Raw | ConvertFrom-Json
+          $bundle = Join-Path $env:GITHUB_WORKSPACE ($spec.authority.attestation.bundleFile -replace '/', '\')
+          if (Test-Path -LiteralPath $bundle) { throw 'Attestation-Bundle-Ausgabe kollidiert.' }
+          Copy-Item -LiteralPath $env:CREATED_ATTESTATION_BUNDLE -Destination $bundle
+          foreach ($subject in $spec.authority.attestation.subjects) {
+            $subjectPath = Join-Path $env:GITHUB_WORKSPACE ($subject -replace '/', '\')
+            $verified = gh attestation verify $subjectPath `
+              --repo $spec.authority.repository `
+              --bundle $bundle `
+              --predicate-type $spec.authority.attestation.predicateType `
+              --signer-workflow $spec.authority.attestation.verification.signerWorkflow `
+              --source-digest $env:GITHUB_SHA `
+              --source-ref $spec.authority.requiredRef `
+              --deny-self-hosted-runners `
+              --format json
+            if ($LASTEXITCODE -ne 0) { throw "GitHub-Sigstore-Verifikation scheiterte fuer $subject." }
+            $null = $verified | ConvertFrom-Json
+          }
+
+      - name: Upload complete pinned evidence set
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: operational-validator-rebuild-infra-deutschland-2026.5-${{ github.run_id }}-${{ github.run_attempt }}
+          if-no-files-found: error
+          retention-days: 30
+          compression-level: 0
+          path: ${{ steps.evidence-paths.outputs.artifact_paths }}
+
+      - name: Upload minimal plan authority set
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: operational-validator-authority-infra-deutschland-2026.5-${{ github.run_id }}-${{ github.run_attempt }}
+          if-no-files-found: error
+          retention-days: 30
+          compression-level: 0
+          path: ${{ steps.evidence-paths.outputs.authority_paths }}
+
+      - name: Remove any retained ephemeral build accounts
+        if: always()
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Get-LocalUser | Where-Object { $_.Name -like 'zfrb*' } | ForEach-Object { Remove-LocalUser -Name $_.Name }

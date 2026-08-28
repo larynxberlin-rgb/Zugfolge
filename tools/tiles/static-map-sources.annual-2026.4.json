@@ -1,0 +1,19 @@
+{
+  "schema": "zugfolge-static-map-sources-materialization/v3",
+  "releaseId": "infra-deutschland-2026.4",
+  "infrastructure": {
+    "forbiddenSourceIds": [
+      "annual-infrastructure-master",
+      "internal-station-plan-evidence",
+      "station-enrichment"
+    ]
+  },
+  "basemap": {
+    "includedSourceIds": [
+      "protomaps-daily-basemap"
+    ],
+    "excludedCapturedSourceIds": [
+      "infrarelease-deutschland"
+    ]
+  }
+}

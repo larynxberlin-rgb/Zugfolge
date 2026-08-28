@@ -1,0 +1,9 @@
+{
+  "schema": "zugfolge-infra-release-artifact-spec/v2",
+  "artifacts": [
+    { "id": "infra-deutschland-2026.4", "kind": "infrastructure", "sourceFile": "var/derived/germany-2026.4/map-release-free-v2/infra-deutschland-2026.4.pmtiles", "file": "infra-deutschland-2026.4.pmtiles" },
+    { "id": "livemap-read-model-2026.4", "kind": "read-model", "sourceFile": "var/derived/germany-2026.4/map-release-free-v2/public/read-model.sqlite", "file": "read-model.sqlite" },
+    { "id": "operational-infrastructure-2026.4", "kind": "operational-infrastructure-v2", "infraReleaseId": "infra-deutschland-2026.4", "sourceFile": "var/derived/germany-2026.4/operational-infrastructure-v2.json", "file": "operational-infrastructure-v2.json" },
+    { "id": "quality-report-2026.4", "kind": "quality-report", "sourceFile": "var/derived/germany-2026.4/operational-infrastructure-quality.json", "file": "operational-infrastructure-quality.json" }
+  ]
+}

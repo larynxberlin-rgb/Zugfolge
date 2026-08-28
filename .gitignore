@@ -46,6 +46,8 @@
 !.env.example
 *.pem
 !ops/keys/zugfolge-alpha-2026-ed25519-public.pem
+!ops/keys/zugfolge-alpha-2026.3-ed25519-public.pem
+!ops/keys/zugfolge-map-deutschland-2026.4-ed25519-public.pem
 *.key
 *.p12
 *.pfx

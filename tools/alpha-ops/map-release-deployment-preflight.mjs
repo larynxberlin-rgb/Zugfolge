@@ -8,6 +8,7 @@ import {
   serializeMapReleaseBuildEvidence,
   validateMapReleaseBuildEvidence,
 } from "../tiles/map-release-build-evidence.mjs";
+import { parseTrustedReleaseKeyScopes } from "../../apps/game-api/dist/trusted-release-keys.js";
 
 export const MAP_RELEASE_PREFLIGHT_MODES = Object.freeze([
   "pre-activation",
@@ -28,16 +29,19 @@ export function runtimeIdentityFromEnvironment(environment, mode) {
   const names = [
     "MAP_RELEASE_PREFLIGHT_RUNTIME_SOURCE_COMMIT",
     "MAP_RELEASE_PREFLIGHT_RUNTIME_IMAGE_DIGEST",
+    "PRODUCTION_RECOVERY_ODOO_IMAGE_DIGEST",
     "MAP_RELEASE_PREFLIGHT_RUNTIME_WORLD_DEPLOYMENT_PATH",
+    "MAP_RELEASE_PREFLIGHT_DATABASE_ROLLBACK_PROOF_PATH",
   ];
   const values = names.map((name) => environment[name]);
   const configured = values.filter((value) => typeof value === "string" && value.trim() !== "");
-  if (configured.length === 0 && mode === "active-candidate") return undefined;
-  invariant(configured.length === names.length, `Modus '${mode}' braucht die vollstaendige Source-/Image-/Welt-Runtime-Identitaet.`);
+  invariant(configured.length === names.length, `Modus '${mode}' braucht die vollstaendige Source-/Game-Image-/Odoo-Image-/Welt-/Datenbank-Runtime-Identitaet.`);
   return {
     sourceCommit: values[0],
     imageDigest: values[1],
-    worldDeploymentPath: values[2],
+    odooImageDigest: values[2],
+    worldDeploymentPath: values[3],
+    databaseRollbackProofPath: values[4],
   };
 }
 
@@ -55,14 +59,17 @@ export function expectedReleaseForMapPreflight(evidence, mode, configuredRelease
 
 export function validateMapPreflightResult(result, evidence, mode, expectedActiveReleaseId) {
   const expectedState = mode === "active-candidate" ? "active-candidate" : "pre-activation";
+  invariant(result?.mapActivationEligible === true, "Map-Preflight hat den Kartenkandidaten nicht qualifiziert.");
   invariant(result?.activationEligible === true, "Map-Preflight hat den Kandidaten nicht zur Aktivierung freigegeben.");
-  invariant(typeof result.rollbackEligible === "boolean", "Map-Preflight meldet keinen ehrlichen Rollbackstatus.");
-  if (result.rollbackEligible === false) {
-    invariant(typeof result.rollbackEligibilityReason === "string" && result.rollbackEligibilityReason.length > 0, "Map-Preflight begründet den fehlenden Rollbackstatus nicht.");
-  }
-  if (mode === "pre-activation") {
-    invariant(result.rollbackEligible === true, "Expliziter Rollbackstart hat kein vollständig gekoppeltes Runtime-Tuple freigegeben.");
-  }
+  invariant(result.mapRollbackEligible === true, `Modus '${mode}' besitzt keinen freigegebenen Map-/Runtime-Rollback.`);
+  invariant(result.databaseRollbackEligible === true, `Modus '${mode}' besitzt keinen freigegebenen Datenbank-Rollback.`);
+  invariant(result.writersQuiesced === true, `Modus '${mode}' besitzt keinen quieszierten Datenbankbeleg.`);
+  invariant(result.rollbackWindow === "pre-activation-only", `Modus '${mode}' besitzt kein ausschliessliches Pre-Activation-Rollbackfenster.`);
+  invariant(
+    result.rollbackEligible === true
+      && result.rollbackEligible === (result.mapRollbackEligible && result.databaseRollbackEligible && result.writersQuiesced),
+    `Modus '${mode}' besitzt keinen vollstaendig gekoppelten Full-Stack-Rollbackvertrag.`,
+  );
   invariant(result.activationState === expectedState, `Map-Preflight meldet nicht den erwarteten Pointerzustand '${expectedState}'.`);
   invariant(result.activeReleaseId === expectedActiveReleaseId, "Map-Preflight meldet ein anderes aktives Release.");
   invariant(result.releaseId === evidence.releaseId && result.previousReleaseId === evidence.previousReleaseId, "Map-Preflight meldet ein anderes Releasepaar.");
@@ -83,14 +90,15 @@ async function readCanonicalEvidence(path) {
 }
 
 async function readTrustedKeys(path) {
+  const bytes = await readFile(resolve(path));
   let value;
   try {
-    value = JSON.parse(await readFile(resolve(path), "utf8"));
+    value = JSON.parse(bytes.toString("utf8"));
   } catch {
     throw new Error("Map-Delivery-Keyring ist kein gueltiges JSON-Artefakt.");
   }
   invariant(value !== null && typeof value === "object" && !Array.isArray(value), "Map-Delivery-Keyring ist kein Schluesselobjekt.");
-  return value;
+  return Object.freeze({ trustedDeliveryKeys: value, trustedDeliveryKeysBytes: bytes });
 }
 
 export async function runMapReleaseDeploymentPreflight({
@@ -99,6 +107,7 @@ export async function runMapReleaseDeploymentPreflight({
   preflight = preflightMapReleaseActivation,
   loadEvidence = readCanonicalEvidence,
   loadRestoreProof = (path) => readFile(resolve(path)),
+  loadDatabaseRollbackProof = (path) => readFile(resolve(path)),
   loadTrustedKeys = readTrustedKeys,
 } = {}) {
   const evidencePath = requiredEnvironment(environment, "MAP_RELEASE_PREFLIGHT_EVIDENCE_PATH");
@@ -106,23 +115,34 @@ export async function runMapReleaseDeploymentPreflight({
   const restoreProofPath = requiredEnvironment(environment, "MAP_RELEASE_PREFLIGHT_RESTORE_PROOF_PATH");
   const restoreRoot = requiredEnvironment(environment, "MAP_RELEASE_PREFLIGHT_RESTORE_ROOT");
   const trustedKeysPath = requiredEnvironment(environment, "MAP_RELEASE_PREFLIGHT_TRUSTED_KEYS_PATH");
+  const databaseRollbackProofPath = requiredEnvironment(environment, "MAP_RELEASE_PREFLIGHT_DATABASE_ROLLBACK_PROOF_PATH");
   const configuredReleaseId = requiredEnvironment(environment, "MAP_RELEASE_PREFLIGHT_EXPECTED_ACTIVE_RELEASE_ID");
+  const trustedKeyScopesJson = requiredEnvironment(environment, "RELEASE_TRUSTED_KEY_SCOPES_JSON");
 
-  const [evidence, restoreProofBytes, trustedDeliveryKeys] = await Promise.all([
+  const [evidence, restoreProofBytes, trustedKeyring, databaseRollbackProofBytes] = await Promise.all([
     loadEvidence(evidencePath),
     loadRestoreProof(restoreProofPath),
     loadTrustedKeys(trustedKeysPath),
+    loadDatabaseRollbackProof(databaseRollbackProofPath),
   ]);
   const expectedActiveReleaseId = expectedReleaseForMapPreflight(evidence, mode, configuredReleaseId);
   const runtimeIdentity = runtimeIdentityFromEnvironment(environment, mode);
+  const trustedReleaseKeyScopes = parseTrustedReleaseKeyScopes(
+    trustedKeyScopesJson,
+    trustedKeyring.trustedDeliveryKeys,
+  );
   const result = await preflight({
     evidence,
     deploymentRoot,
     restoreProofBytes,
     restoreRoot,
-    trustedDeliveryKeys,
+    trustedDeliveryKeys: trustedKeyring.trustedDeliveryKeys,
+    trustedDeliveryKeysBytes: trustedKeyring.trustedDeliveryKeysBytes,
+    trustedAlphaWorldKeys: trustedReleaseKeyScopes.alphaWorldDeployments,
+    trustedMapInfraKeys: trustedReleaseKeyScopes.mapInfraDeliveries,
     expectedActiveReleaseId,
     runtimeIdentity,
+    databaseRollbackProofBytes,
   });
   return validateMapPreflightResult(result, evidence, mode, expectedActiveReleaseId);
 }
@@ -141,9 +161,17 @@ if (invokedPath === import.meta.url) {
     previousReleaseId: result.previousReleaseId,
     activeReleaseId: result.activeReleaseId,
     activationState: result.activationState,
+    mapActivationEligible: result.mapActivationEligible,
     activationEligible: result.activationEligible,
     rollbackEligible: result.rollbackEligible,
     rollbackEligibilityReason: result.rollbackEligibilityReason,
+    mapRollbackEligible: result.mapRollbackEligible,
+    databaseRollbackEligible: result.databaseRollbackEligible,
+    writersQuiesced: result.writersQuiesced,
+    rollbackWindow: result.rollbackWindow,
+    databaseRollbackProofHash: result.databaseRollbackProofHash,
+    databaseBackupManifestSha256: result.databaseBackupManifestSha256,
+    databaseRestoreProofSha256: result.databaseRestoreProofSha256,
     evidenceSha256: result.evidenceSha256,
     deliveryKeyId: result.deliveryKeyId,
     rollbackAttestationSchema: result.rollbackAttestationSchema,

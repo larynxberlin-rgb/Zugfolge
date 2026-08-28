@@ -12,6 +12,8 @@ test("Deutschlandimport filtert vollständig und baut Topologie- sowie Semantikn
   assert.ok(plan.commands[0].args.includes("w/railway=tram,light_rail,subway,narrow_gauge,funicular,monorail"));
   assert.ok(plan.commands[0].args.includes("w/railway=platform"));
   assert.ok(plan.commands[0].args.includes("n/public_transport=platform"));
+  assert.equal(plan.commands[0].args.includes("--overwrite"), false);
+  assert.equal(plan.commands[1].args.includes("--overwrite"), false);
   assert.deepEqual(plan.commands[2].args.slice(-3), [plan.outputs.eboPbf, "osm-pbf-deutschland", plan.outputs.pbfReport]);
   assert.deepEqual(plan.commands[3].args.slice(-3), [
     plan.outputs.eboPbf,

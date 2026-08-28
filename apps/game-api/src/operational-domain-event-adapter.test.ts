@@ -6,6 +6,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   adaptOperationalDomainEvents,
+  compactOperationalCommitEventContext,
   type OperationalCommitEventContext,
   type OperationalNativeEvent,
 } from "./operational-domain-event-adapter.js";
@@ -94,8 +95,7 @@ describe("operativer Domain-Event-Adapter", () => {
         disruptionId: "disruption:1",
         effect: { "resource-closed": { resourceId: "block:1" } },
       },
-      stateBefore: state(),
-      projectionAfter: projection(),
+      affectedTrainRunIds: ["train:1"],
     };
     const adapted = adaptOperationalDomainEvents([
       event("train-safe-stopped", "train:1", "infrastructure-disruption"),
@@ -139,8 +139,8 @@ describe("operativer Domain-Event-Adapter", () => {
         disruptionId: "disruption:1",
         releaseReference: "repair-order:42",
       },
-      stateBefore: state({ "disruption:1": effect }),
-      projectionAfter: projection(),
+      affectedTrainRunIds: [],
+      disruptionEffectBefore: effect,
     };
     const [adapted] = adaptOperationalDomainEvents([
       event("disruption-cleared", "disruption:1", "repair-order:42"),
@@ -172,10 +172,41 @@ describe("operativer Domain-Event-Adapter", () => {
         disruptionId: "disruption:1",
         releaseReference: "foreign-release",
       },
-      stateBefore: state({
-        "disruption:1": { "resource-closed": { resourceId: "block:1" } },
-      }),
-      projectionAfter: projection(),
+      affectedTrainRunIds: [],
+      disruptionEffectBefore: { "resource-closed": { resourceId: "block:1" } },
     }], [], "leipzig")).toThrow(/Freigabekommando/);
+  });
+
+  it("verdichtet Stoerungskontext ohne Vollzustand oder Vollprojektion", () => {
+    const effect = { "signal-failed": { signalId: "signal:1" } } as const;
+    const before = state({ "disruption:1": effect });
+    const after = projection();
+    const context = compactOperationalCommitEventContext(
+      5,
+      {
+        type: "clear-disruption",
+        disruptionId: "disruption:1",
+        releaseReference: "repair-order:42",
+      },
+      before,
+      after,
+      [
+        event("train-safe-stopped", "train:1", "infrastructure-disruption"),
+        event("disruption-cleared", "disruption:1", "repair-order:42"),
+      ],
+    );
+
+    expect(context).toEqual({
+      commitSequence: 5,
+      command: {
+        type: "clear-disruption",
+        disruptionId: "disruption:1",
+        releaseReference: "repair-order:42",
+      },
+      affectedTrainRunIds: ["train:1"],
+      disruptionEffectBefore: effect,
+    });
+    expect(context).not.toHaveProperty("stateBefore");
+    expect(context).not.toHaveProperty("projectionAfter");
   });
 });

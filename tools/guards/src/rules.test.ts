@@ -532,6 +532,22 @@ describe("rust-release-pipeline", () => {
     ).toHaveLength(1);
   });
 
+  it("erlaubt Qualifikationslogik nur in explizit benannten Test-Fixtures", () => {
+    const code = "await verifyQualificationEvidenceFiles(evidence, root);";
+    expect(
+      rustReleasePipelineRule.check(
+        [sourceFile("tools/region-import/minimal.fixture.mjs", code)],
+        testConfig(),
+      ),
+    ).toEqual([]);
+    expect(
+      rustReleasePipelineRule.check(
+        [sourceFile("tools/region-import/minimal.mjs", code)],
+        testConfig(),
+      ),
+    ).toHaveLength(1);
+  });
+
   it("erlaubt einen dünnen JavaScript-Prozessaufruf", () => {
     const code = 'spawn("cargo", ["run", "--bin", "zugfolge-infra-release"]);';
     expect(

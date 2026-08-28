@@ -7,11 +7,15 @@ import { canonicalJson } from "./canonical-json.js";
 import { signPayload, type SigningKey } from "./signing.js";
 import type { CommerceDatabase } from "./store.js";
 
+export const ODOO_PROJECTION_ENVELOPE_HASH_SCHEMA = "zugfolge-projection-envelope-sha256/v1";
+
 export interface OdooReconciliationObservation {
   readonly messageId: string;
   readonly worldId: string;
   readonly correlationId: string;
   readonly payloadHash: string;
+  readonly envelopeHashSchema: string | null;
+  readonly envelopeHash: string | null;
 }
 
 export interface OdooReconciliationClient {
@@ -31,7 +35,16 @@ export function createHttpOdooReconciliationClient(
       if (!response.ok) throw new Error(`Odoo-Reconciliation antwortete mit HTTP ${response.status}.`);
       const parsed = await response.json();
       const value = typeof parsed === "object" && parsed !== null && "result" in parsed ? (parsed as { result: unknown }).result : parsed;
-      if (!Array.isArray(value) || value.some((item) => typeof item !== "object" || item === null || typeof (item as Record<string, unknown>)["messageId"] !== "string" || typeof (item as Record<string, unknown>)["worldId"] !== "string" || typeof (item as Record<string, unknown>)["correlationId"] !== "string" || typeof (item as Record<string, unknown>)["payloadHash"] !== "string")) {
+      if (!Array.isArray(value) || value.some((item) => {
+        if (typeof item !== "object" || item === null) return true;
+        const observation = item as Record<string, unknown>;
+        return typeof observation["messageId"] !== "string"
+          || typeof observation["worldId"] !== "string"
+          || typeof observation["correlationId"] !== "string"
+          || typeof observation["payloadHash"] !== "string"
+          || (observation["envelopeHashSchema"] !== null && typeof observation["envelopeHashSchema"] !== "string")
+          || (observation["envelopeHash"] !== null && typeof observation["envelopeHash"] !== "string");
+      })) {
         throw new Error("Odoo-Reconciliation-Snapshot hat ein ungueltiges Schema.");
       }
       return value as OdooReconciliationObservation[];
@@ -48,8 +61,29 @@ export interface ReconciliationTaskInput {
   readonly observedHash?: string;
 }
 
-function hashPayload(payload: unknown): string {
-  return createHash("sha256").update(canonicalJson(payload), "utf8").digest("hex");
+export interface OdooReconciliationExpectedProjection {
+  readonly id: string;
+  readonly schemaVersion: string;
+  readonly messageType: string;
+  readonly worldId: string;
+  readonly correlationId: string;
+  readonly occurredAt: Date | string;
+  readonly payload: unknown;
+}
+
+export function projectionEnvelopeHash(message: OdooReconciliationExpectedProjection): string {
+  const occurredAt = message.occurredAt instanceof Date
+    ? message.occurredAt.toISOString()
+    : message.occurredAt;
+  return createHash("sha256").update(canonicalJson({
+    schemaVersion: message.schemaVersion,
+    messageId: message.id,
+    messageType: message.messageType,
+    worldId: message.worldId,
+    correlationId: message.correlationId,
+    occurredAt,
+    payload: message.payload,
+  }), "utf8").digest("hex");
 }
 
 /**
@@ -57,7 +91,7 @@ function hashPayload(payload: unknown): string {
  * Patch: weder Game noch Odoo werden bei einer Differenz still überschrieben.
  */
 export function deriveReconciliationTasks(
-  expected: readonly { readonly id: string; readonly worldId: string; readonly correlationId: string; readonly payload: unknown }[],
+  expected: readonly OdooReconciliationExpectedProjection[],
   observed: readonly OdooReconciliationObservation[],
 ): readonly ReconciliationTaskInput[] {
   const observedByMessage = new Map<string, OdooReconciliationObservation[]>();
@@ -68,18 +102,21 @@ export function deriveReconciliationTasks(
   }
   const tasks: ReconciliationTaskInput[] = [];
   for (const message of expected) {
-    const expectedHash = hashPayload(message.payload);
+    const expectedHash = projectionEnvelopeHash(message);
     const matches = observedByMessage.get(message.id) ?? [];
     if (matches.length === 0) {
       tasks.push({ messageId: message.id, worldId: message.worldId, correlationId: message.correlationId, issueKind: "missing", expectedHash });
       continue;
     }
     if (matches.length > 1) {
-      tasks.push({ messageId: message.id, worldId: message.worldId, correlationId: message.correlationId, issueKind: "duplicate", expectedHash, observedHash: matches[0]?.payloadHash });
+      tasks.push({ messageId: message.id, worldId: message.worldId, correlationId: message.correlationId, issueKind: "duplicate", expectedHash, observedHash: matches[0]?.envelopeHash ?? undefined });
     }
     const first = matches[0]!;
-    if (first.worldId !== message.worldId || first.correlationId !== message.correlationId || first.payloadHash !== expectedHash) {
-      tasks.push({ messageId: message.id, worldId: message.worldId, correlationId: message.correlationId, issueKind: "divergent", expectedHash, observedHash: first.payloadHash });
+    if (first.worldId !== message.worldId
+        || first.correlationId !== message.correlationId
+        || first.envelopeHashSchema !== ODOO_PROJECTION_ENVELOPE_HASH_SCHEMA
+        || first.envelopeHash !== expectedHash) {
+      tasks.push({ messageId: message.id, worldId: message.worldId, correlationId: message.correlationId, issueKind: "divergent", expectedHash, observedHash: first.envelopeHash ?? undefined });
     }
   }
   return tasks;
@@ -92,7 +129,15 @@ export async function reconcileOdooProjectionSnapshot(
 ): Promise<readonly ReconciliationTaskInput[]> {
   // guards:allow world-id — Der globale Abgleich enumeriert gelieferte Belege; erzeugte Aufgaben tragen deren Welt-ID.
   const expected = await db
-    .select({ id: odooProjectionOutbox.id, worldId: odooProjectionOutbox.worldId, correlationId: odooProjectionOutbox.correlationId, payload: odooProjectionOutbox.payload })
+    .select({
+      id: odooProjectionOutbox.id,
+      schemaVersion: odooProjectionOutbox.schemaVersion,
+      messageType: odooProjectionOutbox.messageType,
+      worldId: odooProjectionOutbox.worldId,
+      correlationId: odooProjectionOutbox.correlationId,
+      occurredAt: odooProjectionOutbox.occurredAt,
+      payload: odooProjectionOutbox.payload,
+    })
     .from(odooProjectionOutbox)
     .where(isNotNull(odooProjectionOutbox.deliveredAt));
   const tasks = deriveReconciliationTasks(expected, observed);

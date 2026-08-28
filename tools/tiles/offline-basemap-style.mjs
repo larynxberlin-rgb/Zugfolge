@@ -1,4 +1,10 @@
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
+import { link, mkdir, open, rm } from "node:fs/promises";
+import { basename, dirname, join, resolve } from "node:path";
+
+const MUTABLE_TOKEN = /(?:^|[./_:@-])(latest|unversioned|main|master|head)(?:$|[./_:@-])/iu;
+const EXTERNAL_RUNTIME_SCHEME = /^(?:about|blob|chrome(?:-extension)?|data|file|ftp|ftps|geo|http|https|javascript|mailto|mapbox|pmtiles|resource|sms|tel|urn|vbscript|ws|wss):/iu;
+const MAPLIBRE_NAMESPACED_TOKEN = /^[a-z_][a-z0-9_.-]*(?::[a-z0-9_.-]+)+$/iu;
 
 function invariant(condition, message) {
   if (!condition) throw new Error(message);
@@ -17,13 +23,36 @@ function canonical(value) {
 }
 
 function assertLocalUrl(value, label, prefix) {
-  invariant(typeof value === "string" && value.startsWith(prefix), `${label} muss unter ${prefix} selbst gehostet werden.`);
-  invariant(!value.includes("latest"), `${label} darf keinen veränderlichen latest-Pfad verwenden.`);
-  invariant(!/^https?:\/\//i.test(value), `${label} darf keine externe Laufzeitquelle verwenden.`);
+  invariant(
+    typeof value === "string"
+      && value.trim() === value
+      && !/[\\\u0000-\u001f\u007f]/u.test(value),
+    `${label} besitzt keinen portablen lokalen Laufzeitpfad.`,
+  );
+  if (prefix === "pmtiles:///") {
+    invariant(/^pmtiles:\/\/\/(?!\/)[^?#\s]+$/iu.test(value), `${label} muss unter ${prefix} selbst gehostet werden.`);
+  } else {
+    invariant(/^\/(?!\/)[^?#\s]+$/u.test(value), `${label} muss unter ${prefix} selbst gehostet werden.`);
+  }
+  invariant(!MUTABLE_TOKEN.test(value), `${label} darf keinen veränderlichen latest-, main-, master- oder HEAD-Pfad verwenden.`);
+}
+
+function isExternalRuntimeUrl(value) {
+  if (/^pmtiles:\/\/\/(?!\/)/iu.test(value) || /^\/(?!\/)/u.test(value)) return false;
+  if (/^\/\//u.test(value)) return true;
+
+  const scheme = /^[a-z][a-z0-9+.-]*:/iu.exec(value);
+  if (scheme === null) return false;
+  if (EXTERNAL_RUNTIME_SCHEME.test(value) || value.startsWith(`${scheme[0]}//`)) return true;
+
+  // MapLibre-Ausdrücke verwenden Namensraum-Propertys und Sprite-Tokens wie
+  // `name:de`, `pgf:name` und `NL:S-road-`. Das sind Bezeichner, keine URLs.
+  // Unbekannte Schemata bleiben bei URL-Syntax fail-closed.
+  return !MAPLIBRE_NAMESPACED_TOKEN.test(value);
 }
 
 function externalUrls(value, path = "$") {
-  if (typeof value === "string") return /^https?:\/\//i.test(value) ? [{ path, value }] : [];
+  if (typeof value === "string") return isExternalRuntimeUrl(value) ? [{ path, value }] : [];
   if (Array.isArray(value)) return value.flatMap((entry, index) => externalUrls(entry, `${path}[${index}]`));
   if (value !== null && typeof value === "object") {
     return Object.entries(value).flatMap(([key, entry]) => externalUrls(entry, `${path}.${key}`));
@@ -40,7 +69,12 @@ export function buildOfflineBasemapStyle(upstream, options) {
   invariant(upstream.sources[upstreamSourceId]?.type === "vector", "Die Basemap-Vorlage verwendet keine Vektorquelle.");
   invariant(Array.isArray(upstream.layers) && upstream.layers.length > 0, "Die Basemap-Vorlage enthält keine Layer.");
 
-  invariant(typeof options?.releaseId === "string" && /^[a-z0-9][a-z0-9.-]+$/.test(options.releaseId), "Ungültige Kartenrelease-ID.");
+  invariant(
+    typeof options?.releaseId === "string"
+      && /^[a-z0-9][a-z0-9.-]+$/u.test(options.releaseId)
+      && !MUTABLE_TOKEN.test(options.releaseId),
+    "Ungültige oder veränderliche Kartenrelease-ID.",
+  );
   assertLocalUrl(options.basemapUrl, "Basemap", "pmtiles:///");
   assertLocalUrl(options.glyphsUrl, "Schriftdateien", "/");
   assertLocalUrl(options.spriteUrl, "Sprites", "/");
@@ -82,4 +116,32 @@ export function buildOfflineBasemapStyle(upstream, options) {
 
 export function serializeOfflineBasemapStyle(style) {
   return `${JSON.stringify(style, null, 2)}\n`;
+}
+
+export async function materializeOfflineBasemapStyle(upstream, options, outputPath) {
+  const result = buildOfflineBasemapStyle(upstream, options);
+  const output = resolve(outputPath);
+  const outputDirectory = dirname(output);
+  await mkdir(outputDirectory, { recursive: true });
+  const temporary = join(
+    outputDirectory,
+    `.${basename(output)}.building-${process.pid}-${randomUUID()}`,
+  );
+  let handle;
+  try {
+    handle = await open(temporary, "wx", 0o600);
+    await handle.writeFile(serializeOfflineBasemapStyle(result.style), "utf8");
+    await handle.sync();
+    await handle.close();
+    handle = undefined;
+    await link(temporary, output);
+  } finally {
+    await handle?.close();
+    await rm(temporary, { force: true });
+  }
+  return Object.freeze({
+    layers: result.style.layers.length,
+    output,
+    styleHash: result.styleHash,
+  });
 }

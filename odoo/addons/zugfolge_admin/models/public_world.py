@@ -1,11 +1,10 @@
-import hashlib
-import json
 from datetime import datetime, timezone
 
 from odoo import _, api, fields, models
 from odoo.exceptions import AccessError, ValidationError
 
 from .admin_request import validate_serialized_starting_capital_policy
+from .canonical_json import canonical_sha256
 from .rfc3339 import rfc3339_utc
 
 PUBLIC_SNAPSHOT_VERSION = "zugfolge-public-world-snapshot/v1"
@@ -116,7 +115,7 @@ class ZugfolgeWorldProjectionPublic(models.Model):
             "public_releases": body.get("releases"),
             "public_banner_metadata": body.get("banner"),
             "public_generated_at": generated_at,
-            "public_payload_hash": hashlib.sha256(json.dumps(body, sort_keys=True, separators=(",", ":"), ensure_ascii=True).encode()).hexdigest(),
+            "public_payload_hash": canonical_sha256(body),
         }
         record = self.search([("world_id", "=", world_id)], limit=1)
         if not record:

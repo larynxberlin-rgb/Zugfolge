@@ -1,0 +1,11 @@
+{
+  "schema": "zugfolge-official-operating-points/v1",
+  "releaseId": "infra-deutschland-2026.3",
+  "sourceFile": "var/derived/germany-2026.3/infrago-adapter/db-infrago-operating-places.jsonseq",
+  "outputDirectory": "var/derived/germany-2026.3/operating-points-open-data-v1",
+  "allowedSourceId": "db-infrago-infrastructure-open-data",
+  "forbiddenSourceIds": [
+    "annual-infrastructure-master",
+    "trassenfinder-infrastruktur-api"
+  ]
+}

@@ -98,6 +98,7 @@
       "title": "Release-, Referenzkorpus-, Import- und Kartenwerkzeuge",
       "status": "active",
       "paths": [
+        "tools/audits/**",
         "tools/reference-corpus/**",
         "tools/reference-model/**",
         "tools/region-import/**",

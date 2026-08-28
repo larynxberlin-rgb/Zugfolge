@@ -305,13 +305,13 @@ umliegenden Stichproben und bildet erst zwischen den Stützpunkten ein Band.
 Ein Reststück kürzer als die Mindestbandlänge bekommt kein eigenes Band,
 sondern verlängert das letzte.
 
-**Kein Import.** Das Höhenmodell der Pilotregion steht im Quellenregister
-mit Status `pruefung` — Version, Bereitstellungsweg und Lizenz sind noch
-nicht geklärt (`docs/rechte.md` 3). Invariante 8 verbietet jeden Import ohne
-dokumentierte Freigabe. M1.5 liefert deshalb nur das Verfahren, nicht den
-Import: Es rechnet mit Höhenstichproben, gleich woher sie stammen. Sobald das
-Höhenmodell freigegeben ist, liest ein eigener Import reale Stichproben und
-übergibt sie an dieses Verfahren — daran ändert sich dann nichts.
+**Verfahren und Import bleiben getrennt.** `dem-hoehenmodell` steht im
+maßgeblichen Quellenregister auf `freigegeben` (`docs/rechte.md` 3). Der
+konkrete Jahresimport muss trotzdem Auflösung, Kachelauswahl,
+Bereitstellungsweg, Attribution und Prüfsummen pinnen und das Rechte-Gate
+bestehen. M1.5 liefert das davon unabhängige Verfahren: Es rechnet mit den
+freigegebenen Höhenstichproben und gibt das abgeleitete Profil an den
+Releasecompiler weiter.
 
 Umsetzung: [`crates/zugfolge-infra/src/elevation.rs`](../crates/zugfolge-infra/src/elevation.rs).
 
@@ -396,13 +396,17 @@ Umsetzung: [`crates/zugfolge-infra/src/interlocking.rs`](../crates/zugfolge-infr
 
 ## 13. Die Stationsdaten-Anreicherung — Ergebnis von M1.8
 
-`docs/daten.md` 2 nennt OpenStation und StaDa als Stationsdaten-Kandidaten:
+`docs/daten.md` 2 nennt OpenStation und StaDa als Stationsdatenquellen:
 Bahnhofskategorie und Ausstattung — Barrierefreiheit, Wetterschutz,
-Fahrgastinformation und mehr. `docs/rechte.md` 3 führt beide Quellen noch auf
-`pruefung`; Invariante 8 verbietet jeden Import ohne dokumentierte Freigabe.
-**M1.8 liefert deshalb das Modell und das Verfahren, mit dem eine
-Betriebsstelle angereichert wird, keinen Import** — wie M1.5 für die Neigung
-aus dem Höhenmodell.
+Fahrgastinformation und mehr. Das maßgebliche Quellenregister führt beide auf
+`freigegeben` (`docs/rechte.md` 3). Der konkrete Jahresimport muss trotzdem
+Snapshot, Bereitstellungsweg, Attribution, Feldmapping und Prüfsumme pinnen
+und das Rechte-Gate bestehen. Der Deutschland-Jahreslauf verwendet
+OpenStation als Pflichtquelle; StaDa ist nur eine optionale Alternative oder
+Ergänzung und sein Fehlen kein Quellenblocker. **M1.8 liefert das davon
+unabhängige Modell und
+Anreicherungsverfahren, nicht die stillschweigende Auswahl oder Vermischung
+eines Quellenstands.**
 
 **Warum Anreicherung anders ist als Ersterfassung.** Ein `OperatingPoint` oder
 ein `Platform` trägt eine einzige `Provenance` für den ganzen Datensatz, weil
@@ -420,9 +424,9 @@ anzureichern. `StationEnrichmentCatalogBuilder::build` prüft das gegen einen
 fertigen `OperatingGraph`, zusammen mit der Eindeutigkeit je Betriebsstelle.
 
 Wie M1.5, M1.6 und M1.7 ist das Verfahren **kein Import** — es rechnet mit
-einer gegebenen Bahnhofskategorie und Ausstattung, gleich woher sie stammen.
-Sobald OpenStation oder StaDa freigegeben ist, füllt ein eigener Import
-`StationEnrichment`-Werte; an diesem Modul ändert sich dann nichts.
+einer gegebenen Bahnhofskategorie und Ausstattung. Ein eigener, durch das
+Rechte-Gate geprüfter Import füllt daraus `StationEnrichment`-Werte; an diesem
+Modul ändert sich dabei nichts.
 
 Umsetzung: [`crates/zugfolge-infra/src/station.rs`](../crates/zugfolge-infra/src/station.rs).
 

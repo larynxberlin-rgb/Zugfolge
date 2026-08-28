@@ -268,8 +268,8 @@ und das bytegeprüfte Operational-v2-Inventar an Welt, `producedAt`,
 EconomyRelease, Fleet-Authority, Blueprint-Fleet-Hash und beide initialen
 Formationsprojektionen. Die Bindung ist Teil des signierten
 `AlphaWorldDeployment`; sie macht weder den Offline-Compiler noch einen Client
-zu einem Signierer. Legacy-Authority-v1 bleibt ohne diese v2-Bindung und mit
-`producedAt = 0` rückwärtskompatibel.
+zu einem Signierer. Der Alpha-v2-Weltstart akzeptiert keine
+Legacy-Authority-v1 und besitzt keine V1-Kompatibilitätsprojektion.
 
 Der reale Alpha-Buildpfad `tools/region-import/build-alpha-world.mjs` verlangt
 für Authority v2 den Wrapper sowie Receipt v4, Operational Inventory v2,
@@ -283,10 +283,64 @@ Deployment auf. Die Compiler-Hashes
 sind absichtlich bytegenau auf Rust-Pretty-JSON plus abschließendem LF; eine
 Umordnung von JSON-Schlüsseln ist deshalb kein äquivalentes Releaseartefakt und
 scheitert fail-closed. Der manifestierte `generationScriptSha256` bindet sowohl
-`build-alpha-world.mjs` als auch den sicherheitskritischen Binder-Helper mit
-Pfad und Einzelhash; eine Helper-Änderung bleibt damit nicht außerhalb der
-signierten Buildprovenienz. Authority v1 nutzt weiterhin den historischen
-Buildpfad ohne diese fünf zusätzlichen Eingaben.
+`build-alpha-world.mjs`, den sicherheitskritischen Binder-Helper und den
+Fleet-v2-Migrationscompiler jeweils mit Pfad und Einzelhash; eine Änderung
+dieser Buildquellen bleibt damit nicht außerhalb der signierten
+Buildprovenienz.
+
+Der einmalige, explizite Offline-Cutover des freigegebenen 490-Fahrzeuge-
+Bestands läuft über `migrate-alpha-fleet-v1-to-v2.mjs`. Eingecheckt wird eine
+hashfreie Jahresspezifikation. Erst `build-alpha-fleet-migration-contract.mjs`
+erzeugt daraus anhand der real gelesenen Bytes einen Migrationsvertrag, der
+Legacy-Datei, Authority-Inhalt, Buildkonfiguration, GTFS-Envelope,
+Economy-Spezifikation, InfraRelease-Wrapper, Bestandszahl, Rechteentscheidung,
+Zielwelt und den exakten signierten GTFS-Release-Namespace bindet.
+Los- und Linienkennungen enthalten einen SHA-256-Anteil aus den unverkürzten
+GTFS-Fachwerten; lesbare Slugs sind niemals Identitaetsquelle. Der Compiler
+weist eine mehrdeutige historische Slug-Linienzuordnung vor der
+Fahrzeugallokation fail-closed ab. Er erhält daraus einen echten
+`zugfolge-vehicle-catalog-source/v2` und einen
+`zugfolge-vehicle-world-seed/v3`; er benennt keinen JSON-Wurzelknoten um.
+Konkrete Fahrzeug- und numerische Kennungen bleiben erhalten, weltbezogene
+Fahrplanbelege werden aus Operational-v2-Zustand und Timetable-Routen neu
+abgeleitet, und nicht benötigte Fahrzeuge werden sichtbar `reserve-pool`
+zugeordnet. Technische Übernahmen bleiben als freigegebene Fakten markiert;
+neu ergänztes Bremsgewicht und Dynamikgrenzen sind ausdrücklich
+`game-assumption`.
+
+Die vollständige Buildkonfiguration wird nicht mit handberechneten Hashes
+gefüllt. `build-alpha-world-configuration.mjs` übernimmt Weltidentität,
+Operational-v2-Datei-/Zustandsbindung und Timetable-Routenbeleg direkt aus dem
+kanonischen InfraRelease-Wrapper und schreibt ausschließlich create-new:
+
+```powershell
+node tools/region-import/build-alpha-world-configuration.mjs `
+  ALPHA-WORLD-IDENTITY.json INFRA-RELEASE-WRAPPER.json BUILD-CONFIG.json
+```
+
+```powershell
+node tools/region-import/build-alpha-fleet-migration-contract.mjs `
+  MIGRATION-SPECIFICATION.json BUILD-CONFIG.json GTFS.json `
+  LEGACY-ALPHA-DEPLOYMENT.json ECONOMY.json INFRA-RELEASE-WRAPPER.json `
+  MIGRATION-CONTRACT.json
+
+node tools/region-import/migrate-alpha-fleet-v1-to-v2.mjs `
+  MIGRATION-CONTRACT.json BUILD-CONFIG.json GTFS.json `
+  LEGACY-ALPHA-DEPLOYMENT.json ECONOMY.json INFRA-RELEASE-WRAPPER.json `
+  TIMETABLE-ROUTES-V2.jsonseq MIGRATION-OUTPUT-DIRECTORY
+```
+
+Buildkonfiguration und gebundener Vertrag werden in dieser Reihenfolge nach dem
+kanonischen InfraRelease-Wrapper erzeugt; beide Ausgabepfade müssen fehlen. Der
+Vertragscompiler berechnet Byte- und kanonische SHA-256-Pins und prüft
+SnapshotHash, GTFS-Quellbeleg sowie Operational-v2-Release-, Byte- und
+Zustandsbindung. Das Migrationszielverzeichnis muss ebenfalls fehlen. Source,
+Seed, Rust-Compiler-Ausgaben und
+Migrationsbeleg entstehen gemeinsam in einem eindeutigen Staging-Verzeichnis
+und werden erst nach vollständiger Prüfung atomar create-new veröffentlicht.
+Ein fehlgeschlagener Versuch hinterlässt keinen Teilsatz und kann wiederholt
+werden. Der Pfad quittiert den Compiler-Output-Set-Hash; er erzeugt weiterhin
+weder Signatur noch Produktionsfreigabe.
 
 Der Dateicompiler wird ausschließlich offline ausgeführt:
 

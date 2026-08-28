@@ -1,13 +1,13 @@
 import { createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { alphaCanonicalJson, alphaHash } from "../../packages/alpha/dist/index.js";
+import { alphaCanonicalJson } from "../../packages/alpha/dist/index.js";
 
-export const VEHICLE_CATALOG_DEPLOYMENT_BINDING_SCHEMA = "zugfolge-vehicle-catalog-deployment-binding/v1";
+export const VEHICLE_CATALOG_DEPLOYMENT_BINDING_SCHEMA = "zugfolge-vehicle-catalog-deployment-binding/v2";
 const RECEIPT_SCHEMA = "zugfolge-vehicle-catalog-compile-receipt/v4";
 const COMPILER_VERSION = "zugfolge-vehicle-catalog-compiler/v4";
 const INVENTORY_SCHEMA = "zugfolge-operational-vehicle-inventory/v2";
@@ -15,7 +15,7 @@ const WRAPPER_SCHEMA = "zugfolge-fleet-authority-release-catalog/v1";
 const AUTHORITY_SCHEMA_V1 = "zugfolge-fleet-authority-release/v1";
 const AUTHORITY_SCHEMA_V2 = "zugfolge-fleet-authority-release/v2";
 const GENERATION_SOURCES_SCHEMA = "zugfolge-alpha-world-generation-sources/v2";
-const COMPILER_INPUTS_SCHEMA = "zugfolge-vehicle-catalog-compiler-input-files/v1";
+const COMPILER_INPUTS_SCHEMA = "zugfolge-vehicle-catalog-compiler-input-files/v2";
 const SHA256_PATTERN = /^[a-f0-9]{64}$/u;
 const REPOSITORY_ROOT = fileURLToPath(new URL("../..", import.meta.url));
 const VERIFIED_COMPILER_EVIDENCE = new WeakSet();
@@ -228,6 +228,7 @@ export async function verifyVehicleCatalogCompilerReplay({
 
   const temporaryRoot = await mkdtemp(join(tmpdir(), "zugfolge-vehicle-catalog-replay-"));
   const outputDirectory = join(temporaryRoot, "output");
+  let runtimeAuthorityReleaseHash;
   try {
     const replay = spawnSync(
       "cargo",
@@ -259,6 +260,49 @@ export async function verifyVehicleCatalogCompilerReplay({
       replay.stdout.trim().split(/\r?\n/u).at(-1) === receipt.outputSetSha256,
       "Rust-Recompile meldet einen anderen OutputSet-Hash als das Receipt.",
     );
+
+    // Der Fleet-Single-Writer verwendet bewusst seinen nativen, normalisierten
+    // Releasehash. Er ist nicht mit dem Alpha-Domainhash identisch. Deshalb
+    // wird derselbe kompilierte Authority-Satz hier separat durch die echte
+    // Runtime geschickt und der Beleg an das gebrandete Evidence gebunden.
+    const fleetRuntimeInputPath = join(temporaryRoot, "fleet-runtime-authority.json");
+    await writeFile(fleetRuntimeInputPath, `${JSON.stringify({
+      schemaVersion: "zugfolge-fleet-world-initialize/v2",
+      worldId: receipt.worldId,
+      producedAt: receipt.producedAt,
+      authorityRelease: fleetAuthority,
+      formations: [],
+      personnelDuties: [],
+      pathReservations: [],
+    })}\n`, "utf8");
+    const fleetRuntime = spawnSync(
+      "cargo",
+      [
+        "run", "-q", "-p", "zugfolge-runtime", "--example", "fleet_release_hash", "--",
+        fleetRuntimeInputPath,
+      ],
+      { cwd: repositoryRoot, encoding: "utf8" },
+    );
+    invariant(
+      fleetRuntime.error === undefined && fleetRuntime.status === 0,
+      `nativer Fleet-Authority-Hash ist fehlgeschlagen:\n${fleetRuntime.stderr ?? ""}\n${fleetRuntime.stdout ?? ""}`,
+    );
+    let fleetRuntimeReceipt;
+    try {
+      fleetRuntimeReceipt = JSON.parse(fleetRuntime.stdout.trim().split(/\r?\n/u).at(-1));
+    } catch (error) {
+      throw new Error(`Nativer Fleet-Authority-Beleg ist kein JSON: ${error.message}`);
+    }
+    invariant(
+      Object.keys(fleetRuntimeReceipt).sort().join("\u0000")
+        === ["authorityReleaseHash", "formationCount", "pathReservationCount", "personnelDutyCount"].sort().join("\u0000")
+        && SHA256_PATTERN.test(fleetRuntimeReceipt.authorityReleaseHash)
+        && fleetRuntimeReceipt.formationCount === 0
+        && fleetRuntimeReceipt.personnelDutyCount === 0
+        && fleetRuntimeReceipt.pathReservationCount === 0,
+      "Nativer Fleet-Authority-Beleg ist unvollstaendig oder nicht auf den reinen Releasehash begrenzt.",
+    );
+    runtimeAuthorityReleaseHash = fleetRuntimeReceipt.authorityReleaseHash;
   } finally {
     await rm(temporaryRoot, { recursive: true, force: true });
   }
@@ -271,13 +315,15 @@ export async function verifyVehicleCatalogCompilerReplay({
     sourceCatalogFileSha256: bytesSha256(sourceCatalogBytes),
     worldSeedFileSha256: bytesSha256(worldSeedBytes),
     compiledCatalogFileSha256: bytesSha256(compiledCatalogBytes),
+    runtimeAuthorityReleaseHash,
   });
   VERIFIED_COMPILER_EVIDENCE.add(evidence);
   return evidence;
 }
 
 /** Domain-separierter Provenienz-Hash aller sicherheitsrelevanten Buildquellen. */
-export function alphaWorldGenerationSourcesSha256(buildAlphaWorldBytes, vehicleBinderBytes) {
+export function alphaWorldGenerationSourcesSha256(buildAlphaWorldBytes, vehicleBinderBytes, vehicleMigrationBytes) {
+  invariant(Buffer.isBuffer(vehicleMigrationBytes) && vehicleMigrationBytes.length > 0, "Fleet-v2-Migrationscompiler fehlt in der Buildprovenienz.");
   return compilerPrettyJsonSha256({
     schemaVersion: GENERATION_SOURCES_SCHEMA,
     sources: [
@@ -288,6 +334,10 @@ export function alphaWorldGenerationSourcesSha256(buildAlphaWorldBytes, vehicleB
       {
         path: "tools/region-import/vehicle-catalog-deployment-binding.mjs",
         sha256: bytesSha256(vehicleBinderBytes),
+      },
+      {
+        path: "tools/region-import/migrate-alpha-fleet-v1-to-v2.mjs",
+        sha256: bytesSha256(vehicleMigrationBytes),
       },
     ],
   });
@@ -446,7 +496,7 @@ export function bindVehicleCatalogDeploymentArtifacts({
     "Receipt- oder OutputSet-Hash stimmt nicht mit den echten Compilerbytes ueberein.",
   );
   invariant(
-    alphaHash("zugfolge-fleet-authority-runtime/v1", fleet.authorityRelease) === blueprintFleetHash,
+    compilerEvidence.runtimeAuthorityReleaseHash === blueprintFleetHash,
     "Blueprint bindet nicht den Fleet-Authority-Hash.",
   );
   invariant(
@@ -470,6 +520,7 @@ export function bindVehicleCatalogDeploymentArtifacts({
       sourceCatalogSha256: compilerEvidence.sourceCatalogFileSha256,
       worldSeedSha256: compilerEvidence.worldSeedFileSha256,
       compiledCatalogSha256: compilerEvidence.compiledCatalogFileSha256,
+      runtimeAuthorityReleaseHash: compilerEvidence.runtimeAuthorityReleaseHash,
     },
     receipt: structuredClone(receipt),
     operationalInventory: structuredClone(operationalInventory),

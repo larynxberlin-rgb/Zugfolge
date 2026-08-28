@@ -26,21 +26,34 @@ Klasse A bedeutet nicht „sieht plausibel aus“, sondern: Alle für den
 Objekttyp erforderlichen Dimensionen sind unabhängig fachlich validiert. Der
 Gleislayer 2026.1 prüft dafür Topologie, Höchstgeschwindigkeit, Neigung,
 Elektrifizierung, Gleisanzahl, Signale, Blöcke und Konfliktressourcen. Klasse B
-besitzt ein geschlossenes, konservatives Betriebsmodell, verwendet aber für
-mindestens eine Dimension einen beobachteten, abgeleiteten oder ausdrücklich
-angenommenen Wert. Spielbar wird A oder B erst zusammen mit `orderable=true`
-und der Weltmaske. Eine dritte Releaseklasse gibt es nicht. Bleibt eine
-Pflichtdimension ungelöst, bleibt das Objekt ausschließlich als interner
-Buildbefund erhalten und blockiert den gesamten Kandidaten. `rail_context`
-bleibt unabhängig von seiner A-/B-Qualität immer Kontext und nicht bestellbar.
+besitzt ein geschlossenes, konservatives Betriebsmodell. Ein fehlender Wert ist
+dort nicht bloß `assumed`, sondern Ergebnis einer benannten, vollständigen
+Offline-Ableitung mit `provenance=derived`. Spielbar wird A oder B erst zusammen
+mit `orderable=true` und der Weltmaske. Eine gewöhnliche Annahme oder eine
+ungelöste Pflichtdimension bleibt Klasse C und ist nicht bestellbar. Sie
+blockiert den Operational-Kandidaten, wenn sie zu dessen Pflichtscope gehört.
+Ein getrenntes sichtbares Karten-Evidenzobjekt darf C bleiben, sofern das
+Operational-v2-Artefakt seine betriebliche Funktion unabhängig vollständig als
+Derived/B schließt; das Kartenobjekt wird dadurch weder umklassifiziert noch
+entfernt. `rail_context` bleibt unabhängig von seiner Qualität immer Kontext
+und nicht bestellbar.
 
 Fehlende Werte werden nur durch benannte, versionierte Sicherheitsregeln
-geschlossen. Der erste Regelsatz begrenzt unbekannte Hauptgleise auf 20 km/h,
-unbekannte Nebengleise auf 10 km/h, behandelt unbekannte Elektrifizierung als
-nicht elektrifiziert, nutzt einen konservativen Neigungskorridor und erzeugt
-virtuelle Festblöcke sowie kantenexklusive Konfliktressourcen. Diese Annahmen
-sind bewusst restriktiv; sie dürfen nicht als reale Infrastrukturfakten
-angezeigt werden.
+geschlossen. Der Regelsatz `synthetic-operational-b/v2` erhält die beobachtete
+E7-Gleisgeometrie, begrenzt unbekannte Fahrparameter restriktiv und erzeugt
+offline ein zusammenhängendes, kapazitätsärmeres Sicherungsmodell. Ein
+  SHA-gebundenes Closure-Receipt-v2 muss Policy, Jahresspezifikation, sechs
+  operative Kartenlayer sowie die drei freien Fahrwegeingaben `gtfs-snapshot`,
+  `timetable-route-report` und `timetable-routes` binden. Der Routenbericht muss
+  den CC-BY-4.0-Snapshot samt Datei-, internem Snapshot- und Archiv-SHA, die
+  vollständige ausgewählte Segmentmenge und das Verbot externer
+  Operational-Network-Provenienz nachweisen. Das Receipt bindet außerdem Candidate,
+Ableitungsbericht, native Validierungen, materialisiertes Operational-v2-
+Artefakt und Zustand sowie `unresolvedRequired=0` belegen. Ohne dieses Receipt bleiben
+Einzelannahmen Klasse C. Die synthetischen Signalgrenzen, Weichen-/Knotensperren,
+Fahrstraßen, Schutzressourcen und Bahnsteigintervalle sind interne
+Simulationswahrheit und dürfen nicht als reale Stellwerksfakten angezeigt
+werden.
 
 Der Qualitätsbericht wird je Release erzeugt und weist mindestens aus:
 
@@ -51,6 +64,26 @@ Der Qualitätsbericht wird je Release erzeugt und weist mindestens aus:
   verbindlichen Korpusscopes; jeder positive Wert blockiert den Kandidaten;
 - Hash von Korpus und Qualitätsbericht. Der Hash des internen Evidenzledgers
   bleibt ausschließlich im nicht auszuliefernden Buildnachweis.
+
+Der öffentliche Qualitätsbericht darf den Policy- und Closure-Hash des
+synthetischen Modells nennen. Das ausgelieferte Operational-v2-Artefakt enthält
+die synthetischen Betriebsobjekte und führt sie zusammen mit beobachteten
+Objekten in denselben Laufzeit-Collections
+(`syntheticOperationalDetailsShipped=true`,
+`observedAndSyntheticObjectsShareRuntimeCollections=true`). Es liefert jedoch
+keine objektweise Lineage aus (`objectLevelProvenanceShipped=false`) und trägt
+ausdrücklich `realInterlockingFactsClaimed=false`. Das ist eine
+Reproduzierbarkeitsbindung, keine Behauptung über reale Stellwerksausrüstung.
+
+Karten- und Betriebsqualität sind deshalb zwei SHA-gebundene Artefakte. Die
+öffentliche `zugfolge-static-map-quality/v2` darf A/B/C enthalten und verneint
+Operational-Release sowie Produktionsaktivierung; sie bindet den detaillierten
+`visible-map-quality-evidence`-Bericht. Der
+`zugfolge-operational-infrastructure-quality-report/v1` bindet dessen Bytes,
+weist die sichtbaren Karten-C-Zahlen weiterhin aus und führt daneben exakt ein
+geschlossenes Operational-Artefakt als B mit operativem C=0. Seine
+`operationalQualityEligible=true`-Aussage impliziert weder Signatur noch
+Aktivierung.
 
 Die ausführbare Spezifikation liegt unter
 `tools/region-import/germany/release.config.json`; der Compiler und seine Tests
@@ -78,7 +111,10 @@ Prüfledger einen vollständigen Buildbeleg. Der Ledgerhash dient nur dem
 internen Reproduzierbarkeitsnachweis; `buildPublicInfraRelease` übernimmt ihn
 weder direkt noch indirekt in das öffentliche Manifest.
 
-APN-Skizzen sind ausschließlich interne Validierungsevidenz. PDFs, OCR-Text,
+Falls APN-Skizzen im jeweiligen Jahreslauf rechtmäßig und tatsächlich verfügbar
+sind, sind sie ausschließlich optionale interne Validierungsevidenz. Ihr
+Fehlen blockiert weder den kostenlosen Basiskorpus noch die synthetische
+Klasse-B-Schließung. PDFs, OCR-Text,
 Bildkoordinaten, Abrufadresse und der Quellenname gelangen nicht in
 `InfraCorpus`, `InfraRelease`, PMTiles oder Client-API. Ein ausgelieferter
 Abschnitt trägt nur Qualitätsklasse A oder B und Modellzustand, aber weder Beleg-ID noch
@@ -129,12 +165,18 @@ Bahnhofstafel-/FIS-Abfrage gelesen. Der ausführbare Jahresvertrag und der reale
 2026-Nachweis stehen in
 [`livemap-detailkatalog.md`](livemap-detailkatalog.md).
 
-`release-artifacts.annual-2026.json` und `run-release-artifacts.mjs` erfassen
-die finale Infrastruktur-PMTiles, den Detailkatalog, die konservative
-Zugpositionsprojektion und den Qualitätsbericht mit ihren tatsächlichen
-Bytezahlen und SHA-256-Werten. Dieses Inventar ist die einzige Eingabe für den
-öffentlichen Artefaktabschnitt des `InfraRelease`; manuell übertragene
-Prüfsummen sind nicht zulässig.
+Ab dem Operational-v2-Vertrag 2026.3 erfassen die jeweilige
+Jahres-Artefaktspezifikation und `run-release-artifacts.mjs` die finale
+Infrastruktur-PMTiles, den Detailkatalog, den Qualitätsbericht und genau ein
+weltfreies statisches `operational-infrastructure-v2`-Artefakt mit ihren
+tatsächlichen Bytezahlen und SHA-256-Werten. Dieses typisiert erzeugte
+Inventar ist die einzige Eingabe für den öffentlichen Artefaktabschnitt des
+`InfraRelease`; manuell übertragene Prüfsummen sind nicht zulässig. Die
+historischen Verträge 2026.1 und 2026.2 bleiben unverändert v1 und enthalten
+stattdessen ihre damalige statische Exact-/Estimate-Zugpositionsprojektion.
+Diese Projektion ist kein Operational-v2-Laufzeitartefakt. Ab dem v2-Cutover
+projizieren LiveMap und RZÜ ausschließlich denselben committed v2-Zustand und
+frieren bei fehlendem Nachweis ein, statt auf `mapEstimate` zurückzufallen.
 
 ## Historischer Jahreskandidat 2026.1
 
@@ -180,7 +222,7 @@ Die zentralen Laufzeitartefakte vor Transportverpackung sind:
 | Welt-Basemap, Welt z0–10 und Deutschland z11–15 | 11.545.162.669 | `c766073e55b99b213276328e504cbb7a69b0b65db0546adf484539c3bd319aed` |
 | Deutschland-Infrastruktur, z4–18 | 1.536.379.722 | `65af6dbe8c517666c83941468c0f52b37fa30d866b8e402f6977aa4a599d3de6` |
 | anklickbares ReadModel mit Bahnhofstafel und FIS | 1.291.001.856 | `c7e56cecb3db9aaae7994877894312ade91c536e7c5027e10e63045d7303ad21` |
-| releasegebundene Exact-/Estimate-Zugkartenprojektion | 29.003.776 | `61a99693dad47bf21423ed9bf9b1547a0cbdcdeeb7717dd5daabc36375d61bde` |
+| historische, mit Operational-v2 abgelöste Exact-/Estimate-Zugkartenprojektion | 29.003.776 | `61a99693dad47bf21423ed9bf9b1547a0cbdcdeeb7717dd5daabc36375d61bde` |
 | dunkler MapLibre-Stil | 268.406 | `1f4292eab8f40faf0d1a2eff5a410a5943ab260278e84918c0a19f0fc8cc54da` |
 | öffentlicher Qualitätsbericht | 13.336 | `189758347185102a573e1ed89c618b7ef61a88d7af61d95fa71e61a2fe2f6303` |
 

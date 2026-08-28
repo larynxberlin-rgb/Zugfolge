@@ -6,6 +6,7 @@ import { DatabaseSync } from "node:sqlite";
 
 import { afterEach, describe, expect, it } from "vitest";
 
+import { gtfsJourneyChainId } from "../../packages/gtfs/dist/index.js";
 import {
   buildLivemapReadModel,
   inspectPublicReadModel,
@@ -177,13 +178,26 @@ describe("oeffentlicher SQLite-Livemap-Katalog", () => {
         repeat_every_s: "86400",
       });
       expect(database.prepare("SELECT train_id, scheduled_time_s FROM station_schedule_calls WHERE call_type = 'departure'").get()).toEqual({
-        train_id: expect.any(String),
+        train_id: gtfsJourneyChainId({
+          regionId: "mitteldeutschland-b",
+          releaseId: firstReport.timetable.releaseId,
+          sourceTripId: "trip-1",
+        }),
         scheduled_time_s: 7_560,
       });
     } finally {
       database.close();
     }
     expect(sha256(await readFile(first))).toBe(sha256(await readFile(second)));
+    const firstBytes = await readFile(first);
+    await expect(buildLivemapReadModel(spec(inputs), first)).rejects.toMatchObject({ code: "EEXIST" });
+    expect(await readFile(first)).toEqual(firstBytes);
+
+    const partial = join(root, "partial.sqlite");
+    await writeFile(`${partial}.report.json`, "partial-report");
+    await expect(buildLivemapReadModel(spec(inputs), partial)).rejects.toMatchObject({ code: "EEXIST" });
+    expect(await readFile(`${partial}.report.json`, "utf8")).toBe("partial-report");
+    await expect(readFile(partial)).rejects.toMatchObject({ code: "ENOENT" });
   });
 
   it("verweigert Zeitvertraege mit erneutem UTC-Offset oder abweichender Wiederholung", async () => {

@@ -163,7 +163,7 @@ function applyValidation(dimensions, receipts) {
 function qualityClass(dimensions) {
   const states = QUALITY_DIMENSIONS.map((dimension) => dimensions[dimension]?.state ?? "missing");
   if (states.every((state) => state === "validated")) return "A";
-  if (states.every((state) => state !== "missing")) return "B";
+  if (states.every((state) => state !== "missing" && state !== "assumed")) return "B";
   return "C";
 }
 
@@ -268,8 +268,8 @@ export function buildGermanyInfraCorpus({ pbfReport, wayFeatures, validationRece
     dimensions: QUALITY_DIMENSIONS,
     policy: {
       A: "Alle betriebsrelevanten Dimensionen fachlich validiert.",
-      B: "Betriebsmodell vollständig und konservativ; mindestens eine Dimension beobachtet, abgeleitet oder angenommen.",
-      C: "Mindestens eine betriebsrelevante Dimension ungelöst; nur Kartenkontext.",
+      B: "Betriebsmodell vollständig und konservativ; jede nicht beobachtete Dimension ist durch eine versionierte Ableitung geschlossen.",
+      C: "Mindestens eine betriebsrelevante Dimension fehlt oder ist nur gewöhnlich angenommen; nur Kartenkontext.",
     },
     totalLengthMm: sections.reduce((sum, section) => sum + section.lengthMm, 0),
     byClassLengthMm,

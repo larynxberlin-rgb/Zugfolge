@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import { compileJourneyChains, type JourneyChainStopInput } from "./journey-chain.js";
+import {
+  GTFS_JOURNEY_CHAIN_SCHEMA,
+  compileJourneyChains,
+  type JourneyChainStopInput,
+} from "./journey-chain.js";
 
 const stop = (
   stopId: string,
@@ -13,11 +17,11 @@ const stop = (
 function compile(stops: readonly JourneyChainStopInput[], portals = [
   { portalId: "west", stopId: "W", label: "Westportal" },
   { portalId: "east", stopId: "E", label: "Ostportal" },
-]) {
+], worldId = "world-mitteldeutschland", releaseId = "gtfs-2026") {
   return compileJourneyChains({
-    worldId: "world-mitteldeutschland",
+    worldId,
     regionId: "mitteldeutschland-b",
-    releaseId: "gtfs-2026",
+    releaseId,
     specificationVersion: "external-leg-cost/v1",
     boundaryWindowToleranceS: 300,
     fixedExternalCostCentsPerMinute: 25,
@@ -123,5 +127,24 @@ describe("GTFS JourneyChain", () => {
       { portalId: "west", stopId: "W", label: "Westportal" },
     ]);
     expect(again).toEqual(base);
+  });
+
+  it("trennt Weltisolation von der releasegebundenen fachlichen v2-Identitaet", () => {
+    const stops = [
+      stop("W", 1, 10_000, 10_060, true),
+      stop("E", 2, 10_600, 10_660, true),
+    ];
+    const first = compile(stops, undefined, "11111111-1111-4111-8111-111111111111").chains[0]!;
+    const second = compile(stops, undefined, "22222222-2222-4222-8222-222222222222").chains[0]!;
+    const foreignRelease = compile(stops, undefined, "22222222-2222-4222-8222-222222222222", "gtfs-2027").chains[0]!;
+
+    expect(first.schemaVersion).toBe(GTFS_JOURNEY_CHAIN_SCHEMA);
+    expect(first.worldId).not.toBe(second.worldId);
+    expect(first.journeyChainId).toBe(second.journeyChainId);
+    expect(first.legs.map((leg) => leg.legId)).toEqual(second.legs.map((leg) => leg.legId));
+    expect(first.legs.flatMap((leg) => leg.kind === "playable" ? leg.planningWindows.map((window) => window.windowId) : []))
+      .toEqual(second.legs.flatMap((leg) => leg.kind === "playable" ? leg.planningWindows.map((window) => window.windowId) : []));
+    expect(foreignRelease.journeyChainId).not.toBe(first.journeyChainId);
+    expect(foreignRelease.legs[0]!.legId).not.toBe(first.legs[0]!.legId);
   });
 });

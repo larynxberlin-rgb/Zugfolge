@@ -46,7 +46,7 @@ describe("Odoo-Administrationsmodul", () => {
     const security = await readFile(resolve(addon, "security/zugfolge_admin_security.xml"), "utf8");
     const views = await readFile(resolve(addon, "views/zugfolge_admin_views.xml"), "utf8");
 
-    expect(manifest).toContain('"version": "19.0.2.0.3"');
+    expect(manifest).toContain('"version": "19.0.2.0.4"');
     expect(manifest).toContain('"application": True');
     expect(security.match(/model="res\.groups\.privilege"/g)).toHaveLength(4);
     expect(security.match(/<field name="privilege_id"/g)).toHaveLength(4);
@@ -114,6 +114,7 @@ describe("Odoo-Administrationsmodul", () => {
   it("hat eine signierte Projektions-, Replay- und Reconciliation-Grenze", async () => {
     const controller = await readFile(resolve(addon, "controllers/main.py"), "utf8");
     const receipt = await readFile(resolve(addon, "models/projection_receipt.py"), "utf8");
+    const canonical = await readFile(resolve(addon, "models/canonical_json.py"), "utf8");
     const timestamp = await readFile(resolve(addon, "models/rfc3339.py"), "utf8");
     const timestampConsumers = await Promise.all(
       ["projection.py", "admin_capability.py", "feedback.py", "public_world.py"].map((file) =>
@@ -133,6 +134,19 @@ describe("Odoo-Administrationsmodul", () => {
     expect(controller).toContain("{**result, \"state\": state}");
     expect(receipt).toContain("unique(message_id)");
     expect(receipt).toContain("unveränderlich");
+    expect(receipt).toContain("zugfolge-projection-envelope-sha256/v1");
+    expect(controller).toContain("existing.envelope_hash != envelope_digest");
+    expect(controller).toContain("existing.envelope_hash_schema != PROJECTION_ENVELOPE_HASH_SCHEMA");
+    expect(canonical).toContain("ensure_ascii=False");
+    expect(canonical).toContain("MAX_SAFE_INTEGER = 9_007_199_254_740_991");
+    expect(canonical).toContain("Gleitkommazahlen duerfen nicht kanonisch signiert werden");
+    expect(controller).toContain("canonical_sha256(payload)");
+    expect(controller).not.toContain("ensure_ascii=True");
+    const receiptLookup = controller.indexOf('existing = receipt.search([("message_id", "=", message_id)]');
+    const projectionTypeRejection = controller.indexOf('return {"accepted": False, "code": "invalid_projection_type"}');
+    expect(receiptLookup).toBeGreaterThanOrEqual(0);
+    expect(projectionTypeRejection).toBeGreaterThanOrEqual(0);
+    expect(receiptLookup).toBeLessThan(projectionTypeRejection);
     expect(timestamp).toContain("RFC3339_WITH_ZONE");
     expect(timestamp).toContain("astimezone(timezone.utc).replace(tzinfo=None)");
     for (const consumer of timestampConsumers) {

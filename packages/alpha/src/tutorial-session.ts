@@ -280,10 +280,21 @@ export class TutorialSessionService {
     at: Date,
     options: { readonly chapter?: number; readonly reason?: string; readonly suffix?: string } = {},
   ): Promise<void> {
+    await this.db.insert(tutorialTelemetryEvents).values(this.telemetryValues(session, eventType, at, options)).onConflictDoNothing({
+      target: [tutorialTelemetryEvents.worldId, tutorialTelemetryEvents.idempotencyKey],
+    });
+  }
+
+  private telemetryValues(
+    session: TutorialSession,
+    eventType: TutorialTelemetryEventType,
+    at: Date,
+    options: { readonly chapter?: number; readonly reason?: string; readonly suffix?: string } = {},
+  ) {
     const attempts = numericRecord(session.correctionAttempts);
     const hints = booleanRecord(session.hintsUsed);
     const chapter = options.chapter;
-    await this.db.insert(tutorialTelemetryEvents).values({
+    return {
       worldId: session.tutorialWorldId,
       sessionId: session.id,
       idempotencyKey: `${eventType}:${options.suffix ?? chapter ?? "session"}`,
@@ -295,9 +306,7 @@ export class TutorialSessionService {
       hintUsed: chapter === undefined ? false : hints[String(chapter)] ?? false,
       reason: options.reason,
       occurredAt: at,
-    }).onConflictDoNothing({
-      target: [tutorialTelemetryEvents.worldId, tutorialTelemetryEvents.idempotencyKey],
-    });
+    };
   }
 
   private active(publicWorldId: string, publicAccountId: string): Promise<TutorialSession | undefined> {
@@ -635,19 +644,27 @@ export class TutorialSessionService {
         )).returning({ worldId: alphaWorldProfiles.worldId });
         if (archivedProfile === undefined) throw new AlphaConflictError("Tutorial-Weltprofil konnte nicht archiviert werden.");
       }
-      await tx.update(worlds).set({ lifecycleStatus: "archived" }).where(eq(worlds.id, session.tutorialWorldId));
       await tx.update(worldAccesses).set({ status: "revoked", revokedAt: now }).where(and(
         eq(worldAccesses.worldId, session.tutorialWorldId), eq(worldAccesses.keycloakSubject, (await tx.select({ subject: accounts.keycloakSubject }).from(accounts).where(and(eq(accounts.worldId, session.tutorialWorldId), eq(accounts.id, session.tutorialAccountId))).limit(1))[0]?.subject ?? ""),
       ));
-      await tx.update(tutorialSessions).set({ lifecycle: "archived", archivedAt: now, finalStateHash, updatedAt: now }).where(and(
+      const [archived] = await tx.update(tutorialSessions).set({ lifecycle: "archived", archivedAt: now, finalStateHash, updatedAt: now }).where(and(
         eq(tutorialSessions.id, session.id), eq(tutorialSessions.tutorialWorldId, session.tutorialWorldId), eq(tutorialSessions.lifecycle, "closing"),
-      ));
+      )).returning();
+      if (archived === undefined) throw new AlphaConflictError("Tutorial-Sitzung konnte nicht archiviert werden.");
+      const closureTelemetry = [
+        ...(reason !== "completed-confirmed" && !reason.startsWith("summary-grace")
+          ? [{ eventType: "tutorial_abandoned" as const, options: { chapter: session.currentChapter, reason } }]
+          : []),
+        { eventType: "tutorial_world_closed" as const, options: { chapter: session.currentChapter, reason } },
+      ];
+      await tx.insert(tutorialTelemetryEvents).values(closureTelemetry.map((entry) => (
+        this.telemetryValues(archived, entry.eventType, now, entry.options)
+      ))).onConflictDoNothing({
+        target: [tutorialTelemetryEvents.worldId, tutorialTelemetryEvents.idempotencyKey],
+      });
+      // Alle Abschlussbelege muessen vor der dauerhaften Welt-Fence stehen.
+      await tx.update(worlds).set({ lifecycleStatus: "archived" }).where(eq(worlds.id, session.tutorialWorldId));
     });
-    const archived = await this.ownedTutorial(session.tutorialWorldId, session.tutorialAccountId);
-    if (reason !== "completed-confirmed" && !reason.startsWith("summary-grace")) {
-      await this.telemetry(archived, "tutorial_abandoned", now, { chapter: session.currentChapter, reason });
-    }
-    await this.telemetry(archived, "tutorial_world_closed", now, { chapter: session.currentChapter, reason });
   }
 
   async reap(at = this.#clock()): Promise<readonly string[]> {

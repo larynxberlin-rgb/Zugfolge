@@ -11,6 +11,7 @@ werden. Der Prüfvertrag bleibt dabei identisch.
 
 ```text
 zugfolge-map-deutschland-2026.1/
+  .zugfolge-create-new-complete.json
   manifest.json
   manifest.sha256
   parts/
@@ -29,6 +30,14 @@ zugfolge-map-deutschland-2026.1/
 - sicheren relativen Installationspfad,
 - gesamte Bytezahl und SHA-256,
 - stabile Reihenfolge aller Teile sowie deren Bytezahl und SHA-256.
+
+Der kleine create-new-Completion-Marker wird als letzte Publikationsoperation
+sichtbar und bindet den SHA-256 von `manifest.json`. Für den aktuellen
+Jahresvertrag ab `2026.5` lehnen Paketprüfer jedes Verzeichnis ohne diesen
+Marker, mit falscher Zielart oder abweichender Bindung als unvollständigen
+reservierten Zielbaum ab. Vollständig inventarisierte historische Pakete bis
+`2026.4` bleiben ausschließlich in reinen Verify-/Rollback-Pfaden markerlos
+lesbar; `install` akzeptiert diese Ausnahme nicht.
 
 `sha256` bezeichnet dabei immer den Hash der tatsächlich ausgelieferten
 Dateibytes einschließlich JSON-Formatierung und Abschlusszeilen. Ein eventuell
@@ -164,9 +173,14 @@ den Metadaten führen zum Abbruch. Maßgeblich ist die
 [PMTiles-v3-Spezifikation](https://github.com/protomaps/PMTiles/blob/main/spec/v3/spec.md).
 Anschließend sortiert es alle Artefakte
 stabil, teilt sie an festen Bytegrenzen und schreibt zunächst in
-ein temporäres Nachbarverzeichnis. Erst das vollständige Paket wird mit einer
-Umbenennung sichtbar. Gleiche Eingaben und dieselbe Spezifikation ergeben
-dasselbe Manifest, dieselben Teile und dieselben Hashes. Die ausgegebene
+ein temporäres Nachbarverzeichnis. Danach reserviert ein exklusives `mkdir`
+das endgültige Ziel ohne POSIX-`rename`-Ersetzung, übernimmt jede Datei per
+create-new-Hardlink und jedes Unterverzeichnis per exklusivem `mkdir` und
+publiziert den synchronisierten Completion-Marker als letzte create-new-Datei.
+Ein Abbruch kann damit nur einen markerlosen, unbrauchbaren Teilbaum
+hinterlassen; er wird nie wiederverwendet oder
+überschrieben. Gleiche Eingaben und dieselbe Spezifikation ergeben dasselbe
+Manifest, dieselben Teile und dieselben Hashes. Die ausgegebene
 `manifestSha256` ist zusammen mit dem Paket zu übergeben.
 
 Die Prüfsummendatei schützt gegen beschädigte oder vertauschte Übertragungen.
@@ -186,7 +200,8 @@ node tools/tiles/map-package-cli.mjs verify `
 
 Die lokale Installation setzt alle Teile wieder zusammen. Das Ziel ist immer
 ein eigenes, versioniertes Releaseverzeichnis und darf nicht mit einem
-allgemeinen Kartenverzeichnis gleichgesetzt werden:
+allgemeinen Kartenverzeichnis gleichgesetzt werden. Es muss vor dem Aufruf
+vollstaendig fehlen:
 
 ```powershell
 node tools/tiles/map-package-cli.mjs install `
@@ -199,12 +214,20 @@ vorgeschriebene Hilfsdateisatz geprüft.
 Beim einmaligen Lesen der Paketteile werden Teil- und Gesamtprüfsummen gebildet,
 während zugleich die installierten PMTiles-Dateien entstehen. Es gibt keinen
 anschließenden dritten Vollscan. Dasselbe gilt für große Hilfsdateien. Die
-Installation entsteht vollständig in einem temporären
-Nachbarverzeichnis und wird anschließend atomar umbenannt. Ein bereits
-vorhandenes Ziel wird nur wiederverwendet, wenn Manifest, Bytezahl und SHA-256
-aller installierten Dateien exakt stimmen. Abweichungen führen zum Abbruch;
-beschädigte oder fremde Dateien werden weder überschrieben noch stillschweigend
-akzeptiert.
+Installation entsteht vollständig in einem temporären Nachbarverzeichnis. Das
+sichtbare Ziel wird anschließend exklusiv reserviert; erst der abschließende,
+manifestgebundene Completion-Marker macht es für `verify-installed` nutzbar.
+Ein bereits vorhandenes Ziel bricht die Erstinstallation auch bei identischen
+Bytes mit `EEXIST` ab; vorhandene, beschädigte oder fremde Dateien werden weder
+überschrieben noch als erfolgreicher Installationslauf akzeptiert. Eine
+bereits installierte Version wird ausschließlich mit der read-only-Operation
+geprüft:
+
+```powershell
+node tools/tiles/map-package-cli.mjs verify-installed `
+  var/map-package/zugfolge-map-deutschland-2026.1 `
+  var/maps/releases/infra-deutschland-2026.1
+```
 
 Der Jahreskandidat 2026.1 bindet 11.545.162.669 Byte Welt-Basemap,
 1.536.379.722 Byte Deutschland-Infrastruktur, 1.291.001.856 Byte ReadModel und
@@ -221,19 +244,21 @@ Der reale Transportlauf ist erfolgreich ausgeführt:
 | `pack-plan` | Exit 0 in 52,3 s |
 | `verify` | Exit 0; auch nach dem atomaren Austausch am kanonischen Pfad erneut Exit 0 |
 | Erstinstallation | 1.037 installierte Dateien mit 14.420.471.766 Byte; Exit 0 in 28,8 s |
-| zweite Installation | unverändertes Ziel erkannt, Status `reused`; Exit 0 |
+| historischer zweiter Installationslauf (damaliger Vertrag) | unverändertes Ziel erkannt, Status `reused`; Exit 0 |
 
 Paket und Testinstallation liegen außerhalb der Git-Historie unter
 `var/map-package/zugfolge-map-deutschland-2026.1/` beziehungsweise
 `var/maps/releases/infra-deutschland-2026.1/`. Der Lauf beweist Transport,
 vollständige Integritätsprüfung, atomare Installation und idempotente
-Wiederverwendung. Er ist weder Signatur noch produktiver Odoo-Import.
+Wiederverwendung nach dem damaligen Vertrag. Aktuelle Jahresläufe verwenden
+dafür `verify-installed`; `install` bleibt strikt create-new. Der historische
+Lauf ist weder Signatur noch produktiver Odoo-Import.
 
 ## Alpha-Laufzeit an das installierte Paket binden
 
 Die Alpha-Laufzeit erhält **nicht** mehrere frei kombinierbare
 Kartenverzeichnisse. Alle Dateien eines Jahresstands stammen aus genau dem eben
-installierten, unveränderlichen Releaseverzeichnis. Für 2026.2 enthält `.env`
+installierten, unveränderlichen Releaseverzeichnis. Für 2026.4 enthält `.env`
 deshalb gemeinsam:
 
 Die statische `.env` enthält nur die gemeinsame Hostwurzel:
@@ -246,24 +271,24 @@ Die übrigen vier Werte stehen ausschließlich im zuletzt geladenen,
 Evidence-geprüften `var/maps/active/map-release.env`:
 
 ```dotenv
-MAP_RELEASE_ID=infra-deutschland-2026.2
-MAP_RELEASE_HOST_DIR=releases/infra-deutschland-2026.2
-MAP_BASEMAP_STYLE_URL=/artifacts/maps/infra-deutschland-2026.2/style.json
-MAP_GERMANY_PMTILES_URL=/artifacts/maps/infra-deutschland-2026.2/infra-deutschland-2026.2.pmtiles
+MAP_RELEASE_ID=infra-deutschland-2026.4
+MAP_RELEASE_HOST_DIR=releases/infra-deutschland-2026.4
+MAP_BASEMAP_STYLE_URL=/artifacts/maps/infra-deutschland-2026.4/style.json
+MAP_GERMANY_PMTILES_URL=/artifacts/maps/infra-deutschland-2026.4/infra-deutschland-2026.4.pmtiles
 ```
 
 `compose.alpha.yml` leitet ohne verschachtelte Variablenexpansion aus der
 gemeinsamen Hostwurzel und `MAP_RELEASE_ID` exakt
-`./var/maps/releases/infra-deutschland-2026.2` ab. Dieses eine Verzeichnis wird
+`./var/maps/releases/infra-deutschland-2026.4` ab. Dieses eine Verzeichnis wird
 an zwei klar getrennte Verbraucher gebunden, jeweils nur lesbar:
 
 - Die Livemap sieht es unter
-  `/map-artifacts/maps/infra-deutschland-2026.2`. Ihr statischer Server liefert
+  `/map-artifacts/maps/infra-deutschland-2026.4`. Ihr statischer Server liefert
   damit mindestens `style.json`, `basemap.pmtiles`,
-  `infra-deutschland-2026.2.pmtiles`, `read-model.sqlite` und
+  `infra-deutschland-2026.4.pmtiles`, `read-model.sqlite` und
   `train-map-projection.sqlite` unter der
   gemeinsamen öffentlichen Wurzel
-  `/artifacts/maps/infra-deutschland-2026.2/` aus. Alle statischen Dateien
+  `/artifacts/maps/infra-deutschland-2026.4/` aus. Alle statischen Dateien
   unterstützen Einzelbereichsanfragen; erfolgreiche PMTiles-Anfragen mit
   `Range` antworten mit HTTP 206.
 - Die Game-API sieht dasselbe Hostverzeichnis als `/map-release` und öffnet
@@ -280,6 +305,16 @@ Der Livemap-Build kopiert auch den MapLibre-ESM-Worker und dessen Shared-Modul
 in die eigenen statischen Assets. Style, Glyphen-, Sprite-, Worker- und
 PMTiles-URLs werden auf denselben Ursprung normalisiert; es gibt auch für
 fehlende Basemap-Symbole keinen CDN- oder öffentlichen Kartenfallback.
+
+Der `.4`-Block oben dokumentiert den unveränderlichen Vorgängerstand. Der
+aktuelle Deutschland-V2-Patch ist ausschließlich
+`infra-deutschland-2026.5` mit Paketversion `2026.5`, Delivery-Key-ID
+`zugfolge-map-deutschland-2026.5` und `zugfolge-map-runtime/v2`. Er erhält ein
+neues `releases/infra-deutschland-2026.5` und vier gemeinsam auf `.5` zeigende
+Pointerwerte. `.4`-Verzeichnisse, -Spezifikationen, -Manifeste, -Signaturen und
+Public-Key-Bytes bleiben unverändert. Auch bytegleiche wiederverwendete Daten
+werden ausschließlich create-new in den neuen `.5`-Zielbaum materialisiert;
+ein vorhandenes Ziel blockiert den Lauf.
 
 ## Öffentlicher Deliveryvertrag und Odoo-Jahresimport
 
@@ -402,7 +437,7 @@ beschrieben.
 
 Das installierte Laufzeitpaket ist kein Buildcache. Jeder neue Deutschland-
 Patchrelease benötigt deshalb zusätzlich ein internes, unveränderliches
-`zugfolge-map-release-build-evidence/v1`. Dieser Beleg wird nicht öffentlich
+`zugfolge-map-release-build-evidence`. Dieser Beleg wird nicht öffentlich
 ausgeliefert. Er bindet bytegenau:
 
 - den vollständigen Git-Commit des Semantikexports und den vollständigen
@@ -412,26 +447,51 @@ ausgeliefert. Er bindet bytegenau:
 - jedes lokale Werkzeug mit Version, Bytezahl und SHA-256 oder jedes
   Containerwerkzeug mit einer Referenz der Form
   `registry/repository@sha256:<64 hex>`,
-- Welt-Basemap-PMTiles, Semantik-PMTiles, ReadModel, Zugkartenprojektion,
-  MapLibre-Style, Deliverymanifest und öffentlichen Qualitätsbericht,
+- Welt-Basemap-PMTiles, Semantik-PMTiles, ReadModel, den autoritativen
+  Betriebsgraphen, MapLibre-Style, Deliverymanifest und öffentlichen
+  Qualitätsbericht; ab Evidence-v3 zusätzlich zwingend die installierbaren
+  `movement-route-templates-v2` und `timetable-transfer-demands-v2`,
 - alle zehn Semantik-Zwischenlayer als Regressionsbeleg.
 
 `latest`, `main`, `master`, `HEAD`, `unversioned`, verkürzte Git-Commits,
 fehlende Dateien und jede Byte- oder Digestabweichung brechen den Lauf ab. Ein
 neuer Stand überschreibt niemals eine bestehende Jahreskonfiguration. Auf
-`infra-deutschland-2026.1` folgt beispielsweise ein eigener
-`infra-deutschland-2026.2`-Spezifikationssatz, ein eigener Buildcache und ein
+`infra-deutschland-2026.2` folgt beispielsweise ein eigener
+`infra-deutschland-2026.4`-Spezifikationssatz, ein eigener Buildcache und ein
 eigenes Installationsverzeichnis. Release-ID, Paketversion, Welt-/GTFS-
 ServiceDate und alle davon abgeleiteten Spezifikationen müssen innerhalb des
 Patchsatzes übereinstimmen. Für den August-2026-Patch ist der Montag
-`20260810` maßgeblich; die unveränderlichen `.1`-Dateien bleiben unangetastet.
+`20260810` maßgeblich; die unveränderlichen `.2`-Dateien bleiben unangetastet.
+Der bereits signierte Kandidat `infra-deutschland-2026.3` ist verworfen und
+nicht vertrauenswürdig; er darf weder Preflight- noch Aktivierungsquelle sein.
+Die folgenden konkreten `.4`-Beispiele sind historische, unveränderliche
+Vorjahresbelege. Für den aktuellen `.5`-Lauf dürfen sie ausschließlich als
+explizit byte- und hashgebundene Vorjahreseingaben oder als beibehaltener
+Vertrauensanker dienen; kein `.4`-Ziel wird erneut erzeugt oder verändert.
 
-Die interne Build-Evidence-Spezifikation hat das Schema
-`zugfolge-map-release-build-evidence-spec/v1` und liegt selbst versioniert
-unter `tools/tiles/` im belegten Kartenbuild-Commit. Eingaben besitzen stets
-`expectedBytes` und `expectedSha256`. Externe Archive, Capture-Manifeste und
-optionale Derived-Eingaben nennen zusätzlich ihren `cacheFile` im
-verschlüsselten Buildcache.
+Die interne Build-Evidence-Spezifikation liegt selbst versioniert unter
+`tools/tiles/` im belegten Kartenbuild-Commit. Die historischen Schemas v1 und
+v2 bleiben verifizierbar. Neue vollständige Operational-v2-Lieferungen verwenden
+`zugfolge-map-release-build-evidence-spec/v3` und erzeugen
+`zugfolge-map-release-build-evidence/v3`; dieses Schema verlangt alle neun
+aktivierungsrelevanten Ausgaben einschließlich beider Sidecars und bindet sie
+zusätzlich an InfraRelease-Inventar, Delivery-v2-Inventar und signierten
+Paketplan. Eingaben besitzen die jeweils schemageforderten Byte-/SHA-256-Belege.
+Externe Archive, Capture-Manifeste und Derived-Eingaben nennen zusätzlich ihren
+`cacheFile` im verschlüsselten Buildcache.
+
+Für `infra-deutschland-2026.5` ist der Timetable-Upstream ein harter V2-Schnitt:
+Compiler v5 erzeugt den Bericht v4, `zugfolge-daily-circulation-plan/v2` und die
+installierbare Datei `timetable-routes-v2.transfer-demands-v2.json` mit
+`kind=timetable-transfer-demands-v2`. Der gemessene Sidecar umfasst 6.697.294
+Byte mit SHA-256
+`2c8c688a9ce963afbdca75fee526b581bc21be402aabcbaf1abd09ea65418cdf`.
+Seine vollständige Partition enthält 1.677 geplante Übergänge, davon 1.595
+Turnarounds und 82 real geroutete Transfers in 39 Losen bei 197 Umläufen. Die
+historische `.4`-V1-Datei bleibt unverändert verifizierbar, darf aber weder in
+das `.5`-Paket aufgenommen noch vom aktuellen Validator als Fallback akzeptiert
+werden; es gibt keinen V1-Fallback. Dieser Upstream-Beleg allein beweist noch
+keine Paketsignatur, Installation oder Aktivierung.
 
 Das Inventar wird nicht von Hand geschrieben. Ein releasegebundener Plan mit
 dem Schema `zugfolge-map-build-cache-inventory-plan/v1` ordnet jede reguläre
@@ -441,7 +501,7 @@ Cachepfad zu:
 ```json
 {
   "schema": "zugfolge-map-build-cache-inventory-plan/v1",
-  "releaseId": "infra-deutschland-2026.2",
+  "releaseId": "infra-deutschland-2026.4",
   "files": [
     {
       "sourceFile": "var/source-cache/annual-2026/deutschland-2026-08-12.osm.pbf",
@@ -451,24 +511,24 @@ Cachepfad zu:
 }
 ```
 
-Für den realen `.2`-Build wird der vollständige Plan vor dem Lauf unter
-`var/build-cache/infra-deutschland-2026.2.plan.json` angelegt und dort
+Für den realen `.4`-Build wird der vollständige Plan vor dem Lauf unter
+`var/build-cache/infra-deutschland-2026.4.plan.json` angelegt und dort
 unverändert aufbewahrt. Von der Repositorywurzel aus lautet der exakte
 Builder-Aufruf:
 
 ```powershell
 node tools/tiles/map-build-cache-inventory-cli.mjs build `
-  infra-deutschland-2026.2 `
+  infra-deutschland-2026.4 `
   . `
-  var/build-cache/infra-deutschland-2026.2.plan.json `
-  var/build-cache/infra-deutschland-2026.2.inventory.json
+  var/build-cache/infra-deutschland-2026.4.plan.json `
+  var/build-cache/infra-deutschland-2026.4.inventory.json
 ```
 
 Die Ausgabe wird create-new und atomar angelegt; ein vorhandenes Inventar wird
 niemals ersetzt. Der Builder lehnt absolute oder nicht normalisierte Pfade,
 Pfadausbruch, symbolische Links in jeder Quellpfadkomponente, leere oder nicht
 reguläre Dateien sowie doppelte Quell- und Cachepfade ab. Dateiinhalt und
-SHA-256 werden gestreamt, damit auch die großen `.2`-Quellarchive nicht in den
+SHA-256 werden gestreamt, damit auch die großen `.4`-Quellarchive nicht in den
 Arbeitsspeicher geladen werden.
 
 Das kanonische Inventar hat diese Form:
@@ -476,7 +536,7 @@ Das kanonische Inventar hat diese Form:
 ```json
 {
   "schema": "zugfolge-map-build-cache-inventory/v1",
-  "releaseId": "infra-deutschland-2026.2",
+  "releaseId": "infra-deutschland-2026.4",
   "files": [
     {
       "path": "sources/deutschland-2026-08-12.osm.pbf",
@@ -504,12 +564,12 @@ sie laufen vor dem Transfer auf den Deploymenthost:
 
 ```powershell
 node tools/tiles/map-release-build-evidence-cli.mjs build `
-  tools/tiles/map-release-build-evidence.annual-2026.2.spec.json `
+  tools/tiles/map-release-build-evidence.annual-2026.4.spec.json `
   . `
-  var/build-evidence/infra-deutschland-2026.2.json
+  var/build-evidence/infra-deutschland-2026.4.json
 
 node tools/tiles/map-release-build-evidence-cli.mjs verify `
-  var/build-evidence/infra-deutschland-2026.2.json `
+  var/build-evidence/infra-deutschland-2026.4.json `
   .
 ```
 
@@ -518,9 +578,12 @@ nennt alle zehn finalen GeoJSONSeq-Semantiklayer, mindestens eine bekannte
 positive EBO-Signal-ID und die verbotenen öffentlichen Tokens einschließlich
 `12472736971`. Der Beleg scheitert, wenn dieses BOStrab-Objekt in irgendeinem
 Layer oder im öffentlichen ReadModel vorkommt oder wenn das positive
-EBO-Signal fehlt. Die sieben aktivierungsrelevanten Ausgaben werden zusätzlich
-auf ihren Grundtyp und ihre Releasebindung geprüft; die Basemap ist dabei eine
-zwingende eigene Ausgabe. Das Evidence-Manifest übernimmt darüber hinaus das
+EBO-Signal fehlt. Der historische v2-Beleg prüft sieben
+aktivierungsrelevante Ausgaben; die Basemap ist dabei eine zwingende eigene
+Ausgabe. Evidence-v3 prüft dagegen exakt neun Ausgaben einschließlich
+`movement-route-templates-v2` und `timetable-transfer-demands-v2` und schließt
+deren Operational-State- und Transfer-Set-Bindungen. Das Evidence-Manifest
+übernimmt darüber hinaus das
 vollständige Artefaktinventar des bytegenau gebundenen Deliverymanifests. Jede
 Kernausgabe außer dem zirkulär ausgeschlossenen Deliverymanifest muss darin
 mit identischem Installationspfad, Artefakttyp, Bytezahl und SHA-256 vorkommen.
@@ -550,7 +613,7 @@ bereits vorhandenes Ziel und legt einen eindeutigen Leerpfadmarker an:
 
 ```powershell
 node tools/tiles/map-release-build-evidence-cli.mjs prepare-restore `
-  var/restore-check/infra-deutschland-2026.2
+  var/restore-check/infra-deutschland-2026.4
 ```
 
 Danach stellt das freigegebene Backupwerkzeug genau den im Evidence-Manifest
@@ -561,9 +624,9 @@ Dateien und symbolische Links führen zum Abbruch:
 
 ```powershell
 node tools/tiles/map-release-build-evidence-cli.mjs prove-restore `
-  var/build-evidence/infra-deutschland-2026.2.json `
-  var/restore-check/infra-deutschland-2026.2 `
-  var/build-evidence/infra-deutschland-2026.2.restore-proof.json
+  var/build-evidence/infra-deutschland-2026.4.json `
+  var/restore-check/infra-deutschland-2026.4 `
+  var/build-evidence/infra-deutschland-2026.4.restore-proof.json
 ```
 
 Der kanonisch serialisierte Restore-Beleg bindet Evidence-SHA,
@@ -585,13 +648,13 @@ festgehaltenen Ergebnis-Hashes prüfen.
 ### Parallele Installation, Aktivierung und Rückweg
 
 Kandidat und Vorgänger bleiben als getrennte, unveränderliche Verzeichnisse
-installiert. Für `.2` müssen also vor der Umschaltung sowohl
-`releases/infra-deutschland-2026.2` als auch
-`releases/infra-deutschland-2026.1` vorhanden sein. Beide Verzeichnisse müssen
+installiert. Für `.4` müssen also vor der Umschaltung sowohl
+`releases/infra-deutschland-2026.4` als auch
+`releases/infra-deutschland-2026.2` vorhanden sein. Beide Verzeichnisse müssen
 ein kanonisches `.zugfolge-map-package.json` besitzen; dessen vollständiges
 Dateiinventar wird bytegenau geprüft. Leere Rollbackverzeichnisse,
 Zusatzdateien, manipulierte Vorgänger oder ein fehlender Quellenbeleg sperren
-die Aktivierung. Das unveränderliche `.1`-Paket bleibt dabei bewusst
+die Aktivierung. Das unveränderliche `.2`-Paket bleibt dabei bewusst
 byteidentisch zu seiner bereits installierten, intern noch unsignierten
 Ausgabe; es wird niemals unter derselben Versionskennung neu gepackt. Stattdessen
 bindet eine externe Ed25519-signierte Bestandsattestation im v1-Schema mindestens
@@ -604,7 +667,7 @@ selbstkonsistenter, nachträglich veränderter oder fremd attestierter Vorgänge
 ist kein sicheres Rollbackziel. Insbesondere belegt v1 nur Kartenbytes und wird
 deshalb immer als `rollbackEligible: false` mit
 `runtime-tuple-unbound-v1` ausgewiesen. Es reicht nicht, eine aktuelle Runtime
-mit altem ReadModel oder alter Zugprojektion zu starten. Der `.2`-Kandidat
+mit altem ReadModel oder alter Zugprojektion zu starten. Der `.4`-Kandidat
 benötigt weiterhin zwingend sein intern signiertes Deliverymanifest. Die in Evidence genannten
 `installFile`-Pfade des Kandidaten müssen den gebauten Ausgaben bytegenau
 entsprechen. Zusätzlich prüft der Betriebs-Preflight jede Datei des
@@ -614,85 +677,241 @@ alle weiteren inventarisierten Dateien ein. Eine fehlende oder manipulierte
 Basemap sowie jede Abweichung eines anderen Delivery-Artefakts verhindert
 `activationEligible: true`.
 
+Für einen Kandidaten mit `zugfolge-map-package/v2` ist außerdem ausschließlich
+`zugfolge-map-runtime/v2` zulässig. Die v2-Bezeichnung des Paketmarkers allein
+reicht nicht: Ein Kandidat mit dem Legacy-Runtimepfadvertrag v1 wird bereits
+bei der Paketprüfung und damit erneut im Aktivierungs-Preflight abgelehnt. Der
+unveränderte Rollbackbestand mit `zugfolge-map-package/v1` behält dagegen
+seinen historischen `zugfolge-map-runtime/v1`-Vertrag.
+Dieser Karten-Runtimevertrag ist eine andere, ebenfalls verpflichtende Grenze
+als das signierte Full-Stack-Rollback-Tuple
+`zugfolge-runtime-rollback-tuple/v3`; ein gültiger Beleg ersetzt den jeweils
+anderen nicht.
+
 Der in Evidence gebundene `activationPointer` ist eine kanonische LF-env-Datei
 mit genau vier Werten. Der Aufrufer nennt bei jedem Preflight explizit das
-erwartete aktive Release. Vor der `.2`-Aktivierung muss der Pointer damit
-vollständig auf `.1` zeigen; nach der atomaren Umschaltung und bei jedem
+erwartete aktive Release. Vor der `.4`-Aktivierung muss der Pointer damit
+vollständig auf `.2` zeigen; nach der atomaren Umschaltung und bei jedem
 wiederholten Start muss derselbe Gate im Zustand `active-candidate`
-vollständig die vier `.2`-Werte sehen. Ein stilles Akzeptieren beider Zustände
+vollständig die vier `.4`-Werte sehen. Ein stilles Akzeptieren beider Zustände
 ist unzulässig. `MAP_RELEASE_HOST_DIR` ist dabei der zum Deploymentroot
 relative, Evidence-gebundene Installationspfad:
 
 ```dotenv
-MAP_RELEASE_ID=infra-deutschland-2026.1
-MAP_RELEASE_HOST_DIR=releases/infra-deutschland-2026.1
-MAP_BASEMAP_STYLE_URL=/artifacts/maps/infra-deutschland-2026.1/style.json
-MAP_GERMANY_PMTILES_URL=/artifacts/maps/infra-deutschland-2026.1/infra-deutschland-2026.1.pmtiles
+MAP_RELEASE_ID=infra-deutschland-2026.2
+MAP_RELEASE_HOST_DIR=releases/infra-deutschland-2026.2
+MAP_BASEMAP_STYLE_URL=/artifacts/maps/infra-deutschland-2026.2/style.json
+MAP_GERMANY_PMTILES_URL=/artifacts/maps/infra-deutschland-2026.2/infra-deutschland-2026.2.pmtiles
 ```
 
 Der öffentliche Keyring ist ein JSON-Objekt von stabiler `keyId` auf einen
 Ed25519-SPKI-Public-Key im PEM-Format. Private Schlüssel gehören niemals auf
-den Deploymenthost. Die Rollback-Attestation wird deshalb auf einem getrennten
-Signierhost gegen ein byteidentisches Abbild des installierten `.1`-Pakets
-erzeugt und danach an den Evidence-gebundenen externen Pfad übertragen:
+den Deploymenthost, in das Repository, einen Worktree, Buildcache,
+Transportpaket, Evidence oder Laufprotokoll. Die Rollback-Attestation wird
+deshalb auf einem getrennten Signierhost gegen ein byteidentisches Abbild des
+installierten `.2`-Pakets erzeugt. Der nur dort aufgelöste externe Pfad steht
+im Aufruf als `$ROLLBACK_PRIVATE_KEY`; allein die fertige öffentliche
+Attestation wird danach an den Evidence-gebundenen externen Pfad übertragen:
 
 ```powershell
 node tools/tiles/map-release-build-evidence-cli.mjs attest-rollback `
   var/maps `
-  releases/infra-deutschland-2026.1 `
-  infra-deutschland-2026.1 `
-  var/signing/map-rollback-private.pem `
+  releases/infra-deutschland-2026.2 `
+  infra-deutschland-2026.2 `
+  $ROLLBACK_PRIVATE_KEY `
   map-rollback-2026 `
-  var/maps/attestations/infra-deutschland-2026.1.rollback.json
+  var/maps/attestations/infra-deutschland-2026.2.rollback.json
 ```
 
-Ein tatsächlich ausführbares Rollback braucht dagegen zwingend das v2-Schema.
+Ein tatsächlich ausführbares Rollback braucht dagegen zwingend das
+`zugfolge-runtime-rollback-tuple/v3`.
 Die Signatur bindet zusätzlich ein einziges kompatibles Runtime-Tuple aus
-40-stelligem Source-Commit, OCI-Image-Digest, signiertem Weltdeployment samt
+40-stelligem Source-Commit, getrennten OCI-Digests für Game und Odoo,
+signiertem Weltdeployment samt
 Byte-SHA, Welt-ID, Epoch und Wiederholungsperiode, ReadModel-v2 samt
 `application_id`, `user_version` und normalisiertem Zeitvertrag sowie
 Zugprojektion-v2 samt Schema-SQL-Hash und Deployment-Hash. ReadModel,
 Zugprojektion und Weltdeployment müssen dieselbe Welt nennen; Projektions- und
 Weltdeployment-Hash sowie Epoch und Wiederholungsperiode müssen exakt
-übereinstimmen. Die Erstellung verweigert daher auch ein unter `.1` abgelegtes
-ReadModel oder eine Projektion, die tatsächlich noch an `.2` gebunden ist:
+übereinstimmen. Zusätzlich bindet das Tuple den kanonischen
+`zugfolge-database-rollback-proof/v3`. Dieser bindet die mit dem Backup
+restaurierbare, unveränderliche DB-UUID, das bis Schema 32 exakte
+Migrationsledger, den vollständigen Cutover-Constraint-/Guardvertrag und einen
+kanonischen Gesamtreihenhash jeder Zeile des exakt eingecheckten Satzes aus 51
+autoritativen Schema-32-Tabellen. Dadurch ändern auch innere Domain-Events sowie
+Konten-, Ledger-, Fahrzeug-, Fleet- und Planungszeilen den Kopf. Dazu kommen der
+vollständige `keycloak-identity-head/v1` mit den Reihenfingerprints aller 100
+Keycloak-Tabellen, der quieszierte Schreibzustand, das eingebettete semantische
+Backup-Manifest, der
+eingebettete semantische Restore-Beleg und deren Byte-SHAs. Eine strukturgleiche
+andere Datenbank wird auch bei identischen Zählern abgewiesen. Die Erstellung
+verweigert daher auch ein unter `.2` abgelegtes
+ReadModel oder eine Projektion, die tatsächlich noch an `.4` gebunden ist:
 
-Der attestierte Image-Digest muss zugleich als unveränderliche
-`image: registry/repository@sha256:…`-Referenz des Rollback-Compose-Vertrags
-verwendet werden. Eine frei gesetzte Umgebungsvariable oder ein lokaler Tag ist
-kein Image-Nachweis und darf nicht zur v2-Freigabe führen.
+Der attestierte nackte Image-Digest in
+`MAP_RELEASE_PREFLIGHT_RUNTIME_IMAGE_DIGEST` muss zugleich exakt der Digest der
+`MAP_RELEASE_PREFLIGHT_RUNTIME_IMAGE_REFERENCE` im versionierten
+`compose.alpha.rollback.yml` sein. Zulässig sind eine lokale
+`sha256:…`-Image-ID oder eine kleingeschriebene
+`registry/repository@sha256:…`-Referenz. Der Wrapper rechnet diese Bindung vor
+jedem Compose-Aufruf nach und verweigert mutable Tags, Platzhalter, doppelte
+Einträge sowie einen geerbten Shell-Override. Der aktuelle v3-Prüfer läuft
+dagegen über die getrennte unveränderliche
+`ZUGFOLGE_GAME_API_IMAGE_REFERENCE`; sein Digest muss vom Legacy-Digest
+verschieden sein. So kann das prüfende aktuelle Image niemals durch bloßes
+Retagging mit der attestierten alten Runtime gleichgesetzt werden.
+Entsprechend muss `PRODUCTION_RECOVERY_ODOO_IMAGE_DIGEST` exakt den ebenfalls
+signierten Odoo-Digest des Tuples und den Digest der unveränderlichen
+`PRODUCTION_RECOVERY_ODOO_IMAGE_REFERENCE` treffen. Ein nur lokal
+selbstdeklarierter Odoo-Tag ist kein freigegebener Rückweg.
+
+Der DB-Beleg entsteht erst nach dem nachweislichen Stop aller Writer, der
+vorwärtskompatiblen Migration auf Schema 32 sowie einem echten Test-Restore.
+Quell- und Restore-Datenbank müssen gleichzeitig erreichbar sein und sowohl
+verschiedene normalisierte Endpunkte als auch verschiedene physische
+PostgreSQL-Backends besitzen. Andere Zugangsdaten, ein anderer Datenbankname auf
+demselben Backend oder dieselbe URL reichen nicht. Backup-Manifest und
+Restore-Beleg müssen kanonische JSON-Artefakte der Schemas
+`zugfolge-database-backup-manifest/v1` und
+`zugfolge-database-restore-proof/v1` sein. Sie binden DB-UUID, autoritativen
+Quell-/Restore-Kopf, Endpunkt-/Backend-SHAs, Backup-ID, vorwärts laufende
+WAL-Spanne, Quiescence und die vollständige Reihenfingerprint-Verifikation.
+Beliebige nichtleere Dateien werden verweigert. `backup-game.sh` erfasst im
+explizit quieszierten Modus zusätzlich die reale WAL-Spanne in einem
+create-new-Operationsbeleg; `restore-game.sh` schreibt sein Receipt optional
+selbst create-new. Der Qualifizierungsschritt bindet diese beiden Receipts
+bytegenau an den Dump, liest den vollständigen Schema-32-Kopf aus Quelle und
+isoliertem Restore und publiziert das kanonische v1-Paar gemeinsam. Scheitert
+die zweite Pfadbelegung, wird nur die eindeutig selbst angelegte erste Datei
+zurückgenommen; eine fremde Datei wird nie überschrieben oder gelöscht:
+
+```bash
+DATABASE_ROLLBACK_WRITERS_QUIESCED=true \
+sh ops/alpha/backup-game.sh \
+  "$QUIESCED_SOURCE_DATABASE_URL" \
+  /evidence/game.dump \
+  /evidence/game.manifest.json \
+  /evidence/game.operation.json
+
+sh ops/alpha/restore-game.sh \
+  "$ISOLATED_RESTORE_ADMIN_DATABASE_URL" \
+  zugfolge_restore_infra_2026_4 \
+  /evidence/game.dump \
+  /evidence/game.manifest.json \
+  /evidence/game.restore.json
+
+DATABASE_ROLLBACK_WRITERS_QUIESCED=true \
+DATABASE_URL="$QUIESCED_SOURCE_DATABASE_URL" \
+DATABASE_ROLLBACK_RESTORED_DATABASE_URL="$RESTORE_TEST_DATABASE_URL" \
+KEYCLOAK_SCHEMA_CATALOG_PATH=ops/alpha/keycloak/keycloak-pg16-object-catalog.26.7.0.json \
+DATABASE_ROLLBACK_GAME_BACKUP_DUMP_PATH=/evidence/game.dump \
+DATABASE_ROLLBACK_GAME_BACKUP_MANIFEST_PATH=/evidence/game.manifest.json \
+DATABASE_ROLLBACK_GAME_BACKUP_OPERATION_PATH=/evidence/game.operation.json \
+DATABASE_ROLLBACK_GAME_RESTORE_RECEIPT_PATH=/evidence/game.restore.json \
+DATABASE_ROLLBACK_BACKUP_MANIFEST_PATH=/evidence/database-backup-manifest.json \
+DATABASE_ROLLBACK_RESTORE_PROOF_PATH=/evidence/database-restore-proof.json \
+node tools/alpha-ops/create-database-backup-restore-evidence.mjs
+```
+
+Erst danach entsteht ebenfalls ausschließlich create-new der eingebettete
+v3-Beleg:
+
+```bash
+DATABASE_ROLLBACK_WRITERS_QUIESCED=true \
+DATABASE_URL="$QUIESCED_SOURCE_DATABASE_URL" \
+DATABASE_ROLLBACK_RESTORED_DATABASE_URL="$RESTORE_TEST_DATABASE_URL" \
+KEYCLOAK_SCHEMA_CATALOG_PATH=ops/alpha/keycloak/keycloak-pg16-object-catalog.26.7.0.json \
+DATABASE_ROLLBACK_RELEASE_ID=infra-deutschland-2026.4 \
+DATABASE_ROLLBACK_PREVIOUS_RELEASE_ID=infra-deutschland-2026.2 \
+DATABASE_ROLLBACK_BACKUP_MANIFEST_PATH=/evidence/database-backup-manifest.json \
+DATABASE_ROLLBACK_RESTORE_PROOF_PATH=/evidence/database-restore-proof.json \
+DATABASE_ROLLBACK_PROOF_OUTPUT_PATH=/evidence/database-rollback-proof.json \
+node tools/alpha-ops/create-database-rollback-proof.mjs
+```
+
+Der spätere gesperrte `game-bootstrap` liest dieselben Bytes erneut und vergleicht
+`source` nach exklusiver Sperre der lexikographisch geordneten Candidate- und
+Predecessor-Welt mit der tatsächlichen Live-Datenbank, bevor er eine Weltzeile
+ändert. Alle 50 weltgebundenen Tabellen besitzen dafür dauerhafte
+INSERT-/UPDATE-/DELETE-Trigger auf demselben Shared-Xact-World-Lock. Der
+`READ COMMITTED`-Snapshot nach dem Lock-Warten enthält einen bereits laufenden
+Writer-Commit; ein später fortgesetzter Writer liest den Lifecycle erneut mit
+`FOR KEY SHARE` und scheitert an `archived` beziehungsweise am persistenten
+Fence. Beim V1-V2-Wechsel versiegelt der Bootstrap
+zudem in `alpha_world_profiles.final_state_hash` alle im eingecheckten
+Schema-33-Vertrag weltgebundenen Zeilen (einschließlich
+`regional_simulation_command_receipts`, dessen unveränderlicher
+`initialization_hash` jedes Kommando an die konkrete V2-Initialisierung bindet,
+und indirekter
+`public_world_id`-/`target_world_id`-Bezüge) und persistiert einen
+unveränderlichen, DB-gebundenen `world_cutover_receipts`-Beleg.
+Im selben Commit setzt er auf jedem V1-Regionalhead
+`legacy_writer_fenced=true`. Der DB-Trigger verweigert danach auch einer schon
+vor dem Cutover geöffneten oder später neu verbundenen alten V1-Runtime jeden
+weiteren Update- oder Löschversuch; das Compose-`down` ist damit nicht die einzige
+Grenze. Bei einem idempotenten Retry wird der Receipt-Hash aus sämtlichen
+persistierten Receipt-Spalten neu aufgebaut; ein vorbefüllter oder nachträglich
+inkonsistenter Hash wird nicht akzeptiert.
 
 ```powershell
 node tools/tiles/map-release-build-evidence-cli.mjs attest-runtime-rollback `
   var/maps `
-  releases/infra-deutschland-2026.1 `
-  infra-deutschland-2026.1 `
+  releases/infra-deutschland-2026.2 `
+  infra-deutschland-2026.2 `
   0123456789abcdef0123456789abcdef01234567 `
   sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef `
+  sha256:abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789 `
   var/legacy-runtime/alpha-world-deployment.json `
-  var/signing/map-rollback-private.pem `
+  var/legacy-runtime/database-rollback-proof.json `
+  $ROLLBACK_PRIVATE_KEY `
   map-rollback-2026 `
-  var/maps/attestations/infra-deutschland-2026.1.rollback.json
+  var/maps/attestations/infra-deutschland-2026.2.rollback.json
 ```
 
 Der Preflight liest den Pointer selbst, verifiziert das intern signierte
-`.2`-Deliverymanifest und die externe `.1`-Rollback-Attestation gegen den
-unabhängigen, rotierbaren Keyring und prüft anschließend beide installierten
-Pakete und den Cache-Restore. Das sechste Argument legt den erwarteten
-Pointerzustand explizit fest; die drei folgenden Werte belegen beim
+`.4`-Deliverymanifest und die externe `.2`-Rollback-Attestation gegen den
+unabhängigen, rotierbaren Keyring und dessen verpflichtenden, disjunkten
+Alpha-Welt- beziehungsweise Map-/Infra-Scopevertrag. Delivery und
+Rollback-Attestation dürfen nur Map-/Infra-Schlüssel verwenden; das gebundene
+Weltdeployment nur Alpha-Schlüssel. Anschließend prüft der Preflight beide
+installierten Pakete und den Cache-Restore. Das siebte Argument legt den erwarteten
+Pointerzustand explizit fest; die fünf folgenden Werte belegen beim
 Rollback-Check die tatsächlich zu startende Runtime-Identität:
+
+`var/trust/release-key-scopes.json` enthält ausschließlich die Rollenlisten und
+muss jede ID des daneben übergebenen Public-Keyrings genau einmal enthalten:
+
+```json
+{
+  "alphaWorldDeployments": [
+    "zugfolge-alpha-2026",
+    "zugfolge-alpha-2026.3"
+  ],
+  "mapInfraDeliveries": [
+    "zugfolge-map-deutschland-2026.4",
+    "zugfolge-map-deutschland-2026.5"
+  ]
+}
+```
+
+Fehlt die Datei, eine Rolle oder eine Key-ID, überlappen die Listen oder weicht
+ein zugeordneter Public Key vom Evidence-gebundenen Keyring ab, endet der
+Operational-v2-Preflight vor der Autorisierung fail-closed.
 
 ```powershell
 node tools/tiles/map-release-build-evidence-cli.mjs preflight `
-  var/build-evidence/infra-deutschland-2026.2.json `
+  var/build-evidence/infra-deutschland-2026.4.json `
   var/maps `
-  var/build-evidence/infra-deutschland-2026.2.restore-proof.json `
-  var/restore-check/infra-deutschland-2026.2 `
-  var/trust/map-delivery-public-keys.json `
-  infra-deutschland-2026.1 `
+  var/build-evidence/infra-deutschland-2026.4.restore-proof.json `
+  var/restore-check/infra-deutschland-2026.4 `
+  var/trust/release-public-keys.json `
+  var/trust/release-key-scopes.json `
+  infra-deutschland-2026.2 `
   0123456789abcdef0123456789abcdef01234567 `
   sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef `
-  var/legacy-runtime/alpha-world-deployment.json
+  sha256:abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789 `
+  var/legacy-runtime/alpha-world-deployment.json `
+  var/legacy-runtime/database-rollback-proof.json
 ```
 
 Nur `activationEligible: true` erlaubt die Umschaltung. Anschließend werden
@@ -704,28 +923,35 @@ Range-Requests, Release-ID, die Abwesenheit von `12472736971` und mindestens
 ein positives EBO-Signal erneut live geprüft werden.
 
 Unmittelbar nach der Umschaltung wird derselbe Preflight mit
-`infra-deutschland-2026.2` als letztem Argument wiederholt. Er meldet nur dann
+`infra-deutschland-2026.4` als siebtem Argument wiederholt. Er meldet nur dann
 `activationState: "active-candidate"`, wenn alle vier Pointerwerte bereits
-exakt auf `.2` stehen. Ein intaktes v1-`.1`-Paket wird weiterhin geprüft, aber
+exakt auf `.4` stehen. Ein intaktes v1-`.2`-Paket wird weiterhin geprüft, aber
 ehrlich nur als nicht ausführbarer forensischer Bestand gemeldet; es blockiert
-die `.2`-Evaluation nicht.
+die `.4`-Evaluation nicht.
 
 Der Rückweg verwendet denselben atomaren Konfigurationswechsel auf die vier
-unveränderten `.1`-Werte. `rollbackEligible: true` bestätigt vorab nicht nur
-Kartenbytes, sondern das vollständig signierte und aktuell gestartete
-Source-/Image-/Welt-/Map-Tuple. Eine v1-Attestation oder fehlende
-`MAP_RELEASE_PREFLIGHT_RUNTIME_*`-Identität sperrt `pre-activation`
-geschlossen.
+unveränderten `.2`-Werte. `rollbackEligible: true` bestätigt vorab nicht nur
+Kartenbytes, sondern das vollständig signierte
+Source-/Legacy-Image-/Welt-/Map-/Datenbank-Tuple. Eine v1-Attestation, ein fehlender
+`MAP_RELEASE_PREFLIGHT_RUNTIME_*`-Wert oder ein fehlender kanonischer
+Datenbank-Rollbackbeleg sperrt `pre-activation` geschlossen.
 Der normale Startmodus bleibt auch nach Reboot strikt `active-candidate` und
-darf `.1` nicht still akzeptieren. Der explizite Betriebsrückweg erfolgt
+darf `.2` nicht still akzeptieren. Der explizite Betriebsrückweg erfolgt
 ausschließlich über die konfliktierende systemd-Unit
 `ops/alpha/zugfolge-alpha-rollback.service`: Sie ruft den Compose-Wrapper mit
-`--attested-rollback` auf, bindet One-shot, Game API und Livemap an
-`pre-activation` und erzeugt alle Laufzeitcontainer mit `--force-recreate` neu.
-Damit bleibt der manuell gewählte Rückweg auch nach Host-Reboot eindeutig; ein
-geerbter Envwert oder ein Container-`restart` kann ihn nicht einschalten.
+`--attested-rollback` auf. Der Wrapper beendet zuerst den Stack und qualifiziert
+den v3-Beleg mit `map-release-preflight` im **aktuellen**, separat
+digestgebundenen Prüfer-Image. Danach lädt er den bytegleich installierten
+Legacy-Compose-Override und startet mit `--no-deps --no-build --force-recreate`
+nur PostgreSQL, Keycloak im alten Schema `public`, die alte Game API sowie altes
+Game Web und alte Livemap. Der Override bindet ausschließlich diese drei
+Game-Image-Dienste an die attestierte Legacy-Referenz. V2-Weltpreflight,
+Migration, Bootstrap, Keycloak-Schema-Gates und Reconciliation werden gegen den
+zuvor separat restaurierten V1-Datenbankstand nicht ausgeführt. Damit bleibt
+der manuell gewählte Rückweg auch nach Host-Reboot eindeutig; ein geerbter
+Envwert, Retagging oder ein Container-`restart` kann ihn nicht einschalten.
 
-Solange für das reale `.1` nur v1 vorliegt, ist kein laufender `.1`-Rückweg
+Solange für das reale `.2` nur v1 vorliegt, ist kein laufender `.2`-Rückweg
 freigegeben. Altes DB-Volume, alte Images und Artefakte werden stattdessen
 forensisch und vom neuen Evaluationsvolume getrennt aufbewahrt. Der Rückweg gilt
 erst als getestet, wenn die gleichen Readiness- und
@@ -735,6 +961,82 @@ passen; andernfalls sperrt der Serverstart geschlossen. Evidence-, Restore-
 und Umschaltprotokolle gehören in die
 verschlüsselte Betriebssicherung; eine erfolgreiche Laufzeitprüfung ersetzt
 keinen reproduzierbaren Buildcache-Restore.
+
+### Freigabegrenzen für `infra-deutschland-2026.5` auf STRATO
+
+Die privilegierte lokale Realabnahme ist als eigener manueller CI-Vertrag
+`run_germany_2026_5_real_acceptance=true` angelegt. Sie besteht aus zwei
+getrennten Self-hosted-Grenzen: `germany-2026-5-builder` reproduziert unter
+Windows die Semantik-PMTiles ausschließlich mit dem vollständigen
+GDAL-Runtime-Manifest sowie Karten-Capture und Static Sources jeweils mit
+`map-asset-notices.annual-2026.5.json`; `germany-2026-5-runtime` validiert unter
+Linux den identischen Kandidaten in getrennten Builder-, Validator-,
+512-MiB-RSS- und Worker-cgroups gegen PostgreSQL außerhalb der gemessenen
+App-cgroup. Die Korpuswurzeln kommen ausschließlich aus den Repository-Variablen
+`ZUGFOLGE_REAL_GERMANY_2026_5_WINDOWS_ROOT` und
+`ZUGFOLGE_REAL_GERMANY_2026_5_ROOT`.
+
+Beide Jobs verlangen vor jeder privilegierten Arbeit den getrackten Vertrag
+`tools/audits/germany-2026.5-real-acceptance.pins.json`. Er bindet den vollen
+Source-Commit, alle aktuellen V2-Sidecars, create-new unsigned/signed
+Alpha-Deployments, den signierten Paketmanifesthash und die gebauten
+Runtimebytes. Der Dispatch-Ref ist dabei der getrennte
+Pin-Registrierungscommit: Er muss den gepinnten Artefakt-Source-Commit als
+Vorfahr enthalten, checkt exakt diesen Commit in einen eigenen sauberen Worktree
+unter `RUNNER_TEMP` aus und führt sämtliche Builder, Binaries, Validatoren und
+Runtime-Audits ausschließlich dort aus. Jeder erzeugte Beleg nennt deshalb
+sowohl den Registrierungs- als auch den Artefakt-Source-Commit, ohne einen
+unmöglichen Git-Selbstbezug zu behaupten. Der Pinvertrag wird erst mit den
+tatsächlich erzeugten finalen Bytes eingecheckt; es gibt keine `PENDING`-,
+Null- oder Vorjahreswerte. Solange er fehlt, der Source-Commit nicht vorhanden
+oder kein Vorfahr ist oder irgendein Byte/Hash abweicht, bricht der manuelle
+Dispatch vor beziehungsweise an der betroffenen Grenze geschlossen ab. Ein
+gewöhnlicher Pull Request oder ein übersprungener manueller Job ist deshalb
+ausdrücklich kein Realabnahmebeleg.
+
+Der verbleibende reale Dispatch-Gate ist bewusst zweistufig: Zuerst erzeugt
+und signiert der Jahreslauf den vollständigen Kandidaten auf dem vorgesehenen
+Artefakt-Source-Commit. Erst aus diesen vorhandenen Bytes, den nativen
+Validatorbelegen und den gebauten Runtimebytes wird der strikt validierte
+Pinvertrag in einem späteren Registrierungscommit befüllt. Danach darf
+ausschließlich der Repository-Standardbranch auf genau diesem
+Registrierungscommit mit dem Boolean gestartet werden; ein Dispatch von einem
+Feature- oder Pull-Request-Branch bleibt vor jedem Self-hosted Runner
+geschlossen. Der Workflow baut die Kartenbytes erneut und akzeptiert weder den
+bloßen Erstbuild noch manuell übertragene Vorjahreswerte als
+Reproduzierbarkeitsbeleg.
+
+Für `.5` bleiben vier Nachweise getrennt. `pack`/`verify` und die Prüfung des
+frisch installierten Manifests beweisen die Byteintegrität. Die Ed25519-Prüfung
+von Delivery-v2 gegen `zugfolge-map-deutschland-2026.5` im additiven
+Map-/Infra-Scope beweist das Signervertrauen; dabei müssen
+`zugfolge-map-deutschland-2026.4` und alle übrigen bestehenden Public-Key-Bytes
+und Scopes unverändert erhalten sein. Weder Integrität noch Vertrauen beweisen
+Odoo-Import, Game-Staging oder Produktionsaktivierung.
+
+Vor einer STRATO-Mutation wird lesend der tatsächlich aktive Pointer und das
+tatsächlich installierte, ausführbare Vorgänger-Tuple festgestellt. `.4` ist
+als Trustanker und Buildvorgänger beibehalten, aber allein deshalb weder als
+installiert noch als Rollbackziel anzunehmen. Kandidat und Vorgänger liegen in
+getrennten unveränderlichen Verzeichnissen; `.5` muss vor der Installation
+fehlen. Der Aktivierungs-Preflight bindet den vollständigen 40-stelligen
+Source-Commit, die gepinnten Game-/Odoo-Image-Digests, Release-ID
+`infra-deutschland-2026.5`, Paketmanifest-SHA, den erwarteten alten Pointer und
+das signierte Runtime-Rollback-Tuple samt Datenbank- und
+Keycloak-Restore-Belegen. Jede Abweichung blockiert Installation oder
+Umschaltung.
+
+Unmittelbar vor jeder zustandsändernden Installation oder Aktivierung ist eine
+neue ausdrückliche Freigabe für genau `h3076743.stratoserver.net`, Commit,
+Release-ID, Paketmanifest und Aktion einzuholen; zuvor wird der bestätigte
+Hostschlüssel über den vorgesehenen sicheren Inventarweg geprüft. Ohne diese
+Freigabe bleibt der Status `nicht installiert/aktiviert`. Eine Signatur- oder
+Releasefreigabe, ein Draft-PR oder eine frühere Serverfreigabe ersetzt diese
+unmittelbare Produktionsfreigabe nicht. Nach der Umschaltung werden derselbe
+Preflight im Zustand `active-candidate`, Readiness, Release-ID, Range-Requests
+und die vollständigen V2-Laufzeitbindungen erneut geprüft. Rollback ist nur auf
+das vorher verifizierte vollständige Runtime-Tuple zulässig, nie allein auf
+einen beibehaltenen Kartenstand oder Trustanker.
 
 ## Warum nicht in der Git-Historie?
 

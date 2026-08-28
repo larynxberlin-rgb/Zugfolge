@@ -175,6 +175,18 @@ describe("TutorialSessionService", () => {
     const telemetry = await db.select().from(tutorialTelemetryEvents);
     expect(telemetry.map((entry) => entry.eventType)).toEqual(expect.arrayContaining(["tutorial_session_started", "tutorial_chapter_started", "tutorial_chapter_completed", "tutorial_completed", "tutorial_world_closed"]));
     expect(telemetry.find((entry) => entry.eventType === "tutorial_completed")).toMatchObject({ chapter: 5, elapsedMilliseconds: 300_000 });
+    await expect(db.insert(tutorialTelemetryEvents).values({
+      worldId: view.tutorialWorldId,
+      sessionId: sessionRow.id,
+      idempotencyKey: "tutorial_world_closed:after-archive",
+      eventType: "tutorial_world_closed",
+      templateVersion: sessionRow.templateVersion,
+      chapter: 5,
+      elapsedMilliseconds: 301_000,
+      occurredAt: now,
+    })).rejects.toMatchObject({
+      cause: { message: expect.stringContaining("world writer is fenced") },
+    });
   });
 
   it("archiviert beim Neustart und uebernimmt keine alten Nachweise", async () => {

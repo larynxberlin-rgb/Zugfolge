@@ -76,6 +76,8 @@ der Überblick; die Spalte `id` ist die Kennung, die auch der Importmarker nennt
 | `osm-pbf-deutschland` | OSM-PBF-Extract Deutschland | `freigegeben` | M14.2 |
 | `osm-planet-basemap` | OSM Planet PBF für die selbst gehostete Welt-Basiskarte | `freigegeben` | M14.2 |
 | `protomaps-daily-basemap` | gepinnter Protomaps-OSM-Tagesbuild für die selbst gehostete Welt-Basiskarte | `freigegeben` | M14.2 |
+| `noto-glyphs` | selbst gehostete Noto-Sans-Glyphen aus Protomaps basemaps-assets (OFL-1.1) | `freigegeben` | M14.2 |
+| `protomaps-sprites` | selbst gehostete Protomaps-v4-Sprites aus Tangrams-Icons (MIT) | `freigegeben` | M14.2 |
 | `apn-validierung` | APN-Skizzen, nur interne Topologievalidierung | `entwicklung` | M9.10/M14.2 |
 | `db-infrago-infrastrukturdaten-open-data` | offizieller DB-InfraGO-Infrastrukturdatenbestand | `freigegeben` | M9.10/M14.2 |
 | `openrailwaymap-doku` | OpenRailwayMap — Tagging- und Signaldokumentation | `entwicklung` | M1.6 |
@@ -84,7 +86,7 @@ der Überblick; die Spalte `id` ist die Kennung, die auch der Importmarker nennt
 | `dem-hoehenmodell` | Digitales Höhenmodell der Pilotregion | `freigegeben` | M1.5 |
 | `trassenfinder` | Trassenfinder — Trassenpreis- und Fahrzeitstruktur | `entwicklung` | M1.13 |
 | `gtfs-de-rv` | GTFS.DE/DELFI — Schienenregionalverkehr Deutschland | `freigegeben` | M1.13 |
-| `trassenfinder-infrastruktur-api` | Trassenfinder-Infrastruktur-API — Betriebsstellen-/Streckensegment-Stammdaten | `freigegeben` | M9 |
+| `trassenfinder-infrastruktur-api` | Trassenfinder-Infrastruktur-API — historische interne Lineageprüfung | `entwicklung` | M9 |
 | `entgeltregeln-tps-sps-aps-inb` | Entgeltregeln (TPS, SPS, APS, INB, Anlagen-/Stationspreise) | `gesperrt` | M6.1 |
 | `baustellen-stoerungsfeeds` | reale Baustellen- und Störungsfeeds | `gesperrt` | M8.12 |
 | `strecken-info-public` | öffentliche Infrastruktur-Einschränkungen | `freigegeben` | M8.12 |
@@ -116,14 +118,13 @@ sind `openstation` (CC0), `stada` (CC BY 4.0) und `dem-hoehenmodell` (Copernicus
 DEM Data Access and Use Terms) seit dem 2026-08-08 `freigegeben` — die Rechte
 sind geklärt, konkreter Bezugsweg, Version, Prüfsumme, Attributionstext und
 Feldmapping werden erst beim jeweiligen Import (M1.8 beziehungsweise M1.5) im
-`InfraRelease` festgehalten, wie schon bei `osm-pbf-lhe`. Ebenfalls seit dem
-2026-08-08 `freigegeben`: `trassenfinder-infrastruktur-api`, die
-`/infrastrukturen`-Stammdatenressource der öffentlichen, ohne
-Nutzungsbedingungen zugänglichen Trassenfinder-API — als jährliche,
-ergänzende Importquelle für Betriebsstellen und Streckensegmente (E22,
-ADR-0022). Streng abgegrenzt vom bestehenden Eintrag `trassenfinder`: Die
-berechneten Fahrzeit- und Trassenpreiswerte der Routensuche bleiben davon
-unberührt auf `entwicklung`.
+`InfraRelease` festgehalten, wie schon bei `osm-pbf-lhe`. Der frühere
+Freigabeclaim für `trassenfinder-infrastruktur-api` ist mit dem
+2026.3-Jahresvertrag zurückgenommen: Öffentliche Erreichbarkeit ohne
+veröffentlichte Nutzungsbedingungen trägt weder Import noch Auslieferung.
+Die Quelle bleibt nur `entwicklung` für historische Lineage- und
+Altbestandsprüfung; freigegebene Betriebspunkte stammen ausschließlich aus
+dem offiziellen DB-InfraGO-Open-Data-Datensatz.
 
 Seit dem 2026-08-12 ist außerdem der offizielle Open-Data-Datensatz
 `db-infrago-infrastrukturdaten-open-data` freigegeben. GovData weist ihn als
@@ -140,6 +141,15 @@ Welt-Basiskarte. Stil, Schriften, Sprites und PMTiles werden selbst gehostet,
 und der Browser weist Kartenadressen außerhalb des eigenen Ursprungs ab. So
 werden die Community-Kachelserver weder als Produktionsbackend noch als
 Quelle für einen Massendownload missbraucht.
+
+Die selbst gehosteten Noto-Glyphen und Protomaps-v4-Sprites stammen aus dem
+auf Commit `028c18f713baecad011301ff7a69acc39bcc2ae7` gepinnten
+`protomaps/basemaps-assets`-Stand; die Sprite-Vorlage aus `tangrams/icons` ist
+zusaetzlich auf Commit `92510779634f4a006c61ea70e50cb8c52c765a81`
+gebunden. Das Karten-Quellenmanifest liefert OFL- beziehungsweise MIT-Text,
+Dateizahl, Bytezahl und kanonischen Baum-Hash mit aus. Damit bleiben beide
+Asset-Lizenzen getrennt von der ODbL-Basemap und exakt an die ausgelieferten
+Dateien gebunden.
 
 **APN-Entwicklungsfreigabe, Stand 2026-08-12.** Der Projektverantwortliche hat
 die freie Verwendung der APN-Skizzen für diesen Arbeitsprozess ausdrücklich
@@ -248,14 +258,12 @@ oder Referenzwahrheit dargestellt. Diese konservative Auslegung ist keine
 Rechtsberatung; eine systematische Nutzung bleibt bis zur schriftlichen
 Klärung gesperrt.
 
-Dieser Prüfpunkt betrifft ausschließlich die **berechneten** Werte der
-Routensuche (Fahrzeit, Trassenpreis). Die **Stammdatenressource**
-`/infrastrukturen` derselben API ist ein eigener, davon unabhängig geprüfter
-Registereintrag (`trassenfinder-infrastruktur-api`, Status `freigegeben`,
-Abschnitt 3) — öffentlich ohne Nutzungsbedingungen zugänglich, jährlich
-einmalig abgegriffen und offline gehalten (E22). Beides bleibt strikt
-getrennt: Kein automatisierter Abruf der Routensuche, aber ein jährlicher,
-dokumentierter Import der Infrastruktur-Stammdaten.
+Dieser Prüfpunkt betrifft die **berechneten** Werte der Routensuche
+(Fahrzeit, Trassenpreis). Auch die **Stammdatenressource** `/infrastrukturen`
+derselben API ist mangels veröffentlichter Nutzungsbedingungen nur
+Entwicklungs- und Lineagereferenz. Weder Routensuche noch Stammdaten werden im
+freien 2026.3-Jahresrelease als Import- oder Infrastruktur-Faktenquelle
+verwendet.
 
 ---
 

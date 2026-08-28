@@ -36,6 +36,13 @@ import { validatePublicWorldSnapshot, type PublicWorldSnapshotV1 } from "./publi
 /** Gemeinsamer Drizzle-Typ fuer Postgres und PGlite-Integrationstests. */
 export type CommerceDatabase = PgDatabase<PgQueryResultHKT, Record<string, unknown>, any>;
 
+/**
+ * Nicht weltgebundener Projektions-Scope fuer administrative Resultate, deren
+ * Zielwelt im selben Commit irreversibel versiegelt wird. Die echte Zielwelt
+ * bleibt zwingend im typisierten Payload gebunden.
+ */
+export const GLOBAL_ADMIN_PROJECTION_SCOPE_ID = "00000000-0000-0000-0000-000000000000";
+
 function commandWorldId(command: OdooWebhookEnvelope["command"]): string | undefined {
   return command.kind === "entitlement.change" ? undefined : command.worldId;
 }
@@ -299,6 +306,18 @@ export class GameAdminCapabilityUnavailableError extends Error {
   }
 }
 
+/**
+ * Explizite fachliche Ablehnung eines atomaren Admin-Effekts. Technische
+ * Fehler bleiben dagegen retrybar und duerfen nie als autoritative
+ * Fachentscheidung in Odoo verewigt werden.
+ */
+export class GameAdminCommandTerminalError extends Error {
+  constructor(readonly code: string, message: string, options?: ErrorOptions) {
+    super(message, options);
+    this.name = "GameAdminCommandTerminalError";
+  }
+}
+
 /** Der Worker darf nach Ablauf oder Uebernahme seines Claims nichts mehr quittieren. */
 export class OdooCommandClaimLostError extends Error {
   constructor(readonly commandId: string) {
@@ -343,10 +362,31 @@ export interface GameAdminCommandContext {
   readonly payload: AdminCommandPayload;
 }
 
-export interface GameAdminCommandResult {
+export interface GameAdminCommandCompletion {
   readonly state?: "accepted" | "completed";
   readonly gameAuditEventId?: string;
   readonly result?: Readonly<Record<string, unknown>>;
+}
+
+/**
+ * Enger Sonderpfad fuer eine Fachwirkung, deren letzter Schritt die Welt
+ * dauerhaft versiegelt. Der Commerce-Store schreibt Audit, Request, Queue und
+ * den globalen Result-Outbox-Beleg ueber `finalizeBeforeSeal`, bevor der Effekt
+ * den allerletzten weltgebundenen Lifecycle-Write ausfuehrt.
+ */
+export interface AtomicWorldSealAdminEffect {
+  readonly kind: "world-close/v1";
+  readonly worldId: string;
+  readonly execute: (
+    tx: CommerceDatabase,
+    finalizeBeforeSeal: (completion: GameAdminCommandCompletion) => Promise<void>,
+  ) => Promise<void>;
+  /** Prozesslokaler Cleanup, der erst nach erfolgreichem DB-Commit laufen darf. */
+  readonly afterCommit?: () => Promise<void> | void;
+}
+
+export interface GameAdminCommandResult extends GameAdminCommandCompletion {
+  readonly atomicEffect?: AtomicWorldSealAdminEffect;
 }
 
 export type GameAdminCommandHandler = (context: GameAdminCommandContext) => Promise<GameAdminCommandResult> | GameAdminCommandResult;
@@ -521,6 +561,8 @@ export async function processNextOdooCommand(
   let adminRequestPersisted = false;
   let adminPayload: AdminCommandPayload | undefined;
   let handlerCompleted = false;
+  let atomicEffectAttempted = false;
+  let atomicEffectCommitted = false;
   try {
     if (command.commandType === "entitlement.change") {
       const payload = asEntitlementPayload(command.payload);
@@ -666,10 +708,19 @@ export async function processNextOdooCommand(
     if (handler === undefined) throw new GameAdminCapabilityUnavailableError(payload.actionType);
     const requestId = adminRequestId!;
     if (adminRequestPersisted) {
-      await db.update(gameAdminRequests).set({ state: "dispatched", changedAt: now }).where(and(
-        eq(gameAdminRequests.worldId, worldId),
-        eq(gameAdminRequests.id, requestId),
-      ));
+      await db.transaction(async (tx) => {
+        const [owned] = await tx.select({ id: odooCommandQueue.id }).from(odooCommandQueue)
+          .where(claimScope(command, claimToken)).limit(1).for("update");
+        if (owned === undefined) throw new OdooCommandClaimLostError(command.id);
+        const dispatched = await tx.update(gameAdminRequests).set({ state: "dispatched", changedAt: now }).where(and(
+          eq(gameAdminRequests.worldId, worldId),
+          eq(gameAdminRequests.id, requestId),
+          or(eq(gameAdminRequests.state, "approved"), eq(gameAdminRequests.state, "dispatched")),
+        )).returning({ id: gameAdminRequests.id });
+        if (dispatched.length !== 1) {
+          throw new OdooCommandClaimLostError(command.id);
+        }
+      });
     }
     const gameResult = await runWithClaimHeartbeat(
       db,
@@ -690,6 +741,100 @@ export async function processNextOdooCommand(
         payload,
       }),
     );
+    if (gameResult.atomicEffect !== undefined) {
+      const atomicEffect = gameResult.atomicEffect;
+      if (payload.actionType !== "world_close"
+        || atomicEffect.kind !== "world-close/v1"
+        || atomicEffect.worldId !== worldId
+        || !adminRequestPersisted) {
+        throw new Error("Atomarer Welt-Seal ist nicht exakt an einen persistierten world_close-Antrag gebunden.");
+      }
+      atomicEffectAttempted = true;
+      await db.transaction(async (tx) => {
+        const [owned] = await tx.select({ id: odooCommandQueue.id }).from(odooCommandQueue)
+          .where(claimScope(command, claimToken)).limit(1).for("update");
+        if (owned === undefined) throw new OdooCommandClaimLostError(command.id);
+        let finalized = false;
+        await atomicEffect.execute(tx, async (completion) => {
+          if (finalized) throw new Error("Atomarer Welt-Seal versuchte seine Admin-Quittierung mehrfach.");
+          if (completion.state !== "completed") {
+            throw new Error("Atomarer Welt-Seal braucht genau eine endgueltige Completion.");
+          }
+          const effectAuditReference = completion.gameAuditEventId ?? null;
+          const [head] = await tx.select({ sequence: domainEvents.sequence }).from(domainEvents)
+            .where(eq(domainEvents.worldId, worldId)).orderBy(desc(domainEvents.sequence)).limit(1);
+          const [auditEvent] = await tx.insert(domainEvents).values({
+            worldId,
+            sequence: (head?.sequence ?? 0) + 1,
+            eventType: "admin.action-audited",
+            payload: {
+              adminRequestId: requestId,
+              actionType: payload.actionType,
+              riskClass: payload.riskClass,
+              correlationId: command.correlationId,
+              outcome: completion.state,
+              effectAuditReference,
+            },
+            occurredAt: now,
+          }).returning({ id: domainEvents.id });
+          if (auditEvent === undefined) throw new Error("Autoritativer Game-Auditbeleg fuer den Welt-Seal fehlt.");
+          const updatedRequests = await tx.update(gameAdminRequests).set({
+            state: completion.state,
+            gameAuditEventId: auditEvent.id,
+            changedAt: now,
+          }).where(and(
+            eq(gameAdminRequests.id, requestId),
+            eq(gameAdminRequests.worldId, worldId),
+            eq(gameAdminRequests.state, "dispatched"),
+          )).returning({ id: gameAdminRequests.id });
+          if (updatedRequests.length !== 1) {
+            throw new Error("world_close-Antrag ist nicht mehr im dispatchten Vier-Augen-Zustand.");
+          }
+          const completedCommands = await tx.update(odooCommandQueue).set({
+            status: "completed",
+            processedAt: now,
+            claimToken: null,
+            claimExpiresAt: null,
+            failureCode: null,
+          }).where(claimScope(command, claimToken)).returning({ id: odooCommandQueue.id });
+          if (completedCommands.length !== 1) throw new OdooCommandClaimLostError(command.id);
+          await tx.insert(odooProjectionOutbox).values({
+            worldId: GLOBAL_ADMIN_PROJECTION_SCOPE_ID,
+            messageType: "admin.command.result",
+            schemaVersion: ODOO_CONTRACT_VERSION,
+            correlationId: command.correlationId,
+            payload: {
+              ...completion.result,
+              eventId: command.eventId,
+              outcome: "accepted",
+              state: completion.state,
+              authoritative: true,
+              projectionScope: "global-admin",
+              actionType: "world_close",
+              targetWorldId: worldId,
+              adminRequestId: requestId,
+              gameAuditEventId: auditEvent.id,
+              effectAuditReference,
+            },
+            occurredAt: now,
+            enqueuedAt: now,
+          });
+          finalized = true;
+        });
+        if (!finalized) {
+          throw new Error("Atomarer Welt-Seal hat seine Admin-Quittierung nicht vor dem Lifecycle-Seal geschrieben.");
+        }
+        const [sealedWorld] = await tx.select({ lifecycleStatus: worlds.lifecycleStatus })
+          .from(worlds).where(eq(worlds.id, worldId)).limit(1);
+        if (sealedWorld?.lifecycleStatus !== "archived") {
+          throw new Error("Atomarer Welt-Seal hat die Zielwelt nicht dauerhaft archiviert.");
+        }
+      });
+      atomicEffectCommitted = true;
+      handlerCompleted = true;
+      await atomicEffect.afterCommit?.();
+      return { id: command.id, outcome: "accepted" };
+    }
     handlerCompleted = true;
     const state = gameResult.state ?? "accepted";
     const effectAuditReference = gameResult.gameAuditEventId ?? null;
@@ -758,6 +903,37 @@ export async function processNextOdooCommand(
     return { id: command.id, outcome: "accepted" };
   } catch (error) {
     if (error instanceof OdooCommandClaimLostError || error instanceof OdooCommandWorkerInterruptedError) throw error;
+    // Der Welt-Seal ist bereits dauerhaft. Ein rein prozesslokaler Cleanup-
+    // Fehler darf den abgeschlossenen DB-Beleg niemals wieder auf pending
+    // setzen oder als fachliche Ablehnung umdeuten.
+    if (atomicEffectCommitted) throw error;
+    if (atomicEffectAttempted && !(error instanceof GameAdminCommandTerminalError)) {
+      await db.transaction(async (tx) => {
+        const [owned] = await tx.select({ id: odooCommandQueue.id }).from(odooCommandQueue)
+          .where(claimScope(command, claimToken)).limit(1).for("update");
+        if (owned === undefined) throw new OdooCommandClaimLostError(command.id);
+        if (command.worldId === null || adminRequestId === undefined) {
+          throw new Error("Retrybarer atomarer Admin-Effekt besitzt keine stabile Welt- und Antragbindung.");
+        }
+        const resetRequests = await tx.update(gameAdminRequests).set({ state: "approved", changedAt: now }).where(and(
+          eq(gameAdminRequests.id, adminRequestId),
+          eq(gameAdminRequests.worldId, command.worldId),
+          eq(gameAdminRequests.state, "dispatched"),
+        )).returning({ id: gameAdminRequests.id });
+        if (resetRequests.length !== 1) {
+          throw new OdooCommandClaimLostError(command.id);
+        }
+        const released = await tx.update(odooCommandQueue).set({
+          status: "pending",
+          processedAt: null,
+          claimToken: null,
+          claimExpiresAt: null,
+          failureCode: null,
+        }).where(claimScope(command, claimToken)).returning({ id: odooCommandQueue.id });
+        if (released.length !== 1) throw new OdooCommandClaimLostError(command.id);
+      });
+      throw error;
+    }
     // Eine bereits vollzogene Fachwirkung darf bei einem nachgelagerten
     // Audit-/Outboxfehler niemals als abgelehnt gemeldet werden. Der Claim
     // wird nur vom aktuellen Besitzer freigegeben; der Handler muss denselben
@@ -839,7 +1015,9 @@ export async function processNextOdooCommand(
       }
     }
 
-    const code = error instanceof Error ? error.name : "unknown_error";
+    const code = error instanceof GameAdminCommandTerminalError
+      ? error.code
+      : error instanceof Error ? error.name : "unknown_error";
     if (command.commandType === "world.participation.change" && command.worldId !== null) {
       const payload = asWorldParticipationPayload(command.payload);
       await db.transaction(async (tx) => {

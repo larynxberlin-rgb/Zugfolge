@@ -3,6 +3,7 @@
 use std::collections::BTreeMap;
 use std::error::Error;
 use std::fs;
+use std::path::PathBuf;
 
 use serde_json::{Map, Value, json};
 use zugfolge_sim_runtime::operational_runtime::{
@@ -45,37 +46,6 @@ fn nonnegative_i64(value: &Value, detail: &str) -> Result<i64, Box<dyn Error>> {
         .ok_or_else(|| detail.to_owned().into())
 }
 
-fn route_length_mm(route: &Map<String, Value>) -> Result<i64, Box<dyn Error>> {
-    let legs = array(
-        route
-            .get("legs")
-            .ok_or("Laufweg besitzt keine Abschnitte")?,
-        "Laufwegabschnitte sind ungueltig",
-    )?;
-    let last = object(
-        legs.last()
-            .ok_or("Laufweg besitzt keinen letzten Abschnitt")?,
-        "Letzter Laufwegabschnitt ist ungueltig",
-    )?;
-    let start = nonnegative_i64(
-        last.get("routeStartMm").ok_or("routeStartMm fehlt")?,
-        "routeStartMm ist ungueltig",
-    )?;
-    let entry = nonnegative_i64(
-        last.get("edgeEntryMm").ok_or("edgeEntryMm fehlt")?,
-        "edgeEntryMm ist ungueltig",
-    )?;
-    let exit = nonnegative_i64(
-        last.get("edgeExitMm").ok_or("edgeExitMm fehlt")?,
-        "edgeExitMm ist ungueltig",
-    )?;
-    let span = i64::try_from(exit.abs_diff(entry)).map_err(|_| "Laufwegspanne ist zu gross")?;
-    start
-        .checked_add(span)
-        .filter(|value| *value > 0)
-        .ok_or_else(|| "Laufweglaenge ist ungueltig".into())
-}
-
 fn has_recurring_suffix(train_id: &str) -> bool {
     train_id.rsplit_once(":day-").is_some_and(|(_, suffix)| {
         !suffix.is_empty() && suffix.chars().all(|character| character.is_ascii_digit())
@@ -100,24 +70,6 @@ fn program(deployment: &Map<String, Value>) -> Result<ProgramSchedule, Box<dyn E
     if initialization.get("nowMs").and_then(Value::as_i64) != Some(0) {
         return Err("Wiederholbares v2-Betriebsprogramm muss bei 0 ms beginnen".into());
     }
-    let infra = object(
-        initialization
-            .get("infraRelease")
-            .ok_or("operatives InfraRelease fehlt")?,
-        "operatives InfraRelease ist ungueltig",
-    )?;
-    let routes = object(
-        infra
-            .get("routeVersions")
-            .ok_or("Laufwegversionen fehlen")?,
-        "Laufwegversionen sind ungueltig",
-    )?;
-    let interlocking_routes = object(
-        infra
-            .get("interlockingRoutes")
-            .ok_or("Fahrstrassenvorlagen fehlen")?,
-        "Fahrstrassenvorlagen sind ungueltig",
-    )?;
     let trains = array(
         initialization.get("trains").ok_or("Fahrten fehlen")?,
         "Fahrten sind ungueltig",
@@ -146,49 +98,12 @@ fn program(deployment: &Map<String, Value>) -> Result<ProgramSchedule, Box<dyn E
         {
             return Err(format!("Fahrt '{base_id}' ist nicht eindeutig wiederholbar").into());
         }
-        let route_id = string(
+        let interlocking_route_id = string(
             train_object
-                .get("routeVersionId")
-                .ok_or("routeVersionId fehlt")?,
-            "routeVersionId ist ungueltig",
+                .get("dispatchInterlockingRouteId")
+                .ok_or("dispatchInterlockingRouteId fehlt")?,
+            "dispatchInterlockingRouteId ist ungueltig",
         )?;
-        let route = object(
-            routes
-                .get(&route_id)
-                .ok_or_else(|| format!("Laufweg '{route_id}' fehlt"))?,
-            "Laufwegversion ist ungueltig",
-        )?;
-        let route_template_id = string(
-            route.get("templateId").ok_or("templateId fehlt")?,
-            "templateId ist ungueltig",
-        )?;
-        let movement_kind = string(
-            train_object
-                .get("movementKind")
-                .ok_or("movementKind fehlt")?,
-            "movementKind ist ungueltig",
-        )?;
-        let route_length = route_length_mm(route)?;
-        let mut candidates = Vec::new();
-        for candidate in interlocking_routes.values() {
-            let candidate = object(candidate, "Fahrstrassenvorlage ist ungueltig")?;
-            if candidate.get("routeTemplateId").and_then(Value::as_str)
-                == Some(route_template_id.as_str())
-                && candidate.get("movementKind").and_then(Value::as_str)
-                    == Some(movement_kind.as_str())
-                && candidate.get("authorityEndRouteMm").and_then(Value::as_i64)
-                    == Some(route_length)
-            {
-                candidates.push(string(
-                    candidate.get("id").ok_or("Fahrstrassen-ID fehlt")?,
-                    "Fahrstrassen-ID ist ungueltig",
-                )?);
-            }
-        }
-        candidates.sort();
-        let interlocking_route_id = candidates.into_iter().next().ok_or_else(|| {
-            format!("Fahrt '{base_id}' besitzt keine Fahrstrasse bis zum Laufwegende")
-        })?;
         grouped
             .entry(departure_offset_ms)
             .or_default()
@@ -203,6 +118,36 @@ fn program(deployment: &Map<String, Value>) -> Result<ProgramSchedule, Box<dyn E
         trains.sort_by(|left, right| left.base_id.cmp(&right.base_id));
     }
     Ok((repeat_every_ms, grouped))
+}
+
+fn infrastructure_path(bound_state: &Value) -> Result<String, Box<dyn Error>> {
+    let release_id = string(
+        bound_state
+            .pointer("/infraRelease/infraReleaseId")
+            .ok_or("infraRelease.infraReleaseId fehlt")?,
+        "infraRelease.infraReleaseId ist ungueltig",
+    )?;
+    let configured: Value = serde_json::from_str(&std::env::var(
+        "ZUGFOLGE_OPERATIONAL_INFRASTRUCTURE_ROOTS_JSON",
+    )?)?;
+    let roots = object(
+        &configured,
+        "ZUGFOLGE_OPERATIONAL_INFRASTRUCTURE_ROOTS_JSON ist kein Objekt",
+    )?;
+    let root = PathBuf::from(string(
+        roots
+            .get(&release_id)
+            .ok_or("InfraRelease-ID besitzt keine erlaubte Infrastrukturwurzel")?,
+        "erlaubte Infrastrukturwurzel ist ungueltig",
+    )?);
+    if !root.is_absolute() {
+        return Err("Erlaubte Operational-v2-Infrastrukturwurzel muss absolut sein".into());
+    }
+    Ok(root
+        .join("operational-infrastructure-v2.json")
+        .to_str()
+        .ok_or("Operational-v2-Infrastrukturpfad ist nicht UTF-8")?
+        .to_owned())
 }
 
 fn recurring_train_id(base_id: &str, day: usize) -> String {
@@ -261,6 +206,7 @@ fn apply(
     let result: Value = serde_json::from_str(&apply_operational_simulation_command(
         &serde_json::to_string(state)?,
         &serde_json::to_string(&envelope)?,
+        &infrastructure_path(state)?,
     )?)?;
     let event_count = result
         .get("events")
@@ -294,8 +240,10 @@ fn main() -> Result<(), Box<dyn Error>> {
         .get("regionalSimulation")
         .ok_or("regionalSimulation fehlt")?;
     let (repeat_every_ms, grouped) = program(deployment)?;
+    let infrastructure_path = infrastructure_path(initialization)?;
     let initialized: Value = serde_json::from_str(&initialize_operational_simulation(
         &serde_json::to_string(initialization)?,
+        &infrastructure_path,
     )?)?;
     let mut state = initialized
         .get("state")
@@ -356,28 +304,27 @@ fn main() -> Result<(), Box<dyn Error>> {
                     )?;
                     command_count += 1;
                 }
-                for train in trains {
-                    let mut materialized = train.train.clone();
-                    let materialized_object = materialized
-                        .as_object_mut()
-                        .ok_or("Fahrt ist nicht materialisierbar")?;
-                    materialized_object.insert(
-                        "id".to_owned(),
-                        Value::String(recurring_train_id(&train.base_id, day)),
-                    );
-                    materialized_object
-                        .insert("scheduledDepartureMs".to_owned(), Value::from(at_ms));
-                    event_count += apply(
-                        &mut state,
-                        &mut state_hash,
-                        &format!(
-                            "{deployment_hash}:proof:{day}:{departure_offset_ms}:materialize:{}",
-                            train.base_id
-                        ),
-                        json!({ "type": "materialize", "train": materialized }),
-                    )?;
-                    command_count += 1;
-                }
+            }
+            for train in trains {
+                let mut materialized = train.train.clone();
+                let materialized_object = materialized
+                    .as_object_mut()
+                    .ok_or("Fahrt ist nicht materialisierbar")?;
+                materialized_object.insert(
+                    "id".to_owned(),
+                    Value::String(recurring_train_id(&train.base_id, day)),
+                );
+                materialized_object.insert("scheduledDepartureMs".to_owned(), Value::from(at_ms));
+                event_count += apply(
+                    &mut state,
+                    &mut state_hash,
+                    &format!(
+                        "{deployment_hash}:proof:{day}:{departure_offset_ms}:materialize:{}",
+                        train.base_id
+                    ),
+                    json!({ "type": "materialize", "train": materialized }),
+                )?;
+                command_count += 1;
             }
             let requests = trains
                 .iter()
@@ -425,6 +372,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             "state": state,
         })
         .to_string(),
+        &infrastructure_path,
     )?)?;
     let restored_hash = string(
         restored.get("stateHash").ok_or("Restore-Hash fehlt")?,

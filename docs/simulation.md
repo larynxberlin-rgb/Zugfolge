@@ -18,6 +18,21 @@ keine Deltas erfinden: `RegionalSimulationWorker` schreibt neuen Zustand und
 weltgebundene Ereignisse atomar nach `regional_simulation_states` und
 `domain_events`; erst nach dem Commit publiziert er an die Livemap.
 
+Die native Zustandsberechnung läuft dabei immer gegen einen unveränderlichen
+gelesenen Kopf **außerhalb** einer PostgreSQL-Transaktion. Erst das fertige
+Ergebnis öffnet eine kurze Transaktion, sperrt Welt und Region, prüft den
+ursprünglichen Hash sowie Revision und Publisher-Sequenz erneut und schreibt
+per CAS. Hat ein anderer Writer zwischenzeitlich gewonnen, wird die berechnete
+Variante ohne Event oder Fanout verworfen. Damit kann eine langsame Native-
+Berechnung niemals als `idle in transaction` Welt- oder Regionssperren halten.
+
+Der Operational-v2-Checkpoint enthält außerdem keine unbeschränkte
+Kommandohistorie. Für Idempotenz bleiben exakt die jüngsten maximal 4.096
+Quittungen als lückenloses Revisionssuffix erhalten; native Runtime und Worker
+verwerfen übergroße, gelochte, doppelte oder falsch gehashte Fenster
+fail-closed. Die Größe und Hashkosten des Checkpoints wachsen dadurch nicht mit
+der gesamten Laufzeit einer Welt.
+
 Ein `TrainRun` existiert vollständig nur 48 bis 72 Stunden im Voraus. Sein
 Fahrweg besteht aus monotonen Wegpunkten mit Ankunft, Abfahrt,
 Mindesthaltezeit und ganzzahliger Position. Zwischen zwei Wegpunkten wird die

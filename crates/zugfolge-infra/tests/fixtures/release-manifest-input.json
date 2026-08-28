@@ -13,7 +13,71 @@
           "outputs": ["gradient", "quality", "evidence"]
         }
       },
-      "postProcessors": { "mergeTrackGradient": { "entrypoint": "merge.mjs", "joinKey": "properties.feature_id", "geometryMustMatch": true, "existingPropertiesPreserved": true, "output": "final/tracks.geojsonseq", "report": "tracks.report.json" } }
+      "postProcessors": { "mergeTrackGradient": { "entrypoint": "merge.mjs", "joinKey": "properties.feature_id", "geometryMustMatch": true, "existingPropertiesPreserved": true, "output": "final/tracks.geojsonseq", "report": "tracks.report.json" } },
+      "operationalDeriver": {
+        "primaryRunner": "tools/region-import/germany/run-capture-operational-infrastructure-v2.anchored-bundle.mjs",
+        "primaryRunnerMode": "system-launcher-held-bundle-stdin-v1",
+        "systemCommandBuilder": "tools/region-import/germany/print-operational-infrastructure-v2-system-launch-command.mjs",
+        "systemCommandBuilderMode": "source-only-print-direct-command-v1",
+        "directSystemLaunch": {
+          "platform": "win32",
+          "contract": {
+            "file": "tools/region-import/germany/operational-infrastructure-v2-direct-system-launch.annual-2027.1.json",
+            "bytes": 1234,
+            "sha256": "9999999999999999999999999999999999999999999999999999999999999999",
+            "schema": "zugfolge-operational-v2-direct-system-launch-contract/v1",
+            "releaseId": "infra-deutschland-2027.1",
+            "executionPins": {
+              "file": "tools/region-import/germany/operational-infrastructure-v2-execution-pins.annual-2027.1.json",
+              "bytes": 987,
+              "sha256": "8888888888888888888888888888888888888888888888888888888888888888",
+              "schema": "zugfolge-germany-operational-v2-execution-pins/v1"
+            },
+            "trustedExecutor": {
+              "file": "var/derived/germany-2027.1/toolchain/zugfolge-infra-release-5555555555555555555555555555555555555555-6666666666666666666666666666666666666666666666666666666666666666.exe",
+              "buildCommit": "5555555555555555555555555555555555555555",
+              "bytes": 123,
+              "sha256": "6666666666666666666666666666666666666666666666666666666666666666"
+            }
+          }
+        },
+        "executionPins": "tools/region-import/germany/operational-infrastructure-v2-execution-pins.annual-2027.1.json",
+        "specification": "tools/region-import/germany/operational-infrastructure.annual-2027.1.json",
+        "sourceRoot": ".",
+        "candidate": "var/derived/germany-2027.1/operational-infrastructure-v2.candidate.json",
+        "candidateMovementRouteTemplates": "var/derived/germany-2027.1/operational-infrastructure-v2.candidate.movement-route-templates-v2.json",
+        "report": "var/derived/germany-2027.1/operational-infrastructure-v2.derivation-report.json",
+        "output": "var/derived/germany-2027.1/operational-infrastructure-v2.json",
+        "recoveryPublisher": {
+          "captureEntrypoint": "tools/region-import/germany/capture-operational-infrastructure-v2-native-receipt.mjs",
+          "entrypoint": "tools/region-import/germany/publish-operational-infrastructure-v2.mjs",
+          "validatorExecutable": "var/derived/germany-2027.1/toolchain/zugfolge-infra-release-5555555555555555555555555555555555555555-6666666666666666666666666666666666666666666666666666666666666666.exe",
+          "validatorBuildCommit": "5555555555555555555555555555555555555555",
+          "validatorBytes": 123,
+          "validatorSha256": "6666666666666666666666666666666666666666666666666666666666666666",
+          "validatorRebuildSpecification": "tools/region-import/germany/operational-validator-rebuild.annual-2027.1.json",
+          "validatorRebuildEvidence": "var/derived/germany-2027.1/toolchain/zugfolge-infra-release-rebuild-evidence.json",
+          "validatorRebuildExecutable": "var/derived/germany-2027.1/toolchain/zugfolge-infra-release-rebuild-5555555555555555555555555555555555555555-official.exe",
+          "validatorRebuildExpectedBytes": 123,
+          "validatorNormalizedPeSha256": "8888888888888888888888888888888888888888888888888888888888888888",
+          "executionInventory": {
+            "wrapper": "tools/region-import/germany/publish-operational-infrastructure-v2.mjs",
+            "implementation": "tools/region-import/germany/operational-infrastructure-v2-publication.mjs",
+            "operationalDeriver": "tools/region-import/germany/operational-infrastructure-v2.mjs",
+            "materializer": "tools/region-import/materialize-operational-infrastructure-v2.mjs",
+            "createNewOutput": "tools/tiles/create-new-output.mjs",
+            "operationalBinding": "tools/region-import/operational-infrastructure-binding.mjs",
+            "validatorRebuildBootstrap": "tools/region-import/germany/operational-validator-rebuild-bootstrap.mjs",
+            "validatorRebuildVerifier": "tools/region-import/germany/operational-validator-rebuild-evidence.mjs",
+            "executionPinsImplementation": "tools/region-import/germany/operational-infrastructure-v2-execution-pins.mjs",
+            "annualCreateNewArtifact": "tools/region-import/germany/annual-create-new-artifact.mjs",
+            "outerExecutionReceiptVerifier": "tools/region-import/germany/operational-infrastructure-v2-outer-execution-receipt.mjs"
+          },
+          "nativeReceipt": "var/derived/germany-2027.1/operational-infrastructure-v2.native-receipt.json",
+          "outerExecutionReceipt": "var/derived/germany-2027.1/operational-infrastructure-v2.outer-execution-receipt.json",
+          "publicationReceipt": "var/derived/germany-2027.1/operational-infrastructure-v2.publication-receipt.json"
+        }
+      }
     }
   },
   "catalog": {
@@ -45,7 +109,9 @@
   },
   "artifacts": [
     { "id": "infracorpus", "file": "de.jsonseq", "bytes": 123, "sha256": "9999999999999999999999999999999999999999999999999999999999999999", "kind": "infrastructure" },
-    { "id": "operational-infrastructure-2027.1", "file": "operational-infrastructure-v2.json", "bytes": 456, "sha256": "8888888888888888888888888888888888888888888888888888888888888888", "kind": "operational-infrastructure-v2", "infraReleaseId": "infra-deutschland-2027.1", "stateHash": "7777777777777777777777777777777777777777777777777777777777777777" }
+    { "id": "operational-infrastructure-2027.1", "file": "operational-infrastructure-v2.json", "bytes": 456, "sha256": "8888888888888888888888888888888888888888888888888888888888888888", "kind": "operational-infrastructure-v2", "infraReleaseId": "infra-deutschland-2027.1", "stateHash": "7777777777777777777777777777777777777777777777777777777777777777" },
+    { "id": "operational-movement-routes-2027.1", "file": "operational-infrastructure-v2.movement-route-templates-v2.json", "bytes": 789, "sha256": "5555555555555555555555555555555555555555555555555555555555555555", "kind": "movement-route-templates-v2" },
+    { "id": "timetable-transfer-demands-2027.1", "file": "timetable-routes-v2.transfer-demands-v2.json", "bytes": 3456, "sha256": "9999999999999999999999999999999999999999999999999999999999999999", "kind": "timetable-transfer-demands-v2" }
   ],
   "quality": { "schema": "zugfolge-infrastructure-quality-report/v2", "totalLengthMm": 999, "byClassLengthMm": { "A": 100, "B": 899, "C": 0 } }
 }

@@ -115,6 +115,11 @@ describe("language", () => {
     expect(pruefe("language", "crates/x/Cargo.toml", "license.workspace = true")).toEqual([]);
   });
 
+  it("lässt fremde Lizenzmetadaten außerhalb eigener Paketmanifeste zu", () => {
+    expect(pruefe("language", "tools/tiles/source-catalog.json", '"license": "OFL-1.1"'))
+      .toEqual([]);
+  });
+
   it("meldet die Selbstbezeichnung als Open Source", () => {
     expect(pruefe("language", "README.md", "Zugfolge ist Open Source und frei.")).toHaveLength(1);
   });

@@ -17,6 +17,15 @@ use zugfolge_sim::operational::OperationalInfraRelease;
 const SHA256_LENGTH: usize = 64;
 const MAX_SAFE_INTEGER: i64 = 9_007_199_254_740_991;
 const OPERATIONAL_INFRASTRUCTURE_V2_SCHEMA: &str = "operational-infrastructure-v2";
+const MOVEMENT_ROUTE_TEMPLATES_V2_KIND: &str = "movement-route-templates-v2";
+const TIMETABLE_TRANSFER_DEMANDS_V2_KIND: &str = "timetable-transfer-demands-v2";
+const OPERATIONAL_DIRECT_SYSTEM_LAUNCH_CONTRACT_SCHEMA: &str =
+    "zugfolge-operational-v2-direct-system-launch-contract/v1";
+const OPERATIONAL_DIRECT_SYSTEM_LAUNCH_WINDOWS_OUTER_FILE: &str = "tools/region-import/germany/operational-infrastructure-v2-direct-contract-launcher.windows.ps1";
+const OPERATIONAL_DIRECT_SYSTEM_LAUNCH_WINDOWS_OUTER: &[u8] = include_bytes!(
+    "../../../tools/region-import/germany/operational-infrastructure-v2-direct-contract-launcher.windows.ps1"
+);
+const OPERATIONAL_DIRECT_SYSTEM_LAUNCH_WINDOWS_BOOTSTRAP: &str = r#"$ErrorActionPreference='Stop';Set-StrictMode -Version 2.0;$f=$null;try{$r=[Environment]::GetEnvironmentVariable('ZUGFOLGE_OPERATIONAL_WORKSPACE_ROOT','Process');$q=[Environment]::GetEnvironmentVariable('ZUGFOLGE_OPERATIONAL_OUTER_LAUNCHER_FILE','Process');$n=[Int32]::Parse([Environment]::GetEnvironmentVariable('ZUGFOLGE_OPERATIONAL_OUTER_LAUNCHER_BYTES','Process'),[Globalization.CultureInfo]::InvariantCulture);$x=[Environment]::GetEnvironmentVariable('ZUGFOLGE_OPERATIONAL_OUTER_LAUNCHER_SHA256','Process');if(-not[IO.Path]::IsPathRooted($r)-or[IO.Path]::IsPathRooted($q)-or$n-le 0-or$n-gt 2097152-or$x-cnotmatch'^[a-f0-9]{64}$'){throw'Outer-Launcher-Pin'};$r=[IO.Path]::GetFullPath($r).TrimEnd([IO.Path]::DirectorySeparatorChar);$p=[IO.Path]::GetFullPath([IO.Path]::Combine($r,$q));if(-not$p.StartsWith($r+[IO.Path]::DirectorySeparatorChar,[StringComparison]::OrdinalIgnoreCase)){throw'Outer-Launcher-Pfad'};$f=[IO.File]::Open($p,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::Read);if($f.Length-ne$n){throw'Outer-Launcher-Bytes'};$b=New-Object byte[] $n;$o=0;while($o-lt$n){$c=$f.Read($b,$o,$n-$o);if($c-eq 0){throw'Outer-Launcher-EOF'};$o+=$c};$s=[Security.Cryptography.SHA256]::Create();try{$h=([BitConverter]::ToString($s.ComputeHash($b))).Replace('-','').ToLowerInvariant()}finally{$s.Dispose()};if($h-cne$x){throw'Outer-Launcher-SHA'};foreach($k in @('ZUGFOLGE_OPERATIONAL_OUTER_LAUNCHER_FILE','ZUGFOLGE_OPERATIONAL_OUTER_LAUNCHER_BYTES','ZUGFOLGE_OPERATIONAL_OUTER_LAUNCHER_SHA256')){[Environment]::SetEnvironmentVariable($k,$null,'Process')};&([ScriptBlock]::Create((New-Object Text.UTF8Encoding($false,$true)).GetString($b)))}catch{[Console]::Error.Write($_.Exception.ToString());exit 89}finally{if($null-ne$f){$f.Dispose()}}"#;
 
 /// Fehler einer autoritativen Manifestentscheidung.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -179,6 +188,83 @@ fn sha256_bytes(bytes: &[u8]) -> String {
     digest.iter().map(|byte| format!("{byte:02x}")).collect()
 }
 
+fn base64_encode(bytes: &[u8]) -> String {
+    const ALPHABET: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut output = String::with_capacity(bytes.len().div_ceil(3) * 4);
+    for chunk in bytes.chunks(3) {
+        let first = chunk[0];
+        let second = chunk.get(1).copied().unwrap_or_default();
+        let third = chunk.get(2).copied().unwrap_or_default();
+        output.push(ALPHABET[(first >> 2) as usize] as char);
+        output.push(ALPHABET[(((first & 0x03) << 4) | (second >> 4)) as usize] as char);
+        output.push(if chunk.len() > 1 {
+            ALPHABET[(((second & 0x0f) << 2) | (third >> 6)) as usize] as char
+        } else {
+            '='
+        });
+        output.push(if chunk.len() > 2 {
+            ALPHABET[(third & 0x3f) as usize] as char
+        } else {
+            '='
+        });
+    }
+    output
+}
+
+fn powershell_encoded_command(source: &str) -> String {
+    let mut utf16le = Vec::with_capacity(source.len() * 2);
+    for code_unit in source.encode_utf16() {
+        utf16le.extend_from_slice(&code_unit.to_le_bytes());
+    }
+    base64_encode(&utf16le)
+}
+
+fn windows_annual_contract_arguments() -> Vec<String> {
+    let encoded = powershell_encoded_command(OPERATIONAL_DIRECT_SYSTEM_LAUNCH_WINDOWS_BOOTSTRAP);
+    vec![
+        "-NoLogo".to_owned(),
+        "-NoProfile".to_owned(),
+        "-NonInteractive".to_owned(),
+        "-ExecutionPolicy".to_owned(),
+        "Bypass".to_owned(),
+        "-EncodedCommand".to_owned(),
+        encoded,
+    ]
+}
+
+fn windows_annual_contract_environment(
+    contract: &OperationalDirectSystemLaunchContractProof,
+) -> Value {
+    json!({
+        "ComSpec": "C:\\Windows\\System32\\cmd.exe",
+        "PATH": "C:\\Windows\\System32;C:\\Windows",
+        "PATHEXT": ".COM;.EXE;.BAT;.CMD",
+        "PSModulePath": "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\Modules",
+        "SystemRoot": "C:\\Windows",
+        "TEMP": "C:\\Windows\\System32",
+        "TMP": "C:\\Windows\\System32",
+        "WINDIR": "C:\\Windows",
+        "ZUGFOLGE_OPERATIONAL_EXPECTED_EXECUTION_PINS_BYTES": contract.execution_pins.bytes.to_string(),
+        "ZUGFOLGE_OPERATIONAL_EXPECTED_EXECUTION_PINS_FILE": contract.execution_pins.file,
+        "ZUGFOLGE_OPERATIONAL_EXPECTED_EXECUTION_PINS_SCHEMA": contract.execution_pins.schema,
+        "ZUGFOLGE_OPERATIONAL_EXPECTED_EXECUTION_PINS_SHA256": contract.execution_pins.sha256,
+        "ZUGFOLGE_OPERATIONAL_EXPECTED_RELEASE_ID": contract.release_id,
+        "ZUGFOLGE_OPERATIONAL_LAUNCH_CONTEXT_BASE64": "{launchContextBase64}",
+        "ZUGFOLGE_OPERATIONAL_LAUNCH_CONTRACT_BYTES": contract.bytes.to_string(),
+        "ZUGFOLGE_OPERATIONAL_LAUNCH_CONTRACT_PATH": contract.file,
+        "ZUGFOLGE_OPERATIONAL_LAUNCH_CONTRACT_SCHEMA": contract.schema,
+        "ZUGFOLGE_OPERATIONAL_LAUNCH_CONTRACT_SHA256": contract.sha256,
+        "ZUGFOLGE_OPERATIONAL_OUTER_LAUNCHER_BYTES": OPERATIONAL_DIRECT_SYSTEM_LAUNCH_WINDOWS_OUTER.len().to_string(),
+        "ZUGFOLGE_OPERATIONAL_OUTER_LAUNCHER_FILE": OPERATIONAL_DIRECT_SYSTEM_LAUNCH_WINDOWS_OUTER_FILE,
+        "ZUGFOLGE_OPERATIONAL_OUTER_LAUNCHER_SHA256": sha256_bytes(OPERATIONAL_DIRECT_SYSTEM_LAUNCH_WINDOWS_OUTER),
+        "ZUGFOLGE_OPERATIONAL_WORKSPACE_ROOT": "{trustedExecutorWorkspaceRoot}",
+        "ZUGFOLGE_OPERATIONAL_EXPECTED_TRUSTED_EXECUTOR_BUILD_COMMIT": contract.trusted_executor.build_commit,
+        "ZUGFOLGE_OPERATIONAL_EXPECTED_TRUSTED_EXECUTOR_BYTES": contract.trusted_executor.bytes.to_string(),
+        "ZUGFOLGE_OPERATIONAL_EXPECTED_TRUSTED_EXECUTOR_FILE": contract.trusted_executor.file,
+        "ZUGFOLGE_OPERATIONAL_EXPECTED_TRUSTED_EXECUTOR_SHA256": contract.trusted_executor.sha256,
+    })
+}
+
 fn sha256_file(path: &Path) -> Result<String> {
     let bytes = fs::read(path).map_err(|error| {
         ReleaseManifestError::new(format!(
@@ -267,6 +353,83 @@ struct PipelineConfig {
     version: String,
     official_adapters: OfficialAdapters,
     post_processors: PostProcessors,
+    operational_deriver: Option<OperationalDeriverConfig>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+struct OperationalDeriverConfig {
+    entrypoint: Option<String>,
+    primary_runner: Option<String>,
+    primary_runner_mode: Option<String>,
+    system_command_builder: Option<String>,
+    system_command_builder_mode: Option<String>,
+    direct_system_launch: Option<OperationalDirectSystemLaunchConfig>,
+    execution_pins: Option<String>,
+    specification: String,
+    source_root: Option<String>,
+    candidate: String,
+    candidate_movement_route_templates: Option<String>,
+    report: String,
+    output: String,
+    recovery_publisher: Option<OperationalRecoveryPublisherConfig>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+struct OperationalDirectSystemLaunchConfig {
+    platform: String,
+    contract: OperationalDirectSystemLaunchContractProof,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+struct OperationalDirectSystemLaunchContractProof {
+    file: String,
+    bytes: u64,
+    sha256: String,
+    schema: String,
+    release_id: String,
+    execution_pins: OperationalDirectSystemLaunchExecutionPinsProof,
+    trusted_executor: OperationalDirectSystemLaunchTrustedExecutorProof,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+struct OperationalDirectSystemLaunchTrustedExecutorProof {
+    file: String,
+    build_commit: String,
+    bytes: u64,
+    sha256: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+struct OperationalDirectSystemLaunchExecutionPinsProof {
+    file: String,
+    bytes: u64,
+    sha256: String,
+    schema: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+struct OperationalRecoveryPublisherConfig {
+    capture_entrypoint: String,
+    entrypoint: String,
+    validator_executable: String,
+    validator_build_commit: String,
+    validator_bytes: u64,
+    validator_sha256: String,
+    validator_rebuild_specification: String,
+    validator_rebuild_evidence: String,
+    validator_rebuild_executable: String,
+    validator_rebuild_expected_bytes: u64,
+    validator_normalized_pe_sha256: String,
+    execution_inventory: BTreeMap<String, String>,
+    native_receipt: String,
+    outer_execution_receipt: Option<String>,
+    publication_receipt: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -377,8 +540,11 @@ struct RightsDecision {
 #[serde(rename_all = "camelCase")]
 struct CaptureManifest {
     schema: String,
+    release_id: Option<String>,
+    timetable_year: Option<i64>,
+    capture_plan_sha256: Option<String>,
     captured_at: String,
-    internal_evidence_ledger_sha256: String,
+    internal_evidence_ledger_sha256: Option<String>,
     sources: Vec<CapturedSource>,
 }
 
@@ -443,7 +609,53 @@ fn validate_operational_infrastructure_artifact_binding(
     require(
         state_hash != artifact.sha256,
         "Byte-SHA-256 und kanonischer Operational-v2-Zustandshash duerfen nicht gleichgesetzt werden.",
-    )
+    )?;
+
+    let movement_bindings: Vec<_> = artifacts
+        .iter()
+        .filter(|artifact| {
+            artifact.extra.get("kind").and_then(Value::as_str)
+                == Some(MOVEMENT_ROUTE_TEMPLATES_V2_KIND)
+        })
+        .collect();
+    require(
+        movement_bindings.len() == 1,
+        "Oeffentliches InfraRelease muss genau ein Movement-Route-Templates-v2-Artefakt binden.",
+    )?;
+    let movement = movement_bindings[0];
+    let movement_allowed: BTreeSet<&str> = BTreeSet::from(["kind"]);
+    let movement_actual: BTreeSet<&str> = movement.extra.keys().map(String::as_str).collect();
+    require(
+        movement_actual == movement_allowed,
+        "Movement-Route-Templates-v2-Artefakt besitzt unbekannte oder fehlende Manifestfelder.",
+    )?;
+    require(
+        movement.file == "operational-infrastructure-v2.movement-route-templates-v2.json",
+        "Movement-Route-Templates-v2-Artefakt besitzt keinen kanonischen Dateinamen.",
+    )?;
+    let transfer_bindings: Vec<_> = artifacts
+        .iter()
+        .filter(|artifact| {
+            artifact.extra.get("kind").and_then(Value::as_str)
+                == Some(TIMETABLE_TRANSFER_DEMANDS_V2_KIND)
+        })
+        .collect();
+    require(
+        transfer_bindings.len() == 1,
+        "Oeffentliches InfraRelease muss genau ein Timetable-Transfer-Demands-v2-Artefakt binden.",
+    )?;
+    let transfer = transfer_bindings[0];
+    let transfer_allowed: BTreeSet<&str> = BTreeSet::from(["kind"]);
+    let transfer_actual: BTreeSet<&str> = transfer.extra.keys().map(String::as_str).collect();
+    require(
+        transfer_actual == transfer_allowed,
+        "Timetable-Transfer-Demands-v2-Artefakt besitzt unbekannte oder fehlende Manifestfelder.",
+    )?;
+    require(
+        transfer.file == "timetable-routes-v2.transfer-demands-v2.json",
+        "Timetable-Transfer-Demands-v2-Artefakt besitzt keinen kanonischen Dateinamen.",
+    )?;
+    Ok(())
 }
 
 #[derive(Debug, Deserialize)]
@@ -1999,7 +2211,304 @@ fn validate_config(config: &GermanyConfig) -> Result<()> {
     require(
         non_empty(&config.pipeline.version),
         "Deutschland-Konfiguration ohne Pipelineversion.",
-    )
+    )?;
+
+    let release_prefix = format!("infra-deutschland-{}.", config.release.timetable_year);
+    let release_revision = config
+        .release
+        .release_id
+        .strip_prefix(&release_prefix)
+        .and_then(|revision| {
+            revision
+                .parse::<u64>()
+                .ok()
+                .filter(|parsed| parsed.to_string() == revision)
+        });
+    require(
+        release_revision.is_some_and(|revision| revision > 0),
+        "Deutschland-Release-ID muss Fahrplanjahr und positive Revision exakt binden.",
+    )?;
+    let release_revision = release_revision.expect("zuvor validierte positive Release-Revision");
+    let release_version = config
+        .release
+        .release_id
+        .strip_prefix("infra-deutschland-")
+        .expect("zuvor validierter Deutschland-Release-Präfix");
+    let expected_direct_system_launch_contract = format!(
+        "tools/region-import/germany/operational-infrastructure-v2-direct-system-launch.annual-{release_version}.json"
+    );
+    let expected_execution_pins = format!(
+        "tools/region-import/germany/operational-infrastructure-v2-execution-pins.annual-{release_version}.json"
+    );
+    let requires_operational_deriver = config.release.timetable_year > 2026
+        || (config.release.timetable_year == 2026 && release_revision >= 3);
+    require(
+        !requires_operational_deriver || config.pipeline.operational_deriver.is_some(),
+        "Deutschland-Releases ab 2026.3 brauchen den OperationalDeriver-v2-Subvertrag.",
+    )?;
+    let Some(operational_deriver) = &config.pipeline.operational_deriver else {
+        return Ok(());
+    };
+    let requires_recovery_publisher = config.release.timetable_year > 2026
+        || (config.release.timetable_year == 2026 && release_revision >= 5);
+    if requires_recovery_publisher {
+        require(
+            operational_deriver.entrypoint.is_none()
+                && operational_deriver.primary_runner.as_deref()
+                    == Some(
+                        "tools/region-import/germany/run-capture-operational-infrastructure-v2.anchored-bundle.mjs",
+                    )
+                && operational_deriver.primary_runner_mode.as_deref()
+                    == Some("system-launcher-held-bundle-stdin-v1")
+                && operational_deriver.system_command_builder.as_deref()
+                    == Some(
+                        "tools/region-import/germany/print-operational-infrastructure-v2-system-launch-command.mjs",
+                    )
+                && operational_deriver.system_command_builder_mode.as_deref()
+                    == Some("source-only-print-direct-command-v1")
+                && operational_deriver
+                    .direct_system_launch
+                    .as_ref()
+                    .is_some_and(|launch| {
+                        launch.platform == "win32"
+                            && launch.contract.file == expected_direct_system_launch_contract
+                            && launch.contract.bytes > 0
+                            && launch.contract.bytes <= 2 * 1024 * 1024
+                            && is_sha256(&launch.contract.sha256)
+                            && launch.contract.schema
+                                == OPERATIONAL_DIRECT_SYSTEM_LAUNCH_CONTRACT_SCHEMA
+                            && launch.contract.release_id == config.release.release_id
+                            && launch.contract.execution_pins.file == expected_execution_pins
+                            && launch.contract.execution_pins.bytes > 0
+                            && launch.contract.execution_pins.bytes <= 2 * 1024 * 1024
+                            && is_sha256(&launch.contract.execution_pins.sha256)
+                            && launch.contract.execution_pins.schema
+                                == "zugfolge-germany-operational-v2-execution-pins/v1"
+                            && launch.contract.trusted_executor.file
+                                == operational_deriver
+                                    .recovery_publisher
+                                    .as_ref()
+                                    .expect("RecoveryPublisher fuer Trusted-Executor")
+                                    .validator_executable
+                            && launch.contract.trusted_executor.build_commit
+                                == operational_deriver
+                                    .recovery_publisher
+                                    .as_ref()
+                                    .expect("RecoveryPublisher fuer Trusted-Executor")
+                                    .validator_build_commit
+                            && launch.contract.trusted_executor.bytes
+                                == operational_deriver
+                                    .recovery_publisher
+                                    .as_ref()
+                                    .expect("RecoveryPublisher fuer Trusted-Executor")
+                                    .validator_bytes
+                            && launch.contract.trusted_executor.sha256
+                                == operational_deriver
+                                    .recovery_publisher
+                                    .as_ref()
+                                    .expect("RecoveryPublisher fuer Trusted-Executor")
+                                    .validator_sha256
+                    })
+                && operational_deriver.execution_pins.as_deref()
+                    == Some(expected_execution_pins.as_str()),
+            "OperationalDeriver besitzt nicht den festgelegten systemverankerten V2-PrimaryRunner.",
+        )?;
+    } else {
+        require(
+            operational_deriver.primary_runner.is_none()
+                && operational_deriver.primary_runner_mode.is_none()
+                && operational_deriver.system_command_builder.is_none()
+                && operational_deriver.system_command_builder_mode.is_none()
+                && operational_deriver.direct_system_launch.is_none()
+                && operational_deriver.execution_pins.is_none()
+                && operational_deriver.entrypoint.as_deref()
+                    == Some("tools/region-import/germany/run-operational-infrastructure-v2.mjs"),
+            "Historischer OperationalDeriver besitzt nicht den festgelegten EntryPoint.",
+        )?;
+    }
+    require(
+        operational_deriver.specification
+            == format!(
+                "tools/region-import/germany/operational-infrastructure.annual-{release_version}.json"
+            ),
+        "OperationalDeriver-Spezifikation ist nicht exakt an den Deutschland-Release gebunden.",
+    )?;
+    if requires_recovery_publisher {
+        require(
+            operational_deriver.source_root.as_deref() == Some("."),
+            "OperationalDeriver-Quellwurzel muss fuer den gehaltenen Jahreslauf exakt die kanonische Arbeitswurzel binden.",
+        )?;
+    } else {
+        require(
+            operational_deriver.source_root.is_none(),
+            "Historischer OperationalDeriver darf keine gehaltene Jahreslauf-Quellwurzel behaupten.",
+        )?;
+    }
+    let derived_root = format!("var/derived/germany-{release_version}");
+    require(
+        operational_deriver.candidate
+            == format!("{derived_root}/operational-infrastructure-v2.candidate.json"),
+        "OperationalDeriver-Candidate ist nicht exakt an den Deutschland-Release gebunden.",
+    )?;
+    if requires_recovery_publisher {
+        require(
+            operational_deriver.candidate_movement_route_templates.as_deref()
+                == Some(
+                    format!("{derived_root}/operational-infrastructure-v2.candidate.movement-route-templates-v2.json")
+                        .as_str(),
+                ),
+            "OperationalDeriver-Candidate-Sidecar ist nicht exakt an den Deutschland-Release gebunden.",
+        )?;
+    } else {
+        require(
+            operational_deriver
+                .candidate_movement_route_templates
+                .is_none(),
+            "Historischer OperationalDeriver darf keinen Recovery-Candidate-Sidecar behaupten.",
+        )?;
+    }
+    require(
+        operational_deriver.report
+            == format!("{derived_root}/operational-infrastructure-v2.derivation-report.json"),
+        "OperationalDeriver-Bericht ist nicht exakt an den Deutschland-Release gebunden.",
+    )?;
+    require(
+        operational_deriver.output == format!("{derived_root}/operational-infrastructure-v2.json"),
+        "OperationalDeriver-Ausgabe ist nicht exakt an den Deutschland-Release gebunden.",
+    )?;
+    if requires_recovery_publisher {
+        let recovery = operational_deriver
+            .recovery_publisher
+            .as_ref()
+            .ok_or_else(|| {
+                ReleaseManifestError::new(
+                    "OperationalDeriver braucht den typisierten RecoveryPublisher-Subvertrag.",
+                )
+            })?;
+        require(
+            recovery.capture_entrypoint
+                == "tools/region-import/germany/capture-operational-infrastructure-v2-native-receipt.mjs"
+                && recovery.entrypoint
+                    == "tools/region-import/germany/publish-operational-infrastructure-v2.mjs",
+            "OperationalDeriver-RecoveryPublisher besitzt nicht die festgelegten EntryPoints.",
+        )?;
+        require(
+            recovery.validator_build_commit.len() == 40
+                && recovery
+                    .validator_build_commit
+                    .bytes()
+                    .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+                && recovery.validator_bytes > 0
+                && recovery.validator_sha256.len() == 64
+                && recovery
+                    .validator_sha256
+                    .bytes()
+                    .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+                && recovery.validator_executable
+                    == format!(
+                        "{derived_root}/toolchain/zugfolge-infra-release-{}-{}.exe",
+                        recovery.validator_build_commit, recovery.validator_sha256
+                    ),
+            "OperationalDeriver-RecoveryPublisher besitzt keinen vollstaendigen Validator-Build-Commit oder den falschen Validator-Pfad.",
+        )?;
+        require(
+            recovery.validator_rebuild_specification
+                == format!(
+                    "tools/region-import/germany/operational-validator-rebuild.annual-{release_version}.json"
+                )
+                && recovery.validator_rebuild_evidence
+                    == format!(
+                        "{derived_root}/toolchain/zugfolge-infra-release-rebuild-evidence.json"
+                    )
+                && recovery.validator_rebuild_expected_bytes > 0
+                && recovery.validator_normalized_pe_sha256.len() == 64
+                && recovery
+                    .validator_normalized_pe_sha256
+                    .bytes()
+                    .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+                && recovery.validator_rebuild_executable
+                    == format!(
+                        "{derived_root}/toolchain/zugfolge-infra-release-rebuild-{}-official.exe",
+                        recovery.validator_build_commit
+                    ),
+            "OperationalDeriver-RecoveryPublisher besitzt keine vollstaendige immutable Validator-Rebuild-Evidence-Bindung.",
+        )?;
+        let expected_execution_inventory = BTreeMap::from([
+            (
+                "wrapper".to_string(),
+                "tools/region-import/germany/publish-operational-infrastructure-v2.mjs".to_string(),
+            ),
+            (
+                "implementation".to_string(),
+                "tools/region-import/germany/operational-infrastructure-v2-publication.mjs"
+                    .to_string(),
+            ),
+            (
+                "operationalDeriver".to_string(),
+                "tools/region-import/germany/operational-infrastructure-v2.mjs".to_string(),
+            ),
+            (
+                "materializer".to_string(),
+                "tools/region-import/materialize-operational-infrastructure-v2.mjs".to_string(),
+            ),
+            (
+                "createNewOutput".to_string(),
+                "tools/tiles/create-new-output.mjs".to_string(),
+            ),
+            (
+                "operationalBinding".to_string(),
+                "tools/region-import/operational-infrastructure-binding.mjs".to_string(),
+            ),
+            (
+                "validatorRebuildBootstrap".to_string(),
+                "tools/region-import/germany/operational-validator-rebuild-bootstrap.mjs"
+                    .to_string(),
+            ),
+            (
+                "validatorRebuildVerifier".to_string(),
+                "tools/region-import/germany/operational-validator-rebuild-evidence.mjs"
+                    .to_string(),
+            ),
+            (
+                "executionPinsImplementation".to_string(),
+                "tools/region-import/germany/operational-infrastructure-v2-execution-pins.mjs"
+                    .to_string(),
+            ),
+            (
+                "annualCreateNewArtifact".to_string(),
+                "tools/region-import/germany/annual-create-new-artifact.mjs".to_string(),
+            ),
+            (
+                "outerExecutionReceiptVerifier".to_string(),
+                "tools/region-import/germany/operational-infrastructure-v2-outer-execution-receipt.mjs"
+                    .to_string(),
+            ),
+        ]);
+        require(
+            recovery.execution_inventory == expected_execution_inventory,
+            "OperationalDeriver-RecoveryPublisher bindet nicht die vollstaendige lokale Ausfuehrungsclosure.",
+        )?;
+        require(
+            recovery.native_receipt
+                == format!("{derived_root}/operational-infrastructure-v2.native-receipt.json")
+                && recovery.outer_execution_receipt.as_deref()
+                    == Some(
+                        format!("{derived_root}/operational-infrastructure-v2.outer-execution-receipt.json")
+                            .as_str(),
+                    )
+                && recovery.publication_receipt
+                    == format!(
+                        "{derived_root}/operational-infrastructure-v2.publication-receipt.json"
+                    ),
+            "OperationalDeriver-Recovery-Receipts sind nicht exakt an den Deutschland-Release gebunden.",
+        )?;
+    } else {
+        require(
+            operational_deriver.recovery_publisher.is_none(),
+            "Historischer OperationalDeriver darf keinen RecoveryPublisher behaupten.",
+        )?;
+    }
+    Ok(())
 }
 
 fn validate_catalog(catalog: &SourceCatalog) -> Result<()> {
@@ -2108,11 +2617,50 @@ fn validate_rights(catalog: &SourceCatalog, registry: &RightsRegistry) -> Result
     Ok(())
 }
 
-fn validate_capture(capture: &CaptureManifest, catalog: &SourceCatalog) -> Result<()> {
+fn validate_capture(
+    capture: &CaptureManifest,
+    catalog: &SourceCatalog,
+    config: &GermanyConfig,
+) -> Result<()> {
     require(
-        capture.schema == "zugfolge-source-capture/v1",
+        capture.schema == "zugfolge-source-capture/v1"
+            || capture.schema == "zugfolge-source-capture/v2",
         "Unbekanntes Capture-Schema.",
     )?;
+    if capture.schema == "zugfolge-source-capture/v2" {
+        require(
+            capture.release_id.as_deref() == Some(config.release.release_id.as_str())
+                && capture.timetable_year == Some(config.release.timetable_year)
+                && capture
+                    .capture_plan_sha256
+                    .as_deref()
+                    .is_some_and(is_sha256),
+            "Capture v2 ist nicht an Jahresrelease, Fahrplanjahr und Capture-Plan gebunden.",
+        )?;
+    } else {
+        let requires_annual_capture_v2 = config
+            .release
+            .release_id
+            .strip_prefix("infra-deutschland-2026.")
+            .and_then(|revision| {
+                revision
+                    .parse::<u64>()
+                    .ok()
+                    .filter(|parsed| parsed.to_string() == revision)
+            })
+            .is_some_and(|revision| revision >= 3);
+        require(
+            !requires_annual_capture_v2,
+            "Deutschland-2026-Releases ab Patch 3 duerfen das historische Source-Capture v1 nicht verwenden.",
+        )?;
+        require(
+            capture
+                .internal_evidence_ledger_sha256
+                .as_deref()
+                .is_some_and(is_sha256),
+            "Capture v1 ohne Hash des internen Evidenzledgers.",
+        )?;
+    }
     require(
         capture.captured_at.as_bytes().get(4) == Some(&b'-')
             && capture.captured_at.as_bytes().get(7) == Some(&b'-')
@@ -2122,10 +2670,6 @@ fn validate_capture(capture: &CaptureManifest, catalog: &SourceCatalog) -> Resul
     require(
         capture.captured_at.ends_with('Z'),
         "Capture-Zeitpunkt ist nicht als UTC gekennzeichnet.",
-    )?;
-    require(
-        is_sha256(&capture.internal_evidence_ledger_sha256),
-        "Capture ohne Hash des internen Evidenzledgers.",
     )?;
     let catalog_ids: BTreeSet<_> = catalog
         .sources
@@ -2343,14 +2887,837 @@ fn quality_summary(report: &Value, config: &GermanyConfig) -> Result<Value> {
     }))
 }
 
-/// Baut nach Schema-, Rechte- und Qualitätsprüfung den öffentlichen Release.
-pub fn build_public_infra_release(
+fn class_count(value: &Value, context: &str) -> Result<(i64, i64, i64)> {
+    let object = value
+        .as_object()
+        .ok_or_else(|| ReleaseManifestError::new(format!("{context} ist kein Objekt.")))?;
+    let actual: BTreeSet<_> = object.keys().map(String::as_str).collect();
+    require(
+        actual == BTreeSet::from(["A", "B", "C"]),
+        format!("{context} besitzt nicht exakt A, B und C."),
+    )?;
+    let read = |class: &str| {
+        object
+            .get(class)
+            .and_then(Value::as_i64)
+            .filter(|value| *value >= 0)
+            .ok_or_else(|| ReleaseManifestError::new(format!("{context}.{class} ist ungueltig.")))
+    };
+    Ok((read("A")?, read("B")?, read("C")?))
+}
+
+fn static_map_quality_summary(report: &Value, config: &GermanyConfig) -> Result<Value> {
+    require(
+        report.get("schema").and_then(Value::as_str) == Some("zugfolge-static-map-quality/v2"),
+        "Getrennter Kartenqualitaetsbericht ist kein Static-Map-Quality-v2.",
+    )?;
+    let release_version = config
+        .release
+        .release_id
+        .strip_prefix("infra-deutschland-")
+        .ok_or_else(|| ReleaseManifestError::new("Deutschland-Release-ID ist ungueltig."))?;
+    require(
+        report.get("releaseId").and_then(Value::as_str)
+            == Some(format!("karte-deutschland-{release_version}-v2").as_str())
+            && report.get("infrastructureCorpusId").and_then(Value::as_str)
+                == Some(config.release.release_id.as_str())
+            && report.get("timetableYear").and_then(Value::as_i64)
+                == Some(config.release.timetable_year),
+        "Static-Map-Quality-v2 verletzt Karten-, Korpus- oder Jahresbindung.",
+    )?;
+    require(
+        report.get("purpose").and_then(Value::as_str) == Some("static-map-visible-quality")
+            && report.get("deterministic").and_then(Value::as_bool) == Some(true),
+        "Static-Map-Quality-v2 ist keine deterministische sichtbare Kartenqualitaet.",
+    )?;
+    require(
+        report
+            .pointer("/claims/detailedSourceReportShipped")
+            .and_then(Value::as_bool)
+            == Some(false)
+            && report
+                .pointer("/claims/operationalInfraRelease")
+                .and_then(Value::as_bool)
+                == Some(false)
+            && report
+                .pointer("/claims/productionActivationEligible")
+                .and_then(Value::as_bool)
+                == Some(false),
+        "Static-Map-Quality-v2 lockert seine nichtbetriebliche Kartengrenze.",
+    )?;
+    for (class, meaning) in [
+        ("A", "complete-evidence"),
+        ("B", "conservative-visible-model"),
+        ("C", "visible-not-operationally-orderable"),
+    ] {
+        require(
+            report
+                .pointer(&format!("/classification/{class}"))
+                .and_then(Value::as_str)
+                == Some(meaning),
+            "Static-Map-Quality-v2 veraendert die oeffentliche A/B/C-Semantik.",
+        )?;
+    }
+    require(
+        report
+            .pointer("/sourceReport/content")
+            .and_then(Value::as_str)
+            == Some("detailed-infrastructure-quality-report")
+            && report
+                .pointer("/sourceReport/binding")
+                .and_then(Value::as_str)
+                == Some("sha256")
+            && report
+                .pointer("/sourceReport/bytes")
+                .and_then(Value::as_i64)
+                .is_some_and(|bytes| bytes > 0)
+            && report
+                .pointer("/sourceReport/sha256")
+                .and_then(Value::as_str)
+                .is_some_and(is_sha256)
+            && report
+                .pointer("/sourceReport/shipped")
+                .and_then(Value::as_bool)
+                == Some(false),
+        "Static-Map-Quality-v2 besitzt keine gueltige Detailberichtbindung.",
+    )?;
+    let visible_layers = report
+        .pointer("/summary/visibleLayers")
+        .and_then(Value::as_i64)
+        .unwrap_or_default();
+    let visible_features = report
+        .pointer("/summary/visibleFeatures")
+        .and_then(Value::as_i64)
+        .unwrap_or_default();
+    let summary_classes = report
+        .pointer("/summary/qualityClassFeatureCount")
+        .ok_or_else(|| ReleaseManifestError::new("Static-Map-Quality-v2 ohne Objektklassen."))?;
+    let (summary_a, summary_b, summary_c) = class_count(
+        summary_classes,
+        "Static-Map-Quality-v2.summary.qualityClassFeatureCount",
+    )?;
+    require(
+        visible_layers == 10
+            && visible_features > 0
+            && summary_a
+                .checked_add(summary_b)
+                .and_then(|sum| sum.checked_add(summary_c))
+                == Some(visible_features),
+        "Static-Map-Quality-v2 besitzt keinen vollstaendigen sichtbaren Zehn-Layer-Korpus.",
+    )?;
+    let expected_layers = [
+        "rail_corridors",
+        "operating_points",
+        "stations",
+        "tracks",
+        "platforms",
+        "switches",
+        "signals",
+        "blocks",
+        "conflict_resources",
+        "rail_context",
+    ];
+    let layers = report
+        .get("layers")
+        .and_then(Value::as_array)
+        .filter(|layers| layers.len() == expected_layers.len())
+        .ok_or_else(|| {
+            ReleaseManifestError::new("Static-Map-Quality-v2 besitzt nicht exakt zehn Layer.")
+        })?;
+    let mut aggregate = (0_i64, 0_i64, 0_i64);
+    let mut aggregate_features = 0_i64;
+    let mut track_summary = None;
+    for (index, layer) in layers.iter().enumerate() {
+        require(
+            layer.get("name").and_then(Value::as_str) == Some(expected_layers[index]),
+            "Static-Map-Quality-v2 verletzt die kanonische Layerreihenfolge.",
+        )?;
+        let features = layer
+            .get("features")
+            .and_then(Value::as_i64)
+            .filter(|features| *features > 0)
+            .ok_or_else(|| ReleaseManifestError::new("Static-Map-Layer ohne Features."))?;
+        let classes = layer
+            .get("qualityClassFeatureCount")
+            .ok_or_else(|| ReleaseManifestError::new("Static-Map-Layer ohne Objektklassen."))?;
+        let count = class_count(classes, "Static-Map-Layer.qualityClassFeatureCount")?;
+        require(
+            count
+                .0
+                .checked_add(count.1)
+                .and_then(|sum| sum.checked_add(count.2))
+                == Some(features),
+            "Static-Map-Layerklassen ergeben nicht seine Features.",
+        )?;
+        aggregate.0 = aggregate
+            .0
+            .checked_add(count.0)
+            .ok_or_else(|| ReleaseManifestError::new("Static-Map-Objektklassen laufen ueber."))?;
+        aggregate.1 = aggregate
+            .1
+            .checked_add(count.1)
+            .ok_or_else(|| ReleaseManifestError::new("Static-Map-Objektklassen laufen ueber."))?;
+        aggregate.2 = aggregate
+            .2
+            .checked_add(count.2)
+            .ok_or_else(|| ReleaseManifestError::new("Static-Map-Objektklassen laufen ueber."))?;
+        aggregate_features = aggregate_features
+            .checked_add(features)
+            .ok_or_else(|| ReleaseManifestError::new("Static-Map-Featurezahl laeuft ueber."))?;
+        if expected_layers[index] == "tracks" {
+            let total = layer
+                .get("totalLengthMm")
+                .and_then(Value::as_i64)
+                .filter(|total| *total > 0)
+                .ok_or_else(|| ReleaseManifestError::new("Static-Map-Gleise ohne Laenge."))?;
+            let lengths = layer.get("qualityClassLengthMm").ok_or_else(|| {
+                ReleaseManifestError::new("Static-Map-Gleise ohne Klassenlaengen.")
+            })?;
+            let (a, b, c) = class_count(lengths, "Static-Map-Gleislaengen")?;
+            require(
+                a.checked_add(b).and_then(|sum| sum.checked_add(c)) == Some(total),
+                "Static-Map-Gleislaengen sind unvollstaendig.",
+            )?;
+            track_summary = Some((total, lengths.clone(), c));
+        }
+    }
+    require(
+        aggregate == (summary_a, summary_b, summary_c) && aggregate_features == visible_features,
+        "Static-Map-Layeraggregation und Gesamtsumme weichen ab.",
+    )?;
+    let (total_length_mm, by_class_length_mm, class_c_length_mm) = track_summary
+        .ok_or_else(|| ReleaseManifestError::new("Static-Map-Quality-v2 ohne Gleislayer."))?;
+    Ok(json!({
+        "totalLengthMm": total_length_mm,
+        "byClassLengthMm": by_class_length_mm,
+        "visibleFeatures": visible_features,
+        "byClassFeatureCount": summary_classes,
+        "visibleLayers": visible_layers,
+        "classCVisible": summary_c > 0 || class_c_length_mm > 0,
+    }))
+}
+
+fn operational_quality_summary(
+    report: &Value,
+    report_bytes: &[u8],
+    config: &GermanyConfig,
+    artifacts: &[Artifact],
+    static_quality: &Value,
+    static_quality_bytes: &[u8],
+) -> Result<Value> {
+    require(
+        report.get("schema").and_then(Value::as_str)
+            == Some("zugfolge-operational-infrastructure-quality-report/v1")
+            && report.get("deterministic").and_then(Value::as_bool) == Some(true),
+        "Operational-v2-Qualitaet besitzt nicht das getrennte Operational-Quality-v1-Schema.",
+    )?;
+    require(
+        report.get("releaseId").and_then(Value::as_str) == Some(config.release.release_id.as_str())
+            && report.get("timetableYear").and_then(Value::as_i64)
+                == Some(config.release.timetable_year)
+            && report.get("scopeId").and_then(Value::as_str)
+                == Some("deutschland-ebo-operational-v2"),
+        "Operational-v2-Qualitaet verletzt Release-, Jahres- oder Scope-Bindung.",
+    )?;
+    for (path, expected) in [
+        ("/separation/mapClassCReclassified", false),
+        ("/separation/mapClassCBlocksOperationalQualityGate", false),
+        ("/separation/mapObjectsRemoved", false),
+        ("/qualityGate/closureReceiptVerified", true),
+        ("/qualityGate/nativeOperationalValidationVerified", true),
+        ("/qualityGate/operationalClassCZero", true),
+        ("/qualityGate/ordinaryAssumptionsPromoted", false),
+        ("/qualityGate/mapClassCReclassified", false),
+        ("/qualityGate/operationalQualityEligible", true),
+        ("/qualityGate/signatureImplied", false),
+        ("/qualityGate/activationImplied", false),
+    ] {
+        require(
+            report.pointer(path).and_then(Value::as_bool) == Some(expected),
+            format!("Operational-v2-Qualitaetsgate verletzt `{path}`."),
+        )?;
+    }
+    require(
+        report
+            .pointer("/separation/mapEvidencePurpose")
+            .and_then(Value::as_str)
+            == Some("visible-map-quality-evidence")
+            && report
+                .pointer("/separation/operationalEvidencePurpose")
+                .and_then(Value::as_str)
+                == Some("closed-operational-v2-model"),
+        "Operational-v2-Qualitaet vermischt Karten- und Betriebszweck.",
+    )?;
+    let map = report
+        .get("mapEvidence")
+        .ok_or_else(|| ReleaseManifestError::new("Operational-v2-Qualitaet ohne Kartenbeleg."))?;
+    let map_object = map
+        .as_object()
+        .ok_or_else(|| ReleaseManifestError::new("Operational-v2-Kartenbeleg ist kein Objekt."))?;
+    let map_keys: BTreeSet<_> = map_object.keys().map(String::as_str).collect();
+    require(
+        map_keys
+            == BTreeSet::from([
+                "bytes",
+                "infrastructureCorpusId",
+                "mapReleaseId",
+                "qualityClassFeatureCount",
+                "schema",
+                "sha256",
+                "sourceReport",
+                "trackLengthMm",
+                "trackQualityClassLengthMm",
+                "visibleFeatures",
+                "visibleLayers",
+            ]),
+        "Operational-v2-Kartenbeleg besitzt nicht exakt den Static-v2-Doppelbindungsvertrag.",
+    )?;
+    let source_report = map.get("sourceReport").ok_or_else(|| {
+        ReleaseManifestError::new("Operational-v2-Kartenbeleg ohne Detailberichtbindung.")
+    })?;
+    let source_report_object = source_report.as_object().ok_or_else(|| {
+        ReleaseManifestError::new("Operational-v2-Detailberichtbindung ist kein Objekt.")
+    })?;
+    let source_report_keys: BTreeSet<_> = source_report_object.keys().map(String::as_str).collect();
+    require(
+        source_report_keys == BTreeSet::from(["bytes", "schema", "sha256", "shipped"]),
+        "Operational-v2-Detailberichtbindung besitzt nicht exakt den v1-SourceReport-Vertrag.",
+    )?;
+    let actual_static_bytes = i64::try_from(static_quality_bytes.len()).map_err(|_| {
+        ReleaseManifestError::new("Static-Map-Quality-v2-Dateigroesse laeuft ueber.")
+    })?;
+    let actual_static_sha256 = sha256_bytes(static_quality_bytes);
+    require(
+        map.get("schema").and_then(Value::as_str) == Some("zugfolge-static-map-quality/v2")
+            && map.get("mapReleaseId") == static_quality.get("releaseId")
+            && map.get("infrastructureCorpusId") == static_quality.get("infrastructureCorpusId")
+            && map.get("bytes").and_then(Value::as_i64) == Some(actual_static_bytes)
+            && map.get("sha256").and_then(Value::as_str) == Some(actual_static_sha256.as_str())
+            && source_report.get("schema").and_then(Value::as_str)
+                == Some("zugfolge-final-infrastructure-quality-report/v1")
+            && source_report.get("bytes") == static_quality.pointer("/sourceReport/bytes")
+            && source_report.get("sha256") == static_quality.pointer("/sourceReport/sha256")
+            && source_report.get("shipped").and_then(Value::as_bool) == Some(false)
+            && source_report.get("shipped") == static_quality.pointer("/sourceReport/shipped")
+            && map.get("visibleFeatures") == static_quality.pointer("/summary/visibleFeatures")
+            && map.get("visibleLayers") == static_quality.pointer("/summary/visibleLayers")
+            && map.get("qualityClassFeatureCount")
+                == static_quality.pointer("/summary/qualityClassFeatureCount"),
+        "Operational-v2-Qualitaet bindet nicht denselben sichtbaren Kartenbeleg wie Static-Map-v2.",
+    )?;
+    let static_tracks = static_quality
+        .get("layers")
+        .and_then(Value::as_array)
+        .and_then(|layers| {
+            layers
+                .iter()
+                .find(|layer| layer.get("name").and_then(Value::as_str) == Some("tracks"))
+        })
+        .ok_or_else(|| ReleaseManifestError::new("Static-Map-v2 ohne Gleislayer."))?;
+    require(
+        map.get("trackLengthMm") == static_tracks.get("totalLengthMm")
+            && map.get("trackQualityClassLengthMm") == static_tracks.get("qualityClassLengthMm"),
+        "Operational-v2-Qualitaet veraendert die sichtbaren Kartengleisklassen.",
+    )?;
+    let model = report.get("operationalModel").ok_or_else(|| {
+        ReleaseManifestError::new("Operational-v2-Qualitaet ohne Betriebsmodell.")
+    })?;
+    let model_object = model.as_object().ok_or_else(|| {
+        ReleaseManifestError::new("Operational-v2-Betriebsmodell ist kein Objekt.")
+    })?;
+    let model_keys: BTreeSet<_> = model_object.keys().map(String::as_str).collect();
+    require(
+        model_keys
+            == BTreeSet::from([
+                "closureReceiptSha256",
+                "coverage",
+                "objectLevelProvenanceShipped",
+                "observedAndSyntheticObjectsShareRuntimeCollections",
+                "operationalArtifact",
+                "policyId",
+                "policySha256",
+                "provenance",
+                "qualityClass",
+                "realGeometry",
+                "realInterlockingFactsClaimed",
+                "simulatedOperationalAssignment",
+                "syntheticOperationalDetailsShipped",
+                "movementRouteTemplates",
+                "timetableRouteEvidence",
+            ]),
+        "Operational-v2-Betriebsmodell besitzt nicht exakt den ehrlichen v2-Provenienzvertrag.",
+    )?;
+    require(
+        model.get("policyId").and_then(Value::as_str) == Some("synthetic-operational-b/v2")
+            && model
+                .get("policySha256")
+                .and_then(Value::as_str)
+                .is_some_and(is_sha256)
+            && model
+                .get("closureReceiptSha256")
+                .and_then(Value::as_str)
+                .is_some_and(is_sha256)
+            && model.get("qualityClass").and_then(Value::as_str) == Some("B")
+            && model.get("provenance").and_then(Value::as_str) == Some("derived")
+            && model.get("realGeometry").and_then(Value::as_bool) == Some(true)
+            && model
+                .get("simulatedOperationalAssignment")
+                .and_then(Value::as_bool)
+                == Some(true)
+            && model
+                .get("realInterlockingFactsClaimed")
+                .and_then(Value::as_bool)
+                == Some(false)
+            && model
+                .get("syntheticOperationalDetailsShipped")
+                .and_then(Value::as_bool)
+                == Some(true)
+            && model
+                .get("objectLevelProvenanceShipped")
+                .and_then(Value::as_bool)
+                == Some(false)
+            && model
+                .get("observedAndSyntheticObjectsShareRuntimeCollections")
+                .and_then(Value::as_bool)
+                == Some(true),
+        "Operational-v2-Qualitaet besitzt keine ehrliche Derived/B-Simulationsprovenienz.",
+    )?;
+    let movement_route_templates = model.get("movementRouteTemplates").ok_or_else(|| {
+        ReleaseManifestError::new(
+            "Operational-v2-Betriebsmodell ohne Movement-Route-Templates-v2-Beleg.",
+        )
+    })?;
+    let movement_route_templates_object =
+        movement_route_templates.as_object().ok_or_else(|| {
+            ReleaseManifestError::new("Movement-Route-Templates-v2-Beleg ist kein Objekt.")
+        })?;
+    let movement_route_templates_keys: BTreeSet<_> = movement_route_templates_object
+        .keys()
+        .map(String::as_str)
+        .collect();
+    require(
+        movement_route_templates_keys
+            == BTreeSet::from([
+                "bytes",
+                "operationalStateHash",
+                "sha256",
+                "stateHash",
+                "timetableTransferSetSha256",
+            ]),
+        "Movement-Route-Templates-v2-Beleg besitzt nicht exakt den pfadfreien Byte-/Zustandsvertrag.",
+    )?;
+    require(
+        movement_route_templates
+            .get("bytes")
+            .and_then(Value::as_i64)
+            .is_some_and(|bytes| bytes > 0)
+            && [
+                "sha256",
+                "stateHash",
+                "operationalStateHash",
+                "timetableTransferSetSha256",
+            ]
+            .iter()
+            .all(|field| {
+                movement_route_templates
+                    .get(*field)
+                    .and_then(Value::as_str)
+                    .is_some_and(is_sha256)
+            })
+            && movement_route_templates.get("sha256") != movement_route_templates.get("stateHash"),
+        "Movement-Route-Templates-v2-Beleg besitzt keine getrennte Byte-/Zustandsbindung.",
+    )?;
+    let timetable_route_evidence = model.get("timetableRouteEvidence").ok_or_else(|| {
+        ReleaseManifestError::new("Operational-v2-Betriebsmodell ohne freien GTFS-Fahrwegbeleg.")
+    })?;
+    let timetable_route_evidence_object = timetable_route_evidence
+        .as_object()
+        .ok_or_else(|| ReleaseManifestError::new("Freier GTFS-Fahrwegbeleg ist kein Objekt."))?;
+    let timetable_route_evidence_keys: BTreeSet<_> = timetable_route_evidence_object
+        .keys()
+        .map(String::as_str)
+        .collect();
+    require(
+        timetable_route_evidence_keys
+            == BTreeSet::from([
+                "archive",
+                "archiveSha256",
+                "completeRouteCount",
+                "dailyCirculation",
+                "dailyCirculationPlanSha256",
+                "derivationRule",
+                "externalOperationalNetworkProvenance",
+                "gtfsSnapshotBytes",
+                "gtfsSnapshotSha256",
+                "policyId",
+                "realGeometry",
+                "realInterlockingFactsClaimed",
+                "reportBytes",
+                "reportSchema",
+                "reportSha256",
+                "routeRecordCount",
+                "routeSetSha256",
+                "routesBytes",
+                "routesSha256",
+                "sameStopTransitionCount",
+                "selectedSegmentCount",
+                "selectionRule",
+                "simulatedOperationalAssignment",
+                "snapshotHash",
+                "sourceLicense",
+                "sourceLicenseAsPublished",
+                "transferDemandsBytes",
+                "transferDemandsProduced",
+                "transferDemandsSchema",
+                "transferDemandsSha256",
+                "transferRouteCount",
+                "transferRouteLegCount",
+                "transferRouteLengthMm",
+                "transferSetSha256",
+            ]),
+        "Freier GTFS-Fahrwegbeleg besitzt nicht exakt den v4-Closure-Vertrag mit physischer Uebergangspartition.",
+    )?;
+    let selected_segment_count = timetable_route_evidence
+        .get("selectedSegmentCount")
+        .and_then(Value::as_i64)
+        .unwrap_or_default();
+    let complete_route_count = timetable_route_evidence
+        .get("completeRouteCount")
+        .and_then(Value::as_i64)
+        .unwrap_or_default();
+    let route_record_count = timetable_route_evidence
+        .get("routeRecordCount")
+        .and_then(Value::as_i64)
+        .unwrap_or_default();
+    let daily_circulation = timetable_route_evidence
+        .get("dailyCirculation")
+        .and_then(Value::as_object)
+        .ok_or_else(|| {
+            ReleaseManifestError::new(
+                "Freier GTFS-Fahrwegbeleg besitzt keine Daily-Circulation-Metrik.",
+            )
+        })?;
+    let daily_circulation_keys: BTreeSet<_> =
+        daily_circulation.keys().map(String::as_str).collect();
+    require(
+        daily_circulation_keys
+            == BTreeSet::from([
+                "circulationCount",
+                "journeyChainCount",
+                "lotCount",
+                "plannedTransitionCount",
+                "rolloverAssignmentCount",
+                "turnaroundDemandCount",
+                "transferDemandCount",
+                "transferLotCount",
+            ]),
+        "Daily-Circulation-Metrik besitzt fehlende oder unerwartete Felder.",
+    )?;
+    let daily_positive = |field: &str| {
+        daily_circulation
+            .get(field)
+            .and_then(Value::as_i64)
+            .filter(|value| *value > 0)
+    };
+    let daily_non_negative = |field: &str| {
+        daily_circulation
+            .get(field)
+            .and_then(Value::as_i64)
+            .filter(|value| *value >= 0)
+    };
+    let lot_count = daily_positive("lotCount").unwrap_or_default();
+    let journey_chain_count = daily_positive("journeyChainCount").unwrap_or_default();
+    let circulation_count = daily_positive("circulationCount").unwrap_or_default();
+    let rollover_assignment_count = daily_positive("rolloverAssignmentCount").unwrap_or_default();
+    let planned_transition_count = daily_positive("plannedTransitionCount").unwrap_or_default();
+    let turnaround_demand_count = daily_non_negative("turnaroundDemandCount").unwrap_or(-1);
+    let transfer_demand_count = daily_non_negative("transferDemandCount").unwrap_or(-1);
+    let transfer_lot_count = daily_non_negative("transferLotCount").unwrap_or(-1);
+    require(
+        timetable_route_evidence
+            .get("reportSchema")
+            .and_then(Value::as_str)
+            == Some("zugfolge-germany-timetable-route-report/v4")
+            && timetable_route_evidence.get("policyId") == model.get("policyId")
+            && timetable_route_evidence
+                .get("derivationRule")
+                .and_then(Value::as_str)
+                == Some("all-qualified-gtfs-playable-segments-via-real-osm-stop-anchors/v2")
+            && timetable_route_evidence
+                .get("selectionRule")
+                .and_then(Value::as_str)
+                == Some(
+                    "all-orderable-quality-b-gtfs-playable-segments-with-every-stop-as-anchor/v2",
+                )
+            && timetable_route_evidence
+                .get("transferDemandsSchema")
+                .and_then(Value::as_str)
+                == Some("zugfolge-timetable-transfer-demands/v2")
+            && timetable_route_evidence
+                .get("sourceLicense")
+                .and_then(Value::as_str)
+                == Some("CC-BY-4.0")
+            && timetable_route_evidence
+                .get("sourceLicenseAsPublished")
+                .and_then(Value::as_str)
+                == Some("CC BY 4.0")
+            && timetable_route_evidence
+                .get("archive")
+                .and_then(Value::as_str)
+                .is_some_and(|archive| !archive.is_empty())
+            && [
+                "reportBytes",
+                "routesBytes",
+                "gtfsSnapshotBytes",
+                "transferDemandsBytes",
+            ]
+            .iter()
+            .all(|field| {
+                timetable_route_evidence
+                    .get(*field)
+                    .and_then(Value::as_i64)
+                    .is_some_and(|bytes| bytes > 0)
+            })
+            && [
+                "reportSha256",
+                "routesSha256",
+                "gtfsSnapshotSha256",
+                "transferDemandsSha256",
+                "snapshotHash",
+                "archiveSha256",
+                "routeSetSha256",
+                "dailyCirculationPlanSha256",
+                "transferSetSha256",
+            ]
+            .iter()
+            .all(|field| {
+                timetable_route_evidence
+                    .get(*field)
+                    .and_then(Value::as_str)
+                    .is_some_and(is_sha256)
+            })
+            && timetable_route_evidence.get("routesSha256")
+                == timetable_route_evidence.get("routeSetSha256")
+            && selected_segment_count > 0
+            && selected_segment_count == complete_route_count
+            && complete_route_count == route_record_count
+            && timetable_route_evidence
+                .get("sameStopTransitionCount")
+                .and_then(Value::as_i64)
+                .is_some_and(|count| count >= 0)
+            && lot_count > 0
+            && journey_chain_count > 0
+            && circulation_count > 0
+            && rollover_assignment_count > 0
+            && planned_transition_count > 0
+            && turnaround_demand_count >= 0
+            && transfer_demand_count >= 0
+            && transfer_lot_count >= 0
+            && rollover_assignment_count == circulation_count
+            && turnaround_demand_count.checked_add(transfer_demand_count)
+                == Some(planned_transition_count)
+            && planned_transition_count == journey_chain_count
+            && transfer_lot_count <= lot_count
+            && timetable_route_evidence
+                .get("transferDemandsProduced")
+                .and_then(Value::as_bool)
+                == Some(true)
+            && timetable_route_evidence
+                .get("transferRouteCount")
+                .and_then(Value::as_i64)
+                == Some(transfer_demand_count)
+            && ["transferRouteLegCount", "transferRouteLengthMm"]
+                .iter()
+                .all(|field| {
+                    timetable_route_evidence
+                        .get(*field)
+                        .and_then(Value::as_i64)
+                        .is_some_and(|value| value > 0)
+                })
+            && timetable_route_evidence
+                .get("realGeometry")
+                .and_then(Value::as_bool)
+                == Some(true)
+            && timetable_route_evidence
+                .get("simulatedOperationalAssignment")
+                .and_then(Value::as_bool)
+                == Some(true)
+            && timetable_route_evidence
+                .get("realInterlockingFactsClaimed")
+                .and_then(Value::as_bool)
+                == Some(false)
+            && timetable_route_evidence
+                .get("externalOperationalNetworkProvenance")
+                .and_then(Value::as_bool)
+                == Some(false),
+        "Freier GTFS-Fahrwegbeleg verletzt Policy, Bytebindung, Tagesumlauf-/Transferabdeckung, Vollstaendigkeit oder Provenienz.",
+    )?;
+    for field in [
+        "blockResources",
+        "directedEdges",
+        "edgeGeometries",
+        "interlockingRoutes",
+        "platformIntervals",
+        "regionBoundaries",
+        "routeVersions",
+        "rzueLayouts",
+        "signals",
+        "switches",
+    ] {
+        require(
+            model
+                .pointer(&format!("/coverage/{field}"))
+                .and_then(Value::as_i64)
+                .is_some_and(|count| count > 0),
+            format!("Operational-v2-Qualitaet besitzt keinen positiven `{field}`-Abschluss."),
+        )?;
+    }
+    let (class_a, class_b, class_c) = class_count(
+        report
+            .pointer("/summary/operationalQualityClassArtifactCount")
+            .ok_or_else(|| {
+                ReleaseManifestError::new("Operational-v2-Qualitaet ohne operative Klassenbilanz.")
+            })?,
+        "Operational-v2-Qualitaet.summary.operationalQualityClassArtifactCount",
+    )?;
+    let map_class_c = map
+        .pointer("/qualityClassFeatureCount/C")
+        .and_then(Value::as_i64)
+        .unwrap_or_default();
+    require(
+        class_a == 0
+            && class_b == 1
+            && class_c == 0
+            && report
+                .pointer("/summary/unresolvedRequired")
+                .and_then(Value::as_i64)
+                == Some(0)
+            && report
+                .pointer("/summary/visibleMapClassCFeatureCount")
+                .and_then(Value::as_i64)
+                == Some(map_class_c),
+        "Operational-v2-Qualitaet besitzt keine geschlossene B=1/C=0-Bilanz.",
+    )?;
+    let artifact = artifacts
+        .iter()
+        .find(|artifact| {
+            artifact.extra.get("kind").and_then(Value::as_str)
+                == Some(OPERATIONAL_INFRASTRUCTURE_V2_SCHEMA)
+        })
+        .ok_or_else(|| ReleaseManifestError::new("Operational-v2-Artefakt fehlt."))?;
+    let candidate_bytes = model
+        .pointer("/operationalArtifact/bytes")
+        .and_then(Value::as_i64)
+        .unwrap_or_default();
+    let candidate_sha256 = model
+        .pointer("/operationalArtifact/sha256")
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+    let candidate_state_hash = model
+        .pointer("/operationalArtifact/stateHash")
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+    require(
+        candidate_bytes == artifact.bytes
+            && candidate_sha256 == artifact.sha256
+            && artifact.extra.get("stateHash").and_then(Value::as_str)
+                == Some(candidate_state_hash)
+            && is_sha256(candidate_sha256)
+            && is_sha256(candidate_state_hash)
+            && candidate_sha256 != candidate_state_hash,
+        "Operational-v2-Qualitaet und natives Artefakt besitzen keine identische Byte-/Zustandsbindung.",
+    )?;
+    let movement_artifact = artifacts
+        .iter()
+        .find(|artifact| {
+            artifact.extra.get("kind").and_then(Value::as_str)
+                == Some(MOVEMENT_ROUTE_TEMPLATES_V2_KIND)
+        })
+        .ok_or_else(|| ReleaseManifestError::new("Movement-Route-Templates-v2-Artefakt fehlt."))?;
+    let transfer_artifact = artifacts
+        .iter()
+        .find(|artifact| {
+            artifact.extra.get("kind").and_then(Value::as_str)
+                == Some(TIMETABLE_TRANSFER_DEMANDS_V2_KIND)
+        })
+        .ok_or_else(|| {
+            ReleaseManifestError::new("Timetable-Transfer-Demands-v2-Artefakt fehlt.")
+        })?;
+    require(
+        timetable_route_evidence
+            .get("transferDemandsBytes")
+            .and_then(Value::as_i64)
+            == Some(transfer_artifact.bytes)
+            && timetable_route_evidence
+                .get("transferDemandsSha256")
+                .and_then(Value::as_str)
+                == Some(transfer_artifact.sha256.as_str()),
+        "Operational-v2-Closure und Timetable-Transfer-Demands-v2-Artefakt besitzen keine identische Bytebindung.",
+    )?;
+    require(
+        movement_route_templates
+            .get("bytes")
+            .and_then(Value::as_i64)
+            == Some(movement_artifact.bytes)
+            && movement_route_templates
+                .get("sha256")
+                .and_then(Value::as_str)
+                == Some(movement_artifact.sha256.as_str())
+            && movement_route_templates
+                .get("operationalStateHash")
+                .and_then(Value::as_str)
+                == Some(candidate_state_hash)
+            && timetable_route_evidence
+                .get("transferSetSha256")
+                .and_then(Value::as_str)
+                == movement_route_templates
+                    .get("timetableTransferSetSha256")
+                    .and_then(Value::as_str),
+        "Operational-v2-Closure und Movement-Route-Templates-v2-Artefakt besitzen keine identische Byte-, Operational-State- oder Transfer-Set-Bindung.",
+    )?;
+    Ok(json!({
+        "reportSha256": sha256_bytes(report_bytes),
+        "policyId": model["policyId"],
+        "policySha256": model["policySha256"],
+        "closureReceiptSha256": model["closureReceiptSha256"],
+        "qualityClass": "B",
+        "provenance": "derived",
+        "candidateBytes": candidate_bytes,
+        "candidateSha256": candidate_sha256,
+        "candidateStateHash": candidate_state_hash,
+        "staticMapQualityBytes": actual_static_bytes,
+        "staticMapQualitySha256": actual_static_sha256,
+        "staticMapSourceReportSha256": source_report["sha256"],
+        "realInterlockingFactsClaimed": false,
+        "syntheticOperationalDetailsShipped": true,
+        "objectLevelProvenanceShipped": false,
+        "observedAndSyntheticObjectsShareRuntimeCollections": true,
+        "movementRouteTemplates": movement_route_templates,
+        "timetableRouteEvidence": timetable_route_evidence,
+        "operationalQualityEligible": true,
+        "signatureImplied": false,
+        "activationImplied": false,
+        "unresolvedRequired": 0,
+    }))
+}
+
+enum ReleaseQualityInput<'a> {
+    Legacy(&'a Value),
+    Operational {
+        static_report: &'a Value,
+        static_bytes: &'a [u8],
+        operational_report: &'a Value,
+        operational_bytes: &'a [u8],
+    },
+}
+
+fn build_public_infra_release_internal(
     config_value: &Value,
     catalog_value: &Value,
     rights_value: &Value,
     capture_value: &Value,
     artifacts_value: &Value,
-    quality_report: &Value,
+    quality_input: ReleaseQualityInput<'_>,
 ) -> Result<Value> {
     let config: GermanyConfig = decode(config_value, "Deutschland-Konfiguration")?;
     let catalog: SourceCatalog = decode(catalog_value, "Quellenkatalog")?;
@@ -2360,7 +3727,7 @@ pub fn build_public_infra_release(
 
     validate_config(&config)?;
     validate_rights(&catalog, &rights)?;
-    validate_capture(&capture, &catalog)?;
+    validate_capture(&capture, &catalog, &config)?;
     require(!artifacts.is_empty(), "InfraRelease ohne Artefakte.")?;
     let mut artifact_ids = BTreeSet::new();
     for artifact in &artifacts {
@@ -2394,7 +3761,40 @@ pub fn build_public_infra_release(
         )?;
     }
     validate_operational_infrastructure_artifact_binding(&artifacts, &config.release.release_id)?;
-    let quality = quality_summary(quality_report, &config)?;
+    let (quality_report, operational_quality_report, static_quality_bytes) = match quality_input {
+        ReleaseQualityInput::Legacy(report) => (report, None, None),
+        ReleaseQualityInput::Operational {
+            static_report,
+            static_bytes,
+            operational_report,
+            operational_bytes,
+        } => (
+            static_report,
+            Some((operational_report, operational_bytes)),
+            Some(static_bytes),
+        ),
+    };
+    let quality = operational_quality_report.map_or_else(
+        || quality_summary(quality_report, &config),
+        |_| static_map_quality_summary(quality_report, &config),
+    )?;
+    let operational_quality = operational_quality_report
+        .map(|(report, report_bytes)| {
+            let bytes = static_quality_bytes.ok_or_else(|| {
+                ReleaseManifestError::new(
+                    "Operational-v2-Qualitaet besitzt keine bindbaren Static-v2-Dateibytes.",
+                )
+            })?;
+            operational_quality_summary(
+                report,
+                report_bytes,
+                &config,
+                &artifacts,
+                quality_report,
+                bytes,
+            )
+        })
+        .transpose()?;
     let captured: BTreeMap<_, _> = capture
         .sources
         .iter()
@@ -2459,6 +3859,25 @@ pub fn build_public_infra_release(
             object.insert(key.into(), quality[key].clone());
         }
     }
+    if let (Some(object), Some(operational_quality)) =
+        (quality_value.as_object_mut(), operational_quality)
+    {
+        object.insert(
+            "classCVisible".into(),
+            Value::Bool(
+                quality
+                    .get("classCVisible")
+                    .and_then(Value::as_bool)
+                    .unwrap_or(false),
+            ),
+        );
+        object.insert("operationalClosure".into(), operational_quality);
+    }
+    let modelled_scope = if operational_quality_report.is_some() {
+        "operational-v2-closure-with-visible-static-context"
+    } else {
+        "quality-a-and-b"
+    };
     let release = json!({
         "schema": "zugfolge-infra-release/v2",
         "releaseId": config.release.release_id,
@@ -2467,7 +3886,7 @@ pub fn build_public_infra_release(
             "id": "deutschland-ebo",
             "loadedOnServer": "complete",
             "visibleScope": "complete-germany",
-            "modelledScope": "quality-a-and-b",
+            "modelledScope": modelled_scope,
             "playableScope": "separate-world-mask",
         },
         "sources": public_sources,
@@ -2508,6 +3927,78 @@ pub fn build_public_infra_release(
         }
     }
     Ok(json!({ "releaseHash": sha256(&release), "release": release }))
+}
+
+/// Baut den historischen, einteiligen InfraRelease-Qualitaetsvertrag. Klasse C
+/// bleibt in diesem Legacy-Pfad weiterhin nicht freigabefaehig.
+pub fn build_public_infra_release(
+    config_value: &Value,
+    catalog_value: &Value,
+    rights_value: &Value,
+    capture_value: &Value,
+    artifacts_value: &Value,
+    quality_report: &Value,
+) -> Result<Value> {
+    build_public_infra_release_internal(
+        config_value,
+        catalog_value,
+        rights_value,
+        capture_value,
+        artifacts_value,
+        ReleaseQualityInput::Legacy(quality_report),
+    )
+}
+
+/// Baut einen InfraRelease mit strikt getrennten Qualitaetsgrenzen: Die
+/// Static-Map-v2 darf sichtbare Klasse-C-Kontextobjekte behalten, waehrend nur
+/// der native, closure-basierte Operational-v2-Bericht die Betriebsfreigabe
+/// qualifiziert. Beide Berichte werden gegen ihre tatsaechlichen Dateibytes
+/// gebunden; keine Kartenklasse wird dabei umetikettiert.
+pub fn build_public_infra_release_with_operational_quality(
+    config_value: &Value,
+    catalog_value: &Value,
+    rights_value: &Value,
+    capture_value: &Value,
+    artifacts_value: &Value,
+    static_map_quality_bytes: &[u8],
+    operational_quality_bytes: &[u8],
+) -> Result<Value> {
+    require(
+        !static_map_quality_bytes.is_empty(),
+        "Static-Map-Quality-v2-Datei ist leer.",
+    )?;
+    let static_map_quality_report: Value = serde_json::from_slice(static_map_quality_bytes)
+        .map_err(|error| {
+            ReleaseManifestError::new(format!(
+                "Static-Map-Quality-v2-Datei ist kein gueltiges JSON: {error}"
+            ))
+        })?;
+    require(
+        !operational_quality_bytes.is_empty(),
+        "Operational-v2-Quality-Datei ist leer.",
+    )?;
+    let operational_quality_envelope: Value = serde_json::from_slice(operational_quality_bytes)
+        .map_err(|error| {
+            ReleaseManifestError::new(format!(
+                "Operational-v2-Quality-Datei ist kein gueltiges JSON: {error}"
+            ))
+        })?;
+    let operational_quality_report = operational_quality_envelope
+        .get("report")
+        .unwrap_or(&operational_quality_envelope);
+    build_public_infra_release_internal(
+        config_value,
+        catalog_value,
+        rights_value,
+        capture_value,
+        artifacts_value,
+        ReleaseQualityInput::Operational {
+            static_report: &static_map_quality_report,
+            static_bytes: static_map_quality_bytes,
+            operational_report: operational_quality_report,
+            operational_bytes: operational_quality_bytes,
+        },
+    )
 }
 
 /// Baut nach Quellen- und Adapterprüfung den jährlichen Infrastrukturplan.
@@ -2630,23 +4121,244 @@ pub fn build_annual_infra_plan(
         "DEM-Gleis-Join ohne Hashreport.",
     )?;
 
+    let mut stages = vec![
+        json!({ "id": "rights-gate", "mutatesRelease": false, "proof": "all-source-rights-approved" }),
+        json!({ "id": "capture", "mutatesRelease": false, "proof": "version-size-sha256-for-every-input" }),
+    ];
+    stages.extend([
+        json!({ "id": "official-infrago-normalization", "mutatesRelease": true, "sourceId": infrago.source_id, "entrypoint": infrago.entrypoint, "outputs": infrago.outputs, "proof": "strict-schema-report-and-deterministic-jsonseq-hashes" }),
+        json!({ "id": "openstation-normalization", "mutatesRelease": true, "sourceId": openstation.source_id, "entrypoint": openstation.entrypoint, "outputs": openstation.outputs, "proof": "streamed-netex-report-and-deterministic-station-layer-hashes" }),
+        json!({ "id": "ebo-filter", "mutatesRelease": true, "proof": "filter-report" }),
+        json!({ "id": "copernicus-dem-gradient", "mutatesRelease": true, "sourceId": dem.source_id, "entrypoint": dem.entrypoint, "outputs": dem.outputs, "proof": "pinned-cog-hashes-complete-sampling-and-uncertainty-report" }),
+        json!({ "id": "copernicus-dem-track-merge", "mutatesRelease": true, "entrypoint": merge.entrypoint, "output": merge.output, "report": merge.report, "proof": "strict-feature-id-geometry-count-and-sha256-report" }),
+        json!({ "id": "topology-and-conservative-model", "mutatesRelease": true, "proof": "deterministic-corpus-hash" }),
+        json!({ "id": "internal-validation", "mutatesRelease": true, "proof": "accepted-evidence-receipts" }),
+        json!({ "id": "quality-report", "mutatesRelease": false, "proof": "dimension-cause-length-report" }),
+    ]);
+    if let Some(operational_deriver) = &config.pipeline.operational_deriver {
+        let primary_runner = operational_deriver
+            .primary_runner
+            .as_deref()
+            .or(operational_deriver.entrypoint.as_deref())
+            .expect("validierter OperationalDeriver-PrimaryRunner");
+        let primary_runner_mode = operational_deriver
+            .primary_runner_mode
+            .as_deref()
+            .unwrap_or("primary-runner");
+        let derivation_stage = if let (
+            Some(command_builder),
+            Some(command_builder_mode),
+            Some(direct_system_launch),
+            Some(execution_pins),
+        ) = (
+            operational_deriver.system_command_builder.as_deref(),
+            operational_deriver.system_command_builder_mode.as_deref(),
+            operational_deriver.direct_system_launch.as_ref(),
+            operational_deriver.execution_pins.as_deref(),
+        ) {
+            let contract = &direct_system_launch.contract;
+            let trusted_executor = operational_deriver
+                .recovery_publisher
+                .as_ref()
+                .expect("validierter RecoveryPublisher fuer direkten Systemstart");
+            let source_root = operational_deriver
+                .source_root
+                .as_deref()
+                .expect("validierte Quellwurzel fuer direkten Systemstart");
+            let candidate_sidecar = operational_deriver
+                .candidate_movement_route_templates
+                .as_deref()
+                .expect("validierter Candidate-Sidecar fuer direkten Systemstart");
+            let outer_execution_receipt = trusted_executor
+                .outer_execution_receipt
+                .as_deref()
+                .expect("validierter Outer-Execution-Receipt fuer direkten Systemstart");
+            let inline_bootstrap_bytes =
+                OPERATIONAL_DIRECT_SYSTEM_LAUNCH_WINDOWS_BOOTSTRAP.as_bytes();
+            json!({
+                "id": "operational-v2-derivation",
+                "mutatesRelease": true,
+                "executionMode": "held-contract-direct-system-launch-v1",
+                "runnerBundle": {
+                    "file": primary_runner,
+                    "role": "held-stdin-data-only",
+                    "executable": false,
+                    "invocationMode": primary_runner_mode,
+                },
+                "executionPins": execution_pins,
+                "directSystemLaunch": {
+                    "schema": "zugfolge-operational-v2-held-contract-system-launch/v1",
+                    "platform": direct_system_launch.platform,
+                    "contract": {
+                        "file": contract.file,
+                        "bytes": contract.bytes,
+                        "sha256": contract.sha256,
+                        "schema": contract.schema,
+                        "releaseId": contract.release_id,
+                        "executionPins": {
+                            "file": contract.execution_pins.file,
+                            "bytes": contract.execution_pins.bytes,
+                            "sha256": contract.execution_pins.sha256,
+                            "schema": contract.execution_pins.schema,
+                        },
+                        "trustedExecutor": {
+                            "file": contract.trusted_executor.file,
+                            "buildCommit": contract.trusted_executor.build_commit,
+                            "bytes": contract.trusted_executor.bytes,
+                            "sha256": contract.trusted_executor.sha256,
+                        },
+                        "openMode": "share-read-deny-write-delete-held-through-child-exit-v1",
+                    },
+                    "command": "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe",
+                    "arguments": windows_annual_contract_arguments(),
+                    "workingDirectory": "C:\\Windows\\System32",
+                    "environmentMode": "replace-exactly-no-inheritance-v1",
+                    "environment": windows_annual_contract_environment(contract),
+                    "windowsProcessContract": {
+                        "mode": "create-process-argv-and-explicit-environment-v1",
+                        "maximumCommandLineCodeUnits": 32767,
+                        "temporaryDirectory": "read-only-system32-no-policy-test-write-v1",
+                    },
+                    "trustedExecutor": {
+                        "mode": "pinned-rust-command-env-clear-v1",
+                        "command": "run-annual-operational-v2",
+                        "file": trusted_executor.validator_executable,
+                        "buildCommit": trusted_executor.validator_build_commit,
+                        "bytes": trusted_executor.validator_bytes,
+                        "sha256": trusted_executor.validator_sha256,
+                    },
+                    "inlineBootstrap": {
+                        "mode": "held-outer-launcher-inline-powershell-v1",
+                        "sourceBytes": inline_bootstrap_bytes.len(),
+                        "sourceSha256": sha256_bytes(inline_bootstrap_bytes),
+                        "transport": "powershell-encoded-command-utf16le-v1",
+                        "outerLauncherRead": "single-held-handle-before-parse-through-child-exit-v1",
+                    },
+                    "outerLauncher": {
+                        "file": OPERATIONAL_DIRECT_SYSTEM_LAUNCH_WINDOWS_OUTER_FILE,
+                        "bytes": OPERATIONAL_DIRECT_SYSTEM_LAUNCH_WINDOWS_OUTER.len(),
+                        "sha256": sha256_bytes(OPERATIONAL_DIRECT_SYSTEM_LAUNCH_WINDOWS_OUTER),
+                        "mode": "held-source-loaded-by-inline-bootstrap-v1",
+                    },
+                    "dynamicBindings": [{
+                        "id": "launchContext",
+                        "environment": "ZUGFOLGE_OPERATIONAL_LAUNCH_CONTEXT_BASE64",
+                        "encoding": "canonical-json-utf8-base64-v1",
+                        "schema": "zugfolge-operational-v2-direct-system-launch-context/v1",
+                        "properties": [
+                            "candidatePath", "candidateSidecarPath", "executionPinsPath",
+                            "nativeReceiptPath", "reportPath", "runtimePath", "schema",
+                            "sourceRoot", "specificationPath",
+                        ],
+                    }],
+                    "runtimeProof": "held-contract.executionPins.runner.runtime",
+                    "launcherProof": "held-contract.launcher-and-executionPins.runner.launcher",
+                    "commandMaterialization": {
+                        "entrypoint": command_builder,
+                        "mode": command_builder_mode,
+                        "producer": {
+                            "causal": false,
+                            "releaseEvidenceEligible": false,
+                            "mutatesRelease": false,
+                        },
+                        "outputSchema": "zugfolge-operational-v2-direct-system-launch-command/v1",
+                        "role": "optional-diagnostic-only",
+                        "releaseExecutionEligible": false,
+                    },
+                },
+                "operationalBindings": {
+                    "schema": "zugfolge-operational-v2-annual-plan-bindings/v1",
+                    "executionPinsPath": execution_pins,
+                    "specificationPath": operational_deriver.specification,
+                    "sourceRoot": source_root,
+                    "candidatePath": operational_deriver.candidate,
+                    "candidateSidecarPath": candidate_sidecar,
+                    "reportPath": operational_deriver.report,
+                    "nativeReceiptPath": trusted_executor.native_receipt,
+                    "outerExecutionReceiptPath": outer_execution_receipt,
+                    "publishedOutputPath": operational_deriver.output,
+                    "publicationReceiptPath": trusted_executor.publication_receipt,
+                },
+                "proof": "a-b-only-exact-geometry-routes-and-interlocking-report",
+            })
+        } else {
+            json!({
+                "id": "operational-v2-derivation",
+                "mutatesRelease": true,
+                "entrypoint": primary_runner,
+                "executionMode": primary_runner_mode,
+                "proof": "a-b-only-exact-geometry-routes-and-interlocking-report",
+            })
+        };
+        stages.push(derivation_stage);
+        if let Some(recovery) = &operational_deriver.recovery_publisher {
+            let execution_pins = operational_deriver
+                .execution_pins
+                .as_deref()
+                .expect("validierte Execution-Pins fuer interne Rebuild-Phase");
+            let system_launch_contract = operational_deriver
+                .direct_system_launch
+                .as_ref()
+                .map(|launch| launch.contract.file.as_str())
+                .expect("validierter Direct-System-Launch fuer interne Rebuild-Phase");
+            stages.extend([
+                json!({
+                    "id": "operational-v2-validator-rebuild-evidence",
+                    "mutatesRelease": true,
+                    "executionMode": "internal-os-anchored-single-bundle-phase-v1",
+                    "runner": {
+                        "bundle": primary_runner,
+                        "invocationMode": primary_runner_mode,
+                        "executionPins": execution_pins,
+                        "systemLaunchContract": system_launch_contract,
+                        "phase": {
+                            "implementation": "tools/region-import/germany/operational-validator-rebuild-evidence.mjs",
+                            "export": "materializeOperationalValidatorRebuildEvidence",
+                            "loadingMode": "embedded-in-held-runner-bundle-v1",
+                            "order": "before-native-validator",
+                        },
+                    },
+                    "specification": recovery.validator_rebuild_specification,
+                    "specificationSchema": "zugfolge-operational-validator-rebuild-spec/v3",
+                    "output": recovery.validator_rebuild_evidence,
+                    "receiptSchema": "zugfolge-operational-validator-rebuild-evidence/v3",
+                    "preservedValidatorExecutable": recovery.validator_executable,
+                    "rebuiltValidatorExecutable": recovery.validator_rebuild_executable,
+                    "validatorBuildCommit": recovery.validator_build_commit,
+                    "preservedValidatorBytes": recovery.validator_bytes,
+                    "preservedValidatorSha256": recovery.validator_sha256,
+                    "rebuiltValidatorExpectedBytes": recovery.validator_rebuild_expected_bytes,
+                    "rebuiltValidatorRawProof": "from-portable-receipt",
+                    "normalizedPeSha256": recovery.validator_normalized_pe_sha256,
+                    "proof": "pinned-source-vendor-toolchain-isolated-build-pe-normalization-and-section-equivalence",
+                }),
+                json!({ "id": "operational-v2-native-receipt-capture", "mutatesRelease": true, "entrypoint": recovery.capture_entrypoint, "output": recovery.native_receipt, "validatorExecutable": recovery.validator_executable, "validatorBuildCommit": recovery.validator_build_commit, "validatorBytes": recovery.validator_bytes, "validatorSha256": recovery.validator_sha256, "validatorRebuildSpecification": recovery.validator_rebuild_specification, "validatorRebuildEvidence": recovery.validator_rebuild_evidence, "executionMode": "direct-run-recovery-only", "proof": "canonical-native-receipt-triplet-binary-rebuild-and-script-binding" }),
+                json!({ "id": "operational-v2-recovery-publication", "mutatesRelease": true, "entrypoint": recovery.entrypoint, "output": recovery.publication_receipt, "validatorRebuildSpecification": recovery.validator_rebuild_specification, "validatorRebuildEvidence": recovery.validator_rebuild_evidence, "executionInventory": recovery.execution_inventory, "executionMode": "direct-run-recovery-only", "proof": "create-new-final-pair-and-publication-receipt" }),
+            ]);
+        } else {
+            stages.push(
+                json!({ "id": "operational-v2-native-validation", "mutatesRelease": false, "entrypoint": "tools/region-import/materialize-operational-infrastructure-v2.mjs", "proof": "matching-javascript-and-rust-state-hashes" }),
+            );
+        }
+    }
+    stages.push(
+        json!({ "id": "tiles", "mutatesRelease": true, "proof": "self-hosted-pmtiles-hashes" }),
+    );
+    if config.pipeline.operational_deriver.is_some() {
+        stages.extend([
+            json!({ "id": "release-artifact-inventory", "mutatesRelease": true, "entrypoint": "tools/region-import/germany/run-release-artifacts.mjs", "proof": "typed-operational-v2-byte-and-state-binding" }),
+            json!({ "id": "public-manifest", "mutatesRelease": true, "proof": "rust-compiler-operational-v2-binding-and-internal-evidence-scan" }),
+            json!({ "id": "operational-v2-acceptance", "mutatesRelease": false, "proof": "native-worker-livemap-rzue-replay-restore-load-and-negative-gates" }),
+        ]);
+    }
+    stages.extend([
+        json!({ "id": "independent-validation", "mutatesRelease": false, "proof": "holdout-pass" }),
+        json!({ "id": "signature", "mutatesRelease": false, "proof": "release-responsible-signature" }),
+    ]);
+
     Ok(json!({
         "schema": "zugfolge-annual-infra-plan/v1",
         "releaseId": config.release.release_id,
-        "stages": [
-            { "id": "rights-gate", "mutatesRelease": false, "proof": "all-source-rights-approved" },
-            { "id": "capture", "mutatesRelease": false, "proof": "version-size-sha256-for-every-input" },
-            { "id": "official-infrago-normalization", "mutatesRelease": true, "sourceId": infrago.source_id, "entrypoint": infrago.entrypoint, "outputs": infrago.outputs, "proof": "strict-schema-report-and-deterministic-jsonseq-hashes" },
-            { "id": "openstation-normalization", "mutatesRelease": true, "sourceId": openstation.source_id, "entrypoint": openstation.entrypoint, "outputs": openstation.outputs, "proof": "streamed-netex-report-and-deterministic-station-layer-hashes" },
-            { "id": "ebo-filter", "mutatesRelease": true, "proof": "filter-report" },
-            { "id": "copernicus-dem-gradient", "mutatesRelease": true, "sourceId": dem.source_id, "entrypoint": dem.entrypoint, "outputs": dem.outputs, "proof": "pinned-cog-hashes-complete-sampling-and-uncertainty-report" },
-            { "id": "copernicus-dem-track-merge", "mutatesRelease": true, "entrypoint": merge.entrypoint, "output": merge.output, "report": merge.report, "proof": "strict-feature-id-geometry-count-and-sha256-report" },
-            { "id": "topology-and-conservative-model", "mutatesRelease": true, "proof": "deterministic-corpus-hash" },
-            { "id": "internal-validation", "mutatesRelease": true, "proof": "accepted-evidence-receipts" },
-            { "id": "quality-report", "mutatesRelease": false, "proof": "dimension-cause-length-report" },
-            { "id": "tiles", "mutatesRelease": true, "proof": "self-hosted-pmtiles-hashes" },
-            { "id": "independent-validation", "mutatesRelease": false, "proof": "holdout-pass" },
-            { "id": "signature", "mutatesRelease": false, "proof": "release-responsible-signature" }
-        ]
+        "stages": stages,
     }))
 }

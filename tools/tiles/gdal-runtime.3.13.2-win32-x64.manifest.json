@@ -1,0 +1,3175 @@
+{
+  "entryPoint": {
+    "cacheFile": "tools/gdal-3.13.2/ogr2ogr.exe",
+    "sourceFile": "var/tooling-pinned/gdal-3.13.2/ogr2ogr.exe"
+  },
+  "environment": {
+    "gdalData": {
+      "cacheDirectory": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal",
+      "sourceDirectory": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal"
+    },
+    "pathPrepend": {
+      "cacheDirectory": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin",
+      "sourceDirectory": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin"
+    },
+    "projData": {
+      "cacheDirectory": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/proj",
+      "sourceDirectory": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/proj"
+    }
+  },
+  "files": [
+    {
+      "bytes": 16896,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/CreateDOMDocument.exe",
+      "sha256": "341714f0b5da539abab21065afa83ac5bbc1e8d95845d4cf89beacb6feb34bfb",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/CreateDOMDocument.exe"
+    },
+    {
+      "bytes": 37888,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/DOMCount.exe",
+      "sha256": "d827918ad23233a42e96ef3e38b62d863290c9daf4e94c69686d23373487f8d9",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/DOMCount.exe"
+    },
+    {
+      "bytes": 38400,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/DOMPrint.exe",
+      "sha256": "4a9b8f4399b76732ecac771fbdf1edcfda40071c9b9328f35c6e6532dbd647fd",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/DOMPrint.exe"
+    },
+    {
+      "bytes": 25088,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/EnumVal.exe",
+      "sha256": "651197f0164c3842b8014c1db3cbdcfd968435b20f4a723fbe7a6dc29703efe0",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/EnumVal.exe"
+    },
+    {
+      "bytes": 548864,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/Lerc.dll",
+      "sha256": "451cd3d0eaede32c199886717ec7484b8ca7effda47ee89febea957540058975",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/Lerc.dll"
+    },
+    {
+      "bytes": 30208,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/MemParse.exe",
+      "sha256": "9426690a435233d5432ae5aee22709459fe7654b37400646f99b9a6e9aadd5eb",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/MemParse.exe"
+    },
+    {
+      "bytes": 28672,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/PParse.exe",
+      "sha256": "22ae56ce79323768696bd70e1c43f04e1333c45191c551e9425c64c6ebc036f0",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/PParse.exe"
+    },
+    {
+      "bytes": 122368,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/PSVIWriter.exe",
+      "sha256": "b65fc21d009623717ba21d43055bee8b136e3341fb2c218630d68504ec89cd79",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/PSVIWriter.exe"
+    },
+    {
+      "bytes": 28672,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/Redirect.exe",
+      "sha256": "4b4ed9c6a99736f64432dd63dec12fd2fff844126513bbd5a279ff6176c9e142",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/Redirect.exe"
+    },
+    {
+      "bytes": 41472,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/SAX2Count.exe",
+      "sha256": "3f6fcd9ef4ee35edd48d7f07237d07702feb9c4aa472e49b82267cfb20f7fe7f",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/SAX2Count.exe"
+    },
+    {
+      "bytes": 45056,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/SAX2Print.exe",
+      "sha256": "f8734ef1e6d028d4df3a75286a3419b6484ceb222fdef77a0e347a1b97f7a7aa",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/SAX2Print.exe"
+    },
+    {
+      "bytes": 45056,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/SAXCount.exe",
+      "sha256": "be95a38e80a005ce13b52f6579300ec1b6c680785fb1ce5c7cc80dd1d0c81edc",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/SAXCount.exe"
+    },
+    {
+      "bytes": 31232,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/SAXPrint.exe",
+      "sha256": "e3e6a10e49b314c0100a90a6493bc66f5c017aea646ab07bf1659aa187b26b22",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/SAXPrint.exe"
+    },
+    {
+      "bytes": 48640,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/SCMPrint.exe",
+      "sha256": "591318810847b2a8a70d9f5e1201bd08ab4be1ce4f9f2d90065d5e3afc921c12",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/SCMPrint.exe"
+    },
+    {
+      "bytes": 29696,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/SEnumVal.exe",
+      "sha256": "aa0f0ffce30375b4ff060c6c21dfdde95b0d5fc303e3a4495ea9db3a422a89f4",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/SEnumVal.exe"
+    },
+    {
+      "bytes": 28160,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/StdInParse.exe",
+      "sha256": "be1e7a2e42284856e26e69ab069fda1e89f8e127cde106fa4b6ff58dddc3b11c",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/StdInParse.exe"
+    },
+    {
+      "bytes": 21504,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/XInclude.exe",
+      "sha256": "82bfa684eb0f3a718c8fa5ed516763c28ca6924871189b8a21e53ce0125c999c",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/XInclude.exe"
+    },
+    {
+      "bytes": 22872,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/api-ms-win-core-console-l1-1-0.dll",
+      "sha256": "015bd08815c7b934a8952c3a7578e9ce59f21136e8a880d42bbd414bec2c6058",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/api-ms-win-core-console-l1-1-0.dll"
+    },
+    {
+      "bytes": 22872,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/api-ms-win-core-console-l1-2-0.dll",
+      "sha256": "dcb4b82b6177fae57fdf0f3e05ab62ff75e05560b54547c16d6a1d83b33e07d4",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/api-ms-win-core-console-l1-2-0.dll"
+    },
+    {
+      "bytes": 22896,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/api-ms-win-core-datetime-l1-1-0.dll",
+      "sha256": "5534812cdbdae94ba45cb216e5eb9af686b853948df54365103555abbbaf9d9a",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/api-ms-win-core-datetime-l1-1-0.dll"
+    },
+    {
+      "bytes": 22872,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/api-ms-win-core-debug-l1-1-0.dll",
+      "sha256": "837d2b1b2cd03e03fc6ccb050698b6b5763af17c201304872342a5eae9e0a2d2",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/api-ms-win-core-debug-l1-1-0.dll"
+    },
+    {
+      "bytes": 22872,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/api-ms-win-core-errorhandling-l1-1-0.dll",
+      "sha256": "de43b165f568c276c00e95acd454e3092f352a18e95874595f4f4658c06d2ec7",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/api-ms-win-core-errorhandling-l1-1-0.dll"
+    },
+    {
+      "bytes": 22872,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/api-ms-win-core-fibers-l1-1-0.dll",
+      "sha256": "3cebc45bf479ad74cfabf2c6bfd4994d7ad639ed1221025981d19cedf9ce0416",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/api-ms-win-core-fibers-l1-1-0.dll"
+    },
+    {
+      "bytes": 22872,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/api-ms-win-core-fibers-l1-1-1.dll",
+      "sha256": "5ef70308bcca628ce6b0e2856b15b1c7ae340c3f9bbbc4c1071d8c191a34a5c3",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/api-ms-win-core-fibers-l1-1-1.dll"
+    },
+    {
+      "bytes": 27008,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/api-ms-win-core-file-l1-1-0.dll",
+      "sha256": "250ac829f2617bcac1c6e5b8c4f630462e20765863ba573526a3e11bbfb94a9a",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/api-ms-win-core-file-l1-1-0.dll"
+    },
+    {
+      "bytes": 22888,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/api-ms-win-core-file-l1-2-0.dll",
+      "sha256": "ae14079a114733f60ce87b92cba42acd8083c2cd67594e53bc37dc0b97a4b465",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/api-ms-win-core-file-l1-2-0.dll"
+    },
+    {
+      "bytes": 22912,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/api-ms-win-core-file-l2-1-0.dll",
+      "sha256": "914bf26a298713119477ea0a8e7bd43171b91344ebe24fb47ad77c49686e3d87",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/api-ms-win-core-file-l2-1-0.dll"
+    },
+    {
+      "bytes": 22896,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/api-ms-win-core-handle-l1-1-0.dll",
+      "sha256": "ab5489955e371b15f77906c08ec3c7affe2c7a46a08c514ca628768b4478974b",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/api-ms-win-core-handle-l1-1-0.dll"
+    },
+    {
+      "bytes": 22872,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/api-ms-win-core-heap-l1-1-0.dll",
+      "sha256": "c70f9644d8377fa39c5b71f2e9734c1400d7598904fdeb772e8502099982dcb7",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/api-ms-win-core-heap-l1-1-0.dll"
+    },
+    {
+      "bytes": 22888,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/api-ms-win-core-interlocked-l1-1-0.dll",
+      "sha256": "f8129710188e407bb0e6f46d30aeba277d67b947ece5fe09e883fde2323f3ae6",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/api-ms-win-core-interlocked-l1-1-0.dll"
+    },
+    {
+      "bytes": 22888,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/api-ms-win-core-kernel32-legacy-l1-1-1.dll",
+      "sha256": "5200b16cb2ddc61cfc07373a9a84aa85a3ab50806ca96c879c883275832944c1",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/api-ms-win-core-kernel32-legacy-l1-1-1.dll"
+    },
+    {
+      "bytes": 22872,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/api-ms-win-core-libraryloader-l1-1-0.dll",
+      "sha256": "48786fb88b001dcd1f63acea903d3ca9cc0b3060d5a325e3f2f3cbc3bfd53166",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/api-ms-win-core-libraryloader-l1-1-0.dll"
+    },
+    {
+      "bytes": 22872,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/api-ms-win-core-localization-l1-2-0.dll",
+      "sha256": "9ec3898f7eba91faa28b51616c211a2689e3a13aeef8de6e13cb674e49d689eb",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/api-ms-win-core-localization-l1-2-0.dll"
+    },
+    {
+      "bytes": 22896,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/api-ms-win-core-memory-l1-1-0.dll",
+      "sha256": "3a6cbc524c99e1cd80d5368f5601402a37ad602528b1ab628093573ef638eb3b",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/api-ms-win-core-memory-l1-1-0.dll"
+    },
+    {
+      "bytes": 22888,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/api-ms-win-core-namedpipe-l1-1-0.dll",
+      "sha256": "97145ef89c44949fcf0f04ac834a8bc7d687ef49ee73ae9fc32f3c11136b7201",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/api-ms-win-core-namedpipe-l1-1-0.dll"
+    },
+    {
+      "bytes": 22872,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/api-ms-win-core-processenvironment-l1-1-0.dll",
+      "sha256": "8bc7c10b1851aea644e9c9f381cdb935e091fee6b0be3d3aedc6fffaac96adb7",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/api-ms-win-core-processenvironment-l1-1-0.dll"
+    },
+    {
+      "bytes": 22912,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/api-ms-win-core-processthreads-l1-1-0.dll",
+      "sha256": "d8030b777617c71f0f94564607699dbf7561487d779db9756aed378c5675213f",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/api-ms-win-core-processthreads-l1-1-0.dll"
+    },
+    {
+      "bytes": 22872,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/api-ms-win-core-processthreads-l1-1-1.dll",
+      "sha256": "f5e676713340f73a03a3d41a6ec9883b431da7d16c7f07bd0a920fb80e6c0753",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/api-ms-win-core-processthreads-l1-1-1.dll"
+    },
+    {
+      "bytes": 22872,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/api-ms-win-core-profile-l1-1-0.dll",
+      "sha256": "f023d47e44d3eea6b0743580f57e8c6ba81e79d5ebfa7da26250076c647b980e",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/api-ms-win-core-profile-l1-1-0.dll"
+    },
+    {
+      "bytes": 22888,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/api-ms-win-core-rtlsupport-l1-1-0.dll",
+      "sha256": "9746d8930704153578a628c010638a5f818ffe5a927e25591b108e256dc6afca",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/api-ms-win-core-rtlsupport-l1-1-0.dll"
+    },
+    {
+      "bytes": 22896,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/api-ms-win-core-string-l1-1-0.dll",
+      "sha256": "7c53ae24c982d16ffd1bf7f918d115b11b7f30e57bc7feaa18cb9781e4abb926",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/api-ms-win-core-string-l1-1-0.dll"
+    },
+    {
+      "bytes": 22896,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/api-ms-win-core-synch-l1-1-0.dll",
+      "sha256": "56d9d62ca5dba79a6581b8d574a7d8b2a64a5ecb71e47dcf06ed0285708b1859",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/api-ms-win-core-synch-l1-1-0.dll"
+    },
+    {
+      "bytes": 22888,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/api-ms-win-core-synch-l1-2-0.dll",
+      "sha256": "f6482bbec5612c39ecb4822787a333f2b7570f7a5f922a4059be41ba957bb372",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/api-ms-win-core-synch-l1-2-0.dll"
+    },
+    {
+      "bytes": 22896,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/api-ms-win-core-sysinfo-l1-1-0.dll",
+      "sha256": "272d02765fdd3582618236c2d309abba069642f9bc1062ede069d0c144e17007",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/api-ms-win-core-sysinfo-l1-1-0.dll"
+    },
+    {
+      "bytes": 22912,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/api-ms-win-core-sysinfo-l1-2-0.dll",
+      "sha256": "8a0900788859d0eb51c2f48f50cc6ed376a120b518100fa20e11d7702ccde260",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/api-ms-win-core-sysinfo-l1-2-0.dll"
+    },
+    {
+      "bytes": 22896,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/api-ms-win-core-timezone-l1-1-0.dll",
+      "sha256": "ff35de6c03812b332e140f17dade25c5dd4775156da9eeb1eaae3fddd27236ec",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/api-ms-win-core-timezone-l1-1-0.dll"
+    },
+    {
+      "bytes": 22896,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/api-ms-win-core-util-l1-1-0.dll",
+      "sha256": "191ef3e98641a57296f19d572d8eb62489470ff1ef6030d136af170c2f835173",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/api-ms-win-core-util-l1-1-0.dll"
+    },
+    {
+      "bytes": 22872,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/api-ms-win-crt-conio-l1-1-0.dll",
+      "sha256": "54ee5ec719a051496ff60aa00dbeaa94b9a7d2cdac27fe9b7317f1a666b6a2aa",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/api-ms-win-crt-conio-l1-1-0.dll"
+    },
+    {
+      "bytes": 26992,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/api-ms-win-crt-convert-l1-1-0.dll",
+      "sha256": "8b94662429171019fcd63c70bbf2095a075170599704a5e7dcdbe3da13f3a429",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/api-ms-win-crt-convert-l1-1-0.dll"
+    },
+    {
+      "bytes": 22912,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/api-ms-win-crt-environment-l1-1-0.dll",
+      "sha256": "39e5929593709e8af3bc9e0a75ec1155778d6f4a247f4cdfc58928ad6db88434",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/api-ms-win-crt-environment-l1-1-0.dll"
+    },
+    {
+      "bytes": 22872,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/api-ms-win-crt-filesystem-l1-1-0.dll",
+      "sha256": "5a8ecebac32edf4e1f3c5c6c1c8ea1a1add6cda4f9c9cb26f752fb295bea6865",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/api-ms-win-crt-filesystem-l1-1-0.dll"
+    },
+    {
+      "bytes": 22872,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/api-ms-win-crt-heap-l1-1-0.dll",
+      "sha256": "c71080cbcb43bf1f8f3e391deb12a582eb0abefc80946f340675a2c616e4feb4",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/api-ms-win-crt-heap-l1-1-0.dll"
+    },
+    {
+      "bytes": 22896,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/api-ms-win-crt-locale-l1-1-0.dll",
+      "sha256": "6c68648e524187e03c4ad9aaa4a99113c6ee9f29fb39cc0ed93f951975138e63",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/api-ms-win-crt-locale-l1-1-0.dll"
+    },
+    {
+      "bytes": 31064,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/api-ms-win-crt-math-l1-1-0.dll",
+      "sha256": "d4fbcccbe29371cbce431e43b2eb4f7ba9a6f04a3d740a071f02457a505e9dc8",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/api-ms-win-crt-math-l1-1-0.dll"
+    },
+    {
+      "bytes": 31064,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/api-ms-win-crt-multibyte-l1-1-0.dll",
+      "sha256": "41b98a59bea1c86ab3b2357acb77de4eae7ff1132f130b1d9669ab9c2b456a2a",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/api-ms-win-crt-multibyte-l1-1-0.dll"
+    },
+    {
+      "bytes": 76120,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/api-ms-win-crt-private-l1-1-0.dll",
+      "sha256": "29bf3d90617d3781d19b332d6ceb9f20ba5ce082ec74bf6c34d5d4aee56e48a1",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/api-ms-win-crt-private-l1-1-0.dll"
+    },
+    {
+      "bytes": 22896,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/api-ms-win-crt-process-l1-1-0.dll",
+      "sha256": "47c1935942e3ac0812e4dcf18c0e265e565f0194a3349111c299712f5565f7ac",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/api-ms-win-crt-process-l1-1-0.dll"
+    },
+    {
+      "bytes": 26968,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/api-ms-win-crt-runtime-l1-1-0.dll",
+      "sha256": "72adc1b3677e0814d9c4ebf0964000e84bb2acf67336c8963061665e44f78029",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/api-ms-win-crt-runtime-l1-1-0.dll"
+    },
+    {
+      "bytes": 26968,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/api-ms-win-crt-stdio-l1-1-0.dll",
+      "sha256": "900afc3989673c9bb1a687ed38c192f46db9e6ba6d11a668898a539e7fc23798",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/api-ms-win-crt-stdio-l1-1-0.dll"
+    },
+    {
+      "bytes": 26968,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/api-ms-win-crt-string-l1-1-0.dll",
+      "sha256": "fcf12466cc12fd3b73611fc0763a5a1f9d44e90349513c34a0c83b0f36421793",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/api-ms-win-crt-string-l1-1-0.dll"
+    },
+    {
+      "bytes": 22912,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/api-ms-win-crt-time-l1-1-0.dll",
+      "sha256": "886e57c4a6adb299b38f02945369f590a67da4e79a798359fc60aaa067212d7c",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/api-ms-win-crt-time-l1-1-0.dll"
+    },
+    {
+      "bytes": 22912,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/api-ms-win-crt-utility-l1-1-0.dll",
+      "sha256": "5f8f26b216ade615b67a41f6fbbb910972fc6153315a65bb8f09912be50215b1",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/api-ms-win-crt-utility-l1-1-0.dll"
+    },
+    {
+      "bytes": 787456,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/archive.dll",
+      "sha256": "055b9f4c3e0c6284cbe5de21c6afda891d7a77a8ae4f8aecb88c8b11c3268f27",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/archive.dll"
+    },
+    {
+      "bytes": 69632,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/blosc.dll",
+      "sha256": "074911bbfa04a5d7d3215d4aefaee8942a33cf73bac964c675be57f82bb69203",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/blosc.dll"
+    },
+    {
+      "bytes": 137728,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/brotlicommon.dll",
+      "sha256": "7bb3d76ccd52626bd57760f81bfeaf61107861eff68ee81d13d2a925497d4fef",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/brotlicommon.dll"
+    },
+    {
+      "bytes": 52224,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/brotlidec.dll",
+      "sha256": "65541058df636d7856ad6741658ceef9001d907cf45ae67eeecf285322100485",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/brotlidec.dll"
+    },
+    {
+      "bytes": 678912,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/brotlienc.dll",
+      "sha256": "a249530ec794e14670b8c6f5f2429083c80b5511b999a24700c169f9f8947439",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/brotlienc.dll"
+    },
+    {
+      "bytes": 103424,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/bsdcat.exe",
+      "sha256": "3a1c113c6026f58d8cb277fa848eb472fafd011acf67e19eff8626b63c18f09f",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/bsdcat.exe"
+    },
+    {
+      "bytes": 741376,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/bsdcpio.exe",
+      "sha256": "1a7a8481d695bda61ab0753587b8ba47da0a649d4b2e04790dd4d20316e1c1c9",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/bsdcpio.exe"
+    },
+    {
+      "bytes": 780800,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/bsdtar.exe",
+      "sha256": "aebb0014734c1de5c5a9dc5a5c6c4293eadb88693abf2255478e9217b60f9621",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/bsdtar.exe"
+    },
+    {
+      "bytes": 167936,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/bsdunzip.exe",
+      "sha256": "a3ff84e4fa986ed8065b269fe33a787ee572f80c01a3726203d45f3a3f8c2690",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/bsdunzip.exe"
+    },
+    {
+      "bytes": 7353,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/c_rehash.pl",
+      "sha256": "373008b8477a6bdc138706c1d02e7b08943c899550eb2d67e5baa1548e8c6dd9",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/c_rehash.pl"
+    },
+    {
+      "bytes": 157184,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/ccapiserver.exe",
+      "sha256": "215c72978bc0669d5f46e4eef66d173bc2d2d2b8877306b05fbaf0e684cf3467",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/ccapiserver.exe"
+    },
+    {
+      "bytes": 58880,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/cct.exe",
+      "sha256": "587dee7be075d0b6b6f6068b476ea2421358955ea2d271c303b488b00d7bb29e",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/cct.exe"
+    },
+    {
+      "bytes": 12800,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/charset.dll",
+      "sha256": "4983c202d0424ad6e271741fb9453b7a833bb1697854bc37046db39618234f14",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/charset.dll"
+    },
+    {
+      "bytes": 194560,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/cjpeg.exe",
+      "sha256": "652b251a6528a5d3c9f780a0f967e7bf1ad544192ce228d06ae508263d22cafd",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/cjpeg.exe"
+    },
+    {
+      "bytes": 21504,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/comerr64.dll",
+      "sha256": "244d7f39f1333cfbeb37cbc6a4623c13bca9a3a29980bfd4658ec57bf2c44221",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/comerr64.dll"
+    },
+    {
+      "bytes": 374200,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/concrt140.dll",
+      "sha256": "54716f0738af891f283d213b5c8d11b25896bb8ee3097d301eae718560cf974e",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/concrt140.dll"
+    },
+    {
+      "bytes": 58880,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/cs2cs.exe",
+      "sha256": "780174fdf8b41bc814529ca800b2ec6521684458282a108707b3b5aa66951784",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/cs2cs.exe"
+    },
+    {
+      "bytes": 177664,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/deflate.dll",
+      "sha256": "6dd36dd208f18c6b44b3a78ae2c9462f28430e39b7e5bdb00faaec22b495021b",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/deflate.dll"
+    },
+    {
+      "bytes": 171520,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/derb.exe",
+      "sha256": "cb30f35782dd07d350b5398d7a6b6011ffd9298362cdcb0ae01a0150ad64576f",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/derb.exe"
+    },
+    {
+      "bytes": 151040,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/djpeg.exe",
+      "sha256": "e13be1183efee7d12302297fef7e7b02cbb3ae6628c5ac60efb6730cee35cbad",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/djpeg.exe"
+    },
+    {
+      "bytes": 318464,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/escapesrc.exe",
+      "sha256": "72cb274f1f2512b65519ffa3851783c81843d1d6e5dcab2b6595419dd24cbb09",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/escapesrc.exe"
+    },
+    {
+      "bytes": 21504,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/fax2ps.exe",
+      "sha256": "9b37d0b9d23858111331c6f0885f9796c8c4b61eb54a1b2bb9f5be153d46dad2",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/fax2ps.exe"
+    },
+    {
+      "bytes": 18944,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/fax2tiff.exe",
+      "sha256": "8e8a063f4b797c7449be54245ab228d0c02a7dd8ad2baba6fffe58380046c4da",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/fax2tiff.exe"
+    },
+    {
+      "bytes": 31232,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/ffi-8.dll",
+      "sha256": "04c984ac285a64bdfb82c10fae1c6a04e311514aa34aac00a7fb94ec84882924",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/ffi-8.dll"
+    },
+    {
+      "bytes": 125440,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/freexl.dll",
+      "sha256": "90a6ba65e4caa3d94dd454d429b5333b352d96460006a14cd90af9cd5cd281ba",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/freexl.dll"
+    },
+    {
+      "bytes": 7611,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/gdal-config",
+      "sha256": "1a780c7bf555e133622db94bb8c5ca1d4e57500c7356b2b8b40da4b19ba1b5df",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/gdal-config"
+    },
+    {
+      "bytes": 24578048,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/gdal.dll",
+      "sha256": "dfe9006649dac3f37645231626fa2995508073fce7bb572984469c3f5b16486c",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/gdal.dll"
+    },
+    {
+      "bytes": 213504,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/gdal.exe",
+      "sha256": "464b1895866b5feb5f894b99b01a964e1b318d5ad4a3d9afd1c0b23f668440fb",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/gdal.exe"
+    },
+    {
+      "bytes": 38912,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/gdal_contour.exe",
+      "sha256": "cc183c7bd63e459ee9cefe863fe583f0a02422a25f03550d6a2958c3faa090f3",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/gdal_contour.exe"
+    },
+    {
+      "bytes": 340480,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/gdal_create.exe",
+      "sha256": "6e60f9f612fbcc2823c88e25fbc4e4968d47dd28fa2b4b4ab42fd2fa784fc9f0",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/gdal_create.exe"
+    },
+    {
+      "bytes": 219136,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/gdal_footprint.exe",
+      "sha256": "67cdba93ebf4232f7d66176015dabac4483457732ad1db7a81564e387f9062e9",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/gdal_footprint.exe"
+    },
+    {
+      "bytes": 38912,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/gdal_grid.exe",
+      "sha256": "ad746dd9b601d0458bf0ce181a601d1e62c8d94a80f4baa77a6644d27c3eb93e",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/gdal_grid.exe"
+    },
+    {
+      "bytes": 216064,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/gdal_rasterize.exe",
+      "sha256": "bca1be667756ea5013c437d1557b1a584e823ab9c111695cc52c42f03bd4d845",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/gdal_rasterize.exe"
+    },
+    {
+      "bytes": 221184,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/gdal_translate.exe",
+      "sha256": "2f60d9af57f0190a06598ea617d880f6c22abd64628f57ca7e0ac2637fba080b",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/gdal_translate.exe"
+    },
+    {
+      "bytes": 339456,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/gdal_viewshed.exe",
+      "sha256": "41759564bb284f2a909c45b6ba7cb3a90ff7e823f495db3477dbfdf9f9c0dbea",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/gdal_viewshed.exe"
+    },
+    {
+      "bytes": 374784,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/gdaladdo.exe",
+      "sha256": "32e7108165f9a430b95224b37ee836a798c708e36bce310b8c7796b7a9230da8",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/gdaladdo.exe"
+    },
+    {
+      "bytes": 39424,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/gdalbuildvrt.exe",
+      "sha256": "a9e2824fb672ad78c07aadd99883b21ca324937e4aba2c5cd8d1142bd3633566",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/gdalbuildvrt.exe"
+    },
+    {
+      "bytes": 215552,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/gdaldem.exe",
+      "sha256": "2772e44c9dde66743ddcdefd1e7dc1b8a4abdfd05142370597621a2a936b4c90",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/gdaldem.exe"
+    },
+    {
+      "bytes": 231936,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/gdalenhance.exe",
+      "sha256": "2be5f8510f8be6ccb01be29c09e8ad841e74386ae66ccfefe728dc6d078cadc0",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/gdalenhance.exe"
+    },
+    {
+      "bytes": 48640,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/gdalinfo.exe",
+      "sha256": "a9cca826737dcdb14ee99d1af7dfbd346b6029884b195a5de3809ccb0478e82c",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/gdalinfo.exe"
+    },
+    {
+      "bytes": 339968,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/gdallocationinfo.exe",
+      "sha256": "8ef731644f01e54910f650f0a84dc8a83784df8efb5e5b48e7ad839683f7d20b",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/gdallocationinfo.exe"
+    },
+    {
+      "bytes": 145408,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/gdalmanage.exe",
+      "sha256": "61a639fc3c62edf02b4b9d560225fd5e603b9e45c6f1a943ae01150132c3564b",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/gdalmanage.exe"
+    },
+    {
+      "bytes": 38912,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/gdalmdiminfo.exe",
+      "sha256": "f12bb42dd14d8b615d3436c16a1eddb933ec7f039b609d6b9a7e9120f22bf0a3",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/gdalmdiminfo.exe"
+    },
+    {
+      "bytes": 215552,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/gdalmdimtranslate.exe",
+      "sha256": "22b7b003111ef5c2aeafc8f6f787e195c4ca489ca1bde9de8d5dc02703989491",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/gdalmdimtranslate.exe"
+    },
+    {
+      "bytes": 226304,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/gdalsrsinfo.exe",
+      "sha256": "1e925c5df2c9bc565369f220f1e802d08317d2bc9fce6de3ce272be9e0800abd",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/gdalsrsinfo.exe"
+    },
+    {
+      "bytes": 214528,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/gdaltindex.exe",
+      "sha256": "275653b20f90873a18c3041dff9009400e3de5333c2cacf7fa2db6156e458184",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/gdaltindex.exe"
+    },
+    {
+      "bytes": 52736,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/gdaltransform.exe",
+      "sha256": "3d9432f53c0e99114704d839709cdfc4f57f3b9608042fc7cd51cc5ba85bdace",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/gdaltransform.exe"
+    },
+    {
+      "bytes": 45056,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/gdalwarp.exe",
+      "sha256": "2778871aba439b1b1c2abf961edf89ded98ce26013f8631dadceac99cc1d02a1",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/gdalwarp.exe"
+    },
+    {
+      "bytes": 175616,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/genbrk.exe",
+      "sha256": "601a80b5a9c8ed54f973935b59bf71f976f45ec7acf8f3d31631bd2b1a626d0a",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/genbrk.exe"
+    },
+    {
+      "bytes": 144896,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/genccode.exe",
+      "sha256": "2ad481df4a6a9ca486db33e8b1dd899d92ffd4a254253cfaf2814edc949aa884",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/genccode.exe"
+    },
+    {
+      "bytes": 160256,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/gencfu.exe",
+      "sha256": "24dc9dfe3d5a27557644023bc44f6e453f08930389854839ccacef8ebe866e56",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/gencfu.exe"
+    },
+    {
+      "bytes": 145408,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/gencmn.exe",
+      "sha256": "9e42cef48040982df9fbaac3e019916895e524c4cfdc13f5041f49706b0e46ac",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/gencmn.exe"
+    },
+    {
+      "bytes": 159232,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/gencnval.exe",
+      "sha256": "b0a946e79b2f4fa37ee958cc9f4f0ba3b28989c7238892e88b2960eac8af99b7",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/gencnval.exe"
+    },
+    {
+      "bytes": 182272,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/gendict.exe",
+      "sha256": "e9e4b1af84ae4d65dab902fde40d168783fd42f7b49e3b0a6ef9c5821a09623f",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/gendict.exe"
+    },
+    {
+      "bytes": 328192,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/gennorm2.exe",
+      "sha256": "6c6cce84e882e56e76187b7fb56669c34446a81a44b4e1737f4c8119e37ec42e",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/gennorm2.exe"
+    },
+    {
+      "bytes": 497664,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/genrb.exe",
+      "sha256": "4f9ac74461222f07a1b1750ce364a0c18e796c3d376981160aaa55d3c32bf6e5",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/genrb.exe"
+    },
+    {
+      "bytes": 157696,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/gensprep.exe",
+      "sha256": "8aaa4b1b7930d15e9e0050d1a5f3b3c5f50982a185e2067ee126f5b49d0f5356",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/gensprep.exe"
+    },
+    {
+      "bytes": 23552,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/geod.exe",
+      "sha256": "c96bb990e2af9c0333e77f176abf95da789f14d72dd41ef5ddd5cfde8e2cf59b",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/geod.exe"
+    },
+    {
+      "bytes": 1408,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/geos-config",
+      "sha256": "a75bcd7c544aeab0f7a8800765f83c60b7aae567da3fb07428a3d9bead9d1e35",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/geos-config"
+    },
+    {
+      "bytes": 2627584,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/geos.dll",
+      "sha256": "39ee23ada037f082e6821bb4e38cdfac0096e4badfe45f00afba39cb15ab91ac",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/geos.dll"
+    },
+    {
+      "bytes": 501760,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/geos_c.dll",
+      "sha256": "cc4e92e7d65fec7081b35dceb9d4167510267b20460506c0b7c0025fb9c1f980",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/geos_c.dll"
+    },
+    {
+      "bytes": 431104,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/geosop.exe",
+      "sha256": "69154cc9b937b2734e279fff95994446ef26ce481deae386a7eb0e6765992686",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/geosop.exe"
+    },
+    {
+      "bytes": 46080,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/gie.exe",
+      "sha256": "a4cda08f3d2473d060f4fba415a355c1fcfbc1265e86fc6c4c7778cad6ca34b1",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/gie.exe"
+    },
+    {
+      "bytes": 232960,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/gnmanalyse.exe",
+      "sha256": "3c17fa9c67fb73e373faac0f90822fe5fd4b105bab607aed7c7f3cd76dff3a67",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/gnmanalyse.exe"
+    },
+    {
+      "bytes": 239616,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/gnmmanage.exe",
+      "sha256": "e37faa6510702cc72030ec448dce46555ffd16146ad607d8efcd37dbb1a485ec",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/gnmmanage.exe"
+    },
+    {
+      "bytes": 27136,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/gss-client.exe",
+      "sha256": "ca878433999809c6de88d201ea0b9fa96b206226d66735fc8d4c259868e4327e",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/gss-client.exe"
+    },
+    {
+      "bytes": 27136,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/gss-server.exe",
+      "sha256": "0efa7b478667005d7ca4660d21079548f8694f8d7c52f93edfe9d57b994d5655",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/gss-server.exe"
+    },
+    {
+      "bytes": 397824,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/gssapi64.dll",
+      "sha256": "4f7ad046630d7869c40a35a3114cf297659012d44fa56a8c64e006c9200ec784",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/gssapi64.dll"
+    },
+    {
+      "bytes": 273408,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/hwloc-15.dll",
+      "sha256": "e11a2c660f3f7347adcceb1c918da020501eecac6609683c9d80ad39058c9fbe",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/hwloc-15.dll"
+    },
+    {
+      "bytes": 33792,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/hwloc-annotate.exe",
+      "sha256": "6a7736cc93f9452eada625327948e3c638d4cc20f777be17398d1140110b0d97",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/hwloc-annotate.exe"
+    },
+    {
+      "bytes": 40448,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/hwloc-bind.exe",
+      "sha256": "0fb880d33a6c46ac6b15a333e9e7b429b6215200fb127eb246b9f7f8e2e80ffc",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/hwloc-bind.exe"
+    },
+    {
+      "bytes": 47616,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/hwloc-calc.exe",
+      "sha256": "24a797e242343885eca6d7539fc08551b8e5e5fb9fd60d930616a3ef3f9e0c8a",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/hwloc-calc.exe"
+    },
+    {
+      "bytes": 4429,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/hwloc-compress-dir",
+      "sha256": "a58869fdd8efcb968d2e3ea1320c0536da7ba70cd6baca26a8764fa240d0cf0d",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/hwloc-compress-dir"
+    },
+    {
+      "bytes": 13312,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/hwloc-diff.exe",
+      "sha256": "a93c16a6f0ff1e0fc98619a02102175bcc3a128cf24b20c50fd104766269c4a9",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/hwloc-diff.exe"
+    },
+    {
+      "bytes": 23552,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/hwloc-distrib.exe",
+      "sha256": "1206255e10bf6e332ddbcd1fce3503362281697865d816f0cbe81614ea492c87",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/hwloc-distrib.exe"
+    },
+    {
+      "bytes": 26112,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/hwloc-gather-cpuid.exe",
+      "sha256": "d594268524e507b64e62740fefd3b5dfba25d2f43a3ca6687081046541e59221",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/hwloc-gather-cpuid.exe"
+    },
+    {
+      "bytes": 52736,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/hwloc-info.exe",
+      "sha256": "9e8fa8ac1f62efe73bccc1ce33cfc712d3749b2394a7ec91396bd9a83183cb42",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/hwloc-info.exe"
+    },
+    {
+      "bytes": 103424,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/hwloc-ls.exe",
+      "sha256": "8001f42ac401f1c51bc4a315752abe63277b64bc60997096eb55d70e266deb9d",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/hwloc-ls.exe"
+    },
+    {
+      "bytes": 13312,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/hwloc-patch.exe",
+      "sha256": "1ce8785dfe69e3704a915b094ff1175fa99454ee14e64a27c609d3f208af19b2",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/hwloc-patch.exe"
+    },
+    {
+      "bytes": 58880,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/hwy.dll",
+      "sha256": "087943f3c9b675ae3f422ea69bd370ff1ad6126e981014f9d3ba76413f4ab1a3",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/hwy.dll"
+    },
+    {
+      "bytes": 142848,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/hwy_contrib.dll",
+      "sha256": "dc371d998b14fc38f5f67320ab58efe1d746e3674739f263524e7a7aa93b17ec",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/hwy_contrib.dll"
+    },
+    {
+      "bytes": 12288,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/hwy_test.dll",
+      "sha256": "6179671ccb6be4b6a71ce4e2886e351f5096b9e83d06fb6de282075768e1e0a7",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/hwy_test.dll"
+    },
+    {
+      "bytes": 1086464,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/iconv.dll",
+      "sha256": "4fe67a10b7455892ac546d79bc0b2ab2e3483135495255ea2c31d2c794c28e38",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/iconv.dll"
+    },
+    {
+      "bytes": 26627,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/icu-config",
+      "sha256": "ea449ba494b03957a5a6f2f655c427c4370d334d65036eeef0b59744d8390e8f",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/icu-config"
+    },
+    {
+      "bytes": 1024,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/icudt.dll",
+      "sha256": "5410cc846d4f6bbfe6cc9bdb8ccab48ef92b2f7244a54d50c562beeb2786e60b",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/icudt.dll"
+    },
+    {
+      "bytes": 33110528,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/icudt78.dll",
+      "sha256": "18dd8e1881c5d378de868f8f2c2309d95d3f6757ef40868b76657e7a1f061a51",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/icudt78.dll"
+    },
+    {
+      "bytes": 355840,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/icuexportdata.exe",
+      "sha256": "69b9c3a2067813bde41fb336861370cbb9e1791e636f9dc8af809f96c6af9e6f",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/icuexportdata.exe"
+    },
+    {
+      "bytes": 4221952,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/icuin.dll",
+      "sha256": "365ea33b3b204bc06a57c1c3c611f4c7f14e08153ee27ffcd9aacbd4dafeb60a",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/icuin.dll"
+    },
+    {
+      "bytes": 4221952,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/icuin78.dll",
+      "sha256": "365ea33b3b204bc06a57c1c3c611f4c7f14e08153ee27ffcd9aacbd4dafeb60a",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/icuin78.dll"
+    },
+    {
+      "bytes": 154112,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/icuinfo.exe",
+      "sha256": "92ad368852a7ca09b52ed78e5ee024cabe19a6078b31a60dcbfeb6f5e47b6a84",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/icuinfo.exe"
+    },
+    {
+      "bytes": 272384,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/icuio.dll",
+      "sha256": "7a057b2a7c7dc3029087b0c0882a09c059bca26b29e934d0aefac8ffbf552927",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/icuio.dll"
+    },
+    {
+      "bytes": 272384,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/icuio78.dll",
+      "sha256": "7a057b2a7c7dc3029087b0c0882a09c059bca26b29e934d0aefac8ffbf552927",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/icuio78.dll"
+    },
+    {
+      "bytes": 166400,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/icupkg.exe",
+      "sha256": "e8524e250bafef0a2d3a0bb38077b2cb74a019dd8900363270535e0a7803a67e",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/icupkg.exe"
+    },
+    {
+      "bytes": 262144,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/icutest.dll",
+      "sha256": "2c24b0f11d4710ebafd9334fa22534aabb14b449327c5dde9903db2b2b48808b",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/icutest.dll"
+    },
+    {
+      "bytes": 262144,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/icutest78.dll",
+      "sha256": "2c24b0f11d4710ebafd9334fa22534aabb14b449327c5dde9903db2b2b48808b",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/icutest78.dll"
+    },
+    {
+      "bytes": 581120,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/icutu.dll",
+      "sha256": "5b04f0dbe6d16226c16cc2ff425fb990e6800abc63e1bcd82673b0b2496d499b",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/icutu.dll"
+    },
+    {
+      "bytes": 581120,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/icutu78.dll",
+      "sha256": "5b04f0dbe6d16226c16cc2ff425fb990e6800abc63e1bcd82673b0b2496d499b",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/icutu78.dll"
+    },
+    {
+      "bytes": 2728448,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/icuuc.dll",
+      "sha256": "af525f3cb120014ded7c1b5c346ea00a5a488dee5d17b18e0172b6421e730737",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/icuuc.dll"
+    },
+    {
+      "bytes": 2728448,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/icuuc78.dll",
+      "sha256": "af525f3cb120014ded7c1b5c346ea00a5a488dee5d17b18e0172b6421e730737",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/icuuc78.dll"
+    },
+    {
+      "bytes": 23552,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/invgeod.exe",
+      "sha256": "04ca74a09a28e37bee3698348723d7a9eba9f2e3a805d81b5dcdecd78d8ae482",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/invgeod.exe"
+    },
+    {
+      "bytes": 33280,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/invproj.exe",
+      "sha256": "2d25597bbad47fd3399b32c657279c03a45cf82bb64552a78da36c119441addd",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/invproj.exe"
+    },
+    {
+      "bytes": 694784,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/jpeg8.dll",
+      "sha256": "c8ae4649b8bcf41ec8bfd359bd6239ff7622e2041554cee3e99f740698db848f",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/jpeg8.dll"
+    },
+    {
+      "bytes": 51200,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/jpegtran.exe",
+      "sha256": "784bdbe6716abd2963b0b81f747fcc99f8fd4e4bf907fb53812c43221c2d6c2f",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/jpegtran.exe"
+    },
+    {
+      "bytes": 3090432,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/jxl.dll",
+      "sha256": "0de76e2d9f7052b151d88d7208702c2badd13a243585b599d1858f5d0548b5be",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/jxl.dll"
+    },
+    {
+      "bytes": 159232,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/jxl_cms.dll",
+      "sha256": "0cc13d1453f1c3ee49e71aa8c0295db3a47c53901a14682533d9705c44002db3",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/jxl_cms.dll"
+    },
+    {
+      "bytes": 25088,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/jxl_threads.dll",
+      "sha256": "220918f2357be4b0275b1ba064445c5eb7d69275beb63dad9771e623ffc2825f",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/jxl_threads.dll"
+    },
+    {
+      "bytes": 165376,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/k5sprt64.dll",
+      "sha256": "c125a20add80639b9d92cf06ba47dff004f85b432cd1981af3c842819cd53feb",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/k5sprt64.dll"
+    },
+    {
+      "bytes": 15360,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/kcpytkt.exe",
+      "sha256": "c763620cba97593ae2be3f65c0d81a2103a350c28779f0abbaab10b6e0c7cbaa",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/kcpytkt.exe"
+    },
+    {
+      "bytes": 14336,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/kdeltkt.exe",
+      "sha256": "3f99afcfb6005ad6473f39d51be82813a6cbd2bcd3d87a2977905228f38b7061",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/kdeltkt.exe"
+    },
+    {
+      "bytes": 14848,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/kdestroy.exe",
+      "sha256": "98a52338573b81f9436221d1a2bc745967fd19550bf5449d8737d3582c323752",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/kdestroy.exe"
+    },
+    {
+      "bytes": 31232,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/kfwcpcc.exe",
+      "sha256": "f8315cc79afacf8e1370795b10c2ae80319e315075f6288920708f38521ec1d0",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/kfwcpcc.exe"
+    },
+    {
+      "bytes": 36864,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/kfwlogon.dll",
+      "sha256": "f56dbc097129f1c2a82782895794457ccc302d9d62284238186cae2a59e5b838",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/kfwlogon.dll"
+    },
+    {
+      "bytes": 28672,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/kinit.exe",
+      "sha256": "8fa50362366bea3549a96b5007df1e884177ff50514e0525afe639dbda8b7920",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/kinit.exe"
+    },
+    {
+      "bytes": 28672,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/klist.exe",
+      "sha256": "75bfb1005a435730999766a0f698eec125e5a30060849fad8b5d88d3a92bd17e",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/klist.exe"
+    },
+    {
+      "bytes": 15360,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/kpasswd.exe",
+      "sha256": "3a13872038534929c510eae31fbc6eaad0baa31c04635f9834c8357da06b49af",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/kpasswd.exe"
+    },
+    {
+      "bytes": 1226240,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/krb5_64.dll",
+      "sha256": "5943f70ec700335ca1edda41fae1efbbf7bf7cb6048628265a6aa44c2f788e86",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/krb5_64.dll"
+    },
+    {
+      "bytes": 112640,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/krbcc64.dll",
+      "sha256": "af7d4feeb0fd776caf7fb3d08e12e6c9b08d0d91882c49dca681da1967f700b1",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/krbcc64.dll"
+    },
+    {
+      "bytes": 13312,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/kswitch.exe",
+      "sha256": "5dc73a956c4ad8a657a01977091bc4ac6e65ac475fe8c7e79a10c0f2325e97b9",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/kswitch.exe"
+    },
+    {
+      "bytes": 23040,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/kvno.exe",
+      "sha256": "1915daa8514ccd67b3ad3b78f3ebe72ea27395ba94968bff73662df529fc1f5c",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/kvno.exe"
+    },
+    {
+      "bytes": 152576,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/leashw64.dll",
+      "sha256": "723d03066fa5d60730ba133d3f931e239f0eb09b894307fb475436e5b22fd37d",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/leashw64.dll"
+    },
+    {
+      "bytes": 108544,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/libblas.dll",
+      "sha256": "79cbd22e01cb6fd7fbfa2182cc6311b6096e386067605aa7082b64224746b871",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/libblas.dll"
+    },
+    {
+      "bytes": 77824,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/libbz2.dll",
+      "sha256": "7f3ddbb88b670d79ada028480067ccdf240601319128e40eec8dce1daf4a9238",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/libbz2.dll"
+    },
+    {
+      "bytes": 111104,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/libcblas.dll",
+      "sha256": "ab3ce3f51bb1a82bee43267870f0bee94c456f185a90e4ea8947bfaabdb1a790",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/libcblas.dll"
+    },
+    {
+      "bytes": 7428608,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/libcrypto-3-x64.dll",
+      "sha256": "cbd215fc8a92d5bd6ac48f21fc31abaaa74d33ab207b0f6fc8a9226b2db088fc",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/libcrypto-3-x64.dll"
+    },
+    {
+      "bytes": 25759744,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/libcrypto-3-x64.pdb",
+      "sha256": "e775b46240b6e9b34f4292bddee1173bb6304359fe2671b804f55829a2ea7d6e",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/libcrypto-3-x64.pdb"
+    },
+    {
+      "bytes": 779264,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/libcurl.dll",
+      "sha256": "bd488a5ec1d5e01c6f323279cf473d7f495e49ae6f0543ebf6686a42acf7d452",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/libcurl.dll"
+    },
+    {
+      "bytes": 176640,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/libdeflate-gunzip.exe",
+      "sha256": "6877ac4059e46b3218def0e0fa2cec8b146c3212458443829c058f801ccf3a4f",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/libdeflate-gunzip.exe"
+    },
+    {
+      "bytes": 176640,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/libdeflate-gzip.exe",
+      "sha256": "6877ac4059e46b3218def0e0fa2cec8b146c3212458443829c058f801ccf3a4f",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/libdeflate-gzip.exe"
+    },
+    {
+      "bytes": 266752,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/libexpat.dll",
+      "sha256": "8f322ea819d3e90490d8931634e6b681ed10b8b86b2b6e4a762b600c7030f351",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/libexpat.dll"
+    },
+    {
+      "bytes": 20128,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/libimalloc.dll",
+      "sha256": "c12922cd169206dbe0a62d1537be488bb3b7eec01de1b73db4e258af372e3189",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/libimalloc.dll"
+    },
+    {
+      "bytes": 157696,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/libiomp5md.dll",
+      "sha256": "b6fe92f270ac5f64bcbd5b255fb36d4ffc44257fac2ab5ced6a09997120c869e",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/libiomp5md.dll"
+    },
+    {
+      "bytes": 181760,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/liblapack.dll",
+      "sha256": "c29e0577de87fc5ae9bb4e7467400c9c6fef67fb683eaaff74159c717495541b",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/liblapack.dll"
+    },
+    {
+      "bytes": 188416,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/liblzma.dll",
+      "sha256": "8439ed3564a8dbbf6355e29c92e88fdf1f6dee096504149fc051104155c868a9",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/liblzma.dll"
+    },
+    {
+      "bytes": 138752,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/libminizip.dll",
+      "sha256": "00c4a081c78e1c2abe9c7ff2bcddad0b6b3dd3c9ec6301a07034851e78f61ff6",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/libminizip.dll"
+    },
+    {
+      "bytes": 200704,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/libmpdec-4.dll",
+      "sha256": "340836968f8169c6d0764bd503b676832a8cdaf73e2d7901d0fd29ff789a8293",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/libmpdec-4.dll"
+    },
+    {
+      "bytes": 671232,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/libomp.dll",
+      "sha256": "c135c47a3e367169d84780b015d4f9fa1299563396362e7974f8a9b2516da880",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/libomp.dll"
+    },
+    {
+      "bytes": 198656,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/libpng16.dll",
+      "sha256": "fd80ce925fc2bdce591c3f74ac0bbb2b36d72e5f55a0b686aa66453a1e388ff3",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/libpng16.dll"
+    },
+    {
+      "bytes": 660480,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/librttopo.dll",
+      "sha256": "9e4b271e5ea9e31183fe3bd7b2d04b86aa0e2b37064b42653db5a1d0c5a250c0",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/librttopo.dll"
+    },
+    {
+      "bytes": 25600,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/libsharpyuv.dll",
+      "sha256": "09e089c9ad5da983f04e98ccc8f41de1750b0a351370a4d42b9080c3e68eac50",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/libsharpyuv.dll"
+    },
+    {
+      "bytes": 260608,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/libssh2.dll",
+      "sha256": "69c35872dae1ed72e67388a4c64d51004dd15fc1be0901b2025da721d1496bb4",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/libssh2.dll"
+    },
+    {
+      "bytes": 1321984,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/libssl-3-x64.dll",
+      "sha256": "ea300c4fbf879dbaed0d15bd525cf2cb86f6984c5583b28e4bcd08ed6d03710a",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/libssl-3-x64.dll"
+    },
+    {
+      "bytes": 5959680,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/libssl-3-x64.pdb",
+      "sha256": "48d4c0eb231b573ba59e4ab328b15b80575a76a0f085ad2bcaed96210fc16584",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/libssl-3-x64.pdb"
+    },
+    {
+      "bytes": 504320,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/libtiff.dll",
+      "sha256": "cf68d6efb104af0c15281017169480d3d77d5ceab0f9716b8bba1638e962d8a4",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/libtiff.dll"
+    },
+    {
+      "bytes": 382976,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/libwebp.dll",
+      "sha256": "9e13857e99f7fa275aa7870393322d3d54dc55d0a9293098f60f199ae070d235",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/libwebp.dll"
+    },
+    {
+      "bytes": 172544,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/libwebpdecoder.dll",
+      "sha256": "9b6c268b8f76fc9225e78ecb6c44f18c297093ff565b88b677add75997db5df9",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/libwebpdecoder.dll"
+    },
+    {
+      "bytes": 20480,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/libwebpdemux.dll",
+      "sha256": "8ef90ba6327c40049fbb99d26742c0d50a3eb95214dae9bdb3549282cf87c73b",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/libwebpdemux.dll"
+    },
+    {
+      "bytes": 43008,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/libwebpmux.dll",
+      "sha256": "dfa99a3245a78c0ea006907a52705aa07413200c38a190a6ad6e3839455705f3",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/libwebpmux.dll"
+    },
+    {
+      "bytes": 63150,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/libwinpthread-1.dll",
+      "sha256": "9e00ba6d980626b752b698f690709c321a5eab6eb442f352bb8ab90e385f2bf5",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/libwinpthread-1.dll"
+    },
+    {
+      "bytes": 1237504,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/libxml2.dll",
+      "sha256": "61c9554464980d3f1f4d042ca2419a93004af256255d990d9fc3c56bee0facd9",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/libxml2.dll"
+    },
+    {
+      "bytes": 657408,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/libzstd.dll",
+      "sha256": "fcc1dc71b7df5489e37a78abab9c31d763570d55e93c67f388058c41c0d7b8df",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/libzstd.dll"
+    },
+    {
+      "bytes": 103424,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/lstopo-no-graphics.exe",
+      "sha256": "8001f42ac401f1c51bc4a315752abe63277b64bc60997096eb55d70e266deb9d",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/lstopo-no-graphics.exe"
+    },
+    {
+      "bytes": 111616,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/lstopo.exe",
+      "sha256": "d0c7d0a2e4563556d112254cf65922bd96f9545adb9f769a34421a82cf3c8522",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/lstopo.exe"
+    },
+    {
+      "bytes": 126464,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/lz4.dll",
+      "sha256": "4d747c9c0d4ad4d5d3b205da03920dc304719f0a4f12e1ea83c2b5cbde27a89f",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/lz4.dll"
+    },
+    {
+      "bytes": 193024,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/lz4.exe",
+      "sha256": "b44491c1b00bd0a2369466bbf115f94f8f5e2c0cbbbf618a47039ae5fb7f92ac",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/lz4.exe"
+    },
+    {
+      "bytes": 114688,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/lzo2.dll",
+      "sha256": "1894becf58e966183b63b0d88520e0ba5a7c27cb87add1cbc39d56fa9b620832",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/lzo2.dll"
+    },
+    {
+      "bytes": 200704,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/makeconv.exe",
+      "sha256": "70c85d25bfff1309c9b283d56007301363120bbf4878de99972c55be05eaeb7d",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/makeconv.exe"
+    },
+    {
+      "bytes": 14336,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/mit2ms.exe",
+      "sha256": "e366c8fde9befc5c7adcae582908a4ee6b0a9fd75399df9162611c49d1c08e4b",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/mit2ms.exe"
+    },
+    {
+      "bytes": 67684512,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/mkl_avx10.3.dll",
+      "sha256": "f40cd63e85f37b93c8e10a306cd1ba536ccab35ccbebbb9516c2e3af59dbc106",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/mkl_avx10.3.dll"
+    },
+    {
+      "bytes": 47482016,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/mkl_avx2.3.dll",
+      "sha256": "24cac1a180d775424063fc5d7840728bc61e25fd57efd9f1866181fc79860871",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/mkl_avx2.3.dll"
+    },
+    {
+      "bytes": 75416736,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/mkl_avx512.3.dll",
+      "sha256": "9a80f5c5388000b5a5d65d81f52d271dd45fbf16c1412529076f18aba0cfd156",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/mkl_avx512.3.dll"
+    },
+    {
+      "bytes": 742048,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/mkl_blacs_ilp64.2.dll",
+      "sha256": "ae3be7f9fe3237610e1e621a50ec0981e64eabc4e109e7cf4c50d2ed36b75bee",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/mkl_blacs_ilp64.2.dll"
+    },
+    {
+      "bytes": 154272,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/mkl_blacs_intelmpi_ilp64.2.dll",
+      "sha256": "b88986d256b68e163eceddc4e66b46096f913cb204339d3d73d2cce1f9cda233",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/mkl_blacs_intelmpi_ilp64.2.dll"
+    },
+    {
+      "bytes": 154272,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/mkl_blacs_intelmpi_lp64.2.dll",
+      "sha256": "faa514f2fd9767a7abf24c8b3233fe29f80b562aa37af9fdb709f50f939253f9",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/mkl_blacs_intelmpi_lp64.2.dll"
+    },
+    {
+      "bytes": 399008,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/mkl_blacs_lp64.2.dll",
+      "sha256": "3d256a98a49ce2211428f840fe7ba7c771ee05e3716b36ae2403695bad0fe0f3",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/mkl_blacs_lp64.2.dll"
+    },
+    {
+      "bytes": 154272,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/mkl_blacs_msmpi_ilp64.2.dll",
+      "sha256": "5332ebb4aea57da45bc9bbef57e9e8850dd76f3d558c7e4a218b9f82daa28234",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/mkl_blacs_msmpi_ilp64.2.dll"
+    },
+    {
+      "bytes": 154272,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/mkl_blacs_msmpi_lp64.2.dll",
+      "sha256": "739360da503418623b0573b2a395c620be965aef7d8161a6204e2d055cde289f",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/mkl_blacs_msmpi_lp64.2.dll"
+    },
+    {
+      "bytes": 451744,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/mkl_cdft_core.2.dll",
+      "sha256": "cf50423156f9c117fce781642fdd5d1bed68820f504cd4fc5511534fb1e70a36",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/mkl_cdft_core.2.dll"
+    },
+    {
+      "bytes": 71897248,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/mkl_core.3.dll",
+      "sha256": "4c629fe2e3b8a1b23d536a7cbb73827f5d8bd0198d81358b5cc2eee7d0bab765",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/mkl_core.3.dll"
+    },
+    {
+      "bytes": 37053600,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/mkl_def.3.dll",
+      "sha256": "02743fbf53bf4ae84a193cce892cf3c19f66e0a1ac3734152cbcc48f4c3b5cb3",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/mkl_def.3.dll"
+    },
+    {
+      "bytes": 39083168,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/mkl_intel_thread.3.dll",
+      "sha256": "90c8d5dfe43da4cfe1f66f1c79ce27b13a04496c00c61308ace3c382691a0534",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/mkl_intel_thread.3.dll"
+    },
+    {
+      "bytes": 47141024,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/mkl_mc3.3.dll",
+      "sha256": "9a7fadb97bb26babdd1e12765a15b2e3318230649b7ea686fe06f56803da4b9b",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/mkl_mc3.3.dll"
+    },
+    {
+      "bytes": 27890848,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/mkl_rt.3.dll",
+      "sha256": "0ade2b44b4786fa3e4ed19c1e81fa2e2ac975093e373674db52f5db57d6e54b2",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/mkl_rt.3.dll"
+    },
+    {
+      "bytes": 7984800,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/mkl_scalapack_ilp64.2.dll",
+      "sha256": "d975d6768c146d7c3cf75e33946102c752ccf420849e87ad7e29b9160b887646",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/mkl_scalapack_ilp64.2.dll"
+    },
+    {
+      "bytes": 7788192,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/mkl_scalapack_lp64.2.dll",
+      "sha256": "c3c67bd0af55088a0a8e86f850ffedfc67b4f61daf51a87073eb086a0e6e62a0",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/mkl_scalapack_lp64.2.dll"
+    },
+    {
+      "bytes": 23502496,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/mkl_sequential.3.dll",
+      "sha256": "f4fd8034c1cc80b0a2342902c42427909834c313b00d05511e3b41516ff4140f",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/mkl_sequential.3.dll"
+    },
+    {
+      "bytes": 29841056,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/mkl_tbb_thread.3.dll",
+      "sha256": "efa3a897817d8900f910417e2836797977368a6ced88766c0a039d50fb8da462",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/mkl_tbb_thread.3.dll"
+    },
+    {
+      "bytes": 18123936,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/mkl_vml_avx10.3.dll",
+      "sha256": "77fa29a1bd07884d772fe8d6fe6560320bdc3b9144802296cf5050f7468fb580",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/mkl_vml_avx10.3.dll"
+    },
+    {
+      "bytes": 15308448,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/mkl_vml_avx2.3.dll",
+      "sha256": "c5919b4aaa746efcdcee2768dd6fcee7528fcf301fb553a6cac5c4179f4ee029",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/mkl_vml_avx2.3.dll"
+    },
+    {
+      "bytes": 15988896,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/mkl_vml_avx512.3.dll",
+      "sha256": "f248f89797e5cfe5776e9a8c723eb9b352040a0e84286e318bf8d1e9445f3c46",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/mkl_vml_avx512.3.dll"
+    },
+    {
+      "bytes": 8067744,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/mkl_vml_cmpt.3.dll",
+      "sha256": "393118dc31eec7d569712546b1478c88f04f6d9e0ae70982d96d36b0a7fe067e",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/mkl_vml_cmpt.3.dll"
+    },
+    {
+      "bytes": 9272992,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/mkl_vml_def.3.dll",
+      "sha256": "fd90a7d80c3ab95061948b1390078de5ef94f7c568ad8ed0c435a1b804ed9dc6",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/mkl_vml_def.3.dll"
+    },
+    {
+      "bytes": 13031584,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/mkl_vml_mc3.3.dll",
+      "sha256": "0ad2349ff6453deb0651af9ebdc455ad09ce3d851e34059f1ea8b82d87d41547",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/mkl_vml_mc3.3.dll"
+    },
+    {
+      "bytes": 13811712,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/mod_spatialite.dll",
+      "sha256": "f9a3dd5107a798156c73953e9eb5beae1293f6f3328c41fe0edb7396c81aa184",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/mod_spatialite.dll"
+    },
+    {
+      "bytes": 15360,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/ms2mit.exe",
+      "sha256": "6e099078362b80f910a929e6de7382cf3b11e6c092e8179a6a3b1ac83f558f7f",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/ms2mit.exe"
+    },
+    {
+      "bytes": 643512,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/msvcp140.dll",
+      "sha256": "7c26614e1d733892c2deac7e245ce115504b1d80592dd0a01b08e3e5a55f89ca",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/msvcp140.dll"
+    },
+    {
+      "bytes": 35768,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/msvcp140_1.dll",
+      "sha256": "206c931bf90fdad8816de3b5e2ef80b2bcaa9406c89ecc05fe6fddffe251e982",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/msvcp140_1.dll"
+    },
+    {
+      "bytes": 274872,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/msvcp140_2.dll",
+      "sha256": "d50d7883f20d1dc6191768d3746f52dd9cac89c346ffaed5be1f110c2f34a838",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/msvcp140_2.dll"
+    },
+    {
+      "bytes": 57792,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/msvcp140_atomic_wait.dll",
+      "sha256": "3d0cbfaa1bf3eecf5a3f4491d2960ee803cb994f30292c6adc4a07c498f60e2b",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/msvcp140_atomic_wait.dll"
+    },
+    {
+      "bytes": 31160,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/msvcp140_codecvt_ids.dll",
+      "sha256": "8a65c7596ef2e6938731f5a1058e7e40145b6d97967cc649231a076b9a608d78",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/msvcp140_codecvt_ids.dll"
+    },
+    {
+      "bytes": 340480,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/muparser.dll",
+      "sha256": "00e8c44b9f5092d4c78c45596cb537a955c69dcfc091a6ecac10a7f5a88601e5",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/muparser.dll"
+    },
+    {
+      "bytes": 38912,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/nearblack.exe",
+      "sha256": "efe798a0dbf4d190764f652ea1d6861d5e3ef177fce8022c7c37564d6c919419",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/nearblack.exe"
+    },
+    {
+      "bytes": 219136,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/ogr2ogr.exe",
+      "sha256": "c7e282b068ca5001753c3c8bf5d3b4a3235d16f7eb20c0da2ed7c3f39bd49360",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/ogr2ogr.exe"
+    },
+    {
+      "bytes": 217088,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/ogrinfo.exe",
+      "sha256": "b3b680c40cca960a68d9d56194f0ab693eec48a91676c75c7591e4a39bcdbdb3",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/ogrinfo.exe"
+    },
+    {
+      "bytes": 360960,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/ogrlineref.exe",
+      "sha256": "2d92f02a2c3a863c83157331a918c8c61ca03e3fa65852d27f8523b56281c275",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/ogrlineref.exe"
+    },
+    {
+      "bytes": 390144,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/ogrtindex.exe",
+      "sha256": "5becec525797ac01aef98b8841f6049ef9638e362c45b8c73a13bc0c4846816d",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/ogrtindex.exe"
+    },
+    {
+      "bytes": 817664,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/openssl.exe",
+      "sha256": "8142b3ebcbfcd6deee59652b9b67281f8cc9cfa50f5adf5b29de09deff8fdacc",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/openssl.exe"
+    },
+    {
+      "bytes": 4009984,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/openssl.pdb",
+      "sha256": "61ec7f4f5ef49348a2e000a168d3e206625613a44e9c8e8880afe5aa0f1114c9",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/openssl.pdb"
+    },
+    {
+      "bytes": 17408,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/pal2rgb.exe",
+      "sha256": "407123edf5e26ae3c99665ac764948300ff39344fa41124b4e693a97153a0a1f",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/pal2rgb.exe"
+    },
+    {
+      "bytes": 566272,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/pcre2-16.dll",
+      "sha256": "aece7fc5bc5ea30f10ea269a5371c51b5a8c7e9ba7d7c7a72f74595023ac1fe9",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/pcre2-16.dll"
+    },
+    {
+      "bytes": 545280,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/pcre2-32.dll",
+      "sha256": "fa32bdbd5472f1cb7e9dae79b6a5912c568d52d83311ae9925f8d113f709d4ea",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/pcre2-32.dll"
+    },
+    {
+      "bytes": 603648,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/pcre2-8.dll",
+      "sha256": "324af6d564a81800d8e8103f2e9c1f57d3041422dcaf91bd86d805963862bde2",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/pcre2-8.dll"
+    },
+    {
+      "bytes": 2319,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/pcre2-config",
+      "sha256": "f585299677942ec2b256f97a280f3747ccb4d7cc6ac94e79615550d72fed65f0",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/pcre2-config"
+    },
+    {
+      "bytes": 13824,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/pcre2-posix.dll",
+      "sha256": "9c06c6c7abf1c254c61bd5cd62555bae9cef8d4709ee62ca934bccbec620225d",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/pcre2-posix.dll"
+    },
+    {
+      "bytes": 50688,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/pcre2grep.exe",
+      "sha256": "1533a6312fb763fd134d1174edb701901545038415dad2a3d127aedc2baed272",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/pcre2grep.exe"
+    },
+    {
+      "bytes": 245248,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/pcre2test.exe",
+      "sha256": "ae390e5dc41cd31d31e2ee62bce3d05ca0277c2682d77171cfa2f03ee0e34e70",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/pcre2test.exe"
+    },
+    {
+      "bytes": 201216,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/pkgdata.exe",
+      "sha256": "fba89f6f6a55a826d0104b9ea990266f016331a3d42aaafb3291fb8c18e0cdca",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/pkgdata.exe"
+    },
+    {
+      "bytes": 100352,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/plugins/preauth/spake64.dll",
+      "sha256": "d38c80de8a070117ea9d628f12495177d53d1b4674d69a1220e6f92a1beca6a1",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/plugins/preauth/spake64.dll"
+    },
+    {
+      "bytes": 12288,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/png-fix-itxt.exe",
+      "sha256": "74c32755bd4cd4110c84a85f96ff0a78820f4d3dec9592901ec9aa40d3177e0d",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/png-fix-itxt.exe"
+    },
+    {
+      "bytes": 52224,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/pngfix.exe",
+      "sha256": "087f421558f6f87b3866f6274c9cfe359e388c69c833d28d3afa1f2bb4c629a7",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/pngfix.exe"
+    },
+    {
+      "bytes": 17920,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/ppm2tiff.exe",
+      "sha256": "7fe1a4fafceec8d6cfc4e458435068d30e691d4c4739814d12ecfa83d1dddc76",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/ppm2tiff.exe"
+    },
+    {
+      "bytes": 33280,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/proj.exe",
+      "sha256": "631ba270c2afc58e7a9abef8450dd1d9007a05753c1051cecd908ab59d514d29",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/proj.exe"
+    },
+    {
+      "bytes": 3623936,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/proj_9.dll",
+      "sha256": "80ced21fa81d73baeca901571093ddbd5ace688cff4cf6c15ffdcdc90fc47242",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/proj_9.dll"
+    },
+    {
+      "bytes": 13312,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/projinfo.exe",
+      "sha256": "b14f300f7861be416c873b44a218a1760a7e07d06667e421948d7cdbe907dbce",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/projinfo.exe"
+    },
+    {
+      "bytes": 131072,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/projsync.exe",
+      "sha256": "a5e48d8a25f437677c81dd6aecc186317f6adc2d3047f8a27c229f4449216b30",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/projsync.exe"
+    },
+    {
+      "bytes": 77312,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/psl-5.dll",
+      "sha256": "24a1963f1684f342fbd2740c498cddd8f4dbf12846414d2b95637a1a24f86ba1",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/psl-5.dll"
+    },
+    {
+      "bytes": 27648,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/raw2tiff.exe",
+      "sha256": "f79f965cc90f23a5a154ad55993d55328c9fce4fdfab622e81dba3c26afaf737",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/raw2tiff.exe"
+    },
+    {
+      "bytes": 193536,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/rdjpgcom.exe",
+      "sha256": "9d47f6ef875ecc13324df0c98bf81be7bf91b5c051f4469aaf00a25d79bfb121",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/rdjpgcom.exe"
+    },
+    {
+      "bytes": 81920,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/snappy.dll",
+      "sha256": "9a84f1d1a6bc96cd38d0da536090db391f6efeb51e49660df6f40f253e4e50d3",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/snappy.dll"
+    },
+    {
+      "bytes": 315392,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/sozip.exe",
+      "sha256": "89dd37a62728441b32f04e4d2151f1bbca19f9f2b2c659f3373e593e0dc7d743",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/sozip.exe"
+    },
+    {
+      "bytes": 13502464,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/spatialite.dll",
+      "sha256": "3708772776c4b71b7fc8408bc4c10595fadb770893da9261c53011be5e1ba1b7",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/spatialite.dll"
+    },
+    {
+      "bytes": 3239936,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/sqlite3.dll",
+      "sha256": "9519340d2ede13b05cd889605e3a46cc6bde702f266061266e22c18a0951a04e",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/sqlite3.dll"
+    },
+    {
+      "bytes": 1370624,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/sqlite3.exe",
+      "sha256": "fc0336a1dbbcb929cabefa7f4baa7d8b1006061217d6efede51fe8642507bebe",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/sqlite3.exe"
+    },
+    {
+      "bytes": 347648,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/tbb12.dll",
+      "sha256": "e8aff3cfbcaa6dea3e0727ea0673715873273c6b0920b9eaf48a6faae0ff1f8f",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/tbb12.dll"
+    },
+    {
+      "bytes": 25088,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/tbbbind_2_5.dll",
+      "sha256": "6b1e431dbfc9bffe331430419812f70363d67e9b41f3e838294ff0d74ef846a8",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/tbbbind_2_5.dll"
+    },
+    {
+      "bytes": 114176,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/tbbmalloc.dll",
+      "sha256": "75ff31b8548d5c6a70d33e6cd59099c743ad890a8806f957a9e19140c5cfb80d",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/tbbmalloc.dll"
+    },
+    {
+      "bytes": 30720,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/tbbmalloc_proxy.dll",
+      "sha256": "49f793b771fbdd757e836c16fb7f8295960e45634072adba9df4145c728a0858",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/tbbmalloc_proxy.dll"
+    },
+    {
+      "bytes": 1821184,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/tcl86t.dll",
+      "sha256": "e28dfc6793f4fd62054b6bc01f1b7eb741a8154841348a84ea8d36957aae3723",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/tcl86t.dll"
+    },
+    {
+      "bytes": 71168,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/tclsh.exe",
+      "sha256": "df24b190e83f937aead1b87e7e88f184230e14bfeda0b657669c53cee00671d2",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/tclsh.exe"
+    },
+    {
+      "bytes": 71168,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/tclsh86.exe",
+      "sha256": "df24b190e83f937aead1b87e7e88f184230e14bfeda0b657669c53cee00671d2",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/tclsh86.exe"
+    },
+    {
+      "bytes": 71168,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/tclsh86t.exe",
+      "sha256": "df24b190e83f937aead1b87e7e88f184230e14bfeda0b657669c53cee00671d2",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/tclsh86t.exe"
+    },
+    {
+      "bytes": 504320,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/tiff.dll",
+      "sha256": "cf68d6efb104af0c15281017169480d3d77d5ceab0f9716b8bba1638e962d8a4",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/tiff.dll"
+    },
+    {
+      "bytes": 19456,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/tiff2bw.exe",
+      "sha256": "59f8cc38f0e3e5256734725b4e32bc2942c06d46038ca7588ec8839a6b183b97",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/tiff2bw.exe"
+    },
+    {
+      "bytes": 92160,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/tiff2pdf.exe",
+      "sha256": "c2411c2f1ea3166a75af2e3e9578c6c34f417298ed757ff23f1eaeef6cd41444",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/tiff2pdf.exe"
+    },
+    {
+      "bytes": 54272,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/tiff2ps.exe",
+      "sha256": "987a48b103a533853b297377326de6871ed180a72b36daad987be2b504b3d22e",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/tiff2ps.exe"
+    },
+    {
+      "bytes": 20480,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/tiff2rgba.exe",
+      "sha256": "7b2e9711db5acb5b8f53fc5bc6619a709df0cb43c3b3edf56ca8bdb88b67b450",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/tiff2rgba.exe"
+    },
+    {
+      "bytes": 23040,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/tiffcmp.exe",
+      "sha256": "a4a971a3efd29263fccf4f8a38cc0005b570ef5abdf2d5cf53e9b2c0346d75bb",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/tiffcmp.exe"
+    },
+    {
+      "bytes": 41984,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/tiffcp.exe",
+      "sha256": "99c615b353a85fee98f8b8291e18d0d806796a68853c7b277156a57b5631cf06",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/tiffcp.exe"
+    },
+    {
+      "bytes": 131584,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/tiffcrop.exe",
+      "sha256": "a760ac086084c8034db2f1e3e49c600ea7335ba5c66aab581de0ad67d25f6c94",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/tiffcrop.exe"
+    },
+    {
+      "bytes": 17920,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/tiffdither.exe",
+      "sha256": "869322ffe57870574c91d999d7c54fecc7ed4652421f6a81084acff79d703a77",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/tiffdither.exe"
+    },
+    {
+      "bytes": 23552,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/tiffdump.exe",
+      "sha256": "bbcdc8bf3a7689509d99fbd1a5399bf99e361a0b44da71e36f2fd88e142a6959",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/tiffdump.exe"
+    },
+    {
+      "bytes": 23552,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/tiffinfo.exe",
+      "sha256": "940c8a6c2bfef5cd3950d39b4274299159ab505a8d668f04af088af0a51832f4",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/tiffinfo.exe"
+    },
+    {
+      "bytes": 24064,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/tiffmedian.exe",
+      "sha256": "2dd2ab045000db343df63f6296586aa1305ecb7abe237d20ce0efcb73a307ab3",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/tiffmedian.exe"
+    },
+    {
+      "bytes": 17920,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/tiffset.exe",
+      "sha256": "1d4f125f0ffb4afb8835453e2cd25dc07c76317e10e968587841154585cedefc",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/tiffset.exe"
+    },
+    {
+      "bytes": 20480,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/tiffsplit.exe",
+      "sha256": "2cee0ae7013f0b71b837f4d49b2fbfbc44472836de057b9385ea326b6dcb146a",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/tiffsplit.exe"
+    },
+    {
+      "bytes": 240128,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/tjbench.exe",
+      "sha256": "7f1ad5b668e7cb9bfb612fad483e0aee097d4ff9eeff48636f7387c69687164d",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/tjbench.exe"
+    },
+    {
+      "bytes": 1593344,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/tk86t.dll",
+      "sha256": "7349d1d3c9a7338b65f9666569a179bbc06be1ae80a97d90c80160ea83a32dea",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/tk86t.dll"
+    },
+    {
+      "bytes": 1165312,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/turbojpeg.dll",
+      "sha256": "ba53786a4935b86753e7eaf56e48745e59c210572e878d569958ef85cf0c0e0d",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/turbojpeg.dll"
+    },
+    {
+      "bytes": 1362264,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/ucrtbase.dll",
+      "sha256": "3239227d27667ba20d10a880751924e5719de0078f9fce232d149d383f7681f6",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/ucrtbase.dll"
+    },
+    {
+      "bytes": 60416,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/uriparser.dll",
+      "sha256": "5586a4d98bca3e3f6454c17d4f32a03a78cc64f0cff8dae6d1fcff865c1e805c",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/uriparser.dll"
+    },
+    {
+      "bytes": 417728,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/vcamp140.dll",
+      "sha256": "dc283ffb87e9b82e687ed4e899ae062a209aa338207abfc9a89d61407d678bd4",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/vcamp140.dll"
+    },
+    {
+      "bytes": 350648,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/vccorlib140.dll",
+      "sha256": "09f93d5ff96ae09767f3e1af3cdd43a5a58f2598654fc63089429bb6f9f4737f",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/vccorlib140.dll"
+    },
+    {
+      "bytes": 212920,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/vcomp140.dll",
+      "sha256": "95d4ce4a6802d1e18b5e0e1722cc30ea72ca7e033f83828f05c0b7b993fe7cbf",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/vcomp140.dll"
+    },
+    {
+      "bytes": 178616,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/vcruntime140.dll",
+      "sha256": "d1f4225df2cd877dbf130d5668a021dce3f94118455ff5ec952061c30afc9ce7",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/vcruntime140.dll"
+    },
+    {
+      "bytes": 50112,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/vcruntime140_1.dll",
+      "sha256": "a7146c08f89fe5b04541ab507cdb59ff7b44534d4ba3c668a426c6450a03434e",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/vcruntime140_1.dll"
+    },
+    {
+      "bytes": 38840,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/vcruntime140_threads.dll",
+      "sha256": "40f39e8cee5f5a531b4010e18b807e8fe265b908dc58f959ecb7ebc6ea6cb11a",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/vcruntime140_threads.dll"
+    },
+    {
+      "bytes": 58368,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/wish.exe",
+      "sha256": "1eec25edb366c3c489c1974ac69b286c9a0834c6034e464845e57a719358bdc0",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/wish.exe"
+    },
+    {
+      "bytes": 58368,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/wish86.exe",
+      "sha256": "1eec25edb366c3c489c1974ac69b286c9a0834c6034e464845e57a719358bdc0",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/wish86.exe"
+    },
+    {
+      "bytes": 58368,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/wish86t.exe",
+      "sha256": "1eec25edb366c3c489c1974ac69b286c9a0834c6034e464845e57a719358bdc0",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/wish86t.exe"
+    },
+    {
+      "bytes": 158720,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/wrjpgcom.exe",
+      "sha256": "3d6da93edc22585e8ecb56f8d14180d465cfc0c4b59280027e5d633db7360292",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/wrjpgcom.exe"
+    },
+    {
+      "bytes": 2796032,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/xerces-c_3_3.dll",
+      "sha256": "0223343a11019d91a51fd4df345530848d12c7f005755764131567c6fcc6caf0",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/xerces-c_3_3.dll"
+    },
+    {
+      "bytes": 1913,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/xml2-config",
+      "sha256": "a14834caad8bed575afba939a235f663807b66f0c3697ec96fca3b2fef380ec2",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/xml2-config"
+    },
+    {
+      "bytes": 20480,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/xmlcatalog.exe",
+      "sha256": "b1f35b30d2cca86ec9ae6dfbd01d3d8c8227cc96515b534f0872a96cef0b1c75",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/xmlcatalog.exe"
+    },
+    {
+      "bytes": 66560,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/xmllint.exe",
+      "sha256": "ec51d4c108d00407b4599dd79744f82901ba698f272d69a9ff49e52b000ccc38",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/xmllint.exe"
+    },
+    {
+      "bytes": 54784,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/xpprof64.dll",
+      "sha256": "4d11aa50a246f13750079bbcddf8d86efc636e1fbfbc9d354ad939f8f9ff8037",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/xpprof64.dll"
+    },
+    {
+      "bytes": 90624,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/zlib.dll",
+      "sha256": "f4f26ea6300c8449daad4650915e01ac80aafc6ca8b73a50be450f1fb66cdd63",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/zlib.dll"
+    },
+    {
+      "bytes": 134656,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/zlib1.dll",
+      "sha256": "955b8aedcef4546f0e9218014f4743047ab9980e882b507177c4348fbc9e0f45",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/zlib1.dll"
+    },
+    {
+      "bytes": 657408,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/zstd.dll",
+      "sha256": "fcc1dc71b7df5489e37a78abab9c31d763570d55e93c67f388058c41c0d7b8df",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/zstd.dll"
+    },
+    {
+      "bytes": 164864,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/zstd.exe",
+      "sha256": "d28e0286d3c90693785ad831da2d5681bef11ab77da24eef1b9cb716c89d6a8d",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/zstd.exe"
+    },
+    {
+      "bytes": 2787,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/lib/gdalplugins/drivers.ini",
+      "sha256": "6a3fa958a789ef92f333925955248d4562f6a18065677f80aa0be01855887bd0",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/lib/gdalplugins/drivers.ini"
+    },
+    {
+      "bytes": 13022,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/GDALLogoBW.svg",
+      "sha256": "aac9dab33d479e0b832b8bd7c9e5510dcbef34a7c6cc9aea96bbe2aab5161c53",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/GDALLogoBW.svg"
+    },
+    {
+      "bytes": 12305,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/GDALLogoColor.svg",
+      "sha256": "2c102a31c6e9116aa9b98787d8bf5cf648dbcc2b930aee653cd35df65ed118d0",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/GDALLogoColor.svg"
+    },
+    {
+      "bytes": 12305,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/GDALLogoGS.svg",
+      "sha256": "1ae6e2d92e6b0439f3baee0cb55dad8b97abfb4fcc58c9189b23b63c818aeeca",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/GDALLogoGS.svg"
+    },
+    {
+      "bytes": 21841,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/LICENSE.TXT",
+      "sha256": "1dae3468e81d00da56e2936f74d33b8b3ad09d726437f19ce209a5dabea41f77",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/LICENSE.TXT"
+    },
+    {
+      "bytes": 32234,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/MM_m_idofic.csv",
+      "sha256": "7adfc54a3428b6c9bed35048aa48ecab29ff59aa6378429a37c3c4f69faa8e59",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/MM_m_idofic.csv"
+    },
+    {
+      "bytes": 9020,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/bag_template.xml",
+      "sha256": "daf7816f686c35b51ec66c90fc6aedbf12dbef97f28f9fae9731392f92afb733",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/bag_template.xml"
+    },
+    {
+      "bytes": 11977,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/cubewerx_extra.wkt",
+      "sha256": "1cca3fa3e249f4cc7d1bf0ffb0a71a1a2afadd10afdf7ed0aa292dbc5e4f0768",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/cubewerx_extra.wkt"
+    },
+    {
+      "bytes": 463632,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/default.rsc",
+      "sha256": "9e1c9d7081d52775e750d4155d49255252b04ca81fef27cb2997675d3cd9626b",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/default.rsc"
+    },
+    {
+      "bytes": 364032,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/ecw_cs.wkt",
+      "sha256": "d431893eb446b265d206eea8863dcdcce3b65c7c2a707daab58e89e583af033e",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/ecw_cs.wkt"
+    },
+    {
+      "bytes": 411,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/eedaconf.json",
+      "sha256": "03116848a7bacad105289c56f5d13fb59be264f1e3d3809e82745f4163fe1285",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/eedaconf.json"
+    },
+    {
+      "bytes": 27,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/epsg.wkt",
+      "sha256": "e50895e9061aba6dd1588f06a088872aa562a8d98716588bc1a420189dcb254c",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/epsg.wkt"
+    },
+    {
+      "bytes": 332546,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/esri_StatePlane_extra.wkt",
+      "sha256": "682df1b231cb6f1287685d4c64bf1b2611c0af43c30483473bbb366ce1bd8d33",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/esri_StatePlane_extra.wkt"
+    },
+    {
+      "bytes": 8387,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/gdal_algorithm.schema.json",
+      "sha256": "ff2c45ba283a2c91da2c719c7683d022beb4a56e32048c715ab965b0325312d9",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/gdal_algorithm.schema.json"
+    },
+    {
+      "bytes": 711,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/gdalg.schema.json",
+      "sha256": "6e938d02986cf9d87508efd11e73cbfc50c357da6e2638f5e953c5ed13904266",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/gdalg.schema.json"
+    },
+    {
+      "bytes": 2021,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/gdalicon.png",
+      "sha256": "d90f50a8f74c325086c867bf006a92266c259a270d9166b2f41f586b67755729",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/gdalicon.png"
+    },
+    {
+      "bytes": 9197,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/gdalinfo_output.schema.json",
+      "sha256": "c7ec3c1b0c314e74448c2eb2ded6a08cf0170f231a4b4d489be1fdcb09016d1e",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/gdalinfo_output.schema.json"
+    },
+    {
+      "bytes": 8101,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/gdalmdiminfo_output.schema.json",
+      "sha256": "fb6ab557f0f2d36fd93806da80c0461d0ee4b554b89292686eb065fef107ab3b",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/gdalmdiminfo_output.schema.json"
+    },
+    {
+      "bytes": 11294,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/gdaltileindex.xsd",
+      "sha256": "f495bf05d3af699f36debcb6b20a8e232478d9e4e56653555bd4ab8da86f7c51",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/gdaltileindex.xsd"
+    },
+    {
+      "bytes": 42338,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/gdalvrt.xsd",
+      "sha256": "553a9fa08c9aba83032c9dc36c970897e95d019668dd931cd4f0806e81874d04",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/gdalvrt.xsd"
+    },
+    {
+      "bytes": 16469,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/gfs.xsd",
+      "sha256": "4c22f069538d543e8587de28e87c3e342943f3ed9eac1b33dd5f5d828ce61b92",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/gfs.xsd"
+    },
+    {
+      "bytes": 6643,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/gml_registry.xml",
+      "sha256": "dab571b2a74e4b6de27a0fde62d34887141ca456d11caacdd75a166b2de5a743",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/gml_registry.xml"
+    },
+    {
+      "bytes": 6462,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/gml_registry.xsd",
+      "sha256": "ef90b625ec5812fddab313b8b1e387989ccfea09409c515f3139b6d63491297a",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/gml_registry.xsd"
+    },
+    {
+      "bytes": 7432,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/gmlasconf.xml",
+      "sha256": "200939d2ef87de4df80e6ebf30908c60e9654e0bfc6b79c7ae4ea8a9447db76e",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/gmlasconf.xml"
+    },
+    {
+      "bytes": 47584,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/gmlasconf.xsd",
+      "sha256": "b3817d574f8e3b737dca1ad9c8b020c9c8daaa2c60fcbec54e6e35b911ce6819",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/gmlasconf.xsd"
+    },
+    {
+      "bytes": 15804,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/gt_datum.csv",
+      "sha256": "dd0722e59b04d5da58409bceaec4436ec726306446bd6477ecbaa819c58f056d",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/gt_datum.csv"
+    },
+    {
+      "bytes": 1719,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/gt_ellips.csv",
+      "sha256": "c10676c298140d70248045e0c22d73e34c5cf85db359167374367d493ffa7cf4",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/gt_ellips.csv"
+    },
+    {
+      "bytes": 6683,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/header.dxf",
+      "sha256": "6b1504db053a115fe0e245b08c7ddad107f7352ef93cb065a30110ac9b10688f",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/header.dxf"
+    },
+    {
+      "bytes": 1740,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/inspire_cp_BasicPropertyUnit.gfs",
+      "sha256": "286d7b67c2fa3a5c321d439f83193bc06e0c6a0a6536838e79f151678ab5471c",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/inspire_cp_BasicPropertyUnit.gfs"
+    },
+    {
+      "bytes": 1650,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/inspire_cp_CadastralBoundary.gfs",
+      "sha256": "55963c9317f76508f5b64729e6057a230f1f5fc9473851f1031f99c50b1aeb86",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/inspire_cp_CadastralBoundary.gfs"
+    },
+    {
+      "bytes": 2450,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/inspire_cp_CadastralParcel.gfs",
+      "sha256": "6f14b49b1694abfe191f1d45c84c6e62678866e3941dc53f095e0ec6cfa30e24",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/inspire_cp_CadastralParcel.gfs"
+    },
+    {
+      "bytes": 4812,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/inspire_cp_CadastralZoning.gfs",
+      "sha256": "7b5182fbca4b8d9ea073e398d085037792cbd9444d1dc6b3596fa2ed030b4cfa",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/inspire_cp_CadastralZoning.gfs"
+    },
+    {
+      "bytes": 1640,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/jpfgdgml_AdmArea.gfs",
+      "sha256": "17c8bd25f28f7d6fe14d0c821dbf6baa69ea1e11f69c69557c016c985ebbf918",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/jpfgdgml_AdmArea.gfs"
+    },
+    {
+      "bytes": 1382,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/jpfgdgml_AdmBdry.gfs",
+      "sha256": "5d8ef39888b78160d1e71216c7fc09a27ec881609fc1cf04c7ea15ca54024804",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/jpfgdgml_AdmBdry.gfs"
+    },
+    {
+      "bytes": 1633,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/jpfgdgml_AdmPt.gfs",
+      "sha256": "cef6ddf05a7f6735ca4980d6ada751b83ae48e9250b413f34f9148d5dc0e2899",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/jpfgdgml_AdmPt.gfs"
+    },
+    {
+      "bytes": 1501,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/jpfgdgml_BldA.gfs",
+      "sha256": "014ef563b35e7961d1983078b6aefef83656010aac4d5fd744da498815542edd",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/jpfgdgml_BldA.gfs"
+    },
+    {
+      "bytes": 1503,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/jpfgdgml_BldL.gfs",
+      "sha256": "f63eda54f4c92c3174235b1be98cd59682b5543e69015f9ee1a3f8929247f5b0",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/jpfgdgml_BldL.gfs"
+    },
+    {
+      "bytes": 1501,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/jpfgdgml_Cntr.gfs",
+      "sha256": "c0e037fe697e0c714955718d16023c2a994e25fc0e98cf5a96e5935daa436093",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/jpfgdgml_Cntr.gfs"
+    },
+    {
+      "bytes": 1384,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/jpfgdgml_CommBdry.gfs",
+      "sha256": "74b1c1e7bf62091e9a21b34d8851da5ffc697622ecdf132a9bfceb459d64002c",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/jpfgdgml_CommBdry.gfs"
+    },
+    {
+      "bytes": 1635,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/jpfgdgml_CommPt.gfs",
+      "sha256": "039dc82b8ad8a75b4ad5f01845c2e2fc0529442372695e82fe2293ab22e01150",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/jpfgdgml_CommPt.gfs"
+    },
+    {
+      "bytes": 1509,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/jpfgdgml_Cstline.gfs",
+      "sha256": "71bcd30fe0db762d900be9cef44a7c8bae04d82516de6f6746198a7a3eaaccb5",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/jpfgdgml_Cstline.gfs"
+    },
+    {
+      "bytes": 1500,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/jpfgdgml_ElevPt.gfs",
+      "sha256": "f4c45219e538115d6a019e90d89101b083574178f1b652e0ec91609c51f76c83",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/jpfgdgml_ElevPt.gfs"
+    },
+    {
+      "bytes": 2523,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/jpfgdgml_GCP.gfs",
+      "sha256": "d5b4e640d79a4dc7b2bafbf6a78415042d7d28593768bc78b6006c19e650d064",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/jpfgdgml_GCP.gfs"
+    },
+    {
+      "bytes": 1386,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/jpfgdgml_LeveeEdge.gfs",
+      "sha256": "9109ea50fa3225f8ea7ef76748007656f20df4533725dfabf5d08f38fa86899e",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/jpfgdgml_LeveeEdge.gfs"
+    },
+    {
+      "bytes": 1507,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/jpfgdgml_RailCL.gfs",
+      "sha256": "59f70f7da031c91c07d2119847c716a3d2b391869e56374ca567428fcf0bd8b7",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/jpfgdgml_RailCL.gfs"
+    },
+    {
+      "bytes": 1251,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/jpfgdgml_RdASL.gfs",
+      "sha256": "9a0fc53a66ee2a2bdc4e359c23155d7f7298ccabfdc749bb0d4188d541e714e9",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/jpfgdgml_RdASL.gfs"
+    },
+    {
+      "bytes": 1515,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/jpfgdgml_RdArea.gfs",
+      "sha256": "95d2f09254e4b78faffbeb8839df44dd3e5ebc5c567940e0512e9c776eec80c4",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/jpfgdgml_RdArea.gfs"
+    },
+    {
+      "bytes": 1646,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/jpfgdgml_RdCompt.gfs",
+      "sha256": "7b5f405828ffe8613b011f2c504f16951519b8e903b1f3e056b9115b869968af",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/jpfgdgml_RdCompt.gfs"
+    },
+    {
+      "bytes": 1642,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/jpfgdgml_RdEdg.gfs",
+      "sha256": "cc5ad650a75142969d9a44e8b6dae03719276c64dcfbced14ea4f3849f89b785",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/jpfgdgml_RdEdg.gfs"
+    },
+    {
+      "bytes": 1386,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/jpfgdgml_RdMgtBdry.gfs",
+      "sha256": "89c49de530e38deaec512b619478cf6a775ef881690950042565917824a8d2f6",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/jpfgdgml_RdMgtBdry.gfs"
+    },
+    {
+      "bytes": 1644,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/jpfgdgml_RdSgmtA.gfs",
+      "sha256": "0eb42873db9b9127e413c40bd54be8abe11692562f48819e4f0f1cb89b59b995",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/jpfgdgml_RdSgmtA.gfs"
+    },
+    {
+      "bytes": 1388,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/jpfgdgml_RvrMgtBdry.gfs",
+      "sha256": "de64860f4466d8f155f7b3b32038caf0c6f7740a26fee4000c7b482ac4b03633",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/jpfgdgml_RvrMgtBdry.gfs"
+    },
+    {
+      "bytes": 1375,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/jpfgdgml_SBAPt.gfs",
+      "sha256": "e925e429672fe2c39fb1952d44f071de44a0d87f098122e12bf7f168784ec6e1",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/jpfgdgml_SBAPt.gfs"
+    },
+    {
+      "bytes": 1507,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/jpfgdgml_SBArea.gfs",
+      "sha256": "7974755e986151e269a123aaa806e12a99f070369ab4861afd86a9df1c05245a",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/jpfgdgml_SBArea.gfs"
+    },
+    {
+      "bytes": 1253,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/jpfgdgml_SBBdry.gfs",
+      "sha256": "243c9248a0a15f7ab429eb5c0410bad81becaf9f6a8fc6aaeff2d69403ce332b",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/jpfgdgml_SBBdry.gfs"
+    },
+    {
+      "bytes": 1497,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/jpfgdgml_WA.gfs",
+      "sha256": "1810a5b959ecf47b0d19032711be155da6188be70d808a3d2c360c0883559673",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/jpfgdgml_WA.gfs"
+    },
+    {
+      "bytes": 1499,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/jpfgdgml_WL.gfs",
+      "sha256": "27d04a20f449c98df4c068e0424f4262982e4a4dfc105e3bd3ac73608a8448a9",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/jpfgdgml_WL.gfs"
+    },
+    {
+      "bytes": 1503,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/jpfgdgml_WStrA.gfs",
+      "sha256": "ba5fa114ff40f6355c216e31292851e82d328d702af0710f52493ca0bc87dbb0",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/jpfgdgml_WStrA.gfs"
+    },
+    {
+      "bytes": 1505,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/jpfgdgml_WStrL.gfs",
+      "sha256": "ebfe2d9d185ec887fe737250c0a6314870388be23b39191fdc89f1ca01aac890",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/jpfgdgml_WStrL.gfs"
+    },
+    {
+      "bytes": 3391,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/leaflet_template.html",
+      "sha256": "fb2c1c1a5dc2376f029fa577abcbcba1ddfa57bd5e45051ad4d2010dc214c7e4",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/leaflet_template.html"
+    },
+    {
+      "bytes": 6439,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/netcdf_config.xsd",
+      "sha256": "4b76cc1221276e1ff54646d43ec477cb4027c1e68c0573f49363fe3f062f9389",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/netcdf_config.xsd"
+    },
+    {
+      "bytes": 202046,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/nitf_spec.xml",
+      "sha256": "a4c3c303e91f19543a872dd215ee9d36a30f5445b7f11901c2c0b0068d0eea2c",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/nitf_spec.xml"
+    },
+    {
+      "bytes": 7741,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/nitf_spec.xsd",
+      "sha256": "25e5d431d905316b94520d8f17432992b6b664cae1a38eef6794f405405b84e8",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/nitf_spec.xsd"
+    },
+    {
+      "bytes": 6635,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/ogr_fields_override.schema.json",
+      "sha256": "0e3f33915f014254b2b08cb4477955558f7a38afe7f0ee63b26fdfd0dc2d8454",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/ogr_fields_override.schema.json"
+    },
+    {
+      "bytes": 12002,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/ogrinfo_output.schema.json",
+      "sha256": "b12e82f98eed6cf8a407d0c8a6a8250af1b22f04136e4d295f7eeeec4b8fc115",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/ogrinfo_output.schema.json"
+    },
+    {
+      "bytes": 24661,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/ogrvrt.xsd",
+      "sha256": "179466c7ad003a5757dd9c5381189bb095495013b86217f168ca3e3f953129ed",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/ogrvrt.xsd"
+    },
+    {
+      "bytes": 5485,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/osmconf.ini",
+      "sha256": "a0e81bb3a04086b2440558774bf41ccd693191e5978d8f7f1be79a0441e5f198",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/osmconf.ini"
+    },
+    {
+      "bytes": 8482,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/ozi_datum.csv",
+      "sha256": "e3678e3f144084aeb3488c2e1ae2247f07a841f501a89e7225ae9dd9bfb19868",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/ozi_datum.csv"
+    },
+    {
+      "bytes": 1349,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/ozi_ellips.csv",
+      "sha256": "0c8363bfdedc1787d53463d705e2e1ce8fbdfcd49d1e3c778f5d4282980d75c6",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/ozi_ellips.csv"
+    },
+    {
+      "bytes": 45587,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/pci_datum.txt",
+      "sha256": "02f76b0a5451e06801ba4c4de661ac5c760065a65f42d06c9d359c3490ff9c81",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/pci_datum.txt"
+    },
+    {
+      "bytes": 6351,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/pci_ellips.txt",
+      "sha256": "5cf37efdea6a85406b544e6fd6286b8db5f23fa4cda38c6a1d5fbcb50432d7b6",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/pci_ellips.txt"
+    },
+    {
+      "bytes": 33283,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/pdfcomposition.xsd",
+      "sha256": "e857da7dc84481784fb31bf4b6e56c68e6c92c979263fcf59f7b0f63c206456a",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/pdfcomposition.xsd"
+    },
+    {
+      "bytes": 3408,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/pds4_template.xml",
+      "sha256": "bbccb2bf469dba2435eaabfd3de76107f17356a741d025a445244ecc04d27791",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/pds4_template.xml"
+    },
+    {
+      "bytes": 41372,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/plscenesconf.json",
+      "sha256": "55dfff5972723e8bb01d80f5defb989d3603b723c3ef03e4d71578a03710f867",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/plscenesconf.json"
+    },
+    {
+      "bytes": 46735,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/ruian_vf_ob_v1.gfs",
+      "sha256": "167bed33ecdae20aca5301d418bcc113fc315e3ff48983174a0f547f4d8ca41b",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/ruian_vf_ob_v1.gfs"
+    },
+    {
+      "bytes": 2596,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/ruian_vf_st_uvoh_v1.gfs",
+      "sha256": "0bc7126206e1897b89184f5a7813a839f711e265a453ef2116679986fdf4d9d3",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/ruian_vf_st_uvoh_v1.gfs"
+    },
+    {
+      "bytes": 45900,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/ruian_vf_st_v1.gfs",
+      "sha256": "d9214edc2d74694c198ad6ba232d7247eaca98d935145ede5f53ad07a908732e",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/ruian_vf_st_v1.gfs"
+    },
+    {
+      "bytes": 67252,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/ruian_vf_v1.gfs",
+      "sha256": "4e5e3f8fa659824e83a371c30a63cbacccaf0dc23429967b72922f4cc87a1415",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/ruian_vf_v1.gfs"
+    },
+    {
+      "bytes": 13304,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/s57agencies.csv",
+      "sha256": "212ef7211ed83c4382ba59e2ee4437a7331713b29833bee7645c0731cabc4270",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/s57agencies.csv"
+    },
+    {
+      "bytes": 20001,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/s57attributes.csv",
+      "sha256": "f4b6dfe2e82fea5e7ee433e13683292a3fa09bb66750428e4b1578f99a46d2de",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/s57attributes.csv"
+    },
+    {
+      "bytes": 20885,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/s57expectedinput.csv",
+      "sha256": "d5b09a5c4248f3eb0906a4e3ac68d7380c86f819d70deae3662e736f0597bc6c",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/s57expectedinput.csv"
+    },
+    {
+      "bytes": 53425,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/s57objectclasses.csv",
+      "sha256": "06acd7c27d8b9cc0e02db9136aff60c9c95cfad2f5c0cbbd9cdf8aa4d07d8716",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/s57objectclasses.csv"
+    },
+    {
+      "bytes": 9216,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/seed_2d.dgn",
+      "sha256": "dd8465f18569d9289809e9e0962115d365d0a56de021393952a5e7a0a20b527c",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/seed_2d.dgn"
+    },
+    {
+      "bytes": 2048,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/seed_3d.dgn",
+      "sha256": "97c2f00ee6ea96873b7d16e5e898b4850e3d35448299d7d9d37e7d1792b56896",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/seed_3d.dgn"
+    },
+    {
+      "bytes": 10360,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/stateplane.csv",
+      "sha256": "30c6210872b0a4c10d40739a8cb6beda630a7ef3eb4cb07a7128e26e8e83cbe3",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/stateplane.csv"
+    },
+    {
+      "bytes": 2103,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/template_tiles.mapml",
+      "sha256": "9529fbcf05731ff078f8da34acea905b0867644b79f8d53f886c602af4d38ecf",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/template_tiles.mapml"
+    },
+    {
+      "bytes": 4115,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/tms_LINZAntarticaMapTileGrid.json",
+      "sha256": "42327ca8964f95ce7e01f34fbc32780250a4a9524e4b2d7883b4f7eec512e5a0",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/tms_LINZAntarticaMapTileGrid.json"
+    },
+    {
+      "bytes": 6273,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/tms_MapML_APSTILE.json",
+      "sha256": "0a8d75f5f4689775e5be9e93bfc3b27ce3ebf282f277e84240e5ef2bb297e4a3",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/tms_MapML_APSTILE.json"
+    },
+    {
+      "bytes": 7792,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/tms_MapML_CBMTILE.json",
+      "sha256": "b5969c71b757b5c89a88ec8e9044968424f5946b625ed4f07d2be098dc26d780",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/tms_MapML_CBMTILE.json"
+    },
+    {
+      "bytes": 5265,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/tms_NZTM2000.json",
+      "sha256": "8ab3317be77f1fdcf36a0af7152e1bb0965271f7be5cbbc43267716a725839ea",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/tms_NZTM2000.json"
+    },
+    {
+      "bytes": 2275,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/trailer.dxf",
+      "sha256": "506baf0c593d7a8ff24fbcd783887292bd6d3c8d5054729e3bf38b9465d119fc",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/trailer.dxf"
+    },
+    {
+      "bytes": 24765,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/vdv452.xml",
+      "sha256": "133ca409195aedb32cd9c845e1f10240c00106dad3221aee0100228d0ebecb50",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/vdv452.xml"
+    },
+    {
+      "bytes": 1803,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/vdv452.xsd",
+      "sha256": "ffc93318746e8803251f36abcad1e1fbfb70898ca72071c333869663f1ac05af",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/vdv452.xsd"
+    },
+    {
+      "bytes": 3610,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/vicar.json",
+      "sha256": "7924ad101da757cf41091ad4a9e734dde1d23543753f72c2eede11c9cd7d02c8",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/vicar.json"
+    },
+    {
+      "bytes": 1097,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/proj/CH",
+      "sha256": "6c53ea40a2c60325ba6c6b9a2b9c143bd165671c38820ecd8f23caab4a264ab5",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/proj/CH"
+    },
+    {
+      "bytes": 728,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/proj/GL27",
+      "sha256": "85375e6315d6f644e4577dadf3c5f157528ad15b715c99b287bddab23d44193d",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/proj/GL27"
+    },
+    {
+      "bytes": 2099,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/proj/ITRF2000",
+      "sha256": "5225c3b3367a37021e639cfd5bd1521d2bd5d00cbc474cd6b3b3827615a4fe72",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/proj/ITRF2000"
+    },
+    {
+      "bytes": 5682,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/proj/ITRF2008",
+      "sha256": "dc6985d5721e2e1d18fac996dee5dec90244ef3e20c38f72205e32d8842af2e2",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/proj/ITRF2008"
+    },
+    {
+      "bytes": 3490,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/proj/ITRF2014",
+      "sha256": "5fa17d6b66928ee6cb01ae4174ff8bf32458468bf817089df119779dfd382efa",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/proj/ITRF2014"
+    },
+    {
+      "bytes": 5711,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/proj/ITRF2020",
+      "sha256": "fb2fd52951adb9b32334757ed412fe5cdb9c8533af28421fa191dba7b4d73dcb",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/proj/ITRF2020"
+    },
+    {
+      "bytes": 17671,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/proj/deformation_model.schema.json",
+      "sha256": "ba0c5911117207a936fc738c1e31da001b45b51193773ce0c6742143f372b99d",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/proj/deformation_model.schema.json"
+    },
+    {
+      "bytes": 6385,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/proj/nad.lst",
+      "sha256": "1a28ed872fd1550f5bf7b5a5e5bfc5e7500b5f94c9745b84a1d156b32039928c",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/proj/nad.lst"
+    },
+    {
+      "bytes": 19535,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/proj/nad27",
+      "sha256": "0bc231922461ac758922c6a7251e96d7e53e656608b1b4f06b7848fa8fc25520",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/proj/nad27"
+    },
+    {
+      "bytes": 16593,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/proj/nad83",
+      "sha256": "9a6260c8680abe5216ca8fe985998fababc121b0032879a821d75cae3411dc96",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/proj/nad83"
+    },
+    {
+      "bytes": 3915,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/proj/other.extra",
+      "sha256": "c1ef74c0a9b3e1f42a576c15bc43666c135b7e9361db5727a353204da279ccbb",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/proj/other.extra"
+    },
+    {
+      "bytes": 10280960,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/proj/proj.db",
+      "sha256": "f6b20e9033aec8d4b926947e78f49e17a2fc1e2cf776f97c8861adb88bd8c8bc",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/proj/proj.db"
+    },
+    {
+      "bytes": 2435,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/proj/proj.ini",
+      "sha256": "b95ebf0d007339244483d65d571cd887a51806e2bd2c1ab7f47b897d25320d65",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/proj/proj.ini"
+    },
+    {
+      "bytes": 38418,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/proj/projjson.schema.json",
+      "sha256": "67f090556bae996522edad482597c0f9e1b919ca4c9288ac9f8f7cd4180f49b6",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/proj/projjson.schema.json"
+    },
+    {
+      "bytes": 8403,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/proj/triangulation.schema.json",
+      "sha256": "b1528266667d4f3e87072c74e370b27135101515a9012a25287fcf312cea179a",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/proj/triangulation.schema.json"
+    },
+    {
+      "bytes": 7079,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/proj/world",
+      "sha256": "f271cd3e56c7759d2fcfbbbd39870264eb81064155713c04fc92eadd30adeb48",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/proj/world"
+    },
+    {
+      "bytes": 16,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/.pixi-environment-fingerprint",
+      "sha256": "c025d1e5e01e967fffa524048a49553b7e728ea2e91ae3c3f9ce925175175f91",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/.pixi-environment-fingerprint"
+    },
+    {
+      "bytes": 2587,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/blosc-1.21.6-hfd34d9b_1.json",
+      "sha256": "522feccaec7c92ec71b570455f667d3e03d93dbe503590743780b4c339bba674",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/blosc-1.21.6-hfd34d9b_1.json"
+    },
+    {
+      "bytes": 2511,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/bzip2-1.0.8-h0ad9c76_10.json",
+      "sha256": "b81525a61f2af36c60af471a6296d094742b268f29a2e2aad13daf4d7e8233b7",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/bzip2-1.0.8-h0ad9c76_10.json"
+    },
+    {
+      "bytes": 1456,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/ca-certificates-2026.7.22-h4c7d964_0.json",
+      "sha256": "5319e4a98e6460ba28c2928ef41de79d7f2eca7fde95461f69d1e65fe84d00f1",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/ca-certificates-2026.7.22-h4c7d964_0.json"
+    },
+    {
+      "bytes": 2106,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/freexl-2.0.0-hf297d47_2.json",
+      "sha256": "9adef91341f06a13ad7716a065f798e3e4eb68a0261532441f703998170d7927",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/freexl-2.0.0-hf297d47_2.json"
+    },
+    {
+      "bytes": 104453,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/gdal-3.13.2-np2py314h4a48668_3.json",
+      "sha256": "fe119a7e55f455571a3265fceec7ed7b45c8ec8090419e01edb5665e475aa46b",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/gdal-3.13.2-np2py314h4a48668_3.json"
+    },
+    {
+      "bytes": 160804,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/geos-3.14.1-hdade9fe_0.json",
+      "sha256": "731fc4e15b61affec6f590fb53e5007b40f7d92d5d9aae96211bbd5c8a99f51b",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/geos-3.14.1-hdade9fe_0.json"
+    },
+    {
+      "bytes": 47,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/history",
+      "sha256": "e3c14ad1a711a776236298849a1beb5cf0088840bc317fa3839ebda792c92164",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/history"
+    },
+    {
+      "bytes": 71685,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/icu-78.3-h5112557_2.json",
+      "sha256": "14f63e1c191eed417f461edbfdfcb4cf1553b1a1278236dbd5e6925673ea3a8c",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/icu-78.3-h5112557_2.json"
+    },
+    {
+      "bytes": 10919,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/krb5-1.22.2-h719d79b_2.json",
+      "sha256": "81aae682f45998933c7413cc35ba257263eeb699af43483e69d2fb044a0cb7c1",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/krb5-1.22.2-h719d79b_2.json"
+    },
+    {
+      "bytes": 2455,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/lerc-4.2.0-hd936e49_0.json",
+      "sha256": "b56dc4c55d1f0601fb2a35b9a3c3173e2ecabc27a7605f9381ff749a9f4c5a7b",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/lerc-4.2.0-hd936e49_0.json"
+    },
+    {
+      "bytes": 16569,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/libarchive-3.8.9-gpl_h8fdc8af_101.json",
+      "sha256": "097855b94ba6763a92408efa36489f381e9f9d714d01c80851c61e113843bdec",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/libarchive-3.8.9-gpl_h8fdc8af_101.json"
+    },
+    {
+      "bytes": 1420,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/libblas-3.11.0-9_h8455456_mkl.json",
+      "sha256": "f6c44323462787449a8db2cbc597f147b45522f4b5be572dae99aefab62ffaba",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/libblas-3.11.0-9_h8455456_mkl.json"
+    },
+    {
+      "bytes": 3378,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/libbrotlicommon-1.2.0-hf02afa3_3.json",
+      "sha256": "b343b418132f9b283bf5c0b967bba7564b7d1db4d7df70e1d3c44cb2779481b9",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/libbrotlicommon-1.2.0-hf02afa3_3.json"
+    },
+    {
+      "bytes": 2074,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/libbrotlidec-1.2.0-h84f9c24_3.json",
+      "sha256": "7f890bb4dec366d0c8030bc91f633b1ac28ef8f557e4a26cf489ee9063da1f07",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/libbrotlidec-1.2.0-h84f9c24_3.json"
+    },
+    {
+      "bytes": 2076,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/libbrotlienc-1.2.0-he2a975b_3.json",
+      "sha256": "b47930452dc83514f8c193e94a82262e43b8e31b1cff16272709d2f25445a30f",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/libbrotlienc-1.2.0-he2a975b_3.json"
+    },
+    {
+      "bytes": 1399,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/libcblas-3.11.0-9_h2a3cdd5_mkl.json",
+      "sha256": "f439214124df1881f93abbafebe03a11aeac5c3ea3306548fef79b9712b30714",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/libcblas-3.11.0-9_h2a3cdd5_mkl.json"
+    },
+    {
+      "bytes": 5194,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/libcurl-8.21.0-hdb0ef4a_5.json",
+      "sha256": "34a82cb76d1caf4d5d4e28194b8185241d7edefe8be9407a25cb31d44051351a",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/libcurl-8.21.0-hdb0ef4a_5.json"
+    },
+    {
+      "bytes": 4009,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/libdeflate-1.25-h1a1d4e4_1.json",
+      "sha256": "e1ea6b14d688de2a05c489b3161dd07f57941a1bd4f587e71c54ff0ffcc79d78",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/libdeflate-1.25-h1a1d4e4_1.json"
+    },
+    {
+      "bytes": 1283,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/libexpat-2.8.1-hac47afa_1.json",
+      "sha256": "1ae6cff522083eb826e703d872103a7b2ded749803c596dbde6a0fd08f1fe8c2",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/libexpat-2.8.1-hac47afa_1.json"
+    },
+    {
+      "bytes": 3808,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/libffi-3.7.0-h3d046cb_0.json",
+      "sha256": "a57ea9be65468402c27acb0a1e453b8dd8a22dd248f875bec6250ddc649943bd",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/libffi-3.7.0-h3d046cb_0.json"
+    },
+    {
+      "bytes": 122978,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/libgdal-core-3.13.2-hbfeefb7_3.json",
+      "sha256": "828c57124ae02c723063dafca1f7026985347bc508b503db1671f21651b0fba0",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/libgdal-core-3.13.2-hbfeefb7_3.json"
+    },
+    {
+      "bytes": 159379,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/libhwloc-2.13.0-default_h049141e_1000.json",
+      "sha256": "d8c987adea47a0a9532d904717d7c4f7f194d2dbb08ca488f3c4fd2289176902",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/libhwloc-2.13.0-default_h049141e_1000.json"
+    },
+    {
+      "bytes": 22532,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/libhwy-1.4.0-h2419aca_1.json",
+      "sha256": "95452814f2fbfd7ae9224b868afece3d39622b77333e45025684669592de290b",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/libhwy-1.4.0-h2419aca_1.json"
+    },
+    {
+      "bytes": 2736,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/libiconv-1.18-hc1393d2_3.json",
+      "sha256": "54230ecfa82119e4c646a8588baf3edd7b5058b79d115fd2e617aaf3784472c5",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/libiconv-1.18-hc1393d2_3.json"
+    },
+    {
+      "bytes": 10564,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/libjpeg-turbo-3.2.0-hfd05255_1.json",
+      "sha256": "52846972ec1ea1317490188e4ebb34443cc58dbb914ea7449f7295a3ec41215d",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/libjpeg-turbo-3.2.0-hfd05255_1.json"
+    },
+    {
+      "bytes": 9871,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/libjxl-0.12.0-h932607e_2.json",
+      "sha256": "654ef35baa708642080b53e1e338e17829f289750a860fb4cb174e798a06d04c",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/libjxl-0.12.0-h932607e_2.json"
+    },
+    {
+      "bytes": 2840,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/libkml-1.3.0-h68a222c_1023.json",
+      "sha256": "f1c58fe3ef428fd6d398cd0674c1a412dd564bad34be3333ed2032e651b8d60a",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/libkml-1.3.0-h68a222c_1023.json"
+    },
+    {
+      "bytes": 1410,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/liblapack-3.11.0-9_hf9ab0e9_mkl.json",
+      "sha256": "49b801d94c6c3c4de52b9e04541fd9e67b9c4a0d50994d2e0dcb078accbee3f0",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/liblapack-3.11.0-9_hf9ab0e9_mkl.json"
+    },
+    {
+      "bytes": 1302,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/liblzma-5.8.3-hfd05255_1.json",
+      "sha256": "2ce1be4dafa15ca4dc1565c6bf2372520a4c7dc5b61c8fdb58ee6256abf4f30e",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/liblzma-5.8.3-hfd05255_1.json"
+    },
+    {
+      "bytes": 1253,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/libmpdec-4.0.0-hfd05255_2.json",
+      "sha256": "1a2194b56060dbaf4e45a07b3f9a2057a7bfd08bac3ce327cdfc1d7871b75d37",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/libmpdec-4.0.0-hfd05255_2.json"
+    },
+    {
+      "bytes": 8166,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/libpng-1.6.58-hdc8cecf_1.json",
+      "sha256": "64bf64066c585830dae606e1a2db038b1a3a2dadfbd8df94f0b5f71e36c92cae",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/libpng-1.6.58-hdc8cecf_1.json"
+    },
+    {
+      "bytes": 2250,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/libpsl-0.23.1-h9b16d47_1.json",
+      "sha256": "d8efd1393dd6b85373521686db80ef99faae91e74ca692e33b2b1cd1bef3d90b",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/libpsl-0.23.1-h9b16d47_1.json"
+    },
+    {
+      "bytes": 2116,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/librttopo-1.1.0-haa95264_20.json",
+      "sha256": "fef1cc2f64eafb4d61183469d09989b3821ebccdb8b5d7b917fdf572891e6949",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/librttopo-1.1.0-haa95264_20.json"
+    },
+    {
+      "bytes": 10292,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/libspatialite-5.1.0-gpl_h2fc3b25_120.json",
+      "sha256": "bb7ffc06c930a555869f168d6aa1eba1ae87da2d5363094e34760cd49791881a",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/libspatialite-5.1.0-gpl_h2fc3b25_120.json"
+    },
+    {
+      "bytes": 2285,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/libsqlite-3.53.4-hf5d6505_1.json",
+      "sha256": "62f6d8991ed45e49a3e1911285b7ecb282d08c5d9a9b92f21887148e78bb0efd",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/libsqlite-3.53.4-hf5d6505_1.json"
+    },
+    {
+      "bytes": 61209,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/libssh2-1.11.1-h734d217_1.json",
+      "sha256": "17bcc24da47c6a7856ee70a3757cdbf72caceaac1ee4b5a04cd82eaaf004a4bc",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/libssh2-1.11.1-h734d217_1.json"
+    },
+    {
+      "bytes": 128985,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/libtiff-4.7.2-h8f73337_0.json",
+      "sha256": "e72e47cba791bbaab7e62412557909e4c94ca0d9ac873ed8f46a68101b8d04e7",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/libtiff-4.7.2-h8f73337_0.json"
+    },
+    {
+      "bytes": 9315,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/libwebp-base-1.6.0-h4d5522a_1.json",
+      "sha256": "82033b69bc58dcf5feebf1f718a895549f73bf4eebc889863556ed758ff7a1e1",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/libwebp-base-1.6.0-h4d5522a_1.json"
+    },
+    {
+      "bytes": 1373,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/libwinpthread-12.0.0.r4.gg4f2fc60ca-h57928b3_10.json",
+      "sha256": "0ab20600d26b0a9dd0edcba85f5013875d0d6d01ab71ff1535c62ce160f68c74",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/libwinpthread-12.0.0.r4.gg4f2fc60ca-h57928b3_10.json"
+    },
+    {
+      "bytes": 2277,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/libxml2-16-2.15.3-h3cfd58e_1.json",
+      "sha256": "5770e9517486da5afd0f3b2d15069472883ee407b477c36d827187e53d243d29",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/libxml2-16-2.15.3-h3cfd58e_1.json"
+    },
+    {
+      "bytes": 1705,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/libxml2-2.15.3-h8ef44ab_1.json",
+      "sha256": "56db9dc79509b0a3ca10c7195e3983ae9e7a0bf1f871cefb90a4d23fc2080096",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/libxml2-2.15.3-h8ef44ab_1.json"
+    },
+    {
+      "bytes": 14999,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/libxml2-devel-2.15.3-h8ef44ab_1.json",
+      "sha256": "17dcb598e8fc84cb17274f1ea6d0530cfee85ef990be52e940caacc8a4483096",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/libxml2-devel-2.15.3-h8ef44ab_1.json"
+    },
+    {
+      "bytes": 1539,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/libzlib-1.3.2-hfd05255_3.json",
+      "sha256": "d706ca92d6b160664f263a0f1632d82a48b08c21f8e8cc2ede2063d510535f69",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/libzlib-1.3.2-hfd05255_3.json"
+    },
+    {
+      "bytes": 3674,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/llvm-openmp-22.1.8-h4fa8253_1.json",
+      "sha256": "1962ca3c8f44b59a4c5cb9941f7e37ca3ee45c2f788f2721aae76322472dbee8",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/llvm-openmp-22.1.8-h4fa8253_1.json"
+    },
+    {
+      "bytes": 4866,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/lz4-c-1.10.0-h6a83c73_2.json",
+      "sha256": "8a044ffdb5234cde44ea44535e2a5dbfc2a1d8b0db647b9606a19c24381a73cb",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/lz4-c-1.10.0-h6a83c73_2.json"
+    },
+    {
+      "bytes": 7905,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/lzo-2.10-h6a83c73_1003.json",
+      "sha256": "f936f7617930a6d74f0a043750a433f3010b6d941f7d2a8437984e4b97a4ddd9",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/lzo-2.10-h6a83c73_1003.json"
+    },
+    {
+      "bytes": 9365,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/minizip-4.2.2-h0ffbb96_0.json",
+      "sha256": "a75cc589461f45646da71ed6594e63273e66d0fa980665bb7fc015fca3cf17e5",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/minizip-4.2.2-h0ffbb96_0.json"
+    },
+    {
+      "bytes": 7880,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/mkl-2026.1.0-hac47afa_234.json",
+      "sha256": "9c557589b962f54be1990b3b76e0bc3552a5cd9328e4b9faeb24b877f95263d4",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/mkl-2026.1.0-hac47afa_234.json"
+    },
+    {
+      "bytes": 6549,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/muparser-2.3.5-he0c23c2_0.json",
+      "sha256": "1122a877474786de31970ac7883f0bc0ac04a6bacf5600bdc5c0eaea4ed1d617",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/muparser-2.3.5-he0c23c2_0.json"
+    },
+    {
+      "bytes": 428149,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/numpy-2.5.2-py314hffb9209_0.json",
+      "sha256": "e3a73268fc096f61deed4bfa75a383ad0c8f1acdf83f043bfb4678fa68a05002",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/numpy-2.5.2-py314hffb9209_0.json"
+    },
+    {
+      "bytes": 45092,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/openssl-3.6.3-hf411b9b_1.json",
+      "sha256": "16524694adf74141f74429e136871b363034dade15b3f3b968156d231aa8379c",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/openssl-3.6.3-hf411b9b_1.json"
+    },
+    {
+      "bytes": 70471,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/pcre2-10.47-h8466c1e_1.json",
+      "sha256": "f06d733aa7d8ec6bf70a68278567686ddcbc5a946e2ecb7796abfd4b0550b80e",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/pcre2-10.47-h8466c1e_1.json"
+    },
+    {
+      "bytes": 506,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/pixi",
+      "sha256": "9ff727dc1771e10e0d7ea647a6f1e171af8e2cbaadc7b5e61b40750e75525b94",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/pixi"
+    },
+    {
+      "bytes": 134,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/pixi_env_prefix",
+      "sha256": "e77e8add5dbd50cab9d5ff205cd45d778a1fa4b3048f37f4da0c82c712a77f0d",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/pixi_env_prefix"
+    },
+    {
+      "bytes": 20448,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/proj-9.8.1-hd30e2cd_0.json",
+      "sha256": "a497758f03dbd0c180e4a37fe222606e9f72968be694bba93ff9b4b11f5a46a5",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/proj-9.8.1-hd30e2cd_0.json"
+    },
+    {
+      "bytes": 519239,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/python-3.14.7-hb4b0029_0_cp314t.json",
+      "sha256": "43ce66c1b89304c65d21a07a103d12ced81b6600d07a7f1b7b07c76597c40fcf",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/python-3.14.7-hb4b0029_0_cp314t.json"
+    },
+    {
+      "bytes": 983,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/python_abi-3.14-8_cp314t.json",
+      "sha256": "3a9b75d85853b2e95553aad83f398bcea4294b9354e92a1cc1aebc2697105c0c",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/python_abi-3.14-8_cp314t.json"
+    },
+    {
+      "bytes": 3794,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/snappy-1.2.2-h7fa0ca8_1.json",
+      "sha256": "0ed134827094454e0913b70a239c903b210c0ee841d01b22ddb64d7a556b3762",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/snappy-1.2.2-h7fa0ca8_1.json"
+    },
+    {
+      "bytes": 1305,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/sqlite-3.53.4-hdb435a2_1.json",
+      "sha256": "d17bb638e4357c472a822f14f941ae467516d8113aa79fe93b5a877c01ce2819",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/sqlite-3.53.4-hdb435a2_1.json"
+    },
+    {
+      "bytes": 2027,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/tbb-2023.0.0-hd3d4ead_2.json",
+      "sha256": "394521d834acc097a743175cd797533e0edecaf9c2a6a931392986e58ce40b89",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/tbb-2023.0.0-hd3d4ead_2.json"
+    },
+    {
+      "bytes": 298075,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/tk-8.6.13-h967ab96_4.json",
+      "sha256": "1860c0eb9a384a11c4e50a30e3e653183a81e4d2867a1c7240d3c884ccc8256f",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/tk-8.6.13-h967ab96_4.json"
+    },
+    {
+      "bytes": 153979,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/tzdata-2026c-h151e31d_0.json",
+      "sha256": "25b809398ce7cc4991aa3b3aa80530d6759e5b50db430ddf8be71f279ef814f2",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/tzdata-2026c-h151e31d_0.json"
+    },
+    {
+      "bytes": 26385,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/ucrt-10.0.26100.0-h57928b3_0.json",
+      "sha256": "8f1033f4ae85baed4b7a7ef3b812ffff3a2eaa61ad2d9323697db38c62b61683",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/ucrt-10.0.26100.0-h57928b3_0.json"
+    },
+    {
+      "bytes": 4404,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/uriparser-0.9.8-h5a68840_0.json",
+      "sha256": "ed52ea11cb404025e0e47a566f152ebd9a977a1ef2df7a3cc715d69f02fe7748",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/uriparser-0.9.8-h5a68840_0.json"
+    },
+    {
+      "bytes": 949,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/vc-14.5-ha367084_41.json",
+      "sha256": "1b7cc55a8fd89f5e634e64ef4d29021372d2cf0e0f9a31cf5e5fbd70eb4420e3",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/vc-14.5-ha367084_41.json"
+    },
+    {
+      "bytes": 6756,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/vc14_runtime-14.51.36247-habf1de7_41.json",
+      "sha256": "56fbdaf22b3dd45c582bb96e2e0f9e14b86e0ef1cc3bcaee89a39cd3959c92dd",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/vc14_runtime-14.51.36247-habf1de7_41.json"
+    },
+    {
+      "bytes": 1631,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/vcomp14-14.51.36247-habf1de7_41.json",
+      "sha256": "af123c78c386dbc271d71150b1b49021e7a0f73438adb45aaac77b88029c6a3b",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/vcomp14-14.51.36247-habf1de7_41.json"
+    },
+    {
+      "bytes": 548015,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/xerces-c-3.3.0-hac47afa_1.json",
+      "sha256": "163643981c7946655549085321f08c17ac6a782c68821457b6acffd76e883fab",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/xerces-c-3.3.0-hac47afa_1.json"
+    },
+    {
+      "bytes": 5123,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/zlib-1.3.2-hfd05255_3.json",
+      "sha256": "b7a8820a9b1e345e2e2f9d73bf68abf146481f7774aaeac7bdd31deb4db2266b",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/zlib-1.3.2-hfd05255_3.json"
+    },
+    {
+      "bytes": 4880,
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/zstd-1.5.7-h534d264_7.json",
+      "sha256": "871b20373d87da0c0e34230f5bfd9d8b943d969301553da7b165a01076a47563",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/zstd-1.5.7-h534d264_7.json"
+    },
+    {
+      "bytes": 39540,
+      "cacheFile": "tools/gdal-3.13.2-pixi/pixi.lock",
+      "sha256": "ee738db4d935e687563b02e172537079e85a34aae84efbdc74f10b0aba0f53d4",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/pixi.lock"
+    },
+    {
+      "bytes": 144,
+      "cacheFile": "tools/gdal-3.13.2-pixi/pixi.toml",
+      "sha256": "bde4edeebd0285043dc13fcb3f7e1af28eb1de2a7750b35c52c1fa671e9f0b5b",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/pixi.toml"
+    },
+    {
+      "bytes": 219136,
+      "cacheFile": "tools/gdal-3.13.2/ogr2ogr.exe",
+      "sha256": "ee27b7a6a8be8e768381aba520506a75f45549905ac1d3965797aa789a44f8c3",
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2/ogr2ogr.exe"
+    }
+  ],
+  "inventory": {
+    "bytes": 790021286,
+    "cacheSha256": "4265fe50c4ab61cc0c82926c2b96e37756f20ce29baa139eaabe9c752768e6cb",
+    "files": 514,
+    "sha256": "ef0174c2ce0f9a5f2b51f74490cabcf64dd922404f5e653cebf76cd57effd454"
+  },
+  "platform": {
+    "arch": "x64",
+    "os": "win32"
+  },
+  "probes": {
+    "pmtilesDriver": {
+      "args": [
+        "--formats"
+      ],
+      "expectedStdoutLine": "PMTiles -vector- (rw+v): ProtoMap Tiles (*.pmtiles)"
+    },
+    "version": {
+      "args": [
+        "--version"
+      ],
+      "expectedStdout": "GDAL 3.13.2 \"Iowa City\", released 2026/07/20"
+    }
+  },
+  "runtimeId": "gdal-3.13.2-win32-x64",
+  "schema": "zugfolge-gdal-runtime-bundle/v1",
+  "scopes": [
+    {
+      "cachePath": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin",
+      "kind": "directory",
+      "sourcePath": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin"
+    },
+    {
+      "cachePath": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/lib/gdalplugins",
+      "kind": "directory",
+      "sourcePath": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/lib/gdalplugins"
+    },
+    {
+      "cachePath": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal",
+      "kind": "directory",
+      "sourcePath": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal"
+    },
+    {
+      "cachePath": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/proj",
+      "kind": "directory",
+      "sourcePath": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/proj"
+    },
+    {
+      "cachePath": "tools/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta",
+      "kind": "directory",
+      "sourcePath": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta"
+    },
+    {
+      "cachePath": "tools/gdal-3.13.2-pixi/pixi.lock",
+      "kind": "file",
+      "sourcePath": "var/tooling-pinned/gdal-3.13.2-pixi/pixi.lock"
+    },
+    {
+      "cachePath": "tools/gdal-3.13.2-pixi/pixi.toml",
+      "kind": "file",
+      "sourcePath": "var/tooling-pinned/gdal-3.13.2-pixi/pixi.toml"
+    },
+    {
+      "cachePath": "tools/gdal-3.13.2/ogr2ogr.exe",
+      "kind": "file",
+      "sourcePath": "var/tooling-pinned/gdal-3.13.2/ogr2ogr.exe"
+    }
+  ],
+  "version": "3.13.2"
+}

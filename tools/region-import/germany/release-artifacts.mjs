@@ -7,11 +7,15 @@ import {
   operationalInfrastructureV2StateHash,
   OPERATIONAL_INFRASTRUCTURE_V2_SCHEMA,
 } from "../operational-infrastructure-binding.mjs";
-import { validateOperationalInfrastructureV2Native } from "../materialize-operational-infrastructure-v2.mjs";
+import {
+  validateOperationalInfrastructureV2Native,
+  validateOperationalInfrastructureV2NativeReceipt,
+} from "../materialize-operational-infrastructure-v2.mjs";
 
 const SAFE_ID = /^[a-z0-9](?:[a-z0-9._-]{0,126}[a-z0-9])?$/;
 const ARTIFACT_SPEC_V1 = "zugfolge-infra-release-artifact-spec/v1";
 const ARTIFACT_SPEC_V2 = "zugfolge-infra-release-artifact-spec/v2";
+const MAX_IN_MEMORY_OPERATIONAL_JSON_BYTES = 64 * 1024 * 1024;
 
 function invariant(condition, message) {
   if (!condition) throw new Error(message);
@@ -39,25 +43,44 @@ async function fileProof(path) {
 }
 
 async function operationalInfrastructureProof(path, expectedReleaseId, validateNative) {
-  const metadata = await lstat(path);
-  invariant(metadata.isFile() && !metadata.isSymbolicLink() && metadata.size > 0, `${path} ist kein reguläres Releaseartefakt.`);
-  const bytes = await readFile(path);
-  invariant(bytes.length === metadata.size, `${path} änderte sich während der Hashbildung.`);
-  let infrastructure;
-  try {
-    infrastructure = JSON.parse(bytes);
-  } catch (error) {
-    throw new Error(`${path} ist kein gültiges statisches Operational-v2-JSON: ${error instanceof Error ? error.message : String(error)}`);
+  const before = await fileProof(path);
+  const nativeReceipt = validateOperationalInfrastructureV2NativeReceipt(
+    await validateNative(path, expectedReleaseId),
+    expectedReleaseId,
+  );
+  const after = await fileProof(path);
+  invariant(
+    before.bytes === after.bytes && before.sha256 === after.sha256,
+    `${path} änderte sich während der nativen Operational-v2-Validierung.`,
+  );
+  invariant(
+    nativeReceipt.sourceBytes === after.bytes && nativeReceipt.sourceSha256 === after.sha256,
+    "Native Operational-v2-Validierung ist nicht an die inventarisierten Quellbytes gebunden.",
+  );
+  invariant(
+    nativeReceipt.bytes === after.bytes && nativeReceipt.sha256 === after.sha256,
+    "Statische Operational-v2-Infrastruktur entspricht nicht den nativen kanonischen Ausgabe-Bytes.",
+  );
+
+  if (after.bytes <= MAX_IN_MEMORY_OPERATIONAL_JSON_BYTES) {
+    const bytes = await readFile(path);
+    invariant(
+      bytes.length === after.bytes && createHash("sha256").update(bytes).digest("hex") === after.sha256,
+      `${path} änderte sich vor dem JavaScript-Gegenvergleich.`,
+    );
+    let infrastructure;
+    try {
+      infrastructure = JSON.parse(bytes);
+    } catch (error) {
+      throw new Error(`${path} ist kein gültiges statisches Operational-v2-JSON: ${error instanceof Error ? error.message : String(error)}`);
+    }
+    invariant(infrastructure.id === expectedReleaseId, "Statische Operational-v2-Infrastruktur verletzt die InfraRelease-ID-Bindung.");
+    invariant(
+      operationalInfrastructureV2StateHash(infrastructure) === nativeReceipt.stateHash,
+      "JavaScript- und native Rust-Kanonisierung der Operational-v2-Infrastruktur laufen auseinander.",
+    );
   }
-  invariant(infrastructure.id === expectedReleaseId, "Statische Operational-v2-Infrastruktur verletzt die InfraRelease-ID-Bindung.");
-  const sha256 = createHash("sha256").update(bytes).digest("hex");
-  const stateHash = operationalInfrastructureV2StateHash(infrastructure);
-  const nativeReceipt = await validateNative(path, expectedReleaseId);
-  invariant(nativeReceipt?.stateHash === stateHash, "JavaScript- und native Rust-Kanonisierung der Operational-v2-Infrastruktur laufen auseinander.");
-  const unchangedBytes = await readFile(path);
-  invariant(bytes.equals(unchangedBytes), `${path} änderte sich während der nativen Operational-v2-Validierung.`);
-  invariant(sha256 !== stateHash, "Byte-SHA-256 und kanonischer Operational-v2-Zustandshash dürfen nicht gleichgesetzt werden.");
-  return { bytes: bytes.length, sha256, stateHash };
+  return { ...after, stateHash: nativeReceipt.stateHash };
 }
 
 export async function buildReleaseArtifactInventory(

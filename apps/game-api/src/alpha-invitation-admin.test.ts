@@ -3,6 +3,7 @@ import type { GameAdminCommandHandler } from "@zugfolge/commerce";
 import { accounts, alphaWorldProfiles, MIGRATIONS_FOLDER, tutorialSessions, worldAccesses, worlds } from "@zugfolge/db";
 import * as schema from "@zugfolge/db/schema";
 import type { KeycloakAdminClient } from "@zugfolge/identity";
+import { eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/pglite";
 import { migrate } from "drizzle-orm/pglite/migrator";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -58,6 +59,7 @@ describe("Odoo-Alpha-Einladung ohne statische Tutorialwelt", () => {
   let keycloak: KeycloakAdminClient;
 
   async function seedTargetWorld(options: WorldFixtureOptions = {}): Promise<void> {
+    const lifecycleStatus = options.lifecycleStatus ?? "active";
     await db.insert(worlds).values({
       id: WORLD_ID,
       name: "Alpha",
@@ -65,24 +67,31 @@ describe("Odoo-Alpha-Einladung ohne statische Tutorialwelt", () => {
       epoch: new Date(0),
       worldKind: options.worldKind ?? "public",
       rankingStatus: options.rankingStatus ?? "ranked",
-      lifecycleStatus: options.lifecycleStatus ?? "active",
+      // Schema 32 verbietet das Erzeugen einer bereits archivierten Welt. Der
+      // Fixture bildet deshalb denselben vorwaertsgerichteten Lifecycle ab wie
+      // die Produktion und archiviert erst nach den weltgebundenen Seeds.
+      lifecycleStatus: "active",
     });
-    if (options.includeProfile === false) return;
-    await db.insert(alphaWorldProfiles).values({
-      worldId: WORLD_ID,
-      profileKind: options.profileKind ?? "public",
-      regionId: "lhe",
-      regionVariant: "B",
-      worldSeed: 81n,
-      accelerationFactor: 1,
-      infraReleaseHash: "a".repeat(64),
-      timetableReleaseHash: "b".repeat(64),
-      fleetReleaseHash: "c".repeat(64),
-      economyReleaseHash: "d".repeat(64),
-      blueprint: {},
-      blueprintHash: "e".repeat(64),
-      state: options.profileState ?? "running",
-    });
+    if (options.includeProfile !== false) {
+      await db.insert(alphaWorldProfiles).values({
+        worldId: WORLD_ID,
+        profileKind: options.profileKind ?? "public",
+        regionId: "lhe",
+        regionVariant: "B",
+        worldSeed: 81n,
+        accelerationFactor: 1,
+        infraReleaseHash: "a".repeat(64),
+        timetableReleaseHash: "b".repeat(64),
+        fleetReleaseHash: "c".repeat(64),
+        economyReleaseHash: "d".repeat(64),
+        blueprint: {},
+        blueprintHash: "e".repeat(64),
+        state: options.profileState ?? "running",
+      });
+    }
+    if (lifecycleStatus !== "active") {
+      await db.update(worlds).set({ lifecycleStatus }).where(eq(worlds.id, WORLD_ID));
+    }
   }
 
   beforeEach(async () => {

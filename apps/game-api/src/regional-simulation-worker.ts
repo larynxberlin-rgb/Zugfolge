@@ -2,6 +2,7 @@ import {
   domainEvents,
   mailboxMessages,
   operators,
+  regionalSimulationCommandReceipts,
   regionalSimulationStates,
   worldEventLog,
   worlds,
@@ -15,7 +16,10 @@ import {
 } from "@zugfolge/dispatch";
 import type { LivemapRegistry } from "@zugfolge/livemap-stream";
 import {
+  OPERATIONAL_SIMULATION_COMMAND_BATCH_LIMIT,
+  OPERATIONAL_SIMULATION_COMMAND_BATCH_SCHEMA,
   OPERATIONAL_SIMULATION_COMMAND_SCHEMA,
+  OPERATIONAL_SIMULATION_RESULT_SCHEMA,
   OPERATIONAL_SIMULATION_STATE_SCHEMA,
   type OperationalProjection,
   type OperationalSimulationCommandPayload,
@@ -31,6 +35,7 @@ import type { PgDatabase, PgQueryResultHKT } from "drizzle-orm/pg-core";
 
 import {
   adaptOperationalDomainEvents,
+  compactOperationalCommitEventContext,
   type OperationalCommitEventContext,
   type OperationalNativeEvent,
 } from "./operational-domain-event-adapter.js";
@@ -40,7 +45,10 @@ import { compareUtf8 } from "./utf8.js";
 
 type AnyDatabase = PgDatabase<PgQueryResultHKT, Record<string, unknown>, any>;
 
-const OPERATIONAL_COMMAND_BATCH_LIMIT = 4_096;
+// Muss dem begrenzten Idempotenzfenster der nativen Operational-v2-Runtime
+// entsprechen. Der Checkpoint traegt nur den lueckenlosen juengsten Suffix,
+// niemals die gesamte Kommandogeschichte.
+const OPERATIONAL_COMMAND_RECEIPT_LIMIT = 4_096;
 
 export interface RegionalSimulationWorkCommand {
   readonly worldId: string;
@@ -187,10 +195,43 @@ function persistedState(row: RegionalSimulationStateRow): OperationalSimulationS
     state["commandReceipts"],
     "Persistierter operativer Zustand besitzt keine Kommandoquittungen.",
   );
-  if (Object.keys(receipts).length !== revision) {
-    throw new RegionalSimulationSequenceError(
-      "Persistierter operativer Zustand besitzt keine lueckenlose Kommandohistorie.",
+  const expectedReceiptCount = Math.min(revision, OPERATIONAL_COMMAND_RECEIPT_LIMIT);
+  const receiptRevisions = new Set<number>();
+  for (const [commandId, value] of Object.entries(receipts)) {
+    const receipt = record(
+      value,
+      "Persistierter operativer Zustand besitzt eine ungueltige Kommandoquittung.",
     );
+    const appliedRevision = nonnegativeInteger(
+      receipt["appliedRevision"],
+      "Persistierte Kommandoquittung besitzt keine gueltige Revision.",
+    );
+    if (
+      commandId.length === 0
+      || typeof receipt["commandHash"] !== "string"
+      || !/^[a-f0-9]{64}$/u.test(receipt["commandHash"])
+      || appliedRevision === 0
+      || appliedRevision > revision
+      || receiptRevisions.has(appliedRevision)
+    ) {
+      throw new RegionalSimulationSequenceError(
+        "Persistierter operativer Zustand besitzt ein ungueltiges Kommandoquittungsfenster.",
+      );
+    }
+    receiptRevisions.add(appliedRevision);
+  }
+  if (receiptRevisions.size !== expectedReceiptCount) {
+    throw new RegionalSimulationSequenceError(
+      "Persistierter operativer Zustand besitzt kein vollstaendiges begrenztes Kommandoquittungsfenster.",
+    );
+  }
+  const firstRetainedRevision = revision - expectedReceiptCount + 1;
+  for (let retainedRevision = firstRetainedRevision; retainedRevision <= revision; retainedRevision += 1) {
+    if (!receiptRevisions.has(retainedRevision)) {
+      throw new RegionalSimulationSequenceError(
+        "Persistierter operativer Zustand besitzt eine Luecke im Kommandoquittungsfenster.",
+      );
+    }
   }
   if (!Array.isArray(world["events"]) || world["events"].length !== 0) {
     throw new RegionalSimulationSequenceError(
@@ -357,8 +398,10 @@ async function appendEvents(
 /**
  * Persistenter operativer v2-Single-Writer vor LiveMap und RZUE.
  *
- * Native Simulation und DB-CAS laufen unter derselben Regionssperre. Beide
- * Projektionen werden erst nach dem erfolgreichen Commit gemeinsam sichtbar.
+ * Native Simulation berechnet gegen einen unveraenderlichen Basiskopf ohne
+ * offene DB-Transaktion. Der kurze DB-CAS sperrt danach Welt und Region und
+ * verwirft ein inzwischen veraltetes Ergebnis. Beide Projektionen werden erst
+ * nach dem erfolgreichen Commit gemeinsam sichtbar.
  */
 export class RegionalSimulationWorker {
   readonly #db: AnyDatabase;
@@ -458,6 +501,88 @@ export class RegionalSimulationWorker {
       );
     }
     return expected;
+  }
+
+  async #loadRegionRow(
+    worldId: string,
+    regionId: string,
+  ): Promise<RegionalSimulationStateRow> {
+    const [row] = await this.#db.select().from(regionalSimulationStates).where(and(
+      eq(regionalSimulationStates.worldId, worldId),
+      eq(regionalSimulationStates.regionId, regionId),
+    )).limit(1);
+    if (row === undefined) throw new RegionalSimulationUnavailableError(worldId, regionId);
+    return row;
+  }
+
+  async #loadDurableCommandReceipts(
+    worldId: string,
+    regionId: string,
+    initializationHash: string,
+    commandIds: readonly string[],
+  ): Promise<Map<string, typeof regionalSimulationCommandReceipts.$inferSelect>> {
+    const ids = [...new Set(commandIds)];
+    if (ids.length === 0) return new Map();
+    const rows = await this.#db.select().from(regionalSimulationCommandReceipts).where(and(
+      eq(regionalSimulationCommandReceipts.worldId, worldId),
+      eq(regionalSimulationCommandReceipts.regionId, regionId),
+      eq(regionalSimulationCommandReceipts.initializationHash, initializationHash),
+      inArray(regionalSimulationCommandReceipts.commandId, ids),
+    ));
+    return new Map(rows.map((row) => [row.commandId, row] as const));
+  }
+
+  #assertDurableCommandReceipt(
+    receipt: typeof regionalSimulationCommandReceipts.$inferSelect,
+    command: OperationalSimulationCommandPayload,
+    baseRevision: number,
+  ): void {
+    if (receipt.appliedRevision !== null && receipt.appliedRevision > baseRevision) {
+      throw new RegionalSimulationConflictError(
+        "Dauerhaftes operatives Kommando-Receipt liegt vor dem gelesenen Simulationskopf.",
+      );
+    }
+    if (receipt.commandHash !== this.#runtime.commandHash(command)) {
+      throw new RegionalSimulationConflictError(
+        `Operative Kommando-ID '${receipt.commandId}' wurde bereits mit anderer Nutzlast angewendet.`,
+      );
+    }
+  }
+
+  #durableReplayResult(
+    state: OperationalSimulationState,
+    expectedInitializationHash: string,
+    commandId: string,
+  ): OperationalSimulationResult {
+    const restored = this.#runtime.restore(state, expectedInitializationHash);
+    assertProjectionPair(restored.state, restored.liveMap, restored.rzue);
+    return {
+      schemaVersion: OPERATIONAL_SIMULATION_RESULT_SCHEMA,
+      state: restored.state,
+      initializationHash: restored.initializationHash,
+      stateHash: restored.stateHash,
+      liveMap: restored.liveMap,
+      rzue: restored.rzue,
+      events: [],
+      appliedCommandId: commandId,
+      idempotentReplay: true,
+    };
+  }
+
+  #assertUnchangedHead(
+    current: RegionalSimulationStateRow,
+    base: RegionalSimulationStateRow,
+  ): void {
+    if (
+      current.initializationHash !== base.initializationHash
+      || current.stateHash !== base.stateHash
+      || current.revision !== base.revision
+      || current.publisherSequence !== base.publisherSequence
+    ) {
+      throw new RegionalSimulationConflictError(
+        "Regionaler operativer Simulationskopf wurde waehrend der nativen Berechnung veraendert.",
+      );
+    }
   }
 
   #assertPersistedInitializationBinding(
@@ -731,6 +856,71 @@ export class RegionalSimulationWorker {
       throw new RegionalSimulationUnavailableError(work.worldId, work.regionId);
     }
 
+    // Die native Berechnung kann bei einem grossen Zustand teuer sein. Sie darf
+    // deshalb weder eine PostgreSQL-Transaktion noch Welt-/Regionssperren offen
+    // halten. Der nachfolgende kurze Commit sperrt den Kopf und verwirft das
+    // Ergebnis fail-closed, falls ein anderer Writer inzwischen gewonnen hat.
+    const baseRow = await this.#loadRegionRow(work.worldId, work.regionId);
+    const baseState = persistedState(baseRow);
+    this.#assertPersistedInitializationBinding(
+      baseRow,
+      this.#expectedInitializationHash(work.worldId, work.regionId),
+    );
+    const durableReceipt = (await this.#loadDurableCommandReceipts(
+      work.worldId,
+      work.regionId,
+      baseState.initializationHash,
+      [work.commandId],
+    )).get(work.commandId);
+    if (durableReceipt !== undefined) {
+      this.#assertDurableCommandReceipt(durableReceipt, work.command, baseRow.revision);
+    }
+    const result = durableReceipt === undefined
+      ? await this.#runtime.apply(baseState, {
+          schemaVersion: OPERATIONAL_SIMULATION_COMMAND_SCHEMA,
+          worldId: work.worldId,
+          regionId: work.regionId,
+          commandId: work.commandId,
+          expectedStateHash: baseRow.stateHash,
+          expectedRevision: baseRow.revision,
+          expectedPublisherSequence: baseRow.publisherSequence,
+          command: work.command,
+        })
+      : this.#durableReplayResult(
+          baseState,
+          baseState.initializationHash,
+          work.commandId,
+        );
+    assertProjectionPair(result.state, result.liveMap, result.rzue);
+    if (
+      result.initializationHash !== baseRow.initializationHash
+      || result.state.initializationHash !== baseRow.initializationHash
+    ) {
+      throw new RegionalSimulationSequenceError(
+        "Operativer Rust-Uebergang wechselte seine Initialisierungsbindung.",
+      );
+    }
+    if (result.idempotentReplay) {
+      if (
+        result.stateHash !== baseRow.stateHash
+        || result.state.revision !== baseRow.revision
+        || result.state.publisherSequence !== baseRow.publisherSequence
+        || result.events.length !== 0
+      ) {
+        throw new RegionalSimulationSequenceError(
+          "Idempotenter operativer Rust-Replay veraenderte den persistierten Kopf.",
+        );
+      }
+    } else if (
+      result.state.revision !== baseRow.revision + 1
+      || result.state.publisherSequence !== baseRow.publisherSequence + 1
+      || result.state.world.commitSequence !== baseState.world.commitSequence + 1
+    ) {
+      throw new RegionalSimulationSequenceError(
+        "Operativer Rust-Uebergang erzeugte eine Revisions- oder Publisher-Luecke.",
+      );
+    }
+
     const committed = await this.#db.transaction(async (tx) => {
       await tx.execute(
         sql`select ${worlds.id} from ${worlds} where ${worlds.id} = ${work.worldId} for update`,
@@ -754,41 +944,13 @@ export class RegionalSimulationWorker {
       if (row === undefined) {
         throw new RegionalSimulationUnavailableError(work.worldId, work.regionId);
       }
-      const state = persistedState(row);
+      persistedState(row);
       this.#assertPersistedInitializationBinding(
         row,
         this.#expectedInitializationHash(work.worldId, work.regionId),
       );
-      const result = await this.#runtime.apply(state, {
-        schemaVersion: OPERATIONAL_SIMULATION_COMMAND_SCHEMA,
-        worldId: work.worldId,
-        regionId: work.regionId,
-        commandId: work.commandId,
-        expectedStateHash: row.stateHash,
-        expectedRevision: row.revision,
-        expectedPublisherSequence: row.publisherSequence,
-        command: work.command,
-      });
-      assertProjectionPair(result.state, result.liveMap, result.rzue);
-      if (
-        result.initializationHash !== row.initializationHash
-        || result.state.initializationHash !== row.initializationHash
-      ) {
-        throw new RegionalSimulationSequenceError(
-          "Operativer Rust-Uebergang wechselte seine Initialisierungsbindung.",
-        );
-      }
+      this.#assertUnchangedHead(row, baseRow);
       if (result.idempotentReplay) {
-        if (
-          result.stateHash !== row.stateHash
-          || result.state.revision !== row.revision
-          || result.state.publisherSequence !== row.publisherSequence
-          || result.events.length !== 0
-        ) {
-          throw new RegionalSimulationSequenceError(
-            "Idempotenter operativer Rust-Replay veraenderte den persistierten Kopf.",
-          );
-        }
         return { result, fanout: false, appendedEvents: [] };
       }
       const worldRegions = await tx.select().from(regionalSimulationStates)
@@ -802,15 +964,6 @@ export class RegionalSimulationWorker {
           `Operativer Regionscommit bei ${result.liveMap.atMs} ms liegt vor der LiveMap-Weltzeit ${latestWorldAtMs} ms.`,
         );
       }
-      if (
-        result.state.revision !== row.revision + 1
-        || result.state.publisherSequence !== row.publisherSequence + 1
-        || result.state.world.commitSequence !== state.world.commitSequence + 1
-      ) {
-        throw new RegionalSimulationSequenceError(
-          "Operativer Rust-Uebergang erzeugte eine Revisions- oder Publisher-Luecke.",
-        );
-      }
       const updated = await tx.update(regionalSimulationStates).set({
         stateSchema: OPERATIONAL_SIMULATION_STATE_SCHEMA,
         state: result.state,
@@ -821,10 +974,10 @@ export class RegionalSimulationWorker {
       }).where(and(
         eq(regionalSimulationStates.worldId, work.worldId),
         eq(regionalSimulationStates.regionId, work.regionId),
-        eq(regionalSimulationStates.initializationHash, row.initializationHash),
-        eq(regionalSimulationStates.stateHash, row.stateHash),
-        eq(regionalSimulationStates.revision, row.revision),
-        eq(regionalSimulationStates.publisherSequence, row.publisherSequence),
+        eq(regionalSimulationStates.initializationHash, result.state.initializationHash),
+        eq(regionalSimulationStates.stateHash, baseRow.stateHash),
+        eq(regionalSimulationStates.revision, baseRow.revision),
+        eq(regionalSimulationStates.publisherSequence, baseRow.publisherSequence),
       )).returning({ stateHash: regionalSimulationStates.stateHash });
       if (updated.length !== 1) {
         throw new RegionalSimulationConflictError(
@@ -838,12 +991,13 @@ export class RegionalSimulationWorker {
         world.epoch,
         result.events,
         result.state.world.commitSequence,
-        [{
-          commitSequence: result.state.world.commitSequence,
-          command: work.command,
-          stateBefore: state,
-          projectionAfter: result.liveMap,
-        }],
+        [compactOperationalCommitEventContext(
+          result.state.world.commitSequence,
+          work.command,
+          baseState,
+          result.liveMap,
+          result.events.map(operationalEvent),
+        )].filter((context): context is OperationalCommitEventContext => context !== undefined),
       );
       return { result, fanout: true, appendedEvents };
     });
@@ -871,10 +1025,13 @@ export class RegionalSimulationWorker {
   }
 
   /**
-   * Fuehrt einen Scheduler-Chunk nativ sequenziell, aber unter genau einer
-   * Welt-/Regionssperre und einem DB-Commit aus. Ein Fehler verwirft den ganzen
-   * Chunk. Der Post-Commit-Fanout veroeffentlicht danach jeden nicht-idempotenten
-   * Runtime-Commit lueckenlos mit genau einer Publishersequenz je Commit.
+   * Fuehrt einen Scheduler-Chunk nativ atomar ohne offene DB-Transaktion
+   * aus und committet das Gesamtergebnis danach unter genau einer kurzen
+   * Welt-/Regionssperre per CAS. Ein Fehler oder ein inzwischen veraenderter
+   * Kopf verwirft den ganzen Chunk. Mehrere neue Commits invalidieren den
+   * Transport und setzen ihn aus dem final persistierten Kopf neu auf; genau
+   * ein neuer Commit darf direkt publiziert werden. Eine zweite native
+   * Vollzustandsausfuehrung nach dem CAS ist ausdruecklich ausgeschlossen.
    */
   async applyBatch(
     work: RegionalSimulationWorkBatch,
@@ -884,14 +1041,158 @@ export class RegionalSimulationWorker {
     if (work.commands.length === 0) {
       throw new RangeError("Operative Simulationsgruppe darf nicht leer sein.");
     }
-    if (work.commands.length > OPERATIONAL_COMMAND_BATCH_LIMIT) {
+    if (work.commands.length > OPERATIONAL_SIMULATION_COMMAND_BATCH_LIMIT) {
       throw new RangeError(
-        `Operative Simulationsgruppe darf hoechstens ${OPERATIONAL_COMMAND_BATCH_LIMIT} Kommandos enthalten.`,
+        `Operative Simulationsgruppe darf hoechstens ${OPERATIONAL_SIMULATION_COMMAND_BATCH_LIMIT} Kommandos enthalten.`,
       );
     }
     const key = readyKey(work.worldId, work.regionId);
     if (!this.#readyRegions.has(key)) {
       throw new RegionalSimulationUnavailableError(work.worldId, work.regionId);
+    }
+
+    const baseRow = await this.#loadRegionRow(work.worldId, work.regionId);
+    const baseState = persistedState(baseRow);
+    this.#assertPersistedInitializationBinding(
+      baseRow,
+      this.#expectedInitializationHash(work.worldId, work.regionId),
+    );
+    const durableReceipts = await this.#loadDurableCommandReceipts(
+      work.worldId,
+      work.regionId,
+      baseState.initializationHash,
+      work.commands.map(({ commandId }) => commandId),
+    );
+    const nativeCommands: Array<{
+      readonly originalIndex: number;
+      readonly commandId: string;
+      readonly command: OperationalSimulationCommandPayload;
+    }> = [];
+    const commandResults: Array<
+      { commandId: string; idempotentReplay: boolean } | undefined
+    > = Array.from({ length: work.commands.length });
+    for (const [index, item] of work.commands.entries()) {
+      const durableReceipt = durableReceipts.get(item.commandId);
+      if (durableReceipt !== undefined) {
+        this.#assertDurableCommandReceipt(durableReceipt, item.command, baseRow.revision);
+        commandResults[index] = { commandId: item.commandId, idempotentReplay: true };
+        continue;
+      }
+      nativeCommands.push({ originalIndex: index, ...item });
+    }
+
+    let state = baseState;
+    let stateHash = baseRow.stateHash;
+    let liveMap: OperationalProjection;
+    let rzue: OperationalProjection;
+    let events: readonly Readonly<Record<string, unknown>>[] = [];
+    const eventContexts: OperationalCommitEventContext[] = [];
+    if (nativeCommands.length > 0) {
+      const nativeResult = await this.#runtime.applyBatch(baseState, {
+        schemaVersion: OPERATIONAL_SIMULATION_COMMAND_BATCH_SCHEMA,
+        worldId: work.worldId,
+        regionId: work.regionId,
+        expectedStateHash: baseRow.stateHash,
+        expectedRevision: baseRow.revision,
+        expectedPublisherSequence: baseRow.publisherSequence,
+        commands: nativeCommands.map(({ commandId, command }) => ({ commandId, command })),
+      });
+      assertProjectionPair(nativeResult.state, nativeResult.liveMap, nativeResult.rzue);
+      if (
+        nativeResult.initializationHash !== baseRow.initializationHash
+        || nativeResult.state.initializationHash !== baseRow.initializationHash
+      ) {
+        throw new RegionalSimulationSequenceError(
+          "Operative Kommandogruppe wechselte ihre Initialisierungsbindung.",
+        );
+      }
+      if (nativeResult.commandResults.length !== nativeCommands.length) {
+        throw new RegionalSimulationSequenceError(
+          "Native Kommandogruppe quittierte nicht jedes Kommando genau einmal.",
+        );
+      }
+      for (const [nativeIndex, nativeCommand] of nativeCommands.entries()) {
+        const nativeCommandResult = nativeResult.commandResults[nativeIndex];
+        if (
+          nativeCommandResult === undefined
+          || nativeCommandResult.commandId !== nativeCommand.commandId
+        ) {
+          throw new RegionalSimulationSequenceError(
+            "Native Kommandogruppe veraenderte die eindeutige Kommandoreihenfolge.",
+          );
+        }
+        commandResults[nativeCommand.originalIndex] = {
+          commandId: nativeCommandResult.commandId,
+          idempotentReplay: nativeCommandResult.idempotentReplay,
+        };
+      }
+      for (const context of nativeResult.eventContexts) {
+        const nativeCommand = nativeCommands[context.commandIndex];
+        if (
+          nativeCommand === undefined
+          || nativeCommand.commandId !== context.commandId
+          || (
+            nativeCommand.command.type !== "activate-disruption"
+            && nativeCommand.command.type !== "clear-disruption"
+          )
+        ) {
+          throw new RegionalSimulationSequenceError(
+            "Nativer Ereigniskontext gehoert nicht zu seinem Stoerungskommando.",
+          );
+        }
+        eventContexts.push(Object.freeze({
+          commitSequence: context.commitSequence,
+          command: structuredClone(nativeCommand.command),
+          affectedTrainRunIds: Object.freeze([...context.affectedTrainRunIds]),
+          ...(nativeCommand.command.type === "clear-disruption"
+            ? { disruptionEffectBefore: structuredClone(context.disruptionEffectBefore!) }
+            : {}),
+        }));
+      }
+      state = nativeResult.state;
+      stateHash = nativeResult.stateHash;
+      liveMap = nativeResult.liveMap;
+      rzue = nativeResult.rzue;
+      events = nativeResult.events;
+    } else {
+      const restored = this.#durableReplayResult(
+        baseState,
+        baseState.initializationHash,
+        work.commands.at(-1)!.commandId,
+      );
+      liveMap = restored.liveMap;
+      rzue = restored.rzue;
+    }
+    const orderedCommandResults = commandResults.map((commandResult, index) => {
+      if (commandResult === undefined || commandResult.commandId !== work.commands[index]!.commandId) {
+        throw new RegionalSimulationSequenceError(
+          "Operative Kommandogruppe besitzt keine vollstaendige Quittungsreihenfolge.",
+        );
+      }
+      return commandResult;
+    });
+    const appliedCount = orderedCommandResults.filter((result) => !result.idempotentReplay).length;
+    if (
+      state.revision !== baseRow.revision + appliedCount
+      || state.publisherSequence !== baseRow.publisherSequence + appliedCount
+      || state.world.commitSequence !== baseState.world.commitSequence + appliedCount
+    ) {
+      throw new RegionalSimulationSequenceError(
+        "Operative Kommandogruppe erzeugte eine Revisions- oder Publisher-Luecke.",
+      );
+    }
+    const result: OperationalSimulationBatchResult = {
+      state,
+      stateHash,
+      liveMap,
+      rzue,
+      events,
+      commandResults: orderedCommandResults,
+    };
+    if (appliedCount === 0 && (stateHash !== baseRow.stateHash || events.length !== 0)) {
+      throw new RegionalSimulationSequenceError(
+        "Idempotenter operativer Gruppenreplay veraenderte den persistierten Kopf.",
+      );
     }
 
     const committed = await this.#db.transaction(async (tx) => {
@@ -917,98 +1218,14 @@ export class RegionalSimulationWorker {
       if (row === undefined) {
         throw new RegionalSimulationUnavailableError(work.worldId, work.regionId);
       }
-
-      let state = persistedState(row);
+      persistedState(row);
       this.#assertPersistedInitializationBinding(
         row,
         this.#expectedInitializationHash(work.worldId, work.regionId),
       );
-      let stateHash = row.stateHash;
-      let finalResult: OperationalSimulationResult | undefined;
-      const events: Readonly<Record<string, unknown>>[] = [];
-      const eventContexts: OperationalCommitEventContext[] = [];
-      const commandResults: Array<{ commandId: string; idempotentReplay: boolean }> = [];
-      const fanoutProjections: OperationalProjection[] = [];
-      for (const item of work.commands) {
-        const previousState = state;
-        const previousStateHash = stateHash;
-        const result = await this.#runtime.apply(state, {
-          schemaVersion: OPERATIONAL_SIMULATION_COMMAND_SCHEMA,
-          worldId: work.worldId,
-          regionId: work.regionId,
-          commandId: item.commandId,
-          expectedStateHash: stateHash,
-          expectedRevision: state.revision,
-          expectedPublisherSequence: state.publisherSequence,
-          command: item.command,
-        });
-        assertProjectionPair(result.state, result.liveMap, result.rzue);
-        if (
-          result.initializationHash !== row.initializationHash
-          || result.state.initializationHash !== row.initializationHash
-        ) {
-          throw new RegionalSimulationSequenceError(
-            "Operative Kommandogruppe wechselte ihre Initialisierungsbindung.",
-          );
-        }
-        if (result.idempotentReplay) {
-          if (
-            result.stateHash !== previousStateHash
-            || result.state.revision !== previousState.revision
-            || result.state.publisherSequence !== previousState.publisherSequence
-            || result.events.length !== 0
-          ) {
-            throw new RegionalSimulationSequenceError(
-              "Idempotenter operativer Gruppenreplay veraenderte den Zwischenkopf.",
-            );
-          }
-        } else {
-          events.push(...result.events);
-          eventContexts.push({
-            commitSequence: result.state.world.commitSequence,
-            command: item.command,
-            stateBefore: previousState,
-            projectionAfter: result.liveMap,
-          });
-          fanoutProjections.push(result.liveMap);
-        }
-        commandResults.push({
-          commandId: item.commandId,
-          idempotentReplay: result.idempotentReplay,
-        });
-        state = result.state;
-        stateHash = result.stateHash;
-        finalResult = result;
-      }
-      if (finalResult === undefined) {
-        throw new RegionalSimulationSequenceError("Operative Kommandogruppe lieferte kein Ergebnis.");
-      }
-      const appliedCount = commandResults.filter((result) => !result.idempotentReplay).length;
-      if (
-        state.revision !== row.revision + appliedCount
-        || state.publisherSequence !== row.publisherSequence + appliedCount
-        || state.world.commitSequence
-          !== (persistedState(row).world.commitSequence + appliedCount)
-      ) {
-        throw new RegionalSimulationSequenceError(
-          "Operative Kommandogruppe erzeugte eine Revisions- oder Publisher-Luecke.",
-        );
-      }
-      const result: OperationalSimulationBatchResult = {
-        state,
-        stateHash,
-        liveMap: finalResult.liveMap,
-        rzue: finalResult.rzue,
-        events,
-        commandResults,
-      };
+      this.#assertUnchangedHead(row, baseRow);
       if (appliedCount === 0) {
-        if (stateHash !== row.stateHash || events.length !== 0) {
-          throw new RegionalSimulationSequenceError(
-            "Idempotenter operativer Gruppenreplay veraenderte den persistierten Kopf.",
-          );
-        }
-        return { result, fanout: false, appendedEvents: [], fanoutProjections: [] };
+        return { result, fanout: false, appendedEvents: [], resetFanout: false };
       }
 
       const worldRegions = await tx.select().from(regionalSimulationStates)
@@ -1032,10 +1249,10 @@ export class RegionalSimulationWorker {
       }).where(and(
         eq(regionalSimulationStates.worldId, work.worldId),
         eq(regionalSimulationStates.regionId, work.regionId),
-        eq(regionalSimulationStates.initializationHash, row.initializationHash),
-        eq(regionalSimulationStates.stateHash, row.stateHash),
-        eq(regionalSimulationStates.revision, row.revision),
-        eq(regionalSimulationStates.publisherSequence, row.publisherSequence),
+        eq(regionalSimulationStates.initializationHash, state.initializationHash),
+        eq(regionalSimulationStates.stateHash, baseRow.stateHash),
+        eq(regionalSimulationStates.revision, baseRow.revision),
+        eq(regionalSimulationStates.publisherSequence, baseRow.publisherSequence),
       )).returning({ stateHash: regionalSimulationStates.stateHash });
       if (updated.length !== 1) {
         throw new RegionalSimulationConflictError(
@@ -1051,7 +1268,12 @@ export class RegionalSimulationWorker {
         state.world.commitSequence,
         eventContexts,
       );
-      return { result, fanout: true, appendedEvents, fanoutProjections };
+      return {
+        result,
+        fanout: true,
+        appendedEvents,
+        resetFanout: appliedCount > 1,
+      };
     });
 
     this.#assertNotReleased(work.worldId, work.regionId);
@@ -1060,21 +1282,21 @@ export class RegionalSimulationWorker {
       return committed.result;
     }
     try {
-      this.#publishOperations(work.worldId, committed.appendedEvents);
-      let rebuilt = false;
-      for (const projection of committed.fanoutProjections) {
+      if (committed.resetFanout) {
+        // Der Wiederaufbau invalidiert laufende Transporte und publiziert aus
+        // dem finalen persistierten Kopf einen autoritativen Vollsnapshot. Er
+        // spielt zugleich das dauerhafte Operations-Eventlog idempotent nach.
+        await this.#rebuildWorldFeed(work.worldId);
+      } else {
+        this.#publishOperations(work.worldId, committed.appendedEvents);
         const published = this.#livemap.publishOperationalRegionSnapshot(
           work.worldId,
           work.regionId,
-          projectOperationalLivemap(projection),
+          projectOperationalLivemap(committed.result.liveMap),
         );
-        if (published === undefined) {
-          await this.#rebuildWorldFeed(work.worldId);
-          rebuilt = true;
-          break;
-        }
+        if (published === undefined) await this.#rebuildWorldFeed(work.worldId);
       }
-      if (!rebuilt) this.#markReady(committed.result.state);
+      this.#markReady(committed.result.state);
       return committed.result;
     } catch (error) {
       this.#readyRegions.delete(key);

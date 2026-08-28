@@ -9,5 +9,5 @@ if (!outputPath) throw new Error("Aufruf: build-map-release.mjs SPEC.json ARTIFA
 const [spec, catalog, capture, rightsRegistry] = await Promise.all([specPath, sourceCatalogPath, capturePath, rightsPath].map(async (path) => JSON.parse(await readFile(resolve(path), "utf8"))));
 const result = await materializeMapRelease(spec, artifactRoot, { catalog, capture, rightsRegistry });
 await mkdir(dirname(resolve(outputPath)), { recursive: true });
-await writeFile(resolve(outputPath), `${JSON.stringify(result, null, 2)}\n`, "utf8");
+await writeFile(resolve(outputPath), `${JSON.stringify(result, null, 2)}\n`, { encoding: "utf8", flag: "wx" });
 process.stdout.write(`${JSON.stringify({ releaseId: result.release.releaseId, releaseHash: result.releaseHash, artifacts: result.release.artifacts.length })}\n`);

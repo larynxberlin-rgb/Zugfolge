@@ -1,0 +1,278 @@
+{
+  "authority": {
+    "annualExecutorPlan": {
+      "arguments": [
+        "plan",
+        "tools/region-import/germany/release.annual-2026.5.config.json",
+        "tools/region-import/germany/source-catalog.json",
+        "tools/guards/quellenregister.json"
+      ],
+      "directContractFile": "tools/region-import/germany/operational-infrastructure-v2-direct-system-launch.annual-2026.5.json",
+      "maxOutputBytes": 4194304,
+      "mode": "held-helper-independent-supervisor-plan-only-v1",
+      "planFile": "var/derived/germany-2026.5/toolchain/zugfolge-infra-release-annual-plan.json",
+      "startEvidenceFile": "var/derived/germany-2026.5/toolchain/zugfolge-infra-release-annual-executor-start-evidence.json",
+      "startEvidenceSchema": "zugfolge-operational-validator-annual-executor-start-evidence/v1",
+      "timeoutMilliseconds": 120000
+    },
+    "artifactAttestation": "github-sigstore-build-provenance-required-v1",
+    "attestation": {
+      "bundleFile": "var/derived/germany-2026.5/toolchain/zugfolge-infra-release-rebuild-attestation.sigstore.json",
+      "predicateType": "https://slsa.dev/provenance/v1",
+      "subjects": [
+        "var/derived/germany-2026.5/toolchain/zugfolge-infra-release-rebuild-aba354ec1937452a491087626ec0adea36ef6695-official.exe",
+        "var/derived/germany-2026.5/toolchain/zugfolge-infra-release-rebuild-provenance-aba354ec1937452a491087626ec0adea36ef6695.json",
+        "var/derived/germany-2026.5/toolchain/zugfolge-infra-release-rebuild-evidence.json",
+        "var/derived/germany-2026.5/toolchain/zugfolge-infra-release-aba354ec1937452a491087626ec0adea36ef6695-c35e72e352ae573e0416035fc4f0d233af5668864c0bd8df7333337e87bb7fd4.exe",
+        "tools/region-import/germany/operational-infrastructure-v2-direct-system-launch.annual-2026.5.json",
+        "var/derived/germany-2026.5/toolchain/zugfolge-infra-release-annual-plan.json",
+        "var/derived/germany-2026.5/toolchain/zugfolge-infra-release-annual-plan.json.zugfolge-complete.json",
+        "var/derived/germany-2026.5/toolchain/zugfolge-infra-release-annual-executor-start-evidence.json",
+        "var/derived/germany-2026.5/toolchain/zugfolge-infra-release-annual-executor-start-evidence.json.zugfolge-complete.json"
+      ],
+      "verification": {
+        "command": "gh attestation verify",
+        "denySelfHostedRunners": true,
+        "signerWorkflow": "larynxberlin-rgb/Zugfolge/.github/workflows/operational-validator-rebuild-evidence.yml"
+      }
+    },
+    "environment": "github-hosted-fresh-windows-vm-v1",
+    "event": "workflow_dispatch",
+    "repository": "larynxberlin-rgb/Zugfolge",
+    "requiredRef": "refs/heads/main",
+    "runnerImages": [
+      "windows-2025",
+      "windows-2022"
+    ],
+    "workflowFile": ".github/workflows/operational-validator-rebuild-evidence.yml"
+  },
+  "binaries": {
+    "preserved": {
+      "bytes": 8382277,
+      "file": "var/derived/germany-2026.5/toolchain/zugfolge-infra-release-aba354ec1937452a491087626ec0adea36ef6695-c35e72e352ae573e0416035fc4f0d233af5668864c0bd8df7333337e87bb7fd4.exe",
+      "sha256": "c35e72e352ae573e0416035fc4f0d233af5668864c0bd8df7333337e87bb7fd4"
+    },
+    "rebuilt": {
+      "expectedBytes": 8382277,
+      "file": "var/derived/germany-2026.5/toolchain/zugfolge-infra-release-rebuild-aba354ec1937452a491087626ec0adea36ef6695-official.exe"
+    }
+  },
+  "build": {
+    "command": [
+      "cargo",
+      "--config",
+      "$PINNED_CARGO_CONFIG",
+      "build",
+      "--manifest-path",
+      "$PINNED_CARGO_MANIFEST",
+      "--locked",
+      "--offline",
+      "--release",
+      "-p",
+      "zugfolge-infra",
+      "--bin",
+      "zugfolge-infra-release"
+    ],
+    "environmentPolicy": {
+      "allowedInherited": [],
+      "cleared": [
+        "AR",
+        "CARGO_BUILD_RUSTC",
+        "CARGO_BUILD_RUSTC_WRAPPER",
+        "CARGO_BUILD_TARGET",
+        "CARGO_ENCODED_RUSTFLAGS",
+        "CARGO_PROFILE_RELEASE_CODEGEN_UNITS",
+        "CARGO_PROFILE_RELEASE_DEBUG",
+        "CARGO_PROFILE_RELEASE_LTO",
+        "CARGO_PROFILE_RELEASE_OPT_LEVEL",
+        "CARGO_PROFILE_RELEASE_PANIC",
+        "CARGO_TARGET_DIR",
+        "CC",
+        "CFLAGS",
+        "CXX",
+        "CXXFLAGS",
+        "LDFLAGS",
+        "RUSTC",
+        "RUSTC_BOOTSTRAP",
+        "RUSTC_WRAPPER",
+        "RUSTC_WORKSPACE_WRAPPER",
+        "RUSTDOCFLAGS",
+        "RUSTFLAGS",
+        "RUSTUP_TOOLCHAIN",
+        "SOURCE_DATE_EPOCH"
+      ],
+      "fixed": {
+        "CARGO_BUILD_JOBS": "1",
+        "CARGO_ENCODED_RUSTFLAGS": "--remap-path-prefix=$HELD_VENDOR_ROOT=$ANNUAL_VENDOR_REMAP_PREFIX",
+        "CARGO_INCREMENTAL": "0",
+        "CARGO_NET_OFFLINE": "true",
+        "CARGO_TERM_COLOR": "never"
+      },
+      "targetDirectory": "external-empty-create-new"
+    },
+    "processLimits": {
+      "maxOutputBytes": 16777216,
+      "timeoutMilliseconds": 900000
+    },
+    "profile": "release",
+    "targetOutputFile": "release/zugfolge-infra-release.exe"
+  },
+  "pe": {
+    "allowedNormalizationFields": [
+      {
+        "bytes": 4,
+        "name": "coff-time-date-stamp",
+        "offset": 136
+      },
+      {
+        "bytes": 4,
+        "name": "optional-header-checksum",
+        "offset": 216
+      }
+    ],
+    "format": "PE32+",
+    "machine": 34404,
+    "maxBinaryBytes": 8388608,
+    "normalizedSha256": "ae39f5a8378641be0d02be56e93bf585a49a6e65bc1f5a02b77cd2bd556d38cb",
+    "sections": [
+      {
+        "name": ".text",
+        "rawData": "non-empty"
+      },
+      {
+        "name": ".data",
+        "rawData": "non-empty"
+      },
+      {
+        "name": ".rdata",
+        "rawData": "non-empty"
+      },
+      {
+        "name": ".pdata",
+        "rawData": "non-empty"
+      },
+      {
+        "name": ".xdata",
+        "rawData": "non-empty"
+      },
+      {
+        "name": ".bss",
+        "rawData": "empty"
+      },
+      {
+        "name": ".idata",
+        "rawData": "non-empty"
+      },
+      {
+        "name": ".CRT",
+        "rawData": "non-empty"
+      },
+      {
+        "name": ".tls",
+        "rawData": "non-empty"
+      },
+      {
+        "name": ".reloc",
+        "rawData": "non-empty"
+      }
+    ]
+  },
+  "producer": {
+    "bundle": {
+      "bytes": 603191,
+      "file": "tools/region-import/germany/run-capture-operational-infrastructure-v2.anchored-bundle.mjs",
+      "sha256": "ece099656bdfdfa5c18f5aa09c74e6d528be034809bc363accf76beaaa21bfa3"
+    },
+    "entrypoint": {
+      "bytes": 26431,
+      "file": "tools/region-import/germany/run-capture-operational-infrastructure-v2.mjs",
+      "sha256": "b14f9c476bf8bb3e0d2a5b44a88d4ed45fa2b5c5df0dca8b6325bf4064237d74"
+    },
+    "executionPins": {
+      "bytes": 4841,
+      "file": "tools/region-import/germany/operational-infrastructure-v2-execution-pins.annual-2026.5.json",
+      "sha256": "9596748953442d62223c0e24f526e6a0830dff54021968dbfb69529bc56070b0"
+    },
+    "implementation": {
+      "bytes": 223850,
+      "file": "tools/region-import/germany/operational-validator-rebuild-evidence.mjs",
+      "sha256": "43c682f9930dd5f314ab055b7bd88c36cfc73b5ea24484394d353869e1aad190"
+    }
+  },
+  "provenance": {
+    "file": "var/derived/germany-2026.5/toolchain/zugfolge-infra-release-rebuild-provenance-aba354ec1937452a491087626ec0adea36ef6695.json"
+  },
+  "receipt": {
+    "file": "var/derived/germany-2026.5/toolchain/zugfolge-infra-release-rebuild-evidence.json"
+  },
+  "releaseId": "infra-deutschland-2026.5",
+  "schema": "zugfolge-operational-validator-rebuild-spec/v3",
+  "source": {
+    "archive": {
+      "bytes": 25661440,
+      "file": "var/derived/germany-2026.5/toolchain/zugfolge-infra-release-source-aba354ec1937452a491087626ec0adea36ef6695-3f267637dcd52dded45ca921d27863149b3fd2919b7bb2e9d881b381c04565af.tar",
+      "format": "tar",
+      "sha256": "3f267637dcd52dded45ca921d27863149b3fd2919b7bb2e9d881b381c04565af"
+    },
+    "cargoLock": {
+      "bytes": 13125,
+      "file": "Cargo.lock",
+      "sha256": "929fe3fb52098a0e5d234d5b96f5058b7ba7bf4308d1836e8e0b80307af09403"
+    },
+    "commit": "aba354ec1937452a491087626ec0adea36ef6695",
+    "tree": {
+      "fileCount": 1325,
+      "manifestSha256": "3276cda6c04f5e48d89c4e7686900a263e8b2ba0a13ce9393d1d096f1dacf1c5",
+      "totalBytes": 24541942
+    },
+    "vendor": {
+      "archive": {
+        "bytes": 21238784,
+        "file": "var/derived/germany-2026.5/toolchain/zugfolge-infra-cargo-vendor-aba354ec1937452a491087626ec0adea36ef6695-v1.tar",
+        "format": "tar",
+        "sha256": "17611dd9dca437185a59e6696efe21cc64d9e86b03d48fcebe6d5546688cc5f9"
+      },
+      "cargoConfig": {
+        "bytes": 101,
+        "file": ".cargo/config.toml",
+        "sha256": "77e9219c27274120197571fd165cbe4121963b5ad3bc0b20b383c86ef0ce6c2b"
+      },
+      "remapPrefix": "C:\\Users\\laryn\\.cargo\\registry\\src\\index.crates.io-1949cf8c6b5b557f",
+      "tree": {
+        "fileCount": 1795,
+        "manifestSha256": "6a7575f2756941f8b9df5a63af652aed1fcb47f3372f7e59a8fdc071ae9ec100",
+        "totalBytes": 19587298
+      }
+    }
+  },
+  "toolchain": {
+    "anchor": {
+      "helperAssembly": {
+        "bytes": 46080,
+        "file": "tools/region-import/germany/operational-windows-anchor-helper.dll",
+        "sha256": "1e18d3048d9a778d05a7bd1532d4f84233aa2cb5d13d46ca4583e90811e7165f"
+      },
+      "mode": "windows-powershell-held-helper-private-dacl-mitigated-v3"
+    },
+    "cargo": {
+      "commitHash": "29ea6fb6a5db279426f4cc4e17aa385f05a0cfbc",
+      "host": "x86_64-pc-windows-gnu",
+      "release": "1.94.1"
+    },
+    "cargoPath": "bin/cargo.exe",
+    "manifest": {
+      "bytes": 41312,
+      "file": "var/derived/germany-2026.5/toolchain/rust-1.94.1-x86_64-pc-windows-gnu-complete-tree-v1.json",
+      "sha256": "48778f5992c78401aa46f33e99ce96c6e58c5a6fd93c331f788ec73e24fb0d38"
+    },
+    "platform": "win32",
+    "root": "C:\\zugfolge-operational-toolchain\\1.94.1-x86_64-pc-windows-gnu",
+    "rustc": {
+      "commitHash": "e408947bfd200af42db322daf0fadfe7e26d3bd1",
+      "host": "x86_64-pc-windows-gnu",
+      "llvmVersion": "21.1.8",
+      "release": "1.94.1"
+    },
+    "rustcPath": "bin/rustc.exe"
+  }
+}

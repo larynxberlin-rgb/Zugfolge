@@ -2,6 +2,7 @@ import { generateKeyPairSync, sign as signEd25519 } from "node:crypto";
 
 import { PGlite } from "@electric-sql/pglite";
 import {
+  accounts,
   alphaWorldProfiles,
   alphaWorldDeployments,
   MIGRATIONS_FOLDER,
@@ -37,6 +38,7 @@ import {
   FLEET_INITIALIZED_SCHEMA,
   FLEET_INITIALIZE_SCHEMA,
   FLEET_STATE_SCHEMA,
+  OPERATIONAL_PROTECTION_MODE_SELECTION_POLICY,
   OPERATIONAL_SIMULATION_INITIALIZE_SCHEMA,
   type FleetRuntime,
   type FleetWorldInitialization,
@@ -51,8 +53,13 @@ import {
   assertActivePublicWorldDeploymentCoverage,
   loadPersistedActiveAlphaWorldDeployments,
   loadSignedRunningWorldDeployment,
+  parseSignedAlphaWorldDeployment,
+  resolveAlphaWorldStartupDeployments,
+  serializeSignedAlphaWorldDeployment,
   type AlphaWorldDeployment,
+  type SignedAlphaWorldDeployment,
 } from "./alpha-world-start.js";
+import { operationalSimulationInitializationHash } from "./operational-initialization-hash.js";
 import type { RegionalSimulationWorker } from "./regional-simulation-worker.js";
 import {
   WorldDeploymentAdminError,
@@ -307,6 +314,8 @@ function deployment(
       worldId: WORLD_ID,
       regionId: REGION_ID,
       nowMs: 0,
+      repeatEveryMs: 86_400_000,
+      protectionModeSelectionPolicy: OPERATIONAL_PROTECTION_MODE_SELECTION_POLICY,
       infraRelease: {
         id: "infra-test-v1",
         directedEdges: { "edge:leipzig-halle": 35_000_000 },
@@ -331,7 +340,8 @@ function deployment(
               blockIds: ["block:leipzig-halle"],
               speedLimitMmps: 44_444,
               gradientPerMille: 0,
-              requiredProtectionSystems: ["pzb"],
+              availableProtectionSystems: ["pzb"],
+              simultaneouslyRequiredProtectionSystems: [],
             }],
           },
         },
@@ -342,16 +352,17 @@ function deployment(
             signalId: "signal:leipzig-exit",
             movementKind: "train",
             pathResources: ["block:leipzig-halle"],
-            overlapResources: [],
-            flankResources: [],
+            overlapResources: ["overlap:leipzig-halle"],
+            flankResources: ["flank:leipzig-halle"],
             switchPositions: {},
+            authorityStartRouteMm: 0,
             authorityEndRouteMm: 35_000_000,
             releaseAfterTailRouteMm: 35_000_000,
           },
         },
         signals: ["signal:leipzig-exit"],
         switches: [],
-        blockResources: ["block:leipzig-halle"],
+        blockResources: ["block:leipzig-halle", "overlap:leipzig-halle", "flank:leipzig-halle"],
         platformIntervals: {},
         regionBoundaries: [],
         rzueLayoutId: "rzue:test",
@@ -402,6 +413,22 @@ function deployment(
         headRouteMm: 0,
         scheduledDepartureMs: 0,
         publicPassengerStop: true,
+        dispatchInterlockingRouteId: "interlocking:leipzig-halle",
+        protectionModeSelectionRuns: [{
+          throughRouteLegIndex: 0,
+          selectedProtectionSystem: "pzb",
+        }],
+      })),
+      movementContinuations: economyLots.map((_lot, index) => ({
+        id: `continuation:${trainRunId(index)}:daily`,
+        predecessorTrainId: trainRunId(index),
+        predecessorBaseRouteVersionId: "route:leipzig-halle",
+        successorTrainId: trainRunId(index),
+        successorDayOffset: 1 as const,
+        dailyBoundary: true,
+        minimumDwellMs: 300_000,
+        continuity: "reverse-direction" as const,
+        successorFormation: "inherit-predecessor" as const,
       })),
     },
     repeatEveryS: 86_400,
@@ -478,6 +505,32 @@ function signedDeployment(unsigned: AlphaWorldDeployment): SignedWorldDeployment
       algorithm: "Ed25519",
       keyId: KEY_ID,
       valueBase64: signEd25519(null, Buffer.from(deploymentHash, "hex"), privateKey).toString("base64"),
+    },
+  };
+}
+
+function deploymentForWorld(
+  worldId: string,
+  name: string,
+  planningAuthorityAccountId: string,
+): AlphaWorldDeployment {
+  const original = deployment();
+  return {
+    ...original,
+    worldId,
+    worldDefinition: { ...original.worldDefinition, name },
+    fleet: { ...original.fleet, worldId },
+    regionalSimulation: { ...original.regionalSimulation, worldId },
+    planning: {
+      authority: {
+        ...original.planning.authority,
+        accountId: planningAuthorityAccountId,
+        keycloakSubject: `system:planning-authority:${worldId}`,
+      },
+      infrastructureRelease: {
+        ...original.planning.infrastructureRelease,
+        worldId,
+      },
     },
   };
 }
@@ -646,8 +699,14 @@ describe("Game world_deploy: signierte Weltanlage", () => {
 
   afterEach(async () => client.close());
 
-  function handler(registerStartedWorld = vi.fn()) {
+  function handler(registerStartedWorld = vi.fn(), registerOperationalProgram = true) {
     const fleet = fleetRuntime();
+    let prepared: SignedAlphaWorldDeployment | undefined;
+    const rollback = vi.fn(() => { prepared = undefined; });
+    const prepareWorldProgram = vi.fn((signed: SignedAlphaWorldDeployment) => {
+      if (registerOperationalProgram) prepared = signed;
+      return { rollback };
+    });
     return {
       run: createWorldDeployAdminHandler({
         db: db as IdentityDatabase,
@@ -656,9 +715,27 @@ describe("Game world_deploy: signierte Weltanlage", () => {
         regionalSimulation: readyRegionalSimulation(),
         livemap: prepareLivemap(),
         operations: new OperationsRegistry(),
+        operationalPrograms: {
+          operationalProgramRegistration(worldId, regionId) {
+            if (
+              prepared?.deployment.worldId !== worldId
+              || prepared.deployment.regionalSimulation.regionId !== regionId
+            ) return undefined;
+            return {
+              deploymentHash: prepared.deploymentHash,
+              initializationHash: operationalSimulationInitializationHash(
+                prepared.deployment.regionalSimulation,
+              ),
+              trainRunIds: prepared.deployment.regionalSimulation.trains.map(({ id }) => id),
+            };
+          },
+        },
+        prepareWorldProgram,
         registerStartedWorld,
       }),
       fleet,
+      prepareWorldProgram,
+      rollback,
       registerStartedWorld,
     };
   }
@@ -699,6 +776,22 @@ describe("Game world_deploy: signierte Weltanlage", () => {
       .toEqual([{ lifecycleStatus: "active" }]);
     expect(await db.select({ state: alphaWorldProfiles.state }).from(alphaWorldProfiles))
       .toEqual([{ state: "running" }]);
+  });
+
+  it("startet trotz leerem oder sichtbarem Livemap-Zustand nie ohne registriertes Schedulerprogramm", async () => {
+    const registerStartedWorld = vi.fn();
+    const { run, rollback } = handler(registerStartedWorld, false);
+
+    await expect(run(context(commandFor(signedDeployment(deployment()))))).rejects.toMatchObject({
+      code: "world_start_projection_incomplete",
+    });
+
+    expect(rollback).toHaveBeenCalledTimes(1);
+    expect(registerStartedWorld).not.toHaveBeenCalled();
+    expect(await db.select({ lifecycleStatus: worlds.lifecycleStatus }).from(worlds))
+      .toEqual([{ lifecycleStatus: "provisioning" }]);
+    expect(await db.select({ state: alphaWorldProfiles.state }).from(alphaWorldProfiles))
+      .toEqual([{ state: "draft" }]);
   });
 
   it("legt Live-Capabilities als atomaren idempotenten Outbox-Satz an", async () => {
@@ -874,7 +967,26 @@ describe("Game world_deploy: signierte Weltanlage", () => {
       },
     });
     expect(second).toEqual(first);
-    expect(projections.filter((item) => item.messageType === "world.projection")).toHaveLength(1);
+    const worldProjections = projections.filter((item) => item.messageType === "world.projection");
+    expect(worldProjections).toHaveLength(1);
+    expect(worldProjections[0]).toMatchObject({
+      worldId: signed.deployment.worldId,
+      correlationId: `alpha-world-start:${signed.deployment.worldId}:${signed.deploymentHash}`,
+      payload: {
+        projectionKind: "zugfolge-authoritative-world-start-projection/v1",
+        authoritative: true,
+        deploymentHash: signed.deploymentHash,
+        deploymentRevision: 1,
+        deploymentAuthorization: {
+          schemaVersion: "zugfolge-authoritative-world-start-projection/v1",
+          deploymentHash: signed.deploymentHash,
+          deploymentRevision: 1,
+          algorithm: "Ed25519",
+          keyId: signed.signature.keyId,
+          valueBase64: signed.signature.valueBase64,
+        },
+      },
+    });
     expect(await db.select().from(worlds)).toHaveLength(1);
     expect(await db.select().from(alphaWorldProfiles)).toHaveLength(1);
     expect(fleetCallsAfterFirst).toBeGreaterThan(0);
@@ -958,6 +1070,94 @@ describe("Game world_deploy: signierte Weltanlage", () => {
 
     await expect(assertActivePublicWorldDeploymentCoverage(db, { [KEY_ID]: PUBLIC_KEY_PEM }))
       .rejects.toThrow(new RegExp(`ohne Deployment: ${orphanWorldId}`));
+  });
+
+  it("laesst im Mehrwelt-Restart einen exakt gebundenen Archivpfad aus, ohne die aktive Welt zu blockieren", async () => {
+    const archivedWorldId = "70000000-0000-4000-8000-000000000011";
+    const activeWorldId = "70000000-0000-4000-8000-000000000012";
+    const archivedAuthorityAccountId = "70000000-0000-4000-8000-000000000091";
+    const activeAuthorityAccountId = "70000000-0000-4000-8000-000000000092";
+    const trustedKeys = { [KEY_ID]: PUBLIC_KEY_PEM };
+    const archivedUnsigned = deploymentForWorld(
+      archivedWorldId,
+      "Archivierte Testwelt",
+      archivedAuthorityAccountId,
+    );
+    const activeUnsigned = deploymentForWorld(
+      activeWorldId,
+      "Weiterlaufende Testwelt",
+      activeAuthorityAccountId,
+    );
+    const archivedSigned = parseSignedAlphaWorldDeployment(signedDeployment(archivedUnsigned), trustedKeys);
+    const activeSigned = parseSignedAlphaWorldDeployment(signedDeployment(activeUnsigned), trustedKeys);
+
+    for (const [signed, lifecycleStatus] of [
+      [archivedSigned, "archived"],
+      [activeSigned, "active"],
+    ] as const) {
+      const definition = signed.deployment.worldDefinition;
+      await db.insert(worlds).values({
+        id: signed.deployment.worldId,
+        name: definition.name,
+        schedulePeriodWeeks: definition.schedulePeriodWeeks,
+        epoch: new Date(definition.epoch),
+        worldKind: definition.kind === "public" ? "public" : "private",
+        rankingStatus: definition.rankingStatus,
+        lifecycleStatus: "active",
+      });
+      await db.insert(accounts).values({
+        id: signed.deployment.planning.authority.accountId,
+        worldId: signed.deployment.worldId,
+        keycloakSubject: signed.deployment.planning.authority.keycloakSubject,
+        displayName: signed.deployment.planning.authority.displayName,
+      });
+      await db.insert(alphaWorldDeployments).values({
+        worldId: signed.deployment.worldId,
+        deploymentHash: signed.deploymentHash,
+        planningAuthorityAccountId: signed.deployment.planning.authority.accountId,
+        signedDeployment: serializeSignedAlphaWorldDeployment(signed),
+      });
+      if (lifecycleStatus === "archived") {
+        await db.update(worlds).set({ lifecycleStatus }).where(eq(worlds.id, signed.deployment.worldId));
+      }
+    }
+
+    const first = await resolveAlphaWorldStartupDeployments(
+      db,
+      trustedKeys,
+      [archivedSigned, activeSigned],
+    );
+    expect(first.archivedWorldIds).toEqual([archivedWorldId]);
+    expect(first.persistedActiveDeployments.map(({ signed }) => signed.deployment.worldId))
+      .toEqual([activeWorldId]);
+    expect([...first.signedDeployments.keys()]).toEqual([activeWorldId]);
+
+    const retry = await resolveAlphaWorldStartupDeployments(
+      db,
+      trustedKeys,
+      [archivedSigned, activeSigned],
+    );
+    expect([...retry.signedDeployments.keys()]).toEqual([activeWorldId]);
+
+    const foreignArchivedHead = parseSignedAlphaWorldDeployment(signedDeployment({
+      ...archivedUnsigned,
+      deploymentRevision: 2,
+    }), trustedKeys);
+    await expect(resolveAlphaWorldStartupDeployments(
+      db,
+      trustedKeys,
+      [foreignArchivedHead, activeSigned],
+    )).rejects.toThrow(/archivierte Welt .* widerspricht dem autoritativen Deploymentkopf/u);
+
+    const foreignActiveHead = parseSignedAlphaWorldDeployment(signedDeployment({
+      ...activeUnsigned,
+      deploymentRevision: 2,
+    }), trustedKeys);
+    await expect(resolveAlphaWorldStartupDeployments(
+      db,
+      trustedKeys,
+      [archivedSigned, foreignActiveHead],
+    )).rejects.toThrow(/widerspricht dem autoritativ persistierten Deployment/u);
   });
 
   it("haelt eine fehlgeschlagene Welt bis zum erfolgreichen Retry unsichtbar in Provisionierung", async () => {

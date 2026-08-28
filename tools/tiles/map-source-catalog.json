@@ -1,5 +1,5 @@
 {
-  "schema": "zugfolge-map-source-catalog/v1",
+  "schema": "zugfolge-map-source-catalog/v2",
   "sources": [
     {
       "id": "protomaps-daily-basemap",
@@ -13,9 +13,55 @@
       "id": "infrarelease-deutschland",
       "rightsSourceId": "osm-pbf-deutschland",
       "sourceLicense": "ODbL-1.0 und Attributionen des gepinnten InfraRelease",
-      "acquisition": "Signierter deutschlandweiter InfraRelease desselben Fahrplanjahres.",
+      "acquisition": "Kanonisch und bytegenau hashgebundener, noch unsignierter InfraRelease-v2 desselben Fahrplanjahres; eine Signatur ist ein getrennter, ausdruecklich freizugebender Schritt.",
       "attribution": "Infrastrukturquellen und Bearbeitungen gemäß öffentlichem InfraRelease-Manifest",
       "modifications": "Zoomabhängige semantische Layer mit stabilen Objektkennungen; keine vollständigen Objektdetails in den Tiles."
+    }
+  ],
+  "assetSources": [
+    {
+      "id": "noto-glyphs",
+      "kind": "glyph",
+      "rightsSourceId": "noto-glyphs",
+      "sourceLicense": "OFL-1.1",
+      "copyright": "Copyright 2022 The Noto Project Authors (https://github.com/notofonts)",
+      "attribution": "Copyright 2022 The Noto Project Authors (https://github.com/notofonts); SIL Open Font License 1.1",
+      "modifications": "Die von Protomaps bereitgestellten PBF-Glyphen werden unveraendert selbst gehostet und unter assets/fonts ausgeliefert.",
+      "source": {
+        "repository": "https://github.com/protomaps/basemaps-assets",
+        "commit": "028c18f713baecad011301ff7a69acc39bcc2ae7",
+        "path": "fonts"
+      },
+      "derivedFrom": null,
+      "notice": {
+        "url": "https://raw.githubusercontent.com/protomaps/basemaps-assets/028c18f713baecad011301ff7a69acc39bcc2ae7/fonts/OFL.txt",
+        "bytes": 4374,
+        "sha256": "a4e64af683b9a5fc0ebcb849e7a2c1759e415f9791764d09b8a241b79fd90dfa"
+      }
+    },
+    {
+      "id": "protomaps-sprites",
+      "kind": "sprite",
+      "rightsSourceId": "protomaps-sprites",
+      "sourceLicense": "MIT",
+      "copyright": "Copyright (c) 2017 Mapzen",
+      "attribution": "Copyright (c) 2017 Mapzen; MIT License; Sprite-Aufbereitung Protomaps",
+      "modifications": "Die dunklen Protomaps-v4-Sprites werden unveraendert selbst gehostet und unter assets/sprites ausgeliefert.",
+      "source": {
+        "repository": "https://github.com/protomaps/basemaps-assets",
+        "commit": "028c18f713baecad011301ff7a69acc39bcc2ae7",
+        "path": "sprites/v4"
+      },
+      "derivedFrom": {
+        "repository": "https://github.com/tangrams/icons",
+        "commit": "92510779634f4a006c61ea70e50cb8c52c765a81",
+        "license": "MIT"
+      },
+      "notice": {
+        "url": "https://raw.githubusercontent.com/tangrams/icons/92510779634f4a006c61ea70e50cb8c52c765a81/LICENSE.md",
+        "bytes": 1073,
+        "sha256": "5d1eb083c5bf849216176995c7d72545f0d2ad9af469a38cd0ec2c644f20bab2"
+      }
     }
   ]
 }

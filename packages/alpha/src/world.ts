@@ -128,10 +128,15 @@ export interface WorldStartVerification {
   readonly economyReady: boolean;
   readonly fleetReady: boolean;
   readonly regionalSimulationReady: boolean;
+  /** Das signierte Betriebsprogramm ist im autoritativen Scheduler registriert. */
+  readonly operationalProgramReady: boolean;
   readonly livemapReady: boolean;
   readonly operationsCenterReady: boolean;
   readonly odooProjectionQueued: boolean;
   readonly lotIds: readonly string[];
+  /** Signierte Basisfahrten des registrierten Schedulerprogramms. */
+  readonly scheduledTrainRunIds: readonly string[];
+  /** Im Livemap-Snapshot tatsaechlich sichtbare Basisfahrten; darf beim Start leer sein. */
   readonly runningTrainRunIds: readonly string[];
 }
 
@@ -354,10 +359,15 @@ export class AlphaWorldService {
     await this.port.initializeFleet(worldId, blueprint);
     await this.port.initializeRegionalSimulation(worldId, blueprint);
     const verified = await this.port.verify(worldId, blueprint);
-    if (!verified.economyReady || !verified.fleetReady || !verified.regionalSimulationReady || !verified.livemapReady || !verified.operationsCenterReady || !verified.odooProjectionQueued) {
+    if (!verified.economyReady || !verified.fleetReady || !verified.regionalSimulationReady || !verified.operationalProgramReady || !verified.livemapReady || !verified.operationsCenterReady || !verified.odooProjectionQueued) {
       throw new AlphaConflictError("Weltstart ist nicht in allen produktiven Projektionen sichtbar.", "world_start_projection_incomplete");
     }
-    if (!sameSet(verified.lotIds, exactLots(blueprint)) || !sameSet(verified.runningTrainRunIds, exactTrainRuns(blueprint))) {
+    const expectedTrainRunIds = exactTrainRuns(blueprint);
+    if (
+      !sameSet(verified.lotIds, exactLots(blueprint))
+      || !sameSet(verified.scheduledTrainRunIds, expectedTrainRunIds)
+      || verified.runningTrainRunIds.some((trainRunId) => !expectedTrainRunIds.includes(trainRunId))
+    ) {
       throw new AlphaConflictError("Eigenbetrieb deckt Lose oder Zugfahrten nicht vollstaendig ab.", "public_operation_incomplete");
     }
     if (rehydrateRunningDeployment) return profile;

@@ -263,15 +263,17 @@ und leitet daraus die **Ausschlussmenge** ab — die Konfliktressource des
 Bahnhofskopfs, die der Spike aus M0.3 offengelassen hatte. Siehe
 `betriebsgraph.md` Abschnitt 12.
 
-**M1.8 trägt:** OpenStation und StaDa stehen im Quellenregister noch auf
-`pruefung` (`docs/rechte.md` 3) — Invariante 8 verbietet deshalb jeden Import.
-M1.8 liefert stattdessen das Modell: `StationEnrichment` bindet
+**M1.8 trägt:** OpenStation und StaDa sind im Quellenregister freigegeben;
+der konkrete Jahreslauf bindet trotzdem nur den tatsächlich verwendeten
+Snapshot samt Bereitstellungsweg, Rechten und Prüfsumme. Der Deutschlandlauf
+verwendet OpenStation, StaDa bleibt optional. `StationEnrichment` bindet
 Bahnhofskategorie und Ausstattung an eine Betriebsstelle mit planmäßigem
 Fahrgastwechsel, mit einer **eigenen Herkunft je Feld** (`Attributed<T>`) statt
 einer gemeinsamen für den ganzen Eintrag — eine Anreicherung kommt in Schüben,
 keine Ersterfassung in einem Zug. `StationEnrichmentCatalogBuilder::build`
 prüft jeden Eintrag gegen einen fertigen `OperatingGraph`. Wie M1.5 bis M1.7
-ist das Verfahren kein Import; der folgt erst mit der Freigabe. Siehe
+ist das Verfahren selbst kein Import; der konkrete Adapter bleibt ein eigener
+Jahresbuild-Schritt. Siehe
 `betriebsgraph.md` Abschnitt 13.
 
 **M1.9 trägt:** `docs/infrastruktur.md` 2 sagt es wörtlich — „Zugcharakteristik
@@ -861,7 +863,7 @@ EVU-Gründung idempotent angewandt und nach Weltstart nicht geändert.
 | 9.7 | Telemetrie, Balancing-Dashboards, Feedbackkanal | M | in Arbeit |
 | 9.8 | **Weltende** (E18): letzte Periode ohne Ausschreibung, reguläres Vertragsende ohne Insolvenzfolge, Schlusswertung mit mehreren Ranglisten, Archiv und Replay-Export | M | in Arbeit |
 | 9.9 | Geschlossene Alpha mit 20–50 externen Spielern in der freigegebenen Mitteldeutschland-Region, einschließlich M12.1/M12.2 | M | offen |
-| 9.10 | **Jährliche Infrastrukturaktualisierung** (E22): `InfraRelease`-Neubau aus aktualisiertem `osm-pbf-lhe` und der Trassenfinder-Infrastruktur-API zu jedem realen Fahrplanwechsel; Übernahmeverfahren für eine laufende Welt zum nächsten Periodenwechsel, ohne Invariante 1 zu verletzen | L | in Arbeit |
+| 9.10 | **Jährliche Infrastrukturaktualisierung** (E22): `InfraRelease`-Neubau aus den jährlich gepinnten, rechtlich freigegebenen OSM-, DB-InfraGO-Open-Data-, GTFS-, Copernicus-DEM- und OpenStation-Ständen; Übernahmeverfahren für eine laufende Welt zum nächsten Periodenwechsel, ohne Invariante 1 zu verletzen | L | in Arbeit |
 
 M9.1 ist repositoryseitig als persönliche, beim Spielerstart erzeugte Welt
 implementiert: versioniertes Minimaltemplate, echte Economy-/Fleet-/Planning-/

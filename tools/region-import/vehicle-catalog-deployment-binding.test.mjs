@@ -6,7 +6,6 @@ import { join } from "node:path";
 import test, { after } from "node:test";
 import { fileURLToPath } from "node:url";
 
-import { alphaHash } from "../../packages/alpha/dist/index.js";
 import {
   alphaWorldGenerationSourcesSha256,
   assertVehicleCatalogProofInputs,
@@ -97,7 +96,7 @@ async function inputs() {
       version: receipt.economyReleaseId,
       checksum: receipt.economyReleaseSha256,
     },
-    blueprintFleetHash: alphaHash("zugfolge-fleet-authority-runtime/v1", entry.authorityRelease),
+    blueprintFleetHash: compilerEvidence.runtimeAuthorityReleaseHash,
     compilerEvidence,
   };
 }
@@ -109,6 +108,7 @@ test("Build-Binder akzeptiert exakt den echten Rust-Compiler-Ausgabesatz", async
     input.receipt.fleetAuthorityCatalogSha256,
   );
   assert.equal(Object.hasOwn(input.fleet.formations[0], "dynamics"), false);
+  assert.match(input.compilerEvidence.runtimeAuthorityReleaseHash, /^[a-f0-9]{64}$/u);
   assert.doesNotThrow(() => bindVehicleCatalogDeploymentArtifacts(input));
 });
 
@@ -169,6 +169,7 @@ test("Build-Binder verweigert Seed-Zeit, Economy, Operational und OutputSet sepa
       ...input,
       receipt: { ...input.receipt, outputSetSha256: "0".repeat(64) },
     },
+    { ...input, blueprintFleetHash: "0".repeat(64) },
     {
       ...input,
       fleet: {
@@ -223,20 +224,26 @@ test("Legacy-v1-Vorlagen brauchen keinen Eintrag fuer die neu gebaute Welt", () 
   assert.equal(selected.entry, undefined);
 });
 
-test("Generatorprovenienz bindet Hauptskript und sicherheitskritischen Binder", () => {
+test("Generatorprovenienz bindet Hauptskript, Binder und Fleet-v2-Migrationscompiler", () => {
   const main = Buffer.from("build-alpha-world:v1", "utf8");
   const binder = Buffer.from("vehicle-binder:v1", "utf8");
-  const baseline = alphaWorldGenerationSourcesSha256(main, binder);
+  const migration = Buffer.from("fleet-migration:v1", "utf8");
+  const baseline = alphaWorldGenerationSourcesSha256(main, binder, migration);
 
-  assert.equal(alphaWorldGenerationSourcesSha256(main, binder), baseline);
+  assert.equal(alphaWorldGenerationSourcesSha256(main, binder, migration), baseline);
   assert.notEqual(
-    alphaWorldGenerationSourcesSha256(main, Buffer.from("vehicle-binder:manipulated", "utf8")),
+    alphaWorldGenerationSourcesSha256(main, Buffer.from("vehicle-binder:manipulated", "utf8"), migration),
     baseline,
   );
   assert.notEqual(
-    alphaWorldGenerationSourcesSha256(Buffer.from("build-alpha-world:manipulated", "utf8"), binder),
+    alphaWorldGenerationSourcesSha256(Buffer.from("build-alpha-world:manipulated", "utf8"), binder, migration),
     baseline,
   );
+  assert.notEqual(
+    alphaWorldGenerationSourcesSha256(main, binder, Buffer.from("fleet-migration:manipulated", "utf8")),
+    baseline,
+  );
+  assert.throws(() => alphaWorldGenerationSourcesSha256(main, binder), /Migrationscompiler/u);
 });
 
 test("Pre-Sign-Binder prueft Receipt, Inventar und Formationsperformance exakt", async () => {

@@ -126,6 +126,31 @@ describe("gemeinsamer GTFS-Kern", () => {
     expect(createGtfsPlanningEnvelope(same).snapshotHash).toBe(createGtfsPlanningEnvelope(snapshot).snapshotHash);
   });
 
+  it("haelt fachliche Pattern- und Los-IDs weltneutral, aber releasegebunden", () => {
+    const first = buildGtfsPlanningSnapshot(input());
+    const secondInput = input();
+    const second = buildGtfsPlanningSnapshot({
+      ...secondInput,
+      worldId: "22222222-2222-4222-8222-222222222222",
+    });
+    const foreignInput = input();
+    const foreignRelease = buildGtfsPlanningSnapshot({
+      ...foreignInput,
+      source: { ...foreignInput.source, archiveSha256: "b".repeat(64) },
+    });
+
+    expect(second.worldId).not.toBe(first.worldId);
+    expect(second.patterns.map((pattern) => pattern.id)).toEqual(first.patterns.map((pattern) => pattern.id));
+    expect(second.lots.map((lot) => lot.id)).toEqual(first.lots.map((lot) => lot.id));
+    expect(createGtfsPlanningEnvelope(second).snapshotHash).not.toBe(createGtfsPlanningEnvelope(first).snapshotHash);
+    expect(foreignRelease.patterns.map((pattern) => pattern.id)).not.toEqual(first.patterns.map((pattern) => pattern.id));
+    expect(foreignRelease.lots.map((lot) => lot.id)).not.toEqual(first.lots.map((lot) => lot.id));
+    expect(() => validateGtfsPlanningEnvelope({
+      snapshot: { ...first, patterns: first.patterns.map((pattern, index) => index === 0 ? { ...pattern, id: foreignRelease.patterns[0]!.id } : pattern) },
+      snapshotHash: createGtfsPlanningEnvelope(first).snapshotHash,
+    })).toThrow(/v2-Identitaetsnamespace|gehoert nicht/u);
+  });
+
   it("weist unbefahrbare Zuordnungen und manipulierte Snapshots ab", () => {
     const broken = input();
     expect(() => buildGtfsPlanningSnapshot({

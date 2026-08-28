@@ -16,7 +16,15 @@ test("baut jeden semantischen Layer in eine gemeinsame Zwischenquelle", () => {
     specification: specification(),
     inputRoot: "input",
     outputPath: "output/infrastructure.pmtiles",
-    ogr2ogr: "ogr2ogr",
+    runtime: {
+      command: process.execPath,
+      environment: {
+        ...process.env,
+        PATH: process.env.PATH ?? "fixture-path",
+        GDAL_DATA: "fixture-gdal-data",
+        PROJ_DATA: "fixture-proj-data",
+      },
+    },
     temporaryRoot: "output/building",
   });
   assert.equal(plan.imports.length, REQUIRED_INFRA_LAYERS.length);
@@ -25,7 +33,9 @@ test("baut jeden semantischen Layer in eine gemeinsame Zwischenquelle", () => {
   assert.ok(plan.imports.slice(1).every(({ args }) => args.includes("-update") && !args.includes("-append")));
   assert.ok(plan.imports.every(({ args }) => args.includes("GEOMETRY")));
   assert.ok(plan.imports.every(({ args }) => args.includes("GeoJSONSeq")));
-  assert.equal(plan.imports[0].environment.GDAL_DATA, undefined);
+  assert.equal(plan.imports[0].command, process.execPath);
+  assert.equal(plan.imports[0].environment.GDAL_DATA, "fixture-gdal-data");
+  assert.equal(plan.imports[0].environment.PROJ_DATA, "fixture-proj-data");
   assert.ok(plan.tileBuild.args.includes("MAXZOOM=18"));
   assert.equal(plan.tileBuild.environment.GDAL_NUM_THREADS, "ALL_CPUS");
 });
@@ -45,4 +55,21 @@ test("kodiert die abgestufte Zoomtiefe", () => {
   assert.equal(GDAL_SEMANTIC_LAYER_CONFIGURATION.tracks.minzoom, 8);
   assert.equal(GDAL_SEMANTIC_LAYER_CONFIGURATION.signals.minzoom, 13);
   assert.equal(GDAL_SEMANTIC_LAYER_CONFIGURATION.signals.maxzoom, 18);
+});
+
+test("verweigert PATH-ogr2ogr und eine unvollständige Runtime-Umgebung", () => {
+  const base = {
+    specification: specification(),
+    inputRoot: "input",
+    outputPath: "output/infrastructure.pmtiles",
+    temporaryRoot: "output/building",
+  };
+  assert.throws(
+    () => buildGdalSemanticTilePlan({ ...base, runtime: { command: "ogr2ogr", environment: {} } }),
+    /absoluten Entry-Point/u,
+  );
+  assert.throws(
+    () => buildGdalSemanticTilePlan({ ...base, runtime: { command: process.execPath, environment: { PATH: "fixture" } } }),
+    /PATH-\/GDAL_DATA-\/PROJ_DATA/u,
+  );
 });

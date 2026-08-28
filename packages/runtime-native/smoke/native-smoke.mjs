@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
+import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
+import { fileURLToPath } from "node:url";
 
 import {
   FLEET_FORMATION_COMMAND_SCHEMA,
@@ -10,6 +12,8 @@ import {
   OPERATING_INITIALIZE_SCHEMA,
   OPERATING_RESULT_SCHEMA,
   OPERATING_TRANSITION_SCHEMA,
+  OPERATIONAL_INFRASTRUCTURE_ROOTS_ENV,
+  OPERATIONAL_SIMULATION_COMMAND_BATCH_SCHEMA,
   OPERATIONAL_SIMULATION_COMMAND_SCHEMA,
   OPERATIONAL_SIMULATION_INITIALIZE_SCHEMA,
   loadOperationalSimulationRuntime,
@@ -19,6 +23,18 @@ import {
 const worldId = "11111111-1111-4111-8111-111111111111";
 const lotId = "lot-native-smoke";
 const timetableBoundaryS = 604_800;
+const tutorialInfrastructureRootUrl = new URL(
+  "../../../apps/game-api/tutorial-infrastructure/tutorial-minimal-2026.1/",
+  import.meta.url,
+);
+const tutorialInfrastructureRoot = fileURLToPath(tutorialInfrastructureRootUrl);
+const tutorialInfrastructureDescriptor = JSON.parse(readFileSync(
+  new URL("descriptor.json", tutorialInfrastructureRootUrl),
+  "utf8",
+));
+process.env[OPERATIONAL_INFRASTRUCTURE_ROOTS_ENV] = JSON.stringify({
+  [tutorialInfrastructureDescriptor.binding.infraReleaseId]: tutorialInfrastructureRoot,
+});
 const addonPath = process.env.ZUGFOLGE_RUNTIME_NATIVE_PATH;
 assert.ok(addonPath, "ZUGFOLGE_RUNTIME_NATIVE_PATH fehlt");
 const nativeAddon = createRequire(import.meta.url)(addonPath);
@@ -135,74 +151,11 @@ assert.deepEqual(fleetInitialized.snapshot.formations, []);
 const operationalInitialization = {
   schemaVersion: OPERATIONAL_SIMULATION_INITIALIZE_SCHEMA,
   worldId,
-  regionId: "leipzig",
+  regionId: "tutorial-korridor",
   nowMs: 0,
-  infraRelease: {
-    id: "infra:native-smoke:v2",
-    directedEdges: { "edge:1": 100_000 },
-    edgeGeometries: {
-      "edge:1": [
-        {
-          edgeOffsetMm: 0,
-          latitudeE7: 510_000_000,
-          longitudeE7: 120_000_000,
-          bearingMilliDegrees: 90_000,
-        },
-        {
-          edgeOffsetMm: 100_000,
-          latitudeE7: 510_000_000,
-          longitudeE7: 120_100_000,
-          bearingMilliDegrees: null,
-        },
-      ],
-    },
-    routeVersions: {
-      "route:v1": {
-        id: "route:v1",
-        templateId: "template:v1",
-        predecessorId: null,
-        transitionRouteMm: null,
-        legs: [{
-          edgeId: "edge:1",
-          direction: "along",
-          edgeEntryMm: 0,
-          edgeExitMm: 100_000,
-          routeStartMm: 0,
-          blockIds: ["block:1"],
-          speedLimitMmps: 20_000,
-          gradientPerMille: 0,
-          requiredProtectionSystems: ["pzb"],
-        }],
-      },
-    },
-    interlockingRoutes: {
-      "interlocking:1": {
-        id: "interlocking:1",
-        routeTemplateId: "template:v1",
-        signalId: "signal:1",
-        movementKind: "train",
-        pathResources: ["block:1"],
-        overlapResources: ["overlap:1"],
-        flankResources: ["flank:1"],
-        switchPositions: { "switch:1": "straight" },
-        authorityEndRouteMm: 90_000,
-        releaseAfterTailRouteMm: 80_000,
-      },
-    },
-    signals: ["signal:1"],
-    switches: ["switch:1"],
-    blockResources: ["block:1", "overlap:1", "flank:1"],
-    platformIntervals: {
-      "platform:1": {
-        edgeId: "edge:1",
-        fromMm: 10_000,
-        toMm: 30_000,
-        direction: "along",
-      },
-    },
-    regionBoundaries: ["boundary:1"],
-    rzueLayoutId: "rzue:native-smoke:v1",
-  },
+  repeatEveryMs: null,
+  protectionModeSelectionPolicy: "zugfolge-protection-mode-selection/conservative-v1",
+  infraRelease: tutorialInfrastructureDescriptor.binding,
   vehicleTypes: [{
     powered: true,
     vehicleType: {
@@ -244,12 +197,18 @@ const operationalInitialization = {
     trainNumber: "RB 1",
     operatorId: "operator:1",
     movementKind: "train",
-    routeVersionId: "route:v1",
+    routeVersionId: "tutorial-minimal-2026.1:route:v1",
     formationVersionId: "formation:1",
-    headRouteMm: 20_000,
+    headRouteMm: 0,
     scheduledDepartureMs: null,
     publicPassengerStop: false,
+    dispatchInterlockingRouteId: "tutorial-minimal-2026.1:interlocking:v1",
+    protectionModeSelectionRuns: [{
+      throughRouteLegIndex: 2,
+      selectedProtectionSystem: "pzb",
+    }],
   }],
+  movementContinuations: [],
 };
 const operationalInitialized = operationalRuntime.initialize(operationalInitialization);
 assert.equal(operationalInitialized.state.revision, 0);
@@ -258,19 +217,50 @@ assert.equal(operationalInitialized.liveMap.commitSequence, 0);
 assert.equal(operationalInitialized.rzue.commitSequence, 0);
 assert.deepEqual(
   operationalInitialized.liveMap.trains.map((train) => train.trainId),
-  ["train:1"],
+  [],
+);
+assert.equal(operationalInitialized.validationReceipt.programTrainCount, 1);
+assert.equal(operationalInitialized.validationReceipt.validatedProgramTemplateCount, 1);
+assert.equal(operationalInitialized.validationReceipt.dynamicTrainCount, 0);
+assert.equal(operationalInitialized.validationReceipt.validatedTrainNumberCount, 1);
+assert.equal(operationalInitialized.validationReceipt.validatedMovementContinuationCount, 0);
+assert.match(operationalInitialized.validationReceipt.movementContinuationsSha256, /^[a-f0-9]{64}$/u);
+assert.equal(operationalInitialized.validationReceipt.trainNumbersValidated, true);
+assert.equal(
+  operationalInitialized.validationReceipt.protectionModeSelectionPolicy,
+  "zugfolge-protection-mode-selection/conservative-v1",
+);
+assert.equal(operationalInitialized.validationReceipt.validatedProtectionModeSelectionCount, 3);
+assert.match(operationalInitialized.validationReceipt.protectionModeSelectionsSha256, /^[a-f0-9]{64}$/u);
+assert.equal(operationalInitialized.validationReceipt.protectionModeSelectionsValidated, true);
+assert.equal(
+  operationalInitialized.validationReceipt.validationMode,
+  "native-streaming-redb-v1",
 );
 
 const operationalCommand = (head, commandId, command) => ({
   schemaVersion: OPERATIONAL_SIMULATION_COMMAND_SCHEMA,
   worldId,
-  regionId: "leipzig",
+  regionId: "tutorial-korridor",
   commandId,
   expectedStateHash: head.stateHash,
   expectedRevision: head.state.revision,
   expectedPublisherSequence: head.state.publisherSequence,
   command,
 });
+
+const operationalMaterialized = await operationalRuntime.apply(
+  operationalInitialized.state,
+  operationalCommand(operationalInitialized, "native-operational-materialize", {
+    type: "materialize",
+    train: operationalInitialization.trains[0],
+  }),
+);
+assert.equal(operationalMaterialized.state.revision, 1);
+assert.deepEqual(
+  operationalMaterialized.liveMap.trains.map((train) => train.trainId),
+  ["train:1"],
+);
 
 await assert.rejects(
   operationalRuntime.apply(
@@ -296,16 +286,42 @@ await assert.rejects(
   "register-disruption darf die v2-Grenze nicht passieren",
 );
 
-const operationalActivated = await operationalRuntime.apply(
-  operationalInitialized.state,
-  operationalCommand(operationalInitialized, "native-operational-activate", {
-    type: "activate-disruption",
-    disruptionId: "native-block-closure",
-    effect: { "resource-closed": { resourceId: "block:1" } },
+const operationalDispatched = await operationalRuntime.apply(
+  operationalMaterialized.state,
+  operationalCommand(operationalMaterialized, "native-operational-dispatch", {
+    type: "dispatch",
+    requests: [{
+      trainId: "train:1",
+      interlockingRouteId: operationalInitialization.trains[0].dispatchInterlockingRouteId,
+      committedRank: 0,
+      timetableDeviationMs: 0,
+      passengerImpact: 0,
+      contractualImpact: 0,
+      networkImpact: 0,
+      resourceConsequence: 0,
+      recoveryRank: 0,
+      waitingSinceMs: 0,
+    }],
   }),
 );
-assert.equal(operationalActivated.state.revision, 1);
-assert.equal(operationalActivated.state.publisherSequence, 1);
+assert.equal(operationalDispatched.state.revision, 2);
+
+const operationalActivated = await operationalRuntime.apply(
+  operationalDispatched.state,
+  operationalCommand(operationalDispatched, "native-operational-activate", {
+    type: "activate-disruption",
+    disruptionId: "native-block-closure",
+    effect: { "resource-closed": { resourceId: "track:tut-segment-1" } },
+  }),
+);
+assert.equal(operationalActivated.state.revision, 3);
+assert.equal(operationalActivated.state.publisherSequence, 3);
+assert.ok(
+  operationalActivated.events.some(
+    (event) => event.kind === "safe-stop" && event.subjectId === "train:1",
+  ),
+  "die gesperrte, zuvor wirklich disponierte Ressource muss den betroffenen Zug sicher anhalten",
+);
 assert.ok(
   operationalActivated.events.some(
     (event) => event.kind === "disruption-activated"
@@ -326,8 +342,8 @@ const operationalCleared = await operationalRuntime.apply(
   operationalActivated.state,
   operationalClearCommand,
 );
-assert.equal(operationalCleared.state.revision, 2);
-assert.equal(operationalCleared.state.publisherSequence, 2);
+assert.equal(operationalCleared.state.revision, 4);
+assert.equal(operationalCleared.state.publisherSequence, 4);
 assert.ok(
   operationalCleared.events.some(
     (event) => event.kind === "disruption-cleared"
@@ -361,6 +377,67 @@ const operationalRetry = await operationalRuntime.apply(
 );
 assert.equal(operationalRetry.idempotentReplay, true);
 assert.equal(operationalRetry.stateHash, operationalCleared.stateHash);
+
+const nativeBatchEffect = {
+  "resource-closed": { resourceId: "track:tut-segment-1" },
+};
+const operationalBatch = await operationalRuntime.applyBatch(
+  operationalCleared.state,
+  {
+    schemaVersion: OPERATIONAL_SIMULATION_COMMAND_BATCH_SCHEMA,
+    worldId,
+    regionId: "tutorial-korridor",
+    expectedStateHash: operationalCleared.stateHash,
+    expectedRevision: operationalCleared.state.revision,
+    expectedPublisherSequence: operationalCleared.state.publisherSequence,
+    commands: [{
+      commandId: "native-operational-batch-activate",
+      command: {
+        type: "activate-disruption",
+        disruptionId: "native-batch-closure",
+        effect: nativeBatchEffect,
+      },
+    }, {
+      commandId: "native-operational-batch-activate",
+      command: {
+        type: "activate-disruption",
+        disruptionId: "native-batch-closure",
+        effect: nativeBatchEffect,
+      },
+    }, {
+      commandId: "native-operational-batch-clear",
+      command: {
+        type: "clear-disruption",
+        disruptionId: "native-batch-closure",
+        releaseReference: "provider:native-smoke:batch",
+      },
+    }],
+  },
+);
+assert.equal(operationalBatch.state.revision, operationalCleared.state.revision + 2);
+assert.equal(
+  operationalBatch.state.publisherSequence,
+  operationalCleared.state.publisherSequence + 2,
+);
+assert.deepEqual(
+  operationalBatch.commandResults.map((result) => result.idempotentReplay),
+  [false, true, false],
+);
+assert.deepEqual(
+  operationalBatch.events.map((event) => event.kind),
+  ["safe-stop", "disruption-activated", "disruption-cleared"],
+  "eine betroffene Zugfahrt darf im atomaren Stoerungsbatch ein zusaetzliches Fachdomaenenereignis erzeugen",
+);
+assert.deepEqual(
+  operationalBatch.eventContexts.map((context) => context.commandIndex),
+  [0, 2],
+);
+assert.deepEqual(operationalBatch.eventContexts[0].affectedTrainRunIds, ["train:1"]);
+assert.deepEqual(operationalBatch.eventContexts[1].affectedTrainRunIds, []);
+assert.deepEqual(
+  operationalBatch.eventContexts[1].disruptionEffectBefore,
+  nativeBatchEffect,
+);
 
 const formationCommand = {
   schemaVersion: FLEET_FORMATION_COMMAND_SCHEMA,

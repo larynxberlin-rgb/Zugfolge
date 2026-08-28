@@ -15,11 +15,22 @@ Die beiden Achsen bleiben getrennt:
   direkt verwendet, eine konservative Regel anwendet, eine sichtbare sichere
   Annahme setzt oder die Dimension ungeloest bleibt.
 
-Damit kann eine sichere Annahme Klasse B ermoeglichen, ohne als Datenwahrheit
-ausgegeben zu werden. Klasse A verlangt je Layer einen akzeptierten Beleg und
-alle im Eingabevertrag genannten Dimensionen. Eine Einzelquelle, eine
-automatische Ableitung oder ein KI-Urteil reicht nie. Klasse C bleibt sichtbar,
-aber `orderable=false` ist zwingend.
+Auf der reinen Kartenachse kann eine sichere Annahme als konservatives sichtbares
+B erscheinen, weil dieser Bericht kein Operational-Release freigibt. Fuer die
+Operational-Achse bleibt dieselbe gewoehnliche Annahme C. Sie kann dort nur
+dann als Derived/B geschlossen werden, wenn der getrennte Jahresvertrag ein
+bytegeprueftes `zugfolge-synthetic-operational-closure-receipt/v2` bindet.
+Dieses Receipt belegt die gesamte Policy `synthetic-operational-b/v2`, die
+Jahresspezifikation und alle zehn Pflichtinputs: sechs operative Layer sowie
+`gtfs-snapshot`, `timetable-route-report`, `timetable-routes` und
+`timetable-transfer-demands`. Der freie Routenpfad bindet CC-BY-4.0,
+Snapshot-/Datei-/Archiv-SHA, vollständige physische Daily-Circulation und vollständige
+ausgewählte Segmentabdeckung und das Verbot externer Operational-Network-
+Provenienz. Das Receipt bindet außerdem Candidate, Ableitungsbericht, natives Operational-v2-
+Artefakt und Zustand; ein einzelner Fallbackwert reicht nicht. Klasse A
+verlangt je Layer einen
+akzeptierten Beleg und alle im Eingabevertrag genannten Dimensionen. Eine
+Einzelquelle, eine automatische Ableitung oder ein KI-Urteil reicht nie.
 
 Der Gleisbericht verbindet die finalen Trackfeatures mit den realen Signal-,
 Block- und Konfliktressourcenlayern. Ein vorhandenes Attribut allein gilt nicht
@@ -31,6 +42,20 @@ Quelldateinamen und Source-IDs noch Eingabe- oder Evidenzhashes. Seine
 Dimensionszustaende bleiben fachlich lesbar; die SHA-256 der fertigen
 `quality.json` wird nur vom Baukommando als externe Reproduzierbarkeitsangabe
 ausgegeben.
+
+Dieser Bericht ist mit `purpose=visible-map-quality-evidence` und
+`operationalReleaseGate=false` ausdruecklich der Kartenachse zugeordnet. Der
+getrennte Operational-v2-Qualitaetsbericht prueft Policy und Closure-Receipt,
+bindet diesen Kartenbericht nur per SHA-256 und darf seine C-Objekte weder
+umklassifizieren noch als Operational-C zaehlen. Seine oeffentliche Projektion
+enthaelt nur Policy-/Closure-Hash, Derived/B und die Claims
+`realGeometry=true`, `simulatedOperationalAssignment=true` und
+`realInterlockingFactsClaimed=false`. Sie weist zugleich ehrlich aus, dass das
+Operational-v2-Artefakt synthetische Betriebsdetails ausliefert und beobachtete
+sowie synthetische Objekte in denselben Laufzeit-Collections führt, aber keine
+objektweise Lineage mitliefert (`syntheticOperationalDetailsShipped=true`,
+`observedAndSyntheticObjectsShareRuntimeCollections=true`,
+`objectLevelProvenanceShipped=false`).
 
 `declaredQualityClassFeatureCount` zeigt die im Layer gespeicherte Klasse.
 `qualityClassFeatureCount` und bei Gleisen `qualityClassLengthMm` sind die

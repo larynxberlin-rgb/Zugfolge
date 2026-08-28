@@ -65,6 +65,13 @@ wait_http() {
   done
 }
 
+wait_game_ready() {
+  "${COMPOSE[@]}" exec -T game-api node \
+    tools/alpha-ops/wait-game-readiness.mjs \
+    http://127.0.0.1:3000 \
+    "${ZUGFOLGE_GAME_READY_MAX_WAIT_MS:-7200000}"
+}
+
 wait_alert() {
   local alert_name=$1 timeout=$2 started=$SECONDS
   until curl --fail --silent "$PROMETHEUS_URL/api/v1/alerts" | node -e '
@@ -90,7 +97,7 @@ assert_query_result() {
 
 "${COMPOSE[@]}" ps --status running --services | grep -qx odoo
 "${COMPOSE[@]}" ps --status running --services | grep -qx game-api
-wait_http "$GAME_API_URL/health/ready" 180
+wait_game_ready
 wait_http "$PROMETHEUS_URL/-/ready" 180
 wait_http "$GRAFANA_URL/api/health" 180
 
@@ -164,7 +171,7 @@ GAME_API_STOPPED=1
 wait_alert ZugfolgeGameApiDown "$ALERT_TIMEOUT"
 "${COMPOSE[@]}" start game-api >/dev/null
 GAME_API_STOPPED=0
-wait_http "$GAME_API_URL/health/ready" 300
+wait_game_ready
 
 curl --fail --silent --user "admin:$GRAFANA_ADMIN_PASSWORD" "$GRAFANA_URL/api/dashboards/uid/zugfolge-alpha-ops" \
   | grep -q 'Zugfolge Alpha - Betrieb'

@@ -100,9 +100,70 @@ describe("autorisierte Bewegungsabschnitte", () => {
   it("interpoliert analytisch bis valid_until und friert danach exakt ein", () => {
     const current = state(1);
     const samples = { previous: current, current };
+    expect(renderTrains(samples, 1)[0]?.positionMm).toBe(0);
+    expect(renderTrains(samples, 1)[0]?.speedMmPerSecond).toBe(1_000);
     expect(renderTrains(samples, 2)[0]?.positionMm).toBe(1_000);
     expect(renderTrains(samples, 30)[0]?.positionMm).toBe(2_000);
+    expect(renderTrains(samples, 30)[0]?.speedMmPerSecond).toBe(1_000);
     expect(renderTrains(samples, 30)[0]?.operational?.simulationTimeMs).toBe(3_000);
+  });
+
+  it("loest nur den terminalen Millimeter wie der Rust-Kern auf", () => {
+    const terminalMillimetre: PublicTrain = {
+      ...exactTrain,
+      operational: {
+        ...exactTrain.operational!,
+        motionSegment: {
+          ...exactTrain.operational!.motionSegment!,
+          validUntilMs: 1_002,
+          startSpeedMmPerSecond: 1,
+          accelerationMmPerSecondSquared: -900,
+          authorityEndRouteMm: 1,
+          segmentEndRouteMm: 1,
+          geometry: [
+            { routeMm: 0, trackId: "track:1", offsetMm: 0, latitudeE7: 510_000_000, longitudeE7: 120_000_000 },
+            { routeMm: 1, trackId: "track:1", offsetMm: 1, latitudeE7: 510_000_001, longitudeE7: 120_000_001 },
+          ],
+        },
+      },
+    };
+    const terminalState = initialState({
+      worldId: "world:1", streamId: "stream:1", sequence: 7, at: 1,
+      trains: [terminalMillimetre], operationalRegions: [frame(7, 1_000, 2_000)],
+    });
+    const samples = { previous: terminalState, current: terminalState };
+
+    expect(renderTrains(samples, 1.001)[0]?.positionMm).toBe(0);
+    expect(renderTrains(samples, 1.002)[0]?.positionMm).toBe(1);
+    expect(renderTrains(samples, 1.002)[0]?.speedMmPerSecond).toBe(0);
+  });
+
+  it("springt weder Nullzeit- noch groessere Nullfortschrittsabschnitte", () => {
+    const noProgress = (validUntilMs: number, segmentEndRouteMm: number): PublicTrain => ({
+      ...exactTrain,
+      operational: {
+        ...exactTrain.operational!,
+        motionSegment: {
+          ...exactTrain.operational!.motionSegment!,
+          validUntilMs,
+          startSpeedMmPerSecond: 1,
+          accelerationMmPerSecondSquared: -900,
+          authorityEndRouteMm: segmentEndRouteMm,
+          segmentEndRouteMm,
+        },
+      },
+    });
+    const zeroDuration = initialState({
+      worldId: "world:1", streamId: "stream:1", sequence: 7, at: 1,
+      trains: [noProgress(1_000, 1)], operationalRegions: [frame(7, 1_000, 2_000)],
+    });
+    const twoMillimetres = initialState({
+      worldId: "world:1", streamId: "stream:1", sequence: 7, at: 1,
+      trains: [noProgress(1_002, 2)], operationalRegions: [frame(7, 1_000, 2_000)],
+    });
+
+    expect(renderTrains({ previous: zeroDuration, current: zeroDuration }, 2)[0]?.positionMm).toBe(0);
+    expect(renderTrains({ previous: twoMillimetres, current: twoMillimetres }, 1.002)[0]?.positionMm).toBe(0);
   });
 
   it("ueberschreitet auch im Browser nie die naechste operative Ereignisgrenze", () => {

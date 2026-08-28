@@ -58,9 +58,16 @@ function saveTokens(configuration: BrowserOidcConfiguration, response: TokenResp
   sessionStorage.setItem(key(configuration.clientId, "accessToken"), response.access_token);
   sessionStorage.setItem(key(configuration.clientId, "accessTokenExpiresAt"), String(now + accessLifetime * 1_000));
   if (typeof response.refresh_token === "string" && response.refresh_token !== "") {
-    const refreshLifetime = lifetimeSeconds(response.refresh_expires_in, Math.max(1_800, accessLifetime));
+    const refreshLifetime = response.refresh_expires_in === 0
+      ? 0
+      : lifetimeSeconds(response.refresh_expires_in, Math.max(1_800, accessLifetime));
     sessionStorage.setItem(key(configuration.clientId, "refreshToken"), response.refresh_token);
-    sessionStorage.setItem(key(configuration.clientId, "refreshTokenExpiresAt"), String(now + refreshLifetime * 1_000));
+    // Keycloak liefert fuer Offline-Tokens ohne festes `exp` den Wert 0. Diese
+    // Tokens bleiben serverseitig ueber das Offline-Idle-Timeout gueltig; 0 ist
+    // deshalb bewusst der lokale Marker "kein festes Ablaufdatum".
+    sessionStorage.setItem(key(configuration.clientId, "refreshTokenExpiresAt"), String(
+      refreshLifetime === 0 ? 0 : now + refreshLifetime * 1_000,
+    ));
   }
   return response.access_token;
 }
@@ -85,7 +92,12 @@ async function tokenRequest(configuration: BrowserOidcConfiguration, body: URLSe
 async function refresh(configuration: BrowserOidcConfiguration): Promise<string | undefined> {
   const refreshToken = sessionStorage.getItem(key(configuration.clientId, "refreshToken"));
   const refreshExpiresAt = Number(sessionStorage.getItem(key(configuration.clientId, "refreshTokenExpiresAt")) ?? "0");
-  if (refreshToken === null || refreshToken === "" || refreshExpiresAt <= Date.now()) return undefined;
+  if (
+    refreshToken === null
+    || refreshToken === ""
+    || !Number.isFinite(refreshExpiresAt)
+    || (refreshExpiresAt !== 0 && refreshExpiresAt <= Date.now())
+  ) return undefined;
   try {
     return saveTokens(configuration, await tokenRequest(configuration, new URLSearchParams({
       grant_type: "refresh_token",

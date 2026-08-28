@@ -1,0 +1,22 @@
+{
+  "envelope": {
+    "schemaVersion": "zugfolge-odoo/v1",
+    "messageId": "77777777-7777-4777-8777-777777777777",
+    "messageType": "world.projection",
+    "worldId": "88888888-8888-4888-8888-888888888888",
+    "correlationId": "unicode-golden-leipzig-halle",
+    "occurredAt": "2026-08-26T00:00:00.000Z",
+    "payload": {
+      "worldName": "Leipzig–Halle ÄÖÜ äöü ß",
+      "projectionRevision": "unicode-golden-v1",
+      "freshness": "delayed",
+      "attempt": 1,
+      "maxSafeInteger": 9007199254740991
+    }
+  },
+  "canonical": "{\"correlationId\":\"unicode-golden-leipzig-halle\",\"messageId\":\"77777777-7777-4777-8777-777777777777\",\"messageType\":\"world.projection\",\"occurredAt\":\"2026-08-26T00:00:00.000Z\",\"payload\":{\"attempt\":1,\"freshness\":\"delayed\",\"maxSafeInteger\":9007199254740991,\"projectionRevision\":\"unicode-golden-v1\",\"worldName\":\"Leipzig–Halle ÄÖÜ äöü ß\"},\"schemaVersion\":\"zugfolge-odoo/v1\",\"worldId\":\"88888888-8888-4888-8888-888888888888\"}",
+  "envelopeSha256": "0b5b0555250d134c6ccbcd018d98723bc88083b1890cb5c909fd2a610eb8a116",
+  "timestamp": "2026-08-26T00:00:00.000Z",
+  "secret": "unicode-golden-secret",
+  "hmacSha256": "d2eab67152e256802e6734b5735a192097a9e3f2571487146ed6f5f063b12309"
+}

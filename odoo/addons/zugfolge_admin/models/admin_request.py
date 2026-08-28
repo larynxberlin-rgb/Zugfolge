@@ -309,7 +309,7 @@ class ZugfolgeAdminRequest(models.Model):
                 raise ValidationError(_("Antragsteller und Freigeber duerfen nicht dieselbe Person sein."))
             if record.action_type == "infra_release_adoption" and record.risk_class != "high":
                 raise ValidationError(_("Die Uebernahme eines InfraRelease ist immer hochriskant."))
-            if record.action_type == "infra_release_adoption" and record.release_hash and len(record.release_hash) != 64:
+            if record.action_type == "infra_release_adoption" and record.release_hash and not SHA256_RE.fullmatch(record.release_hash):
                 raise ValidationError(_("Der InfraRelease-Hash muss SHA-256 besitzen."))
             if record.action_type == "manual_disruption_create":
                 if record.risk_class != "high":
@@ -434,6 +434,12 @@ class ZugfolgeAdminRequest(models.Model):
         self._require_state("draft")
         if any(not request.reason.strip() for request in self):
             raise ValidationError(_("Eine Begruendung ist Pflicht."))
+        if any(
+            request.action_type == "infra_release_adoption"
+            and (not request.release_hash or not request.requested_period_start)
+            for request in self
+        ):
+            raise ValidationError(_("InfraRelease-Uebernahme braucht den qualifizierten Release-Hash und den exakten naechsten Periodenwechsel."))
         if any(request.action_type == "world_deploy" and (not request.signed_world_deployment or not request.deployment_hash) for request in self):
             raise ValidationError(_("Vor dem Einreichen muss das extern Ed25519-signierte Welt-Deployment importiert sein."))
         self._write_controlled({"state": "submitted"})
@@ -473,6 +479,11 @@ class ZugfolgeAdminRequest(models.Model):
 
     def _game_command_payload(self):
         self.ensure_one()
+        requested_period_start = (
+            fields.Datetime.to_datetime(self.requested_period_start).replace(tzinfo=timezone.utc)
+            if self.requested_period_start
+            else None
+        )
         payload = {
             "kind": "admin.%s" % self.action_type,
             "worldId": self.world_id,
@@ -483,7 +494,7 @@ class ZugfolgeAdminRequest(models.Model):
             "reason": self.reason,
             "effectPreview": self.effect_preview,
             "releaseHash": self.release_hash or None,
-            "requestedPeriodStart": self.requested_period_start.isoformat() if self.requested_period_start else None,
+            "requestedPeriodStart": requested_period_start.isoformat().replace("+00:00", "Z") if requested_period_start else None,
             "targetReference": self.target_reference or None,
             "requestedAtS": self.requested_at_s,
         }

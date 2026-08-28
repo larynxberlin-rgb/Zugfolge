@@ -401,7 +401,7 @@ describe("TutorialWorldFactory PlanningRun-Vertrag", () => {
     }
   });
 
-  it("rekonstruiert die Tutorialkontierung fuer den Retry einer archivierten Outboxzeile", async () => {
+  it("rekonstruiert die Tutorialkontierung fuer den letzten Retry vor der Archivierungs-Fence", async () => {
     const client = new PGlite();
     try {
       const db = drizzle(client, { schema });
@@ -414,7 +414,7 @@ describe("TutorialWorldFactory PlanningRun-Vertrag", () => {
       const at = new Date("2026-08-13T16:05:00.000Z");
       await db.insert(worlds).values([
         { id: publicWorldId, name: "Alpha", schedulePeriodWeeks: 4, epoch: at, worldKind: "public", rankingStatus: "ranked", lifecycleStatus: "active" },
-        { id: tutorialWorldId, name: "Archiviertes Tutorial", schedulePeriodWeeks: 4, epoch: at, worldKind: "private", rankingStatus: "unranked", lifecycleStatus: "archived" },
+        { id: tutorialWorldId, name: "Tutorial vor Archivierung", schedulePeriodWeeks: 4, epoch: at, worldKind: "private", rankingStatus: "unranked", lifecycleStatus: "active" },
       ]);
       await db.insert(accounts).values([
         { id: publicAccountId, worldId: publicWorldId, keycloakSubject: "kc-public", displayName: "Public" },
@@ -431,7 +431,7 @@ describe("TutorialWorldFactory PlanningRun-Vertrag", () => {
         tutorialOperatorId,
         templateVersion: TUTORIAL_TEMPLATE.version,
         templateHash: "a".repeat(64),
-        lifecycle: "archived",
+        lifecycle: "closing",
         startedAt: at,
         lastActivityAt: at,
         idleExpiresAt: new Date(at.getTime() + 60_000),
@@ -450,7 +450,7 @@ describe("TutorialWorldFactory PlanningRun-Vertrag", () => {
         operatorId: tutorialOperatorId,
         idempotencyKey: `${reference}:settlement:settlement`,
         at: 93_600,
-        description: "Archivierter Tutorialabschluss",
+        description: "Tutorialabschluss vor Archivierung",
         revenueCents: 1_000n,
         postings: [{ amountCents: 250n, costType: "energy" as const, costCentreId: "tutorial-lot", reference: "period-0" }],
       };

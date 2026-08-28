@@ -67,11 +67,13 @@ function readyPort(): WorldStartPort {
       economyReady: true,
       fleetReady: true,
       regionalSimulationReady: true,
+      operationalProgramReady: true,
       livemapReady: true,
       operationsCenterReady: true,
       odooProjectionQueued: true,
       lotIds: ["lot-1"],
-      runningTrainRunIds: ["train-1"],
+      scheduledTrainRunIds: ["train-1"],
+      runningTrainRunIds: [],
     }),
   };
 }
@@ -261,11 +263,13 @@ describe("AlphaWorldService", () => {
       economyReady: false,
       fleetReady: true,
       regionalSimulationReady: true,
+      operationalProgramReady: true,
       livemapReady: true,
       operationsCenterReady: true,
       odooProjectionQueued: true,
       lotIds: ["lot-1"],
-      runningTrainRunIds: ["train-1"],
+      scheduledTrainRunIds: ["train-1"],
+      runningTrainRunIds: [],
     }));
     const service = new AlphaWorldService(db, { initializeEconomy, initializeFleet, initializeRegionalSimulation, verify });
 
@@ -278,11 +282,13 @@ describe("AlphaWorldService", () => {
       economyReady: true,
       fleetReady: true,
       regionalSimulationReady: true,
+      operationalProgramReady: true,
       livemapReady: true,
       operationsCenterReady: true,
       odooProjectionQueued: true,
       lotIds: ["lot-1"],
-      runningTrainRunIds: ["train-1"],
+      scheduledTrainRunIds: ["train-1"],
+      runningTrainRunIds: [],
     });
     const bound = await service.start(WORLD_ID, expected, 0, deploymentHash);
 

@@ -2,6 +2,7 @@ import { spawn } from "node:child_process";
 import { mkdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import { basename, dirname, isAbsolute, resolve } from "node:path";
 
+import { loadAndVerifyGdalRuntimeBundle } from "./gdal-runtime-bundle.mjs";
 import { inspectPmtilesFile } from "./map-package.mjs";
 import { validateSemanticTileFiles, validateSemanticTileInputs } from "./semantic-tiles.mjs";
 
@@ -71,7 +72,7 @@ function run(command, args, environment = {}) {
     const child = spawn(command, args, {
       stdio: "inherit",
       windowsHide: true,
-      env: { ...process.env, ...environment },
+      env: environment,
     });
     child.once("error", reject);
     child.once("exit", (code, signal) => {
@@ -81,9 +82,12 @@ function run(command, args, environment = {}) {
   });
 }
 
-export function buildGdalSemanticTilePlan({ specification, inputRoot, outputPath, ogr2ogr, temporaryRoot }) {
+export function buildGdalSemanticTilePlan({ specification, inputRoot, outputPath, runtime, temporaryRoot }) {
   validateSemanticTileInputs(specification);
-  invariant(typeof ogr2ogr === "string" && ogr2ogr !== "", "ogr2ogr-Pfad fehlt.");
+  invariant(runtime !== null && typeof runtime === "object" && !Array.isArray(runtime), "Manifestverifizierte GDAL-Runtime fehlt.");
+  invariant(typeof runtime.command === "string" && isAbsolute(runtime.command), "GDAL-Runtime besitzt keinen absoluten Entry-Point.");
+  invariant(runtime.environment !== null && typeof runtime.environment === "object" && !Array.isArray(runtime.environment), "GDAL-Runtime besitzt keine manifestgebundene Umgebung.");
+  invariant(typeof runtime.environment.PATH === "string" && typeof runtime.environment.GDAL_DATA === "string" && typeof runtime.environment.PROJ_DATA === "string", "GDAL-Runtime besitzt keine vollständige PATH-/GDAL_DATA-/PROJ_DATA-Bindung.");
   const layers = specification.layers.map((layer) => {
     const policy = LAYER_CONFIGURATION[layer.name];
     invariant(policy !== undefined, `Layer ${layer.name} besitzt keine GDAL-Tilekonfiguration.`);
@@ -93,13 +97,10 @@ export function buildGdalSemanticTilePlan({ specification, inputRoot, outputPath
   const sourceDatabase = resolve(root, "semantic-source.gpkg");
   const configurationPath = resolve(root, "semantic-layer-configuration.json");
   const buildingPmtiles = resolve(root, "infrastructure.pmtiles");
-  const gdalEnvironment = isAbsolute(ogr2ogr) ? {
-    GDAL_DATA: resolve(dirname(ogr2ogr), "..", "share", "gdal"),
-    PROJ_DATA: resolve(dirname(ogr2ogr), "..", "share", "proj"),
-  } : {};
+  const gdalEnvironment = { ...runtime.environment };
   const imports = layers.map((layer, index) => ({
     id: `import-${layer.name}`,
-    command: ogr2ogr,
+    command: runtime.command,
     args: [
       "-f", "GPKG",
       "-if", "GeoJSONSeq",
@@ -124,7 +125,7 @@ export function buildGdalSemanticTilePlan({ specification, inputRoot, outputPath
     imports,
     tileBuild: {
       id: "build-pmtiles",
-      command: ogr2ogr,
+      command: runtime.command,
       args: [
         "-f", "PMTiles",
         "-dsco", "NAME=Zugfolge Deutschland-Infrastruktur",
@@ -151,16 +152,25 @@ export function buildGdalSemanticTilePlan({ specification, inputRoot, outputPath
   };
 }
 
-export async function buildGdalSemanticPmtiles({ specificationPath, inputRoot, outputPath, ogr2ogr }) {
+export async function buildGdalSemanticPmtiles({ specificationPath, inputRoot, outputPath, runtimeManifestPath, artifactRoot }) {
   const specification = JSON.parse(await readFile(resolve(specificationPath), "utf8"));
   const featureCounts = await validateSemanticTileFiles(specification, inputRoot);
+  invariant(typeof runtimeManifestPath === "string" && runtimeManifestPath.length > 0, "GDAL-Runtime-Manifest fehlt.");
+  invariant(typeof artifactRoot === "string" && artifactRoot.length > 0, "GDAL-Runtime-Artefaktwurzel fehlt.");
+  const runtimeBundle = await loadAndVerifyGdalRuntimeBundle(resolve(runtimeManifestPath), resolve(artifactRoot));
   const destination = resolve(outputPath);
   const temporaryRoot = `${destination}.building`;
   invariant(!(await stat(destination).catch(() => null)), `Ziel ${destination} existiert bereits.`);
   invariant(!(await stat(temporaryRoot).catch(() => null)), `Paralleler oder abgebrochener Tilebuild ${temporaryRoot} existiert.`);
   await mkdir(dirname(destination), { recursive: true });
   await mkdir(temporaryRoot, { recursive: false });
-  const plan = buildGdalSemanticTilePlan({ specification, inputRoot, outputPath, ogr2ogr, temporaryRoot });
+  const plan = buildGdalSemanticTilePlan({
+    specification,
+    inputRoot,
+    outputPath,
+    runtime: runtimeBundle.verification.invocation,
+    temporaryRoot,
+  });
   try {
     await writeFile(plan.configurationPath, `${JSON.stringify(plan.configuration, null, 2)}\n`, { encoding: "utf8", flag: "wx" });
     for (const step of plan.imports) await run(step.command, step.args, step.environment);
@@ -174,7 +184,21 @@ export async function buildGdalSemanticPmtiles({ specificationPath, inputRoot, o
       invariant(tileStatistics.get(layer.name) === featureCounts[layer.name], `PMTiles-Layer ${layer.name} enthält ${tileStatistics.get(layer.name) ?? "keine"} statt ${featureCounts[layer.name]} Features.`);
     }
     await rename(plan.buildingPmtiles, destination);
-    return { output: destination, featureCounts, inspection };
+    return {
+      output: destination,
+      featureCounts,
+      inspection,
+      runtime: {
+        manifestSha256: runtimeBundle.sha256,
+        runtimeId: runtimeBundle.verification.runtimeId,
+        version: runtimeBundle.verification.version,
+        platform: runtimeBundle.verification.platform,
+        files: runtimeBundle.verification.files,
+        bytes: runtimeBundle.verification.bytes,
+        inventorySha256: runtimeBundle.verification.inventorySha256,
+        probes: runtimeBundle.verification.probes,
+      },
+    };
   } finally {
     await rm(temporaryRoot, { recursive: true, force: true });
   }

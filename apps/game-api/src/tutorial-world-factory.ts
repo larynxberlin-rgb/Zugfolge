@@ -76,6 +76,7 @@ import {
   FLEET_PERSONNEL_DUTY_COMMAND_SCHEMA,
   OPERATING_INITIALIZE_SCHEMA,
   OPERATING_TRANSITION_SCHEMA,
+  OPERATIONAL_PROTECTION_MODE_SELECTION_POLICY,
   OPERATIONAL_SIMULATION_INITIALIZE_SCHEMA,
   type FleetAuthorityRelease,
   type NativeRuntime,
@@ -87,6 +88,7 @@ import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
 import { GameFleetAssetTransferWriter } from "./fleet-market-writer.js";
 import { operationalSimulationInitializationHash } from "./operational-initialization-hash.js";
 import { RegionalSimulationWorker } from "./regional-simulation-worker.js";
+import { TUTORIAL_OPERATIONAL_INFRASTRUCTURE_DESCRIPTOR } from "./tutorial-operational-infrastructure.js";
 
 const COST_TYPES: readonly CostType[] = ["track", "station", "facility", "energy", "personnel", "administration", "vehicle", "penalty", "interest"];
 
@@ -104,8 +106,8 @@ type TutorialEconomyPlatformAdapters = ReturnType<typeof createEconomyPlatformAd
 
 /**
  * Rekonstruiert die welt- und EVU-gebundene Tutorialkontierung aus dem Ledger.
- * Dadurch kann derselbe persistierte Outboxpfad auch nach Prozessneustart oder
- * fuer eine bereits archivierte Altzeile sicher weiterlaufen.
+ * Dadurch kann derselbe persistierte Outboxpfad nach Prozessneustart und bis
+ * unmittelbar vor der dauerhaften Archivierungs-Fence sicher weiterlaufen.
  */
 export async function loadTutorialEconomyPlatformAdapters(
   db: AlphaDatabase,
@@ -468,103 +470,27 @@ function tutorialOperationalInitialization(
   session: Pick<TutorialSession, "tutorialWorldId" | "tutorialOperatorId">,
   template: TutorialTemplate,
 ): OperationalSimulationInitialization {
-  const stations = new Map(template.region.stations.map((station) => [
-    textValue(station["id"], "Tutorialbetriebsstelle"),
-    station,
-  ] as const));
-  let routeStartMm = 0;
-  const routeLegs = template.region.segments.map((segment) => {
-    const edgeId = textValue(segment["id"], "Tutorialkante");
-    const lengthMm = integer(segment["lengthMm"], "Tutorialkantenlaenge");
-    const leg = Object.freeze({
-      edgeId,
-      direction: "along" as const,
-      edgeEntryMm: 0,
-      edgeExitMm: lengthMm,
-      routeStartMm,
-      blockIds: Object.freeze([`track:${edgeId}`]),
-      speedLimitMmps: Math.floor(integer(segment["maximumSpeedKph"], "Tutorialgeschwindigkeit") * 1_000_000 / 3_600),
-      gradientPerMille: 0,
-      requiredProtectionSystems: Object.freeze(["pzb"]),
-    });
-    routeStartMm += lengthMm;
-    return leg;
-  });
-  const directedEdges = Object.fromEntries(routeLegs.map((leg) => [
-    leg.edgeId,
-    leg.edgeExitMm,
-  ]));
-  const edgeGeometries = Object.fromEntries(template.region.segments.map((segment) => {
-    const edgeId = textValue(segment["id"], "Tutorialkante");
-    const from = stations.get(textValue(segment["fromStationId"], "Tutorialkantenanfang"));
-    const to = stations.get(textValue(segment["toStationId"], "Tutorialkantenende"));
-    if (from === undefined || to === undefined) {
-      throw new AlphaValidationError("Tutorialkante besitzt keine vollstaendige releasegebundene Geometrie.");
-    }
-    const lengthMm = integer(segment["lengthMm"], "Tutorialkantenlaenge");
-    return [edgeId, Object.freeze([
-      Object.freeze({
-        edgeOffsetMm: 0,
-        latitudeE7: integer(from["latitudeE7"], "Tutorialbreitengrad"),
-        longitudeE7: integer(from["longitudeE7"], "Tutoriallaengengrad"),
-        bearingMilliDegrees: 90_000,
-      }),
-      Object.freeze({
-        edgeOffsetMm: lengthMm,
-        latitudeE7: integer(to["latitudeE7"], "Tutorialbreitengrad"),
-        longitudeE7: integer(to["longitudeE7"], "Tutoriallaengengrad"),
-        bearingMilliDegrees: null,
-      }),
-    ])] as const;
-  }));
+  if (template.version !== TUTORIAL_OPERATIONAL_INFRASTRUCTURE_DESCRIPTOR.templateVersion
+    || alphaHash(template.schemaVersion, template)
+      !== TUTORIAL_OPERATIONAL_INFRASTRUCTURE_DESCRIPTOR.templateHash
+    || TUTORIAL_TEMPLATE_HASH !== TUTORIAL_OPERATIONAL_INFRASTRUCTURE_DESCRIPTOR.templateHash) {
+    throw new AlphaValidationError(
+      "Tutorialtemplate besitzt kein exakt gebundenes externes Operational-v2-Artefakt.",
+    );
+  }
   const routeVersionId = `${template.version}:route:v1`;
-  const routeTemplateId = `${template.version}:route-template:v1`;
   const interlockingRouteId = `${template.version}:interlocking:v1`;
-  const signalId = `${template.version}:signal:entry`;
-  const switchId = `${template.version}:switch:muehlenbrueck`;
   const vehicleTypeId = `${template.version}:vehicle-type`;
   const vehicleId = `${template.version}:operational-vehicle`;
   const formationId = `${template.version}:formation:v1`;
-  const blockResources = routeLegs.map((leg) => leg.blockIds[0]!);
   return Object.freeze({
     schemaVersion: OPERATIONAL_SIMULATION_INITIALIZE_SCHEMA,
     worldId: session.tutorialWorldId,
     regionId: template.region.id,
     nowMs: 0,
-    infraRelease: Object.freeze({
-      id: `${template.version}:operational-infra`,
-      directedEdges,
-      edgeGeometries,
-      routeVersions: Object.freeze({
-        [routeVersionId]: Object.freeze({
-          id: routeVersionId,
-          templateId: routeTemplateId,
-          predecessorId: null,
-          transitionRouteMm: null,
-          legs: Object.freeze(routeLegs),
-        }),
-      }),
-      interlockingRoutes: Object.freeze({
-        [interlockingRouteId]: Object.freeze({
-          id: interlockingRouteId,
-          routeTemplateId,
-          signalId,
-          movementKind: "train",
-          pathResources: Object.freeze(blockResources),
-          overlapResources: Object.freeze([]),
-          flankResources: Object.freeze([]),
-          switchPositions: Object.freeze({ [switchId]: "straight" }),
-          authorityEndRouteMm: routeStartMm,
-          releaseAfterTailRouteMm: routeStartMm,
-        }),
-      }),
-      signals: Object.freeze([signalId]),
-      switches: Object.freeze([switchId]),
-      blockResources: Object.freeze(blockResources),
-      platformIntervals: Object.freeze({}),
-      regionBoundaries: Object.freeze([]),
-      rzueLayoutId: `${template.version}:rzue-layout`,
-    }),
+    repeatEveryMs: null,
+    protectionModeSelectionPolicy: OPERATIONAL_PROTECTION_MODE_SELECTION_POLICY,
+    infraRelease: TUTORIAL_OPERATIONAL_INFRASTRUCTURE_DESCRIPTOR.binding,
     vehicleTypes: Object.freeze([Object.freeze({
       powered: true,
       vehicleType: Object.freeze({
@@ -611,7 +537,16 @@ function tutorialOperationalInitialization(
       headRouteMm: 0,
       scheduledDepartureMs: TUTORIAL_TIMELINE.operatingFromS * 1_000,
       publicPassengerStop: true,
+      dispatchInterlockingRouteId: interlockingRouteId,
+      protectionModeSelectionRuns: Object.freeze([Object.freeze({
+        throughRouteLegIndex: 2,
+        selectedProtectionSystem: "pzb" as const,
+      })]),
     })]),
+    // Die private Tutorialfahrt ist kein wiederholtes Tagesprogramm. Eine
+    // spaetere Rueckfahrt braucht wie jede andere Fahrt einen eigenen realen
+    // Laufweg und darf hier nicht als Self-Ring erfunden werden.
+    movementContinuations: Object.freeze([]),
   });
 }
 

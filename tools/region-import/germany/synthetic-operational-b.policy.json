@@ -1,0 +1,108 @@
+{
+  "schema": "zugfolge-synthetic-operational-policy/v2",
+  "id": "synthetic-operational-b/v2",
+  "qualityClass": "B",
+  "provenance": "derived",
+  "classAEligible": false,
+  "ordinaryAssumptionsEligible": false,
+  "requiredInputRoles": [
+    "blocks",
+    "conflict-resources",
+    "gtfs-snapshot",
+    "platforms",
+    "signals",
+    "switches",
+    "timetable-route-report",
+    "timetable-routes",
+    "timetable-transfer-demands",
+    "tracks"
+  ],
+  "requiredDimensions": [
+    "directed-edge-geometry",
+    "route-versions",
+    "complete-pinned-timetable-routes",
+    "daily-physical-circulations",
+    "real-transfer-route-coverage",
+    "free-gtfs-route-provenance",
+    "station-heads",
+    "interlocking-routes",
+    "platform-intervals",
+    "train-protection",
+    "path-resources",
+    "overlap-resources",
+    "flank-resources",
+    "region-boundaries",
+    "rzue-layout"
+  ],
+  "rules": [
+    {
+      "id": "observed-e7-track-geometry/v1",
+      "effect": "Preserve every retained EBO track polyline and its integer millimetre length; do not create geographic shortcuts or straight-line replacements."
+    },
+    {
+      "id": "synthetic-directional-edge-route/v1",
+      "effect": "Derive directed edges and route versions deterministically from the retained topology and serialize incompatible use conservatively."
+    },
+    {
+      "id": "pinned-timetable-route-coverage/v1",
+      "effect": "Bind every released route version and every directed leg to the complete pinned timetableRoutes input; missing, ambiguous or discontinuous route coverage leaves the closure ineligible."
+    },
+    {
+      "id": "daily-physical-circulation-and-transfer-coverage/v2",
+      "effect": "Bind the complete v2 partition of every daily physical continuation into explicit same-physical-stop turnaround demands or real directed OSM train-transfer demands; require reproducible daily-plan, transfer-set and movement-template hashes with no implicit reclassification."
+    },
+    {
+      "id": "free-gtfs-route-provenance/v2",
+      "effect": "Bind the free GTFS snapshot, its CC BY 4.0 archive proof, the complete selected-segment route set and the v4 derivation report byte-for-byte; reject external operational-network provenance, GTFS shape geometry and invented geometry."
+    },
+    {
+      "id": "synthetic-junction-node-exclusion/v1",
+      "effect": "Treat unresolved junction internals as one conservative exclusion scope; do not claim a real turnout role or interlocking position."
+    },
+    {
+      "id": "synthetic-boundary-and-overlap/v1",
+      "effect": "Generate internal signal boundaries, overlaps and terminal protection only as conservative authority limits bound to explicit conflict resources."
+    },
+    {
+      "id": "synthetic-platform-interval/v1",
+      "effect": "Materialize an interval only from a deterministic track binding; an unbound visible platform point remains map class C."
+    },
+    {
+      "id": "synthetic-restricted-train-protection/v1",
+      "effect": "Use the restrictive policy profile where no supported observed train-protection value exists; never expose it as installed equipment."
+    },
+    {
+      "id": "synthetic-region-rzue-projection/v1",
+      "effect": "Derive region handovers and the static RZUE layout from the same closed operational graph and stable identifiers."
+    }
+  ],
+  "compilerPolicy": {
+    "id": "synthetic-operational-b/v2",
+    "qualityClass": "B",
+    "sourceId": "zugfolge-synthetic-operational-model",
+    "derivationRule": "synthetic-operational-b/v2",
+    "unknownMainlineSpeedKmh": 20,
+    "unknownServiceSpeedKmh": 10,
+    "unknownGradientAbsPermille": 40,
+    "minimumPlatformLengthMm": 60000,
+    "maximumPlatformSnapDistanceMm": 25000,
+    "minimumOverlapMm": 200000,
+    "minimumBerthEndClearanceMm": 10000,
+    "maximumStablingPathEdges": 64,
+    "maximumStablingPathLengthMm": 10000000,
+    "simulatedOperationalBerthFallback": "real-osm-service-yard-then-spur-then-unclassified-rail/v1",
+    "maximumDirectDwellMs": 1200000,
+    "terminalFormationLengthsMm": [46560, 69860],
+    "defaultProtectionSystem": "pzb",
+    "regionBoundaryId": "region:deutschland-ebo",
+    "rzueLayoutId": "rzue-deutschland-2026.3-synthetic-b-v2"
+  },
+  "publicClaims": {
+    "realGeometry": true,
+    "simulatedOperationalAssignment": true,
+    "realInterlockingFactsClaimed": false,
+    "syntheticOperationalDetailsShipped": true,
+    "objectLevelProvenanceShipped": false,
+    "observedAndSyntheticObjectsShareRuntimeCollections": true
+  }
+}

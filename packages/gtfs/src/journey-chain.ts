@@ -1,6 +1,10 @@
 import { canonicalPlanningJson, planningSha256 } from "./planning.js";
 
-export const GTFS_JOURNEY_CHAIN_SCHEMA = "zugfolge-gtfs-journey-chain/v1" as const;
+export const GTFS_JOURNEY_CHAIN_SCHEMA = "zugfolge-gtfs-journey-chain/v2" as const;
+export const GTFS_JOURNEY_CHAIN_IDENTITY_SCHEMA = "zugfolge-gtfs-journey-chain-identity/v2" as const;
+export const GTFS_PLAYABLE_LEG_IDENTITY_SCHEMA = "zugfolge-gtfs-playable-leg-identity/v2" as const;
+export const GTFS_EXTERNAL_LEG_IDENTITY_SCHEMA = "zugfolge-gtfs-external-leg-identity/v2" as const;
+export const GTFS_BOUNDARY_WINDOW_IDENTITY_SCHEMA = "zugfolge-gtfs-boundary-window-identity/v2" as const;
 
 export interface JourneyChainPortalDefinition {
   readonly portalId: string;
@@ -134,6 +138,64 @@ function stableId(prefix: string, value: unknown): string {
   return `${prefix}-${planningSha256(canonicalPlanningJson(value)).slice(0, 24)}`;
 }
 
+export function gtfsJourneyChainId(identity: {
+  readonly regionId: string;
+  readonly releaseId: string;
+  readonly sourceTripId: string;
+}): string {
+  text(identity.regionId, "JourneyChain-Identitaet.regionId");
+  text(identity.releaseId, "JourneyChain-Identitaet.releaseId");
+  text(identity.sourceTripId, "JourneyChain-Identitaet.sourceTripId");
+  return stableId("jc", {
+    schemaVersion: GTFS_JOURNEY_CHAIN_IDENTITY_SCHEMA,
+    regionId: identity.regionId,
+    releaseId: identity.releaseId,
+    sourceTripId: identity.sourceTripId,
+  });
+}
+
+export function gtfsPlayableLegId(identity: {
+  readonly journeyChainId: string;
+  readonly sequence: number;
+}): string {
+  text(identity.journeyChainId, "PlayableLeg-Identitaet.journeyChainId");
+  integer(identity.sequence, "PlayableLeg-Identitaet.sequence");
+  return stableId("pl", {
+    schemaVersion: GTFS_PLAYABLE_LEG_IDENTITY_SCHEMA,
+    journeyChainId: identity.journeyChainId,
+    sequence: identity.sequence,
+  });
+}
+
+export function gtfsExternalLegId(identity: {
+  readonly journeyChainId: string;
+  readonly sequence: number;
+}): string {
+  text(identity.journeyChainId, "ExternalLeg-Identitaet.journeyChainId");
+  integer(identity.sequence, "ExternalLeg-Identitaet.sequence");
+  return stableId("el", {
+    schemaVersion: GTFS_EXTERNAL_LEG_IDENTITY_SCHEMA,
+    journeyChainId: identity.journeyChainId,
+    sequence: identity.sequence,
+  });
+}
+
+export function gtfsBoundaryPlanningWindowId(identity: {
+  readonly playableLegId: string;
+  readonly portalId: string;
+  readonly direction: "entry" | "exit";
+}): string {
+  text(identity.playableLegId, "BoundaryWindow-Identitaet.playableLegId");
+  text(identity.portalId, "BoundaryWindow-Identitaet.portalId");
+  invariant(identity.direction === "entry" || identity.direction === "exit", "BoundaryWindow-Identitaet.direction ist ungueltig.");
+  return stableId("bpw", {
+    schemaVersion: GTFS_BOUNDARY_WINDOW_IDENTITY_SCHEMA,
+    playableLegId: identity.playableLegId,
+    portalId: identity.portalId,
+    direction: identity.direction,
+  });
+}
+
 function portalAt(
   portalsByStop: ReadonlyMap<string, JourneyChainPortalDefinition>,
   stop: JourneyChainStopInput,
@@ -153,14 +215,14 @@ function portalAtBoundary(
 }
 
 function planningWindow(
-  identity: Readonly<Record<string, unknown>>,
+  playableLegId: string,
   portal: JourneyChainPortalDefinition,
   direction: "entry" | "exit",
   targetS: number,
   toleranceS: number,
 ): BoundaryPlanningWindow {
   return Object.freeze({
-    windowId: stableId("bpw", { ...identity, portalId: portal.portalId, direction }),
+    windowId: gtfsBoundaryPlanningWindowId({ playableLegId, portalId: portal.portalId, direction }),
     portalId: portal.portalId,
     direction,
     earliestS: Math.max(0, targetS - toleranceS),
@@ -232,12 +294,11 @@ export function compileJourneyChains(input: JourneyChainCompilerInput): JourneyC
     validateTrip(trip);
     if (!trip.stops.some((stop) => stop.inRegion)) continue;
     const chainIdentity = {
-      worldId: input.worldId,
       regionId: input.regionId,
       releaseId: input.releaseId,
       sourceTripId: trip.sourceTripId,
     };
-    const journeyChainId = stableId("jc", chainIdentity);
+    const journeyChainId = gtfsJourneyChainId(chainIdentity);
     const legs: JourneyLeg[] = [];
     let cursor = 0;
     let legSequence = 0;
@@ -262,11 +323,11 @@ export function compileJourneyChains(input: JourneyChainCompilerInput): JourneyC
         qualifiedBoundaryCount += resolvedCount;
         unresolvedBoundaryCount += boundaryCount - resolvedCount;
         const orderable = selected.length >= 2 && boundaryCount === resolvedCount;
-        const legIdentity = { journeyChainId, legSequence, kind: "playable" };
+        const legId = gtfsPlayableLegId({ journeyChainId, sequence: legSequence });
         const windows: BoundaryPlanningWindow[] = [];
         if (entryPortal !== undefined) {
           windows.push(planningWindow(
-            legIdentity,
+            legId,
             entryPortal,
             "entry",
             selected[0]!.departureS,
@@ -275,7 +336,7 @@ export function compileJourneyChains(input: JourneyChainCompilerInput): JourneyC
         }
         if (exitPortal !== undefined) {
           windows.push(planningWindow(
-            legIdentity,
+            legId,
             exitPortal,
             "exit",
             selected.at(-1)!.arrivalS,
@@ -284,7 +345,7 @@ export function compileJourneyChains(input: JourneyChainCompilerInput): JourneyC
         }
         legs.push(Object.freeze({
           kind: "playable",
-          legId: stableId("pl", legIdentity),
+          legId,
           sequence: legSequence,
           qualityClass: orderable ? "B" : "C",
           orderable,
@@ -310,10 +371,9 @@ export function compileJourneyChains(input: JourneyChainCompilerInput): JourneyC
         const scheduledStartS = previousInner?.departureS ?? selected[0]!.departureS;
         const scheduledEndS = nextInner?.arrivalS ?? selected.at(-1)!.arrivalS;
         invariant(scheduledEndS >= scheduledStartS, `Außenlauf in '${trip.sourceTripId}' besitzt negative Dauer.`);
-        const legIdentity = { journeyChainId, legSequence, kind: "external" };
         legs.push(Object.freeze({
           kind: "external",
-          legId: stableId("el", legIdentity),
+          legId: gtfsExternalLegId({ journeyChainId, sequence: legSequence }),
           sequence: legSequence,
           fromPortalId: fromPortal?.portalId ?? null,
           toPortalId: toPortal?.portalId ?? null,

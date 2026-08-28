@@ -1,16 +1,21 @@
 import { accounts, alphaWorldProfiles, odooProjectionOutbox, worldAccesses, worlds } from "@zugfolge/db";
 import { decodeEconomyValue, parseStartingCapitalPolicy, serializeStartingCapitalPolicy } from "@zugfolge/economy";
 import {
+  AlphaAuthorizationError,
+  AlphaConflictError,
+  AlphaValidationError,
   validateWorldBlueprint,
   effectiveStartingCapitalPolicy,
   type AbuseGuard,
   type AlphaWorldBlueprint,
   type InfraUpdateService,
+  type QualifiedInfraPackageCandidate,
   type WorldEndService,
 } from "@zugfolge/alpha";
 import {
   canonicalJson,
   enqueueGameAdminCapabilityProjection,
+  GameAdminCommandTerminalError,
   type GameAdminCommandContext,
   type GameAdminCommandHandler,
   type GameAdminCapabilityProjection,
@@ -26,10 +31,15 @@ import {
   parseSignedAlphaWorldDeployment,
   persistSignedAlphaWorldDeployment,
   startSignedAlphaWorld,
+  type OperationalProgramRegistrationCatalog,
   type SignedAlphaWorldDeployment,
   signedDeploymentRevision,
 } from "./alpha-world-start.js";
 import type { RegionalSimulationWorker } from "./regional-simulation-worker.js";
+
+export interface InfraPackageActivationStore {
+  activationCandidate(importId: string): Promise<QualifiedInfraPackageCandidate>;
+}
 
 export const WORLD_ACCESS_REVOKE_CAPABILITY: GameAdminCapabilityProjection = Object.freeze({
   actionType: "world_access_revoke",
@@ -54,6 +64,16 @@ export const INFRA_RELEASE_ADOPTION_CAPABILITY: GameAdminCapabilityProjection = 
   availability: "available",
   detail: "M9.10 aktiv; Odoo kann nur einen vorab signierten, rechte- und konfliktgeprueften Game-Kandidaten fuer den naechsten Periodenwechsel freigeben.",
 });
+
+export function infraReleaseAdoptionCapability(stagingAvailable: boolean): GameAdminCapabilityProjection {
+  return stagingAvailable
+    ? INFRA_RELEASE_ADOPTION_CAPABILITY
+    : Object.freeze({
+        actionType: "infra_release_adoption",
+        availability: "unavailable",
+        detail: "InfraRelease-Uebernahme bleibt gesperrt, solange das signierte Game-Paketstaging nicht vollstaendig konfiguriert ist.",
+      });
+}
 
 export const WORLD_DEPLOY_CAPABILITY: GameAdminCapabilityProjection = Object.freeze({
   actionType: "world_deploy",
@@ -177,6 +197,10 @@ export function createWorldDeployAdminHandler(options: {
   readonly regionalSimulation: RegionalSimulationWorker;
   readonly livemap: LivemapRegistry;
   readonly operations: OperationsRegistry;
+  readonly operationalPrograms: OperationalProgramRegistrationCatalog;
+  readonly prepareWorldProgram: (
+    signed: SignedAlphaWorldDeployment,
+  ) => { readonly rollback: () => void } | Promise<{ readonly rollback: () => void }>;
   readonly validateSignedDeployment?: (signed: SignedAlphaWorldDeployment) => void | Promise<void>;
   readonly registerStartedWorld?: (world: {
     readonly signed: SignedAlphaWorldDeployment;
@@ -253,6 +277,7 @@ export function createWorldDeployAdminHandler(options: {
     }
     await ensureSignedPlanningAuthority(options.db, signed);
     await persistSignedAlphaWorldDeployment(options.db, signed);
+    const operationalProgramLease = await options.prepareWorldProgram(signed);
     const port = new ProductionWorldStartPort(
       options.db,
       signed,
@@ -260,8 +285,15 @@ export function createWorldDeployAdminHandler(options: {
       options.regionalSimulation,
       options.livemap,
       options.operations,
+      options.operationalPrograms,
     );
-    const profile = await startSignedAlphaWorld(options.db, signed, port);
+    let profile: Awaited<ReturnType<typeof startSignedAlphaWorld>>;
+    try {
+      profile = await startSignedAlphaWorld(options.db, signed, port);
+    } catch (error) {
+      operationalProgramLease.rollback();
+      throw error;
+    }
     if (world.lifecycleStatus === "provisioning") {
       const [activated] = await options.db.update(worlds).set({ lifecycleStatus: "active" }).where(and(
         eq(worlds.id, payload.worldId),
@@ -344,24 +376,105 @@ export function createAbuseSanctionActivateAdminHandler(abuse: AbuseGuard): Game
   };
 }
 
-export function createWorldCloseAdminHandler(worldEnd: WorldEndService): GameAdminCommandHandler {
+export function createWorldCloseAdminHandler(
+  worldEnd: WorldEndService,
+  afterCommit: (worldId: string) => Promise<void> | void = () => undefined,
+): GameAdminCommandHandler {
   return async (context) => {
     const { payload } = context;
     if (payload.kind !== "admin.world_close" || payload.actionType !== "world_close" || payload.riskClass !== "high" || payload.requestedAtS === undefined) {
       throw new WorldAccessAdminError("schema");
     }
-    const profile = await worldEnd.beginClosure(payload.worldId, payload.requestedAtS, context.effectIdempotencyKey);
-    return { state: "completed", gameAuditEventId: `world-close:${payload.worldId}:${profile.closingAtS}` };
+    const atS = payload.requestedAtS;
+    return {
+      atomicEffect: {
+        kind: "world-close/v1",
+        worldId: payload.worldId,
+        afterCommit: () => afterCommit(payload.worldId),
+        execute: async (tx, finalizeBeforeSeal) => {
+          try {
+            await worldEnd.close({
+              db: tx,
+              worldId: payload.worldId,
+              atS,
+              adminRequestId: context.effectIdempotencyKey,
+              beforeSeal: async (closed) => finalizeBeforeSeal({
+                state: "completed",
+                gameAuditEventId: `world-close:${payload.worldId}:${closed.finalStateHash}`,
+                result: {
+                  finalStateHash: closed.finalStateHash,
+                  evidenceHash: closed.evidenceHash,
+                  replayHash: closed.replayHash,
+                  archivedAtS: atS,
+                },
+              }),
+            });
+          } catch (error) {
+            if (error instanceof AlphaValidationError
+              || error instanceof AlphaAuthorizationError
+              || error instanceof AlphaConflictError) {
+              throw new GameAdminCommandTerminalError(error.code, error.message, { cause: error });
+            }
+            throw error;
+          }
+        },
+      },
+    };
   };
 }
 
-export function createInfraReleaseAdoptionAdminHandler(infra: InfraUpdateService): GameAdminCommandHandler {
+export function createInfraReleaseAdoptionAdminHandler(
+  infra: InfraUpdateService,
+  packages: InfraPackageActivationStore | undefined,
+): GameAdminCommandHandler {
   return async (context) => {
     const { payload } = context;
     if (payload.kind !== "admin.infra_release_adoption" || payload.actionType !== "infra_release_adoption" || payload.riskClass !== "high" || payload.releaseHash === undefined || payload.requestedPeriodStart === undefined) {
       throw new WorldAccessAdminError("schema");
     }
-    const scheduled = await infra.approveStagedAt(payload.worldId, payload.releaseHash, context.effectIdempotencyKey, new Date(payload.requestedPeriodStart));
-    return { state: "completed", gameAuditEventId: `infra-release:${payload.worldId}:${scheduled.id}:scheduled` };
+    const preview = payload.effectPreview;
+    const previewKeys = Object.keys(preview).sort().join(",");
+    const importId = preview["importId"];
+    if (previewKeys !== "deliveryReleaseId,importId,infraReleaseHash,kind,manifestSha256"
+      || preview["kind"] !== "infra-release"
+      || typeof importId !== "string"
+      || !/^[a-z0-9](?:[a-z0-9._-]{0,126}[a-z0-9])?$/.test(importId)
+      || typeof preview["deliveryReleaseId"] !== "string"
+      || typeof preview["manifestSha256"] !== "string"
+      || !/^[a-f0-9]{64}$/.test(preview["manifestSha256"])
+      || preview["infraReleaseHash"] !== payload.releaseHash) {
+      throw new GameAdminCommandTerminalError("infra_package_binding_invalid", "InfraRelease-Antrag bindet kein exakt qualifiziertes Delivery-v2-Paket.");
+    }
+    if (packages === undefined) {
+      throw new GameAdminCommandTerminalError("infra_package_staging_unavailable", "Game-Paketstaging ist fuer die InfraRelease-Uebernahme nicht aktiviert.");
+    }
+    try {
+      const candidate = await packages.activationCandidate(importId);
+      if (candidate.releaseId !== preview["deliveryReleaseId"]
+        || candidate.packageManifestSha256 !== preview["manifestSha256"]
+        || candidate.releaseHash !== payload.releaseHash) {
+        throw new GameAdminCommandTerminalError("infra_package_binding_invalid", "InfraRelease-Antrag und Game-Staging nennen verschiedene Paket- oder Release-Hashes.");
+      }
+      // Die installierte Runtime kann einen InfraRelease nur gemeinsam mit
+      // Planning und Livemap aus einem vollstaendig signierten Deployment
+      // wechseln. Das Paket darf deshalb hier ausschliesslich read-only
+      // qualifiziert werden; selbst ein `validated`-Kandidat waere bereits
+      // eine irrefuehrende partielle Admin-Wirkung.
+      void infra;
+      void context;
+      throw new GameAdminCommandTerminalError(
+        "infra_hot_activation_requires_full_deployment",
+        "InfraRelease-Uebernahme erfordert ein vollstaendig signiertes Deployment-Cutover mit Planning- und Livemap-Bindung.",
+      );
+    } catch (error) {
+      if (error instanceof GameAdminCommandTerminalError) throw error;
+      if (error instanceof AlphaValidationError || error instanceof AlphaAuthorizationError || error instanceof AlphaConflictError) {
+        throw new GameAdminCommandTerminalError(error.code, error.message, { cause: error });
+      }
+      if (error instanceof Error && error.name === "InfraPackageStagingError") {
+        throw new GameAdminCommandTerminalError("infra_package_binding_invalid", error.message, { cause: error });
+      }
+      throw error;
+    }
   };
 }

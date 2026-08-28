@@ -30,7 +30,14 @@ import {
   type CostType,
   type EconomyDatabase,
 } from "@zugfolge/economy";
-import { createGtfsPlanningEnvelope, type GtfsPlanningSnapshot } from "@zugfolge/gtfs";
+import {
+  createGtfsPlanningEnvelope,
+  GTFS_PLANNING_SCHEMA,
+  gtfsPlanningIdentityNamespace,
+  gtfsPlanningLotId,
+  gtfsPlanningPatternId,
+  type GtfsPlanningSnapshot,
+} from "@zugfolge/gtfs";
 import { requestWorldAccess, type IdentityDatabase } from "@zugfolge/identity";
 import { LivemapRegistry } from "@zugfolge/livemap-stream";
 import { foundOperator } from "@zugfolge/operators";
@@ -128,37 +135,54 @@ const release = buildEconomyRelease({
 });
 
 function planning() {
-  const patterns: GtfsPlanningSnapshot["patterns"] = Array.from({ length: 4 }, (_, index) => ({
-    id: `pattern-${index}`,
-    lineId: `S${index + 1}`,
-    directionId: "0",
-    sourceRouteIds: [`route-${index}`],
-    stopIds: [`stop-${index}-a`, `stop-${index}-b`],
-    stopNames: [`Stop ${index} A`, `Stop ${index} B`],
-    nodeIds: [`node-${index}-a`, `node-${index}-b`],
-    edgeIds: [`edge-${index}`],
-    distanceMeters: 10_000,
-    journeys: [{
-      sourceTripId: `trip-${index}`,
-      serviceDate: "20260811",
-      departureServiceSeconds: index * 3_600,
-      arrivalServiceSeconds: index * 3_600 + 1_800,
-      departureEpochSeconds: 1_000 + index * 3_600,
-      arrivalEpochSeconds: 2_800 + index * 3_600,
-    }],
-    metrics: {
-      journeyCount: 1,
-      totalTrainMeters: "10000",
-      totalStops: "2",
-      totalServiceSeconds: "1800",
-      totalEnergyWh: "80000",
-      medianHeadwaySeconds: null,
-      maximumOperatingSpanSeconds: 1_800,
-      peakVehicles: 1,
-    },
-  }));
+  const source = {
+    sourceId: "synthetic-native-m6",
+    feedUrl: "https://example.invalid/native-m6.zip",
+    archiveSha256: "a".repeat(64),
+    capturedAt: "2026-08-11T00:00:00.000Z",
+    timeZone: "Europe/Berlin",
+    sourceLicense: "synthetic-test-data",
+    attribution: "Zugfolge synthetic native integration fixture",
+  };
+  const infrastructureVersion = "native-m6-graph-v1";
+  const rulesVersion = "native-m6-rules-v1";
+  const serviceDates = ["20260811"];
+  const identity = gtfsPlanningIdentityNamespace({ source, infrastructureVersion, rulesVersion, serviceDates });
+  const patterns: GtfsPlanningSnapshot["patterns"] = Array.from({ length: 4 }, (_, index) => {
+    const lineId = `S${index + 1}`;
+    const nodeIds = [`node-${index}-a`, `node-${index}-b`];
+    return {
+      id: gtfsPlanningPatternId(identity, lineId, "0", nodeIds),
+      lineId,
+      directionId: "0",
+      sourceRouteIds: [`route-${index}`],
+      stopIds: [`stop-${index}-a`, `stop-${index}-b`],
+      stopNames: [`Stop ${index} A`, `Stop ${index} B`],
+      nodeIds,
+      edgeIds: [`edge-${index}`],
+      distanceMeters: 10_000,
+      journeys: [{
+        sourceTripId: `trip-${index}`,
+        serviceDate: "20260811",
+        departureServiceSeconds: index * 3_600,
+        arrivalServiceSeconds: index * 3_600 + 1_800,
+        departureEpochSeconds: 1_000 + index * 3_600,
+        arrivalEpochSeconds: 2_800 + index * 3_600,
+      }],
+      metrics: {
+        journeyCount: 1,
+        totalTrainMeters: "10000",
+        totalStops: "2",
+        totalServiceSeconds: "1800",
+        totalEnergyWh: "80000",
+        medianHeadwaySeconds: null,
+        maximumOperatingSpanSeconds: 1_800,
+        peakVehicles: 1,
+      },
+    };
+  });
   const lots: GtfsPlanningSnapshot["lots"] = patterns.map((pattern, index) => ({
-    id: `lot-${index}`,
+    id: gtfsPlanningLotId(identity, [pattern.lineId]),
     lineIds: [pattern.lineId],
     patternIds: [pattern.id],
     connectingNodeIds: [],
@@ -186,22 +210,14 @@ function planning() {
     },
   }));
   return createGtfsPlanningEnvelope({
-    schema: "zugfolge-gtfs-planning/v1",
+    schema: GTFS_PLANNING_SCHEMA,
     worldId: WORLD,
     revision: 1,
     producedAt: 10,
-    source: {
-      sourceId: "synthetic-native-m6",
-      feedUrl: "https://example.invalid/native-m6.zip",
-      archiveSha256: "a".repeat(64),
-      capturedAt: "2026-08-11T00:00:00.000Z",
-      timeZone: "Europe/Berlin",
-      sourceLicense: "synthetic-test-data",
-      attribution: "Zugfolge synthetic native integration fixture",
-    },
-    infrastructureVersion: "native-m6-graph-v1",
-    rulesVersion: "native-m6-rules-v1",
-    serviceDates: ["20260811"],
+    source,
+    infrastructureVersion,
+    rulesVersion,
+    serviceDates,
     patterns,
     lots,
   });
@@ -365,6 +381,30 @@ describe("M6 mit echtem Rust-NAPI-Laufzeitkern", () => {
       ]))) as Record<CostType, string>;
 
       const planningEnvelope = planning();
+      const publishedServiceForLine = (lineId: string) => {
+        const lots = planningEnvelope.snapshot.lots.filter((lot) =>
+          lot.lineIds.length === 1 && lot.lineIds[0] === lineId
+        );
+        if (lots.length !== 1 || lots[0]!.patternIds.length !== 1) {
+          throw new Error(`GTFS-Testplanung besitzt kein eindeutiges veroeffentlichtes Los fuer ${lineId}.`);
+        }
+        const lot = lots[0]!;
+        const pattern = planningEnvelope.snapshot.patterns.find(
+          (candidate) => candidate.id === lot.patternIds[0],
+        );
+        if (pattern === undefined || pattern.journeys.length !== 1) {
+          throw new Error(`GTFS-Testplanung besitzt keine eindeutige veroeffentlichte Fahrt fuer ${lineId}.`);
+        }
+        const journey = pattern.journeys[0]!;
+        return Object.freeze({
+          lotId: lot.id,
+          trainRunId:
+            `${pattern.id}:${journey.sourceTripId}:${journey.serviceDate}:${journey.departureEpochSeconds}`,
+        });
+      };
+      const rewinService = publishedServiceForLine("S1");
+      const failedService = publishedServiceForLine("S2");
+      const successService = publishedServiceForLine("S3");
       const operatingRuntime = loadOperatingRuntime(nativeAddonPath);
       const authorityRelease = fleetAuthorityRelease(operator.id);
       fleetApp = buildApp({
@@ -543,9 +583,9 @@ describe("M6 mit echtem Rust-NAPI-Laufzeitkern", () => {
       let state = transition.state;
 
       const tenders = [
-        { id: "tender-rewin", lotId: "lot-0", line: "S1", incumbentOperatorId: operator.id },
-        { id: "tender-failed", lotId: "lot-1", line: "S2", incumbentOperatorId: "legacy-operator" },
-        { id: "tender-success", lotId: "lot-2", line: "S3", incumbentOperatorId: "legacy-success" },
+        { id: "tender-rewin", lotId: rewinService.lotId, line: "S1", incumbentOperatorId: operator.id },
+        { id: "tender-failed", lotId: failedService.lotId, line: "S2", incumbentOperatorId: "legacy-operator" },
+        { id: "tender-success", lotId: successService.lotId, line: "S3", incumbentOperatorId: "legacy-success" },
       ] as const;
       for (const tender of tenders) {
         const expectedRevision = state.revision;
@@ -701,9 +741,9 @@ describe("M6 mit echtem Rust-NAPI-Laufzeitkern", () => {
       expect(publisherObservedAtomicCommit).toBe(true);
       expect(completed.contracts.get("tender-rewin")).toMatchObject({ operatorId: operator.id, startsAt: OPERATING });
       expect(completed.contracts.get("tender-success")).toMatchObject({ operatorId: operator.id, startsAt: OPERATING });
-      expect(completed.publicOperations.has("lot-0")).toBe(false);
-      expect(completed.publicOperations.has("lot-2")).toBe(false);
-      expect(completed.publicOperations.get("lot-1")).toMatchObject({
+      expect(completed.publicOperations.has(rewinService.lotId)).toBe(false);
+      expect(completed.publicOperations.has(successService.lotId)).toBe(false);
+      expect(completed.publicOperations.get(failedService.lotId)).toMatchObject({
         vehiclePool: PUBLIC_REPLACEMENT_FLEET,
         livemapMarker: "public-operator",
       });
@@ -718,9 +758,9 @@ describe("M6 mit echtem Rust-NAPI-Laufzeitkern", () => {
           pathReservationIds: ["path-success"],
         },
       });
-      expect(completed.operatingRuntimeByLot.get("lot-0")).toMatchObject({ state: { revision: 1 } });
-      expect(completed.operatingRuntimeByLot.get("lot-1")).toMatchObject({ state: { revision: 1 } });
-      expect(completed.operatingRuntimeByLot.get("lot-2")).toMatchObject({ state: { revision: 1 } });
+      expect(completed.operatingRuntimeByLot.get(rewinService.lotId)).toMatchObject({ state: { revision: 1 } });
+      expect(completed.operatingRuntimeByLot.get(failedService.lotId)).toMatchObject({ state: { revision: 1 } });
+      expect(completed.operatingRuntimeByLot.get(successService.lotId)).toMatchObject({ state: { revision: 1 } });
       expect([...completed.operatingRuntimeByLot.values()].every((item) => /^[a-f0-9]{64}$/.test(item.stateHash))).toBe(true);
 
       const persistedEvents = await db.select().from(domainEvents);
@@ -737,7 +777,7 @@ describe("M6 mit echtem Rust-NAPI-Laufzeitkern", () => {
       expect(endedOperators).toEqual(["legacy-operator", "legacy-success", operator.id].sort());
       const successOutcome = persistedEvents.find((event) =>
         event.eventType === "operating-transition-completed"
-        && (event.payload as Record<string, unknown>)["lotId"] === "lot-2",
+        && (event.payload as Record<string, unknown>)["lotId"] === successService.lotId,
       );
       expect(successOutcome?.payload).toMatchObject({
         previousOperatorId: "legacy-success",
@@ -750,9 +790,9 @@ describe("M6 mit echtem Rust-NAPI-Laufzeitkern", () => {
       expect(persistedEvents.filter((event) => event.eventType === "livemap-operation-marked")).toHaveLength(1);
       expect(persistedEvents.filter((event) => event.eventType === "livemap-operation-cleared")).toHaveLength(2);
 
-      const failedTrainRunId = "pattern-1:trip-1:20260811:4600";
-      const rewinTrainRunId = "pattern-0:trip-0:20260811:1000";
-      const successTrainRunId = "pattern-2:trip-2:20260811:8200";
+      const failedTrainRunId = failedService.trainRunId;
+      const rewinTrainRunId = rewinService.trainRunId;
+      const successTrainRunId = successService.trainRunId;
       livemap.forWorld(WORLD).publish({
         at: OPERATING,
         changed: [
@@ -793,7 +833,7 @@ describe("M6 mit echtem Rust-NAPI-Laufzeitkern", () => {
         schemaVersion: OPERATING_INITIALIZE_SCHEMA,
         worldId: WORLD,
         lots: [{
-          lotId: "lot-1",
+          lotId: failedService.lotId,
           incumbentOperatorId: "legacy-operator",
           timetableBoundaryS: OPERATING,
           trainRuns: [{ trainRunId: failedTrainRunId, formationId: null }],
@@ -808,7 +848,7 @@ describe("M6 mit echtem Rust-NAPI-Laufzeitkern", () => {
         commandId: `scheduler:tender-failed:mobilize:${OPERATING}`,
         expectedStateHash: initializedA.stateHash,
         expectedRevision: initializedA.state.revision,
-        lotId: "lot-1",
+        lotId: failedService.lotId,
         atS: OPERATING,
         winnerOperatorId: operator.id,
         mobilizationProof: null,
@@ -817,12 +857,12 @@ describe("M6 mit echtem Rust-NAPI-Laufzeitkern", () => {
       const deterministicA = operatingRuntime.applyTransition(initializedA.state, failedCommand);
       const deterministicB = operatingRuntime.applyTransition(initializedB.state, failedCommand);
       expect(deterministicB).toEqual(deterministicA);
-      expect(deterministicA.stateHash).toBe(completed.operatingRuntimeByLot.get("lot-1")?.stateHash);
+      expect(deterministicA.stateHash).toBe(completed.operatingRuntimeByLot.get(failedService.lotId)?.stateHash);
       expect(deterministicA.events).toEqual(
         publishedEvents.filter((event) => event.eventId.startsWith(`${failedCommand.commandId}:`)),
       );
       const nativeReplay = operatingRuntime.applyTransition(
-        completed.operatingRuntimeByLot.get("lot-1")!.state,
+        completed.operatingRuntimeByLot.get(failedService.lotId)!.state,
         failedCommand,
       );
       expect(nativeReplay).toMatchObject({ idempotentReplay: true, stateHash: deterministicA.stateHash });

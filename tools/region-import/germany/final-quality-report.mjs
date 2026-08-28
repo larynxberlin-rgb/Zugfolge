@@ -415,6 +415,8 @@ export async function buildFinalQualityReport({ specification, artifactRoot }) {
     releaseId: specification.releaseId,
     timetableYear: specification.timetableYear,
     scopeId: "deutschland-ebo-visible-corpus",
+    purpose: "visible-map-quality-evidence",
+    operationalReleaseGate: false,
     deterministic: true,
     policy: {
       classA: "accepted complete evidence for every layer-specific required dimension",
@@ -422,6 +424,8 @@ export async function buildFinalQualityReport({ specification, artifactRoot }) {
       classC: "visible but not orderable because at least one required model relation remains unresolved",
       classAFromSingleSourceOrAutomatedInference: false,
       conservativeAssumptionsReportedSeparately: true,
+      ordinaryAssumptionsOperationalClassBEligible: false,
+      syntheticDerivedClosureRequiredForOperationalClassB: true,
       nonPublicSourceRawDataShipped: false,
     },
     summary: { visibleLayers: layers.length, visibleFeatures, declaredQualityClassFeatureCount, qualityClassFeatureCount },

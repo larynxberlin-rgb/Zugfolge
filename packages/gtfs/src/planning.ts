@@ -1,6 +1,8 @@
 import { createHash } from "node:crypto";
 
-export const GTFS_PLANNING_SCHEMA = "zugfolge-gtfs-planning/v1" as const;
+export const GTFS_PLANNING_SCHEMA = "zugfolge-gtfs-planning/v2" as const;
+export const GTFS_SERVICE_PATTERN_IDENTITY_SCHEMA = "zugfolge-gtfs-service-pattern-identity/v2" as const;
+export const GTFS_SERVICE_LOT_IDENTITY_SCHEMA = "zugfolge-gtfs-service-lot-identity/v2" as const;
 
 export type GtfsRow = Readonly<Record<string, string>>;
 
@@ -350,8 +352,48 @@ function contiguousSubsequenceIndex(values: readonly string[], candidate: readon
   return -1;
 }
 
-function patternId(worldId: string, lineId: string, directionId: string, nodeIds: readonly string[]): string {
-  return `sp-${planningSha256(canonicalPlanningJson({ worldId, lineId, directionId, nodeIds })).slice(0, 20)}`;
+export interface GtfsPlanningIdentityNamespace {
+  readonly sourceArchiveSha256: string;
+  readonly infrastructureVersion: string;
+  readonly rulesVersion: string;
+  readonly serviceDates: readonly string[];
+}
+
+export function gtfsPlanningIdentityNamespace(value: {
+  readonly source: Pick<GtfsPlanningSource, "archiveSha256">;
+  readonly infrastructureVersion: string;
+  readonly rulesVersion: string;
+  readonly serviceDates: readonly string[];
+}): GtfsPlanningIdentityNamespace {
+  return Object.freeze({
+    sourceArchiveSha256: value.source.archiveSha256,
+    infrastructureVersion: value.infrastructureVersion,
+    rulesVersion: value.rulesVersion,
+    serviceDates: Object.freeze([...value.serviceDates]),
+  });
+}
+
+export function gtfsPlanningPatternId(
+  namespace: GtfsPlanningIdentityNamespace,
+  lineId: string,
+  directionId: string,
+  nodeIds: readonly string[],
+): string {
+  return `sp-${planningSha256(canonicalPlanningJson({
+    schemaVersion: GTFS_SERVICE_PATTERN_IDENTITY_SCHEMA,
+    namespace,
+    lineId,
+    directionId,
+    nodeIds,
+  })).slice(0, 20)}`;
+}
+
+export function gtfsPlanningLotId(namespace: GtfsPlanningIdentityNamespace, lineIds: readonly string[]): string {
+  return `lot-${planningSha256(canonicalPlanningJson({
+    schemaVersion: GTFS_SERVICE_LOT_IDENTITY_SCHEMA,
+    namespace,
+    lineIds,
+  })).slice(0, 20)}`;
 }
 
 function median(values: readonly number[]): number | null {
@@ -600,6 +642,12 @@ export function buildGtfsPlanningSnapshot(input: GtfsPlanningInput): GtfsPlannin
   nonEmpty(input.source.sourceLicense, "source.sourceLicense");
   nonEmpty(input.source.attribution, "source.attribution");
   const policies = validateRules(input.rules);
+  const identityNamespace = gtfsPlanningIdentityNamespace({
+    source: input.source,
+    infrastructureVersion: input.infrastructure.version,
+    rulesVersion: input.rules.version,
+    serviceDates: input.serviceDates,
+  });
   const resolvedMappings = resolveMappings(input);
   const routes = new Map(input.tables.routes.map((route) => [route["route_id"]!, route]));
   const timesByTrip = new Map<string, GtfsRow[]>();
@@ -652,7 +700,7 @@ export function buildGtfsPlanningSnapshot(input: GtfsPlanningInput): GtfsPlannin
       const segmentDeparture = gtfsServiceSeconds(segmentTimes[0]!["departure_time"]!);
       const segmentArrival = gtfsServiceSeconds(segmentTimes.at(-1)!["arrival_time"]!);
       invariant(tripArrival > tripDeparture && segmentArrival > segmentDeparture, `GTFS-Fahrt '${trip["trip_id"]!}' besitzt keine positive Fahrzeit.`);
-      const id = patternId(input.worldId, resolved.mapping.lineId, directionId, resolved.nodeIds);
+      const id = gtfsPlanningPatternId(identityNamespace, resolved.mapping.lineId, directionId, resolved.nodeIds);
       const accumulator = accumulators.get(id) ?? { resolved, routeIds: new Set<string>(), journeys: [] };
       invariant(accumulator.resolved.mapping.lineId === resolved.mapping.lineId && accumulator.resolved.nodeIds.join("\u001f") === resolved.nodeIds.join("\u001f"), `Stabile Pattern-ID '${id}' ist kollidiert.`);
       accumulator.routeIds.add(trip["route_id"]!);
@@ -754,7 +802,7 @@ export function buildGtfsPlanningSnapshot(input: GtfsPlanningInput): GtfsPlannin
     const facilityMinutesPerDay = group.reduce((sum, line) => sum + line.conservativeVehiclePeak * line.policy.facilityMinutesPerVehicleDay, 0);
     const overnightUnits = group.reduce((sum, line) => sum + Number(ceilDivide(BigInt(line.conservativeVehiclePeak * line.policy.overnightBasisPoints), 10_000n)), 0);
     const protectionUnits = group.reduce((sum, line) => sum + (line.policy.requiredProtection.length > 0 ? line.conservativeVehiclePeak : 0), 0);
-    const id = `lot-${planningSha256(canonicalPlanningJson({ worldId: input.worldId, lineIds })).slice(0, 20)}`;
+    const id = gtfsPlanningLotId(identityNamespace, lineIds);
     return Object.freeze({
       id,
       lineIds: Object.freeze(lineIds),
@@ -804,10 +852,20 @@ export function validateGtfsPlanningSnapshot(snapshot: GtfsPlanningSnapshot): Gt
   invariant(snapshot.lots.length > 0, "GTFS-Planung besitzt keine Lose.");
   uniqueStrings(snapshot.patterns.map((pattern) => pattern.id), "patterns[].id");
   uniqueStrings(snapshot.lots.map((lot) => lot.id), "lots[].id");
+  const identityNamespace = gtfsPlanningIdentityNamespace({
+    source: snapshot.source,
+    infrastructureVersion: snapshot.infrastructureVersion,
+    rulesVersion: snapshot.rulesVersion,
+    serviceDates: snapshot.serviceDates,
+  });
   const patternIds = new Set(snapshot.patterns.map((pattern) => pattern.id));
   for (const [index, pattern] of snapshot.patterns.entries()) {
     const name = `patterns[${index}]`;
     nonEmpty(pattern.lineId, `${name}.lineId`);
+    invariant(
+      pattern.id === gtfsPlanningPatternId(identityNamespace, pattern.lineId, pattern.directionId, pattern.nodeIds),
+      `${name}.id gehoert nicht zum releasegebundenen v2-Identitaetsnamespace.`,
+    );
     uniqueStrings(pattern.stopIds, `${name}.stopIds`);
     uniqueStrings(pattern.nodeIds, `${name}.nodeIds`);
     uniqueStrings(pattern.edgeIds, `${name}.edgeIds`);
@@ -823,6 +881,10 @@ export function validateGtfsPlanningSnapshot(snapshot: GtfsPlanningSnapshot): Gt
   for (const [index, lot] of snapshot.lots.entries()) {
     const name = `lots[${index}]`;
     uniqueStrings(lot.lineIds, `${name}.lineIds`);
+    invariant(
+      lot.id === gtfsPlanningLotId(identityNamespace, lot.lineIds),
+      `${name}.id gehoert nicht zum releasegebundenen v2-Identitaetsnamespace.`,
+    );
     uniqueStrings(lot.patternIds, `${name}.patternIds`);
     invariant(lot.patternIds.every((id) => patternIds.has(id)), `${name} verweist auf unbekanntes Pattern.`);
     invariant(lot.patternIds.every((id) => !assignedPatterns.has(id)), `${name} enthält ein bereits vergebenes Pattern.`);

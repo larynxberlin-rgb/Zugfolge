@@ -2,6 +2,8 @@
 
 use std::fs;
 use std::path::Path;
+#[cfg(windows)]
+use std::path::PathBuf;
 use std::process::Command;
 use std::sync::atomic::{AtomicU64, Ordering};
 
@@ -9,7 +11,8 @@ use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use zugfolge_infra::{
     build_annual_infra_plan, build_mitteldeutschland_infra_release, build_public_infra_release,
-    build_qualified_reference_release, build_reference_report,
+    build_public_infra_release_with_operational_quality, build_qualified_reference_release,
+    build_reference_report,
 };
 
 fn fixture() -> (Value, Value, Value, Value, Value, Value) {
@@ -23,6 +26,223 @@ fn fixture() -> (Value, Value, Value, Value, Value, Value) {
         input["artifacts"].clone(),
         input["quality"].clone(),
     )
+}
+
+fn static_map_quality_with_visible_class_c() -> Value {
+    let layer_names = [
+        ("rail_corridors", "rail-corridor"),
+        ("operating_points", "operating-point"),
+        ("stations", "station"),
+        ("tracks", "track"),
+        ("platforms", "platform"),
+        ("switches", "switch"),
+        ("signals", "signal"),
+        ("blocks", "block"),
+        ("conflict_resources", "conflict_resource"),
+        ("rail_context", "rail_context"),
+    ];
+    let layers: Vec<_> = layer_names
+        .iter()
+        .enumerate()
+        .map(|(index, (name, feature_type))| {
+            let mut layer = json!({
+                "name": name,
+                "featureType": feature_type,
+                "features": 1,
+                "qualityClassFeatureCount": if index == 9 {
+                    json!({"A": 0, "B": 0, "C": 1})
+                } else {
+                    json!({"A": 0, "B": 1, "C": 0})
+                },
+            });
+            if *name == "tracks" {
+                layer["totalLengthMm"] = json!(999);
+                layer["qualityClassLengthMm"] = json!({"A": 100, "B": 799, "C": 100});
+            }
+            layer
+        })
+        .collect();
+    json!({
+        "schema": "zugfolge-static-map-quality/v2",
+        "releaseId": "karte-deutschland-2027.1-v2",
+        "infrastructureCorpusId": "infra-deutschland-2027.1",
+        "timetableYear": 2027,
+        "scopeId": "deutschland-ebo-visible-corpus",
+        "purpose": "static-map-visible-quality",
+        "deterministic": true,
+        "claims": {
+            "detailedSourceReportShipped": false,
+            "operationalInfraRelease": false,
+            "productionActivationEligible": false
+        },
+        "classification": {
+            "A": "complete-evidence",
+            "B": "conservative-visible-model",
+            "C": "visible-not-operationally-orderable"
+        },
+        "sourceReport": {
+            "content": "detailed-infrastructure-quality-report",
+            "binding": "sha256",
+            "bytes": 123,
+            "sha256": "6".repeat(64),
+            "shipped": false
+        },
+        "summary": {
+            "visibleLayers": 10,
+            "visibleFeatures": 10,
+            "qualityClassFeatureCount": {"A": 0, "B": 9, "C": 1}
+        },
+        "layers": layers
+    })
+}
+
+fn static_map_quality_bytes(report: &Value) -> Vec<u8> {
+    let mut bytes = serde_json::to_vec_pretty(report).expect("Static-Map-Quality-v2");
+    bytes.push(b'\n');
+    bytes
+}
+
+fn operational_quality_bytes(report: &Value) -> Vec<u8> {
+    let mut bytes = serde_json::to_vec_pretty(report).expect("Operational-v2-Quality");
+    bytes.push(b'\n');
+    bytes
+}
+
+fn closed_operational_quality(static_quality: &Value, static_quality_bytes: &[u8]) -> Value {
+    let static_quality_sha256 = Sha256::digest(static_quality_bytes)
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect::<String>();
+    let timetable_route_evidence = json!({
+        "reportSchema": "zugfolge-germany-timetable-route-report/v4",
+        "policyId": "synthetic-operational-b/v2",
+        "derivationRule": "all-qualified-gtfs-playable-segments-via-real-osm-stop-anchors/v2",
+        "selectionRule": "all-orderable-quality-b-gtfs-playable-segments-with-every-stop-as-anchor/v2",
+        "reportBytes": 1234,
+        "reportSha256": "9".repeat(64),
+        "routesBytes": 5678,
+        "routesSha256": "a".repeat(64),
+        "gtfsSnapshotBytes": 9012,
+        "gtfsSnapshotSha256": "b".repeat(64),
+        "transferDemandsSchema": "zugfolge-timetable-transfer-demands/v2",
+        "transferDemandsBytes": 3456,
+        "transferDemandsSha256": "9".repeat(64),
+        "snapshotHash": "c".repeat(64),
+        "archive": "gtfs-rv-free.zip",
+        "archiveSha256": "d".repeat(64),
+        "sourceLicense": "CC-BY-4.0",
+        "sourceLicenseAsPublished": "CC BY 4.0",
+        "selectedSegmentCount": 1677,
+        "completeRouteCount": 1677,
+        "routeRecordCount": 1677,
+        "sameStopTransitionCount": 2,
+        "routeSetSha256": "a".repeat(64),
+        "dailyCirculationPlanSha256": "b".repeat(64),
+        "transferSetSha256": "c".repeat(64),
+        "transferDemandsProduced": true,
+        "dailyCirculation": {
+            "lotCount": 52,
+            "journeyChainCount": 1677,
+            "circulationCount": 197,
+            "rolloverAssignmentCount": 197,
+            "plannedTransitionCount": 1677,
+            "turnaroundDemandCount": 1595,
+            "transferDemandCount": 82,
+            "transferLotCount": 39
+        },
+        "transferRouteCount": 82,
+        "transferRouteLegCount": 1234,
+        "transferRouteLengthMm": 3_000_000_000_i64,
+        "realGeometry": true,
+        "simulatedOperationalAssignment": true,
+        "realInterlockingFactsClaimed": false,
+        "externalOperationalNetworkProvenance": false
+    });
+    json!({
+        "schema": "zugfolge-operational-infrastructure-quality-report/v1",
+        "releaseId": "infra-deutschland-2027.1",
+        "timetableYear": 2027,
+        "scopeId": "deutschland-ebo-operational-v2",
+        "deterministic": true,
+        "separation": {
+            "mapEvidencePurpose": "visible-map-quality-evidence",
+            "operationalEvidencePurpose": "closed-operational-v2-model",
+            "mapClassCReclassified": false,
+            "mapClassCBlocksOperationalQualityGate": false,
+            "mapObjectsRemoved": false
+        },
+        "mapEvidence": {
+            "schema": "zugfolge-static-map-quality/v2",
+            "mapReleaseId": static_quality["releaseId"],
+            "infrastructureCorpusId": static_quality["infrastructureCorpusId"],
+            "bytes": static_quality_bytes.len(),
+            "sha256": static_quality_sha256,
+            "sourceReport": {
+                "schema": "zugfolge-final-infrastructure-quality-report/v1",
+                "bytes": static_quality["sourceReport"]["bytes"],
+                "sha256": static_quality["sourceReport"]["sha256"],
+                "shipped": static_quality["sourceReport"]["shipped"]
+            },
+            "visibleFeatures": static_quality["summary"]["visibleFeatures"],
+            "visibleLayers": static_quality["summary"]["visibleLayers"],
+            "qualityClassFeatureCount": static_quality["summary"]["qualityClassFeatureCount"],
+            "trackLengthMm": static_quality["layers"][3]["totalLengthMm"],
+            "trackQualityClassLengthMm": static_quality["layers"][3]["qualityClassLengthMm"]
+        },
+        "operationalModel": {
+            "policyId": "synthetic-operational-b/v2",
+            "policySha256": "4".repeat(64),
+            "closureReceiptSha256": "3".repeat(64),
+            "qualityClass": "B",
+            "provenance": "derived",
+            "realGeometry": true,
+            "simulatedOperationalAssignment": true,
+            "realInterlockingFactsClaimed": false,
+            "syntheticOperationalDetailsShipped": true,
+            "objectLevelProvenanceShipped": false,
+            "observedAndSyntheticObjectsShareRuntimeCollections": true,
+            "movementRouteTemplates": {
+                "bytes": 789,
+                "sha256": "5".repeat(64),
+                "stateHash": "6".repeat(64),
+                "operationalStateHash": "7".repeat(64),
+                "timetableTransferSetSha256": "c".repeat(64)
+            },
+            "timetableRouteEvidence": timetable_route_evidence,
+            "operationalArtifact": {
+                "bytes": 456,
+                "sha256": "8".repeat(64),
+                "stateHash": "7".repeat(64)
+            },
+            "coverage": {
+                "blockResources": 3,
+                "directedEdges": 2,
+                "edgeGeometries": 2,
+                "interlockingRoutes": 2,
+                "platformIntervals": 1,
+                "regionBoundaries": 1,
+                "routeVersions": 1,
+                "rzueLayouts": 1,
+                "signals": 2,
+                "switches": 1
+            }
+        },
+        "summary": {
+            "operationalQualityClassArtifactCount": {"A": 0, "B": 1, "C": 0},
+            "unresolvedRequired": 0,
+            "visibleMapClassCFeatureCount": 1
+        },
+        "qualityGate": {
+            "closureReceiptVerified": true,
+            "nativeOperationalValidationVerified": true,
+            "operationalClassCZero": true,
+            "ordinaryAssumptionsPromoted": false,
+            "mapClassCReclassified": false,
+            "operationalQualityEligible": true,
+            "signatureImplied": false,
+            "activationImplied": false
+        }
+    })
 }
 
 fn bytes_hex(bytes: &[u8]) -> String {
@@ -310,8 +530,698 @@ fn jahresplan_endet_mit_holdout_und_signatur() {
     let (config, catalog, rights, ..) = fixture();
     let plan = build_annual_infra_plan(&config, &catalog, &rights).expect("gültiger Jahresplan");
     let stages = plan["stages"].as_array().expect("Stufen");
+    let ids: Vec<&str> = stages
+        .iter()
+        .map(|stage| stage["id"].as_str().expect("Stufenkennung"))
+        .collect();
+    for required in [
+        "openstation-normalization",
+        "operational-v2-derivation",
+        "operational-v2-validator-rebuild-evidence",
+        "operational-v2-native-receipt-capture",
+        "operational-v2-recovery-publication",
+        "release-artifact-inventory",
+        "public-manifest",
+        "operational-v2-acceptance",
+    ] {
+        assert!(ids.contains(&required), "Jahresplan fehlt {required}");
+    }
+    assert!(
+        !ids.contains(&"operational-v2-native-validation"),
+        "Recovery-Releases duerfen vor dem receiptgebundenen Publisher kein finales Operational-Artefakt materialisieren",
+    );
+    assert!(
+        !ids.contains(&"stada-capture-gate"),
+        "eine optionale StaDa-Quelle darf den Jahresplan nicht blockieren"
+    );
+    assert!(
+        ids.iter().position(|id| *id == "operational-v2-derivation")
+            < ids
+                .iter()
+                .position(|id| *id == "release-artifact-inventory"),
+        "Ableitung muss vor dem typisierten Inventar liegen",
+    );
+    let derivation = stages
+        .iter()
+        .find(|stage| stage["id"] == "operational-v2-derivation")
+        .expect("Operational-v2-Ableitungsstufe");
+    assert_eq!(
+        derivation["executionMode"],
+        "held-contract-direct-system-launch-v1"
+    );
+    assert_eq!(
+        derivation["directSystemLaunch"]["commandMaterialization"]["mode"],
+        "source-only-print-direct-command-v1"
+    );
+    assert_eq!(
+        derivation["executionPins"],
+        "tools/region-import/germany/operational-infrastructure-v2-execution-pins.annual-2027.1.json"
+    );
+    assert!(
+        derivation.get("entrypoint").is_none(),
+        "das gehaltene Bundle-Datenfile darf kein mutierender Entrypoint sein"
+    );
+    assert_eq!(derivation["runnerBundle"]["role"], "held-stdin-data-only");
+    assert_eq!(derivation["runnerBundle"]["executable"], false);
+    assert_eq!(
+        derivation["directSystemLaunch"]["command"],
+        r"C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe"
+    );
+    assert_eq!(derivation["directSystemLaunch"]["arguments"][0], "-NoLogo");
+    assert_eq!(
+        derivation["directSystemLaunch"]["arguments"][5],
+        "-EncodedCommand"
+    );
+    assert!(
+        derivation["directSystemLaunch"]["arguments"][6]
+            .as_str()
+            .is_some_and(|encoded| !encoded.is_empty() && encoded.len() < 32_000),
+        "der Annual-Plan muss den vollstaendigen direkt startbaren EncodedCommand enthalten"
+    );
+    assert_eq!(
+        derivation["directSystemLaunch"]["environmentMode"],
+        "replace-exactly-no-inheritance-v1"
+    );
+    assert_eq!(
+        derivation["directSystemLaunch"]["environment"]["TEMP"],
+        r"C:\Windows\System32"
+    );
+    assert_eq!(
+        derivation["directSystemLaunch"]["environment"]["ZUGFOLGE_OPERATIONAL_LAUNCH_CONTEXT_BASE64"],
+        "{launchContextBase64}"
+    );
+    assert_eq!(
+        derivation["directSystemLaunch"]["commandMaterialization"]["producer"]["causal"],
+        false
+    );
+    assert_eq!(
+        derivation["directSystemLaunch"]["commandMaterialization"]["producer"]["releaseEvidenceEligible"],
+        false
+    );
+    assert_eq!(
+        derivation["directSystemLaunch"]["commandMaterialization"]["releaseExecutionEligible"],
+        false
+    );
+    assert_eq!(
+        derivation["directSystemLaunch"]["dynamicBindings"]
+            .as_array()
+            .map(Vec::len),
+        Some(1)
+    );
+    assert_eq!(
+        derivation["directSystemLaunch"]["dynamicBindings"][0]["schema"],
+        "zugfolge-operational-v2-direct-system-launch-context/v1"
+    );
+    assert_eq!(
+        derivation["directSystemLaunch"]["contract"]["openMode"],
+        "share-read-deny-write-delete-held-through-child-exit-v1"
+    );
+    assert_eq!(
+        derivation["directSystemLaunch"]["contract"]["releaseId"],
+        "infra-deutschland-2027.1"
+    );
+    for (left, right) in [
+        (
+            "operational-v2-derivation",
+            "operational-v2-validator-rebuild-evidence",
+        ),
+        (
+            "operational-v2-validator-rebuild-evidence",
+            "operational-v2-native-receipt-capture",
+        ),
+        (
+            "operational-v2-native-receipt-capture",
+            "operational-v2-recovery-publication",
+        ),
+        (
+            "operational-v2-recovery-publication",
+            "release-artifact-inventory",
+        ),
+    ] {
+        assert!(
+            ids.iter().position(|id| *id == left) < ids.iter().position(|id| *id == right),
+            "Jahresplan-Reihenfolge muss {left} vor {right} binden",
+        );
+    }
+    let rebuild = stages
+        .iter()
+        .find(|stage| stage["id"] == "operational-v2-validator-rebuild-evidence")
+        .expect("Validator-Rebuild-Stufe");
+    assert!(
+        rebuild.get("entrypoint").is_none() && rebuild.get("bootstrap").is_none(),
+        "die mutierende Rebuild-Phase darf keinen separat startbaren CLI- oder Bootstrap-Pfad emittieren"
+    );
+    assert_eq!(
+        rebuild["executionMode"],
+        "internal-os-anchored-single-bundle-phase-v1"
+    );
+    assert_eq!(
+        rebuild["runner"]["bundle"],
+        derivation["runnerBundle"]["file"]
+    );
+    assert_eq!(
+        rebuild["runner"]["invocationMode"],
+        derivation["runnerBundle"]["invocationMode"]
+    );
+    assert_eq!(
+        rebuild["runner"]["executionPins"],
+        derivation["executionPins"]
+    );
+    assert_eq!(
+        rebuild["runner"]["systemLaunchContract"],
+        derivation["directSystemLaunch"]["contract"]["file"]
+    );
+    assert_eq!(
+        rebuild["runner"]["phase"]["implementation"],
+        "tools/region-import/germany/operational-validator-rebuild-evidence.mjs"
+    );
+    assert_eq!(
+        rebuild["runner"]["phase"]["export"],
+        "materializeOperationalValidatorRebuildEvidence"
+    );
+    assert_eq!(
+        rebuild["runner"]["phase"]["loadingMode"],
+        "embedded-in-held-runner-bundle-v1"
+    );
+    assert_eq!(
+        rebuild["runner"]["phase"]["order"],
+        "before-native-validator"
+    );
+    assert_eq!(
+        rebuild["specificationSchema"],
+        "zugfolge-operational-validator-rebuild-spec/v3"
+    );
+    assert_eq!(
+        rebuild["receiptSchema"],
+        "zugfolge-operational-validator-rebuild-evidence/v3"
+    );
+    assert_eq!(rebuild["rebuiltValidatorRawProof"], "from-portable-receipt");
     assert_eq!(stages[stages.len() - 2]["id"], "independent-validation");
     assert_eq!(stages[stages.len() - 1]["id"], "signature");
+}
+
+#[test]
+fn operational_deriver_subvertrag_ist_exakt_und_releasegebunden() {
+    let (config, catalog, rights, ..) = fixture();
+    build_annual_infra_plan(&config, &catalog, &rights)
+        .expect("exakter OperationalDeriver-Jahresvertrag");
+    let current: Value = serde_json::from_str(include_str!(
+        "../../../tools/region-import/germany/release.annual-2026.5.config.json"
+    ))
+    .expect("gueltige 2026.5-Jahreskonfiguration");
+    let current_plan = build_annual_infra_plan(&current, &catalog, &rights)
+        .expect("2026.5 bindet PrimaryRunner und RecoveryPublisher exakt");
+    let current_stages = current_plan["stages"].as_array().expect("2026.5-Stufen");
+    let current_derivation = current_stages
+        .iter()
+        .find(|stage| stage["id"] == "operational-v2-derivation")
+        .expect("systemverankerte Operational-v2-Ableitung");
+    assert!(current_derivation.get("entrypoint").is_none());
+    assert_eq!(
+        current_derivation["runnerBundle"]["file"],
+        "tools/region-import/germany/run-capture-operational-infrastructure-v2.anchored-bundle.mjs"
+    );
+    assert_eq!(
+        current_derivation["executionMode"],
+        "held-contract-direct-system-launch-v1"
+    );
+    assert_eq!(
+        current_derivation["directSystemLaunch"]["commandMaterialization"]["entrypoint"],
+        "tools/region-import/germany/print-operational-infrastructure-v2-system-launch-command.mjs"
+    );
+    assert_eq!(
+        current_derivation["directSystemLaunch"]["commandMaterialization"]["mode"],
+        "source-only-print-direct-command-v1"
+    );
+    assert_eq!(
+        current_derivation["directSystemLaunch"]["commandMaterialization"]["releaseExecutionEligible"],
+        false
+    );
+    assert_eq!(
+        current_derivation["directSystemLaunch"]["contract"]["file"],
+        "tools/region-import/germany/operational-infrastructure-v2-direct-system-launch.annual-2026.5.json"
+    );
+    assert_eq!(
+        current_derivation["executionPins"],
+        "tools/region-import/germany/operational-infrastructure-v2-execution-pins.annual-2026.5.json"
+    );
+    assert_eq!(
+        current_derivation["operationalBindings"],
+        json!({
+            "schema": "zugfolge-operational-v2-annual-plan-bindings/v1",
+            "executionPinsPath": "tools/region-import/germany/operational-infrastructure-v2-execution-pins.annual-2026.5.json",
+            "specificationPath": "tools/region-import/germany/operational-infrastructure.annual-2026.5.json",
+            "sourceRoot": ".",
+            "candidatePath": "var/derived/germany-2026.5/operational-infrastructure-v2.candidate.json",
+            "candidateSidecarPath": "var/derived/germany-2026.5/operational-infrastructure-v2.candidate.movement-route-templates-v2.json",
+            "reportPath": "var/derived/germany-2026.5/operational-infrastructure-v2.derivation-report.json",
+            "nativeReceiptPath": "var/derived/germany-2026.5/operational-infrastructure-v2.native-receipt.json",
+            "outerExecutionReceiptPath": "var/derived/germany-2026.5/operational-infrastructure-v2.outer-execution-receipt.json",
+            "publishedOutputPath": "var/derived/germany-2026.5/operational-infrastructure-v2.json",
+            "publicationReceiptPath": "var/derived/germany-2026.5/operational-infrastructure-v2.publication-receipt.json",
+        })
+    );
+    let current_rebuild = current_stages
+        .iter()
+        .find(|stage| stage["id"] == "operational-v2-validator-rebuild-evidence")
+        .expect("interne 2026.5-Rebuild-Phase");
+    assert!(
+        current_rebuild.get("entrypoint").is_none() && current_rebuild.get("bootstrap").is_none(),
+        "2026.5 darf keinen separat mutierenden Rebuild-CLI-Pfad emittieren"
+    );
+    assert_eq!(
+        current_rebuild["executionMode"],
+        "internal-os-anchored-single-bundle-phase-v1"
+    );
+    assert_eq!(
+        current_rebuild["runner"]["bundle"],
+        current_derivation["runnerBundle"]["file"]
+    );
+    assert_eq!(
+        current_rebuild["runner"]["phase"]["export"],
+        "materializeOperationalValidatorRebuildEvidence"
+    );
+    assert_eq!(
+        current_rebuild["specificationSchema"],
+        "zugfolge-operational-validator-rebuild-spec/v3"
+    );
+    assert_eq!(
+        current_rebuild["receiptSchema"],
+        "zugfolge-operational-validator-rebuild-evidence/v3"
+    );
+
+    let mut unbekanntes_feld = config.clone();
+    unbekanntes_feld["pipeline"]["operationalDeriver"]["stateHash"] = Value::String("0".repeat(64));
+    assert!(build_annual_infra_plan(&unbekanntes_feld, &catalog, &rights).is_err());
+
+    let mut falsche_spezifikation = config.clone();
+    falsche_spezifikation["pipeline"]["operationalDeriver"]["specification"] = Value::String(
+        "tools/region-import/germany/operational-infrastructure.annual-2026.3.json".to_owned(),
+    );
+    assert!(build_annual_infra_plan(&falsche_spezifikation, &catalog, &rights).is_err());
+
+    let mut fehlender_primary_runner_modus = config.clone();
+    fehlender_primary_runner_modus["pipeline"]["operationalDeriver"]
+        .as_object_mut()
+        .expect("OperationalDeriver")
+        .remove("primaryRunnerMode");
+    assert!(build_annual_infra_plan(&fehlender_primary_runner_modus, &catalog, &rights).is_err());
+
+    let mut falscher_primary_runner_modus = config.clone();
+    falscher_primary_runner_modus["pipeline"]["operationalDeriver"]["primaryRunnerMode"] =
+        Value::String("materialize".to_owned());
+    assert!(build_annual_infra_plan(&falscher_primary_runner_modus, &catalog, &rights).is_err());
+
+    let mut fehlender_system_command_builder = config.clone();
+    fehlender_system_command_builder["pipeline"]["operationalDeriver"]
+        .as_object_mut()
+        .expect("OperationalDeriver")
+        .remove("systemCommandBuilder");
+    assert!(build_annual_infra_plan(&fehlender_system_command_builder, &catalog, &rights).is_err());
+
+    let mut falscher_system_command_builder = config.clone();
+    falscher_system_command_builder["pipeline"]["operationalDeriver"]["systemCommandBuilder"] =
+        Value::String(
+            "tools/region-import/germany/run-capture-operational-infrastructure-v2.mjs".to_owned(),
+        );
+    assert!(build_annual_infra_plan(&falscher_system_command_builder, &catalog, &rights).is_err());
+
+    let mut falscher_system_command_builder_modus = config.clone();
+    falscher_system_command_builder_modus["pipeline"]["operationalDeriver"]["systemCommandBuilderMode"] =
+        Value::String("execute-repo-js".to_owned());
+    assert!(
+        build_annual_infra_plan(&falscher_system_command_builder_modus, &catalog, &rights).is_err()
+    );
+
+    let mut fehlender_direct_system_launch = config.clone();
+    fehlender_direct_system_launch["pipeline"]["operationalDeriver"]
+        .as_object_mut()
+        .expect("OperationalDeriver")
+        .remove("directSystemLaunch");
+    assert!(build_annual_infra_plan(&fehlender_direct_system_launch, &catalog, &rights).is_err());
+
+    let mut driftender_direct_system_launch = config.clone();
+    driftender_direct_system_launch["pipeline"]["operationalDeriver"]["directSystemLaunch"]["contract"]
+        ["file"] =
+        Value::String("tools/region-import/germany/fremder-direct-system-launch.json".to_owned());
+    assert!(build_annual_infra_plan(&driftender_direct_system_launch, &catalog, &rights).is_err());
+
+    let mut ungueltiger_direct_system_launch_hash = config.clone();
+    ungueltiger_direct_system_launch_hash["pipeline"]["operationalDeriver"]["directSystemLaunch"]
+        ["contract"]["sha256"] = Value::String("0".repeat(63));
+    assert!(
+        build_annual_infra_plan(&ungueltiger_direct_system_launch_hash, &catalog, &rights).is_err()
+    );
+
+    let mut driftende_direct_system_launch_release_id = config.clone();
+    driftende_direct_system_launch_release_id["pipeline"]["operationalDeriver"]["directSystemLaunch"]
+        ["contract"]["releaseId"] = Value::String("infra-deutschland-2027.2".to_owned());
+    assert!(
+        build_annual_infra_plan(
+            &driftende_direct_system_launch_release_id,
+            &catalog,
+            &rights
+        )
+        .is_err()
+    );
+
+    let mut driftender_direct_system_launch_execution_pins = config.clone();
+    driftender_direct_system_launch_execution_pins["pipeline"]["operationalDeriver"]["directSystemLaunch"]
+        ["contract"]["executionPins"]["sha256"] = Value::String("7".repeat(63));
+    assert!(
+        build_annual_infra_plan(
+            &driftender_direct_system_launch_execution_pins,
+            &catalog,
+            &rights
+        )
+        .is_err()
+    );
+
+    let mut driftende_execution_pins = config.clone();
+    driftende_execution_pins["pipeline"]["operationalDeriver"]["executionPins"] =
+        Value::String(
+            "tools/region-import/germany/operational-infrastructure-v2-execution-pins.annual-anderer-release.json"
+                .to_owned(),
+        );
+    assert!(build_annual_infra_plan(&driftende_execution_pins, &catalog, &rights).is_err());
+
+    let mut driftende_quellwurzel = config.clone();
+    driftende_quellwurzel["pipeline"]["operationalDeriver"]["sourceRoot"] =
+        Value::String("var/derived/germany-2027.1".to_owned());
+    assert!(build_annual_infra_plan(&driftende_quellwurzel, &catalog, &rights).is_err());
+
+    let mut fehlendes_native_receipt = config.clone();
+    fehlendes_native_receipt["pipeline"]["operationalDeriver"]["recoveryPublisher"]
+        .as_object_mut()
+        .expect("RecoveryPublisher")
+        .remove("nativeReceipt");
+    assert!(build_annual_infra_plan(&fehlendes_native_receipt, &catalog, &rights).is_err());
+
+    let mut fehlendes_outer_execution_receipt = config.clone();
+    fehlendes_outer_execution_receipt["pipeline"]["operationalDeriver"]["recoveryPublisher"]
+        .as_object_mut()
+        .expect("RecoveryPublisher")
+        .remove("outerExecutionReceipt");
+    assert!(
+        build_annual_infra_plan(&fehlendes_outer_execution_receipt, &catalog, &rights).is_err()
+    );
+
+    let mut driftendes_publication_receipt = config.clone();
+    driftendes_publication_receipt["pipeline"]["operationalDeriver"]["recoveryPublisher"]["publicationReceipt"] =
+        Value::String("var/derived/germany-2027.1/fremdes-publication-receipt.json".to_owned());
+    assert!(build_annual_infra_plan(&driftendes_publication_receipt, &catalog, &rights).is_err());
+
+    let mut fehlender_validator_commit = config.clone();
+    fehlender_validator_commit["pipeline"]["operationalDeriver"]["recoveryPublisher"]
+        .as_object_mut()
+        .expect("RecoveryPublisher")
+        .remove("validatorBuildCommit");
+    assert!(build_annual_infra_plan(&fehlender_validator_commit, &catalog, &rights).is_err());
+
+    let mut umetikettierter_validator = config.clone();
+    umetikettierter_validator["pipeline"]["operationalDeriver"]["recoveryPublisher"]["validatorBuildCommit"] =
+        Value::String("7777777777777777777777777777777777777777".to_owned());
+    assert!(build_annual_infra_plan(&umetikettierter_validator, &catalog, &rights).is_err());
+
+    let mut fehlende_ausfuehrungsdatei = config.clone();
+    fehlende_ausfuehrungsdatei["pipeline"]["operationalDeriver"]["recoveryPublisher"]
+        ["executionInventory"]
+        .as_object_mut()
+        .expect("Ausfuehrungsinventar")
+        .remove("operationalBinding");
+    assert!(build_annual_infra_plan(&fehlende_ausfuehrungsdatei, &catalog, &rights).is_err());
+
+    let mut fehlendes_rebuild_evidence = config.clone();
+    fehlendes_rebuild_evidence["pipeline"]["operationalDeriver"]["recoveryPublisher"]
+        .as_object_mut()
+        .expect("RecoveryPublisher")
+        .remove("validatorRebuildEvidence");
+    assert!(build_annual_infra_plan(&fehlendes_rebuild_evidence, &catalog, &rights).is_err());
+
+    let mut driftende_ausfuehrungsdatei = config.clone();
+    driftende_ausfuehrungsdatei["pipeline"]["operationalDeriver"]["recoveryPublisher"]["executionInventory"]
+        ["operationalBinding"] = Value::String("packages/alpha/dist/hash.js".to_owned());
+    assert!(build_annual_infra_plan(&driftende_ausfuehrungsdatei, &catalog, &rights).is_err());
+
+    let mut fehlender_rebuild_bootstrap = config.clone();
+    fehlender_rebuild_bootstrap["pipeline"]["operationalDeriver"]["recoveryPublisher"]
+        ["executionInventory"]
+        .as_object_mut()
+        .expect("Ausfuehrungsinventar")
+        .remove("validatorRebuildBootstrap");
+    assert!(build_annual_infra_plan(&fehlender_rebuild_bootstrap, &catalog, &rights).is_err());
+
+    let mut mutable_rebuild_datei = config.clone();
+    mutable_rebuild_datei["pipeline"]["operationalDeriver"]["recoveryPublisher"]["validatorRebuildExecutable"] =
+        Value::String("target/release/zugfolge-infra-release.exe".to_owned());
+    assert!(build_annual_infra_plan(&mutable_rebuild_datei, &catalog, &rights).is_err());
+
+    let mut fehlender_subvertrag = config;
+    fehlender_subvertrag["pipeline"]
+        .as_object_mut()
+        .expect("Pipelineobjekt")
+        .remove("operationalDeriver");
+    assert!(build_annual_infra_plan(&fehlender_subvertrag, &catalog, &rights).is_err());
+}
+
+#[cfg(windows)]
+#[test]
+fn gepinnter_rust_executor_startet_exakten_annual_plan_mit_ersatzumgebung() {
+    fn base64(bytes: &[u8]) -> String {
+        const ALPHABET: &[u8; 64] =
+            b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+        let mut output = String::with_capacity(bytes.len().div_ceil(3) * 4);
+        for chunk in bytes.chunks(3) {
+            let a = chunk[0];
+            let b = chunk.get(1).copied().unwrap_or_default();
+            let c = chunk.get(2).copied().unwrap_or_default();
+            output.push(ALPHABET[(a >> 2) as usize] as char);
+            output.push(ALPHABET[(((a & 3) << 4) | (b >> 4)) as usize] as char);
+            output.push(if chunk.len() > 1 {
+                ALPHABET[(((b & 15) << 2) | (c >> 6)) as usize] as char
+            } else {
+                '='
+            });
+            output.push(if chunk.len() > 2 {
+                ALPHABET[(c & 63) as usize] as char
+            } else {
+                '='
+            });
+        }
+        output
+    }
+
+    static NEXT_DIRECTORY: AtomicU64 = AtomicU64::new(0);
+    let suffix = NEXT_DIRECTORY.fetch_add(1, Ordering::Relaxed);
+    let root = std::env::temp_dir().join(format!(
+        "zugfolge-annual-direct-executor-{}-{suffix}",
+        std::process::id()
+    ));
+    let contract_relative = "tools/region-import/germany/operational-infrastructure-v2-direct-system-launch.annual-2027.1.json";
+    let contract_path = root.join(contract_relative);
+    let marker = root.join("direct-plan.marker");
+    fs::create_dir_all(contract_path.parent().expect("Contract-Elternpfad"))
+        .expect("Contract-Elternpfad anlegen");
+
+    let (mut config, catalog, rights, ..) = fixture();
+    let executable_source = Path::new(env!("CARGO_BIN_EXE_zugfolge-infra-release"));
+    let executable_bytes = fs::read(executable_source).expect("Test-Releasecompiler lesen");
+    let executable_sha256 = Sha256::digest(&executable_bytes)
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect::<String>();
+    let build_commit = "5555555555555555555555555555555555555555";
+    let executable_relative = format!(
+        "var/derived/germany-2027.1/toolchain/zugfolge-infra-release-{build_commit}-{executable_sha256}.exe"
+    );
+    let executable_path = root.join(&executable_relative);
+    fs::create_dir_all(executable_path.parent().expect("Executor-Elternpfad"))
+        .expect("Executor-Elternpfad anlegen");
+    fs::copy(executable_source, &executable_path).expect("gepinnten Testexecutor kopieren");
+    let outer_launcher_path = root.join(
+        "tools/region-import/germany/operational-infrastructure-v2-direct-contract-launcher.windows.ps1",
+    );
+    fs::create_dir_all(
+        outer_launcher_path
+            .parent()
+            .expect("Outer-Launcher-Elternpfad"),
+    )
+    .expect("Outer-Launcher-Elternpfad anlegen");
+    fs::copy(
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(
+            "../../tools/region-import/germany/operational-infrastructure-v2-direct-contract-launcher.windows.ps1",
+        ),
+        &outer_launcher_path,
+    )
+    .expect("Outer-Launcher kopieren");
+
+    let marker_literal = marker.to_string_lossy().replace('\'', "''");
+    let bootstrap = format!(
+        "param($Contract,$Context,[string]$WorkspaceRoot);[IO.File]::WriteAllText('{marker_literal}','direct-plan-ok')"
+    );
+    let bootstrap_sha256 = Sha256::digest(bootstrap.as_bytes())
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect::<String>();
+    let execution_pins = json!({
+        "file": "tools/region-import/germany/operational-infrastructure-v2-execution-pins.annual-2027.1.json",
+        "bytes": 987,
+        "sha256": "8888888888888888888888888888888888888888888888888888888888888888",
+        "schema": "zugfolge-germany-operational-v2-execution-pins/v1",
+    });
+    let contract = json!({
+        "schema": "zugfolge-operational-v2-direct-system-launch-contract/v1",
+        "releaseId": "infra-deutschland-2027.1",
+        "platform": "win32",
+        "executionPins": execution_pins,
+        "trustedExecutor": {
+            "file": executable_relative,
+            "buildCommit": build_commit,
+            "bytes": executable_bytes.len(),
+            "sha256": executable_sha256,
+        },
+        "launcher": {
+            "file": "tools/region-import/germany/operational-infrastructure-v2-system-launcher.windows.ps1",
+            "mode": "windows-system-powershell-held-bundle-v1",
+            "sourceBytes": 1,
+            "sourceSha256": "2222222222222222222222222222222222222222222222222222222222222222",
+        },
+        "dynamicBindings": [{
+            "id": "launchContext",
+            "environment": "ZUGFOLGE_OPERATIONAL_LAUNCH_CONTEXT_BASE64",
+            "encoding": "canonical-json-utf8-base64-v1",
+            "schema": "zugfolge-operational-v2-direct-system-launch-context/v1",
+            "properties": [
+                "candidatePath", "candidateSidecarPath", "executionPinsPath",
+                "nativeReceiptPath", "reportPath", "runtimePath", "schema", "sourceRoot",
+                "specificationPath"
+            ],
+        }],
+        "bootstrap": {
+            "mode": "held-contract-inline-powershell-v1",
+            "sourceEncoding": "utf-8",
+            "sourceBase64": base64(bootstrap.as_bytes()),
+            "sourceBytes": bootstrap.len(),
+            "sourceSha256": bootstrap_sha256,
+        },
+    });
+    let mut contract_bytes = serde_json::to_vec(&contract).expect("Contract serialisieren");
+    contract_bytes.push(b'\n');
+    fs::write(&contract_path, &contract_bytes).expect("Contract schreiben");
+    let contract_sha256 = Sha256::digest(&contract_bytes)
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect::<String>();
+
+    config["pipeline"]["operationalDeriver"]["recoveryPublisher"]["validatorExecutable"] =
+        Value::String(executable_relative);
+    config["pipeline"]["operationalDeriver"]["recoveryPublisher"]["validatorBytes"] =
+        Value::from(executable_bytes.len());
+    config["pipeline"]["operationalDeriver"]["recoveryPublisher"]["validatorSha256"] =
+        Value::String(executable_sha256);
+    config["pipeline"]["operationalDeriver"]["directSystemLaunch"]["contract"] = json!({
+        "file": contract_relative,
+        "bytes": contract_bytes.len(),
+        "sha256": contract_sha256,
+        "schema": "zugfolge-operational-v2-direct-system-launch-contract/v1",
+        "releaseId": "infra-deutschland-2027.1",
+        "executionPins": contract["executionPins"].clone(),
+        "trustedExecutor": contract["trustedExecutor"].clone(),
+    });
+    let context = json!({
+        "schema": "zugfolge-operational-v2-direct-system-launch-context/v1",
+        "runtimePath": r"C:\runtime\node.exe",
+        "executionPinsPath": "pins.json",
+        "specificationPath": "spec.json",
+        "sourceRoot": "source",
+        "candidatePath": "candidate.json",
+        "candidateSidecarPath": "candidate-sidecar.json",
+        "reportPath": "report.json",
+        "nativeReceiptPath": "native-receipt.json",
+    });
+    let config_path = root.join("config.json");
+    let catalog_path = root.join("catalog.json");
+    let rights_path = root.join("rights.json");
+    let context_path = root.join("context.json");
+    fs::write(&config_path, serde_json::to_vec(&config).unwrap()).unwrap();
+    fs::write(&catalog_path, serde_json::to_vec(&catalog).unwrap()).unwrap();
+    fs::write(&rights_path, serde_json::to_vec(&rights).unwrap()).unwrap();
+    fs::write(&context_path, serde_json::to_vec(&context).unwrap()).unwrap();
+
+    let result = Command::new(&executable_path)
+        .args([
+            "run-annual-operational-v2",
+            config_path.to_str().unwrap(),
+            catalog_path.to_str().unwrap(),
+            rights_path.to_str().unwrap(),
+            context_path.to_str().unwrap(),
+        ])
+        .env("COMPLUS_InstallRoot", r"C:\definitely-missing")
+        .env("DOTNET_STARTUP_HOOKS", r"C:\attacker\hook.dll")
+        .output()
+        .expect("gepinnten Rust-Executor starten");
+    assert!(
+        result.status.success(),
+        "stdout={} stderr={}",
+        String::from_utf8_lossy(&result.stdout),
+        String::from_utf8_lossy(&result.stderr)
+    );
+    assert_eq!(fs::read_to_string(&marker).unwrap(), "direct-plan-ok");
+    fs::remove_dir_all(&root).expect("Testbaum entfernen");
+}
+
+#[test]
+fn operational_deriver_bleibt_fuer_historischen_v1_jahresvertrag_optional() {
+    let (_, catalog, rights, ..) = fixture();
+    for (name, bytes) in [
+        (
+            "release.config.json",
+            include_str!("../../../tools/region-import/germany/release.config.json"),
+        ),
+        (
+            "release.annual-2026.2.config.json",
+            include_str!("../../../tools/region-import/germany/release.annual-2026.2.config.json"),
+        ),
+    ] {
+        let legacy: Value = serde_json::from_str(bytes).expect("gültige Legacy-Konfiguration");
+        let plan = build_annual_infra_plan(&legacy, &catalog, &rights).unwrap_or_else(|error| {
+            panic!("{name} muss ohne OperationalDeriver gültig bleiben: {error}")
+        });
+        let stage_ids: Vec<&str> = plan["stages"]
+            .as_array()
+            .expect("Legacy-Stufen")
+            .iter()
+            .map(|stage| stage["id"].as_str().expect("Legacy-Stufenkennung"))
+            .collect();
+        for forbidden in [
+            "operational-v2-derivation",
+            "operational-v2-native-validation",
+            "release-artifact-inventory",
+            "public-manifest",
+            "operational-v2-acceptance",
+        ] {
+            assert!(
+                !stage_ids.contains(&forbidden),
+                "{name} darf die neue v2-Stufe {forbidden} nicht nachträglich erhalten"
+            );
+        }
+    }
+
+    let (mut config, ..) = fixture();
+    config["release"]["releaseId"] = Value::String("infra-deutschland-2026.2".to_owned());
+    config["release"]["timetableYear"] = Value::from(2026);
+    config["pipeline"]
+        .as_object_mut()
+        .expect("Pipelineobjekt")
+        .remove("operationalDeriver");
+    build_annual_infra_plan(&config, &catalog, &rights)
+        .expect("historischer 2026.2/v1-Jahresvertrag ohne OperationalDeriver");
+
+    config["release"]["releaseId"] = Value::String("infra-deutschland-2026.3".to_owned());
+    assert!(
+        build_annual_infra_plan(&config, &catalog, &rights).is_err(),
+        "2026.3 muss ohne OperationalDeriver fail-closed enden"
+    );
 }
 
 #[test]
@@ -335,6 +1245,161 @@ fn fehlende_rechte_und_interner_hash_schliessen_fail_closed() {
         )
         .is_err()
     );
+}
+
+#[test]
+fn source_capture_v2_bindet_release_jahr_und_plan_ohne_historisches_ledger() {
+    let (config, catalog, rights, mut capture, artifacts, quality) = fixture();
+    capture["schema"] = Value::String("zugfolge-source-capture/v2".to_owned());
+    capture
+        .as_object_mut()
+        .expect("Captureobjekt")
+        .remove("internalEvidenceLedgerSha256");
+    capture["releaseId"] = config["release"]["releaseId"].clone();
+    capture["timetableYear"] = config["release"]["timetableYear"].clone();
+    capture["capturePlanSha256"] = Value::String("a".repeat(64));
+
+    build_public_infra_release(&config, &catalog, &rights, &capture, &artifacts, &quality)
+        .expect("Source-Capture v2 mit exakter Jahresbindung");
+
+    capture["releaseId"] = Value::String("infra-deutschland-anderes-jahr".to_owned());
+    assert!(
+        build_public_infra_release(&config, &catalog, &rights, &capture, &artifacts, &quality)
+            .is_err(),
+        "abweichende Releasebindung muss fail-closed enden"
+    );
+}
+
+#[test]
+fn deutschland_2026_patch_4_verweigert_historisches_source_capture_v1() {
+    let (mut config, catalog, rights, capture, mut artifacts, quality) = fixture();
+    config["release"]["releaseId"] = Value::String("infra-deutschland-2026.4".to_owned());
+    config["release"]["timetableYear"] = Value::from(2026);
+    let deriver = &mut config["pipeline"]["operationalDeriver"];
+    deriver["entrypoint"] = Value::String(
+        "tools/region-import/germany/run-operational-infrastructure-v2.mjs".to_owned(),
+    );
+    deriver
+        .as_object_mut()
+        .expect("OperationalDeriver")
+        .remove("primaryRunner");
+    deriver
+        .as_object_mut()
+        .expect("OperationalDeriver")
+        .remove("primaryRunnerMode");
+    deriver
+        .as_object_mut()
+        .expect("OperationalDeriver")
+        .remove("systemCommandBuilder");
+    deriver
+        .as_object_mut()
+        .expect("OperationalDeriver")
+        .remove("systemCommandBuilderMode");
+    deriver
+        .as_object_mut()
+        .expect("OperationalDeriver")
+        .remove("directSystemLaunch");
+    deriver
+        .as_object_mut()
+        .expect("OperationalDeriver")
+        .remove("executionPins");
+    deriver
+        .as_object_mut()
+        .expect("OperationalDeriver")
+        .remove("sourceRoot");
+    deriver
+        .as_object_mut()
+        .expect("OperationalDeriver")
+        .remove("candidateMovementRouteTemplates");
+    deriver
+        .as_object_mut()
+        .expect("OperationalDeriver")
+        .remove("recoveryPublisher");
+    deriver["specification"] = Value::String(
+        "tools/region-import/germany/operational-infrastructure.annual-2026.4.json".to_owned(),
+    );
+    deriver["candidate"] = Value::String(
+        "var/derived/germany-2026.4/operational-infrastructure-v2.candidate.json".to_owned(),
+    );
+    deriver["report"] = Value::String(
+        "var/derived/germany-2026.4/operational-infrastructure-v2.derivation-report.json"
+            .to_owned(),
+    );
+    deriver["output"] =
+        Value::String("var/derived/germany-2026.4/operational-infrastructure-v2.json".to_owned());
+
+    let legacy_plan = build_annual_infra_plan(&config, &catalog, &rights)
+        .expect("2026.4-Jahresplan ohne Current-Rebuild-Phase");
+    assert!(
+        legacy_plan["stages"]
+            .as_array()
+            .expect("2026.4-Stufen")
+            .iter()
+            .all(|stage| stage["id"] != "operational-v2-validator-rebuild-evidence"),
+        "2026.4 darf weder den v3-Rebuild-Vertrag noch eine interne Current-Bundle-Phase emittieren"
+    );
+
+    let mut config_mit_systemlauncher = config.clone();
+    config_mit_systemlauncher["pipeline"]["operationalDeriver"]["systemCommandBuilder"] =
+        Value::String(
+            "tools/region-import/germany/print-operational-infrastructure-v2-system-launch-command.mjs"
+                .to_owned(),
+        );
+    assert!(
+        build_annual_infra_plan(&config_mit_systemlauncher, &catalog, &rights).is_err(),
+        "2026.4 darf selbst einen korrekt benannten neuen SystemCommandBuilder nicht akzeptieren"
+    );
+
+    let operational = artifacts
+        .as_array_mut()
+        .expect("Artefaktliste")
+        .iter_mut()
+        .find(|artifact| artifact["kind"] == "operational-infrastructure-v2")
+        .expect("Operational-v2-Artefakt");
+    operational["id"] = Value::String("operational-infrastructure-2026.4".to_owned());
+    operational["infraReleaseId"] = Value::String("infra-deutschland-2026.4".to_owned());
+    for (kind, id) in [
+        (
+            "movement-route-templates-v2",
+            "operational-movement-routes-2026.4",
+        ),
+        (
+            "timetable-transfer-demands-v2",
+            "timetable-transfer-demands-2026.4",
+        ),
+    ] {
+        let artifact = artifacts
+            .as_array_mut()
+            .expect("Artefaktliste")
+            .iter_mut()
+            .find(|artifact| artifact["kind"] == kind)
+            .unwrap_or_else(|| panic!("{kind}-Artefakt"));
+        artifact["id"] = Value::String(id.to_owned());
+    }
+
+    let error =
+        build_public_infra_release(&config, &catalog, &rights, &capture, &artifacts, &quality)
+            .expect_err("2026.4 darf kein historisches Source-Capture v1 akzeptieren");
+    assert!(error.to_string().contains("ab Patch 3"));
+
+    let mut capture_v2 = capture;
+    capture_v2["schema"] = Value::String("zugfolge-source-capture/v2".to_owned());
+    capture_v2
+        .as_object_mut()
+        .expect("Captureobjekt")
+        .remove("internalEvidenceLedgerSha256");
+    capture_v2["releaseId"] = Value::String("infra-deutschland-2026.4".to_owned());
+    capture_v2["timetableYear"] = Value::from(2026);
+    capture_v2["capturePlanSha256"] = Value::String("a".repeat(64));
+    build_public_infra_release(
+        &config,
+        &catalog,
+        &rights,
+        &capture_v2,
+        &artifacts,
+        &quality,
+    )
+    .expect("2026.4 akzeptiert das exakt releasegebundene Source-Capture v2");
 }
 
 #[test]
@@ -390,7 +1455,623 @@ fn widerspruechliche_summen_und_doppelte_ids_schliessen_fail_closed() {
 }
 
 #[test]
-fn oeffentlicher_release_transportiert_genau_eine_getrennte_statische_v2_bindung() {
+fn sichtbare_static_map_klasse_c_bleibt_getrennt_von_operational_v2_signierbar() {
+    let (config, catalog, rights, capture, artifacts, _) = fixture();
+    let static_quality_value = static_map_quality_with_visible_class_c();
+    let static_quality = static_map_quality_bytes(&static_quality_value);
+    let operational_quality_value =
+        closed_operational_quality(&static_quality_value, &static_quality);
+    let operational_quality = operational_quality_bytes(&operational_quality_value);
+
+    let result = build_public_infra_release_with_operational_quality(
+        &config,
+        &catalog,
+        &rights,
+        &capture,
+        &artifacts,
+        &static_quality,
+        &operational_quality,
+    )
+    .expect("getrennte Karten- und Betriebsqualitaet");
+    let release = &result["release"];
+    assert_eq!(
+        release["quality"]["byClassLengthMm"],
+        json!({"A": 100, "B": 799, "C": 100})
+    );
+    assert_eq!(
+        release["quality"]["byClassFeatureCount"],
+        json!({"A": 0, "B": 9, "C": 1})
+    );
+    assert_eq!(release["quality"]["classCVisible"], true);
+    assert_eq!(release["quality"]["classCPlayable"], false);
+    assert_eq!(
+        release["quality"]["operationalClosure"]["qualityClass"],
+        "B"
+    );
+    assert_eq!(
+        release["quality"]["operationalClosure"]["operationalQualityEligible"],
+        true
+    );
+    assert_eq!(
+        release["quality"]["operationalClosure"]["activationImplied"],
+        false
+    );
+    assert_eq!(
+        release["quality"]["operationalClosure"]["candidateSha256"],
+        "8".repeat(64)
+    );
+    assert_eq!(
+        release["quality"]["operationalClosure"]["syntheticOperationalDetailsShipped"],
+        true
+    );
+    assert_eq!(
+        release["quality"]["operationalClosure"]["objectLevelProvenanceShipped"],
+        false
+    );
+    assert_eq!(
+        release["quality"]["operationalClosure"]["observedAndSyntheticObjectsShareRuntimeCollections"],
+        true
+    );
+    assert_eq!(
+        release["quality"]["operationalClosure"]["timetableRouteEvidence"]["routeSetSha256"],
+        "a".repeat(64)
+    );
+    assert_eq!(
+        release["quality"]["operationalClosure"]["timetableRouteEvidence"]["routeRecordCount"],
+        1677
+    );
+    assert_eq!(
+        release["quality"]["operationalClosure"]["timetableRouteEvidence"]["transferRouteCount"],
+        82
+    );
+    assert_eq!(
+        release["quality"]["operationalClosure"]["timetableRouteEvidence"]["externalOperationalNetworkProvenance"],
+        false
+    );
+    assert_eq!(
+        release["corpus"]["modelledScope"],
+        "operational-v2-closure-with-visible-static-context"
+    );
+    assert_eq!(
+        static_quality_value["claims"]["productionActivationEligible"],
+        false
+    );
+}
+
+#[test]
+fn manifest_cli_bindet_die_tatsaechlichen_static_und_operational_quality_dateibytes() {
+    static NEXT_DIRECTORY: AtomicU64 = AtomicU64::new(0);
+    let suffix = NEXT_DIRECTORY.fetch_add(1, Ordering::Relaxed);
+    let root = std::env::temp_dir().join(format!(
+        "zugfolge-two-artifact-manifest-{}-{suffix}",
+        std::process::id()
+    ));
+    fs::create_dir_all(&root).expect("CLI-Testverzeichnis");
+    let (config, catalog, rights, capture, artifacts, _) = fixture();
+    let static_quality_value = static_map_quality_with_visible_class_c();
+    let static_quality = static_map_quality_bytes(&static_quality_value);
+    let operational_quality = closed_operational_quality(&static_quality_value, &static_quality);
+    let values = [
+        ("config.json", &config),
+        ("catalog.json", &catalog),
+        ("rights.json", &rights),
+        ("capture.json", &capture),
+        ("artifacts.json", &artifacts),
+        ("operational-quality.json", &operational_quality),
+    ];
+    for (name, value) in values {
+        write(
+            &root.join(name),
+            &serde_json::to_vec(value).expect("CLI-Fixture"),
+        );
+    }
+    let static_quality_path = root.join("static-quality.json");
+    write(&static_quality_path, &static_quality);
+    let operational_quality_path = root.join("operational-quality.json");
+    let output_path = root.join("release.json");
+    let invoke = |output: &Path| {
+        Command::new(env!("CARGO_BIN_EXE_zugfolge-infra-release"))
+            .arg("manifest")
+            .arg(root.join("config.json"))
+            .arg(root.join("catalog.json"))
+            .arg(root.join("rights.json"))
+            .arg(root.join("capture.json"))
+            .arg(root.join("artifacts.json"))
+            .arg(&static_quality_path)
+            .arg(&operational_quality_path)
+            .arg(output)
+            .status()
+            .expect("Releasecompiler starten")
+    };
+    assert!(invoke(&output_path).success());
+    let original_output_bytes = fs::read(&output_path).expect("CLI-Releasebytes lesen");
+    assert!(
+        !invoke(&output_path).success(),
+        "zweiter Manifestlauf auf dasselbe versionierte Ziel muss create-new scheitern"
+    );
+    assert_eq!(
+        fs::read(&output_path).expect("CLI-Releasebytes nach zweitem Lauf lesen"),
+        original_output_bytes,
+        "fehlgeschlagener zweiter Manifestlauf darf vorhandene Bytes nicht veraendern"
+    );
+    let release: Value =
+        serde_json::from_slice(&fs::read(&output_path).expect("CLI-Release lesen"))
+            .expect("CLI-Release");
+    assert_eq!(
+        release["release"]["quality"]["operationalClosure"]["staticMapQualitySha256"],
+        Sha256::digest(&static_quality)
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect::<String>()
+    );
+    let original_operational_bytes =
+        fs::read(&operational_quality_path).expect("Operational-Quality lesen");
+    let original_operational_sha256 = Sha256::digest(&original_operational_bytes)
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect::<String>();
+    assert_eq!(
+        release["release"]["quality"]["operationalClosure"]["reportSha256"],
+        original_operational_sha256
+    );
+
+    let mut whitespace_changed_operational_bytes = original_operational_bytes;
+    whitespace_changed_operational_bytes.push(b' ');
+    write(
+        &operational_quality_path,
+        &whitespace_changed_operational_bytes,
+    );
+    let whitespace_output = root.join("release-with-operational-whitespace.json");
+    assert!(
+        invoke(&whitespace_output).success(),
+        "JSON-Whitespace aendert keine operative Semantik"
+    );
+    let whitespace_release: Value =
+        serde_json::from_slice(&fs::read(&whitespace_output).expect("Whitespace-Release lesen"))
+            .expect("Whitespace-Release");
+    let whitespace_operational_sha256 = Sha256::digest(&whitespace_changed_operational_bytes)
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect::<String>();
+    assert_ne!(
+        whitespace_operational_sha256, original_operational_sha256,
+        "gueltiger JSON-Whitespace muss die Dateibytebindung aendern"
+    );
+    assert_eq!(
+        whitespace_release["release"]["quality"]["operationalClosure"]["reportSha256"],
+        whitespace_operational_sha256
+    );
+
+    let mut changed_static_quality = static_quality;
+    changed_static_quality.push(b' ');
+    write(&static_quality_path, &changed_static_quality);
+    assert!(
+        !invoke(&root.join("release-with-unbound-static-bytes.json")).success(),
+        "selbst gueltiger JSON-Nachlauf muss wegen abweichender Dateibytes scheitern"
+    );
+    fs::remove_dir_all(root).expect("CLI-Testverzeichnis aufraeumen");
+}
+
+#[test]
+fn operationaler_zwei_artefakt_gate_verwirft_offene_dimension_und_hashabweichung() {
+    let (config, catalog, rights, capture, artifacts, _) = fixture();
+    let static_quality_value = static_map_quality_with_visible_class_c();
+    let static_quality = static_map_quality_bytes(&static_quality_value);
+    let mut unresolved = closed_operational_quality(&static_quality_value, &static_quality);
+    unresolved["summary"]["unresolvedRequired"] = json!(1);
+    unresolved["qualityGate"]["operationalQualityEligible"] = json!(false);
+    let error = build_public_infra_release_with_operational_quality(
+        &config,
+        &catalog,
+        &rights,
+        &capture,
+        &artifacts,
+        &static_quality,
+        &operational_quality_bytes(&unresolved),
+    )
+    .expect_err("offene Operational-v2-Dimension muss scheitern");
+    assert!(error.to_string().contains("operationalQualityEligible"));
+
+    let mut wrong_hash = closed_operational_quality(&static_quality_value, &static_quality);
+    wrong_hash["operationalModel"]["operationalArtifact"]["sha256"] = Value::String("3".repeat(64));
+    let error = build_public_infra_release_with_operational_quality(
+        &config,
+        &catalog,
+        &rights,
+        &capture,
+        &artifacts,
+        &static_quality,
+        &operational_quality_bytes(&wrong_hash),
+    )
+    .expect_err("abweichender Candidate-Hash muss scheitern");
+    assert!(error.to_string().contains("Byte-/Zustandsbindung"));
+
+    let mut changed_static_bytes = static_quality.clone();
+    changed_static_bytes.push(b' ');
+    let operational_quality = closed_operational_quality(&static_quality_value, &static_quality);
+    let error = build_public_infra_release_with_operational_quality(
+        &config,
+        &catalog,
+        &rights,
+        &capture,
+        &artifacts,
+        &changed_static_bytes,
+        &operational_quality_bytes(&operational_quality),
+    )
+    .expect_err("jede Aenderung der tatsaechlichen Static-v2-Dateibytes muss scheitern");
+    assert!(error.to_string().contains("sichtbaren Kartenbeleg"));
+
+    let mut extra_map_field = closed_operational_quality(&static_quality_value, &static_quality);
+    extra_map_field["mapEvidence"]["unexpected"] = json!(true);
+    let error = build_public_infra_release_with_operational_quality(
+        &config,
+        &catalog,
+        &rights,
+        &capture,
+        &artifacts,
+        &static_quality,
+        &operational_quality_bytes(&extra_map_field),
+    )
+    .expect_err("MapEvidence muss den exakten Doppelbindungsvertrag besitzen");
+    assert!(error.to_string().contains("Doppelbindungsvertrag"));
+
+    let mut wrong_transfer_bytes =
+        closed_operational_quality(&static_quality_value, &static_quality);
+    wrong_transfer_bytes["operationalModel"]["timetableRouteEvidence"]["transferDemandsBytes"] =
+        json!(3457);
+    let error = build_public_infra_release_with_operational_quality(
+        &config,
+        &catalog,
+        &rights,
+        &capture,
+        &artifacts,
+        &static_quality,
+        &operational_quality_bytes(&wrong_transfer_bytes),
+    )
+    .expect_err("Closure und Transfer-Sidecar muessen dieselben Dateibytes binden");
+    assert!(error.to_string().contains("identische Bytebindung"));
+
+    let mut wrong_transfer_hash =
+        closed_operational_quality(&static_quality_value, &static_quality);
+    wrong_transfer_hash["operationalModel"]["timetableRouteEvidence"]["transferDemandsSha256"] =
+        json!("e".repeat(64));
+    let error = build_public_infra_release_with_operational_quality(
+        &config,
+        &catalog,
+        &rights,
+        &capture,
+        &artifacts,
+        &static_quality,
+        &operational_quality_bytes(&wrong_transfer_hash),
+    )
+    .expect_err("Closure und Transfer-Sidecar muessen denselben SHA-256 binden");
+    assert!(error.to_string().contains("identische Bytebindung"));
+
+    let mut wrong_transfer_binding =
+        closed_operational_quality(&static_quality_value, &static_quality);
+    wrong_transfer_binding["operationalModel"]["timetableRouteEvidence"]["transferSetSha256"] =
+        json!("f".repeat(64));
+    let error = build_public_infra_release_with_operational_quality(
+        &config,
+        &catalog,
+        &rights,
+        &capture,
+        &artifacts,
+        &static_quality,
+        &operational_quality_bytes(&wrong_transfer_binding),
+    )
+    .expect_err("Closure und Movement-Beleg muessen dasselbe Transfer-Set binden");
+    assert!(error.to_string().contains("Transfer-Set-Bindung"));
+
+    for (field, value, message) in [
+        ("bytes", json!(790), "Byte-"),
+        ("sha256", json!("e".repeat(64)), "Byte-"),
+        (
+            "operationalStateHash",
+            json!("e".repeat(64)),
+            "Operational-State-",
+        ),
+        (
+            "timetableTransferSetSha256",
+            json!("e".repeat(64)),
+            "Transfer-Set-",
+        ),
+    ] {
+        let mut wrong_movement = closed_operational_quality(&static_quality_value, &static_quality);
+        wrong_movement["operationalModel"]["movementRouteTemplates"][field] = value;
+        let error = build_public_infra_release_with_operational_quality(
+            &config,
+            &catalog,
+            &rights,
+            &capture,
+            &artifacts,
+            &static_quality,
+            &operational_quality_bytes(&wrong_movement),
+        )
+        .expect_err("Movement-Beleg muss Sidecar, Operational-State und Transfer-Set binden");
+        assert!(error.to_string().contains(message), "{field}: {error}");
+    }
+
+    let mut extra_movement_field =
+        closed_operational_quality(&static_quality_value, &static_quality);
+    extra_movement_field["operationalModel"]["movementRouteTemplates"]["file"] =
+        json!("forbidden-path.json");
+    let error = build_public_infra_release_with_operational_quality(
+        &config,
+        &catalog,
+        &rights,
+        &capture,
+        &artifacts,
+        &static_quality,
+        &operational_quality_bytes(&extra_movement_field),
+    )
+    .expect_err("oeffentlicher Movement-Beleg darf keinen Pfad tragen");
+    assert!(
+        error
+            .to_string()
+            .contains("pfadfreien Byte-/Zustandsvertrag")
+    );
+}
+
+#[test]
+fn operationaler_gate_verwirft_v1_policy_und_alte_provenienzfelder() {
+    let (config, catalog, rights, capture, artifacts, _) = fixture();
+    let static_quality_value = static_map_quality_with_visible_class_c();
+    let static_quality = static_map_quality_bytes(&static_quality_value);
+
+    let mut legacy_details = closed_operational_quality(&static_quality_value, &static_quality);
+    let model = legacy_details["operationalModel"]
+        .as_object_mut()
+        .expect("OperationalModel");
+    model.remove("syntheticOperationalDetailsShipped");
+    model.insert("syntheticObjectDetailsShipped".into(), json!(false));
+    let error = build_public_infra_release_with_operational_quality(
+        &config,
+        &catalog,
+        &rights,
+        &capture,
+        &artifacts,
+        &static_quality,
+        &operational_quality_bytes(&legacy_details),
+    )
+    .expect_err("altes syntheticObjectDetailsShipped darf nicht akzeptiert werden");
+    assert!(error.to_string().contains("v2-Provenienzvertrag"));
+
+    let mut legacy_merge = closed_operational_quality(&static_quality_value, &static_quality);
+    let model = legacy_merge["operationalModel"]
+        .as_object_mut()
+        .expect("OperationalModel");
+    model.remove("objectLevelProvenanceShipped");
+    model.remove("observedAndSyntheticObjectsShareRuntimeCollections");
+    model.insert("observedAndSyntheticProvenanceMerged".into(), json!(false));
+    let error = build_public_infra_release_with_operational_quality(
+        &config,
+        &catalog,
+        &rights,
+        &capture,
+        &artifacts,
+        &static_quality,
+        &operational_quality_bytes(&legacy_merge),
+    )
+    .expect_err("altes Provenienz-Mergefeld darf nicht akzeptiert werden");
+    assert!(error.to_string().contains("v2-Provenienzvertrag"));
+
+    let mut v1_policy = closed_operational_quality(&static_quality_value, &static_quality);
+    v1_policy["operationalModel"]["policyId"] = json!("synthetic-operational-b/v1");
+    let error = build_public_infra_release_with_operational_quality(
+        &config,
+        &catalog,
+        &rights,
+        &capture,
+        &artifacts,
+        &static_quality,
+        &operational_quality_bytes(&v1_policy),
+    )
+    .expect_err("v1-Policy-ID darf nicht akzeptiert werden");
+    assert!(error.to_string().contains("Simulationsprovenienz"));
+
+    for (field, wrong_value) in [
+        ("syntheticOperationalDetailsShipped", false),
+        ("objectLevelProvenanceShipped", true),
+        ("observedAndSyntheticObjectsShareRuntimeCollections", false),
+    ] {
+        let mut report = closed_operational_quality(&static_quality_value, &static_quality);
+        report["operationalModel"][field] = json!(wrong_value);
+        let error = build_public_infra_release_with_operational_quality(
+            &config,
+            &catalog,
+            &rights,
+            &capture,
+            &artifacts,
+            &static_quality,
+            &operational_quality_bytes(&report),
+        )
+        .expect_err("falscher v2-Provenienzclaim muss scheitern");
+        assert!(
+            error.to_string().contains("Simulationsprovenienz"),
+            "{field}: {error}"
+        );
+    }
+}
+
+#[test]
+fn operationaler_gate_verwirft_aufgeweichten_freien_gtfs_fahrwegbeleg() {
+    let (config, catalog, rights, capture, artifacts, _) = fixture();
+    let static_quality_value = static_map_quality_with_visible_class_c();
+    let static_quality = static_map_quality_bytes(&static_quality_value);
+
+    let mut extra_field = closed_operational_quality(&static_quality_value, &static_quality);
+    extra_field["operationalModel"]["timetableRouteEvidence"]["operationalNetwork"] =
+        json!({"bytes": 1, "sha256": "f".repeat(64)});
+    let error = build_public_infra_release_with_operational_quality(
+        &config,
+        &catalog,
+        &rights,
+        &capture,
+        &artifacts,
+        &static_quality,
+        &operational_quality_bytes(&extra_field),
+    )
+    .expect_err("externe Operational-Network-Provenienz muss am Strict-Key-Vertrag scheitern");
+    assert!(error.to_string().contains("v4-Closure-Vertrag"));
+
+    for (label, field, value) in [
+        (
+            "externe Operational-Network-Provenienz",
+            "externalOperationalNetworkProvenance",
+            json!(true),
+        ),
+        (
+            "unvollstaendige Segmentabdeckung",
+            "completeRouteCount",
+            json!(1676),
+        ),
+        (
+            "abweichender RouteSet-Hash",
+            "routeSetSha256",
+            json!("e".repeat(64)),
+        ),
+        (
+            "unvollstaendige Transferabdeckung",
+            "transferRouteCount",
+            json!(78),
+        ),
+        ("unfreie Lizenz", "sourceLicense", json!("proprietary")),
+    ] {
+        let mut report = closed_operational_quality(&static_quality_value, &static_quality);
+        report["operationalModel"]["timetableRouteEvidence"][field] = value;
+        let error = build_public_infra_release_with_operational_quality(
+            &config,
+            &catalog,
+            &rights,
+            &capture,
+            &artifacts,
+            &static_quality,
+            &operational_quality_bytes(&report),
+        )
+        .expect_err(label);
+        assert!(
+            error
+                .to_string()
+                .contains("Policy, Bytebindung, Tagesumlauf-/Transferabdeckung, Vollstaendigkeit oder Provenienz"),
+            "{label}: {error}"
+        );
+    }
+}
+
+#[test]
+fn operationaler_gate_verlangt_exklusiv_report_v4_transfer_v2_und_daily_partition() {
+    let (config, catalog, rights, capture, artifacts, _) = fixture();
+    let static_quality_value = static_map_quality_with_visible_class_c();
+    let static_quality = static_map_quality_bytes(&static_quality_value);
+
+    for (label, field, value) in [
+        (
+            "Report-v3",
+            "reportSchema",
+            json!("zugfolge-germany-timetable-route-report/v3"),
+        ),
+        (
+            "Transfer-Schema-v1",
+            "transferDemandsSchema",
+            json!("zugfolge-timetable-transfer-demands/v1"),
+        ),
+    ] {
+        let mut report = closed_operational_quality(&static_quality_value, &static_quality);
+        report["operationalModel"]["timetableRouteEvidence"][field] = value;
+        let error = build_public_infra_release_with_operational_quality(
+            &config,
+            &catalog,
+            &rights,
+            &capture,
+            &artifacts,
+            &static_quality,
+            &operational_quality_bytes(&report),
+        )
+        .expect_err(label);
+        assert!(
+            error
+                .to_string()
+                .contains("Policy, Bytebindung, Tagesumlauf-/Transferabdeckung, Vollstaendigkeit oder Provenienz"),
+            "{label}: {error}"
+        );
+    }
+
+    for field in ["plannedTransitionCount", "turnaroundDemandCount"] {
+        let mut report = closed_operational_quality(&static_quality_value, &static_quality);
+        report["operationalModel"]["timetableRouteEvidence"]["dailyCirculation"]
+            .as_object_mut()
+            .expect("Daily-Circulation")
+            .remove(field);
+        let error = build_public_infra_release_with_operational_quality(
+            &config,
+            &catalog,
+            &rights,
+            &capture,
+            &artifacts,
+            &static_quality,
+            &operational_quality_bytes(&report),
+        )
+        .expect_err("alle acht Daily-Plan-Metriken sind Pflicht");
+        assert!(
+            error
+                .to_string()
+                .contains("Daily-Circulation-Metrik besitzt fehlende oder unerwartete Felder"),
+            "{field}: {error}"
+        );
+    }
+
+    let mut report = closed_operational_quality(&static_quality_value, &static_quality);
+    report["operationalModel"]["timetableRouteEvidence"]["dailyCirculation"]["turnaroundPairCount"] =
+        json!(1_595);
+    let error = build_public_infra_release_with_operational_quality(
+        &config,
+        &catalog,
+        &rights,
+        &capture,
+        &artifacts,
+        &static_quality,
+        &operational_quality_bytes(&report),
+    )
+    .expect_err("turnaroundPairCount gehoert nicht in die acht Daily-Plan-Metriken");
+    assert!(
+        error
+            .to_string()
+            .contains("Daily-Circulation-Metrik besitzt fehlende oder unerwartete Felder"),
+        "{error}"
+    );
+
+    for (label, planned, turnaround, rollover) in [
+        ("unvollstaendige Demand-Partition", 1_677, 1_594, 197),
+        ("Planned/JourneyChain-Drift", 1_676, 1_594, 197),
+        ("Rollover/Circulation-Drift", 1_677, 1_595, 196),
+    ] {
+        let mut report = closed_operational_quality(&static_quality_value, &static_quality);
+        let daily = &mut report["operationalModel"]["timetableRouteEvidence"]["dailyCirculation"];
+        daily["plannedTransitionCount"] = json!(planned);
+        daily["turnaroundDemandCount"] = json!(turnaround);
+        daily["rolloverAssignmentCount"] = json!(rollover);
+        let error = build_public_infra_release_with_operational_quality(
+            &config,
+            &catalog,
+            &rights,
+            &capture,
+            &artifacts,
+            &static_quality,
+            &operational_quality_bytes(&report),
+        )
+        .expect_err(label);
+        assert!(
+            error
+                .to_string()
+                .contains("Policy, Bytebindung, Tagesumlauf-/Transferabdeckung, Vollstaendigkeit oder Provenienz"),
+            "{label}: {error}"
+        );
+    }
+}
+
+#[test]
+fn oeffentlicher_release_transportiert_genau_eine_getrennte_v2_paketkomposition() {
     let (config, catalog, rights, capture, artifacts, quality) = fixture();
 
     let mut missing = artifacts.clone();
@@ -402,6 +2083,130 @@ fn oeffentlicher_release_transportiert_genau_eine_getrennte_statische_v2_bindung
         build_public_infra_release(&config, &catalog, &rights, &capture, &missing, &quality)
             .expect_err("fehlende Operational-v2-Infrastruktur muss scheitern");
     assert!(error.to_string().contains("genau eine statische"));
+
+    for (kind, message) in [
+        (
+            "movement-route-templates-v2",
+            "genau ein Movement-Route-Templates-v2-Artefakt",
+        ),
+        (
+            "timetable-transfer-demands-v2",
+            "genau ein Timetable-Transfer-Demands-v2-Artefakt",
+        ),
+    ] {
+        let mut missing_sidecar = artifacts.clone();
+        missing_sidecar
+            .as_array_mut()
+            .expect("Artefakte")
+            .retain(|artifact| artifact["kind"] != kind);
+        let error = build_public_infra_release(
+            &config,
+            &catalog,
+            &rights,
+            &capture,
+            &missing_sidecar,
+            &quality,
+        )
+        .unwrap_err();
+        assert!(error.to_string().contains(message), "{kind}: {error}");
+
+        let mut duplicate_sidecar = artifacts.clone();
+        let mut duplicate = duplicate_sidecar
+            .as_array()
+            .expect("Artefakte")
+            .iter()
+            .find(|artifact| artifact["kind"] == kind)
+            .expect("Sidecar")
+            .clone();
+        duplicate["id"] = json!(format!("duplicate-{kind}"));
+        duplicate_sidecar
+            .as_array_mut()
+            .expect("Artefakte")
+            .push(duplicate);
+        let error = build_public_infra_release(
+            &config,
+            &catalog,
+            &rights,
+            &capture,
+            &duplicate_sidecar,
+            &quality,
+        )
+        .unwrap_err();
+        assert!(error.to_string().contains(message), "{kind}: {error}");
+    }
+
+    for (kind, message) in [
+        (
+            "movement-route-templates-v2",
+            "unbekannte oder fehlende Manifestfelder",
+        ),
+        (
+            "timetable-transfer-demands-v2",
+            "unbekannte oder fehlende Manifestfelder",
+        ),
+    ] {
+        let mut extra_field = artifacts.clone();
+        let artifact = extra_field
+            .as_array_mut()
+            .expect("Artefakte")
+            .iter_mut()
+            .find(|artifact| artifact["kind"] == kind)
+            .expect("Sidecar");
+        artifact["worldId"] = json!("world-must-not-enter-infra-release");
+        let error = build_public_infra_release(
+            &config,
+            &catalog,
+            &rights,
+            &capture,
+            &extra_field,
+            &quality,
+        )
+        .unwrap_err();
+        assert!(error.to_string().contains(message), "{kind}: {error}");
+    }
+
+    let mut legacy_transfer_kind = artifacts.clone();
+    let transfer = legacy_transfer_kind
+        .as_array_mut()
+        .expect("Artefakte")
+        .iter_mut()
+        .find(|artifact| artifact["kind"] == "timetable-transfer-demands-v2")
+        .expect("Transfer-v2-Sidecar");
+    transfer["kind"] = json!("timetable-transfer-demands-v1");
+    transfer["file"] = json!("timetable-routes-v2.transfer-demands-v1.json");
+    let error = build_public_infra_release(
+        &config,
+        &catalog,
+        &rights,
+        &capture,
+        &legacy_transfer_kind,
+        &quality,
+    )
+    .expect_err("Transfer-v1 darf nicht als aktuelles Paketartefakt dienen");
+    assert!(
+        error
+            .to_string()
+            .contains("genau ein Timetable-Transfer-Demands-v2-Artefakt")
+    );
+
+    let mut legacy_transfer_file = artifacts.clone();
+    let transfer = legacy_transfer_file
+        .as_array_mut()
+        .expect("Artefakte")
+        .iter_mut()
+        .find(|artifact| artifact["kind"] == "timetable-transfer-demands-v2")
+        .expect("Transfer-v2-Sidecar");
+    transfer["file"] = json!("timetable-routes-v2.transfer-demands-v1.json");
+    let error = build_public_infra_release(
+        &config,
+        &catalog,
+        &rights,
+        &capture,
+        &legacy_transfer_file,
+        &quality,
+    )
+    .expect_err("Transfer-v2 braucht den kanonischen v2-Dateinamen");
+    assert!(error.to_string().contains("keinen kanonischen Dateinamen"));
 
     let mut conflated_hashes = artifacts.clone();
     let artifact = conflated_hashes
@@ -567,27 +2372,29 @@ fn regionaler_v1_release_wird_aus_explizitem_versioniertem_buildvertrag_gebildet
                     "blockIds": ["block-1"],
                     "speedLimitMmps": 20_000,
                     "gradientPerMille": 0,
-                    "requiredProtectionSystems": ["pzb"]
+                    "availableProtectionSystems": ["pzb"],
+                    "simultaneouslyRequiredProtectionSystems": []
                 }]
             }
         },
-        "interlockingRoutes": {
+            "interlockingRoutes": {
             "interlocking-1": {
                 "id": "interlocking-1",
                 "routeTemplateId": "template-1",
                 "signalId": "signal-1",
                 "movementKind": "train",
                 "pathResources": ["block-1"],
-                "overlapResources": [],
-                "flankResources": [],
+                "overlapResources": ["overlap-1"],
+                "flankResources": ["flank-1"],
                 "switchPositions": {},
+                "authorityStartRouteMm": 0,
                 "authorityEndRouteMm": 1_000,
-                "releaseAfterTailRouteMm": 1_000
-            }
-        },
-        "signals": ["signal-1"],
+                    "releaseAfterTailRouteMm": 1_000
+                }
+            },
+            "signals": ["signal-1"],
         "switches": [],
-        "blockResources": ["block-1"],
+        "blockResources": ["block-1", "flank-1", "overlap-1"],
         "platformIntervals": {},
         "regionBoundaries": [],
         "rzueLayoutId": "rzue-layout-1"

@@ -1,12 +1,13 @@
 #!/usr/bin/env node
 import { createReadStream } from "node:fs";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { lstat, mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { createInterface } from "node:readline";
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
 import { buildGermanyInfraCorpus } from "./quality-model.mjs";
+import { germanyReleaseManifestCompilerArgs } from "./release-manifest-invocation.mjs";
 
 async function json(path) {
   return JSON.parse(await readFile(resolve(path), "utf8"));
@@ -24,12 +25,24 @@ async function jsonSequence(path) {
 
 async function output(path, value) {
   await mkdir(dirname(resolve(path)), { recursive: true });
-  await writeFile(resolve(path), `${JSON.stringify(value, null, 2)}\n`, "utf8");
+  await writeFile(resolve(path), `${JSON.stringify(value, null, 2)}\n`, { encoding: "utf8", flag: "wx" });
 }
 
 async function sequence(path, values) {
   await mkdir(dirname(resolve(path)), { recursive: true });
-  await writeFile(resolve(path), values.map((value) => `\x1e${JSON.stringify(value)}\n`).join(""), "utf8");
+  await writeFile(resolve(path), values.map((value) => `\x1e${JSON.stringify(value)}\n`).join(""), { encoding: "utf8", flag: "wx" });
+}
+
+async function requireCreateNewOutputs(paths) {
+  for (const path of paths.map((value) => resolve(value))) {
+    try {
+      await lstat(path);
+    } catch (error) {
+      if (error?.code === "ENOENT") continue;
+      throw error;
+    }
+    throw new Error(`Release-Ausgabe existiert bereits: ${path}.`);
+  }
 }
 
 async function rustReleaseCompiler(args) {
@@ -55,6 +68,7 @@ if (command === "compile") {
   }
   const [configPath, pbfReportPath, wayFeaturesPath, validationPath, corpusPath, qualityPath, internalEvidencePath] = args;
   if (!internalEvidencePath) throw new Error("Aufruf: build-germany-release.mjs compile CONFIG PBF_REPORT WAYS.geojsonseq VALIDATION.jsonseq|- CORPUS.jsonseq QUALITY.json INTERNAL_EVIDENCE.json");
+  await requireCreateNewOutputs([corpusPath, qualityPath, internalEvidencePath]);
   const [config, pbfReport, wayFeatures, validationReceipts] = await Promise.all([
     json(configPath), json(pbfReportPath), jsonSequence(wayFeaturesPath), jsonSequence(validationPath),
   ]);
@@ -66,10 +80,7 @@ if (command === "compile") {
   ]);
   process.stdout.write(`${JSON.stringify({ sections: result.corpus.sections.length, corpusHash: result.corpusHash, qualityReportHash: result.qualityReportHash })}\n`);
 } else if (command === "manifest") {
-  const [configPath, catalogPath, rightsPath, capturePath, artifactsPath, qualityPath, outputPath] = args;
-  if (!outputPath) throw new Error("Aufruf: build-germany-release.mjs manifest CONFIG CATALOG RIGHTS CAPTURE ARTIFACTS QUALITY OUTPUT");
-  const paths = [configPath, catalogPath, rightsPath, capturePath, artifactsPath, qualityPath, outputPath];
-  await rustReleaseCompiler(["manifest", ...paths.map((path) => resolve(path))]);
+  await rustReleaseCompiler(germanyReleaseManifestCompilerArgs(args));
 } else if (command === "plan") {
   const [configPath, catalogPath, rightsPath] = args;
   if (!rightsPath) throw new Error("Aufruf: build-germany-release.mjs plan CONFIG CATALOG RIGHTS");

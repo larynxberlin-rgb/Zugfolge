@@ -1,0 +1,9 @@
+{
+  "schema": "zugfolge-operational-quality-inputs/v1",
+  "releaseId": "infra-deutschland-2026.3",
+  "timetableYear": 2026,
+  "artifactRoot": "var/derived/germany-2026.3",
+  "policyFile": "tools/region-import/germany/synthetic-operational-b.policy.json",
+  "closureReceiptFile": "synthetic-operational-closure-receipt.json",
+  "mapQualityReportFile": "map-release-free-v2/public/static-map-quality-v2.json"
+}

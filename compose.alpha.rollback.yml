@@ -1,0 +1,50 @@
+services:
+  keycloak:
+    environment:
+      KC_DB_URL: "jdbc:postgresql://postgres:5432/${PRODUCTION_RECOVERY_GAME_RESTORE_DATABASE:?PRODUCTION_RECOVERY_GAME_RESTORE_DATABASE fehlt}"
+      # Der attestierte Rueckweg startet den V1-Anwendungsstand gegen den
+      # unveraenderten Schema-33-Hot-Restore; dessen Keycloak-Katalog wurde
+      # bereits verlustfrei nach `keycloak` verschoben.
+      KC_DB_SCHEMA: keycloak
+  game-api:
+    image: "${MAP_RELEASE_PREFLIGHT_RUNTIME_IMAGE_REFERENCE:?MAP_RELEASE_PREFLIGHT_RUNTIME_IMAGE_REFERENCE muss den attestierten Legacy-Digest referenzieren}"
+    pull_policy: never
+    command: [node, apps/game-api/dist/server.js]
+    environment:
+      DATABASE_URL: "postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${PRODUCTION_RECOVERY_GAME_RESTORE_DATABASE:?PRODUCTION_RECOVERY_GAME_RESTORE_DATABASE fehlt}"
+      ALPHA_PUBLIC_WORLD_ID: "${PRODUCTION_RECOVERY_PREVIOUS_WORLD_ID:?PRODUCTION_RECOVERY_PREVIOUS_WORLD_ID fehlt}"
+      ALPHA_WORLD_RELEASE_PATHS_JSON: '["/evidence/rollback-alpha-world-deployment.json"]'
+      ALPHA_WORLD_V2_CUTOVER_AUTHORIZATION_JSON: ""
+  game-web:
+    image: "${MAP_RELEASE_PREFLIGHT_RUNTIME_IMAGE_REFERENCE:?MAP_RELEASE_PREFLIGHT_RUNTIME_IMAGE_REFERENCE muss den attestierten Legacy-Digest referenzieren}"
+    pull_policy: never
+    environment:
+      ALPHA_PUBLIC_WORLD_ID: "${PRODUCTION_RECOVERY_PREVIOUS_WORLD_ID:?PRODUCTION_RECOVERY_PREVIOUS_WORLD_ID fehlt}"
+  livemap:
+    image: "${MAP_RELEASE_PREFLIGHT_RUNTIME_IMAGE_REFERENCE:?MAP_RELEASE_PREFLIGHT_RUNTIME_IMAGE_REFERENCE muss den attestierten Legacy-Digest referenzieren}"
+    pull_policy: never
+    command: [node, tools/alpha-ops/static-server.mjs, apps/livemap/dist, "4174"]
+    environment:
+      ALPHA_PUBLIC_WORLD_ID: "${PRODUCTION_RECOVERY_PREVIOUS_WORLD_ID:?PRODUCTION_RECOVERY_PREVIOUS_WORLD_ID fehlt}"
+  operations-center:
+    image: "${MAP_RELEASE_PREFLIGHT_RUNTIME_IMAGE_REFERENCE:?MAP_RELEASE_PREFLIGHT_RUNTIME_IMAGE_REFERENCE muss den attestierten Legacy-Digest referenzieren}"
+    pull_policy: never
+  static:
+    image: "${MAP_RELEASE_PREFLIGHT_RUNTIME_IMAGE_REFERENCE:?MAP_RELEASE_PREFLIGHT_RUNTIME_IMAGE_REFERENCE muss den attestierten Legacy-Digest referenzieren}"
+    pull_policy: never
+  odoo:
+    image: "${PRODUCTION_RECOVERY_ODOO_IMAGE_REFERENCE:?PRODUCTION_RECOVERY_ODOO_IMAGE_REFERENCE muss den attestierten Legacy-Odoo-Digest referenzieren}"
+    pull_policy: never
+    build: null
+    command:
+      - odoo
+      - "--database=${PRODUCTION_RECOVERY_ODOO_RESTORE_DATABASE:?PRODUCTION_RECOVERY_ODOO_RESTORE_DATABASE fehlt}"
+      - --db_host=odoo-postgres
+      - --db_user=odoo
+      - "--db_password=${ODOO_DB_PASSWORD}"
+      - --addons-path=/usr/lib/python3/dist-packages/odoo/addons,/opt/zugfolge-addons
+      - --load=base,web,queue_job
+      - --workers=2
+      - --max-cron-threads=1
+    volumes:
+      - "${PRODUCTION_RECOVERY_ODOO_FILESTORE_HOST_ROOT:?PRODUCTION_RECOVERY_ODOO_FILESTORE_HOST_ROOT fehlt}/${PRODUCTION_RECOVERY_ODOO_RESTORE_DATABASE:?PRODUCTION_RECOVERY_ODOO_RESTORE_DATABASE fehlt}:/var/lib/odoo/filestore/${PRODUCTION_RECOVERY_ODOO_RESTORE_DATABASE:?PRODUCTION_RECOVERY_ODOO_RESTORE_DATABASE fehlt}:rw"

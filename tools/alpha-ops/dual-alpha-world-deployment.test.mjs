@@ -65,7 +65,11 @@ function minimalPublicDeployment() {
       tenderCalendarHash: "f".repeat(64),
     },
     fleet: { worldId: PUBLIC_WORLD_ID, authorityRelease: { assets: [{ id: "public-vehicle-1", operatorId: "public" }] } },
-    regionalSimulation: { schemaVersion: "zugfolge-operational-simulation-initialize/v2", worldId: PUBLIC_WORLD_ID },
+    regionalSimulation: {
+      schemaVersion: "zugfolge-operational-simulation-initialize/v2",
+      worldId: PUBLIC_WORLD_ID,
+      protectionModeSelectionPolicy: "zugfolge-protection-mode-selection/conservative-v1",
+    },
   };
 }
 
@@ -140,7 +144,7 @@ test("Generatorvertrag erzeugt nur das signierbare Public-Artefakt; Tutorialwelt
   assert.doesNotMatch(source, /const phase2Configuration\s*=/);
   assert.doesNotMatch(source, /writeFile\([^\n]*\.phase2\.json/);
   assert.match(source, /assertOperationalInfrastructureV2ReleaseBinding/);
-  assert.match(source, /const operationalSimulationSourceSha256 = sha256\(operationalV2Bytes\)/);
+  assert.match(source, /const operationalSimulationSourceSha256 = sha256\(alphaCanonicalJson\(operationalSimulation\)\)/);
   assert.doesNotMatch(source, /artifact\.kind === "operational-simulation-v2"/);
 });
 
@@ -177,6 +181,15 @@ test("bestehender Ed25519-Signierer signiert Public und Tutorial als getrennte H
       await writeFile(unsignedPath, `${JSON.stringify({ deployment: encodeEconomyValue(deployment) }, null, 2)}\n`);
       const result = spawnSync(process.execPath, [signerPath, unsignedPath, privateKeyPath, "dual-test", signedPath], { encoding: "utf8" });
       assert.equal(result.status, 0, `${result.stderr}\n${result.stdout}`);
+
+      const signedBytes = await readFile(signedPath);
+      const overwrite = spawnSync(process.execPath, [signerPath, unsignedPath, privateKeyPath, "dual-test", signedPath], { encoding: "utf8" });
+      assert.notEqual(overwrite.status, 0, "signierte create-new Ausgabe darf nicht ersetzt werden");
+      assert.deepEqual(await readFile(signedPath), signedBytes);
+      const unsignedBytes = await readFile(unsignedPath);
+      const inPlace = spawnSync(process.execPath, [signerPath, unsignedPath, privateKeyPath, "dual-test", unsignedPath], { encoding: "utf8" });
+      assert.notEqual(inPlace.status, 0, "Signierer darf die unsigned Eingabe nicht in-place ersetzen");
+      assert.deepEqual(await readFile(unsignedPath), unsignedBytes);
 
       const signed = JSON.parse(await readFile(signedPath, "utf8"));
       const decoded = decodeEconomyValue(signed.deployment);

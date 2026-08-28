@@ -57,35 +57,63 @@ function sameMetadata(left, right) {
     && left.ctimeNs === right.ctimeNs;
 }
 
-async function resolveArtifactRoot(value) {
-  invariant(typeof value === "string" && value.length > 0, "artifactRoot fehlt.");
-  const requested = resolve(value);
-  const metadata = await lstat(requested);
-  invariant(metadata.isDirectory() && !metadata.isSymbolicLink(), "artifactRoot muss ein reguläres Verzeichnis ohne symbolischen Link sein.");
-  return realpath(requested);
-}
-
-async function resolveContainedRegularFile(root, sourceFile, label) {
-  let current = root;
-  const parts = sourceFile.split("/");
-  for (const [index, part] of parts.entries()) {
-    current = resolve(current, part);
-    const metadata = await lstat(current);
-    invariant(!metadata.isSymbolicLink(), `${label} darf keinen symbolischen Link enthalten.`);
-    if (index < parts.length - 1) invariant(metadata.isDirectory(), `${label} besitzt einen nicht auflösbaren Zwischenpfad.`);
+async function resolveArtifactRoots(value) {
+  const requestedValues = Array.isArray(value) ? value : [value];
+  invariant(requestedValues.length > 0, "artifactRoot fehlt.");
+  const roots = [];
+  const seen = new Set();
+  for (const [index, requestedValue] of requestedValues.entries()) {
+    invariant(typeof requestedValue === "string" && requestedValue.length > 0, `artifactRoots[${index}] fehlt.`);
+    const requested = resolve(requestedValue);
+    const metadata = await lstat(requested);
+    invariant(metadata.isDirectory() && !metadata.isSymbolicLink(), `artifactRoots[${index}] muss ein reguläres Verzeichnis ohne symbolischen Link sein.`);
+    const root = await realpath(requested);
+    const key = process.platform === "win32" ? root.toLowerCase() : root;
+    invariant(!seen.has(key), `artifactRoots[${index}] ist doppelt.`);
+    seen.add(key);
+    roots.push(root);
   }
-  const actual = await realpath(current);
-  const remainder = relative(root, actual);
-  invariant(remainder !== "" && remainder !== ".." && !remainder.startsWith(`..${sep}`) && !isAbsolute(remainder), `${label} verlässt artifactRoot.`);
-  const metadata = await lstat(actual, { bigint: true });
-  invariant(metadata.isFile() && !metadata.isSymbolicLink(), `${label} muss eine reguläre Datei sein.`);
-  invariant(metadata.size > 0n, `${label} darf nicht leer sein.`);
-  invariant(metadata.size <= BigInt(Number.MAX_SAFE_INTEGER), `${label} ist für das Inventar zu groß.`);
-  return { path: actual, metadata };
+  return roots;
 }
 
-async function streamedFileProof(root, sourceFile, label) {
-  const resolved = await resolveContainedRegularFile(root, sourceFile, label);
+async function resolveContainedRegularFile(roots, sourceFile, label) {
+  const matches = [];
+  for (const root of roots) {
+    let current = root;
+    let missing = false;
+    const parts = sourceFile.split("/");
+    for (const [index, part] of parts.entries()) {
+      current = resolve(current, part);
+      let metadata;
+      try {
+        metadata = await lstat(current);
+      } catch (error) {
+        if (error !== null && typeof error === "object" && error.code === "ENOENT") {
+          missing = true;
+          break;
+        }
+        throw error;
+      }
+      invariant(!metadata.isSymbolicLink(), `${label} darf keinen symbolischen Link enthalten.`);
+      if (index < parts.length - 1) invariant(metadata.isDirectory(), `${label} besitzt einen nicht auflösbaren Zwischenpfad.`);
+    }
+    if (missing) continue;
+    const actual = await realpath(current);
+    const remainder = relative(root, actual);
+    invariant(remainder !== "" && remainder !== ".." && !remainder.startsWith(`..${sep}`) && !isAbsolute(remainder), `${label} verlässt artifactRoot.`);
+    const metadata = await lstat(actual, { bigint: true });
+    invariant(metadata.isFile() && !metadata.isSymbolicLink(), `${label} muss eine reguläre Datei sein.`);
+    invariant(metadata.size > 0n, `${label} darf nicht leer sein.`);
+    invariant(metadata.size <= BigInt(Number.MAX_SAFE_INTEGER), `${label} ist für das Inventar zu groß.`);
+    matches.push({ path: actual, metadata });
+  }
+  invariant(matches.length > 0, `${label} fehlt in allen artifactRoots.`);
+  invariant(matches.length === 1, `${label} ist in mehreren artifactRoots vorhanden und deshalb mehrdeutig.`);
+  return matches[0];
+}
+
+async function streamedFileProof(roots, sourceFile, label) {
+  const resolved = await resolveContainedRegularFile(roots, sourceFile, label);
   const handle = await open(resolved.path, "r");
   try {
     const before = await handle.stat({ bigint: true });
@@ -181,12 +209,13 @@ export async function loadMapBuildCacheInventoryPlan(planPath) {
   }
 }
 
-export async function buildMapBuildCacheInventory({ releaseId, artifactRoot, plan }) {
+export async function buildMapBuildCacheInventory({ releaseId, artifactRoot, artifactRoots, plan }) {
   const mappings = validateMapBuildCacheInventoryPlan(plan, releaseId);
-  const root = await resolveArtifactRoot(artifactRoot);
+  invariant((artifactRoot === undefined) !== (artifactRoots === undefined), "Genau artifactRoot oder artifactRoots muss gesetzt sein.");
+  const roots = await resolveArtifactRoots(artifactRoots ?? artifactRoot);
   const files = [];
   for (const [index, mapping] of mappings.entries()) {
-    const proof = await streamedFileProof(root, mapping.sourceFile, `files[${index}].sourceFile`);
+    const proof = await streamedFileProof(roots, mapping.sourceFile, `files[${index}].sourceFile`);
     files.push({ path: mapping.cacheFile, bytes: proof.bytes, sha256: proof.sha256 });
   }
   const inventory = { schema: MAP_BUILD_CACHE_INVENTORY_SCHEMA, releaseId, files };

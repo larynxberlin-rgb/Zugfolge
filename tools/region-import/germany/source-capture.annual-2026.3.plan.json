@@ -1,0 +1,61 @@
+{
+  "schema": "zugfolge-germany-source-capture-plan/v1",
+  "releaseId": "infra-deutschland-2026.3",
+  "timetableYear": 2026,
+  "notBefore": "2026-08-24T00:00:00.000Z",
+  "forbiddenSourceIds": [
+    "annual-infrastructure-master",
+    "internal-station-plan-evidence",
+    "station-enrichment"
+  ],
+  "sources": [
+    {
+      "id": "copernicus-dem-germany",
+      "kind": "dem-tile-set",
+      "version": "COP-DEM-GLO-30-DGED-2021",
+      "manifest": "annual-2026/copernicus-dem-glo30-2021-capture.json",
+      "directory": "annual-2026/copernicus-dem-glo30-2021",
+      "captureFile": "annual-2026/copernicus-dem-glo30-2021",
+      "manifestBytes": 30607,
+      "manifestSha256": "2dc6ee88fe6e6d1bac566290fcc7fe4f111879e1b54e18821baf68f36ad4bbec",
+      "bytes": 2204833309,
+      "sha256": "8a7d5784f47ce9e775f474858ed8948ac969920d84a795452f6b29add13857cd"
+    },
+    {
+      "id": "db-infrago-infrastructure-open-data",
+      "kind": "file",
+      "version": "2026-05",
+      "input": "Infrastrukturdaten.gpkg",
+      "captureFile": "Infrastrukturdaten.gpkg",
+      "bytes": 54587392,
+      "sha256": "79f8227e889769d87dcc77301f58adbc93a31839febb0cd1bdb16679e25453fe"
+    },
+    {
+      "id": "geofabrik-germany-pbf",
+      "kind": "file",
+      "version": "germany-260811",
+      "input": "germany-260811.osm.pbf",
+      "captureFile": "germany-260811.osm.pbf",
+      "bytes": 4816726656,
+      "sha256": "5f7bfb9800c74b236b28405453b2e45337ae225c88be2078a7bdc49bd3e945b0"
+    },
+    {
+      "id": "gtfs-de-regional-rail",
+      "kind": "file",
+      "version": "2026-08-10",
+      "input": "annual-2026/gtfs-rv-free-latest.zip",
+      "captureFile": "annual-2026/gtfs-rv-free-latest.zip",
+      "bytes": 11246155,
+      "sha256": "c0cba1cfdbf6179b18e529b13613644e861f1ea6159fa5788c2045de82bea738"
+    },
+    {
+      "id": "openstation-enrichment",
+      "kind": "file",
+      "version": "1.2.4-2026-08-12T02:38:37.532Z",
+      "input": "annual-2026/openstation-netex.xml",
+      "captureFile": "annual-2026/openstation-netex.xml",
+      "bytes": 303425534,
+      "sha256": "04f489a1cb7bb9513e10c90d5d613e0f21265c8ed6b8f3f342f85f7fab7623b3"
+    }
+  ]
+}

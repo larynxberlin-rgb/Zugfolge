@@ -365,16 +365,16 @@ export async function listEconomyWorldIds(db: EconomyDatabase): Promise<readonly
   return rows.map((row) => row.worldId);
 }
 
-/**
- * Enumeriert Outbox-Arbeit unabhaengig vom Welt-Lifecycle. Archivierung darf
- * den crash-sicheren Ack-Pfad nicht abschneiden; die Nutzdaten bleiben danach
- * weiterhin nur ueber die jeweilige Welt-ID erreichbar.
- */
+/** Enumeriert nur Outbox-Arbeit schreibbarer Welten; vor Archivierung muss sie leer sein. */
 export async function listPendingEconomyOutboxWorldIds(db: EconomyDatabase): Promise<readonly string[]> {
-  // guards:allow world-id — Globaler Worker ermittelt ausschliesslich Welt-IDs offener Queuezeilen.
+  // guards:allow world-id — Globaler Worker ermittelt nur aktive Welt-IDs offener Queuezeilen.
   const rows = await db
     .selectDistinct({ worldId: economyOutbox.worldId })
     .from(economyOutbox)
+    .innerJoin(worlds, and(
+      eq(worlds.id, economyOutbox.worldId),
+      eq(worlds.lifecycleStatus, "active"),
+    ))
     .where(isNull(economyOutbox.processedAt))
     .orderBy(asc(economyOutbox.worldId));
   return rows.map((row) => row.worldId);
@@ -495,7 +495,7 @@ export class EconomyOutboxDrainLimitError extends Error {
 }
 
 /**
- * Begrenzt drainender Abschluss-/Recovery-Pfad. Zieladapter bleiben
+ * Begrenzt drainender Abschluss-/Recovery-Pfad vor der Archivierungs-Fence. Zieladapter bleiben
  * idempotent; eine Restzeile wird niemals geloescht oder als verarbeitet
  * markiert, bevor der Adapter erfolgreich zurueckgekehrt ist.
  */

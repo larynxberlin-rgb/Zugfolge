@@ -1,6 +1,7 @@
 import { alphaHash } from "@zugfolge/alpha";
 import {
   FLEET_INITIALIZE_SCHEMA,
+  OPERATIONAL_PROTECTION_MODE_SELECTION_POLICY,
   OPERATIONAL_SIMULATION_INITIALIZE_SCHEMA,
   type FleetAuthorityReleaseV2,
 } from "@zugfolge/runtime-native";
@@ -24,6 +25,10 @@ const FIXTURE_DIRECTORY = new URL(
   "../../../crates/zugfolge-fleet/tests/fixtures/",
   import.meta.url,
 );
+const UNUSED_OPERATIONAL_PROGRAM_PREFLIGHT = () => {
+  throw new Error("Dieser Fahrzeugkatalogtest registriert kein Betriebsprogramm.");
+};
+const RUNTIME_AUTHORITY_RELEASE_HASH = "9".repeat(64);
 
 function fixture<T>(name: string): T {
   return JSON.parse(readFileSync(fileURLToPath(new URL(name, FIXTURE_DIRECTORY)), "utf8")) as T;
@@ -72,6 +77,8 @@ function inputs() {
     worldId: entry.worldId,
     regionId: "fixture-region",
     nowMs: 0,
+    repeatEveryMs: null,
+    protectionModeSelectionPolicy: OPERATIONAL_PROTECTION_MODE_SELECTION_POLICY,
     infraRelease: {},
     vehicleTypes: operationalInventory.vehicleTypes,
     vehicles: operationalInventory.vehicles,
@@ -81,12 +88,13 @@ function inputs() {
       vehicleIds: (formation as Record<string, unknown>)["vehicleIds"] as readonly string[],
     })),
     trains: [],
+    movementContinuations: [],
   } as const;
   const facts: VehicleCatalogDeploymentFacts = {
     worldId: entry.worldId,
     economyReleaseId: receipt.economyReleaseId,
     economyReleaseSha256: receipt.economyReleaseSha256,
-    blueprintFleetHash: alphaHash("zugfolge-fleet-authority-runtime/v1", entry.authorityRelease),
+    blueprintFleetHash: RUNTIME_AUTHORITY_RELEASE_HASH,
     fleet,
     regionalSimulation,
   };
@@ -95,6 +103,7 @@ function inputs() {
     sourceCatalogSha256: "1".repeat(64),
     worldSeedSha256: "2".repeat(64),
     compiledCatalogSha256: receipt.compiledCatalogSha256,
+    runtimeAuthorityReleaseHash: RUNTIME_AUTHORITY_RELEASE_HASH,
   } as const;
   return { catalog, receipt, operationalInventory, worldSeed, facts, compilerInputFiles };
 }
@@ -163,6 +172,9 @@ describe("signierte Fahrzeugkatalog-Deployment-Bindung", () => {
     expect(() => validateVehicleCatalogDeploymentBinding(changed(binding, (copy) => {
       delete copy.compilerInputFiles.worldSeedSha256;
     }), facts)).toThrow(/exakt/);
+    expect(() => validateVehicleCatalogDeploymentBinding(changed(binding, (copy) => {
+      copy.compilerInputFiles.runtimeAuthorityReleaseHash = "0".repeat(64);
+    }), facts)).toThrow(/Blueprint-Hash/);
   });
 
   it("verweigert Operational-Typ, Asset, Formation und Fleet-Client-Dynamics getrennt", () => {
@@ -221,6 +233,7 @@ describe("signierte Fahrzeugkatalog-Deployment-Bindung", () => {
     for (const verifiedSource of [persistedOnly, releasePathOnly]) {
       const runtime = new ActiveWorldDeploymentRuntime({
         activeWorlds: [],
+        operationalProgramPreflight: UNUSED_OPERATIONAL_PROGRAM_PREFLIGHT,
         fleetAuthorityConfigurations: { [signed.deployment.worldId]: configuration },
       });
       expect(() => runtime.assertVehicleCatalogDeploymentBindings(verifiedSource)).not.toThrow();
@@ -228,6 +241,7 @@ describe("signierte Fahrzeugkatalog-Deployment-Bindung", () => {
 
     const missing = new ActiveWorldDeploymentRuntime({
       activeWorlds: [],
+      operationalProgramPreflight: UNUSED_OPERATIONAL_PROGRAM_PREFLIGHT,
       fleetAuthorityConfigurations: { [signed.deployment.worldId]: configuration },
     });
     expect(() => missing.assertVehicleCatalogDeploymentBindings(new Map())).toThrow(
@@ -242,6 +256,7 @@ describe("signierte Fahrzeugkatalog-Deployment-Bindung", () => {
     });
     const runtime = new ActiveWorldDeploymentRuntime({
       activeWorlds: [],
+      operationalProgramPreflight: UNUSED_OPERATIONAL_PROGRAM_PREFLIGHT,
       fleetAuthorityConfigurations: {
         [signed.deployment.worldId]: {
           producedAt: signed.deployment.fleet.producedAt,

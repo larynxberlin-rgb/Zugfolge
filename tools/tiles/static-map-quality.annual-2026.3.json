@@ -1,0 +1,19 @@
+{
+  "schema": "zugfolge-static-map-quality-materialization/v2",
+  "releaseId": "karte-deutschland-2026.3-v2",
+  "infrastructureCorpusId": "infra-deutschland-2026.3",
+  "timetableYear": 2026,
+  "scopeId": "deutschland-ebo-visible-corpus",
+  "visibleLayerOrder": [
+    "rail_corridors",
+    "operating_points",
+    "stations",
+    "tracks",
+    "platforms",
+    "switches",
+    "signals",
+    "blocks",
+    "conflict_resources",
+    "rail_context"
+  ]
+}

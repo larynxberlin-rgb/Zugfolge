@@ -17,7 +17,7 @@
     "@zugfolge/db": "workspace:*",
     "@zugfolge/health": "workspace:*",
     "drizzle-orm": "^0.45.2",
-    "jose": "^6.2.8"
+    "jose": "^6.2.9"
   },
   "devDependencies": {
     "@electric-sql/pglite": "^0.5.5",
