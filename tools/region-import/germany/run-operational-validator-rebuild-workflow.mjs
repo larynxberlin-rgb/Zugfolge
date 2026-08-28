@@ -10,6 +10,7 @@ import {
 } from "./build-operational-infrastructure-v2-direct-system-launch-contract.mjs";
 import {
   GERMANY_OPERATIONAL_ANNUAL_LAUNCH_MODE,
+  GERMANY_OPERATIONAL_REBUILD_AUTHORITY_ENVIRONMENT_KEYS,
   createGermanyOperationalAnchoredRunnerInvocation,
   decodeGermanyOperationalAnchoredRunnerResult,
   loadGermanyOperationalExecutionPins,
@@ -113,12 +114,16 @@ const annualLaunchProof = {
   trustedExecutor: directContract.value.trustedExecutor,
 };
 const annualLaunchProofBase64 = Buffer.from(JSON.stringify(canonicalValue(annualLaunchProof)), "utf8").toString("base64");
+const workflowAuthorityEnvironment = phase === "materialize-validator-rebuild-v3"
+  ? Object.fromEntries(GERMANY_OPERATIONAL_REBUILD_AUTHORITY_ENVIRONMENT_KEYS.map((name) => [name, process.env[name]]))
+  : undefined;
 const invocation = await createGermanyOperationalAnchoredRunnerInvocation({
   annualLaunchProofBase64,
   arguments: phaseArguments.map((value) => resolve(value)),
   executionPinsPath,
   nodePath: process.execPath,
   phase,
+  workflowAuthorityEnvironment,
   workspaceRoot: ROOT,
 });
 const launched = spawnSync(invocation.command, invocation.arguments, {

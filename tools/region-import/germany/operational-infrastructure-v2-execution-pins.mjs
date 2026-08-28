@@ -28,6 +28,21 @@ export const GERMANY_OPERATIONAL_RUNNER_PHASES = Object.freeze({
   "materialize-annual-plan-evidence-v1": 6,
   "materialize-validator-rebuild-v3": 3,
 });
+export const GERMANY_OPERATIONAL_REBUILD_AUTHORITY_ENVIRONMENT_KEYS = Object.freeze([
+  "GITHUB_ACTIONS",
+  "GITHUB_EVENT_NAME",
+  "GITHUB_REF",
+  "GITHUB_REF_PROTECTED",
+  "GITHUB_REPOSITORY",
+  "GITHUB_RUN_ATTEMPT",
+  "GITHUB_RUN_ID",
+  "GITHUB_SHA",
+  "GITHUB_WORKFLOW_REF",
+  "RUNNER_ARCH",
+  "RUNNER_ENVIRONMENT",
+  "RUNNER_OS",
+  "ZUGFOLGE_REBUILD_RUNNER_IMAGE",
+]);
 export const GERMANY_OPERATIONAL_ANNUAL_PLAN_TIMEOUT_MILLISECONDS = 120_000;
 export const GERMANY_OPERATIONAL_ANNUAL_RUN_TIMEOUT_MILLISECONDS = 21_600_000;
 export const GERMANY_OPERATIONAL_EXECUTION_RUNNER_ROOT_FILES = Object.freeze([
@@ -39,6 +54,7 @@ export const GERMANY_OPERATIONAL_EXECUTION_RUNNER_ROOT_FILES = Object.freeze([
 const SHA256 = /^[a-f0-9]{64}$/u;
 const GIT_COMMIT = /^[a-f0-9]{40}$/u;
 const SAFE_COMMAND = /^[a-z0-9][a-z0-9-]*$/u;
+const ASCII_CONTROL_CHARACTER = /[\x00-\x1f\x7f]/u;
 const MAX_PINS_BYTES = 1024 * 1024;
 const WINDOWS_TRUSTED_SYSTEM_ROOT = String.raw`C:\Windows`;
 const WINDOWS_TRUSTED_CMD = String.raw`C:\Windows\System32\cmd.exe`;
@@ -718,6 +734,25 @@ try {
     ZUGFOLGE_OPERATIONAL_RUNNER_ANNUAL_LAUNCH_PROOF_BASE64 = $annualLaunchProofBase64
     ZUGFOLGE_OPERATIONAL_RUNNER_PHASE = $runnerPhase
   }
+  if ($runnerPhase -ceq "materialize-validator-rebuild-v3") {
+    foreach ($name in @(
+      "GITHUB_ACTIONS",
+      "GITHUB_EVENT_NAME",
+      "GITHUB_REF",
+      "GITHUB_REF_PROTECTED",
+      "GITHUB_REPOSITORY",
+      "GITHUB_RUN_ATTEMPT",
+      "GITHUB_RUN_ID",
+      "GITHUB_SHA",
+      "GITHUB_WORKFLOW_REF",
+      "RUNNER_ARCH",
+      "RUNNER_ENVIRONMENT",
+      "RUNNER_OS",
+      "ZUGFOLGE_REBUILD_RUNNER_IMAGE"
+    )) {
+      $childEnvironment[$name] = Required ("AUTHORITY_" + $name)
+    }
+  }
   for ($index = 0; $index -lt $cliCount; $index += 1) {
     $childEnvironment["ZUGFOLGE_OPERATIONAL_RUNNER_CLI_$index"] = Required "CLI_$index"
   }
@@ -1128,6 +1163,20 @@ function exactKeys(value, expected, label) {
     `${label} besitzt fremde oder fehlende Felder.`,
   );
   return value;
+}
+
+export function validateGermanyOperationalRebuildAuthorityEnvironment(value) {
+  exactKeys(value, GERMANY_OPERATIONAL_REBUILD_AUTHORITY_ENVIRONMENT_KEYS,
+    "Operational-v2-Rebuild-Authority-Umgebung");
+  return Object.freeze(Object.fromEntries(
+    GERMANY_OPERATIONAL_REBUILD_AUTHORITY_ENVIRONMENT_KEYS.map((name) => {
+      const entry = value[name];
+      invariant(typeof entry === "string" && entry.length > 0 && entry.length <= 2048
+        && !ASCII_CONTROL_CHARACTER.test(entry),
+        `Operational-v2-Rebuild-Authority ${name} ist kein begrenzter Umgebungswert.`);
+      return [name, entry];
+    }),
+  ));
 }
 
 function positiveInteger(value, label) {
@@ -2221,6 +2270,7 @@ export async function createGermanyOperationalAnchoredRunnerInvocation({
   nodePath: requestedNodePath,
   annualLaunchProofBase64,
   phase = "derive-and-capture-v1",
+  workflowAuthorityEnvironment,
 }) {
   const root = resolve(workspaceRoot);
   invariant(Array.isArray(arguments_) && Object.values(GERMANY_OPERATIONAL_RUNNER_PHASES).includes(arguments_.length)
@@ -2229,6 +2279,11 @@ export async function createGermanyOperationalAnchoredRunnerInvocation({
   invariant(Object.hasOwn(GERMANY_OPERATIONAL_RUNNER_PHASES, phase)
     && GERMANY_OPERATIONAL_RUNNER_PHASES[phase] === arguments_.length,
   "Operational-v2-Systemlauncher besitzt eine ungueltige interne Phase oder Argumentzahl.");
+  const rebuildAuthorityEnvironment = phase === "materialize-validator-rebuild-v3"
+    ? validateGermanyOperationalRebuildAuthorityEnvironment(workflowAuthorityEnvironment)
+    : undefined;
+  invariant(phase === "materialize-validator-rebuild-v3" || workflowAuthorityEnvironment === undefined,
+    "Operational-v2-Systemlauncher darf Workflow-Authority nur in der Validator-Rebuild-v3-Phase transportieren.");
   const executionPinsSource = await loadGermanyOperationalExecutionPins({
     workspaceRoot: root,
     executionPinsPath,
@@ -2288,6 +2343,11 @@ export async function createGermanyOperationalAnchoredRunnerInvocation({
         "Operational-v2-Systemlauncher-Annual-Launch-Proof",
       ));
       environment.ZUGFOLGE_OPERATIONAL_RUNNER_ANNUAL_LAUNCH_PROOF_BASE64 = annualLaunchProofBase64;
+    }
+    if (rebuildAuthorityEnvironment !== undefined) {
+      for (const [name, value] of Object.entries(rebuildAuthorityEnvironment)) {
+        environment[`ZUGFOLGE_OPERATIONAL_RUNNER_AUTHORITY_${name}`] = value;
+      }
     }
     for (const [index, argument] of arguments_.entries()) environment[`ZUGFOLGE_OPERATIONAL_RUNNER_CLI_${index}`] = argument;
     await windowsPowerShellPath();
