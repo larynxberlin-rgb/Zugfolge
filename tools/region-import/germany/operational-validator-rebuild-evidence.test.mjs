@@ -1027,6 +1027,21 @@ test("Workflow bindet Spec-Pfade, privaten GitHub-Assettransport und Sigstore-Ve
   );
   assert.doesNotMatch(workflow, /preserved_validator_url/u);
   assert.doesNotMatch(workflow, /zugfolge-infra-release-rebuild-[a-f0-9]{40}-official\.exe/u);
+  assert.match(
+    runner,
+    /bytes\.equals\(serializeGermanyOperationalDirectSystemLaunchContract\(value\)\)/u,
+    "Rebuild-Runner muss den gemeinsamen kanonischen Direct-Contract-Serializer verwenden.",
+  );
+  assert.match(
+    runner,
+    /\.\/build-operational-infrastructure-v2-direct-system-launch-contract\.mjs/u,
+    "Rebuild-Runner importiert den gemeinsamen Direct-Contract-Serializer nicht.",
+  );
+  assert.doesNotMatch(
+    runner,
+    /function canonicalBytes/u,
+    "Rebuild-Runner darf keinen abweichenden lokalen Contract-Canonicalizer besitzen.",
+  );
   for (const required of [
     "operator-approved-hash-binding-not-source-reexecution-v1",
     "environment: operational-release-approval",

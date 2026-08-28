@@ -6,6 +6,9 @@ import { dirname, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import {
+  serializeGermanyOperationalDirectSystemLaunchContract,
+} from "./build-operational-infrastructure-v2-direct-system-launch-contract.mjs";
+import {
   GERMANY_OPERATIONAL_ANNUAL_LAUNCH_MODE,
   createGermanyOperationalAnchoredRunnerInvocation,
   decodeGermanyOperationalAnchoredRunnerResult,
@@ -24,10 +27,6 @@ function canonicalValue(value) {
   if (Array.isArray(value)) return value.map(canonicalValue);
   if (value === null || typeof value !== "object") return value;
   return Object.fromEntries(Object.keys(value).sort().map((key) => [key, canonicalValue(value[key])]));
-}
-
-function canonicalBytes(value) {
-  return Buffer.from(`${JSON.stringify(canonicalValue(value), null, 2)}\n`, "utf8");
 }
 
 function portable(path, label) {
@@ -50,7 +49,8 @@ async function loadDirectContract(pathInput, executionPinsSource) {
   } catch (error) {
     throw new Error("Direkter Annual-Systemstartvertrag ist kein JSON.", { cause: error });
   }
-  invariant(bytes.equals(canonicalBytes(value)), "Direkter Annual-Systemstartvertrag ist nicht kanonisch serialisiert.");
+  invariant(bytes.equals(serializeGermanyOperationalDirectSystemLaunchContract(value)),
+    "Direkter Annual-Systemstartvertrag ist nicht kanonisch serialisiert.");
   invariant(value?.schema === "zugfolge-operational-v2-direct-system-launch-contract/v1"
     && value.releaseId === executionPinsSource.value.releaseId && value.platform === "win32",
   "Direkter Annual-Systemstartvertrag bindet eine falsche Identitaet.");
