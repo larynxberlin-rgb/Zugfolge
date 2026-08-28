@@ -1007,8 +1007,14 @@ test("Workflow bindet Spec-Pfade, privaten GitHub-Assettransport und Sigstore-Ve
     '"$($spec.authority.annualExecutorPlan.startEvidenceFile).zugfolge-complete.json"',
     "zugfolge-germany-annual-create-new-artifact-completion/v1",
     "Annual-Completion ist nicht bytekanonisch",
+    "rustup toolchain install $toolchainId --profile minimal --component clippy --component rustfmt",
     "$subjects",
   ]) assert.ok(workflow.includes(required), `Workflow bindet ${required} nicht.`);
+  assert.doesNotMatch(
+    workflow,
+    /^\s*rustup toolchain install \$toolchainId --profile minimal\s*$/gmu,
+    "Workflow darf die gepinnte Toolchain nicht ohne Clippy und rustfmt materialisieren.",
+  );
   assert.equal(workflow.match(/^\s+GITHUB_TOKEN:/gmu)?.length, 1);
   const downloadStart = workflow.indexOf("- name: Download exact preserved validator from private draft release");
   const materializeStart = workflow.indexOf("- name: Materialize Annual-pinned source, vendor, toolchain and helper inputs");
