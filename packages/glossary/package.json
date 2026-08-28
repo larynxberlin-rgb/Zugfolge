@@ -7,5 +7,5 @@
   "license": "LicenseRef-PolyForm-Shield-1.0.0",
   "exports": { ".": "./dist/index.js", "./styles.css": "./src/styles.css" },
   "scripts": { "generate": "node generate.mjs", "build": "node generate.mjs --check && tsc", "typecheck": "node generate.mjs --check && tsc --noEmit", "test": "node generate.mjs --check && vitest run" },
-  "devDependencies": { "typescript": "^7.0.2", "vitest": "^4.1.10" }
+  "devDependencies": { "typescript": "^7.0.2", "vitest": "^4.1.11" }
 }

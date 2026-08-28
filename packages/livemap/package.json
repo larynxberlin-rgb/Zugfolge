@@ -8,5 +8,5 @@
   "exports": { ".": "./dist/index.js" },
   "scripts": { "build": "tsc", "typecheck": "tsc --noEmit", "test": "vitest run" },
   "dependencies": { "@zugfolge/health": "workspace:*" },
-  "devDependencies": { "typescript": "^7.0.2", "vitest": "^4.1.10" }
+  "devDependencies": { "typescript": "^7.0.2", "vitest": "^4.1.11" }
 }
