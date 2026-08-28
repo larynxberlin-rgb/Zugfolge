@@ -40,9 +40,95 @@ const STATIC_MAP_SOURCE_QUALITY_SCHEMA = "zugfolge-final-infrastructure-quality-
 const OPERATIONAL_INFRASTRUCTURE_KIND = "operational-infrastructure-v2";
 const MOVEMENT_ROUTE_TEMPLATES_KIND = "movement-route-templates-v2";
 const TIMETABLE_TRANSFER_DEMANDS_KIND = "timetable-transfer-demands-v2";
+const OPERATIONAL_PROVENANCE_SCHEMA = "zugfolge-germany-operational-v2-provenance/v1";
+const OPERATIONAL_EXECUTION_PINS_SCHEMA = "zugfolge-germany-operational-v2-execution-pins/v1";
+const OPERATIONAL_EXECUTION_PROOF_SCHEMA = "zugfolge-germany-operational-v2-execution-proof/v1";
+const OPERATIONAL_AUTHORITY_SCHEMA = "zugfolge-map-build-operational-authority/v1";
+const OPERATIONAL_EXECUTION_AUTHORITY_SCHEMA = "zugfolge-operational-v2-execution-authority/v1";
+const OPERATIONAL_REBUILD_ATTESTATION_PREDICATE = "https://slsa.dev/provenance/v1";
+const OPERATIONAL_EXECUTION_AUTHORITY_PREDICATE = "https://zugfolge.de/attestations/operational-v2-execution-authority/v1";
+const OPERATIONAL_REBUILD_ATTESTATION_WORKFLOW = "larynxberlin-rgb/Zugfolge/.github/workflows/operational-validator-rebuild-evidence.yml";
+const OPERATIONAL_EXECUTION_AUTHORITY_WORKFLOW = "larynxberlin-rgb/Zugfolge/.github/workflows/operational-v2-execution-authority.yml";
+const OPERATIONAL_REBUILD_ATTESTATION_FILE = "var/derived/germany-2026.5/toolchain/zugfolge-infra-release-rebuild-attestation.sigstore.json";
+const OPERATIONAL_EXECUTION_AUTHORITY_FILE = "var/derived/germany-2026.5/toolchain/zugfolge-operational-v2-execution-authority.sigstore.json";
+const OPERATIONAL_OUTER_EXECUTION_RECEIPT_FILE = "var/derived/germany-2026.5/operational-infrastructure-v2.outer-execution-receipt.json";
+const OPERATIONAL_OUTER_EXECUTION_COMPLETION_FILE = `${OPERATIONAL_OUTER_EXECUTION_RECEIPT_FILE}.zugfolge-complete.json`;
+const OPERATIONAL_ANNUAL_PLAN_FILE = "var/derived/germany-2026.5/toolchain/zugfolge-infra-release-annual-plan.json";
+const OPERATIONAL_ANNUAL_PLAN_COMPLETION_FILE = `${OPERATIONAL_ANNUAL_PLAN_FILE}.zugfolge-complete.json`;
+const OPERATIONAL_ANNUAL_START_EVIDENCE_FILE = "var/derived/germany-2026.5/toolchain/zugfolge-infra-release-annual-executor-start-evidence.json";
+const OPERATIONAL_ANNUAL_START_COMPLETION_FILE = `${OPERATIONAL_ANNUAL_START_EVIDENCE_FILE}.zugfolge-complete.json`;
+const OPERATIONAL_WINDOWS_ANCHOR_HELPER_FILE = "tools/region-import/germany/operational-windows-anchor-helper.dll";
+const OPERATIONAL_RUNNER_BUNDLE_FILE = "tools/region-import/germany/run-capture-operational-infrastructure-v2.anchored-bundle.mjs";
+const OPERATIONAL_RUNNER_ENTRYPOINT_FILE = "tools/region-import/germany/run-capture-operational-infrastructure-v2.mjs";
+const OPERATIONAL_RUNNER_INVOCATION_MODE = "system-launcher-held-bundle-stdin-v1";
+// FINAL-REPIN 2026.5: Diesen einen Vertrag nach dem letzten attestierten
+// Windows-Lauf atomar aus der finalen Execution-Pins-Datei aktualisieren.
+export const GERMANY_2026_5_OPERATIONAL_REPIN = Object.freeze({
+  executionPins: Object.freeze({
+    file: "tools/region-import/germany/operational-infrastructure-v2-execution-pins.annual-2026.5.json",
+    bytes: 4_841,
+    sha256: "be5d372d0b5cd6179848139c3b52c413db2fd60f2e94647eaa7105cce8c5d28b",
+    schema: OPERATIONAL_EXECUTION_PINS_SCHEMA,
+  }),
+  runtime: Object.freeze({
+    id: "nodejs-24-operational-runner-v1",
+    platform: "win32",
+    bytes: 92_825_416,
+    sha256: "3602f2bb1a10f2cbab4c36886218a33c1ab3db87290e73b033c46c77147d0237",
+  }),
+  anchorHelper: Object.freeze({
+    file: OPERATIONAL_WINDOWS_ANCHOR_HELPER_FILE,
+    bytes: 46_080,
+    sha256: "1e18d3048d9a778d05a7bd1532d4f84233aa2cb5d13d46ca4583e90811e7165f",
+  }),
+  bundle: Object.freeze({
+    file: OPERATIONAL_RUNNER_BUNDLE_FILE,
+    bytes: 603_179,
+    sha256: "2f824edebed402068b2fe6f1c06e83718883097ea3e5c824285a9afcf6eb0ac5",
+  }),
+  entrypoint: Object.freeze({
+    file: OPERATIONAL_RUNNER_ENTRYPOINT_FILE,
+    bytes: 26_431,
+    sha256: "b14f9c476bf8bb3e0d2a5b44a88d4ed45fa2b5c5df0dca8b6325bf4064237d74",
+  }),
+  validator: Object.freeze({
+    buildCommit: "aba354ec1937452a491087626ec0adea36ef6695",
+    preserved: Object.freeze({
+      file: "var/derived/germany-2026.5/toolchain/zugfolge-infra-release-aba354ec1937452a491087626ec0adea36ef6695-c35e72e352ae573e0416035fc4f0d233af5668864c0bd8df7333337e87bb7fd4.exe",
+      bytes: 8_382_277,
+      sha256: "c35e72e352ae573e0416035fc4f0d233af5668864c0bd8df7333337e87bb7fd4",
+    }),
+    executedMode: "windows-exclusive-handle-launch-v1",
+  }),
+  launcher: Object.freeze({
+    file: "tools/region-import/germany/operational-infrastructure-v2-system-launcher.windows.ps1",
+    mode: "windows-system-powershell-held-bundle-v1",
+    sourceBytes: 17_130,
+    sourceSha256: "2a91b702b042a565a8e2ec5bf3ae039182d1e736e4e8bd4c27b375d06a35276f",
+  }),
+  importClosure: Object.freeze([
+    Object.freeze({ file: "tools/region-import/germany/annual-create-new-artifact.mjs", bytes: 19_192, sha256: "742f388c1df04507a9c6c656faf6f5d3c6195209b373b27385464ff3465a7340" }),
+    Object.freeze({ file: "tools/region-import/germany/capture-operational-infrastructure-v2-native-receipt.mjs", bytes: 2_525, sha256: "4224a650f5673d4c948b4a5d05e84330f975f3f6d0d38a15c353ef960d7930e6" }),
+    Object.freeze({ file: "tools/region-import/germany/operational-infrastructure-v2-execution-pins.mjs", bytes: 162_424, sha256: "be49874c3a624a0ff39adb9cf928cb98fdde84eecd377556bfad326916ba676a" }),
+    Object.freeze({ file: "tools/region-import/germany/operational-infrastructure-v2-outer-execution-receipt.mjs", bytes: 23_497, sha256: "19c17314d72359a1114e6c567b91a74fb2b631eddb4f33d3d482bec011855447" }),
+    Object.freeze({ file: "tools/region-import/germany/operational-infrastructure-v2-publication.mjs", bytes: 140_209, sha256: "b6f92d0143f9e27b58e49248ee65561122154db0b85ebb689323b1847d7716ac" }),
+    Object.freeze({ file: "tools/region-import/germany/operational-infrastructure-v2-system-launcher.windows.ps1", bytes: 17_130, sha256: "2a91b702b042a565a8e2ec5bf3ae039182d1e736e4e8bd4c27b375d06a35276f" }),
+    Object.freeze({ file: "tools/region-import/germany/operational-infrastructure-v2.mjs", bytes: 93_203, sha256: "a308b29bdece8fbe7e18b0bb513393834cd6e99ccca5121fe7f12b344a24ab43" }),
+    Object.freeze({ file: "tools/region-import/germany/operational-validator-rebuild-evidence.mjs", bytes: 223_837, sha256: "3e0f1c9f7a2159e4c7bc1c28193c7f1ff81cfaee933b27f7a27cba9836e227da" }),
+    Object.freeze({ file: OPERATIONAL_WINDOWS_ANCHOR_HELPER_FILE, bytes: 46_080, sha256: "1e18d3048d9a778d05a7bd1532d4f84233aa2cb5d13d46ca4583e90811e7165f" }),
+    Object.freeze({ file: "tools/region-import/germany/publish-operational-infrastructure-v2.mjs", bytes: 3_180, sha256: "56ca8cb74f2fb3c6147c128116e26a5147866fa507e1d8113273ef81d3ff7aa4" }),
+    Object.freeze({ file: "tools/region-import/germany/run-capture-operational-infrastructure-v2.mjs", bytes: 26_431, sha256: "b14f9c476bf8bb3e0d2a5b44a88d4ed45fa2b5c5df0dca8b6325bf4064237d74" }),
+    Object.freeze({ file: "tools/region-import/materialize-operational-infrastructure-v2.mjs", bytes: 22_300, sha256: "fe504130e303c0859bc87bfaa2c370e2d3bd0835b3c25c9a75b0eab02958955e" }),
+    Object.freeze({ file: "tools/region-import/operational-infrastructure-binding.mjs", bytes: 9_981, sha256: "a5efe6f0725b9c4ffa82bf42f71f0aa0bf71b8a282802a822dce95ce6b11b16a" }),
+    Object.freeze({ file: "tools/tiles/create-new-output.mjs", bytes: 12_485, sha256: "8947e01163310e80fc7b38b1163982e49c376424dcde34df1377e7db8c512d45" }),
+  ]),
+});
 const FINALIZATION_CHALLENGE_SCHEMA = "zugfolge-infra-package-finalization-challenge/v1";
-const FINALIZATION_RECEIPT_SCHEMA = "zugfolge-infra-package-finalization-receipt/v1";
+const FINALIZATION_RECEIPT_SCHEMA_V1 = "zugfolge-infra-package-finalization-receipt/v1";
+const FINALIZATION_RECEIPT_SCHEMA_V2 = "zugfolge-infra-package-finalization-receipt/v2";
 const FINALIZATION_MAX_DURATION_MS = 65 * 60_000;
+const LEGACY_DELIVERY_V2_VERSIONS = new Set(["2026.1", "2026.3", "2026.4"]);
+const PROVENANCE_DELIVERY_V2_VERSION = "2026.5";
 const QUALITY_CLASSES = ["A", "B", "C"] as const;
 const OPERATIONAL_COVERAGE_FIELDS = [
   "blockResources", "directedEdges", "edgeGeometries", "interlockingRoutes", "platformIntervals",
@@ -58,6 +144,18 @@ export class InfraPackageStagingError extends Error {
     super(message);
     this.name = "InfraPackageStagingError";
   }
+}
+
+export function germanyOperationalDeliveryV2Generation(version: string): "legacy-v1" | "integrated-provenance-v2" {
+  if (version === PROVENANCE_DELIVERY_V2_VERSION) return "integrated-provenance-v2";
+  if (LEGACY_DELIVERY_V2_VERSIONS.has(version)) return "legacy-v1";
+  throw new InfraPackageStagingError("Paketversion ist nicht als Deutschland-Delivery-v2-Version freigegeben.");
+}
+
+function validateGermanyOperationalDeliveryV2Pair(version: string, releaseId: string): "legacy-v1" | "integrated-provenance-v2" {
+  const generation = germanyOperationalDeliveryV2Generation(version);
+  invariant(releaseId === `infra-deutschland-${version}`, "Delivery-v2 bindet Paketversion und InfraRelease-ID nicht exakt.");
+  return generation;
 }
 
 function record(value: unknown, label: string): Record<string, unknown> {
@@ -332,6 +430,425 @@ function sha256(value: Buffer | string): string {
   return createHash("sha256").update(value).digest("hex");
 }
 
+function positiveInteger(value: unknown, label: string): number {
+  invariant(Number.isSafeInteger(value) && (value as number) > 0, `${label} muss eine positive sichere Ganzzahl sein.`);
+  return value as number;
+}
+
+function operationalSha256(value: unknown, label: string): string {
+  invariant(typeof value === "string" && SHA256.test(value), `${label} ist kein SHA-256.`);
+  return value;
+}
+
+function operationalFileProof(value: unknown, label: string, withSchema = false): Record<string, unknown> {
+  const proof = exactKeys(value, withSchema ? ["file", "bytes", "sha256", "schema"] : ["file", "bytes", "sha256"], label);
+  const file = portablePath(proof["file"], `${label}.file`);
+  invariant(file.length <= 512, `${label}.file ist zu lang.`);
+  positiveInteger(proof["bytes"], `${label}.bytes`);
+  operationalSha256(proof["sha256"], `${label}.sha256`);
+  if (withSchema) invariant(typeof proof["schema"] === "string" && proof["schema"] !== "", `${label}.schema fehlt.`);
+  return proof;
+}
+
+function operationalStringList(value: unknown, label: string): readonly string[] {
+  invariant(Array.isArray(value), `${label} muss eine Liste sein.`);
+  for (const [index, entry] of value.entries()) {
+    invariant(
+      typeof entry === "string" && entry.length > 0 && entry.length <= 1024 && !entry.includes("\0"),
+      `${label}[${index}] ist ungueltig.`,
+    );
+  }
+  return value as string[];
+}
+
+function validateOperationalProvenance(value: unknown): {
+  readonly value: Record<string, unknown>;
+  readonly sha256: string;
+  readonly executionProofSha256: string;
+  readonly validatorSha256: string;
+} {
+  const provenance = exactKeys(value, [
+    "schema", "producerKind", "releaseEvidenceEligible", "productionActivationEligible", "executionPins", "executionProof",
+  ], "Delivery Operational-v2-Provenienz");
+  invariant(
+    provenance["schema"] === OPERATIONAL_PROVENANCE_SCHEMA
+      && provenance["producerKind"] === "integrated-runner-v1"
+      && provenance["releaseEvidenceEligible"] === true
+      && provenance["productionActivationEligible"] === true,
+    "Delivery-v2 akzeptiert nur integrierte, evidence- und aktivierungsgeeignete Operational-v2-Provenienz.",
+  );
+  const pins = operationalFileProof(provenance["executionPins"], "Delivery Operational-v2-Provenienz.executionPins", true);
+  invariant(
+    pins["file"] === GERMANY_2026_5_OPERATIONAL_REPIN.executionPins.file
+      && pins["bytes"] === GERMANY_2026_5_OPERATIONAL_REPIN.executionPins.bytes
+      && pins["sha256"] === GERMANY_2026_5_OPERATIONAL_REPIN.executionPins.sha256
+      && pins["schema"] === GERMANY_2026_5_OPERATIONAL_REPIN.executionPins.schema,
+    "Delivery Operational-v2-Provenienz bindet nicht die bytegenaue Execution-Pins-Datei des aktuellen Deutschland-Release.",
+  );
+  const proof = exactKeys(provenance["executionProof"], [
+    "schema", "executionPinsSha256", "runner", "validator", "rebuild", "invocation", "stdout", "exit",
+  ], "Delivery Operational-v2-Provenienz.executionProof");
+  invariant(
+    proof["schema"] === OPERATIONAL_EXECUTION_PROOF_SCHEMA
+      && proof["executionPinsSha256"] === pins["sha256"],
+    "Delivery Operational-v2-Provenienz bindet Execution-Pins und Execution-Proof verschieden.",
+  );
+  const runner = exactKeys(proof["runner"], ["anchorHelper", "bundle", "entrypoint", "importClosure", "invocation", "launcher", "runtime"], "Delivery Operational-v2-Provenienz.runner");
+  const bundle = operationalFileProof(runner["bundle"], "Delivery Operational-v2-Provenienz.runner.bundle");
+  const entrypoint = operationalFileProof(runner["entrypoint"], "Delivery Operational-v2-Provenienz.runner.entrypoint");
+  invariant(
+    bundle["file"] === GERMANY_2026_5_OPERATIONAL_REPIN.bundle.file
+      && bundle["bytes"] === GERMANY_2026_5_OPERATIONAL_REPIN.bundle.bytes
+      && bundle["sha256"] === GERMANY_2026_5_OPERATIONAL_REPIN.bundle.sha256,
+    "Delivery Operational-v2-Provenienz bindet nicht das bytegenaue gehaltene Runner-Bundle.",
+  );
+  invariant(
+    entrypoint["file"] === GERMANY_2026_5_OPERATIONAL_REPIN.entrypoint.file
+      && entrypoint["bytes"] === GERMANY_2026_5_OPERATIONAL_REPIN.entrypoint.bytes
+      && entrypoint["sha256"] === GERMANY_2026_5_OPERATIONAL_REPIN.entrypoint.sha256,
+    "Delivery Operational-v2-Provenienz bindet nicht den bytegenauen Runner-Entrypoint.",
+  );
+  const runnerInvocation = exactKeys(runner["invocation"], ["mode", "nodeArguments", "nodeOptions"], "Delivery Operational-v2-Provenienz.runner.invocation");
+  const runnerNodeArguments = operationalStringList(runnerInvocation["nodeArguments"], "Delivery Operational-v2-Provenienz.runner.invocation.nodeArguments");
+  invariant(
+    runnerInvocation["mode"] === OPERATIONAL_RUNNER_INVOCATION_MODE
+      && JSON.stringify(runnerNodeArguments) === JSON.stringify(["--input-type=module", "-"])
+      && runnerInvocation["nodeOptions"] === null,
+    "Delivery Operational-v2-Provenienz.runner.invocation startet nicht exakt das gehaltene ESM-stdin-Bundle.",
+  );
+  const runtime = exactKeys(runner["runtime"], ["id", "platform", "bytes", "sha256"], "Delivery Operational-v2-Provenienz.runner.runtime");
+  positiveInteger(runtime["bytes"], "Delivery Operational-v2-Provenienz.runner.runtime.bytes");
+  operationalSha256(runtime["sha256"], "Delivery Operational-v2-Provenienz.runner.runtime.sha256");
+  invariant(
+    runtime["id"] === GERMANY_2026_5_OPERATIONAL_REPIN.runtime.id
+      && runtime["platform"] === GERMANY_2026_5_OPERATIONAL_REPIN.runtime.platform
+      && runtime["bytes"] === GERMANY_2026_5_OPERATIONAL_REPIN.runtime.bytes
+      && runtime["sha256"] === GERMANY_2026_5_OPERATIONAL_REPIN.runtime.sha256,
+    "Delivery Operational-v2-Provenienz.runner.runtime bindet nicht die bytegenaue Runtime des aktuellen Deutschland-Release.",
+  );
+  const anchorHelper = operationalFileProof(runner["anchorHelper"], "Delivery Operational-v2-Provenienz.runner.anchorHelper");
+  invariant(
+    runtime["platform"] === "win32"
+      && anchorHelper["file"] === GERMANY_2026_5_OPERATIONAL_REPIN.anchorHelper.file
+      && anchorHelper["bytes"] === GERMANY_2026_5_OPERATIONAL_REPIN.anchorHelper.bytes
+      && anchorHelper["sha256"] === GERMANY_2026_5_OPERATIONAL_REPIN.anchorHelper.sha256,
+    "Delivery Operational-v2-Provenienz.runner.anchorHelper bindet nicht die bytegenaue Windows-Anchor-Helper-Assembly.",
+  );
+  const launcher = exactKeys(runner["launcher"], ["mode", "sourceBytes", "sourceSha256"], "Delivery Operational-v2-Provenienz.runner.launcher");
+  const expectedLauncher = GERMANY_2026_5_OPERATIONAL_REPIN.launcher;
+  positiveInteger(launcher["sourceBytes"], "Delivery Operational-v2-Provenienz.runner.launcher.sourceBytes");
+  operationalSha256(launcher["sourceSha256"], "Delivery Operational-v2-Provenienz.runner.launcher.sourceSha256");
+  invariant(
+    launcher["mode"] === expectedLauncher.mode
+      && launcher["sourceBytes"] === expectedLauncher.sourceBytes
+      && launcher["sourceSha256"] === expectedLauncher.sourceSha256,
+    "Delivery Operational-v2-Provenienz.runner.launcher bindet nicht exakt den kanonischen win32-Systemlauncher des aktuellen Deutschland-Release.",
+  );
+  invariant(Array.isArray(runner["importClosure"]) && runner["importClosure"].length > 0, "Delivery Operational-v2-Provenienz besitzt keine Runner-Importclosure.");
+  const closure: Record<string, unknown>[] = [];
+  let previous: string | undefined;
+  let entrypointFound = false;
+  let launcherSourceCount = 0;
+  let anchorHelperCount = 0;
+  for (const [index, entry] of (runner["importClosure"] as unknown[]).entries()) {
+    const item = operationalFileProof(entry, `Delivery Operational-v2-Provenienz.runner.importClosure[${index}]`);
+    const file = String(item["file"]);
+    if (previous !== undefined) invariant(file.localeCompare(previous, "en") > 0, "Delivery Operational-v2-Provenienz.runner.importClosure ist nicht eindeutig sortiert.");
+    previous = file;
+    closure.push(item);
+    if (file === entrypoint["file"] && item["bytes"] === entrypoint["bytes"] && item["sha256"] === entrypoint["sha256"]) entrypointFound = true;
+    if (file === expectedLauncher.file) {
+      launcherSourceCount += 1;
+      invariant(
+        item["bytes"] === expectedLauncher.sourceBytes && item["sha256"] === expectedLauncher.sourceSha256,
+        "Delivery Operational-v2-Provenienz bindet Launcher-Proof und Launcher-Quelldatei verschieden.",
+      );
+    }
+    if (file === anchorHelper["file"]) {
+      anchorHelperCount += 1;
+      invariant(
+        item["bytes"] === anchorHelper["bytes"] && item["sha256"] === anchorHelper["sha256"],
+        "Delivery Operational-v2-Provenienz bindet Anchor-Helper-Proof und Importclosure verschieden.",
+      );
+    }
+  }
+  invariant(entrypointFound, "Delivery Operational-v2-Provenienz bindet den Runner-Entrypoint nicht in seiner Importclosure.");
+  invariant(launcherSourceCount === 1, "Delivery Operational-v2-Provenienz bindet die kanonische Launcher-Quelldatei nicht exakt einmal in der Importclosure.");
+  invariant(anchorHelperCount === 1, "Delivery Operational-v2-Provenienz bindet die Windows-Anchor-Helper-Assembly nicht exakt einmal in der Importclosure.");
+  invariant(
+    closure.length === GERMANY_2026_5_OPERATIONAL_REPIN.importClosure.length
+      && closure.every((item, index) => {
+        const expected = GERMANY_2026_5_OPERATIONAL_REPIN.importClosure[index]!;
+        return item["file"] === expected.file && item["bytes"] === expected.bytes && item["sha256"] === expected.sha256;
+      }),
+    "Delivery Operational-v2-Provenienz bindet nicht die bytegenaue streng sortierte Importclosure des aktuellen Deutschland-Release.",
+  );
+  const validator = exactKeys(proof["validator"], ["buildCommit", "preserved", "executed"], "Delivery Operational-v2-Provenienz.validator");
+  invariant(
+    validator["buildCommit"] === GERMANY_2026_5_OPERATIONAL_REPIN.validator.buildCommit,
+    "Delivery Operational-v2-Provenienz bindet nicht den Build-Commit des aktuellen preserved Validators.",
+  );
+  const preserved = operationalFileProof(validator["preserved"], "Delivery Operational-v2-Provenienz.validator.preserved");
+  invariant(
+    preserved["file"] === GERMANY_2026_5_OPERATIONAL_REPIN.validator.preserved.file
+      && preserved["bytes"] === GERMANY_2026_5_OPERATIONAL_REPIN.validator.preserved.bytes
+      && preserved["sha256"] === GERMANY_2026_5_OPERATIONAL_REPIN.validator.preserved.sha256,
+    "Delivery Operational-v2-Provenienz bindet nicht den bytegenauen preserved Validator des aktuellen Deutschland-Release.",
+  );
+  const executed = exactKeys(validator["executed"], ["mode", "bytes", "sha256"], "Delivery Operational-v2-Provenienz.validator.executed");
+  const executedBytes = positiveInteger(executed["bytes"], "Delivery Operational-v2-Provenienz.validator.executed.bytes");
+  const executedSha256 = operationalSha256(executed["sha256"], "Delivery Operational-v2-Provenienz.validator.executed.sha256");
+  invariant(
+    executed["mode"] === GERMANY_2026_5_OPERATIONAL_REPIN.validator.executedMode
+      && executedBytes === preserved["bytes"]
+      && executedSha256 === preserved["sha256"],
+    "Delivery Operational-v2-Provenienz bindet nicht dieselben preserved und ausgefuehrten Validator-Bytes.",
+  );
+  const rebuild = exactKeys(proof["rebuild"], ["specification", "evidence", "sourceCommit"], "Delivery Operational-v2-Provenienz.rebuild");
+  operationalFileProof(rebuild["specification"], "Delivery Operational-v2-Provenienz.rebuild.specification");
+  operationalFileProof(rebuild["evidence"], "Delivery Operational-v2-Provenienz.rebuild.evidence", true);
+  invariant(typeof rebuild["sourceCommit"] === "string" && rebuild["sourceCommit"] === validator["buildCommit"] && GIT_COMMIT.test(rebuild["sourceCommit"]), "Delivery Operational-v2-Provenienz bindet Rebuild und Validator an verschiedene Commits.");
+  const invocation = exactKeys(proof["invocation"], ["command", "argumentPrefix", "argumentFiles", "arguments"], "Delivery Operational-v2-Provenienz.invocation");
+  invariant(invocation["command"] === "derive-germany-operational-v2", "Delivery Operational-v2-Provenienz bindet einen falschen nativen Befehl.");
+  const argumentPrefix = operationalStringList(invocation["argumentPrefix"], "Delivery Operational-v2-Provenienz.invocation.argumentPrefix");
+  invariant(Array.isArray(invocation["argumentFiles"]), "Delivery Operational-v2-Provenienz.invocation.argumentFiles fehlt.");
+  invariant(argumentPrefix.length === 0 && invocation["argumentFiles"].length === 0, "Delivery Operational-v2-Provenienz-v1 erlaubt keinen Argumentpraefix und keine Argumentdateien.");
+  for (const [index, entry] of (invocation["argumentFiles"] as unknown[]).entries()) operationalFileProof(entry, `Delivery Operational-v2-Provenienz.invocation.argumentFiles[${index}]`);
+  const arguments_ = operationalStringList(invocation["arguments"], "Delivery Operational-v2-Provenienz.invocation.arguments");
+  invariant(arguments_.length === 5 && arguments_[0] === invocation["command"], "Delivery Operational-v2-Provenienz.invocation.arguments ist unvollstaendig.");
+  for (let index = 1; index < arguments_.length; index += 1) {
+    portablePath(arguments_[index], `Delivery Operational-v2-Provenienz.invocation.arguments[${index}]`);
+  }
+  const stdout = exactKeys(proof["stdout"], ["bytes", "sha256", "recordCount", "structuredReceiptSha256"], "Delivery Operational-v2-Provenienz.stdout");
+  positiveInteger(stdout["bytes"], "Delivery Operational-v2-Provenienz.stdout.bytes");
+  operationalSha256(stdout["sha256"], "Delivery Operational-v2-Provenienz.stdout.sha256");
+  operationalSha256(stdout["structuredReceiptSha256"], "Delivery Operational-v2-Provenienz.stdout.structuredReceiptSha256");
+  invariant(
+    stdout["recordCount"] === 1,
+    "Delivery Operational-v2-Provenienz.stdout ist kein einzelner strukturierter Validatorbeleg.",
+  );
+  const exit = exactKeys(proof["exit"], ["code", "signal"], "Delivery Operational-v2-Provenienz.exit");
+  invariant(exit["code"] === 0 && exit["signal"] === null, "Delivery Operational-v2-Provenienz bindet keinen erfolgreichen signal-freien Validatorabschluss.");
+  return {
+    value: provenance,
+    sha256: sha256(`${JSON.stringify(canonicalValue(provenance))}\n`),
+    executionProofSha256: sha256(`${JSON.stringify(canonicalValue(proof))}\n`),
+    validatorSha256: executedSha256,
+  };
+}
+
+export function validateInfraPackageOperationalProvenance(value: unknown): Readonly<{
+  readonly sha256: string;
+  readonly executionProofSha256: string;
+  readonly validatorSha256: string;
+}> {
+  const validated = validateOperationalProvenance(value);
+  return Object.freeze({
+    sha256: validated.sha256,
+    executionProofSha256: validated.executionProofSha256,
+    validatorSha256: validated.validatorSha256,
+  });
+}
+
+interface OperationalAuthorityProof {
+  readonly sha256: string;
+  readonly rebuildAttestationSha256: string;
+  readonly executionAuthorityAttestationSha256: string;
+  readonly outerExecutionReceiptSha256: string;
+  readonly outerExecutionCompletionSha256: string;
+  readonly sourceCommit: string;
+}
+
+function sameCanonicalValue(left: unknown, right: unknown): boolean {
+  return JSON.stringify(canonicalValue(left)) === JSON.stringify(canonicalValue(right));
+}
+
+function validateAuthoritySubjects(value: unknown, label: string): readonly Record<string, unknown>[] {
+  invariant(Array.isArray(value) && value.length > 0, `${label} besitzt keine Subjects.`);
+  const subjects = value.map((subject, index) => operationalFileProof(subject, `${label}[${index}]`));
+  const files = subjects.map((subject) => String(subject["file"]));
+  invariant(
+    new Set(files).size === files.length
+      && files.every((file, index) => index === 0 || file.localeCompare(files[index - 1]!, "en") > 0),
+    `${label} ist nicht eindeutig und kanonisch sortiert.`,
+  );
+  return subjects;
+}
+
+function validateAuthorityToolBinding(
+  value: unknown,
+  expected: { readonly id: string; readonly file: string; readonly bytes: number; readonly sha256: string },
+  label: string,
+): void {
+  const binding = exactKeys(value, ["bytes", "file", "id", "kind", "sha256", "version"], label);
+  operationalFileProof({ file: binding["file"], bytes: binding["bytes"], sha256: binding["sha256"] }, label);
+  invariant(
+    binding["id"] === expected.id
+      && binding["kind"] === "derived-input"
+      && binding["version"] === "infra-deutschland-2026.5"
+      && binding["file"] === expected.file
+      && binding["bytes"] === expected.bytes
+      && binding["sha256"] === expected.sha256,
+    `${label} driftet vom gepinnten aktuellen Authority-Werkzeugvertrag.`,
+  );
+}
+
+function validateAuthorityBlock(
+  value: unknown,
+  expected: {
+    readonly bundleFile: string;
+    readonly predicateType: string;
+    readonly signerWorkflow: string;
+  },
+  label: string,
+): { readonly value: Record<string, unknown>; readonly bundle: Record<string, unknown>; readonly subjects: readonly Record<string, unknown>[]; readonly sourceDigest: string } {
+  const block = exactKeys(value, [
+    "bundle", "denySelfHostedRunners", "predicateType", "repository", "signerWorkflow",
+    "sourceDigest", "sourceRef", "subjects",
+  ], label);
+  const bundle = operationalFileProof(block["bundle"], `${label}.bundle`);
+  const sourceDigest = String(block["sourceDigest"] ?? "");
+  invariant(
+    bundle["file"] === expected.bundleFile
+      && block["denySelfHostedRunners"] === true
+      && block["predicateType"] === expected.predicateType
+      && block["repository"] === "larynxberlin-rgb/Zugfolge"
+      && block["signerWorkflow"] === expected.signerWorkflow
+      && block["sourceRef"] === "refs/heads/main"
+      && GIT_COMMIT.test(sourceDigest),
+    `${label} driftet von der geschuetzten GitHub-Sigstore-Authority.`,
+  );
+  return { value: block, bundle, subjects: validateAuthoritySubjects(block["subjects"], `${label}.subjects`), sourceDigest };
+}
+
+function validateOperationalAuthority(value: unknown): OperationalAuthorityProof & { readonly value: Record<string, unknown> } {
+  const authority = exactKeys(value, ["execution", "rebuild", "schema", "trustedRoot", "verifier"], "Delivery Operational-v2-Build-Authority");
+  invariant(authority["schema"] === OPERATIONAL_AUTHORITY_SCHEMA, "Delivery Operational-v2-Build-Authority besitzt ein unbekanntes Schema.");
+  validateAuthorityToolBinding(authority["verifier"], {
+    id: "operational-attestation-verifier",
+    file: "var/derived/germany-2026.5/toolchain/gh-2.94.0-windows-amd64.exe",
+    bytes: 40_998_712,
+    sha256: "91ed1eff1819a96b34bc2ca3adc01822c807ae1bb883c01ad9fdf335bf242b38",
+  }, "Delivery Operational-v2-Build-Authority.verifier");
+  validateAuthorityToolBinding(authority["trustedRoot"], {
+    id: "operational-attestation-trusted-root",
+    file: "var/derived/germany-2026.5/toolchain/github-attestation-trusted-root.jsonl",
+    bytes: 34_634,
+    sha256: "65ca537f6ed8a47fd0e560c421baa1f6c1efb8b25fc200d8c5c02c0e92eb2b9c",
+  }, "Delivery Operational-v2-Build-Authority.trustedRoot");
+  const rebuild = validateAuthorityBlock(authority["rebuild"], {
+    bundleFile: OPERATIONAL_REBUILD_ATTESTATION_FILE,
+    predicateType: OPERATIONAL_REBUILD_ATTESTATION_PREDICATE,
+    signerWorkflow: OPERATIONAL_REBUILD_ATTESTATION_WORKFLOW,
+  }, "Delivery Operational-v2-Build-Authority.rebuild");
+  const executionValue = exactKeys(authority["execution"], [
+    "bundle", "denySelfHostedRunners", "predicate", "predicateSha256", "predicateType", "repository",
+    "signerWorkflow", "sourceDigest", "sourceRef", "subjects",
+  ], "Delivery Operational-v2-Build-Authority.execution");
+  const execution = validateAuthorityBlock(
+    Object.fromEntries(Object.entries(executionValue).filter(([key]) => !["predicate", "predicateSha256"].includes(key))),
+    {
+      bundleFile: OPERATIONAL_EXECUTION_AUTHORITY_FILE,
+      predicateType: OPERATIONAL_EXECUTION_AUTHORITY_PREDICATE,
+      signerWorkflow: OPERATIONAL_EXECUTION_AUTHORITY_WORKFLOW,
+    },
+    "Delivery Operational-v2-Build-Authority.execution",
+  );
+  const predicate = exactKeys(executionValue["predicate"], [
+    "executionJob", "origin", "outerExecutionCompletion", "outerExecutionReceipt", "planAuthority",
+    "protectedEnvironment", "releaseId", "requiredPhases", "schema", "source", "verificationScope",
+  ], "Delivery Operational-v2-Build-Authority.execution.predicate");
+  invariant(
+    predicate["schema"] === OPERATIONAL_EXECUTION_AUTHORITY_SCHEMA
+      && predicate["releaseId"] === "infra-deutschland-2026.5"
+      && predicate["origin"] === "local-held-runner"
+      && predicate["verificationScope"] === "operator-approved-hash-binding-not-source-reexecution-v1"
+      && predicate["protectedEnvironment"] === "operational-release-approval"
+      && sameCanonicalValue(predicate["requiredPhases"], [
+        "materialize-annual-plan-evidence-v1",
+        "execute-annual-operational-v2-v1",
+        "derive-and-capture-v1",
+      ]),
+    "Delivery Operational-v2-Build-Authority.execution.predicate besitzt keinen exakten geschuetzten Authority-Kontext.",
+  );
+  const source = exactKeys(predicate["source"], ["commit", "ref", "repository"], "Delivery Operational-v2-Build-Authority.execution.predicate.source");
+  invariant(
+    source["repository"] === "larynxberlin-rgb/Zugfolge"
+      && source["ref"] === "refs/heads/main"
+      && source["commit"] === execution.sourceDigest
+      && rebuild.sourceDigest === execution.sourceDigest,
+    "Delivery Operational-v2-Build-Authority bindet Rebuild, Execution und Predicate nicht an denselben protected-main-Commit.",
+  );
+  const executionJob = exactKeys(predicate["executionJob"], ["mode", "timeoutMilliseconds"], "Delivery Operational-v2-Build-Authority.execution.predicate.executionJob");
+  invariant(
+    executionJob["mode"] === "windows-kill-on-job-close-root-exit-bounded-io-v1"
+      && executionJob["timeoutMilliseconds"] === 21_600_000,
+    "Delivery Operational-v2-Build-Authority.execution.predicate besitzt keinen exakten Prozessbaumvertrag.",
+  );
+  const planAuthority = exactKeys(predicate["planAuthority"], [
+    "artifact", "bundle", "plan", "planCompletion", "startEvidence", "startEvidenceCompletion",
+  ], "Delivery Operational-v2-Build-Authority.execution.predicate.planAuthority");
+  const artifact = exactKeys(planAuthority["artifact"], ["digest", "id", "workflowRunId"], "Delivery Operational-v2-Build-Authority.execution.predicate.planAuthority.artifact");
+  invariant(
+    Number.isSafeInteger(artifact["id"]) && (artifact["id"] as number) > 0
+      && Number.isSafeInteger(artifact["workflowRunId"]) && (artifact["workflowRunId"] as number) > 0
+      && typeof artifact["digest"] === "string" && /^sha256:[a-f0-9]{64}$/u.test(artifact["digest"]),
+    "Delivery Operational-v2-Build-Authority.execution.predicate besitzt keine eindeutigen GitHub-Artefaktmetadaten.",
+  );
+  const planBundle = operationalFileProof(planAuthority["bundle"], "Delivery Operational-v2-Build-Authority.execution.predicate.planAuthority.bundle");
+  invariant(sameCanonicalValue(planBundle, rebuild.bundle), "Delivery Operational-v2-Build-Authority.execution.predicate bindet ein anderes Rebuild-Bundle.");
+  const causalProofs = [
+    ["plan", OPERATIONAL_ANNUAL_PLAN_FILE],
+    ["planCompletion", OPERATIONAL_ANNUAL_PLAN_COMPLETION_FILE],
+    ["startEvidence", OPERATIONAL_ANNUAL_START_EVIDENCE_FILE],
+    ["startEvidenceCompletion", OPERATIONAL_ANNUAL_START_COMPLETION_FILE],
+  ].map(([key, file]) => {
+    const proof = operationalFileProof(planAuthority[key!], `Delivery Operational-v2-Build-Authority.execution.predicate.planAuthority.${key}`);
+    invariant(proof["file"] === file, `Delivery Operational-v2-Build-Authority.execution.predicate.planAuthority.${key} besitzt den falschen Kausalpfad.`);
+    invariant(rebuild.subjects.some((subject) => sameCanonicalValue(subject, proof)), `Delivery Operational-v2-Build-Authority.rebuild bindet Phase-1-Subject ${file} nicht.`);
+    return proof;
+  });
+  invariant(causalProofs.length === 4, "Delivery Operational-v2-Build-Authority besitzt keine vollstaendige Phase-1-Kausalkette.");
+  const outerReceipt = operationalFileProof(predicate["outerExecutionReceipt"], "Delivery Operational-v2-Build-Authority.execution.predicate.outerExecutionReceipt");
+  const outerCompletion = operationalFileProof(predicate["outerExecutionCompletion"], "Delivery Operational-v2-Build-Authority.execution.predicate.outerExecutionCompletion");
+  invariant(
+    outerReceipt["file"] === OPERATIONAL_OUTER_EXECUTION_RECEIPT_FILE
+      && outerCompletion["file"] === OPERATIONAL_OUTER_EXECUTION_COMPLETION_FILE,
+    "Delivery Operational-v2-Build-Authority.execution.predicate bindet nicht Outer-Receipt und Completion.",
+  );
+  const expectedExecutionSubjects = [outerReceipt, outerCompletion]
+    .sort((left, right) => String(left["file"]).localeCompare(String(right["file"]), "en"));
+  invariant(
+    sameCanonicalValue(execution.subjects, expectedExecutionSubjects),
+    "Delivery Operational-v2-Build-Authority.execution besitzt nicht exakt Outer-Receipt und Completion als Subjects.",
+  );
+  invariant(
+    executionValue["predicateSha256"] === sha256(JSON.stringify(canonicalValue(predicate))),
+    "Delivery Operational-v2-Build-Authority.execution.predicateSha256 bindet das Predicate nicht kanonisch.",
+  );
+  return {
+    value: authority,
+    sha256: sha256(JSON.stringify(canonicalValue(authority))),
+    rebuildAttestationSha256: String(rebuild.bundle["sha256"]),
+    executionAuthorityAttestationSha256: String(execution.bundle["sha256"]),
+    outerExecutionReceiptSha256: String(outerReceipt["sha256"]),
+    outerExecutionCompletionSha256: String(outerCompletion["sha256"]),
+    sourceCommit: execution.sourceDigest,
+  };
+}
+
+export function validateInfraPackageOperationalAuthority(value: unknown): Readonly<OperationalAuthorityProof> {
+  const validated = validateOperationalAuthority(value);
+  return Object.freeze({
+    sha256: validated.sha256,
+    rebuildAttestationSha256: validated.rebuildAttestationSha256,
+    executionAuthorityAttestationSha256: validated.executionAuthorityAttestationSha256,
+    outerExecutionReceiptSha256: validated.outerExecutionReceiptSha256,
+    outerExecutionCompletionSha256: validated.outerExecutionCompletionSha256,
+    sourceCommit: validated.sourceCommit,
+  });
+}
+
 interface PackagePart {
   readonly partId: string;
   readonly packagePath: string;
@@ -441,6 +958,7 @@ function parsePackageManifest(bytes: Buffer): ParsedPackageManifest {
   invariant(bytes.toString("utf8") === canonicalManifest(manifest), "Paketmanifest ist nicht kanonisch serialisiert.");
   const packageId = safeId(manifest["packageId"], "packageId");
   const version = safeId(manifest["version"], "version");
+  germanyOperationalDeliveryV2Generation(version);
   invariant(manifest["partBytes"] === PART_BYTES, "Jahrespaket muss das 100-MiB-Transportprofil verwenden.");
   const artifacts = manifest["artifacts"];
   const auxiliaryFiles = manifest["auxiliaryFiles"];
@@ -628,6 +1146,17 @@ export interface InfraPackageQualification {
   readonly signatureStatus: "missing" | "verified";
   readonly nativeOperationalValidationStatus: "missing" | "verified";
   readonly operationalStateHash: string | null;
+  readonly operationalProvenanceStatus: "missing" | "verified";
+  readonly operationalProvenanceSha256: string | null;
+  readonly operationalExecutionProofSha256: string | null;
+  readonly operationalValidatorSha256: string | null;
+  readonly operationalAuthorityStatus: "missing" | "verified";
+  readonly operationalAuthoritySha256: string | null;
+  readonly operationalRebuildAttestationSha256: string | null;
+  readonly operationalExecutionAuthorityAttestationSha256: string | null;
+  readonly operationalOuterExecutionReceiptSha256: string | null;
+  readonly operationalOuterExecutionCompletionSha256: string | null;
+  readonly operationalAuthoritySourceCommit: string | null;
   readonly activationBlocker: "delivery-signature-missing" | "operational-v2-native-validation-missing" | null;
   readonly activationEligible: boolean;
 }
@@ -641,7 +1170,7 @@ export interface InfraPackageFinalizationChallenge {
 }
 
 export interface InfraPackageFinalizationReceipt {
-  readonly schema: "zugfolge-infra-package-finalization-receipt/v1";
+  readonly schema: "zugfolge-infra-package-finalization-receipt/v1" | "zugfolge-infra-package-finalization-receipt/v2";
   readonly signatureAlgorithm: "HMAC-SHA256";
   readonly keyId: string;
   readonly nonce: string;
@@ -653,6 +1182,17 @@ export interface InfraPackageFinalizationReceipt {
   readonly manifestSha256: string;
   readonly deliveryReleaseId: string;
   readonly operationalStateHash: string | null;
+  readonly operationalProvenanceStatus?: "missing" | "verified";
+  readonly operationalProvenanceSha256?: string | null;
+  readonly operationalExecutionProofSha256?: string | null;
+  readonly operationalValidatorSha256?: string | null;
+  readonly operationalAuthorityStatus?: "missing" | "verified";
+  readonly operationalAuthoritySha256?: string | null;
+  readonly operationalRebuildAttestationSha256?: string | null;
+  readonly operationalExecutionAuthorityAttestationSha256?: string | null;
+  readonly operationalOuterExecutionReceiptSha256?: string | null;
+  readonly operationalOuterExecutionCompletionSha256?: string | null;
+  readonly operationalAuthoritySourceCommit?: string | null;
   readonly signatureStatus: "missing" | "verified";
   readonly nativeOperationalValidationStatus: "missing" | "verified";
   readonly activationBlocker: "delivery-signature-missing" | "operational-v2-native-validation-missing" | null;
@@ -735,19 +1275,60 @@ function qualificationIsConsistent(qualification: InfraPackageQualification): bo
   if (
     qualification === null
       || typeof qualification !== "object"
-      || Object.keys(qualification).sort().join(",") !== "activationBlocker,activationEligible,deliveryReleaseId,manifestSha256,nativeOperationalValidationStatus,operationalStateHash,packageId,signatureStatus,version"
+      || Object.keys(qualification).sort().join(",") !== "activationBlocker,activationEligible,deliveryReleaseId,manifestSha256,nativeOperationalValidationStatus,operationalAuthoritySha256,operationalAuthoritySourceCommit,operationalAuthorityStatus,operationalExecutionAuthorityAttestationSha256,operationalExecutionProofSha256,operationalOuterExecutionCompletionSha256,operationalOuterExecutionReceiptSha256,operationalProvenanceSha256,operationalProvenanceStatus,operationalRebuildAttestationSha256,operationalStateHash,operationalValidatorSha256,packageId,signatureStatus,version"
       || !SAFE_ID.test(qualification.packageId)
       || !SAFE_ID.test(qualification.version)
       || !SHA256.test(qualification.manifestSha256)
       || !SAFE_ID.test(qualification.deliveryReleaseId)
   ) return false;
+  let currentOperationalProvenance: boolean;
+  try {
+    currentOperationalProvenance = germanyOperationalDeliveryV2Generation(qualification.version) === "integrated-provenance-v2";
+    validateGermanyOperationalDeliveryV2Pair(qualification.version, qualification.deliveryReleaseId);
+  } catch {
+    return false;
+  }
   if (qualification.signatureStatus === "missing") {
     return qualification.nativeOperationalValidationStatus === "missing"
       && qualification.operationalStateHash === null
+      && qualification.operationalProvenanceStatus === "missing"
+      && qualification.operationalProvenanceSha256 === null
+      && qualification.operationalExecutionProofSha256 === null
+      && qualification.operationalValidatorSha256 === null
+      && qualification.operationalAuthorityStatus === "missing"
+      && qualification.operationalAuthoritySha256 === null
+      && qualification.operationalRebuildAttestationSha256 === null
+      && qualification.operationalExecutionAuthorityAttestationSha256 === null
+      && qualification.operationalOuterExecutionReceiptSha256 === null
+      && qualification.operationalOuterExecutionCompletionSha256 === null
+      && qualification.operationalAuthoritySourceCommit === null
       && qualification.activationEligible === false
       && qualification.activationBlocker === "delivery-signature-missing";
   }
   if (qualification.signatureStatus !== "verified") return false;
+  if (currentOperationalProvenance) {
+    if (qualification.operationalProvenanceStatus !== "verified"
+      || !SHA256.test(String(qualification.operationalProvenanceSha256))
+      || !SHA256.test(String(qualification.operationalExecutionProofSha256))
+      || !SHA256.test(String(qualification.operationalValidatorSha256))
+      || qualification.operationalAuthorityStatus !== "verified"
+      || !SHA256.test(String(qualification.operationalAuthoritySha256))
+      || !SHA256.test(String(qualification.operationalRebuildAttestationSha256))
+      || !SHA256.test(String(qualification.operationalExecutionAuthorityAttestationSha256))
+      || !SHA256.test(String(qualification.operationalOuterExecutionReceiptSha256))
+      || !SHA256.test(String(qualification.operationalOuterExecutionCompletionSha256))
+      || !GIT_COMMIT.test(String(qualification.operationalAuthoritySourceCommit))) return false;
+  } else if (qualification.operationalProvenanceStatus !== "missing"
+    || qualification.operationalProvenanceSha256 !== null
+    || qualification.operationalExecutionProofSha256 !== null
+    || qualification.operationalValidatorSha256 !== null
+    || qualification.operationalAuthorityStatus !== "missing"
+    || qualification.operationalAuthoritySha256 !== null
+    || qualification.operationalRebuildAttestationSha256 !== null
+    || qualification.operationalExecutionAuthorityAttestationSha256 !== null
+    || qualification.operationalOuterExecutionReceiptSha256 !== null
+    || qualification.operationalOuterExecutionCompletionSha256 !== null
+    || qualification.operationalAuthoritySourceCommit !== null) return false;
   if (qualification.nativeOperationalValidationStatus === "missing") {
     return qualification.operationalStateHash === null
       && qualification.activationEligible === false
@@ -1281,11 +1862,28 @@ export class InfraPackageStaging {
       invariant(finalization !== undefined, "InfraRelease-Paket besitzt keine persistierte Odoo-Finalisierungsbindung.");
       const result = await this.#finalizeLocked(importId);
       const { stagePath, ...qualification } = result;
+      const currentOperationalProvenance = validateGermanyOperationalDeliveryV2Pair(
+        qualification.version,
+        qualification.deliveryReleaseId,
+      ) === "integrated-provenance-v2";
       invariant(JSON.stringify(finalization.qualification) === JSON.stringify(qualification), "Odoo-Finalisierungsbindung weicht vom erneut qualifizierten Paket ab.");
       invariant(
         qualification.signatureStatus === "verified"
           && qualification.nativeOperationalValidationStatus === "verified"
           && qualification.operationalStateHash !== null
+          && (!currentOperationalProvenance || (
+            qualification.operationalProvenanceStatus === "verified"
+            && qualification.operationalProvenanceSha256 !== null
+            && qualification.operationalExecutionProofSha256 !== null
+            && qualification.operationalValidatorSha256 !== null
+            && qualification.operationalAuthorityStatus === "verified"
+            && qualification.operationalAuthoritySha256 !== null
+            && qualification.operationalRebuildAttestationSha256 !== null
+            && qualification.operationalExecutionAuthorityAttestationSha256 !== null
+            && qualification.operationalOuterExecutionReceiptSha256 !== null
+            && qualification.operationalOuterExecutionCompletionSha256 !== null
+            && qualification.operationalAuthoritySourceCommit !== null
+          ))
           && qualification.activationBlocker === null
           && qualification.activationEligible === true,
         "Nur ein signiertes und nativ validiertes Delivery-v2-Paket darf einen Weltkandidaten speisen.",
@@ -1352,18 +1950,34 @@ export class InfraPackageStaging {
         orderableClassCSections: 0 as const,
       };
       const signatureProof: QualifiedInfraPackageCandidate["signatureProof"] = {
-        schema: "zugfolge-infra-package-activation-proof/v1",
+        schema: currentOperationalProvenance
+          ? "zugfolge-infra-package-activation-proof/v2"
+          : "zugfolge-infra-package-activation-proof/v1",
         deliveryReleaseId: qualification.deliveryReleaseId,
         timetableYear: timetableYear as number,
         packageManifestSha256: qualification.manifestSha256,
         deliveryReleaseHash,
         infraReleaseHash,
+        deliveryReleaseBase64: delivery.bytes.toString("base64"),
         algorithm: "Ed25519",
         keyId: signature["keyId"],
         valueBase64: signature["valueBase64"],
         signatureStatus: qualification.signatureStatus,
         nativeOperationalValidationStatus: qualification.nativeOperationalValidationStatus,
         operationalStateHash: qualification.operationalStateHash,
+        ...(currentOperationalProvenance ? {
+          operationalProvenanceStatus: "verified" as const,
+          operationalProvenanceSha256: qualification.operationalProvenanceSha256!,
+          operationalExecutionProofSha256: qualification.operationalExecutionProofSha256!,
+          operationalValidatorSha256: qualification.operationalValidatorSha256!,
+          operationalAuthorityStatus: "verified" as const,
+          operationalAuthoritySha256: qualification.operationalAuthoritySha256!,
+          operationalRebuildAttestationSha256: qualification.operationalRebuildAttestationSha256!,
+          operationalExecutionAuthorityAttestationSha256: qualification.operationalExecutionAuthorityAttestationSha256!,
+          operationalOuterExecutionReceiptSha256: qualification.operationalOuterExecutionReceiptSha256!,
+          operationalOuterExecutionCompletionSha256: qualification.operationalOuterExecutionCompletionSha256!,
+          operationalAuthoritySourceCommit: qualification.operationalAuthoritySourceCommit!,
+        } : {}),
       };
       return Object.freeze({
         releaseId: qualification.deliveryReleaseId,
@@ -1496,12 +2110,15 @@ async function qualifyDeliveryPackage(
   const [delivery, sources, quality] = await Promise.all([
     readPackagedJson(packageRoot, deliveryFile), readPackagedJson(packageRoot, sourcesFile), readPackagedJson(packageRoot, qualityFile),
   ]);
+  const currentOperationalProvenance = germanyOperationalDeliveryV2Generation(parsed.version) === "integrated-provenance-v2";
   const deliveryContract = exactKeys(delivery.value, [
     "schema", "releaseId", "timetableYear", "packageId", "packageVersion", "scope", "artifacts", "bindings",
-    "approvalGates", "releaseHash", "signature",
+    "approvalGates", "releaseHash", "signature", ...(currentOperationalProvenance ? ["operationalAuthority", "operationalProvenance"] : []),
   ], "Delivery-Release");
+  invariant(delivery.bytes.equals(Buffer.from(canonicalManifest(deliveryContract), "utf8")), "release.json ist nicht kanonisch serialisiert.");
   invariant(deliveryContract["schema"] === DELIVERY_SCHEMA, "release.json ist kein vollständiger öffentlicher Delivery-Release.");
   const releaseId = safeId(deliveryContract["releaseId"], "Delivery releaseId");
+  validateGermanyOperationalDeliveryV2Pair(parsed.version, releaseId);
   const yearMatch = /^infra-deutschland-(\d{4})(?:\.|$)/.exec(releaseId);
   invariant(
     yearMatch !== null
@@ -1518,9 +2135,15 @@ async function qualifyDeliveryPackage(
     "Delivery-Release besitzt keinen Operational-v2-Auslieferungsscope.",
   );
   invariant(deliveryContract["packageId"] === parsed.packageId && deliveryContract["packageVersion"] === parsed.version, "Delivery-Release ist nicht an dieses Paket gebunden.");
+  const operationalProvenance = currentOperationalProvenance
+    ? validateOperationalProvenance(deliveryContract["operationalProvenance"])
+    : undefined;
+  const operationalAuthority = currentOperationalProvenance
+    ? validateOperationalAuthority(deliveryContract["operationalAuthority"])
+    : undefined;
   const bindings = exactKeys(delivery.value["bindings"], [
     "packageManifestSchema", "infraReleaseSchema", "mapReleaseSchema", "infraReleaseHash", "mapReleaseHash",
-    "sourcesSha256", "qualitySha256",
+    "sourcesSha256", "qualitySha256", ...(currentOperationalProvenance ? ["operationalAuthoritySha256", "operationalProvenanceSha256"] : []),
   ], "Delivery bindings");
   invariant(
     bindings["packageManifestSchema"] === PACKAGE_SCHEMA
@@ -1532,6 +2155,13 @@ async function qualifyDeliveryPackage(
       && bindings["qualitySha256"] === sha256(quality.bytes),
     "Delivery-Release bindet Paketvertrag, Infra-/Map-Release-Hüllen, Quellen oder Qualität nicht bytegenau.",
   );
+  if (operationalProvenance !== undefined) {
+    invariant(
+      bindings["operationalProvenanceSha256"] === operationalProvenance.sha256
+        && bindings["operationalAuthoritySha256"] === operationalAuthority?.sha256,
+      "Delivery-v2 bindet die integrierte Operational-v2-Provenienz oder Build-Authority nicht kanonisch.",
+    );
+  }
   invariant(Array.isArray(deliveryContract["artifacts"]), "Delivery-Release besitzt kein vollständiges Artefaktinventar.");
   const deliveredArtifacts = [...(deliveryContract["artifacts"] as unknown[])].map((entry) => {
     const artifact = record(entry, "Delivery-Artefakt");
@@ -1634,6 +2264,17 @@ async function qualifyDeliveryPackage(
       signatureStatus: "missing",
       nativeOperationalValidationStatus: "missing",
       operationalStateHash: null,
+      operationalProvenanceStatus: "missing",
+      operationalProvenanceSha256: null,
+      operationalExecutionProofSha256: null,
+      operationalValidatorSha256: null,
+      operationalAuthorityStatus: "missing",
+      operationalAuthoritySha256: null,
+      operationalRebuildAttestationSha256: null,
+      operationalExecutionAuthorityAttestationSha256: null,
+      operationalOuterExecutionReceiptSha256: null,
+      operationalOuterExecutionCompletionSha256: null,
+      operationalAuthoritySourceCommit: null,
       activationBlocker: "delivery-signature-missing",
       activationEligible: false,
     };
@@ -1684,6 +2325,17 @@ async function qualifyDeliveryPackage(
       signatureStatus: "verified",
       nativeOperationalValidationStatus: "missing",
       operationalStateHash: null,
+      operationalProvenanceStatus: operationalProvenance === undefined ? "missing" : "verified",
+      operationalProvenanceSha256: operationalProvenance?.sha256 ?? null,
+      operationalExecutionProofSha256: operationalProvenance?.executionProofSha256 ?? null,
+      operationalValidatorSha256: operationalProvenance?.validatorSha256 ?? null,
+      operationalAuthorityStatus: operationalAuthority === undefined ? "missing" : "verified",
+      operationalAuthoritySha256: operationalAuthority?.sha256 ?? null,
+      operationalRebuildAttestationSha256: operationalAuthority?.rebuildAttestationSha256 ?? null,
+      operationalExecutionAuthorityAttestationSha256: operationalAuthority?.executionAuthorityAttestationSha256 ?? null,
+      operationalOuterExecutionReceiptSha256: operationalAuthority?.outerExecutionReceiptSha256 ?? null,
+      operationalOuterExecutionCompletionSha256: operationalAuthority?.outerExecutionCompletionSha256 ?? null,
+      operationalAuthoritySourceCommit: operationalAuthority?.sourceCommit ?? null,
       activationBlocker: "operational-v2-native-validation-missing",
       activationEligible: false,
     };
@@ -1722,6 +2374,17 @@ async function qualifyDeliveryPackage(
     signatureStatus: "verified",
     nativeOperationalValidationStatus: "verified",
     operationalStateHash: nativeReceipt.stateHash,
+    operationalProvenanceStatus: operationalProvenance === undefined ? "missing" : "verified",
+    operationalProvenanceSha256: operationalProvenance?.sha256 ?? null,
+    operationalExecutionProofSha256: operationalProvenance?.executionProofSha256 ?? null,
+    operationalValidatorSha256: operationalProvenance?.validatorSha256 ?? null,
+    operationalAuthorityStatus: operationalAuthority === undefined ? "missing" : "verified",
+    operationalAuthoritySha256: operationalAuthority?.sha256 ?? null,
+    operationalRebuildAttestationSha256: operationalAuthority?.rebuildAttestationSha256 ?? null,
+    operationalExecutionAuthorityAttestationSha256: operationalAuthority?.executionAuthorityAttestationSha256 ?? null,
+    operationalOuterExecutionReceiptSha256: operationalAuthority?.outerExecutionReceiptSha256 ?? null,
+    operationalOuterExecutionCompletionSha256: operationalAuthority?.outerExecutionCompletionSha256 ?? null,
+    operationalAuthoritySourceCommit: operationalAuthority?.sourceCommit ?? null,
     activationBlocker: null,
     activationEligible: true,
   };
@@ -1736,7 +2399,73 @@ export function infraFinalizationReceiptSignature(input: {
   readonly key: InfraUploadSigningKey;
   readonly receipt: InfraPackageFinalizationReceipt;
 }): string {
-  invariant(input.receipt.schema === FINALIZATION_RECEIPT_SCHEMA, "Game-Finalisierungsbeleg besitzt ein unbekanntes Schema.");
+  const currentOperationalProvenance = validateGermanyOperationalDeliveryV2Pair(
+    input.receipt.packageVersion,
+    input.receipt.deliveryReleaseId,
+  ) === "integrated-provenance-v2";
+  const expectedReceiptKeys = [
+    "schema", "signatureAlgorithm", "keyId", "nonce", "requestedAt", "finalizedAt", "importId",
+    "packageId", "packageVersion", "manifestSha256", "deliveryReleaseId", "operationalStateHash",
+    "signatureStatus", "nativeOperationalValidationStatus", "activationBlocker", "activationEligible",
+    ...(currentOperationalProvenance ? [
+      "operationalProvenanceStatus", "operationalProvenanceSha256", "operationalExecutionProofSha256", "operationalValidatorSha256",
+      "operationalAuthorityStatus", "operationalAuthoritySha256", "operationalRebuildAttestationSha256",
+      "operationalExecutionAuthorityAttestationSha256", "operationalOuterExecutionReceiptSha256",
+      "operationalOuterExecutionCompletionSha256", "operationalAuthoritySourceCommit",
+    ] : []),
+  ];
+  invariant(
+    Object.keys(input.receipt).sort().join("\0") === expectedReceiptKeys.sort().join("\0"),
+    "Game-Finalisierungsbeleg besitzt unerwartete oder fehlende Felder.",
+  );
+  invariant(
+    input.receipt.schema === (currentOperationalProvenance ? FINALIZATION_RECEIPT_SCHEMA_V2 : FINALIZATION_RECEIPT_SCHEMA_V1),
+    "Game-Finalisierungsbeleg besitzt fuer seine Paketversion ein unbekanntes Schema.",
+  );
+  if (currentOperationalProvenance) {
+    const unsigned = input.receipt.signatureStatus === "missing";
+    invariant(unsigned
+      ? input.receipt.operationalProvenanceStatus === "missing"
+        && input.receipt.operationalProvenanceSha256 === null
+        && input.receipt.operationalExecutionProofSha256 === null
+        && input.receipt.operationalValidatorSha256 === null
+        && input.receipt.operationalAuthorityStatus === "missing"
+        && input.receipt.operationalAuthoritySha256 === null
+        && input.receipt.operationalRebuildAttestationSha256 === null
+        && input.receipt.operationalExecutionAuthorityAttestationSha256 === null
+        && input.receipt.operationalOuterExecutionReceiptSha256 === null
+        && input.receipt.operationalOuterExecutionCompletionSha256 === null
+        && input.receipt.operationalAuthoritySourceCommit === null
+        && input.receipt.activationBlocker === "delivery-signature-missing"
+        && input.receipt.activationEligible === false
+      : input.receipt.operationalProvenanceStatus === "verified"
+        && SHA256.test(input.receipt.operationalProvenanceSha256 ?? "")
+        && SHA256.test(input.receipt.operationalExecutionProofSha256 ?? "")
+        && SHA256.test(input.receipt.operationalValidatorSha256 ?? "")
+        && input.receipt.operationalAuthorityStatus === "verified"
+        && SHA256.test(input.receipt.operationalAuthoritySha256 ?? "")
+        && SHA256.test(input.receipt.operationalRebuildAttestationSha256 ?? "")
+        && SHA256.test(input.receipt.operationalExecutionAuthorityAttestationSha256 ?? "")
+        && SHA256.test(input.receipt.operationalOuterExecutionReceiptSha256 ?? "")
+        && SHA256.test(input.receipt.operationalOuterExecutionCompletionSha256 ?? "")
+        && GIT_COMMIT.test(input.receipt.operationalAuthoritySourceCommit ?? ""),
+    "Aktueller Game-Finalisierungsbeleg bindet keinen konsistenten Operational-v2-Ausfuehrungsprovenienz-/Authority-Status.");
+  } else {
+    invariant(
+      input.receipt.operationalProvenanceStatus === undefined
+        && input.receipt.operationalProvenanceSha256 === undefined
+        && input.receipt.operationalExecutionProofSha256 === undefined
+        && input.receipt.operationalValidatorSha256 === undefined
+        && input.receipt.operationalAuthorityStatus === undefined
+        && input.receipt.operationalAuthoritySha256 === undefined
+        && input.receipt.operationalRebuildAttestationSha256 === undefined
+        && input.receipt.operationalExecutionAuthorityAttestationSha256 === undefined
+        && input.receipt.operationalOuterExecutionReceiptSha256 === undefined
+        && input.receipt.operationalOuterExecutionCompletionSha256 === undefined
+        && input.receipt.operationalAuthoritySourceCommit === undefined,
+      "Legacy-Game-Finalisierungsbeleg darf keine aktuelle Operational-v2-Ausfuehrungsprovenienz oder Build-Authority tragen.",
+    );
+  }
   invariant(SAFE_ID.test(input.key.id) && input.receipt.keyId === input.key.id, "Game-Finalisierungsbeleg und Signaturschlüssel weichen ab.");
   return createHmac("sha256", input.key.secret)
     .update(JSON.stringify(canonicalValue(input.receipt)), "utf8")

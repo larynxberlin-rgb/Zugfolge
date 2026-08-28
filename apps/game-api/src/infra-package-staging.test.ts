@@ -8,13 +8,23 @@ import { mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile } from "node:
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
+import { PGlite } from "@electric-sql/pglite";
+import { InfraUpdateService, type InfraActivationSafety } from "@zugfolge/alpha";
+import { MIGRATIONS_FOLDER, alphaWorldProfiles, infraReleaseChanges, worlds } from "@zugfolge/db";
+import * as databaseSchema from "@zugfolge/db/schema";
+import { drizzle } from "drizzle-orm/pglite";
+import { migrate } from "drizzle-orm/pglite/migrator";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   createLocalMapPackageVerifier,
+  GERMANY_2026_5_OPERATIONAL_REPIN,
+  germanyOperationalDeliveryV2Generation,
   InfraPackageStaging,
   InfraPackageStagingError,
   infraUploadSignature,
+  validateInfraPackageOperationalAuthority,
+  validateInfraPackageOperationalProvenance,
   verifyInfraUploadSignature,
   type InfraOperationalV2NativeVerifier,
   type InfraPackageVerifier,
@@ -24,6 +34,300 @@ const HASH_A = "a".repeat(64);
 const HASH_B = "b".repeat(64);
 const HASH_C = "c".repeat(64);
 const OPERATIONAL_STATE_HASH = "d".repeat(64);
+
+it("laesst nur die drei historischen Deutschland-Stagingvertraege und den exakt aktuellen 2026.5-Vertrag zu", () => {
+  for (const version of ["2026.1", "2026.3", "2026.4"]) {
+    expect(germanyOperationalDeliveryV2Generation(version)).toBe("legacy-v1");
+  }
+  expect(germanyOperationalDeliveryV2Generation("2026.5")).toBe("integrated-provenance-v2");
+  for (const version of ["2026.2", "2026.6", "2027.1", "2026.5-near-miss"]) {
+    expect(() => germanyOperationalDeliveryV2Generation(version)).toThrow(/nicht als Deutschland-Delivery-v2-Version freigegeben/u);
+  }
+});
+
+it("leitet den Game-Repin bytegenau aus der eingecheckten 2026.5-Execution-Pins-Datei ab", async () => {
+  const bytes = await readFile(new URL(
+    "../../../tools/region-import/germany/operational-infrastructure-v2-execution-pins.annual-2026.5.json",
+    import.meta.url,
+  ));
+  const pins = JSON.parse(bytes.toString("utf8"));
+  expect(GERMANY_2026_5_OPERATIONAL_REPIN).toEqual({
+    executionPins: {
+      file: "tools/region-import/germany/operational-infrastructure-v2-execution-pins.annual-2026.5.json",
+      bytes: bytes.length,
+      sha256: sha256(bytes),
+      schema: pins.schema,
+    },
+    runtime: pins.runner.runtime,
+    anchorHelper: pins.runner.anchorHelper,
+    bundle: pins.runner.bundle,
+    entrypoint: pins.runner.entrypoint,
+    validator: {
+      buildCommit: pins.validator.buildCommit,
+      preserved: {
+        file: pins.validator.file,
+        bytes: pins.validator.bytes,
+        sha256: pins.validator.sha256,
+      },
+      executedMode: "windows-exclusive-handle-launch-v1",
+    },
+    launcher: {
+      file: "tools/region-import/germany/operational-infrastructure-v2-system-launcher.windows.ps1",
+      mode: pins.runner.launcher.mode,
+      sourceBytes: pins.runner.launcher.sourceBytes,
+      sourceSha256: pins.runner.launcher.sourceSha256,
+    },
+    importClosure: pins.runner.importClosure,
+  });
+});
+
+function integratedOperationalProvenance() {
+  const repin = GERMANY_2026_5_OPERATIONAL_REPIN;
+  return {
+    schema: "zugfolge-germany-operational-v2-provenance/v1",
+    producerKind: "integrated-runner-v1",
+    releaseEvidenceEligible: true,
+    productionActivationEligible: true,
+    executionPins: { ...repin.executionPins },
+    executionProof: {
+      schema: "zugfolge-germany-operational-v2-execution-proof/v1",
+      executionPinsSha256: repin.executionPins.sha256,
+      runner: {
+        anchorHelper: { ...repin.anchorHelper },
+        bundle: { ...repin.bundle },
+        entrypoint: { ...repin.entrypoint },
+        importClosure: repin.importClosure.map((entry) => ({ ...entry })),
+        invocation: {
+          mode: "system-launcher-held-bundle-stdin-v1",
+          nodeArguments: ["--input-type=module", "-"],
+          nodeOptions: null,
+        },
+        launcher: { mode: repin.launcher.mode, sourceBytes: repin.launcher.sourceBytes, sourceSha256: repin.launcher.sourceSha256 },
+        runtime: { ...repin.runtime },
+      },
+      validator: {
+        buildCommit: repin.validator.buildCommit,
+        preserved: { ...repin.validator.preserved },
+        executed: { mode: repin.validator.executedMode, bytes: repin.validator.preserved.bytes, sha256: repin.validator.preserved.sha256 },
+      },
+      rebuild: {
+        specification: { file: "tools/region-import/germany/operational-validator-rebuild.annual-2026.5.json", bytes: 201, sha256: "7".repeat(64) },
+        evidence: { file: "var/derived/germany-2026.5/toolchain/rebuild-evidence.json", bytes: 202, sha256: "8".repeat(64), schema: "zugfolge-operational-validator-rebuild-evidence/v2" },
+        sourceCommit: repin.validator.buildCommit,
+      },
+      invocation: {
+        command: "derive-germany-operational-v2",
+        argumentPrefix: [],
+        argumentFiles: [],
+        arguments: ["derive-germany-operational-v2", "spec.json", "source", "candidate.json", "report.json"],
+      },
+      stdout: { bytes: 401, sha256: HASH_A, recordCount: 1, structuredReceiptSha256: HASH_B },
+      exit: { code: 0, signal: null },
+    },
+  };
+}
+
+function integratedOperationalAuthority() {
+  const sourceCommit = "c".repeat(40);
+  const rebuildBundle = {
+    file: "var/derived/germany-2026.5/toolchain/zugfolge-infra-release-rebuild-attestation.sigstore.json",
+    bytes: 501,
+    sha256: "1".repeat(64),
+  };
+  const plan = { file: "var/derived/germany-2026.5/toolchain/zugfolge-infra-release-annual-plan.json", bytes: 502, sha256: "2".repeat(64) };
+  const planCompletion = { file: `${plan.file}.zugfolge-complete.json`, bytes: 503, sha256: "3".repeat(64) };
+  const startEvidence = { file: "var/derived/germany-2026.5/toolchain/zugfolge-infra-release-annual-executor-start-evidence.json", bytes: 504, sha256: "4".repeat(64) };
+  const startEvidenceCompletion = { file: `${startEvidence.file}.zugfolge-complete.json`, bytes: 505, sha256: "5".repeat(64) };
+  const outerExecutionReceipt = { file: "var/derived/germany-2026.5/operational-infrastructure-v2.outer-execution-receipt.json", bytes: 506, sha256: "6".repeat(64) };
+  const outerExecutionCompletion = { file: `${outerExecutionReceipt.file}.zugfolge-complete.json`, bytes: 507, sha256: "7".repeat(64) };
+  const predicate = {
+    schema: "zugfolge-operational-v2-execution-authority/v1",
+    releaseId: "infra-deutschland-2026.5",
+    origin: "local-held-runner",
+    verificationScope: "operator-approved-hash-binding-not-source-reexecution-v1",
+    protectedEnvironment: "operational-release-approval",
+    requiredPhases: ["materialize-annual-plan-evidence-v1", "execute-annual-operational-v2-v1", "derive-and-capture-v1"],
+    executionJob: { mode: "windows-kill-on-job-close-root-exit-bounded-io-v1", timeoutMilliseconds: 21_600_000 },
+    source: { repository: "larynxberlin-rgb/Zugfolge", ref: "refs/heads/main", commit: sourceCommit },
+    planAuthority: {
+      artifact: { digest: `sha256:${"8".repeat(64)}`, id: 123, workflowRunId: 456 },
+      bundle: { ...rebuildBundle },
+      plan,
+      planCompletion,
+      startEvidence,
+      startEvidenceCompletion,
+    },
+    outerExecutionReceipt,
+    outerExecutionCompletion,
+  };
+  return {
+    schema: "zugfolge-map-build-operational-authority/v1",
+    rebuild: {
+      bundle: rebuildBundle,
+      denySelfHostedRunners: true,
+      predicateType: "https://slsa.dev/provenance/v1",
+      repository: "larynxberlin-rgb/Zugfolge",
+      signerWorkflow: "larynxberlin-rgb/Zugfolge/.github/workflows/operational-validator-rebuild-evidence.yml",
+      sourceDigest: sourceCommit,
+      sourceRef: "refs/heads/main",
+      subjects: [plan, planCompletion, startEvidence, startEvidenceCompletion]
+        .sort((left, right) => left.file.localeCompare(right.file, "en")),
+    },
+    execution: {
+      bundle: {
+        file: "var/derived/germany-2026.5/toolchain/zugfolge-operational-v2-execution-authority.sigstore.json",
+        bytes: 508,
+        sha256: "9".repeat(64),
+      },
+      denySelfHostedRunners: true,
+      predicateType: "https://zugfolge.de/attestations/operational-v2-execution-authority/v1",
+      repository: "larynxberlin-rgb/Zugfolge",
+      signerWorkflow: "larynxberlin-rgb/Zugfolge/.github/workflows/operational-v2-execution-authority.yml",
+      sourceDigest: sourceCommit,
+      sourceRef: "refs/heads/main",
+      subjects: [outerExecutionReceipt, outerExecutionCompletion]
+        .sort((left, right) => left.file.localeCompare(right.file, "en")),
+      predicate,
+      predicateSha256: sha256(JSON.stringify(sorted(predicate))),
+    },
+    trustedRoot: {
+      id: "operational-attestation-trusted-root",
+      kind: "derived-input",
+      version: "infra-deutschland-2026.5",
+      file: "var/derived/germany-2026.5/toolchain/github-attestation-trusted-root.jsonl",
+      bytes: 34_634,
+      sha256: "65ca537f6ed8a47fd0e560c421baa1f6c1efb8b25fc200d8c5c02c0e92eb2b9c",
+    },
+    verifier: {
+      id: "operational-attestation-verifier",
+      kind: "derived-input",
+      version: "infra-deutschland-2026.5",
+      file: "var/derived/germany-2026.5/toolchain/gh-2.94.0-windows-amd64.exe",
+      bytes: 40_998_712,
+      sha256: "91ed1eff1819a96b34bc2ca3adc01822c807ae1bb883c01ad9fdf335bf242b38",
+    },
+  };
+}
+
+it("weist forensische oder prooflose Operational-v2-Provenienz an der Game-Grenze fail-closed ab", () => {
+  const executionPins = { ...GERMANY_2026_5_OPERATIONAL_REPIN.executionPins };
+  expect(() => validateInfraPackageOperationalProvenance({
+    schema: "zugfolge-germany-operational-v2-provenance/v1",
+    producerKind: "forensic-stdin-v1",
+    releaseEvidenceEligible: false,
+    productionActivationEligible: false,
+    executionPins,
+    executionProof: null,
+  })).toThrow(/nur integrierte/u);
+  expect(() => validateInfraPackageOperationalProvenance({
+    schema: "zugfolge-germany-operational-v2-provenance/v1",
+    producerKind: "integrated-runner-v1",
+    releaseEvidenceEligible: true,
+    productionActivationEligible: true,
+    executionPins,
+    executionProof: null,
+  })).toThrow(/executionProof muss ein Objekt/u);
+});
+
+it("bindet die aktuelle Operational-v2-Runner-Provenienz exakt und verwirft Legacy- oder driftende Shapes", () => {
+  const valid = integratedOperationalProvenance();
+  expect(validateInfraPackageOperationalProvenance(valid)).toMatchObject({ validatorSha256: GERMANY_2026_5_OPERATIONAL_REPIN.validator.preserved.sha256 });
+
+  type Provenance = ReturnType<typeof integratedOperationalProvenance>;
+  const cases: readonly [string, (value: Provenance) => void][] = [
+    ["fehlende Execution-Pins", (value) => { delete (value as Partial<Provenance>).executionPins; }],
+    ["falsche Execution-Pins-Bytezahl", (value) => { value.executionPins.bytes += 1; }],
+    ["formal gueltiger falscher Execution-Pins-SHA", (value) => {
+      value.executionPins.sha256 = "f".repeat(64);
+      value.executionProof.executionPinsSha256 = value.executionPins.sha256;
+    }],
+    ["fehlendes Bundle", (value) => { delete (value.executionProof.runner as Partial<typeof value.executionProof.runner>).bundle; }],
+    ["formal gueltiger falscher Bundle-SHA", (value) => { value.executionProof.runner.bundle.sha256 = "f".repeat(64); }],
+    ["formal gueltiger falscher Entrypoint-SHA", (value) => { value.executionProof.runner.entrypoint.sha256 = "f".repeat(64); }],
+    ["fehlender Windows-Anchor-Helper", (value) => { delete (value.executionProof.runner as Partial<typeof value.executionProof.runner>).anchorHelper; }],
+    ["driftender Windows-Anchor-Helper", (value) => { value.executionProof.runner.anchorHelper.sha256 = "e".repeat(64); }],
+    ["Windows-Anchor-Helper fehlt in Importclosure", (value) => {
+      value.executionProof.runner.importClosure = value.executionProof.runner.importClosure
+        .filter(({ file }) => file !== GERMANY_2026_5_OPERATIONAL_REPIN.anchorHelper.file);
+    }],
+    ["Legacy-Aufruf", (value) => {
+      value.executionProof.runner.invocation = { execArgv: [], nodeOptions: null } as unknown as typeof value.executionProof.runner.invocation;
+    }],
+    ["falsche Node-Argumente", (value) => { value.executionProof.runner.invocation.nodeArguments = ["--input-type=module", "runner.mjs"]; }],
+    ["falscher Invocation-Modus", (value) => { value.executionProof.runner.invocation.mode = "process-execfile-runner-v1"; }],
+    ["falscher Launcher-Modus", (value) => { value.executionProof.runner.launcher.mode = "windows-exclusive-handle-launch-v1"; }],
+    ["fehlende Launcher-Quelldatei", (value) => {
+      value.executionProof.runner.importClosure = value.executionProof.runner.importClosure.filter(({ file }) => !file.endsWith("system-launcher.windows.ps1"));
+    }],
+    ["falsche Launcher-Bytezahl", (value) => { value.executionProof.runner.launcher.sourceBytes += 1; }],
+    ["formal gueltiger falscher Launcher-Quellhash", (value) => { value.executionProof.runner.launcher.sourceSha256 = "f".repeat(64); }],
+    ["nicht bytegleiche Launcher-Closure", (value) => {
+      const source = value.executionProof.runner.importClosure.find(({ file }) => file.endsWith("system-launcher.windows.ps1"));
+      if (source !== undefined) source.bytes += 1;
+    }],
+    ["doppelter Launcher in der Closure", (value) => {
+      const index = value.executionProof.runner.importClosure.findIndex(({ file }) => file.endsWith("system-launcher.windows.ps1"));
+      if (index >= 0) value.executionProof.runner.importClosure.splice(index, 0, { ...value.executionProof.runner.importClosure[index]! });
+    }],
+    ["unsortierte Importclosure", (value) => {
+      [value.executionProof.runner.importClosure[0], value.executionProof.runner.importClosure[1]] = [
+        value.executionProof.runner.importClosure[1]!, value.executionProof.runner.importClosure[0]!,
+      ];
+    }],
+    ["ungueltiger Launcher-Quellhash", (value) => { value.executionProof.runner.launcher.sourceSha256 = "not-a-sha256"; }],
+    ["nichtstring Launcher-Quellhash", (value) => { value.executionProof.runner.launcher.sourceSha256 = [HASH_A] as unknown as string; }],
+    ["falsche Runtime", (value) => { value.executionProof.runner.runtime.id = "nodejs-path-only-v1"; }],
+    ["falsche Plattformkopplung", (value) => { value.executionProof.runner.runtime.platform = "linux"; }],
+    ["nichtstring Runtime-Plattform", (value) => { value.executionProof.runner.runtime.platform = ["win32"] as unknown as string; }],
+    ["falsche Runtime-Bytezahl", (value) => { value.executionProof.runner.runtime.bytes += 1; }],
+    ["formal gueltiger falscher Runtime-SHA", (value) => { value.executionProof.runner.runtime.sha256 = "f".repeat(64); }],
+    ["falscher Validator-Build-Commit", (value) => {
+      value.executionProof.validator.buildCommit = "f".repeat(40);
+      value.executionProof.rebuild.sourceCommit = value.executionProof.validator.buildCommit;
+    }],
+    ["falsche preserved Validator-Bytezahl", (value) => {
+      value.executionProof.validator.preserved.bytes += 1;
+      value.executionProof.validator.executed.bytes = value.executionProof.validator.preserved.bytes;
+    }],
+    ["formal gueltiger falscher preserved Validator-SHA", (value) => {
+      value.executionProof.validator.preserved.sha256 = "f".repeat(64);
+      value.executionProof.validator.executed.sha256 = value.executionProof.validator.preserved.sha256;
+    }],
+  ];
+  for (const [label, mutate] of cases) {
+    const drifted = structuredClone(valid);
+    mutate(drifted);
+    expect(() => validateInfraPackageOperationalProvenance(drifted), label).toThrow();
+  }
+});
+
+it("bindet Phase 1, Phase 2 und beide Outer-Belege in einer kanonischen Operational-v2-Build-Authority", () => {
+  const authority = integratedOperationalAuthority();
+  const proof = validateInfraPackageOperationalAuthority(authority);
+  expect(proof).toEqual({
+    sha256: sha256(JSON.stringify(sorted(authority))),
+    rebuildAttestationSha256: authority.rebuild.bundle.sha256,
+    executionAuthorityAttestationSha256: authority.execution.bundle.sha256,
+    outerExecutionReceiptSha256: authority.execution.predicate.outerExecutionReceipt.sha256,
+    outerExecutionCompletionSha256: authority.execution.predicate.outerExecutionCompletion.sha256,
+    sourceCommit: authority.execution.sourceDigest,
+  });
+  const drifts: readonly [string, (value: ReturnType<typeof integratedOperationalAuthority>) => void][] = [
+    ["fehlendes Phase-1-Subject", (value) => { value.rebuild.subjects = value.rebuild.subjects.slice(1); }],
+    ["getauschtes Outer-Receipt", (value) => {
+      value.execution.predicate.outerExecutionReceipt = { ...value.execution.predicate.outerExecutionCompletion };
+      value.execution.predicateSha256 = sha256(JSON.stringify(sorted(value.execution.predicate)));
+    }],
+    ["driftender protected-main-Commit", (value) => { value.execution.sourceDigest = "d".repeat(40); }],
+    ["fremder Execution-Bundlepfad", (value) => { value.execution.bundle.file = "var/derived/germany-2026.5/toolchain/foreign.sigstore.json"; }],
+    ["zusaetzliches Feld", (value) => { (value.execution.predicate as Record<string, unknown>)["unexpected"] = true; }],
+  ];
+  for (const [label, mutate] of drifts) {
+    const drifted = structuredClone(authority);
+    mutate(drifted);
+    expect(() => validateInfraPackageOperationalAuthority(drifted), label).toThrow();
+  }
+});
 
 async function waitUntil(predicate: () => Promise<boolean>, timeoutMs = 5_000): Promise<void> {
   const deadlineMs = Date.now() + timeoutMs;
@@ -99,6 +403,9 @@ async function deliveryV2ProducerGoldenFixture(): Promise<{
 }
 
 interface PackageFixtureOptions {
+  readonly packageVersion?: string;
+  readonly operationalProvenance?: ReturnType<typeof integratedOperationalProvenance>;
+  readonly operationalAuthority?: ReturnType<typeof integratedOperationalAuthority>;
   readonly visibleMapClassCFeatures?: number;
   readonly operationalClassCArtifacts?: number;
   readonly unresolvedRequired?: number;
@@ -119,6 +426,7 @@ interface PackageFixtureOptions {
   readonly unsignedReleaseHash?: string | null;
   readonly unsignedSignatureReason?: string | null;
   readonly unsignedSignatureExtraField?: boolean;
+  readonly compactReleaseBytes?: boolean;
 }
 
 interface FixtureFile {
@@ -189,18 +497,21 @@ function packageFixture(
   signing?: { readonly keyId: string; readonly privateKey: KeyObject },
   options: PackageFixtureOptions = {},
 ): { readonly manifest: Buffer; readonly parts: readonly FixturePart[] } {
+  const packageVersion = options.packageVersion ?? "2026.1";
+  const releaseId = `infra-deutschland-${packageVersion}`;
+  const mapReleaseId = `karte-deutschland-${packageVersion}-v2`;
   const visibleMapClassC = options.visibleMapClassCFeatures ?? 2;
   const operationalClassC = options.operationalClassCArtifacts ?? 0;
-  const operationalBytes = Buffer.from('{"id":"infra-deutschland-2026.1","schema":"zugfolge-operational-infrastructure/v2"}\n');
-  const movementRouteTemplatesBytes = Buffer.from('{"infraReleaseId":"infra-deutschland-2026.1","schema":"movement-route-templates-v2"}\n');
-  const transferDemandsBytes = Buffer.from('{"infraReleaseId":"infra-deutschland-2026.1","schema":"zugfolge-timetable-transfer-demands/v2"}\n');
+  const operationalBytes = Buffer.from(`${JSON.stringify({ id: releaseId, schema: "zugfolge-operational-infrastructure/v2" })}\n`);
+  const movementRouteTemplatesBytes = Buffer.from(`${JSON.stringify({ infraReleaseId: releaseId, schema: "movement-route-templates-v2" })}\n`);
+  const transferDemandsBytes = Buffer.from(`${JSON.stringify({ infraReleaseId: releaseId, schema: "zugfolge-timetable-transfer-demands/v2" })}\n`);
   const glyphBytes = Buffer.from("glyph");
   const spriteBytes = Buffer.from("sprite");
   const notices = assetNotices(glyphBytes, spriteBytes);
   if (options.assetTreeSha256 !== undefined) notices.assets[0]!.tree.sha256 = options.assetTreeSha256;
   const quality = compact({
     schema: "zugfolge-operational-infrastructure-quality-report/v1",
-    releaseId: "infra-deutschland-2026.1",
+    releaseId,
     timetableYear: 2026,
     scopeId: "deutschland-ebo-operational-v2",
     deterministic: true,
@@ -213,8 +524,8 @@ function packageFixture(
     },
     mapEvidence: {
       schema: "zugfolge-static-map-quality/v2",
-      mapReleaseId: "karte-deutschland-2026.1-v2",
-      infrastructureCorpusId: "infra-deutschland-2026.1",
+      mapReleaseId,
+      infrastructureCorpusId: releaseId,
       bytes: 4_321,
       sha256: HASH_A,
       sourceReport: {
@@ -332,13 +643,13 @@ function packageFixture(
   });
   const sources = compact({
     schema: "zugfolge-map-delivery-sources/v2",
-    releaseId: "infra-deutschland-2026.1",
+    releaseId,
     sources: [{
       id: "basemap-protomaps",
       scope: "basemap",
       approved: true,
       license: "ODbL-1.0",
-      version: "basemap-2026.1",
+      version: `basemap-${packageVersion}`,
       attribution: "© OpenStreetMap-Mitwirkende; Basemap-Aufbereitung Protomaps",
       modifications: "Deterministische PMTiles-Aufbereitung für den öffentlichen Kartenrelease.",
     }],
@@ -356,21 +667,21 @@ function packageFixture(
     { id: "sprite", kind: "sprite", installPath: "assets/sprites/dark.png", bytes: spriteBytes },
     { id: "style", kind: "style", installPath: "style.json", bytes: Buffer.from("{}") },
     {
-      id: "operational-infrastructure-2026.1",
+      id: `operational-infrastructure-${packageVersion}`,
       kind: "operational-infrastructure-v2",
       installPath: "operational-infrastructure-v2.json",
       bytes: operationalBytes,
-      infraReleaseId: options.operationalInfraReleaseId ?? "infra-deutschland-2026.1",
+      infraReleaseId: options.operationalInfraReleaseId ?? releaseId,
       stateHash: OPERATIONAL_STATE_HASH,
     },
     {
-      id: "operational-movement-routes-2026.1",
+      id: `operational-movement-routes-${packageVersion}`,
       kind: "movement-route-templates-v2",
       installPath: "operational-infrastructure-v2.movement-route-templates-v2.json",
       bytes: movementRouteTemplatesBytes,
     },
     {
-      id: "timetable-transfer-demands-2026.1",
+      id: `timetable-transfer-demands-${packageVersion}`,
       kind: "timetable-transfer-demands-v2",
       installPath: "timetable-routes-v2.transfer-demands-v2.json",
       bytes: transferDemandsBytes,
@@ -390,10 +701,10 @@ function packageFixture(
   });
   const unsignedRelease = {
     schema: "zugfolge-map-delivery-release/v2",
-    releaseId: "infra-deutschland-2026.1",
+    releaseId,
     timetableYear: 2026,
     packageId: "zugfolge-map-deutschland",
-    packageVersion: "2026.1",
+    packageVersion,
     scope: {
       basemap: "world-z0-10-and-germany-z11-15",
       infrastructure: "germany-ebo-complete-visible-corpus",
@@ -408,7 +719,15 @@ function packageFixture(
       ...(options.mapReleaseHash === null ? {} : { mapReleaseHash: options.mapReleaseHash ?? HASH_C }),
       sourcesSha256: sha256(sources),
       qualitySha256: sha256(quality),
+      ...(options.operationalProvenance === undefined ? {} : {
+        operationalProvenanceSha256: sha256(`${JSON.stringify(sorted(options.operationalProvenance))}\n`),
+      }),
+      ...(options.operationalAuthority === undefined ? {} : {
+        operationalAuthoritySha256: sha256(JSON.stringify(sorted(options.operationalAuthority))),
+      }),
     },
+    ...(options.operationalProvenance === undefined ? {} : { operationalProvenance: options.operationalProvenance }),
+    ...(options.operationalAuthority === undefined ? {} : { operationalAuthority: options.operationalAuthority }),
     approvalGates: {
       rights: {
         status: "passed",
@@ -461,7 +780,7 @@ function packageFixture(
           },
         };
       })();
-  const release = compact(releaseValue);
+  const release = options.compactReleaseBytes === true ? compact(releaseValue) : canonical(releaseValue);
   const allFiles = [
     ...baseFiles,
     { id: "release", kind: "release-manifest", installPath: "manifests/release.json", bytes: release },
@@ -476,7 +795,7 @@ function packageFixture(
   const manifest = canonical({
     schema: "zugfolge-map-package/v2",
     packageId: "zugfolge-map-deutschland",
-    version: "2026.1",
+    version: packageVersion,
     format: "directory-parts",
     partBytes: 100 * 1024 * 1024,
     artifacts: descriptors.filter(({ kind }) => ["basemap", "infrastructure"].includes(kind)),
@@ -608,6 +927,18 @@ describe("InfraPackageStaging", () => {
       activationBlocker: "delivery-signature-missing",
       activationEligible: false,
     });
+  });
+
+  it("verwirft eine inhaltlich gueltige Signatur ueber nichtkanonisch kompakt serialisierte Delivery-Bytes", async () => {
+    const { privateKey, publicKey } = generateKeyPairSync("ed25519");
+    const keyId = "delivery-noncanonical-bytes";
+    const fixture = packageFixture("nonPublicSourceRawDataShipped", { keyId, privateKey }, { compactReleaseBytes: true });
+    const service = await staging(undefined, {
+      [keyId]: publicKey.export({ type: "spki", format: "pem" }).toString(),
+    });
+
+    await expect(uploadFixture(service, "noncanonical-delivery-release-bytes", fixture))
+      .rejects.toThrow(/release\.json ist nicht kanonisch serialisiert/u);
   });
 
   it("verwirft PKCS8-Private-Key, RSA-SPKI und ungueltige Delivery-Vertrauensanker", async () => {
@@ -1034,6 +1365,17 @@ export function verifyMapPackageTransport() {
         manifestSha256: first.manifestSha256,
         deliveryReleaseId: first.deliveryReleaseId,
         operationalStateHash: first.operationalStateHash,
+        operationalProvenanceStatus: first.operationalProvenanceStatus,
+        operationalProvenanceSha256: first.operationalProvenanceSha256,
+        operationalExecutionProofSha256: first.operationalExecutionProofSha256,
+        operationalValidatorSha256: first.operationalValidatorSha256,
+        operationalAuthorityStatus: first.operationalAuthorityStatus,
+        operationalAuthoritySha256: first.operationalAuthoritySha256,
+        operationalRebuildAttestationSha256: first.operationalRebuildAttestationSha256,
+        operationalExecutionAuthorityAttestationSha256: first.operationalExecutionAuthorityAttestationSha256,
+        operationalOuterExecutionReceiptSha256: first.operationalOuterExecutionReceiptSha256,
+        operationalOuterExecutionCompletionSha256: first.operationalOuterExecutionCompletionSha256,
+        operationalAuthoritySourceCommit: first.operationalAuthoritySourceCommit,
         signatureStatus: first.signatureStatus,
         nativeOperationalValidationStatus: first.nativeOperationalValidationStatus,
         activationBlocker: first.activationBlocker,
@@ -1102,6 +1444,198 @@ export function verifyMapPackageTransport() {
     await expect(service.activationCandidate(genericImportId))
       .rejects.toThrow("keine persistierte Odoo-Finalisierungsbindung");
   }, 15_000);
+
+  it("fuehrt das aktuelle 2026.5-Paket mit integrierter Provenienz bis an die Alpha-Aktivierungsgrenze", async () => {
+    const { privateKey, publicKey } = generateKeyPairSync("ed25519");
+    const keyId = "delivery-2026-5-alpha";
+    const trustedReleaseKeys = {
+      [keyId]: publicKey.export({ type: "spki", format: "pem" }).toString(),
+    };
+    const provenance = integratedOperationalProvenance();
+    const provenanceProof = validateInfraPackageOperationalProvenance(provenance);
+    const authority = integratedOperationalAuthority();
+    const authorityProof = validateInfraPackageOperationalAuthority(authority);
+    const fixture = packageFixture("nonPublicSourceRawDataShipped", { keyId, privateKey }, {
+      packageVersion: "2026.5",
+      operationalProvenance: provenance,
+      operationalAuthority: authority,
+    });
+    const nativeOperationalVerifier: InfraOperationalV2NativeVerifier = async ({ expectedInfraReleaseId }) => ({
+      schema: "operational-infrastructure-v2",
+      infraReleaseId: expectedInfraReleaseId,
+      stateHash: OPERATIONAL_STATE_HASH,
+    });
+    const service = await staging(undefined, trustedReleaseKeys, nativeOperationalVerifier);
+    const importId = "annual-2026-5-alpha-activation";
+    await prepareFixtureUpload(service, importId, fixture);
+    const finalized = await service.finalizeForOdoo(importId, {
+      schema: "zugfolge-infra-package-finalization-challenge/v1",
+      nonce: "5".repeat(64),
+      requestedAt: new Date().toISOString(),
+    });
+    const activation = await service.activationCandidate(importId);
+
+    expect(finalized).toMatchObject({
+      version: "2026.5",
+      deliveryReleaseId: "infra-deutschland-2026.5",
+      operationalProvenanceStatus: "verified",
+      operationalProvenanceSha256: provenanceProof.sha256,
+      operationalExecutionProofSha256: provenanceProof.executionProofSha256,
+      operationalValidatorSha256: provenanceProof.validatorSha256,
+      operationalAuthorityStatus: "verified",
+      operationalAuthoritySha256: authorityProof.sha256,
+      operationalRebuildAttestationSha256: authorityProof.rebuildAttestationSha256,
+      operationalExecutionAuthorityAttestationSha256: authorityProof.executionAuthorityAttestationSha256,
+      operationalOuterExecutionReceiptSha256: authorityProof.outerExecutionReceiptSha256,
+      operationalOuterExecutionCompletionSha256: authorityProof.outerExecutionCompletionSha256,
+      operationalAuthoritySourceCommit: authorityProof.sourceCommit,
+      activationEligible: true,
+    });
+    expect(activation).toMatchObject({
+      releaseId: "infra-deutschland-2026.5",
+      signatureProof: {
+        schema: "zugfolge-infra-package-activation-proof/v2",
+        operationalProvenanceStatus: "verified",
+        operationalProvenanceSha256: provenanceProof.sha256,
+        operationalExecutionProofSha256: provenanceProof.executionProofSha256,
+        operationalValidatorSha256: provenanceProof.validatorSha256,
+        operationalAuthorityStatus: "verified",
+        operationalAuthoritySha256: authorityProof.sha256,
+        operationalRebuildAttestationSha256: authorityProof.rebuildAttestationSha256,
+        operationalExecutionAuthorityAttestationSha256: authorityProof.executionAuthorityAttestationSha256,
+        operationalOuterExecutionReceiptSha256: authorityProof.outerExecutionReceiptSha256,
+        operationalOuterExecutionCompletionSha256: authorityProof.outerExecutionCompletionSha256,
+        operationalAuthoritySourceCommit: authorityProof.sourceCommit,
+      },
+    });
+
+    const alphaClient = new PGlite();
+    try {
+      const alphaDb = drizzle(alphaClient, { schema: databaseSchema });
+      await migrate(alphaDb, { migrationsFolder: MIGRATIONS_FOLDER });
+      const worldId = "55555555-5555-4555-8555-555555555555";
+      const epoch = new Date("2026-01-01T00:00:00.000Z");
+      await alphaDb.insert(worlds).values({ id: worldId, name: "2026.5-Provenienzwelt", schedulePeriodWeeks: 3, epoch });
+      await alphaDb.insert(alphaWorldProfiles).values({
+        worldId,
+        profileKind: "test",
+        regionId: "deutschland-ebo-operational-v2",
+        regionVariant: "B",
+        worldSeed: 42n,
+        accelerationFactor: 60,
+        infraReleaseHash: "e".repeat(64),
+        timetableReleaseHash: "1".repeat(64),
+        fleetReleaseHash: "2".repeat(64),
+        economyReleaseHash: "3".repeat(64),
+        blueprint: { schemaVersion: "zugfolge-alpha-world-blueprint/v1" },
+        blueprintHash: "4".repeat(64),
+        currentPeriod: 0,
+        state: "running",
+        startedAtS: 0,
+      });
+      const safety: InfraActivationSafety = { verify: async () => ({
+        safe: true,
+        conflictCount: 0,
+        invalidPathCount: 0,
+        invalidCirculationCount: 0,
+        invalidContractCount: 0,
+        invariantOneProofHash: "f".repeat(64),
+        explanation: "2026.5-Integrationsfixture ist konfliktfrei.",
+      }) };
+      const alpha = new InfraUpdateService(alphaDb, trustedReleaseKeys, safety);
+      const substitutions: readonly [string, (value: any) => void][] = [
+        ["provenanceSha", (value) => { value.signatureProof.operationalProvenanceSha256 = "f".repeat(64); }],
+        ["executionProofSha", (value) => { value.signatureProof.operationalExecutionProofSha256 = "f".repeat(64); }],
+        ["validatorSha", (value) => { value.signatureProof.operationalValidatorSha256 = "f".repeat(64); }],
+        ["authoritySha", (value) => { value.signatureProof.operationalAuthoritySha256 = "f".repeat(64); }],
+        ["rebuildBundleSha", (value) => { value.signatureProof.operationalRebuildAttestationSha256 = "f".repeat(64); }],
+        ["executionBundleSha", (value) => { value.signatureProof.operationalExecutionAuthorityAttestationSha256 = "f".repeat(64); }],
+        ["outerReceiptSha", (value) => { value.signatureProof.operationalOuterExecutionReceiptSha256 = "f".repeat(64); }],
+        ["outerCompletionSha", (value) => { value.signatureProof.operationalOuterExecutionCompletionSha256 = "f".repeat(64); }],
+        ["sourceCommit", (value) => { value.signatureProof.operationalAuthoritySourceCommit = "f".repeat(40); }],
+        ["operationalArtifactSha", (value) => { value.operationalInfrastructure.sha256 = "f".repeat(64); }],
+        ["operationalArtifactBytes", (value) => { value.operationalInfrastructure.bytes += 1; }],
+        ["operationalArtifactState", (value) => {
+          const stateHash = "f".repeat(64);
+          value.operationalInfrastructure.stateHash = stateHash;
+          value.signatureProof.operationalStateHash = stateHash;
+          value.impactPreview.operationalStateHash = stateHash;
+        }],
+        ["releaseId", (value) => {
+          value.releaseId = "infra-deutschland-2026.5-near-miss";
+          value.signatureProof.deliveryReleaseId = value.releaseId;
+          value.operationalInfrastructure.infraReleaseId = value.releaseId;
+        }],
+        ["timetableYear", (value) => {
+          value.timetableYear = 2027;
+          value.signatureProof.timetableYear = 2027;
+        }],
+        ["infraReleaseHash", (value) => {
+          value.releaseHash = "f".repeat(64);
+          value.signatureProof.infraReleaseHash = value.releaseHash;
+        }],
+      ];
+      for (const [label, mutate] of substitutions) {
+        const substituted = structuredClone(activation) as any;
+        mutate(substituted);
+        expect(substituted.signatureProof.valueBase64, label).toBe(activation.signatureProof.valueBase64);
+        expect(substituted.signatureProof.deliveryReleaseBase64, label).toBe(activation.signatureProof.deliveryReleaseBase64);
+        await expect(alpha.stageQualifiedPackageCandidateAt(
+          worldId,
+          substituted,
+          new Date("2026-01-01T08:24:00.000Z"),
+        ), label).rejects.toThrow();
+        expect(await alphaDb.select().from(infraReleaseChanges), label).toHaveLength(0);
+      }
+      await expect(alpha.stageQualifiedPackageCandidateAt(
+        worldId,
+        activation,
+        new Date("2026-01-01T08:24:00.000Z"),
+      )).resolves.toMatchObject({
+        releaseId: "infra-deutschland-2026.5",
+        releaseHash: HASH_B,
+        status: "validated",
+        signature: {
+          schema: "zugfolge-infra-package-activation-proof/v2",
+          operationalProvenanceSha256: provenanceProof.sha256,
+          operationalAuthoritySha256: authorityProof.sha256,
+        },
+      });
+    } finally {
+      await alphaClient.close();
+    }
+
+    const manipulatedProvenance = structuredClone(provenance);
+    manipulatedProvenance.executionProof.runner.launcher.mode = "windows-exclusive-handle-launch-v1";
+    const manipulatedFixture = packageFixture("nonPublicSourceRawDataShipped", { keyId, privateKey }, {
+      packageVersion: "2026.5",
+      operationalProvenance: manipulatedProvenance,
+      operationalAuthority: authority,
+    });
+    const manipulatedImportId = "annual-2026-5-manipulated-launcher";
+    await prepareFixtureUpload(service, manipulatedImportId, manipulatedFixture);
+    await expect(service.finalizeForOdoo(manipulatedImportId, {
+      schema: "zugfolge-infra-package-finalization-challenge/v1",
+      nonce: "7".repeat(64),
+      requestedAt: new Date().toISOString(),
+    })).rejects.toThrow(/Systemlauncher|Launcher/u);
+
+    const manipulatedAuthority = structuredClone(authority);
+    manipulatedAuthority.rebuild.subjects = manipulatedAuthority.rebuild.subjects
+      .filter(({ file }) => file !== manipulatedAuthority.execution.predicate.planAuthority.plan.file);
+    const manipulatedAuthorityFixture = packageFixture("nonPublicSourceRawDataShipped", { keyId, privateKey }, {
+      packageVersion: "2026.5",
+      operationalProvenance: provenance,
+      operationalAuthority: manipulatedAuthority,
+    });
+    const manipulatedAuthorityImportId = "annual-2026-5-manipulated-authority";
+    await prepareFixtureUpload(service, manipulatedAuthorityImportId, manipulatedAuthorityFixture);
+    await expect(service.finalizeForOdoo(manipulatedAuthorityImportId, {
+      schema: "zugfolge-infra-package-finalization-challenge/v1",
+      nonce: "8".repeat(64),
+      requestedAt: new Date().toISOString(),
+    })).rejects.toThrow(/Phase-1-Subject/u);
+  }, 30_000);
 
   it("persistiert nach einem kontrolliert langen Prüfwarten keine abgelaufene Odoo-Finalisierungsbindung", async () => {
     const fixture = packageFixture();

@@ -654,6 +654,28 @@ fn streaming_validator_erhaelt_fehlerprioritaet_vor_laufweginkompatibilitaet() {
 }
 
 #[test]
+fn streaming_validator_verwirft_fahrstrasse_ohne_laufwegindex() {
+    let root = TestDirectory::create();
+    let release_id = "infra-deutschland-streaming-missing-route-index";
+    let candidate_path = root.join("candidate.json");
+    let mut value = candidate(release_id);
+    let mut orphan = value["interlockingRoutes"]["interlocking-1"].clone();
+    orphan["id"] = json!("interlocking-orphan");
+    orphan["routeTemplateId"] = json!("unknown-template");
+    value["interlockingRoutes"]["interlocking-orphan"] = orphan;
+    write_json(&candidate_path, &value);
+
+    let error = validate_operational_infrastructure_v2_file(&candidate_path, release_id, None)
+        .expect_err("eine Fahrstrasse ohne Laufwegindex muss fail-closed scheitern");
+    assert!(
+        error
+            .to_string()
+            .contains("Fahrstrassenvorlage `interlocking-orphan` besitzt keinen Laufweg"),
+        "unerwarteter Fehler: {error}"
+    );
+}
+
+#[test]
 fn streaming_validator_prueft_shunting_gegen_jede_geteilte_laufwegversion() {
     let root = TestDirectory::create();
     let release_id = "infra-deutschland-streaming-shared-shunting";

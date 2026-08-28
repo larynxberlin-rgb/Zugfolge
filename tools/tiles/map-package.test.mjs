@@ -192,6 +192,53 @@ function operationalV2Spec() {
   return spec;
 }
 
+test("aktueller Operational-v2-Paketvertrag verlangt Publication-Receipt und Build-Evidence als typisierte Authority-Quellen", () => {
+  const current = operationalV2Spec();
+  current.version = "2026.5";
+  assert.throws(
+    () => validateMapPackageSpec(current),
+    /operationalProvenanceSource fehlt im aktuellen Deutschland-Operational-v2-Vertrag/u,
+  );
+  current.operationalProvenanceSource = {
+    publicationReceiptFile: "var/derived/germany-2026.5/operational-infrastructure-v2.publication-receipt.json",
+  };
+  assert.throws(
+    () => validateMapPackageSpec(current),
+    /operationalAuthoritySource fehlt im aktuellen Deutschland-Operational-v2-Vertrag/u,
+  );
+  current.operationalAuthoritySource = {
+    buildEvidenceSpecFile: "tools/tiles/map-release-build-evidence.annual-2026.5.spec.json",
+  };
+  assert.doesNotThrow(() => validateMapPackageSpec(current));
+  current.operationalProvenanceSource.publicationReceiptFile = "var/derived/germany-2026.5/forensic.json";
+  assert.throws(() => validateMapPackageSpec(current), /typisierte Operational-v2-Publication-Receipt/u);
+  current.operationalProvenanceSource.publicationReceiptFile = "var/derived/germany-2026.5/operational-infrastructure-v2.publication-receipt.json";
+  current.operationalAuthoritySource.buildEvidenceSpecFile = "tools/tiles/map-release-build-evidence.annual-2026.4.spec.json";
+  assert.throws(() => validateMapPackageSpec(current), /exakte aktuelle Build-Evidence-v3-Spezifikation/u);
+});
+
+test("Operational-v2-Paketgenerationen sind explizit freigegeben und koennen nicht in Legacy herunterfallen", () => {
+  const legacy = operationalV2Spec();
+  legacy.operationalProvenanceSource = {
+    publicationReceiptFile: "var/derived/germany-2026.3/operational-infrastructure-v2.publication-receipt.json",
+  };
+  assert.throws(() => validateMapPackageSpec(legacy), /Legacy-Delivery-v2-Versionen nicht zulaessig/u);
+  delete legacy.operationalProvenanceSource;
+  legacy.operationalAuthoritySource = {
+    buildEvidenceSpecFile: "tools/tiles/map-release-build-evidence.annual-2026.5.spec.json",
+  };
+  assert.throws(() => validateMapPackageSpec(legacy), /Legacy-Delivery-v2-Versionen nicht zulaessig/u);
+  for (const version of ["2026.2", "2026.6", "2027.1", "2026.5-near-miss"]) {
+    const unknown = operationalV2Spec();
+    unknown.version = version;
+    assert.throws(
+      () => validateMapPackageSpec(unknown),
+      /nicht als Deutschland-Delivery-v2-Version freigegeben/u,
+      version,
+    );
+  }
+});
+
 async function operationalDeliveryArtifacts(root, spec) {
   const artifacts = [];
   for (const descriptor of [...spec.artifacts, ...spec.auxiliaryFiles]
@@ -888,6 +935,15 @@ test("Paketvertrag v2 transportiert genau eine statische Operational-v2-Bindung 
     const legacyRuntimeManifest = structuredClone(packed.manifest);
     legacyRuntimeManifest.runtime = { ...legacyRuntimeManifest.runtime, schema: "zugfolge-map-runtime/v1" };
     assert.throws(() => validateMapPackageManifest(legacyRuntimeManifest), /zugfolge-map-runtime\/v2/);
+    for (const version of ["2026.2", "2026.6", "2027.1", "2026.5-near-miss"]) {
+      const unknownGeneration = structuredClone(packed.manifest);
+      unknownGeneration.version = version;
+      assert.throws(
+        () => validateMapPackageManifest(unknownGeneration),
+        /nicht als Deutschland-Delivery-v2-Version freigegeben/u,
+        version,
+      );
+    }
     const operational = packed.manifest.auxiliaryFiles.find(({ kind }) => kind === "operational-infrastructure-v2");
     assert.deepEqual(
       { infraReleaseId: operational.infraReleaseId, bytes: operational.bytes, sha256: operational.sha256, stateHash: operational.stateHash },

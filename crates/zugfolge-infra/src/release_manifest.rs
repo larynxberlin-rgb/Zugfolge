@@ -19,6 +19,13 @@ const MAX_SAFE_INTEGER: i64 = 9_007_199_254_740_991;
 const OPERATIONAL_INFRASTRUCTURE_V2_SCHEMA: &str = "operational-infrastructure-v2";
 const MOVEMENT_ROUTE_TEMPLATES_V2_KIND: &str = "movement-route-templates-v2";
 const TIMETABLE_TRANSFER_DEMANDS_V2_KIND: &str = "timetable-transfer-demands-v2";
+const OPERATIONAL_DIRECT_SYSTEM_LAUNCH_CONTRACT_SCHEMA: &str =
+    "zugfolge-operational-v2-direct-system-launch-contract/v1";
+const OPERATIONAL_DIRECT_SYSTEM_LAUNCH_WINDOWS_OUTER_FILE: &str = "tools/region-import/germany/operational-infrastructure-v2-direct-contract-launcher.windows.ps1";
+const OPERATIONAL_DIRECT_SYSTEM_LAUNCH_WINDOWS_OUTER: &[u8] = include_bytes!(
+    "../../../tools/region-import/germany/operational-infrastructure-v2-direct-contract-launcher.windows.ps1"
+);
+const OPERATIONAL_DIRECT_SYSTEM_LAUNCH_WINDOWS_BOOTSTRAP: &str = r#"$ErrorActionPreference='Stop';Set-StrictMode -Version 2.0;$f=$null;try{$r=[Environment]::GetEnvironmentVariable('ZUGFOLGE_OPERATIONAL_WORKSPACE_ROOT','Process');$q=[Environment]::GetEnvironmentVariable('ZUGFOLGE_OPERATIONAL_OUTER_LAUNCHER_FILE','Process');$n=[Int32]::Parse([Environment]::GetEnvironmentVariable('ZUGFOLGE_OPERATIONAL_OUTER_LAUNCHER_BYTES','Process'),[Globalization.CultureInfo]::InvariantCulture);$x=[Environment]::GetEnvironmentVariable('ZUGFOLGE_OPERATIONAL_OUTER_LAUNCHER_SHA256','Process');if(-not[IO.Path]::IsPathRooted($r)-or[IO.Path]::IsPathRooted($q)-or$n-le 0-or$n-gt 2097152-or$x-cnotmatch'^[a-f0-9]{64}$'){throw'Outer-Launcher-Pin'};$r=[IO.Path]::GetFullPath($r).TrimEnd([IO.Path]::DirectorySeparatorChar);$p=[IO.Path]::GetFullPath([IO.Path]::Combine($r,$q));if(-not$p.StartsWith($r+[IO.Path]::DirectorySeparatorChar,[StringComparison]::OrdinalIgnoreCase)){throw'Outer-Launcher-Pfad'};$f=[IO.File]::Open($p,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::Read);if($f.Length-ne$n){throw'Outer-Launcher-Bytes'};$b=New-Object byte[] $n;$o=0;while($o-lt$n){$c=$f.Read($b,$o,$n-$o);if($c-eq 0){throw'Outer-Launcher-EOF'};$o+=$c};$s=[Security.Cryptography.SHA256]::Create();try{$h=([BitConverter]::ToString($s.ComputeHash($b))).Replace('-','').ToLowerInvariant()}finally{$s.Dispose()};if($h-cne$x){throw'Outer-Launcher-SHA'};foreach($k in @('ZUGFOLGE_OPERATIONAL_OUTER_LAUNCHER_FILE','ZUGFOLGE_OPERATIONAL_OUTER_LAUNCHER_BYTES','ZUGFOLGE_OPERATIONAL_OUTER_LAUNCHER_SHA256')){[Environment]::SetEnvironmentVariable($k,$null,'Process')};&([ScriptBlock]::Create((New-Object Text.UTF8Encoding($false,$true)).GetString($b)))}catch{[Console]::Error.Write($_.Exception.ToString());exit 89}finally{if($null-ne$f){$f.Dispose()}}"#;
 
 /// Fehler einer autoritativen Manifestentscheidung.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -181,6 +188,83 @@ fn sha256_bytes(bytes: &[u8]) -> String {
     digest.iter().map(|byte| format!("{byte:02x}")).collect()
 }
 
+fn base64_encode(bytes: &[u8]) -> String {
+    const ALPHABET: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut output = String::with_capacity(bytes.len().div_ceil(3) * 4);
+    for chunk in bytes.chunks(3) {
+        let first = chunk[0];
+        let second = chunk.get(1).copied().unwrap_or_default();
+        let third = chunk.get(2).copied().unwrap_or_default();
+        output.push(ALPHABET[(first >> 2) as usize] as char);
+        output.push(ALPHABET[(((first & 0x03) << 4) | (second >> 4)) as usize] as char);
+        output.push(if chunk.len() > 1 {
+            ALPHABET[(((second & 0x0f) << 2) | (third >> 6)) as usize] as char
+        } else {
+            '='
+        });
+        output.push(if chunk.len() > 2 {
+            ALPHABET[(third & 0x3f) as usize] as char
+        } else {
+            '='
+        });
+    }
+    output
+}
+
+fn powershell_encoded_command(source: &str) -> String {
+    let mut utf16le = Vec::with_capacity(source.len() * 2);
+    for code_unit in source.encode_utf16() {
+        utf16le.extend_from_slice(&code_unit.to_le_bytes());
+    }
+    base64_encode(&utf16le)
+}
+
+fn windows_annual_contract_arguments() -> Vec<String> {
+    let encoded = powershell_encoded_command(OPERATIONAL_DIRECT_SYSTEM_LAUNCH_WINDOWS_BOOTSTRAP);
+    vec![
+        "-NoLogo".to_owned(),
+        "-NoProfile".to_owned(),
+        "-NonInteractive".to_owned(),
+        "-ExecutionPolicy".to_owned(),
+        "Bypass".to_owned(),
+        "-EncodedCommand".to_owned(),
+        encoded,
+    ]
+}
+
+fn windows_annual_contract_environment(
+    contract: &OperationalDirectSystemLaunchContractProof,
+) -> Value {
+    json!({
+        "ComSpec": "C:\\Windows\\System32\\cmd.exe",
+        "PATH": "C:\\Windows\\System32;C:\\Windows",
+        "PATHEXT": ".COM;.EXE;.BAT;.CMD",
+        "PSModulePath": "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\Modules",
+        "SystemRoot": "C:\\Windows",
+        "TEMP": "C:\\Windows\\System32",
+        "TMP": "C:\\Windows\\System32",
+        "WINDIR": "C:\\Windows",
+        "ZUGFOLGE_OPERATIONAL_EXPECTED_EXECUTION_PINS_BYTES": contract.execution_pins.bytes.to_string(),
+        "ZUGFOLGE_OPERATIONAL_EXPECTED_EXECUTION_PINS_FILE": contract.execution_pins.file,
+        "ZUGFOLGE_OPERATIONAL_EXPECTED_EXECUTION_PINS_SCHEMA": contract.execution_pins.schema,
+        "ZUGFOLGE_OPERATIONAL_EXPECTED_EXECUTION_PINS_SHA256": contract.execution_pins.sha256,
+        "ZUGFOLGE_OPERATIONAL_EXPECTED_RELEASE_ID": contract.release_id,
+        "ZUGFOLGE_OPERATIONAL_LAUNCH_CONTEXT_BASE64": "{launchContextBase64}",
+        "ZUGFOLGE_OPERATIONAL_LAUNCH_CONTRACT_BYTES": contract.bytes.to_string(),
+        "ZUGFOLGE_OPERATIONAL_LAUNCH_CONTRACT_PATH": contract.file,
+        "ZUGFOLGE_OPERATIONAL_LAUNCH_CONTRACT_SCHEMA": contract.schema,
+        "ZUGFOLGE_OPERATIONAL_LAUNCH_CONTRACT_SHA256": contract.sha256,
+        "ZUGFOLGE_OPERATIONAL_OUTER_LAUNCHER_BYTES": OPERATIONAL_DIRECT_SYSTEM_LAUNCH_WINDOWS_OUTER.len().to_string(),
+        "ZUGFOLGE_OPERATIONAL_OUTER_LAUNCHER_FILE": OPERATIONAL_DIRECT_SYSTEM_LAUNCH_WINDOWS_OUTER_FILE,
+        "ZUGFOLGE_OPERATIONAL_OUTER_LAUNCHER_SHA256": sha256_bytes(OPERATIONAL_DIRECT_SYSTEM_LAUNCH_WINDOWS_OUTER),
+        "ZUGFOLGE_OPERATIONAL_WORKSPACE_ROOT": "{trustedExecutorWorkspaceRoot}",
+        "ZUGFOLGE_OPERATIONAL_EXPECTED_TRUSTED_EXECUTOR_BUILD_COMMIT": contract.trusted_executor.build_commit,
+        "ZUGFOLGE_OPERATIONAL_EXPECTED_TRUSTED_EXECUTOR_BYTES": contract.trusted_executor.bytes.to_string(),
+        "ZUGFOLGE_OPERATIONAL_EXPECTED_TRUSTED_EXECUTOR_FILE": contract.trusted_executor.file,
+        "ZUGFOLGE_OPERATIONAL_EXPECTED_TRUSTED_EXECUTOR_SHA256": contract.trusted_executor.sha256,
+    })
+}
+
 fn sha256_file(path: &Path) -> Result<String> {
     let bytes = fs::read(path).map_err(|error| {
         ReleaseManifestError::new(format!(
@@ -278,12 +362,54 @@ struct OperationalDeriverConfig {
     entrypoint: Option<String>,
     primary_runner: Option<String>,
     primary_runner_mode: Option<String>,
+    system_command_builder: Option<String>,
+    system_command_builder_mode: Option<String>,
+    direct_system_launch: Option<OperationalDirectSystemLaunchConfig>,
+    execution_pins: Option<String>,
     specification: String,
+    source_root: Option<String>,
     candidate: String,
     candidate_movement_route_templates: Option<String>,
     report: String,
     output: String,
     recovery_publisher: Option<OperationalRecoveryPublisherConfig>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+struct OperationalDirectSystemLaunchConfig {
+    platform: String,
+    contract: OperationalDirectSystemLaunchContractProof,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+struct OperationalDirectSystemLaunchContractProof {
+    file: String,
+    bytes: u64,
+    sha256: String,
+    schema: String,
+    release_id: String,
+    execution_pins: OperationalDirectSystemLaunchExecutionPinsProof,
+    trusted_executor: OperationalDirectSystemLaunchTrustedExecutorProof,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+struct OperationalDirectSystemLaunchTrustedExecutorProof {
+    file: String,
+    build_commit: String,
+    bytes: u64,
+    sha256: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+struct OperationalDirectSystemLaunchExecutionPinsProof {
+    file: String,
+    bytes: u64,
+    sha256: String,
+    schema: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -302,6 +428,7 @@ struct OperationalRecoveryPublisherConfig {
     validator_normalized_pe_sha256: String,
     execution_inventory: BTreeMap<String, String>,
     native_receipt: String,
+    outer_execution_receipt: Option<String>,
     publication_receipt: String,
 }
 
@@ -2107,6 +2234,12 @@ fn validate_config(config: &GermanyConfig) -> Result<()> {
         .release_id
         .strip_prefix("infra-deutschland-")
         .expect("zuvor validierter Deutschland-Release-Präfix");
+    let expected_direct_system_launch_contract = format!(
+        "tools/region-import/germany/operational-infrastructure-v2-direct-system-launch.annual-{release_version}.json"
+    );
+    let expected_execution_pins = format!(
+        "tools/region-import/germany/operational-infrastructure-v2-execution-pins.annual-{release_version}.json"
+    );
     let requires_operational_deriver = config.release.timetable_year > 2026
         || (config.release.timetable_year == 2026 && release_revision >= 3);
     require(
@@ -2122,14 +2255,72 @@ fn validate_config(config: &GermanyConfig) -> Result<()> {
         require(
             operational_deriver.entrypoint.is_none()
                 && operational_deriver.primary_runner.as_deref()
-                    == Some("tools/region-import/germany/run-operational-infrastructure-v2.mjs")
-                && operational_deriver.primary_runner_mode.as_deref() == Some("candidate-triplet"),
-            "OperationalDeriver besitzt nicht den festgelegten Candidate-Triplet-PrimaryRunner.",
+                    == Some(
+                        "tools/region-import/germany/run-capture-operational-infrastructure-v2.anchored-bundle.mjs",
+                    )
+                && operational_deriver.primary_runner_mode.as_deref()
+                    == Some("system-launcher-held-bundle-stdin-v1")
+                && operational_deriver.system_command_builder.as_deref()
+                    == Some(
+                        "tools/region-import/germany/print-operational-infrastructure-v2-system-launch-command.mjs",
+                    )
+                && operational_deriver.system_command_builder_mode.as_deref()
+                    == Some("source-only-print-direct-command-v1")
+                && operational_deriver
+                    .direct_system_launch
+                    .as_ref()
+                    .is_some_and(|launch| {
+                        launch.platform == "win32"
+                            && launch.contract.file == expected_direct_system_launch_contract
+                            && launch.contract.bytes > 0
+                            && launch.contract.bytes <= 2 * 1024 * 1024
+                            && is_sha256(&launch.contract.sha256)
+                            && launch.contract.schema
+                                == OPERATIONAL_DIRECT_SYSTEM_LAUNCH_CONTRACT_SCHEMA
+                            && launch.contract.release_id == config.release.release_id
+                            && launch.contract.execution_pins.file == expected_execution_pins
+                            && launch.contract.execution_pins.bytes > 0
+                            && launch.contract.execution_pins.bytes <= 2 * 1024 * 1024
+                            && is_sha256(&launch.contract.execution_pins.sha256)
+                            && launch.contract.execution_pins.schema
+                                == "zugfolge-germany-operational-v2-execution-pins/v1"
+                            && launch.contract.trusted_executor.file
+                                == operational_deriver
+                                    .recovery_publisher
+                                    .as_ref()
+                                    .expect("RecoveryPublisher fuer Trusted-Executor")
+                                    .validator_executable
+                            && launch.contract.trusted_executor.build_commit
+                                == operational_deriver
+                                    .recovery_publisher
+                                    .as_ref()
+                                    .expect("RecoveryPublisher fuer Trusted-Executor")
+                                    .validator_build_commit
+                            && launch.contract.trusted_executor.bytes
+                                == operational_deriver
+                                    .recovery_publisher
+                                    .as_ref()
+                                    .expect("RecoveryPublisher fuer Trusted-Executor")
+                                    .validator_bytes
+                            && launch.contract.trusted_executor.sha256
+                                == operational_deriver
+                                    .recovery_publisher
+                                    .as_ref()
+                                    .expect("RecoveryPublisher fuer Trusted-Executor")
+                                    .validator_sha256
+                    })
+                && operational_deriver.execution_pins.as_deref()
+                    == Some(expected_execution_pins.as_str()),
+            "OperationalDeriver besitzt nicht den festgelegten systemverankerten V2-PrimaryRunner.",
         )?;
     } else {
         require(
             operational_deriver.primary_runner.is_none()
                 && operational_deriver.primary_runner_mode.is_none()
+                && operational_deriver.system_command_builder.is_none()
+                && operational_deriver.system_command_builder_mode.is_none()
+                && operational_deriver.direct_system_launch.is_none()
+                && operational_deriver.execution_pins.is_none()
                 && operational_deriver.entrypoint.as_deref()
                     == Some("tools/region-import/germany/run-operational-infrastructure-v2.mjs"),
             "Historischer OperationalDeriver besitzt nicht den festgelegten EntryPoint.",
@@ -2142,6 +2333,17 @@ fn validate_config(config: &GermanyConfig) -> Result<()> {
             ),
         "OperationalDeriver-Spezifikation ist nicht exakt an den Deutschland-Release gebunden.",
     )?;
+    if requires_recovery_publisher {
+        require(
+            operational_deriver.source_root.as_deref() == Some("."),
+            "OperationalDeriver-Quellwurzel muss fuer den gehaltenen Jahreslauf exakt die kanonische Arbeitswurzel binden.",
+        )?;
+    } else {
+        require(
+            operational_deriver.source_root.is_none(),
+            "Historischer OperationalDeriver darf keine gehaltene Jahreslauf-Quellwurzel behaupten.",
+        )?;
+    }
     let derived_root = format!("var/derived/germany-{release_version}");
     require(
         operational_deriver.candidate
@@ -2267,6 +2469,20 @@ fn validate_config(config: &GermanyConfig) -> Result<()> {
                 "tools/region-import/germany/operational-validator-rebuild-evidence.mjs"
                     .to_string(),
             ),
+            (
+                "executionPinsImplementation".to_string(),
+                "tools/region-import/germany/operational-infrastructure-v2-execution-pins.mjs"
+                    .to_string(),
+            ),
+            (
+                "annualCreateNewArtifact".to_string(),
+                "tools/region-import/germany/annual-create-new-artifact.mjs".to_string(),
+            ),
+            (
+                "outerExecutionReceiptVerifier".to_string(),
+                "tools/region-import/germany/operational-infrastructure-v2-outer-execution-receipt.mjs"
+                    .to_string(),
+            ),
         ]);
         require(
             recovery.execution_inventory == expected_execution_inventory,
@@ -2275,6 +2491,11 @@ fn validate_config(config: &GermanyConfig) -> Result<()> {
         require(
             recovery.native_receipt
                 == format!("{derived_root}/operational-infrastructure-v2.native-receipt.json")
+                && recovery.outer_execution_receipt.as_deref()
+                    == Some(
+                        format!("{derived_root}/operational-infrastructure-v2.outer-execution-receipt.json")
+                            .as_str(),
+                    )
                 && recovery.publication_receipt
                     == format!(
                         "{derived_root}/operational-infrastructure-v2.publication-receipt.json"
@@ -3924,12 +4145,193 @@ pub fn build_annual_infra_plan(
             .primary_runner_mode
             .as_deref()
             .unwrap_or("primary-runner");
-        stages.push(
-            json!({ "id": "operational-v2-derivation", "mutatesRelease": true, "entrypoint": primary_runner, "executionMode": primary_runner_mode, "proof": "a-b-only-exact-geometry-routes-and-interlocking-report" }),
-        );
+        let derivation_stage = if let (
+            Some(command_builder),
+            Some(command_builder_mode),
+            Some(direct_system_launch),
+            Some(execution_pins),
+        ) = (
+            operational_deriver.system_command_builder.as_deref(),
+            operational_deriver.system_command_builder_mode.as_deref(),
+            operational_deriver.direct_system_launch.as_ref(),
+            operational_deriver.execution_pins.as_deref(),
+        ) {
+            let contract = &direct_system_launch.contract;
+            let trusted_executor = operational_deriver
+                .recovery_publisher
+                .as_ref()
+                .expect("validierter RecoveryPublisher fuer direkten Systemstart");
+            let source_root = operational_deriver
+                .source_root
+                .as_deref()
+                .expect("validierte Quellwurzel fuer direkten Systemstart");
+            let candidate_sidecar = operational_deriver
+                .candidate_movement_route_templates
+                .as_deref()
+                .expect("validierter Candidate-Sidecar fuer direkten Systemstart");
+            let outer_execution_receipt = trusted_executor
+                .outer_execution_receipt
+                .as_deref()
+                .expect("validierter Outer-Execution-Receipt fuer direkten Systemstart");
+            let inline_bootstrap_bytes =
+                OPERATIONAL_DIRECT_SYSTEM_LAUNCH_WINDOWS_BOOTSTRAP.as_bytes();
+            json!({
+                "id": "operational-v2-derivation",
+                "mutatesRelease": true,
+                "executionMode": "held-contract-direct-system-launch-v1",
+                "runnerBundle": {
+                    "file": primary_runner,
+                    "role": "held-stdin-data-only",
+                    "executable": false,
+                    "invocationMode": primary_runner_mode,
+                },
+                "executionPins": execution_pins,
+                "directSystemLaunch": {
+                    "schema": "zugfolge-operational-v2-held-contract-system-launch/v1",
+                    "platform": direct_system_launch.platform,
+                    "contract": {
+                        "file": contract.file,
+                        "bytes": contract.bytes,
+                        "sha256": contract.sha256,
+                        "schema": contract.schema,
+                        "releaseId": contract.release_id,
+                        "executionPins": {
+                            "file": contract.execution_pins.file,
+                            "bytes": contract.execution_pins.bytes,
+                            "sha256": contract.execution_pins.sha256,
+                            "schema": contract.execution_pins.schema,
+                        },
+                        "trustedExecutor": {
+                            "file": contract.trusted_executor.file,
+                            "buildCommit": contract.trusted_executor.build_commit,
+                            "bytes": contract.trusted_executor.bytes,
+                            "sha256": contract.trusted_executor.sha256,
+                        },
+                        "openMode": "share-read-deny-write-delete-held-through-child-exit-v1",
+                    },
+                    "command": "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe",
+                    "arguments": windows_annual_contract_arguments(),
+                    "workingDirectory": "C:\\Windows\\System32",
+                    "environmentMode": "replace-exactly-no-inheritance-v1",
+                    "environment": windows_annual_contract_environment(contract),
+                    "windowsProcessContract": {
+                        "mode": "create-process-argv-and-explicit-environment-v1",
+                        "maximumCommandLineCodeUnits": 32767,
+                        "temporaryDirectory": "read-only-system32-no-policy-test-write-v1",
+                    },
+                    "trustedExecutor": {
+                        "mode": "pinned-rust-command-env-clear-v1",
+                        "command": "run-annual-operational-v2",
+                        "file": trusted_executor.validator_executable,
+                        "buildCommit": trusted_executor.validator_build_commit,
+                        "bytes": trusted_executor.validator_bytes,
+                        "sha256": trusted_executor.validator_sha256,
+                    },
+                    "inlineBootstrap": {
+                        "mode": "held-outer-launcher-inline-powershell-v1",
+                        "sourceBytes": inline_bootstrap_bytes.len(),
+                        "sourceSha256": sha256_bytes(inline_bootstrap_bytes),
+                        "transport": "powershell-encoded-command-utf16le-v1",
+                        "outerLauncherRead": "single-held-handle-before-parse-through-child-exit-v1",
+                    },
+                    "outerLauncher": {
+                        "file": OPERATIONAL_DIRECT_SYSTEM_LAUNCH_WINDOWS_OUTER_FILE,
+                        "bytes": OPERATIONAL_DIRECT_SYSTEM_LAUNCH_WINDOWS_OUTER.len(),
+                        "sha256": sha256_bytes(OPERATIONAL_DIRECT_SYSTEM_LAUNCH_WINDOWS_OUTER),
+                        "mode": "held-source-loaded-by-inline-bootstrap-v1",
+                    },
+                    "dynamicBindings": [{
+                        "id": "launchContext",
+                        "environment": "ZUGFOLGE_OPERATIONAL_LAUNCH_CONTEXT_BASE64",
+                        "encoding": "canonical-json-utf8-base64-v1",
+                        "schema": "zugfolge-operational-v2-direct-system-launch-context/v1",
+                        "properties": [
+                            "candidatePath", "candidateSidecarPath", "executionPinsPath",
+                            "nativeReceiptPath", "reportPath", "runtimePath", "schema",
+                            "sourceRoot", "specificationPath",
+                        ],
+                    }],
+                    "runtimeProof": "held-contract.executionPins.runner.runtime",
+                    "launcherProof": "held-contract.launcher-and-executionPins.runner.launcher",
+                    "commandMaterialization": {
+                        "entrypoint": command_builder,
+                        "mode": command_builder_mode,
+                        "producer": {
+                            "causal": false,
+                            "releaseEvidenceEligible": false,
+                            "mutatesRelease": false,
+                        },
+                        "outputSchema": "zugfolge-operational-v2-direct-system-launch-command/v1",
+                        "role": "optional-diagnostic-only",
+                        "releaseExecutionEligible": false,
+                    },
+                },
+                "operationalBindings": {
+                    "schema": "zugfolge-operational-v2-annual-plan-bindings/v1",
+                    "executionPinsPath": execution_pins,
+                    "specificationPath": operational_deriver.specification,
+                    "sourceRoot": source_root,
+                    "candidatePath": operational_deriver.candidate,
+                    "candidateSidecarPath": candidate_sidecar,
+                    "reportPath": operational_deriver.report,
+                    "nativeReceiptPath": trusted_executor.native_receipt,
+                    "outerExecutionReceiptPath": outer_execution_receipt,
+                    "publishedOutputPath": operational_deriver.output,
+                    "publicationReceiptPath": trusted_executor.publication_receipt,
+                },
+                "proof": "a-b-only-exact-geometry-routes-and-interlocking-report",
+            })
+        } else {
+            json!({
+                "id": "operational-v2-derivation",
+                "mutatesRelease": true,
+                "entrypoint": primary_runner,
+                "executionMode": primary_runner_mode,
+                "proof": "a-b-only-exact-geometry-routes-and-interlocking-report",
+            })
+        };
+        stages.push(derivation_stage);
         if let Some(recovery) = &operational_deriver.recovery_publisher {
+            let execution_pins = operational_deriver
+                .execution_pins
+                .as_deref()
+                .expect("validierte Execution-Pins fuer interne Rebuild-Phase");
+            let system_launch_contract = operational_deriver
+                .direct_system_launch
+                .as_ref()
+                .map(|launch| launch.contract.file.as_str())
+                .expect("validierter Direct-System-Launch fuer interne Rebuild-Phase");
             stages.extend([
-                json!({ "id": "operational-v2-validator-rebuild-evidence", "mutatesRelease": true, "entrypoint": "tools/region-import/germany/operational-validator-rebuild-evidence-cli.mjs", "bootstrap": "tools/region-import/germany/operational-validator-rebuild-bootstrap.mjs", "specification": recovery.validator_rebuild_specification, "specificationSchema": "zugfolge-operational-validator-rebuild-spec/v2", "output": recovery.validator_rebuild_evidence, "receiptSchema": "zugfolge-operational-validator-rebuild-evidence/v2", "preservedValidatorExecutable": recovery.validator_executable, "rebuiltValidatorExecutable": recovery.validator_rebuild_executable, "validatorBuildCommit": recovery.validator_build_commit, "preservedValidatorBytes": recovery.validator_bytes, "preservedValidatorSha256": recovery.validator_sha256, "rebuiltValidatorExpectedBytes": recovery.validator_rebuild_expected_bytes, "rebuiltValidatorRawProof": "from-portable-receipt", "normalizedPeSha256": recovery.validator_normalized_pe_sha256, "executionMode": "git-archive-clean-locked-official-build", "proof": "typed-portable-build-environment-pe-normalization-and-section-equivalence" }),
+                json!({
+                    "id": "operational-v2-validator-rebuild-evidence",
+                    "mutatesRelease": true,
+                    "executionMode": "internal-os-anchored-single-bundle-phase-v1",
+                    "runner": {
+                        "bundle": primary_runner,
+                        "invocationMode": primary_runner_mode,
+                        "executionPins": execution_pins,
+                        "systemLaunchContract": system_launch_contract,
+                        "phase": {
+                            "implementation": "tools/region-import/germany/operational-validator-rebuild-evidence.mjs",
+                            "export": "materializeOperationalValidatorRebuildEvidence",
+                            "loadingMode": "embedded-in-held-runner-bundle-v1",
+                            "order": "before-native-validator",
+                        },
+                    },
+                    "specification": recovery.validator_rebuild_specification,
+                    "specificationSchema": "zugfolge-operational-validator-rebuild-spec/v3",
+                    "output": recovery.validator_rebuild_evidence,
+                    "receiptSchema": "zugfolge-operational-validator-rebuild-evidence/v3",
+                    "preservedValidatorExecutable": recovery.validator_executable,
+                    "rebuiltValidatorExecutable": recovery.validator_rebuild_executable,
+                    "validatorBuildCommit": recovery.validator_build_commit,
+                    "preservedValidatorBytes": recovery.validator_bytes,
+                    "preservedValidatorSha256": recovery.validator_sha256,
+                    "rebuiltValidatorExpectedBytes": recovery.validator_rebuild_expected_bytes,
+                    "rebuiltValidatorRawProof": "from-portable-receipt",
+                    "normalizedPeSha256": recovery.validator_normalized_pe_sha256,
+                    "proof": "pinned-source-vendor-toolchain-isolated-build-pe-normalization-and-section-equivalence",
+                }),
                 json!({ "id": "operational-v2-native-receipt-capture", "mutatesRelease": true, "entrypoint": recovery.capture_entrypoint, "output": recovery.native_receipt, "validatorExecutable": recovery.validator_executable, "validatorBuildCommit": recovery.validator_build_commit, "validatorBytes": recovery.validator_bytes, "validatorSha256": recovery.validator_sha256, "validatorRebuildSpecification": recovery.validator_rebuild_specification, "validatorRebuildEvidence": recovery.validator_rebuild_evidence, "executionMode": "direct-run-recovery-only", "proof": "canonical-native-receipt-triplet-binary-rebuild-and-script-binding" }),
                 json!({ "id": "operational-v2-recovery-publication", "mutatesRelease": true, "entrypoint": recovery.entrypoint, "output": recovery.publication_receipt, "validatorRebuildSpecification": recovery.validator_rebuild_specification, "validatorRebuildEvidence": recovery.validator_rebuild_evidence, "executionInventory": recovery.execution_inventory, "executionMode": "direct-run-recovery-only", "proof": "create-new-final-pair-and-publication-receipt" }),
             ]);

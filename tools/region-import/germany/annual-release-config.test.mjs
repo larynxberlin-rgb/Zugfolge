@@ -746,24 +746,51 @@ test("der ergänzende Source-Audit verweist nicht mehr auf 2026.2-Layer", async 
   }
 });
 
-test("Jahresprompt verlangt alle achtzehn konkreten Platzhalter und den Jahresvertrag in den Befehlen", async () => {
+test("Jahresprompt verlangt alle fünfundvierzig konkreten Platzhalter und den integrierten V2-Jahresvertrag in den Befehlen", async () => {
   const prompt = await text("docs/prompts/infrarelease-deutschland-jahreslauf.md");
   const expected = [
     "ANNUAL_ARTIFACT_SPEC",
     "ANNUAL_RELEASE_CONFIG",
     "ARTEFAKTWURZEL",
+    "BUILD_EVIDENCE_SPEC",
     "DELIVERY_KEY_ID",
     "FAHRPLANJAHR",
+    "GDAL_RUNTIME_MANIFEST",
     "INFRARELEASE_ID",
+    "MAP_ASSET_NOTICES_SPEC",
     "MAP_PACKAGE_PLAN",
+    "OPERATIONAL_ANNUAL_PLAN",
+    "OPERATIONAL_ANNUAL_START_EVIDENCE",
     "OPERATIONAL_ARTIFACT_ID",
+    "OPERATIONAL_ATTESTATION_TRUSTED_ROOT",
+    "OPERATIONAL_ATTESTATION_VERIFIER",
     "OPERATIONAL_CANDIDATE",
     "OPERATIONAL_CANDIDATE_SIDECAR",
+    "OPERATIONAL_DERIVER_OUTPUT",
+    "OPERATIONAL_DERIVER_REPORT",
+    "OPERATIONAL_DERIVER_SPECIFICATION",
+    "OPERATIONAL_DIRECT_SYSTEM_LAUNCH_CONTRACT",
+    "OPERATIONAL_EXECUTION_AUTHORITY_BUNDLE",
+    "OPERATIONAL_EXECUTION_PINS",
+    "OPERATIONAL_LAUNCH_CONTEXT",
+    "OPERATIONAL_NATIVE_RECEIPT",
+    "OPERATIONAL_OUTER_EXECUTION_RECEIPT",
+    "OPERATIONAL_PUBLICATION_RECEIPT",
     "OPERATIONAL_QUALITY_SPEC",
+    "OPERATIONAL_REBUILD_ATTESTATION_BUNDLE",
     "OPERATIONAL_VALIDATOR_BUILD_COMMIT",
+    "OPERATIONAL_VALIDATOR_PATH",
+    "OPERATIONAL_VALIDATOR_REBUILD_EVIDENCE",
+    "OPERATIONAL_VALIDATOR_REBUILD_SPEC",
+    "PINNED_ZUGFOLGE_INFRA_RELEASE",
     "QUELLWURZEL",
     "RELEASE_ARTIFACT_INVENTORY",
+    "RIGHTS_LEDGER",
+    "SEMANTIC_PMTILES_OUTPUT",
+    "SEMANTIC_TILE_INPUTS",
+    "SEMANTIC_TILE_INPUT_ROOT",
     "SOURCE_CAPTURE_MANIFEST",
+    "SOURCE_CATALOG",
     "STICHTAG_UTC",
     "SYNTHETIC_CLOSURE_SPEC",
     "TIMETABLE_ROUTE_SPEC",
@@ -773,7 +800,30 @@ test("Jahresprompt verlangt alle achtzehn konkreten Platzhalter und den Jahresve
   assert.doesNotMatch(prompt, /tools\/region-import\/germany\/release\.config\.json/u);
   assert.match(prompt, /build-germany-release\.mjs compile <ANNUAL_RELEASE_CONFIG>/u);
   assert.match(prompt, /build-germany-release\.mjs manifest <ANNUAL_RELEASE_CONFIG>/u);
-  assert.match(prompt, /run-operational-infrastructure-v2\.mjs.*<OPERATIONAL_CANDIDATE>.*OPERATIONAL_DERIVER_REPORT.*OPERATIONAL_DERIVER_OUTPUT/su);
+  assert.doesNotMatch(prompt, /node tools\/region-import\/germany\/run-capture-operational-infrastructure-v2\.mjs/u);
+  assert.match(prompt, /primaryRunnerMode` muss exakt[\s\S]*`system-launcher-held-bundle-stdin-v1/u);
+  assert.match(prompt, /systemCommandBuilderMode` muss exakt[\s\S]*`source-only-print-direct-command-v1/u);
+  assert.match(prompt, /\.github\/workflows\/operational-validator-rebuild-evidence\.yml[\s\S]*GitHub-hosted Windows-Runner/u);
+  assert.match(prompt, /Node-24-Runtime create-new als[\s\S]*<ARTEFAKTWURZEL>\/toolchain\/nodejs-24-operational-runner-v1\.exe[\s\S]*portablen repositoryrelativen Pfad/u);
+  assert.doesNotMatch(prompt, /kanonischen absoluten Pfad der gepinnten Node-24-Runtime/u);
+  assert.match(prompt, /& "\.\\<ARTEFAKTWURZEL>\\toolchain\\nodejs-24-operational-runner-v1\.exe" tools\/region-import\/germany\/run-operational-infrastructure-v2-annual-execution\.mjs execute <OPERATIONAL_EXECUTION_PINS> <OPERATIONAL_DIRECT_SYSTEM_LAUNCH_CONTRACT> <ANNUAL_RELEASE_CONFIG> <SOURCE_CATALOG> <RIGHTS_LEDGER> <OPERATIONAL_LAUNCH_CONTEXT> <OPERATIONAL_ANNUAL_PLAN> <OPERATIONAL_ANNUAL_START_EVIDENCE> <OPERATIONAL_OUTER_EXECUTION_RECEIPT>/u);
+  assert.doesNotMatch(prompt, /(?:^|\n)\s*node tools\/region-import\/germany\/run-operational-infrastructure-v2-annual-execution\.mjs/u);
+  assert.match(prompt, /build-map-delivery-release\.mjs <MAP_PACKAGE_PLAN>[\s\S]*"\$MAP_BUILD_COMMIT"[\s\S]*delivery-unsigned/u);
+  assert.match(prompt, /sign-map-delivery-release\.mjs <MAP_PACKAGE_PLAN>[\s\S]*"\$DELIVERY_KEY_ID" "\$MAP_BUILD_COMMIT"[\s\S]*public\/release\.json/u);
+  assert.match(prompt, /signed-map-package-plan-cli\.mjs <MAP_PACKAGE_PLAN>[\s\S]*trusted-delivery-key-scopes\.json "\$MAP_BUILD_COMMIT"[\s\S]*signed-package-plan\.json/u);
+  const trustPreparationIndex = prompt.indexOf("Vor Phase 1 und vor dem Merge");
+  const phaseOneIndex = prompt.indexOf("Phase 1 ist");
+  const signatureIndex = prompt.indexOf("Signiere erst dann Delivery-v2");
+  assert.ok(trustPreparationIndex >= 0 && trustPreparationIndex < phaseOneIndex);
+  assert.ok(phaseOneIndex < signatureIndex);
+  assert.match(prompt, /Registrierung ist noch[\s\S]*keine Delivery-Signatur/u);
+  assert.match(prompt, /bereits im selben geschützten[\s\S]*Commit registrierte öffentliche PEM-Datei/u);
+  assert.doesNotMatch(prompt, /Signatur zunächst[\s\S]*Ergänze danach \$DELIVERY_KEY_ID/u);
+  assert.match(prompt, /\.github\/workflows\/operational-v2-execution-authority\.yml[\s\S]*`operational-release-approval`[\s\S]*operator-approved-hash-binding-not-source-reexecution-v1/u);
+  assert.match(prompt, /<OPERATIONAL_ATTESTATION_VERIFIER>[\s\S]*<OPERATIONAL_ATTESTATION_TRUSTED_ROOT>/u);
+  assert.match(prompt, /publish-operational-infrastructure-v2\.mjs publish[\s\S]*<OPERATIONAL_NATIVE_RECEIPT>[\s\S]*<OPERATIONAL_PUBLICATION_RECEIPT>/u);
+  assert.match(prompt, /forensic-stdin-v1[\s\S]*releaseEvidenceEligible=false[\s\S]*productionActivationEligible=false[\s\S]*executionProof=null/u);
+  assert.match(prompt, /build-gdal-semantic-pmtiles\.mjs <SEMANTIC_TILE_INPUTS> <SEMANTIC_TILE_INPUT_ROOT> <SEMANTIC_PMTILES_OUTPUT> <GDAL_RUNTIME_MANIFEST> \./u);
   assert.match(prompt, /deterministic-conservative-v1/u);
   assert.match(prompt, /synthetic-operational-b\/v2/u);
   assert.match(prompt, /timetableRoutes.*TIMETABLE_ROUTE_OUTPUT/su);
@@ -789,9 +839,10 @@ test("Jahresprompt verlangt alle achtzehn konkreten Platzhalter und den Jahresve
   assert.match(prompt, /zugfolge-daily-circulation-plan\/v2/u);
   assert.match(prompt, /kind=timetable-transfer-demands-v2/u);
   assert.match(prompt, /timetable-routes-v2\.transfer-demands-v2\.json/u);
-  assert.match(prompt, /1\.595 Turnarounds, 82[\s\S]*Transfers in 39 Losen/u);
-  assert.match(prompt, /2c8c688a9ce963afbdca75fee526b581bc21be402aabcbaf1abd09ea65418cdf/u);
+  assert.match(prompt, /erwarteten Mengen, Bytezahlen und SHA-256-Werte ausschließlich[\s\S]*<TIMETABLE_ROUTE_SPEC>/u);
   assert.doesNotMatch(prompt, /timetable-transfer-demands-v1|transfer-demands-v1\.json/u);
+  assert.doesNotMatch(prompt, /infra-deutschland-20\d{2}\.\d+|germany-20\d{2}\.\d+|annual-20\d{2}\.\d+/u);
+  assert.doesNotMatch(prompt, /\b[0-9a-f]{40}\b|\b[0-9a-f]{64}\b/u);
 });
 
 test("aktuelle Datengrenze und Installationsanleitung verlangen den 2026.5-V2-Upstream ohne Laufzeitfallback", async () => {
@@ -812,10 +863,9 @@ test("aktuelle Datengrenze und Installationsanleitung verlangen den 2026.5-V2-Up
   assert.match(installation, /6\.697\.294[\s\S]*2c8c688a9ce963afbdca75fee526b581bc21be402aabcbaf1abd09ea65418cdf/u);
 });
 
-test("Jahresprompt kann den historischen 2026.4-Beleg auflösen, kennzeichnet ihn aber nicht als aktuelles Ziel", async () => {
+test("Jahresprompt löst den aktuellen V2-Vertrag vollständig auf und lässt Vorgängerpfade nur im Evidence-Vertrag zu", async () => {
   const [
     prompt,
-    runbook,
     releaseConfig,
     timetableRouteSpec,
     closureSpec,
@@ -823,59 +873,110 @@ test("Jahresprompt kann den historischen 2026.4-Beleg auflösen, kennzeichnet ih
     sourceCapturePlan,
     artifactSpec,
     mapPackagePlan,
+    buildEvidence,
+    executionPins,
+    rebuildSpecification,
   ] = await Promise.all([
     text("docs/prompts/infrarelease-deutschland-jahreslauf.md"),
-    text("docs/kartenrelease-deutschland-2026.4-v2.md"),
-    json("tools/region-import/germany/release.annual-2026.4.config.json"),
-    json("tools/region-import/germany/timetable-route-compiler.annual-2026.4.json"),
-    json("tools/region-import/germany/synthetic-operational-closure.annual-2026.4.json"),
-    json("tools/region-import/germany/operational-quality.annual-2026.4.json"),
-    json("tools/region-import/germany/source-capture.annual-2026.4.plan.json"),
-    json("tools/region-import/germany/release-artifacts.annual-2026.4.json"),
-    json("tools/tiles/map-package.annual-2026.4.plan.json"),
+    json("tools/region-import/germany/release.annual-2026.5.config.json"),
+    json("tools/region-import/germany/timetable-route-compiler.annual-2026.5.json"),
+    json("tools/region-import/germany/synthetic-operational-closure.annual-2026.5.json"),
+    json("tools/region-import/germany/operational-quality.annual-2026.5.json"),
+    json("tools/region-import/germany/source-capture.annual-2026.5.plan.json"),
+    json("tools/region-import/germany/release-artifacts.annual-2026.5.json"),
+    json("tools/tiles/map-package.annual-2026.5.plan.json"),
+    json("tools/tiles/map-release-build-evidence.annual-2026.5.spec.json"),
+    json("tools/region-import/germany/operational-infrastructure-v2-execution-pins.annual-2026.5.json"),
+    json("tools/region-import/germany/operational-validator-rebuild.annual-2026.5.json"),
   ]);
   const releaseId = releaseConfig.release.releaseId;
   const timetableYear = releaseConfig.release.timetableYear;
   const version = releaseId.replace(/^infra-deutschland-/u, "");
   const artifactRoot = `var/derived/germany-${version}`;
+  const operationalDeriver = releaseConfig.pipeline.operationalDeriver;
+  const recoveryPublisher = operationalDeriver.recoveryPublisher;
   const operationalArtifact = artifactSpec.artifacts.find(({ kind }) => kind === "operational-infrastructure-v2");
+  const semanticAssembly = buildEvidence.inputs.find(({ id }) => id === "semantic-tile-assembly-spec");
+  const semanticInputs = semanticAssembly.reuse.artifacts.find(({ targetFile }) => targetFile.endsWith("/inputs.json")).targetFile;
+  const semanticInputRoot = semanticInputs.replace(/\/inputs\.json$/u, "");
+  const semanticOutput = buildEvidence.outputs.find(({ id }) => id === "semantic-pmtiles").file;
+  const assetNotices = buildEvidence.inputs.find(({ id }) => id === "map-asset-notices-spec").file;
+  const gdalRuntime = buildEvidence.tools.find(({ id }) => id === "gdal-pmtiles").manifestFile;
+  const evidenceInputFile = (id) => buildEvidence.inputs.find((input) => input.id === id).file;
+  const annualExecutorPlan = rebuildSpecification.authority.annualExecutorPlan;
   const bindings = {
-    ANNUAL_ARTIFACT_SPEC: "tools/region-import/germany/release-artifacts.annual-2026.4.json",
-    ANNUAL_RELEASE_CONFIG: "tools/region-import/germany/release.annual-2026.4.config.json",
+    ANNUAL_ARTIFACT_SPEC: "tools/region-import/germany/release-artifacts.annual-2026.5.json",
+    ANNUAL_RELEASE_CONFIG: "tools/region-import/germany/release.annual-2026.5.config.json",
     ARTEFAKTWURZEL: artifactRoot,
-    DELIVERY_KEY_ID: "zugfolge-map-deutschland-2026.5",
+    BUILD_EVIDENCE_SPEC: "tools/tiles/map-release-build-evidence.annual-2026.5.spec.json",
+    DELIVERY_KEY_ID: `zugfolge-map-deutschland-${version}`,
     FAHRPLANJAHR: String(timetableYear),
+    GDAL_RUNTIME_MANIFEST: gdalRuntime,
     INFRARELEASE_ID: releaseId,
-    MAP_PACKAGE_PLAN: "tools/tiles/map-package.annual-2026.4.plan.json",
+    MAP_ASSET_NOTICES_SPEC: assetNotices,
+    MAP_PACKAGE_PLAN: "tools/tiles/map-package.annual-2026.5.plan.json",
+    OPERATIONAL_ANNUAL_PLAN: annualExecutorPlan.planFile,
+    OPERATIONAL_ANNUAL_START_EVIDENCE: annualExecutorPlan.startEvidenceFile,
     OPERATIONAL_ARTIFACT_ID: operationalArtifact.id,
-    OPERATIONAL_CANDIDATE: `${artifactRoot}/operational-infrastructure-v2.candidate.json`,
-    OPERATIONAL_CANDIDATE_SIDECAR: `${artifactRoot}/operational-infrastructure-v2.candidate.movement-route-templates-v2.json`,
-    OPERATIONAL_QUALITY_SPEC: "tools/region-import/germany/operational-quality.annual-2026.4.json",
-    OPERATIONAL_VALIDATOR_BUILD_COMMIT: "ee6d7081b32277e46cd6ebb28fc65bd45ce55012",
+    OPERATIONAL_ATTESTATION_TRUSTED_ROOT: evidenceInputFile("operational-attestation-trusted-root"),
+    OPERATIONAL_ATTESTATION_VERIFIER: evidenceInputFile("operational-attestation-verifier"),
+    OPERATIONAL_CANDIDATE: operationalDeriver.candidate,
+    OPERATIONAL_CANDIDATE_SIDECAR: operationalDeriver.candidateMovementRouteTemplates,
+    OPERATIONAL_DERIVER_OUTPUT: operationalDeriver.output,
+    OPERATIONAL_DERIVER_REPORT: operationalDeriver.report,
+    OPERATIONAL_DERIVER_SPECIFICATION: operationalDeriver.specification,
+    OPERATIONAL_DIRECT_SYSTEM_LAUNCH_CONTRACT: operationalDeriver.directSystemLaunch.contract.file,
+    OPERATIONAL_EXECUTION_AUTHORITY_BUNDLE: evidenceInputFile("operational-execution-authority-attestation"),
+    OPERATIONAL_EXECUTION_PINS: operationalDeriver.executionPins,
+    OPERATIONAL_LAUNCH_CONTEXT: `${artifactRoot}/operational-infrastructure-v2.launch-context.json`,
+    OPERATIONAL_NATIVE_RECEIPT: recoveryPublisher.nativeReceipt,
+    OPERATIONAL_OUTER_EXECUTION_RECEIPT: recoveryPublisher.outerExecutionReceipt,
+    OPERATIONAL_PUBLICATION_RECEIPT: recoveryPublisher.publicationReceipt,
+    OPERATIONAL_QUALITY_SPEC: "tools/region-import/germany/operational-quality.annual-2026.5.json",
+    OPERATIONAL_REBUILD_ATTESTATION_BUNDLE: evidenceInputFile("operational-validator-rebuild-attestation"),
+    OPERATIONAL_VALIDATOR_BUILD_COMMIT: recoveryPublisher.validatorBuildCommit,
+    OPERATIONAL_VALIDATOR_PATH: recoveryPublisher.validatorExecutable,
+    OPERATIONAL_VALIDATOR_REBUILD_EVIDENCE: recoveryPublisher.validatorRebuildEvidence,
+    OPERATIONAL_VALIDATOR_REBUILD_SPEC: recoveryPublisher.validatorRebuildSpecification,
+    PINNED_ZUGFOLGE_INFRA_RELEASE: recoveryPublisher.validatorExecutable,
     QUELLWURZEL: "var/source-cache",
     RELEASE_ARTIFACT_INVENTORY: `${artifactRoot}/release-artifacts.v2.json`,
+    RIGHTS_LEDGER: annualExecutorPlan.arguments[3],
+    SEMANTIC_PMTILES_OUTPUT: semanticOutput,
+    SEMANTIC_TILE_INPUT_ROOT: semanticInputRoot,
+    SEMANTIC_TILE_INPUTS: semanticInputs,
     SOURCE_CAPTURE_MANIFEST: `${artifactRoot}/source-capture.${version}.json`,
+    SOURCE_CATALOG: annualExecutorPlan.arguments[2],
     STICHTAG_UTC: sourceCapturePlan.notBefore,
-    SYNTHETIC_CLOSURE_SPEC: "tools/region-import/germany/synthetic-operational-closure.annual-2026.4.json",
-    TIMETABLE_ROUTE_SPEC: "tools/region-import/germany/timetable-route-compiler.annual-2026.4.json",
+    SYNTHETIC_CLOSURE_SPEC: "tools/region-import/germany/synthetic-operational-closure.annual-2026.5.json",
+    TIMETABLE_ROUTE_SPEC: "tools/region-import/germany/timetable-route-compiler.annual-2026.5.json",
   };
 
   const placeholder = /<([A-Z_]+)>/gu;
   const resolved = prompt.replace(placeholder, (match, name) => bindings[name] ?? match);
   assert.doesNotMatch(resolved, placeholder);
-  assert.match(prompt, /infra-deutschland-2026\.4.*bytegleich[\s\S]*Vorgängerstand/u);
-  assert.doesNotMatch(prompt, /infra-deutschland-2026\.3|germany-2026\.3|annual-2026\.3|source-capture\.2026\.3/u);
-  assert.match(resolved, /run-timetable-route-compiler\.mjs tools\/region-import\/germany\/timetable-route-compiler\.annual-2026\.4\.json \./u);
-  assert.match(resolved, /run-synthetic-operational-closure\.mjs tools\/region-import\/germany\/synthetic-operational-closure\.annual-2026\.4\.json var\/derived\/germany-2026\.4\/synthetic-operational-closure-receipt\.json/u);
-  assert.match(resolved, /run-operational-quality-report\.mjs tools\/region-import\/germany\/operational-quality\.annual-2026\.4\.json var\/derived\/germany-2026\.4\/operational-infrastructure-quality\.json/u);
-  assert.match(resolved, /build-germany-release\.mjs manifest tools\/region-import\/germany\/release\.annual-2026\.4\.config\.json[\s\S]*var\/derived\/germany-2026\.4\/source-capture\.2026\.4\.json/u);
-  assert.match(resolved, /signed-map-package-plan-cli\.mjs tools\/tiles\/map-package\.annual-2026\.4\.plan\.json \./u);
+  assert.match(resolved, new RegExp(
+    `nodejs-24-operational-runner-v1\\.exe" tools/region-import/germany/run-operational-infrastructure-v2-annual-execution\\.mjs execute ${bindings.OPERATIONAL_EXECUTION_PINS.replaceAll(".", "\\.")} ${bindings.OPERATIONAL_DIRECT_SYSTEM_LAUNCH_CONTRACT.replaceAll(".", "\\.")} ${bindings.ANNUAL_RELEASE_CONFIG.replaceAll(".", "\\.")} ${bindings.SOURCE_CATALOG.replaceAll(".", "\\.")} ${bindings.RIGHTS_LEDGER.replaceAll(".", "\\.")} ${bindings.OPERATIONAL_LAUNCH_CONTEXT.replaceAll(".", "\\.")} ${bindings.OPERATIONAL_ANNUAL_PLAN.replaceAll(".", "\\.")} ${bindings.OPERATIONAL_ANNUAL_START_EVIDENCE.replaceAll(".", "\\.")} ${bindings.OPERATIONAL_OUTER_EXECUTION_RECEIPT.replaceAll(".", "\\.")}`,
+    "u",
+  ));
+  assert.match(resolved, new RegExp(`publish-operational-infrastructure-v2\\.mjs publish[\\s\\S]*${bindings.OPERATIONAL_NATIVE_RECEIPT.replaceAll(".", "\\.")}[\\s\\S]*${bindings.OPERATIONAL_PUBLICATION_RECEIPT.replaceAll(".", "\\.")}`, "u"));
+  assert.match(resolved, new RegExp(`build-gdal-semantic-pmtiles\\.mjs ${semanticInputs.replaceAll(".", "\\.")} ${semanticInputRoot.replaceAll(".", "\\.")} ${semanticOutput.replaceAll(".", "\\.")} ${gdalRuntime.replaceAll(".", "\\.")} \\.`, "u"));
+  assert.match(resolved, /run-timetable-route-compiler\.mjs tools\/region-import\/germany\/timetable-route-compiler\.annual-2026\.5\.json \./u);
+  assert.match(resolved, /run-synthetic-operational-closure\.mjs tools\/region-import\/germany\/synthetic-operational-closure\.annual-2026\.5\.json var\/derived\/germany-2026\.5\/synthetic-operational-closure-receipt\.json/u);
+  assert.match(resolved, /run-operational-quality-report\.mjs tools\/region-import\/germany\/operational-quality\.annual-2026\.5\.json var\/derived\/germany-2026\.5\/operational-infrastructure-quality\.json/u);
+  assert.match(resolved, /build-germany-release\.mjs manifest tools\/region-import\/germany\/release\.annual-2026\.5\.config\.json[\s\S]*var\/derived\/germany-2026\.5\/source-capture\.2026\.5\.json/u);
+  assert.match(resolved, /signed-map-package-plan-cli\.mjs tools\/tiles\/map-package\.annual-2026\.5\.plan\.json \./u);
 
-  assert.equal(timetableRouteSpec.schema, "zugfolge-germany-timetable-route-compiler/v3");
+  assert.equal(operationalDeriver.primaryRunner, "tools/region-import/germany/run-capture-operational-infrastructure-v2.anchored-bundle.mjs");
+  assert.equal(operationalDeriver.primaryRunnerMode, "system-launcher-held-bundle-stdin-v1");
+  assert.equal(operationalDeriver.systemCommandBuilder, "tools/region-import/germany/print-operational-infrastructure-v2-system-launch-command.mjs");
+  assert.equal(operationalDeriver.systemCommandBuilderMode, "source-only-print-direct-command-v1");
+  assert.equal(executionPins.releaseId, releaseId);
+  assert.equal(timetableRouteSpec.schema, "zugfolge-germany-timetable-route-compiler/v5");
   assert.equal(timetableRouteSpec.infraReleaseId, releaseId);
   assert.equal(timetableRouteSpec.output, `${artifactRoot}/timetable-routes-v2.jsonseq`);
-  assert.equal(Object.hasOwn(timetableRouteSpec, "transferOutput"), false);
-  assert.equal(timetableRouteSpec.report, `${artifactRoot}/timetable-routes-v2.derivation-report.json`);
+  assert.equal(timetableRouteSpec.transferOutput, `${artifactRoot}/timetable-routes-v2.transfer-demands-v2.json`);
+  assert.equal(timetableRouteSpec.report, `${artifactRoot}/timetable-routes-v2.derivation-report-v4.json`);
   assert.equal(closureSpec.schema, "zugfolge-synthetic-operational-closure-inputs/v2");
   assert.equal(closureSpec.releaseId, releaseId);
   assert.equal(closureSpec.artifactRoot, artifactRoot);
@@ -891,11 +992,9 @@ test("Jahresprompt kann den historischen 2026.4-Beleg auflösen, kennzeichnet ih
   assert.equal(mapPackagePlan.version, version);
   assert.equal(mapPackagePlan.runtime.schema, "zugfolge-map-runtime/v2");
   assert.equal(mapPackagePlan.runtime.publicBasePath, `/artifacts/maps/${releaseId}`);
-
-  for (const path of [bindings.SOURCE_CAPTURE_MANIFEST, bindings.MAP_PACKAGE_PLAN]) {
-    assert.match(runbook, new RegExp(path.replaceAll(".", "\\."), "u"));
-  }
-  assert.match(runbook, /map-asset-notices\.annual-2026\.3\.json/u);
+  assert.equal(semanticAssembly.reuse.mode, "byte-identical-cross-release");
+  assert.equal(semanticAssembly.reuse.targetReleaseId, releaseId);
+  assert.notEqual(semanticAssembly.reuse.sourceReleaseId, releaseId);
 });
 
 test("Build-Evidence-v3 bindet alle tatsächlich verwendeten 2026.5-Spezifikationen und Repo-Verträge fail-closed", async () => {
@@ -972,9 +1071,35 @@ test("2026.5 trennt den primaeren Operational-v2-Runner vom receiptgebundenen Re
     json("tools/tiles/map-build-cache-inventory.annual-2026.5.plan.json"),
   ]);
   assert.deepEqual(releaseConfig.pipeline.operationalDeriver, {
-    primaryRunner: "tools/region-import/germany/run-operational-infrastructure-v2.mjs",
-    primaryRunnerMode: "candidate-triplet",
+    primaryRunner: "tools/region-import/germany/run-capture-operational-infrastructure-v2.anchored-bundle.mjs",
+    primaryRunnerMode: "system-launcher-held-bundle-stdin-v1",
+    systemCommandBuilder: "tools/region-import/germany/print-operational-infrastructure-v2-system-launch-command.mjs",
+    systemCommandBuilderMode: "source-only-print-direct-command-v1",
+    directSystemLaunch: {
+      platform: "win32",
+      contract: {
+        file: "tools/region-import/germany/operational-infrastructure-v2-direct-system-launch.annual-2026.5.json",
+        bytes: 22_507,
+        sha256: "2ad359028db2eb912c35b13027d77a26c8675dc5ae656a35f89a6c63ad65da23",
+        schema: "zugfolge-operational-v2-direct-system-launch-contract/v1",
+        releaseId: "infra-deutschland-2026.5",
+        executionPins: {
+          file: "tools/region-import/germany/operational-infrastructure-v2-execution-pins.annual-2026.5.json",
+          bytes: 4_841,
+          sha256: "be5d372d0b5cd6179848139c3b52c413db2fd60f2e94647eaa7105cce8c5d28b",
+          schema: "zugfolge-germany-operational-v2-execution-pins/v1",
+        },
+        trustedExecutor: {
+          file: "var/derived/germany-2026.5/toolchain/zugfolge-infra-release-aba354ec1937452a491087626ec0adea36ef6695-c35e72e352ae573e0416035fc4f0d233af5668864c0bd8df7333337e87bb7fd4.exe",
+          buildCommit: "aba354ec1937452a491087626ec0adea36ef6695",
+          bytes: 8_382_277,
+          sha256: "c35e72e352ae573e0416035fc4f0d233af5668864c0bd8df7333337e87bb7fd4",
+        },
+      },
+    },
+    executionPins: "tools/region-import/germany/operational-infrastructure-v2-execution-pins.annual-2026.5.json",
     specification: "tools/region-import/germany/operational-infrastructure.annual-2026.5.json",
+    sourceRoot: ".",
     candidate: "var/derived/germany-2026.5/operational-infrastructure-v2.candidate.json",
     candidateMovementRouteTemplates: "var/derived/germany-2026.5/operational-infrastructure-v2.candidate.movement-route-templates-v2.json",
     report: "var/derived/germany-2026.5/operational-infrastructure-v2.derivation-report.json",
@@ -982,15 +1107,15 @@ test("2026.5 trennt den primaeren Operational-v2-Runner vom receiptgebundenen Re
     recoveryPublisher: {
       captureEntrypoint: "tools/region-import/germany/capture-operational-infrastructure-v2-native-receipt.mjs",
       entrypoint: "tools/region-import/germany/publish-operational-infrastructure-v2.mjs",
-      validatorExecutable: "var/derived/germany-2026.5/toolchain/zugfolge-infra-release-ee6d7081b32277e46cd6ebb28fc65bd45ce55012-69f6f13d69cd256464f254804d6d7349acd0f09bbe614ae2b0e38e70664306fc.exe",
-      validatorBuildCommit: "ee6d7081b32277e46cd6ebb28fc65bd45ce55012",
-      validatorBytes: 8_283_251,
-      validatorSha256: "69f6f13d69cd256464f254804d6d7349acd0f09bbe614ae2b0e38e70664306fc",
+      validatorExecutable: "var/derived/germany-2026.5/toolchain/zugfolge-infra-release-aba354ec1937452a491087626ec0adea36ef6695-c35e72e352ae573e0416035fc4f0d233af5668864c0bd8df7333337e87bb7fd4.exe",
+      validatorBuildCommit: "aba354ec1937452a491087626ec0adea36ef6695",
+      validatorBytes: 8_382_277,
+      validatorSha256: "c35e72e352ae573e0416035fc4f0d233af5668864c0bd8df7333337e87bb7fd4",
       validatorRebuildSpecification: "tools/region-import/germany/operational-validator-rebuild.annual-2026.5.json",
       validatorRebuildEvidence: "var/derived/germany-2026.5/toolchain/zugfolge-infra-release-rebuild-evidence.json",
-      validatorRebuildExecutable: "var/derived/germany-2026.5/toolchain/zugfolge-infra-release-rebuild-ee6d7081b32277e46cd6ebb28fc65bd45ce55012-official.exe",
-      validatorRebuildExpectedBytes: 8_283_251,
-      validatorNormalizedPeSha256: "91e84253399bf8836ec4e6a5688da51f753531a0040831a54b8585e28f1d5363",
+      validatorRebuildExecutable: "var/derived/germany-2026.5/toolchain/zugfolge-infra-release-rebuild-aba354ec1937452a491087626ec0adea36ef6695-official.exe",
+      validatorRebuildExpectedBytes: 8_382_277,
+      validatorNormalizedPeSha256: "ae39f5a8378641be0d02be56e93bf585a49a6e65bc1f5a02b77cd2bd556d38cb",
       executionInventory: {
         wrapper: "tools/region-import/germany/publish-operational-infrastructure-v2.mjs",
         implementation: "tools/region-import/germany/operational-infrastructure-v2-publication.mjs",
@@ -1000,8 +1125,12 @@ test("2026.5 trennt den primaeren Operational-v2-Runner vom receiptgebundenen Re
         operationalBinding: "tools/region-import/operational-infrastructure-binding.mjs",
         validatorRebuildBootstrap: "tools/region-import/germany/operational-validator-rebuild-bootstrap.mjs",
         validatorRebuildVerifier: "tools/region-import/germany/operational-validator-rebuild-evidence.mjs",
+        executionPinsImplementation: "tools/region-import/germany/operational-infrastructure-v2-execution-pins.mjs",
+        annualCreateNewArtifact: "tools/region-import/germany/annual-create-new-artifact.mjs",
+        outerExecutionReceiptVerifier: "tools/region-import/germany/operational-infrastructure-v2-outer-execution-receipt.mjs",
       },
       nativeReceipt: "var/derived/germany-2026.5/operational-infrastructure-v2.native-receipt.json",
+      outerExecutionReceipt: "var/derived/germany-2026.5/operational-infrastructure-v2.outer-execution-receipt.json",
       publicationReceipt: "var/derived/germany-2026.5/operational-infrastructure-v2.publication-receipt.json",
     },
   });
@@ -1009,18 +1138,18 @@ test("2026.5 trennt den primaeren Operational-v2-Runner vom receiptgebundenen Re
     "operational-infrastructure-v2.native-receipt.json",
     "operational-infrastructure-v2.publication-receipt.json",
     "zugfolge-infra-release-rebuild-evidence.json",
-    "zugfolge-infra-release-source-ee6d7081b32277e46cd6ebb28fc65bd45ce55012-556c906567dd436de091390b66cf9538e82febd237f70b0d353b286480852b2a.tar",
-    "zugfolge-infra-release-rebuild-provenance-ee6d7081b32277e46cd6ebb28fc65bd45ce55012.json",
+    "zugfolge-infra-release-source-aba354ec1937452a491087626ec0adea36ef6695-3f267637dcd52dded45ca921d27863149b3fd2919b7bb2e9d881b381c04565af.tar",
+    "zugfolge-infra-release-rebuild-provenance-aba354ec1937452a491087626ec0adea36ef6695.json",
   ]) {
     assert.ok(cachePlan.files.some(({ sourceFile, cacheFile }) => sourceFile.endsWith(`/${file}`) && cacheFile.endsWith(`/${file}`)), `${file} fehlt im Buildcache-Inventar`);
   }
   assert.ok(cachePlan.files.some(({ sourceFile, cacheFile }) => (
-    sourceFile === "var/derived/germany-2026.5/toolchain/zugfolge-infra-release-ee6d7081b32277e46cd6ebb28fc65bd45ce55012-69f6f13d69cd256464f254804d6d7349acd0f09bbe614ae2b0e38e70664306fc.exe"
-      && cacheFile === "tools/zugfolge-infra-release/infra-deutschland-2026.5/ee6d7081b32277e46cd6ebb28fc65bd45ce55012/69f6f13d69cd256464f254804d6d7349acd0f09bbe614ae2b0e38e70664306fc/zugfolge-infra-release.exe"
+    sourceFile === "var/derived/germany-2026.5/toolchain/zugfolge-infra-release-aba354ec1937452a491087626ec0adea36ef6695-c35e72e352ae573e0416035fc4f0d233af5668864c0bd8df7333337e87bb7fd4.exe"
+      && cacheFile === "tools/zugfolge-infra-release/infra-deutschland-2026.5/aba354ec1937452a491087626ec0adea36ef6695/c35e72e352ae573e0416035fc4f0d233af5668864c0bd8df7333337e87bb7fd4/zugfolge-infra-release.exe"
   )), "effektives Validator-Binary fehlt im Buildcache-Inventar");
   assert.ok(cachePlan.files.some(({ sourceFile, cacheFile }) => (
-    sourceFile === "var/derived/germany-2026.5/toolchain/zugfolge-infra-release-rebuild-ee6d7081b32277e46cd6ebb28fc65bd45ce55012-official.exe"
-      && cacheFile === "tools/zugfolge-infra-release/infra-deutschland-2026.5/ee6d7081b32277e46cd6ebb28fc65bd45ce55012/official/zugfolge-infra-release.exe"
+    sourceFile === "var/derived/germany-2026.5/toolchain/zugfolge-infra-release-rebuild-aba354ec1937452a491087626ec0adea36ef6695-official.exe"
+      && cacheFile === "tools/zugfolge-infra-release/infra-deutschland-2026.5/aba354ec1937452a491087626ec0adea36ef6695/official/zugfolge-infra-release.exe"
   )), "immutable Validator-Rebuild-Binary fehlt im Buildcache-Inventar");
 });
 
@@ -1035,7 +1164,7 @@ test("2026.5 besitzt einen eigenen Asset-Notice-Vertrag und das vollständige GD
   ]);
   assert.deepEqual(currentNotices, historicalNotices);
   assert.equal(evidence.inputs.find(({ id }) => id === "map-asset-notices-spec").file, "tools/tiles/map-asset-notices.annual-2026.5.json");
-  assert.match(prompt, /map-asset-notices\.annual-2026\.5\.json[\s\S]*Karten-Capture und[\s\S]*Static-Sources-Builder/u);
+  assert.match(prompt, /<MAP_ASSET_NOTICES_SPEC>[\s\S]*Karten-Capture und[\s\S]*Static-Sources-Builder/u);
   assert.equal(manifest.schema, "zugfolge-gdal-runtime-bundle/v1");
   assert.deepEqual(manifest.platform, { arch: "x64", os: "win32" });
   assert.equal(manifest.entryPoint.sourceFile, "var/tooling-pinned/gdal-3.13.2/ogr2ogr.exe");
@@ -1046,5 +1175,5 @@ test("2026.5 besitzt einen eigenen Asset-Notice-Vertrag und das vollständige GD
   const actualMappings = new Map(cachePlan.files.filter(({ cacheFile }) => expectedMappings.has(cacheFile)).map(({ sourceFile, cacheFile }) => [cacheFile, sourceFile]));
   assert.equal(actualMappings.size, expectedMappings.size);
   assert.deepEqual(actualMappings, expectedMappings);
-  assert.match(prompt, /build-gdal-semantic-pmtiles\.mjs[\s\S]*gdal-runtime\.3\.13\.2-win32-x64\.manifest\.json \./u);
+  assert.match(prompt, /build-gdal-semantic-pmtiles\.mjs <SEMANTIC_TILE_INPUTS> <SEMANTIC_TILE_INPUT_ROOT> <SEMANTIC_PMTILES_OUTPUT> <GDAL_RUNTIME_MANIFEST> \./u);
 });

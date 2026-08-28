@@ -59,16 +59,56 @@
       "cacheFile": "derived/infra-deutschland-2026.5/operational-infrastructure-v2.publication-receipt.json"
     },
     {
+      "sourceFile": "var/derived/germany-2026.5/operational-infrastructure-v2.outer-execution-receipt.json",
+      "cacheFile": "derived/infra-deutschland-2026.5/operational-infrastructure-v2.outer-execution-receipt.json"
+    },
+    {
+      "sourceFile": "var/derived/germany-2026.5/operational-infrastructure-v2.outer-execution-receipt.json.zugfolge-complete.json",
+      "cacheFile": "derived/infra-deutschland-2026.5/operational-infrastructure-v2.outer-execution-receipt.json.zugfolge-complete.json"
+    },
+    {
+      "sourceFile": "var/derived/germany-2026.5/toolchain/zugfolge-infra-release-annual-plan.json",
+      "cacheFile": "derived/infra-deutschland-2026.5/toolchain/zugfolge-infra-release-annual-plan.json"
+    },
+    {
+      "sourceFile": "var/derived/germany-2026.5/toolchain/zugfolge-infra-release-annual-plan.json.zugfolge-complete.json",
+      "cacheFile": "derived/infra-deutschland-2026.5/toolchain/zugfolge-infra-release-annual-plan.json.zugfolge-complete.json"
+    },
+    {
+      "sourceFile": "var/derived/germany-2026.5/toolchain/zugfolge-infra-release-annual-executor-start-evidence.json",
+      "cacheFile": "derived/infra-deutschland-2026.5/toolchain/zugfolge-infra-release-annual-executor-start-evidence.json"
+    },
+    {
+      "sourceFile": "var/derived/germany-2026.5/toolchain/zugfolge-infra-release-annual-executor-start-evidence.json.zugfolge-complete.json",
+      "cacheFile": "derived/infra-deutschland-2026.5/toolchain/zugfolge-infra-release-annual-executor-start-evidence.json.zugfolge-complete.json"
+    },
+    {
+      "sourceFile": "var/derived/germany-2026.5/toolchain/zugfolge-infra-release-rebuild-attestation.sigstore.json",
+      "cacheFile": "derived/infra-deutschland-2026.5/toolchain/zugfolge-infra-release-rebuild-attestation.sigstore.json"
+    },
+    {
+      "sourceFile": "var/derived/germany-2026.5/toolchain/zugfolge-operational-v2-execution-authority.sigstore.json",
+      "cacheFile": "derived/infra-deutschland-2026.5/toolchain/zugfolge-operational-v2-execution-authority.sigstore.json"
+    },
+    {
+      "sourceFile": "var/derived/germany-2026.5/toolchain/gh-2.94.0-windows-amd64.exe",
+      "cacheFile": "derived/infra-deutschland-2026.5/toolchain/gh-2.94.0-windows-amd64.exe"
+    },
+    {
+      "sourceFile": "var/derived/germany-2026.5/toolchain/github-attestation-trusted-root.jsonl",
+      "cacheFile": "derived/infra-deutschland-2026.5/toolchain/github-attestation-trusted-root.jsonl"
+    },
+    {
       "sourceFile": "var/derived/germany-2026.5/toolchain/zugfolge-infra-release-rebuild-evidence.json",
       "cacheFile": "derived/infra-deutschland-2026.5/toolchain/zugfolge-infra-release-rebuild-evidence.json"
     },
     {
-      "sourceFile": "var/derived/germany-2026.5/toolchain/zugfolge-infra-release-source-ee6d7081b32277e46cd6ebb28fc65bd45ce55012-556c906567dd436de091390b66cf9538e82febd237f70b0d353b286480852b2a.tar",
-      "cacheFile": "derived/infra-deutschland-2026.5/toolchain/zugfolge-infra-release-source-ee6d7081b32277e46cd6ebb28fc65bd45ce55012-556c906567dd436de091390b66cf9538e82febd237f70b0d353b286480852b2a.tar"
+      "sourceFile": "var/derived/germany-2026.5/toolchain/zugfolge-infra-release-source-aba354ec1937452a491087626ec0adea36ef6695-3f267637dcd52dded45ca921d27863149b3fd2919b7bb2e9d881b381c04565af.tar",
+      "cacheFile": "derived/infra-deutschland-2026.5/toolchain/zugfolge-infra-release-source-aba354ec1937452a491087626ec0adea36ef6695-3f267637dcd52dded45ca921d27863149b3fd2919b7bb2e9d881b381c04565af.tar"
     },
     {
-      "sourceFile": "var/derived/germany-2026.5/toolchain/zugfolge-infra-release-rebuild-provenance-ee6d7081b32277e46cd6ebb28fc65bd45ce55012.json",
-      "cacheFile": "derived/infra-deutschland-2026.5/toolchain/zugfolge-infra-release-rebuild-provenance-ee6d7081b32277e46cd6ebb28fc65bd45ce55012.json"
+      "sourceFile": "var/derived/germany-2026.5/toolchain/zugfolge-infra-release-rebuild-provenance-aba354ec1937452a491087626ec0adea36ef6695.json",
+      "cacheFile": "derived/infra-deutschland-2026.5/toolchain/zugfolge-infra-release-rebuild-provenance-aba354ec1937452a491087626ec0adea36ef6695.json"
     },
     {
       "sourceFile": "var/derived/germany-2026.5/operational-infrastructure-v2.json",
@@ -6619,12 +6659,12 @@
       "cacheFile": "tools/osmium-tool-1.19.1/osmium.exe"
     },
     {
-      "sourceFile": "var/derived/germany-2026.5/toolchain/zugfolge-infra-release-ee6d7081b32277e46cd6ebb28fc65bd45ce55012-69f6f13d69cd256464f254804d6d7349acd0f09bbe614ae2b0e38e70664306fc.exe",
-      "cacheFile": "tools/zugfolge-infra-release/infra-deutschland-2026.5/ee6d7081b32277e46cd6ebb28fc65bd45ce55012/69f6f13d69cd256464f254804d6d7349acd0f09bbe614ae2b0e38e70664306fc/zugfolge-infra-release.exe"
+      "sourceFile": "var/derived/germany-2026.5/toolchain/zugfolge-infra-release-aba354ec1937452a491087626ec0adea36ef6695-c35e72e352ae573e0416035fc4f0d233af5668864c0bd8df7333337e87bb7fd4.exe",
+      "cacheFile": "tools/zugfolge-infra-release/infra-deutschland-2026.5/aba354ec1937452a491087626ec0adea36ef6695/c35e72e352ae573e0416035fc4f0d233af5668864c0bd8df7333337e87bb7fd4/zugfolge-infra-release.exe"
     },
     {
-      "sourceFile": "var/derived/germany-2026.5/toolchain/zugfolge-infra-release-rebuild-ee6d7081b32277e46cd6ebb28fc65bd45ce55012-official.exe",
-      "cacheFile": "tools/zugfolge-infra-release/infra-deutschland-2026.5/ee6d7081b32277e46cd6ebb28fc65bd45ce55012/official/zugfolge-infra-release.exe"
+      "sourceFile": "var/derived/germany-2026.5/toolchain/zugfolge-infra-release-rebuild-aba354ec1937452a491087626ec0adea36ef6695-official.exe",
+      "cacheFile": "tools/zugfolge-infra-release/infra-deutschland-2026.5/aba354ec1937452a491087626ec0adea36ef6695/official/zugfolge-infra-release.exe"
     }
   ]
 }

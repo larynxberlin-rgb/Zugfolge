@@ -25,6 +25,15 @@ import {
   spawnGermanyOperationalInfrastructureV2Compiler,
   validateGermanyOperationalInfrastructureV2Specification,
 } from "./operational-infrastructure-v2.mjs";
+import {
+  GERMANY_OPERATIONAL_EXECUTION_PINS_SCHEMA,
+  GERMANY_OPERATIONAL_EXECUTION_PROOF_SCHEMA,
+  GERMANY_OPERATIONAL_INTEGRATED_PRODUCER_KIND,
+  GERMANY_OPERATIONAL_PROVENANCE_SCHEMA,
+  germanyOperationalSystemLauncherSourceProof,
+  germanyOperationalStructuredValueSha256,
+  validateGermanyOperationalProvenance,
+} from "./operational-infrastructure-v2-execution-pins.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const RUNNER = join(HERE, "run-operational-infrastructure-v2.mjs");
@@ -44,6 +53,62 @@ function canonicalValue(value) {
 
 function canonicalHash(value) {
   return sha256(JSON.stringify(canonicalValue(value)));
+}
+
+function operationalProvenanceFixture(nativeReceipt) {
+  const executionPinsSha256 = "a".repeat(64);
+  return validateGermanyOperationalProvenance({
+    schema: GERMANY_OPERATIONAL_PROVENANCE_SCHEMA,
+    producerKind: GERMANY_OPERATIONAL_INTEGRATED_PRODUCER_KIND,
+    releaseEvidenceEligible: true,
+    productionActivationEligible: true,
+    executionPins: {
+      file: "tools/region-import/germany/execution-pins.fixture.json",
+      bytes: 1,
+      sha256: executionPinsSha256,
+      schema: GERMANY_OPERATIONAL_EXECUTION_PINS_SCHEMA,
+    },
+    executionProof: {
+      schema: GERMANY_OPERATIONAL_EXECUTION_PROOF_SCHEMA,
+      executionPinsSha256,
+      runner: {
+        anchorHelper: null,
+        bundle: { file: "tools/region-import/germany/run-capture-operational-infrastructure-v2.anchored-bundle.mjs", bytes: 1, sha256: "9".repeat(64) },
+        entrypoint: { file: "tools/region-import/germany/runner.fixture.mjs", bytes: 1, sha256: "b".repeat(64) },
+        importClosure: [{ file: "tools/region-import/germany/runner.fixture.mjs", bytes: 1, sha256: "b".repeat(64) }],
+        invocation: {
+          mode: "system-launcher-held-bundle-stdin-v1",
+          nodeArguments: ["--input-type=module", "-"],
+          nodeOptions: null,
+        },
+        launcher: germanyOperationalSystemLauncherSourceProof("linux"),
+        runtime: { id: "nodejs-24-operational-runner-v1", platform: "linux", bytes: 1, sha256: "8".repeat(64) },
+      },
+      validator: {
+        buildCommit: "c".repeat(40),
+        preserved: { file: "tools/native/validator.fixture.exe", bytes: 1, sha256: "d".repeat(64) },
+        executed: { mode: "linux-sealed-memfd-launch-v1", bytes: 1, sha256: "d".repeat(64) },
+      },
+      rebuild: {
+        specification: { file: "tools/region-import/germany/rebuild.fixture.json", bytes: 1, sha256: "e".repeat(64) },
+        evidence: { file: "var/derived/rebuild.fixture.json", bytes: 1, sha256: "f".repeat(64), schema: "fixture-rebuild/v1" },
+        sourceCommit: "c".repeat(40),
+      },
+      invocation: {
+        command: "derive-germany-operational-v2",
+        argumentPrefix: [],
+        argumentFiles: [],
+        arguments: ["derive-germany-operational-v2", "specification.json", "source", "candidate.json", "report.json"],
+      },
+      stdout: {
+        bytes: 1,
+        sha256: "1".repeat(64),
+        recordCount: 1,
+        structuredReceiptSha256: germanyOperationalStructuredValueSha256(nativeReceipt),
+      },
+      exit: { code: 0, signal: null },
+    },
+  }, { nativeReceipt });
 }
 
 function mapLayers() {
@@ -409,6 +474,7 @@ for (const killAfterLink of [1, 2]) {
       reportPath: basePaths.reportPath,
     };
     let claimObservedBeforeFirstLink = false;
+    let expectedProvenance;
     await assert.rejects(
       runGermanyOperationalInfrastructureV2({
         specification,
@@ -416,6 +482,10 @@ for (const killAfterLink of [1, 2]) {
         sourceRoot: root,
         ...paths,
         deriveNative: fixtureNativeCompiler(specification),
+        candidateTripletProvenance: async ({ nativeReceipt }) => {
+          expectedProvenance = operationalProvenanceFixture(nativeReceipt);
+          return expectedProvenance;
+        },
         hooks: {
           afterCandidateTripletClaim: async () => {
             claimObservedBeforeFirstLink = true;
@@ -444,6 +514,15 @@ for (const killAfterLink of [1, 2]) {
       sourceRoot: root,
       ...paths,
       deriveNative: async () => assert.fail("Recovery darf den Native-Compiler nicht erneut starten."),
+      hooks: {
+        beforeCandidateTripletCleanup: ({ claim, recovery }) => {
+          assert.equal(recovery, true);
+          assert.deepEqual(
+            validateGermanyOperationalProvenance(claim.operationalProvenance, { nativeReceipt: claim.nativeReceipt }),
+            expectedProvenance,
+          );
+        },
+      },
     });
     assert.equal(recovered.candidateProduced, true);
     assert.equal(recovered.materialized, null);

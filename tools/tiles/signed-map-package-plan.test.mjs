@@ -25,9 +25,18 @@ import {
   deriveSignedReleaseSourceFile,
   writeSignedMapPackagePlan,
 } from "./signed-map-package-plan.mjs";
+import {
+  germanyOperationalProvenanceSha256,
+  germanyOperationalSystemLauncherSourceProof,
+} from "../region-import/germany/operational-infrastructure-v2-execution-pins.mjs";
+import {
+  operationalBuildAuthoritySha256,
+  validateOperationalBuildAuthority,
+} from "../region-import/germany/operational-build-authority.mjs";
 
 const UNSIGNED_RELEASE = "release/delivery-unsigned/release.json";
 const SIGNED_RELEASE = "release/public/release.json";
+const RELEASE_ID = "infra-deutschland-2026.3";
 const HASH_A = "a".repeat(64);
 const HASH_B = "b".repeat(64);
 const HASH_C = "c".repeat(64);
@@ -46,6 +55,169 @@ function sortedValue(value) {
     return Object.fromEntries(Object.keys(value).sort().map((key) => [key, sortedValue(value[key])]));
   }
   return value;
+}
+
+function integratedOperationalProvenance() {
+  const executionPinsSha256 = "2".repeat(64);
+  const validatorSha256 = "3".repeat(64);
+  const entrypoint = {
+    file: "tools/region-import/germany/run-capture-operational-infrastructure-v2.mjs",
+    bytes: 101,
+    sha256: "4".repeat(64),
+  };
+  const launcher = germanyOperationalSystemLauncherSourceProof("linux");
+  return {
+    schema: "zugfolge-germany-operational-v2-provenance/v1",
+    producerKind: "integrated-runner-v1",
+    releaseEvidenceEligible: true,
+    productionActivationEligible: true,
+    executionPins: {
+      file: "tools/region-import/germany/operational-infrastructure-v2-execution-pins.annual-2026.5.json",
+      bytes: 123,
+      sha256: executionPinsSha256,
+      schema: "zugfolge-germany-operational-v2-execution-pins/v1",
+    },
+    executionProof: {
+      schema: "zugfolge-germany-operational-v2-execution-proof/v1",
+      executionPinsSha256,
+      runner: {
+        anchorHelper: null,
+        bundle: {
+          file: "tools/region-import/germany/run-capture-operational-infrastructure-v2.anchored-bundle.mjs",
+          bytes: 103,
+          sha256: "9".repeat(64),
+        },
+        entrypoint,
+        importClosure: [
+          entrypoint,
+          {
+            file: "tools/region-import/germany/operational-infrastructure-v2-system-launcher.linux.py",
+            bytes: launcher.sourceBytes,
+            sha256: launcher.sourceSha256,
+          },
+        ].sort((left, right) => left.file.localeCompare(right.file, "en")),
+        invocation: {
+          mode: "system-launcher-held-bundle-stdin-v1",
+          nodeArguments: ["--input-type=module", "-"],
+          nodeOptions: null,
+        },
+        launcher,
+        runtime: {
+          id: "nodejs-24-operational-runner-v1",
+          platform: "linux",
+          bytes: 50_000_000,
+          sha256: "0".repeat(64),
+        },
+      },
+      validator: {
+        buildCommit: "6".repeat(40),
+        preserved: {
+          file: "var/derived/germany-2026.5/toolchain/validator",
+          bytes: 8_382_277,
+          sha256: validatorSha256,
+        },
+        executed: { mode: "linux-sealed-memfd-launch-v1", bytes: 8_382_277, sha256: validatorSha256 },
+      },
+      rebuild: {
+        specification: {
+          file: "tools/region-import/germany/operational-validator-rebuild.annual-2026.5.json",
+          bytes: 201,
+          sha256: "7".repeat(64),
+        },
+        evidence: {
+          file: "var/derived/germany-2026.5/toolchain/rebuild-evidence.json",
+          bytes: 202,
+          sha256: "8".repeat(64),
+          schema: "zugfolge-operational-validator-rebuild-evidence/v2",
+        },
+        sourceCommit: "6".repeat(40),
+      },
+      invocation: {
+        command: "derive-germany-operational-v2",
+        argumentPrefix: [],
+        argumentFiles: [],
+        arguments: ["derive-germany-operational-v2", "spec.json", "source", "candidate.json", "report.json"],
+      },
+      stdout: { bytes: 401, sha256: "a".repeat(64), recordCount: 1, structuredReceiptSha256: "b".repeat(64) },
+      exit: { code: 0, signal: null },
+    },
+  };
+}
+
+function operationalAuthority(mapBuildCommit = "4".repeat(40)) {
+  const proof = (file) => ({ bytes: Buffer.byteLength(file) + 1, file, sha256: digest(Buffer.from(file)) });
+  const planProof = proof("var/derived/germany-2026.5/toolchain/zugfolge-infra-release-annual-plan.json");
+  const planCompletionProof = proof(`${planProof.file}.zugfolge-complete.json`);
+  const startProof = proof("var/derived/germany-2026.5/toolchain/zugfolge-infra-release-annual-executor-start-evidence.json");
+  const startCompletionProof = proof(`${startProof.file}.zugfolge-complete.json`);
+  const outerProof = proof("var/derived/germany-2026.5/operational-infrastructure-v2.outer-execution-receipt.json");
+  const outerCompletionProof = proof(`${outerProof.file}.zugfolge-complete.json`);
+  const rebuildBundle = proof("var/derived/germany-2026.5/toolchain/zugfolge-infra-release-rebuild-attestation.sigstore.json");
+  const executionBundle = proof("var/derived/germany-2026.5/toolchain/zugfolge-operational-v2-execution-authority.sigstore.json");
+  const predicate = {
+    executionJob: { mode: "windows-kill-on-job-close-root-exit-bounded-io-v1", timeoutMilliseconds: 21_600_000 },
+    origin: "local-held-runner",
+    outerExecutionCompletion: outerCompletionProof,
+    outerExecutionReceipt: outerProof,
+    planAuthority: {
+      artifact: { digest: `sha256:${"9".repeat(64)}`, id: 12_345, workflowRunId: 67_890 },
+      bundle: rebuildBundle,
+      plan: planProof,
+      planCompletion: planCompletionProof,
+      startEvidence: startProof,
+      startEvidenceCompletion: startCompletionProof,
+    },
+    protectedEnvironment: "operational-release-approval",
+    releaseId: "infra-deutschland-2026.5",
+    requiredPhases: [
+      "materialize-annual-plan-evidence-v1",
+      "execute-annual-operational-v2-v1",
+      "derive-and-capture-v1",
+    ],
+    schema: "zugfolge-operational-v2-execution-authority/v1",
+    source: { commit: mapBuildCommit, ref: "refs/heads/main", repository: "larynxberlin-rgb/Zugfolge" },
+    verificationScope: "operator-approved-hash-binding-not-source-reexecution-v1",
+  };
+  const block = (bundle, predicateType, signerWorkflow, subjects) => ({
+    bundle,
+    denySelfHostedRunners: true,
+    predicateType,
+    repository: "larynxberlin-rgb/Zugfolge",
+    signerWorkflow,
+    sourceDigest: mapBuildCommit,
+    sourceRef: "refs/heads/main",
+    subjects: [...subjects].sort((left, right) => left.file.localeCompare(right.file, "en")),
+  });
+  return validateOperationalBuildAuthority({
+    execution: {
+      ...block(executionBundle,
+        "https://zugfolge.de/attestations/operational-v2-execution-authority/v1",
+        "larynxberlin-rgb/Zugfolge/.github/workflows/operational-v2-execution-authority.yml",
+        [outerProof, outerCompletionProof]),
+      predicate,
+      predicateSha256: digest(Buffer.from(JSON.stringify(sortedValue(predicate)))),
+    },
+    rebuild: block(rebuildBundle, "https://slsa.dev/provenance/v1",
+      "larynxberlin-rgb/Zugfolge/.github/workflows/operational-validator-rebuild-evidence.yml",
+      [planProof, planCompletionProof, startProof, startCompletionProof]),
+    schema: "zugfolge-map-build-operational-authority/v1",
+    trustedRoot: {
+      bytes: 34_634,
+      file: "var/derived/germany-2026.5/toolchain/github-attestation-trusted-root.jsonl",
+      id: "operational-attestation-trusted-root",
+      kind: "derived-input",
+      sha256: "65ca537f6ed8a47fd0e560c421baa1f6c1efb8b25fc200d8c5c02c0e92eb2b9c",
+      version: "infra-deutschland-2026.5",
+    },
+    verifier: {
+      bytes: 40_998_712,
+      file: "var/derived/germany-2026.5/toolchain/gh-2.94.0-windows-amd64.exe",
+      id: "operational-attestation-verifier",
+      kind: "derived-input",
+      sha256: "91ed1eff1819a96b34bc2ca3adc01822c807ae1bb883c01ad9fdf335bf242b38",
+      version: "infra-deutschland-2026.5",
+    },
+  });
 }
 
 function withoutBytePins(spec) {
@@ -93,7 +265,7 @@ function fixtureAssetNotices(artifacts) {
 function operationalQuality(operationalBytes, operationalSha256, stateHash, movementRoutesBytes, movementRoutesSha256, transferDemandsBytes, transferDemandsSha256) {
   return {
     schema: "zugfolge-operational-infrastructure-quality-report/v1",
-    releaseId: "infra-test",
+    releaseId: RELEASE_ID,
     timetableYear: 2026,
     scopeId: "deutschland-ebo-operational-v2",
     deterministic: true,
@@ -106,8 +278,8 @@ function operationalQuality(operationalBytes, operationalSha256, stateHash, move
     },
     mapEvidence: {
       schema: "zugfolge-static-map-quality/v2",
-      mapReleaseId: "infra-test",
-      infrastructureCorpusId: "infra-test",
+      mapReleaseId: RELEASE_ID,
+      infrastructureCorpusId: RELEASE_ID,
       bytes: 4321,
       sha256: HASH_A,
       sourceReport: { schema: "zugfolge-final-infrastructure-quality-report/v1", bytes: 9876, sha256: HASH_B, shipped: false },
@@ -210,9 +382,9 @@ function plan(releaseBinding = {}) {
     partBytes: 104857600,
     runtime: {
       schema: "zugfolge-map-runtime/v2",
-      publicBasePath: "/artifacts/maps/infra-test",
-      basemapStyleUrl: "/artifacts/maps/infra-test/style.json",
-      infrastructurePmtilesUrl: "/artifacts/maps/infra-test/infra.pmtiles",
+      publicBasePath: `/artifacts/maps/${RELEASE_ID}`,
+      basemapStyleUrl: `/artifacts/maps/${RELEASE_ID}/style.json`,
+      infrastructurePmtilesUrl: `/artifacts/maps/${RELEASE_ID}/infra.pmtiles`,
     },
     artifacts: [
       {
@@ -317,8 +489,8 @@ async function fixture({ pinUnsigned = false, transformUnsigned, transformSigned
   const root = await mkdtemp(join(tmpdir(), "zugfolge-signed-plan-"));
   const unsignedPlan = plan();
   const operationalBytes = Buffer.from('{"schema":"zugfolge-operational-infrastructure/v2"}\n', "utf8");
-  const movementRoutesBytes = Buffer.from('{"infraReleaseId":"infra-test","schema":"movement-route-templates-v2"}\n', "utf8");
-  const transferDemandsBytes = Buffer.from('{"infraReleaseId":"infra-test","schema":"zugfolge-timetable-transfer-demands/v2"}\n', "utf8");
+  const movementRoutesBytes = Buffer.from(`{"infraReleaseId":"${RELEASE_ID}","schema":"movement-route-templates-v2"}\n`, "utf8");
+  const transferDemandsBytes = Buffer.from(`{"infraReleaseId":"${RELEASE_ID}","schema":"zugfolge-timetable-transfer-demands/v2"}\n`, "utf8");
   const operationalStateHash = "b".repeat(64);
   const qualityReport = operationalQuality(
     operationalBytes.length,
@@ -355,7 +527,7 @@ async function fixture({ pinUnsigned = false, transformUnsigned, transformSigned
         id: "operational-infrastructure-test",
         kind: "operational-infrastructure-v2",
         file: "operational-infrastructure-v2.json",
-        infraReleaseId: "infra-test",
+        infraReleaseId: RELEASE_ID,
         bytes: operationalBytes.length,
         sha256: digest(operationalBytes),
         stateHash: operationalStateHash,
@@ -391,7 +563,7 @@ async function fixture({ pinUnsigned = false, transformUnsigned, transformSigned
   const transferDemands = current("timetable-transfer-demands-v2");
   const infraWrapper = materialized({
     schema: "zugfolge-infra-release/v2",
-    releaseId: "infra-test",
+    releaseId: RELEASE_ID,
     timetableYear: 2026,
     sources: [{
       id: "official-infrastructure",
@@ -457,7 +629,7 @@ async function fixture({ pinUnsigned = false, transformUnsigned, transformSigned
   });
   const mapWrapper = materialized({
     schema: "zugfolge-map-release/v1",
-    releaseId: "infra-test",
+    releaseId: RELEASE_ID,
     sources: [{
       id: "protomaps-daily-basemap",
       version: "2026-test",
@@ -473,7 +645,7 @@ async function fixture({ pinUnsigned = false, transformUnsigned, transformSigned
     assetNotices: fixtureAssetNotices(artifacts),
   });
   const built = await buildMapDeliveryRelease({
-    releaseId: "infra-test",
+    releaseId: RELEASE_ID,
     timetableYear: 2026,
     packageSpec: expanded,
     sourceRoot: root,
@@ -598,6 +770,82 @@ test("leitet den Signed-Plan reproduzierbar mit unveraendertem Runtime-v2-Vertra
     await assert.rejects(
       writeSignedMapPackagePlan(derived.plan, output),
       (error) => error?.code === "EEXIST",
+    );
+  } finally {
+    await context.cleanup();
+  }
+});
+
+test("aktueller Preflight verifiziert die Build-Authority vor jedem Keyring-Zugriff und verwirft gespeicherte Felder allein", async () => {
+  const context = await fixture();
+  try {
+    const mapBuildCommit = "4".repeat(40);
+    const currentPlan = structuredClone(context.unsignedPlan);
+    currentPlan.version = "2026.5";
+    currentPlan.operationalProvenanceSource = {
+      publicationReceiptFile: "var/derived/germany-2026.5/operational-infrastructure-v2.publication-receipt.json",
+    };
+    currentPlan.operationalAuthoritySource = {
+      buildEvidenceSpecFile: "tools/tiles/map-release-build-evidence.annual-2026.5.spec.json",
+    };
+    const currentPlanPath = join(context.root, "current-annual-plan.json");
+    await writeFile(currentPlanPath, `${JSON.stringify(currentPlan, null, 2)}\n`, "utf8");
+    const missingCommitCli = spawnSync(process.execPath, [
+      fileURLToPath(new URL("./signed-map-package-plan-cli.mjs", import.meta.url)),
+      currentPlanPath,
+      context.root,
+      "missing-keyring-must-not-be-read.json",
+      "missing-scopes-must-not-be-read.json",
+      join(context.root, "current-signed-plan.json"),
+    ], { encoding: "utf8" });
+    assert.notEqual(missingCommitCli.status, 0);
+    assert.match(missingCommitCli.stderr, /current 2026\.5 verlangt einen expliziten MAP_BUILD_COMMIT/u);
+    assert.doesNotMatch(missingCommitCli.stderr, /missing-keyring|missing-scopes/u);
+    const currentRelease = JSON.parse(await readFile(join(context.root, ...UNSIGNED_RELEASE.split("/")), "utf8"));
+    const provenance = integratedOperationalProvenance();
+    const authority = operationalAuthority(mapBuildCommit);
+    currentRelease.releaseId = "infra-deutschland-2026.5";
+    currentRelease.packageVersion = "2026.5";
+    currentRelease.operationalProvenance = provenance;
+    currentRelease.operationalAuthority = authority;
+    currentRelease.bindings.operationalProvenanceSha256 = germanyOperationalProvenanceSha256(provenance);
+    currentRelease.bindings.operationalAuthoritySha256 = operationalBuildAuthoritySha256(authority);
+    await writeFile(join(context.root, ...UNSIGNED_RELEASE.split("/")), serializeDeliveryJson(currentRelease));
+
+    let verifierCalls = 0;
+    await assert.rejects(
+      deriveSignedMapPackagePlan(
+        currentPlan,
+        context.root,
+        "missing-keyring-must-not-be-read.json",
+        "missing-scopes-must-not-be-read.json",
+        {
+          mapBuildCommit,
+          materializeOperationalAuthority: async ({ mapBuildCommit: actualCommit }) => {
+            verifierCalls += 1;
+            assert.equal(actualCommit, mapBuildCommit);
+            throw new Error("fixture-authority-verifier-rejected");
+          },
+        },
+      ),
+      /fixture-authority-verifier-rejected/u,
+    );
+    assert.equal(verifierCalls, 1);
+
+    const cryptographicallyDifferent = operationalAuthority(mapBuildCommit);
+    cryptographicallyDifferent.execution.bundle.sha256 = "f".repeat(64);
+    await assert.rejects(
+      deriveSignedMapPackagePlan(
+        currentPlan,
+        context.root,
+        "missing-keyring-must-not-be-read.json",
+        "missing-scopes-must-not-be-read.json",
+        {
+          mapBuildCommit,
+          materializeOperationalAuthority: async () => cryptographicallyDifferent,
+        },
+      ),
+      /nicht kanonisch aus den kryptografisch erneut verifizierten Build-Belegen/u,
     );
   } finally {
     await context.cleanup();

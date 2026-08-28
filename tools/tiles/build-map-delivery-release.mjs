@@ -7,20 +7,40 @@ import { buildMapDeliveryRelease, writeMapDeliveryRelease } from "./map-delivery
 import { LIVEMAP_READ_MODEL_REPORT_SCHEMA } from "./livemap-read-model.mjs";
 import { TRAIN_MAP_PROJECTION_REPORT_SCHEMA } from "./train-map-projection.mjs";
 
+const usage = "Aufruf: build-map-delivery-release.mjs PACKAGE_PLAN.json QUELLWURZEL INFRA_RELEASE.json MAP_RELEASE.json READ_MODEL_REPORT.json [LEGACY_TRAIN_PROJECTION_REPORT.json] [MAP_BUILD_COMMIT] AUSGABEVERZEICHNIS";
 const arguments_ = process.argv.slice(2);
-if (![6, 7].includes(arguments_.length)) {
-  throw new Error("Aufruf: build-map-delivery-release.mjs PACKAGE_PLAN.json QUELLWURZEL INFRA_RELEASE.json MAP_RELEASE.json READ_MODEL_REPORT.json [LEGACY_TRAIN_PROJECTION_REPORT.json] AUSGABEVERZEICHNIS");
-}
+if (arguments_.length < 6 || arguments_.length > 8) throw new Error(usage);
 const [planPath, sourceRootPath, infraReleasePath, mapReleasePath, readModelReportPath] = arguments_;
-const trainProjectionReportPath = arguments_.length === 7 ? arguments_[5] : undefined;
-const outputDirectoryPath = arguments_.at(-1);
 
 async function json(path) {
   return JSON.parse(await readFile(resolve(path), "utf8"));
 }
 
-const [plan, infraRelease, mapRelease, readModelReport, trainProjectionReport] = await Promise.all([
-  json(planPath), json(infraReleasePath), json(mapReleasePath), json(readModelReportPath),
+const plan = await json(planPath);
+const currentAnnualDelivery = plan?.schema === "zugfolge-map-package-plan/v2" && plan.version === "2026.5";
+const hasTrainProjection = Array.isArray(plan?.auxiliaryFiles)
+  && plan.auxiliaryFiles.some(({ kind }) => kind === "train-map-projection");
+let trainProjectionReportPath;
+let mapBuildCommit;
+let outputDirectoryPath;
+if (currentAnnualDelivery) {
+  const expectedLength = hasTrainProjection ? 8 : 7;
+  if (arguments_.length !== expectedLength) {
+    throw new Error(`${usage}; current 2026.5 verlangt einen expliziten MAP_BUILD_COMMIT.`);
+  }
+  trainProjectionReportPath = hasTrainProjection ? arguments_[5] : undefined;
+  mapBuildCommit = arguments_[hasTrainProjection ? 6 : 5];
+  if (!/^[a-f0-9]{40}$/u.test(mapBuildCommit)) {
+    throw new Error("current 2026.5 verlangt einen expliziten exakten MAP_BUILD_COMMIT.");
+  }
+  outputDirectoryPath = arguments_.at(-1);
+} else {
+  if (![6, 7].includes(arguments_.length)) throw new Error(usage);
+  trainProjectionReportPath = arguments_.length === 7 ? arguments_[5] : undefined;
+  outputDirectoryPath = arguments_.at(-1);
+}
+const [infraRelease, mapRelease, readModelReport, trainProjectionReport] = await Promise.all([
+  json(infraReleasePath), json(mapReleasePath), json(readModelReportPath),
   trainProjectionReportPath === undefined ? undefined : json(trainProjectionReportPath),
 ]);
 const sourceRoot = resolve(sourceRootPath);
@@ -40,6 +60,7 @@ const result = await buildMapDeliveryRelease({
   sourceRoot,
   infraRelease,
   mapRelease,
+  mapBuildCommit,
   auxiliaryArtifactProofs: [
     { id: readModel.id, bytes: readModelReport.artifact.bytes, sha256: readModelReport.artifact.sha256 },
     ...(trainProjection === undefined ? [] : [{ id: trainProjection.id, bytes: trainProjectionReport.artifact.bytes, sha256: trainProjectionReport.artifact.sha256 }]),

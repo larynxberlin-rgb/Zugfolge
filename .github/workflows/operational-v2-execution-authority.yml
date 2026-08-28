@@ -1,0 +1,290 @@
+name: Operational v2 Execution Authority
+
+on:
+  workflow_dispatch:
+    inputs:
+      plan_authority_artifact_id:
+        description: Artifact-ID des erfolgreichen Operational-Validator-Authority-Laufs auf demselben main-Commit.
+        required: true
+        type: string
+      outer_receipt_bytes:
+        description: Exakte Bytezahl des lokal gehalten erzeugten Outer-Execution-Receipts.
+        required: true
+        type: string
+      outer_receipt_sha256:
+        description: SHA-256 des lokal gehalten erzeugten Outer-Execution-Receipts.
+        required: true
+        type: string
+      outer_completion_bytes:
+        description: Exakte Bytezahl des create-new Completion-Belegs des Outer-Execution-Receipts.
+        required: true
+        type: string
+      outer_completion_sha256:
+        description: SHA-256 des create-new Completion-Belegs des Outer-Execution-Receipts.
+        required: true
+        type: string
+
+permissions:
+  artifact-metadata: write
+  actions: read
+  attestations: write
+  contents: read
+  id-token: write
+
+concurrency:
+  group: operational-v2-execution-authority-${{ github.sha }}
+  cancel-in-progress: false
+
+jobs:
+  authorize:
+    name: Bind local held execution hashes
+    runs-on: windows-2025
+    timeout-minutes: 20
+    environment: operational-release-approval
+    steps:
+      - name: Checkout exact protected commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Validate protected authority context and inputs
+        shell: powershell
+        env:
+          PLAN_AUTHORITY_ARTIFACT_ID: ${{ inputs.plan_authority_artifact_id }}
+          OUTER_RECEIPT_BYTES: ${{ inputs.outer_receipt_bytes }}
+          OUTER_RECEIPT_SHA256: ${{ inputs.outer_receipt_sha256 }}
+          OUTER_COMPLETION_BYTES: ${{ inputs.outer_completion_bytes }}
+          OUTER_COMPLETION_SHA256: ${{ inputs.outer_completion_sha256 }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if ($env:GITHUB_REPOSITORY -cne 'larynxberlin-rgb/Zugfolge') { throw 'Falsches Repository.' }
+          if ($env:GITHUB_EVENT_NAME -cne 'workflow_dispatch') { throw 'Falsches Workflow-Ereignis.' }
+          if ($env:GITHUB_REF -cne 'refs/heads/main' -or $env:GITHUB_REF_PROTECTED -cne 'true') { throw 'Execution-Authority muss auf geschuetztem main laufen.' }
+          if ($env:RUNNER_ENVIRONMENT -cne 'github-hosted' -or $env:RUNNER_OS -cne 'Windows' -or $env:RUNNER_ARCH -cne 'X64') { throw 'Execution-Authority benoetigt einen frischen GitHub-hosted Windows-x64-Runner.' }
+          if ($env:PLAN_AUTHORITY_ARTIFACT_ID -cnotmatch '^[1-9][0-9]*$') { throw 'Plan-Authority-Artifact-ID ist ungueltig.' }
+          foreach ($value in @($env:OUTER_RECEIPT_BYTES, $env:OUTER_COMPLETION_BYTES)) {
+            if ($value -cnotmatch '^[1-9][0-9]{0,15}$') { throw 'Outer-Beleg-Bytezahl ist ungueltig.' }
+          }
+          foreach ($value in @($env:OUTER_RECEIPT_SHA256, $env:OUTER_COMPLETION_SHA256)) {
+            if ($value -cnotmatch '^[a-f0-9]{64}$') { throw 'Outer-Beleg-SHA-256 ist ungueltig.' }
+          }
+
+      - name: Download and verify same-commit plan authority
+        id: phase-one
+        shell: powershell
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PLAN_AUTHORITY_ARTIFACT_ID: ${{ inputs.plan_authority_artifact_id }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $repository = 'larynxberlin-rgb/Zugfolge'
+          $artifact = gh api "repos/$repository/actions/artifacts/$env:PLAN_AUTHORITY_ARTIFACT_ID" | ConvertFrom-Json
+          if ($LASTEXITCODE -ne 0) { throw 'Plan-Authority-Metadaten konnten nicht geladen werden.' }
+          if ($artifact.expired -or $artifact.name -cnotmatch '^operational-validator-authority-infra-deutschland-2026[.]5-[1-9][0-9]*-[1-9][0-9]*$') { throw 'Plan-Authority-Artefakt ist abgelaufen oder fremd benannt.' }
+          if ($artifact.workflow_run.head_sha -cne $env:GITHUB_SHA -or $artifact.workflow_run.head_branch -cne 'main') { throw 'Plan-Authority-Artefakt stammt nicht aus demselben main-Commit.' }
+          $run = gh api "repos/$repository/actions/runs/$($artifact.workflow_run.id)" | ConvertFrom-Json
+          if ($LASTEXITCODE -ne 0 -or $run.event -cne 'workflow_dispatch' -or $run.head_sha -cne $env:GITHUB_SHA -or
+              $run.path -cne '.github/workflows/operational-validator-rebuild-evidence.yml' -or $run.conclusion -cne 'success') {
+            throw 'Plan-Authority-Artefakt stammt nicht aus dem erfolgreichen festgelegten Workflow.'
+          }
+
+          $archive = Join-Path $env:RUNNER_TEMP 'plan-authority.zip'
+          $extract = Join-Path $env:RUNNER_TEMP 'plan-authority'
+          if ((Test-Path -LiteralPath $archive) -or (Test-Path -LiteralPath $extract)) { throw 'Plan-Authority-Ziel kollidiert.' }
+          & (Join-Path $env:SystemRoot 'System32\curl.exe') `
+            --fail --silent --show-error --location --max-redirs 3 `
+            --proto '=https' --proto-redir '=https' `
+            --header 'Accept: application/vnd.github+json' `
+            --header "Authorization: Bearer $env:GH_TOKEN" `
+            --header 'X-GitHub-Api-Version: 2022-11-28' `
+            --output $archive "https://api.github.com/repos/$repository/actions/artifacts/$env:PLAN_AUTHORITY_ARTIFACT_ID/zip"
+          if ($LASTEXITCODE -ne 0) { throw 'Plan-Authority-Artefakt konnte nicht geladen werden.' }
+          $archiveHash = (Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($artifact.digest -cne "sha256:$archiveHash") { throw 'Plan-Authority-Archiv driftet von seinen GitHub-Metadaten.' }
+          Expand-Archive -LiteralPath $archive -DestinationPath $extract
+          if (@(Get-ChildItem -LiteralPath $extract -Recurse -Force | Where-Object { $_.Attributes -band [IO.FileAttributes]::ReparsePoint }).Count -ne 0) {
+            throw 'Plan-Authority-Artefakt enthaelt Reparse-Points.'
+          }
+
+          $specRelative = 'tools/region-import/germany/operational-validator-rebuild.annual-2026.5.json'
+          $specPath = Join-Path $extract ($specRelative -replace '/', '\')
+          $spec = Get-Content -LiteralPath $specPath -Raw | ConvertFrom-Json
+          $expected = @($specRelative) + @($spec.authority.attestation.subjects) + @($spec.authority.attestation.bundleFile)
+          $expected = @($expected | Sort-Object -Unique)
+          $prefix = (Resolve-Path -LiteralPath $extract).Path.TrimEnd('\') + '\'
+          $actual = @(Get-ChildItem -LiteralPath $extract -Recurse -Force -File | ForEach-Object {
+            if (-not $_.FullName.StartsWith($prefix, [StringComparison]::OrdinalIgnoreCase)) { throw 'Plan-Authority-Datei verlaesst das Archiv.' }
+            $_.FullName.Substring($prefix.Length).Replace('\', '/')
+          } | Sort-Object -Unique)
+          if (($actual -join "`n") -cne ($expected -join "`n")) { throw 'Plan-Authority-Artefakt besitzt fremde oder fehlende Dateien.' }
+
+          $bundle = Join-Path $extract ($spec.authority.attestation.bundleFile -replace '/', '\')
+          $expectedStatementSubjects = @($spec.authority.attestation.subjects | ForEach-Object {
+            $subjectPath = Join-Path $extract ($_ -replace '/', '\')
+            [ordered]@{
+              name = [IO.Path]::GetFileName($_)
+              digest = [ordered]@{
+                sha256 = (Get-FileHash -LiteralPath $subjectPath -Algorithm SHA256).Hash.ToLowerInvariant()
+              }
+            }
+          } | Sort-Object { $_.name })
+          if (@($expectedStatementSubjects | Group-Object name | Where-Object Count -ne 1).Count -ne 0) {
+            throw 'Plan-Authority-Subjects besitzen keine eindeutigen Attestierungsnamen.'
+          }
+          $expectedStatementSubjectsJson = $expectedStatementSubjects | ConvertTo-Json -Compress -Depth 10
+          foreach ($subject in $spec.authority.attestation.subjects) {
+            $subjectPath = Join-Path $extract ($subject -replace '/', '\')
+            $verified = gh attestation verify $subjectPath `
+              --repo $spec.authority.repository `
+              --bundle $bundle `
+              --predicate-type $spec.authority.attestation.predicateType `
+              --signer-workflow $spec.authority.attestation.verification.signerWorkflow `
+              --source-digest $env:GITHUB_SHA `
+              --source-ref $spec.authority.requiredRef `
+              --deny-self-hosted-runners `
+              --format json
+            if ($LASTEXITCODE -ne 0) { throw "Plan-Authority-Sigstore-Verifikation scheiterte fuer $subject." }
+            $parsed = $verified | ConvertFrom-Json
+            $matchingStatements = 0
+            foreach ($entry in @($parsed)) {
+              $statementSubjects = @($entry.verificationResult.statement.subject | ForEach-Object {
+                [ordered]@{
+                  name = [String]$_.name
+                  digest = [ordered]@{ sha256 = [String]$_.digest.sha256 }
+                }
+              } | Sort-Object { $_.name })
+              if (($statementSubjects | ConvertTo-Json -Compress -Depth 10) -ceq $expectedStatementSubjectsJson) {
+                $matchingStatements += 1
+              }
+            }
+            if ($matchingStatements -ne 1) { throw "Plan-Authority besitzt nicht exakt eine verifizierte Attestation mit der vollstaendigen Subjectmenge fuer $subject." }
+          }
+
+          function File-Proof([string] $relativePath) {
+            $path = Join-Path $extract ($relativePath -replace '/', '\')
+            $item = Get-Item -LiteralPath $path
+            [ordered]@{
+              file = $relativePath
+              bytes = $item.Length
+              sha256 = (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant()
+            }
+          }
+          $plan = File-Proof $spec.authority.annualExecutorPlan.planFile
+          $planCompletion = File-Proof ($spec.authority.annualExecutorPlan.planFile + '.zugfolge-complete.json')
+          $start = File-Proof $spec.authority.annualExecutorPlan.startEvidenceFile
+          $startCompletion = File-Proof ($spec.authority.annualExecutorPlan.startEvidenceFile + '.zugfolge-complete.json')
+          $bundleProof = File-Proof $spec.authority.attestation.bundleFile
+          $startValue = Get-Content -LiteralPath (Join-Path $extract ($start.file -replace '/', '\')) -Raw | ConvertFrom-Json
+          if ($startValue.schema -cne $spec.authority.annualExecutorPlan.startEvidenceSchema -or
+              $startValue.invocation.phase -cne 'materialize-annual-plan-evidence-v1' -or
+              $startValue.job.mode -cne 'windows-kill-on-job-close-root-exit-bounded-io-v1' -or
+              $startValue.job.timeoutMilliseconds -ne $spec.authority.annualExecutorPlan.timeoutMilliseconds) {
+            throw 'Plan-Authority-Startbeleg besitzt nicht den exakten festgelegten Phasen-/Jobvertrag.'
+          }
+          $authority = [ordered]@{
+            artifact = [ordered]@{ id = [Int64]$artifact.id; digest = $artifact.digest; workflowRunId = [Int64]$artifact.workflow_run.id }
+            bundle = $bundleProof
+            plan = $plan
+            planCompletion = $planCompletion
+            startEvidence = $start
+            startEvidenceCompletion = $startCompletion
+          }
+          $authorityPath = Join-Path $env:RUNNER_TEMP 'phase-one-authority.json'
+          [IO.File]::WriteAllText($authorityPath, ($authority | ConvertTo-Json -Depth 20), [Text.UTF8Encoding]::new($false))
+          [IO.File]::AppendAllText($env:GITHUB_OUTPUT, "authority_path=$authorityPath`n", [Text.UTF8Encoding]::new($false))
+
+      - name: Create exact execution-authority predicate
+        id: predicate
+        shell: powershell
+        env:
+          PHASE_ONE_AUTHORITY_PATH: ${{ steps.phase-one.outputs.authority_path }}
+          OUTER_RECEIPT_BYTES: ${{ inputs.outer_receipt_bytes }}
+          OUTER_RECEIPT_SHA256: ${{ inputs.outer_receipt_sha256 }}
+          OUTER_COMPLETION_BYTES: ${{ inputs.outer_completion_bytes }}
+          OUTER_COMPLETION_SHA256: ${{ inputs.outer_completion_sha256 }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $phaseOne = Get-Content -LiteralPath $env:PHASE_ONE_AUTHORITY_PATH -Raw | ConvertFrom-Json
+          $outerFile = 'var/derived/germany-2026.5/operational-infrastructure-v2.outer-execution-receipt.json'
+          $completionFile = $outerFile + '.zugfolge-complete.json'
+          $predicate = [ordered]@{
+            schema = 'zugfolge-operational-v2-execution-authority/v1'
+            releaseId = 'infra-deutschland-2026.5'
+            origin = 'local-held-runner'
+            verificationScope = 'operator-approved-hash-binding-not-source-reexecution-v1'
+            protectedEnvironment = 'operational-release-approval'
+            source = [ordered]@{
+              repository = 'larynxberlin-rgb/Zugfolge'
+              commit = $env:GITHUB_SHA
+              ref = 'refs/heads/main'
+            }
+            requiredPhases = @(
+              'materialize-annual-plan-evidence-v1'
+              'execute-annual-operational-v2-v1'
+              'derive-and-capture-v1'
+            )
+            executionJob = [ordered]@{
+              mode = 'windows-kill-on-job-close-root-exit-bounded-io-v1'
+              timeoutMilliseconds = 21600000
+            }
+            planAuthority = $phaseOne
+            outerExecutionReceipt = [ordered]@{
+              file = $outerFile
+              bytes = [Int64]$env:OUTER_RECEIPT_BYTES
+              sha256 = $env:OUTER_RECEIPT_SHA256
+            }
+            outerExecutionCompletion = [ordered]@{
+              file = $completionFile
+              bytes = [Int64]$env:OUTER_COMPLETION_BYTES
+              sha256 = $env:OUTER_COMPLETION_SHA256
+            }
+          }
+          $path = Join-Path $env:RUNNER_TEMP 'operational-v2-execution-authority.json'
+          [IO.File]::WriteAllText($path, ($predicate | ConvertTo-Json -Depth 30), [Text.UTF8Encoding]::new($false))
+          [IO.File]::AppendAllText($env:GITHUB_OUTPUT, "path=$path`n", [Text.UTF8Encoding]::new($false))
+
+      - name: Attest approved Outer receipt hash
+        id: attest-outer
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4
+        with:
+          subject-name: var/derived/germany-2026.5/operational-infrastructure-v2.outer-execution-receipt.json
+          subject-digest: sha256:${{ inputs.outer_receipt_sha256 }}
+          predicate-type: https://zugfolge.de/attestations/operational-v2-execution-authority/v1
+          predicate-path: ${{ steps.predicate.outputs.path }}
+
+      - name: Attest approved Outer Completion hash
+        id: attest-completion
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4
+        with:
+          subject-name: var/derived/germany-2026.5/operational-infrastructure-v2.outer-execution-receipt.json.zugfolge-complete.json
+          subject-digest: sha256:${{ inputs.outer_completion_sha256 }}
+          predicate-type: https://zugfolge.de/attestations/operational-v2-execution-authority/v1
+          predicate-path: ${{ steps.predicate.outputs.path }}
+
+      - name: Persist execution-authority bundle
+        id: persist
+        shell: powershell
+        env:
+          OUTER_ATTESTATION_BUNDLE: ${{ steps.attest-outer.outputs.bundle-path }}
+          COMPLETION_ATTESTATION_BUNDLE: ${{ steps.attest-completion.outputs.bundle-path }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $relative = 'var/derived/germany-2026.5/toolchain/zugfolge-operational-v2-execution-authority.sigstore.json'
+          $target = Join-Path $env:GITHUB_WORKSPACE ($relative -replace '/', '\')
+          New-Item -ItemType Directory -Path (Split-Path -Parent $target) -Force | Out-Null
+          if (Test-Path -LiteralPath $target) { throw 'Execution-Authority-Bundle kollidiert.' }
+          $outer = Get-Content -LiteralPath $env:OUTER_ATTESTATION_BUNDLE -Raw | ConvertFrom-Json
+          $completion = Get-Content -LiteralPath $env:COMPLETION_ATTESTATION_BUNDLE -Raw | ConvertFrom-Json
+          $lines = @(($outer | ConvertTo-Json -Compress -Depth 100), ($completion | ConvertTo-Json -Compress -Depth 100))
+          [IO.File]::WriteAllText($target, (($lines -join "`n") + "`n"), [Text.UTF8Encoding]::new($false))
+          [IO.File]::AppendAllText($env:GITHUB_OUTPUT, "bundle_path=$target`n", [Text.UTF8Encoding]::new($false))
+
+      - name: Upload execution-authority bundle
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: operational-v2-execution-authority-infra-deutschland-2026.5-${{ github.run_id }}-${{ github.run_attempt }}
+          if-no-files-found: error
+          retention-days: 30
+          compression-level: 0
+          path: ${{ steps.persist.outputs.bundle_path }}

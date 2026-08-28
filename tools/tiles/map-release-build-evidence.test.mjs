@@ -1,10 +1,10 @@
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { createHash, generateKeyPairSync, sign as signEd25519 } from "node:crypto";
 import { createReadStream } from "node:fs";
-import { copyFile, mkdir, mkdtemp, open, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { copyFile, mkdir, mkdtemp, open, readFile, readdir, rename, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname, isAbsolute, join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
@@ -12,6 +12,8 @@ import test from "node:test";
 import {
   createDatabaseRollbackProof,
   createMapRollbackAttestation,
+  materializeCurrentAnnualOperationalAuthority,
+  materializeOperationalBuildAuthorityFromBuildEvidenceSpec,
   materializeMapReleaseBuildEvidence,
   preflightMapReleaseActivation,
   prepareEmptyBuildCacheRestore,
@@ -22,7 +24,12 @@ import {
   validateCurrentAnnualOperationalPublicationBinding,
   validateCurrentAnnualValidatorRebuildCacheArtifacts,
   validateDatabaseRollbackProof,
+  validateFirstClassOperationalSidecarEvidence,
   validateMapReleaseBuildEvidence,
+  validateMapReleaseBuildEvidenceSpec,
+  validateCurrentAnnualOperationalAuthority,
+  verifyGithubAttestationSubject,
+  verifyCurrentAnnualOperationalAuthorityLocal,
   verifyMapReleaseBuildEvidence,
   writeBuildCacheRestoreProof,
   writeMapReleaseBuildEvidence,
@@ -63,6 +70,8 @@ import {
 
 const RELEASE_ID = "infra-deutschland-2026.2";
 const PREVIOUS_RELEASE_ID = "infra-deutschland-2026.1";
+const V2_RELEASE_ID = "infra-deutschland-2026.3";
+const V2_PREVIOUS_RELEASE_ID = RELEASE_ID;
 const DATABASE_ID = "00000000-0000-4000-8000-000000000031";
 const EBO_SIGNAL = "signal:osm-node-42";
 const UNSIGNED_SIGNATURE_REASON = "Kein produktiver privater Signaturschluessel vorhanden; Aktivierung bleibt gesperrt.";
@@ -132,9 +141,9 @@ function databaseRollbackProof(overrides = {}) {
   });
 }
 
-function operationalInfrastructureV2() {
+function operationalInfrastructureV2(releaseId = RELEASE_ID) {
   return {
-    id: RELEASE_ID,
+    id: releaseId,
     directedEdges: { "edge:fixture": 1_000 },
     edgeGeometries: {
       "edge:fixture": [
@@ -204,7 +213,7 @@ function movementDispatch(id, predecessorBaseRouteVersionId, resourceIds, contin
   };
 }
 
-function operationalSidecars(stateHash) {
+function operationalSidecars(stateHash, releaseId = RELEASE_ID) {
   const dailyPlanBody = {
     schema: "zugfolge-daily-circulation-plan/v2",
     rule: "lot-local-playable-path-cover-with-explicit-physical-transition-partition/v2",
@@ -366,7 +375,7 @@ function operationalSidecars(stateHash) {
     .digest("hex");
   const transfers = {
     schema: "zugfolge-timetable-transfer-demands/v2",
-    infraReleaseId: RELEASE_ID,
+    infraReleaseId: releaseId,
     gtfsSnapshotHash: "a".repeat(64),
     dailyPlan,
     formationLengthsMm: [100],
@@ -400,7 +409,7 @@ function operationalSidecars(stateHash) {
   );
   const movementBody = {
     schema: "movement-route-templates-v2",
-    infraReleaseId: RELEASE_ID,
+    infraReleaseId: releaseId,
     operationalStateHash: stateHash,
     timetableTransferSetSha256: transferSetSha256,
     directTemplates: [{
@@ -492,10 +501,11 @@ function operationalV2Quality(
   timetableRoutesProof,
   transferSetSha256,
   dailyPlanSha256,
+  releaseId = RELEASE_ID,
 ) {
   return {
     schema: "zugfolge-operational-infrastructure-quality-report/v1",
-    releaseId: RELEASE_ID,
+    releaseId,
     timetableYear: 2026,
     scopeId: "deutschland-ebo-operational-v2",
     deterministic: true,
@@ -509,7 +519,7 @@ function operationalV2Quality(
     mapEvidence: {
       schema: "zugfolge-static-map-quality/v2",
       mapReleaseId: "karte-deutschland-2026.2-v2",
-      infrastructureCorpusId: RELEASE_ID,
+      infrastructureCorpusId: releaseId,
       bytes: 4_321,
       sha256: "a".repeat(64),
       sourceReport: { schema: "zugfolge-final-infrastructure-quality-report/v1", bytes: 9_876, sha256: "b".repeat(64), shipped: false },
@@ -819,7 +829,9 @@ function createTrainProjection(path, infrastructureReleaseId = RELEASE_ID, deplo
   }
 }
 
-async function fixture() {
+async function fixture({ releaseId = RELEASE_ID, previousReleaseId = PREVIOUS_RELEASE_ID } = {}) {
+  const releaseVersion = releaseId.replace("infra-deutschland-", "");
+  const previousReleaseVersion = previousReleaseId.replace("infra-deutschland-", "");
   const root = await mkdtemp(join(tmpdir(), "zugfolge-build-evidence-"));
   const { privateKey, publicKey } = generateKeyPairSync("ed25519");
   const { privateKey: rollbackPrivateKey, publicKey: rollbackPublicKey } = generateKeyPairSync("ed25519");
@@ -834,21 +846,21 @@ async function fixture() {
   };
   const cached = [
     ["inputs/deutschland-2026-08-12.osm.pbf", "cache/sources/deutschland-2026-08-12.osm.pbf", Buffer.from("pinned external archive")],
-    ["inputs/map-source-capture-2026.2.json", "cache/captures/map-source-capture-2026.2.json", Buffer.from('{"schema":"capture/v1"}\n')],
-    ["inputs/derived-station-evidence-2026.2.json", "cache/derived/station-evidence-2026.2.json", Buffer.from('{"schema":"derived/v1"}\n')],
+    [`inputs/map-source-capture-${releaseVersion}.json`, `cache/captures/map-source-capture-${releaseVersion}.json`, Buffer.from('{"schema":"capture/v1"}\n')],
+    [`inputs/derived-station-evidence-${releaseVersion}.json`, `cache/derived/station-evidence-${releaseVersion}.json`, Buffer.from('{"schema":"derived/v1"}\n')],
     ["tools/bin/osmium-1.19.1", "cache/tools/osmium-1.19.1", Buffer.from("pinned osmium binary")],
   ];
   for (const [file, , bytes] of cached) await write(root, file, bytes);
-  await write(root, "tools/region-import/germany/release-2026.2.json", `${JSON.stringify({
+  await write(root, `tools/region-import/germany/release-${releaseVersion}.json`, `${JSON.stringify({
     schema: "germany-release/v1",
-    releaseId: RELEASE_ID,
+    releaseId,
   })}\n`);
 
   const inventoryFiles = [];
   for (const [file, cacheFile] of cached) inventoryFiles.push({ path: cacheFile, ...(await proof(root, file)) });
   inventoryFiles.sort((left, right) => left.path.localeCompare(right.path, "en"));
-  const inventory = { schema: "zugfolge-map-build-cache-inventory/v1", releaseId: RELEASE_ID, files: inventoryFiles };
-  await write(root, "cache/build-cache-inventory-2026.2.json", `${JSON.stringify(inventory, null, 2)}\n`);
+  const inventory = { schema: "zugfolge-map-build-cache-inventory/v1", releaseId, files: inventoryFiles };
+  await write(root, `cache/build-cache-inventory-${releaseVersion}.json`, `${JSON.stringify(inventory, null, 2)}\n`);
 
   const semanticLayers = [];
   for (const layer of LAYERS) {
@@ -859,15 +871,15 @@ async function fixture() {
   }
 
   await write(root, "outputs/basemap.pmtiles", Buffer.concat([Buffer.from("PMTiles"), Buffer.alloc(256, 3)]));
-  await write(root, "outputs/infra-deutschland-2026.2.pmtiles", Buffer.concat([Buffer.from("PMTiles"), Buffer.alloc(256, 1)]));
+  await write(root, `outputs/${releaseId}.pmtiles`, Buffer.concat([Buffer.from("PMTiles"), Buffer.alloc(256, 1)]));
   const readModelPath = join(root, "outputs", "read-model.sqlite");
   await mkdir(dirname(readModelPath), { recursive: true });
-  createReadModel(readModelPath);
-  createTrainProjection(join(root, "outputs", "train-map-projection.sqlite"));
+  createReadModel(readModelPath, releaseId);
+  createTrainProjection(join(root, "outputs", "train-map-projection.sqlite"), releaseId);
   await write(root, "outputs/style.json", `${JSON.stringify({ version: 8, sources: {}, layers: [] })}\n`);
   await write(root, "outputs/quality.json", `${JSON.stringify({
     schema: "zugfolge-final-infrastructure-quality-report/v1",
-    releaseId: RELEASE_ID,
+    releaseId,
     deterministic: true,
     summary: { visibleLayers: 10, visibleFeatures: 10 },
   })}\n`);
@@ -876,14 +888,14 @@ async function fixture() {
   await write(root, "outputs/assets/sprites/dark.png", Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.alloc(16, 7)]));
   const sources = {
     schema: "zugfolge-map-delivery-sources/v1",
-    releaseId: RELEASE_ID,
-    sources: [{ id: "fixture", approved: true, license: "ODbL-1.0", attribution: "OpenStreetMap; Protomaps", version: "2026.2" }],
+    releaseId,
+    sources: [{ id: "fixture", approved: true, license: "ODbL-1.0", attribution: "OpenStreetMap; Protomaps", version: releaseVersion }],
   };
   const sourcesBytes = serializeDeliveryJson(sources);
   await write(root, "outputs/sources.json", sourcesBytes);
   const deliverySources = [
     { id: "welt-basiskarte", kind: "basemap", sourceFile: "outputs/basemap.pmtiles", installPath: "basemap.pmtiles" },
-    { id: "deutschland-infrastruktur", kind: "infrastructure", sourceFile: "outputs/infra-deutschland-2026.2.pmtiles", installPath: "infra-deutschland-2026.2.pmtiles" },
+    { id: "deutschland-infrastruktur", kind: "infrastructure", sourceFile: `outputs/${releaseId}.pmtiles`, installPath: `${releaseId}.pmtiles` },
     { id: "public-read-model", kind: "read-model", sourceFile: "outputs/read-model.sqlite", installPath: "read-model.sqlite" },
     { id: "train-map-projection", kind: "train-map-projection", sourceFile: "outputs/train-map-projection.sqlite", installPath: "train-map-projection.sqlite" },
     { id: "style-dark", kind: "style", sourceFile: "outputs/style.json", installPath: "style.json" },
@@ -902,10 +914,10 @@ async function fixture() {
   deliveryArtifacts.sort((left, right) => left.id.localeCompare(right.id, "en"));
   const unsignedDelivery = {
     schema: "zugfolge-map-delivery-release/v1",
-    releaseId: RELEASE_ID,
+    releaseId,
     timetableYear: 2026,
     packageId: "zugfolge-map-deutschland",
-    packageVersion: "2026.2",
+    packageVersion: releaseVersion,
     scope: {},
     artifacts: deliveryArtifacts,
     bindings: {
@@ -927,10 +939,10 @@ async function fixture() {
 
   const inputDescriptors = [
     { id: "osm-pbf-deutschland", kind: "source-archive", version: "2026-08-12", file: cached[0][0], cacheFile: cached[0][1] },
-    { id: "map-source-capture", kind: "capture-manifest", version: "2026.2", file: cached[1][0], cacheFile: cached[1][1] },
-    { id: "germany-release-spec", kind: "specification", version: "2026.2", file: "tools/region-import/germany/release-2026.2.json" },
-    { id: "station-derived-input", kind: "derived-input", version: "2026.2", file: cached[2][0], cacheFile: cached[2][1] },
-    { id: "build-cache-inventory", kind: "build-cache-inventory", version: "2026.2", file: "cache/build-cache-inventory-2026.2.json" },
+    { id: "map-source-capture", kind: "capture-manifest", version: releaseVersion, file: cached[1][0], cacheFile: cached[1][1] },
+    { id: "germany-release-spec", kind: "specification", version: releaseVersion, file: `tools/region-import/germany/release-${releaseVersion}.json` },
+    { id: "station-derived-input", kind: "derived-input", version: releaseVersion, file: cached[2][0], cacheFile: cached[2][1] },
+    { id: "build-cache-inventory", kind: "build-cache-inventory", version: releaseVersion, file: `cache/build-cache-inventory-${releaseVersion}.json` },
   ];
   for (const descriptor of inputDescriptors) Object.assign(descriptor, await proof(root, descriptor.file), {
     expectedBytes: (await proof(root, descriptor.file)).bytes,
@@ -939,8 +951,8 @@ async function fixture() {
   const toolProof = await proof(root, cached[3][0]);
   const spec = {
     schema: "zugfolge-map-release-build-evidence-spec/v1",
-    releaseId: RELEASE_ID,
-    previousReleaseId: PREVIOUS_RELEASE_ID,
+    releaseId,
+    previousReleaseId,
     commits: { semanticExport: "1".repeat(40), mapBuild: "2".repeat(40) },
     inputs: inputDescriptors,
     tools: [
@@ -963,7 +975,7 @@ async function fixture() {
     ],
     outputs: [
       { id: "basemap", kind: "basemap-pmtiles", file: "outputs/basemap.pmtiles", installFile: "basemap.pmtiles" },
-      { id: "semantic-pmtiles", kind: "semantic-pmtiles", file: "outputs/infra-deutschland-2026.2.pmtiles", installFile: "infra-deutschland-2026.2.pmtiles" },
+      { id: "semantic-pmtiles", kind: "semantic-pmtiles", file: `outputs/${releaseId}.pmtiles`, installFile: `${releaseId}.pmtiles` },
       { id: "read-model", kind: "read-model", file: "outputs/read-model.sqlite", installFile: "read-model.sqlite" },
       { id: "train-map-projection", kind: "train-map-projection", file: "outputs/train-map-projection.sqlite", installFile: "train-map-projection.sqlite" },
       { id: "style", kind: "style", file: "outputs/style.json", installFile: "style.json" },
@@ -977,26 +989,30 @@ async function fixture() {
     },
     buildCache: {
       inventoryInputId: "build-cache-inventory",
-      objectKey: "map-build-cache/infra-deutschland-2026.2/cache.tar.zst.age",
+      objectKey: `map-build-cache/${releaseId}/cache.tar.zst.age`,
       backupRequired: true,
       encrypted: true,
       encryptionScheme: "age-x25519",
       restoreVerification: "empty-path-full-inventory",
     },
     deployment: {
-      candidateInstallPath: "releases/infra-deutschland-2026.2",
-      previousInstallPath: "releases/infra-deutschland-2026.1",
+      candidateInstallPath: `releases/${releaseId}`,
+      previousInstallPath: `releases/${previousReleaseId}`,
       activationPointer: "active/map-release.env",
-      rollbackAttestationPath: "attestations/infra-deutschland-2026.1.rollback.json",
+      rollbackAttestationPath: `attestations/${previousReleaseId}.rollback.json`,
       activationMode: "atomic-config-swap",
       retainPreviousForRollback: true,
     },
   };
-  const specFile = "tools/tiles/map-release-build-evidence.annual-2026.2.spec.json";
+  const specFile = `tools/tiles/map-release-build-evidence.annual-${releaseVersion}.spec.json`;
   const specBytes = Buffer.from(`${JSON.stringify(spec, null, 2)}\n`);
   await write(root, specFile, specBytes);
   return {
     root,
+    releaseId,
+    previousReleaseId,
+    releaseVersion,
+    previousReleaseVersion,
     spec,
     specBytes,
     specFile,
@@ -1015,9 +1031,10 @@ async function fixture() {
   };
 }
 
-async function fixtureV2() {
-  const value = await fixture();
-  const infrastructure = operationalInfrastructureV2();
+async function fixtureV2({ releaseId = V2_RELEASE_ID, previousReleaseId = V2_PREVIOUS_RELEASE_ID } = {}) {
+  const value = await fixture({ releaseId, previousReleaseId });
+  const { releaseVersion } = value;
+  const infrastructure = operationalInfrastructureV2(releaseId);
   const operationalFile = "outputs/operational-infrastructure-v2.json";
   await write(value.root, operationalFile, `${canonicalOperationalInfrastructureV2Json(infrastructure)}\n`);
   const operationalProof = await proof(value.root, operationalFile);
@@ -1031,7 +1048,7 @@ async function fixtureV2() {
     movementStateHash,
     transferSetSha256,
     dailyPlanSha256,
-  } = operationalSidecars(stateHash);
+  } = operationalSidecars(stateHash, releaseId);
   await write(value.root, movementFile, `${JSON.stringify(movement)}\n`);
   await write(value.root, transferFile, `${JSON.stringify(transfers)}\n`);
   const timetableRoutesFile = "inputs/timetable-routes-v2.jsonseq";
@@ -1047,21 +1064,21 @@ async function fixtureV2() {
     schema: "zugfolge-infra-release-artifacts/v2",
     artifacts: [
       {
-        id: "operational-infrastructure-2026.2",
+        id: `operational-infrastructure-${releaseVersion}`,
         kind: "operational-infrastructure-v2",
         file: "operational-infrastructure-v2.json",
-        infraReleaseId: RELEASE_ID,
+        infraReleaseId: releaseId,
         ...operationalProof,
         stateHash,
       },
       {
-        id: "operational-movement-routes-2026.2",
+        id: `operational-movement-routes-${releaseVersion}`,
         kind: "movement-route-templates-v2",
         file: "operational-infrastructure-v2.movement-route-templates-v2.json",
         ...movementProof,
       },
       {
-        id: "timetable-transfer-demands-2026.2",
+        id: `timetable-transfer-demands-${releaseVersion}`,
         kind: "timetable-transfer-demands-v2",
         file: "timetable-routes-v2.transfer-demands-v2.json",
         ...transferProof,
@@ -1071,7 +1088,7 @@ async function fixtureV2() {
   await write(value.root, artifactInventoryFile, `${JSON.stringify(artifactInventory, null, 2)}\n`);
   const artifactInventoryProof = await proof(value.root, artifactInventoryFile);
 
-  const cacheInventoryPath = "cache/build-cache-inventory-2026.2.json";
+  const cacheInventoryPath = `cache/build-cache-inventory-${releaseVersion}.json`;
   const cacheInventory = JSON.parse(await readFile(join(value.root, ...cacheInventoryPath.split("/")), "utf8"));
   cacheInventory.files.push(
     { path: artifactInventoryCacheFile, ...artifactInventoryProof },
@@ -1090,6 +1107,7 @@ async function fixtureV2() {
     timetableRoutesProof,
     transferSetSha256,
     dailyPlanSha256,
+    releaseId,
   );
   await write(value.root, qualityFile, `${JSON.stringify(qualityReport, null, 2)}\n`);
   const qualityProof = await proof(value.root, qualityFile);
@@ -1098,7 +1116,7 @@ async function fixtureV2() {
   const infraReleaseWrapperCacheFile = "cache/derived/infra-release.json";
   const infraRelease = {
     schema: "zugfolge-infra-release/v2",
-    releaseId: RELEASE_ID,
+    releaseId,
     timetableYear: 2026,
     artifacts: structuredClone(artifactInventory.artifacts),
     quality: {
@@ -1136,7 +1154,7 @@ async function fixtureV2() {
   const mapReleaseWrapperCacheFile = "cache/derived/map-release.json";
   const mapWrapper = releaseWrapper({
     schema: "zugfolge-map-release/v1",
-    releaseId: "map-2026.2",
+    releaseId: `map-${releaseVersion}`,
     assetInventoryPlanSha256: "9".repeat(64),
   });
   await write(value.root, mapReleaseWrapperFile, `${JSON.stringify(mapWrapper, null, 2)}\n`);
@@ -1153,21 +1171,21 @@ async function fixtureV2() {
     .filter(({ kind }) => kind !== "train-map-projection")
     .map((artifact) => artifact.kind === "quality-manifest" ? { ...artifact, ...qualityProof } : artifact);
   deliveryPayload.artifacts.push({
-    id: "operational-infrastructure-2026.2",
+    id: `operational-infrastructure-${releaseVersion}`,
     kind: "operational-infrastructure-v2",
     installPath: "operational-infrastructure-v2.json",
-    infraReleaseId: RELEASE_ID,
+    infraReleaseId: releaseId,
     stateHash,
     ...operationalProof,
   });
   deliveryPayload.artifacts.push({
-    id: "operational-movement-routes-2026.2",
+    id: `operational-movement-routes-${releaseVersion}`,
     kind: "movement-route-templates-v2",
     installPath: "operational-infrastructure-v2.movement-route-templates-v2.json",
     ...movementProof,
   });
   deliveryPayload.artifacts.push({
-    id: "timetable-transfer-demands-2026.2",
+    id: `timetable-transfer-demands-${releaseVersion}`,
     kind: "timetable-transfer-demands-v2",
     installPath: "timetable-routes-v2.transfer-demands-v2.json",
     ...transferProof,
@@ -1221,26 +1239,26 @@ async function fixtureV2() {
   await write(value.root, deliveryOutputFile, serializeDeliveryJson(signedDelivery));
   const deliveryOutputProof = await proof(value.root, deliveryOutputFile);
 
-  const basePlanFile = "tools/tiles/map-package.base-2026.2.plan.json";
+  const basePlanFile = `tools/tiles/map-package.base-${releaseVersion}.plan.json`;
   const signedPlanFile = "outputs/map-release-free-v2/signed-package-plan.json";
   const trustedKeysFile = "ops/keys/trusted-delivery-keys.json";
   const packageDescriptors = value.deliverySources.filter(({ kind }) => kind !== "train-map-projection");
   packageDescriptors.push({
-    id: "operational-infrastructure-2026.2",
+    id: `operational-infrastructure-${releaseVersion}`,
     kind: "operational-infrastructure-v2",
     sourceFile: operationalFile,
     installPath: "operational-infrastructure-v2.json",
     artifactInventory: artifactInventoryFile,
   });
   packageDescriptors.push({
-    id: "operational-movement-routes-2026.2",
+    id: `operational-movement-routes-${releaseVersion}`,
     kind: "movement-route-templates-v2",
     sourceFile: movementFile,
     installPath: "operational-infrastructure-v2.movement-route-templates-v2.json",
     artifactInventory: artifactInventoryFile,
   });
   packageDescriptors.push({
-    id: "timetable-transfer-demands-2026.2",
+    id: `timetable-transfer-demands-${releaseVersion}`,
     kind: "timetable-transfer-demands-v2",
     sourceFile: transferFile,
     installPath: "timetable-routes-v2.transfer-demands-v2.json",
@@ -1253,9 +1271,9 @@ async function fixtureV2() {
     partBytes: 104857600,
     runtime: {
       schema: "zugfolge-map-runtime/v2",
-      publicBasePath: `/artifacts/maps/${RELEASE_ID}`,
-      basemapStyleUrl: `/artifacts/maps/${RELEASE_ID}/style.json`,
-      infrastructurePmtilesUrl: `/artifacts/maps/${RELEASE_ID}/${RELEASE_ID}.pmtiles`,
+      publicBasePath: `/artifacts/maps/${releaseId}`,
+      basemapStyleUrl: `/artifacts/maps/${releaseId}/style.json`,
+      infrastructurePmtilesUrl: `/artifacts/maps/${releaseId}/${releaseId}.pmtiles`,
     },
     artifacts: packageDescriptors
       .filter(({ kind }) => ["basemap", "infrastructure"].includes(kind))
@@ -1319,19 +1337,19 @@ async function fixtureV2() {
   spec.inputs = spec.inputs.map(({ expectedBytes: ignoredBytes, expectedSha256: ignoredSha256, ...input }) => {
     void ignoredBytes;
     void ignoredSha256;
-    return input.kind === "specification" ? { ...input, version: RELEASE_ID } : input;
+    return input.kind === "specification" ? { ...input, version: releaseId } : input;
   });
   spec.inputs.push({
     id: "infra-release-artifact-inventory",
     kind: "derived-input",
-    version: "2026.2",
+    version: releaseVersion,
     file: artifactInventoryFile,
     cacheFile: artifactInventoryCacheFile,
   });
   spec.inputs.push({
     id: "timetable-routes-v2",
     kind: "derived-input",
-    version: RELEASE_ID,
+    version: releaseId,
     file: timetableRoutesFile,
     cacheFile: timetableRoutesCacheFile,
   });
@@ -1339,21 +1357,21 @@ async function fixtureV2() {
     {
       id: "infra-release-wrapper",
       kind: "derived-input",
-      version: "2026.2",
+      version: releaseVersion,
       file: infraReleaseWrapperFile,
       cacheFile: infraReleaseWrapperCacheFile,
     },
     {
       id: "map-release-wrapper",
       kind: "derived-input",
-      version: "2026.2",
+      version: releaseVersion,
       file: mapReleaseWrapperFile,
       cacheFile: mapReleaseWrapperCacheFile,
     },
     {
       id: "delivery-sources",
       kind: "derived-input",
-      version: "2026.2",
+      version: releaseVersion,
       file: deliverySourcesFile,
       cacheFile: deliverySourcesCacheFile,
     },
@@ -1361,7 +1379,7 @@ async function fixtureV2() {
   spec.inputs.push({
     id: "map-package-base-plan",
     kind: "specification",
-    version: RELEASE_ID,
+    version: releaseId,
     file: basePlanFile,
   });
   spec.outputs = spec.outputs.map((output) => {
@@ -1385,21 +1403,21 @@ async function fixtureV2() {
   await write(value.root, specFile, specBytes);
   const deliverySources = value.deliverySources.filter(({ kind }) => kind !== "train-map-projection");
   deliverySources.push({
-    id: "operational-infrastructure-2026.2",
+    id: `operational-infrastructure-${releaseVersion}`,
     kind: "operational-infrastructure-v2",
     sourceFile: operationalFile,
     installPath: "operational-infrastructure-v2.json",
-    infraReleaseId: RELEASE_ID,
+    infraReleaseId: releaseId,
     stateHash,
   });
   deliverySources.push({
-    id: "operational-movement-routes-2026.2",
+    id: `operational-movement-routes-${releaseVersion}`,
     kind: "movement-route-templates-v2",
     sourceFile: movementFile,
     installPath: "operational-infrastructure-v2.movement-route-templates-v2.json",
   });
   deliverySources.push({
-    id: "timetable-transfer-demands-2026.2",
+    id: `timetable-transfer-demands-${releaseVersion}`,
     kind: "timetable-transfer-demands-v2",
     sourceFile: transferFile,
     installPath: "timetable-routes-v2.transfer-demands-v2.json",
@@ -1445,52 +1463,6 @@ async function fixtureV2() {
   };
 }
 
-async function fixtureV3() {
-  const value = await fixtureV2();
-  const spec = structuredClone(value.spec);
-  spec.schema = "zugfolge-map-release-build-evidence-spec/v3";
-  spec.outputs.push(
-    {
-      id: "operational-movement-routes",
-      kind: "movement-route-templates-v2",
-      file: value.movementFile,
-      installFile: "operational-infrastructure-v2.movement-route-templates-v2.json",
-    },
-    {
-      id: "timetable-transfer-demands",
-      kind: "timetable-transfer-demands-v2",
-      file: value.transferFile,
-      installFile: "timetable-routes-v2.transfer-demands-v2.json",
-    },
-  );
-  const specFile = "tools/tiles/map-release-build-evidence.operational-sidecars-v3.spec.json";
-  const specBytes = Buffer.from(`${JSON.stringify(spec, null, 2)}\n`);
-  await write(value.root, specFile, specBytes);
-  return { ...value, spec, specFile, specBytes };
-}
-
-async function configureOperationalValidatorBuild(value, commit = "5".repeat(40)) {
-  const file = `tools/native/zugfolge-infra-release-${commit}.exe`;
-  const cacheFile = `cache/tools/zugfolge-infra-release/${commit}/zugfolge-infra-release.exe`;
-  await write(value.root, file, Buffer.from("pinned operational validator binary\n"));
-  const validatorProof = await proof(value.root, file);
-  value.inventory.files.push({ path: cacheFile, ...validatorProof });
-  value.inventory.files.sort((left, right) => left.path.localeCompare(right.path, "en"));
-  await write(value.root, value.cacheInventoryPath, `${JSON.stringify(value.inventory, null, 2)}\n`);
-  value.spec.tools.push({
-    id: "operational-v2-validator",
-    kind: "binary",
-    version: "operational-validator-build-commit",
-    file,
-    cacheFile,
-    expectedBytes: validatorProof.bytes,
-    expectedSha256: validatorProof.sha256,
-  });
-  value.commits = { ...value.commits, operationalValidatorBuild: commit };
-  await rewriteEvidenceSpec(value);
-  return { commit, file, cacheFile, validatorProof };
-}
-
 async function materialized(value) {
   return materializeMapReleaseBuildEvidence({
     spec: value.spec,
@@ -1504,6 +1476,261 @@ async function materialized(value) {
   });
 }
 
+async function currentAnnualOperationalAuthorityFixture() {
+  const root = await mkdtemp(join(tmpdir(), "zugfolge-operational-authority-"));
+  const releaseId = "infra-deutschland-2026.5";
+  const mapBuildCommit = "4".repeat(40);
+  const completionSuffix = ".zugfolge-complete.json";
+  const completionSchema = "zugfolge-germany-annual-create-new-artifact-completion/v1";
+  const customPredicateType = "https://zugfolge.de/attestations/operational-v2-execution-authority/v1";
+  const paths = {
+    config: "tools/region-import/germany/release.annual-2026.5.config.json",
+    sourceCatalog: "tools/region-import/germany/source-catalog.json",
+    rights: "tools/guards/quellenregister.json",
+    context: "var/derived/germany-2026.5/toolchain/operational-launch-context.json",
+    plan: "var/derived/germany-2026.5/toolchain/zugfolge-infra-release-annual-plan.json",
+    start: "var/derived/germany-2026.5/toolchain/zugfolge-infra-release-annual-executor-start-evidence.json",
+    outer: "var/derived/germany-2026.5/operational-infrastructure-v2.outer-execution-receipt.json",
+    rebuildBundle: "var/derived/germany-2026.5/toolchain/zugfolge-infra-release-rebuild-attestation.sigstore.json",
+    executionBundle: "var/derived/germany-2026.5/toolchain/zugfolge-operational-v2-execution-authority.sigstore.json",
+    verifier: "var/derived/germany-2026.5/toolchain/gh-2.94.0-windows-amd64.exe",
+    trustedRoot: "var/derived/germany-2026.5/toolchain/github-attestation-trusted-root.jsonl",
+    executionPins: "tools/region-import/germany/operational-infrastructure-v2-execution-pins.annual-2026.5.json",
+    specification: "tools/region-import/germany/operational-infrastructure.annual-2026.5.json",
+    candidate: "var/derived/germany-2026.5/operational-infrastructure-v2.candidate.json",
+    candidateSidecar: "var/derived/germany-2026.5/operational-infrastructure-v2.candidate.movement-route-templates-v2.json",
+    report: "var/derived/germany-2026.5/operational-infrastructure-v2.derivation-report.json",
+    nativeReceipt: "var/derived/germany-2026.5/operational-infrastructure-v2.native-receipt.json",
+    published: "var/derived/germany-2026.5/operational-infrastructure-v2.json",
+    publicationReceipt: "var/derived/germany-2026.5/operational-infrastructure-v2.publication-receipt.json",
+  };
+  const operationalBindings = {
+    candidatePath: paths.candidate,
+    candidateSidecarPath: paths.candidateSidecar,
+    executionPinsPath: paths.executionPins,
+    nativeReceiptPath: paths.nativeReceipt,
+    outerExecutionReceiptPath: paths.outer,
+    publicationReceiptPath: paths.publicationReceipt,
+    publishedOutputPath: paths.published,
+    reportPath: paths.report,
+    schema: "zugfolge-operational-v2-annual-plan-bindings/v1",
+    sourceRoot: ".",
+    specificationPath: paths.specification,
+  };
+  const releaseConfig = {
+    pipeline: {
+      operationalDeriver: {
+        candidate: paths.candidate,
+        candidateMovementRouteTemplates: paths.candidateSidecar,
+        executionPins: paths.executionPins,
+        output: paths.published,
+        report: paths.report,
+        sourceRoot: ".",
+        specification: paths.specification,
+        recoveryPublisher: {
+          nativeReceipt: paths.nativeReceipt,
+          outerExecutionReceipt: paths.outer,
+          publicationReceipt: paths.publicationReceipt,
+        },
+      },
+    },
+  };
+  const context = {
+    candidatePath: paths.candidate,
+    candidateSidecarPath: paths.candidateSidecar,
+    executionPinsPath: paths.executionPins,
+    nativeReceiptPath: paths.nativeReceipt,
+    reportPath: paths.report,
+    runtimePath: "C:\\nodejs\\node.exe",
+    schema: "zugfolge-operational-v2-direct-system-launch-context/v1",
+    sourceRoot: ".",
+    specificationPath: paths.specification,
+  };
+  const plan = {
+    releaseId,
+    schema: "zugfolge-annual-infra-plan/v1",
+    stages: [{ id: "operational-v2-derivation", operationalBindings }],
+  };
+  const putJson = async (file, value) => {
+    await write(root, file, serializeMapReleaseBuildEvidence(value));
+    return { file, ...(await proof(root, file)) };
+  };
+  const putBytes = async (file, value) => {
+    await write(root, file, Buffer.from(value));
+    return { file, ...(await proof(root, file)) };
+  };
+  const configProof = await putJson(paths.config, releaseConfig);
+  const sourceProof = await putJson(paths.sourceCatalog, { schema: "fixture-source-catalog/v1" });
+  const rightsProof = await putJson(paths.rights, { schema: "fixture-rights/v1" });
+  const contextProof = await putJson(paths.context, context);
+  const planProof = await putJson(paths.plan, plan);
+  const startProof = await putJson(paths.start, { releaseId, schema: "zugfolge-operational-validator-annual-executor-start-evidence/v1" });
+  const outerProof = await putJson(paths.outer, { releaseId, schema: "fixture-outer/v1" });
+  const completion = async (artifact) => putJson(`${artifact.file}${completionSuffix}`, {
+    artifact,
+    schema: completionSchema,
+  });
+  const planCompletionProof = await completion(planProof);
+  const startCompletionProof = await completion(startProof);
+  const outerCompletionProof = await completion(outerProof);
+  const rebuildBundleProof = await putJson(paths.rebuildBundle, { bundle: "fixture-rebuild" });
+  const executionBundleProof = await putJson(paths.executionBundle, { bundle: "fixture-execution" });
+  const verifierProof = await putBytes(paths.verifier, "fixture-held-gh-verifier");
+  const trustedRootProof = await putBytes(paths.trustedRoot, "fixture-held-github-trusted-root");
+  const rebuildSubjectProofs = [];
+  for (const [file, value] of [
+    ["var/derived/germany-2026.5/toolchain/rebuilt.exe", "rebuilt"],
+    ["var/derived/germany-2026.5/toolchain/rebuild-provenance.json", "provenance"],
+    ["var/derived/germany-2026.5/toolchain/rebuild-evidence.json", "evidence"],
+    ["var/derived/germany-2026.5/toolchain/preserved.exe", "preserved"],
+    ["tools/region-import/germany/operational-infrastructure-v2-direct-system-launch.annual-2026.5.json", "contract"],
+  ]) rebuildSubjectProofs.push(await putBytes(file, value));
+  const rebuildSubjects = [
+    ...rebuildSubjectProofs.map(({ file }) => file),
+    paths.plan,
+    `${paths.plan}${completionSuffix}`,
+    paths.start,
+    `${paths.start}${completionSuffix}`,
+  ];
+  const rebuildSpec = {
+    authority: {
+      annualExecutorPlan: { planFile: paths.plan, startEvidenceFile: paths.start },
+      attestation: {
+        bundleFile: paths.rebuildBundle,
+        predicateType: "https://slsa.dev/provenance/v1",
+        subjects: rebuildSubjects,
+        verification: {
+          command: "gh attestation verify",
+          denySelfHostedRunners: true,
+          signerWorkflow: "larynxberlin-rgb/Zugfolge/.github/workflows/operational-validator-rebuild-evidence.yml",
+        },
+      },
+      repository: "larynxberlin-rgb/Zugfolge",
+      requiredRef: "refs/heads/main",
+    },
+  };
+  const input = (id, kind, value) => ({ id, kind, version: releaseId, ...value });
+  const inputs = [
+    input("germany-release-spec", "specification", configProof),
+    input("germany-source-catalog", "repo-contract", sourceProof),
+    input("rights-registry", "repo-contract", rightsProof),
+    input("operational-outer-execution-receipt", "derived-input", outerProof),
+    input("operational-outer-execution-receipt-completion", "derived-input", outerCompletionProof),
+    input("operational-annual-plan", "derived-input", planProof),
+    input("operational-annual-plan-completion", "derived-input", planCompletionProof),
+    input("operational-annual-executor-start-evidence", "derived-input", startProof),
+    input("operational-annual-executor-start-evidence-completion", "derived-input", startCompletionProof),
+    input("operational-validator-rebuild-attestation", "derived-input", rebuildBundleProof),
+    input("operational-execution-authority-attestation", "derived-input", executionBundleProof),
+    input("operational-attestation-verifier", "derived-input", verifierProof),
+    input("operational-attestation-trusted-root", "derived-input", trustedRootProof),
+  ];
+  const outerExecution = {
+    proof: outerProof,
+    receipt: {
+      attestedPlan: planProof,
+      attestedPlanStartEvidence: startProof,
+      executionPins: { file: paths.executionPins },
+      inputs: [configProof, sourceProof, rightsProof, contextProof, planProof, startProof],
+      outputs: {
+        candidate: { file: paths.candidate },
+        movementRouteTemplates: { file: paths.candidateSidecar },
+        nativeReceipt: { file: paths.nativeReceipt },
+        report: { file: paths.report },
+      },
+    },
+  };
+  const predicate = {
+    executionJob: {
+      mode: "windows-kill-on-job-close-root-exit-bounded-io-v1",
+      timeoutMilliseconds: 21_600_000,
+    },
+    origin: "local-held-runner",
+    outerExecutionCompletion: outerCompletionProof,
+    outerExecutionReceipt: outerProof,
+    planAuthority: {
+      artifact: { digest: `sha256:${"a".repeat(64)}`, id: 12_345, workflowRunId: 67_890 },
+      bundle: rebuildBundleProof,
+      plan: planProof,
+      planCompletion: planCompletionProof,
+      startEvidence: startProof,
+      startEvidenceCompletion: startCompletionProof,
+    },
+    protectedEnvironment: "operational-release-approval",
+    releaseId,
+    requiredPhases: [
+      "materialize-annual-plan-evidence-v1",
+      "execute-annual-operational-v2-v1",
+      "derive-and-capture-v1",
+    ],
+    schema: "zugfolge-operational-v2-execution-authority/v1",
+    source: { commit: mapBuildCommit, ref: "refs/heads/main", repository: "larynxberlin-rgb/Zugfolge" },
+    verificationScope: "operator-approved-hash-binding-not-source-reexecution-v1",
+  };
+  const calls = [];
+  const verifier = async (request) => {
+    calls.push(request);
+    const bytes = await readFile(request.subjectPath);
+    return [{
+      verificationResult: {
+        statement: {
+          predicate: request.predicateType === customPredicateType ? predicate : { buildType: "fixture" },
+          predicateType: request.predicateType,
+          subject: [{ digest: { sha256: sha256(bytes) }, name: request.expectedSubjectName }],
+        },
+      },
+    }];
+  };
+  return {
+    root,
+    releaseId,
+    mapBuildCommit,
+    inputs,
+    releaseConfig,
+    rebuildSpec,
+    outerExecution,
+    predicate,
+    verifier,
+    verifierProof,
+    trustedRootProof,
+    calls,
+    paths,
+  };
+}
+
+async function firstClassOperationalSidecarFixture(value) {
+  const evidence = await materialized(value);
+  const movement = JSON.parse(await readFile(join(value.root, ...value.movementFile.split("/")), "utf8"));
+  const transfers = JSON.parse(await readFile(join(value.root, ...value.transferFile.split("/")), "utf8"));
+  return {
+    inputs: evidence.inputs,
+    outputs: [
+      evidence.outputs.find(({ kind }) => kind === "operational-infrastructure-v2"),
+      {
+        id: "operational-movement-routes",
+        kind: "movement-route-templates-v2",
+        file: value.movementFile,
+        installFile: "operational-infrastructure-v2.movement-route-templates-v2.json",
+        ...(await proof(value.root, value.movementFile)),
+        infraReleaseId: movement.infraReleaseId,
+        operationalStateHash: movement.operationalStateHash,
+        timetableTransferSetSha256: movement.timetableTransferSetSha256,
+        stateHash: movement.stateHash,
+      },
+      {
+        id: "timetable-transfer-demands",
+        kind: "timetable-transfer-demands-v2",
+        file: value.transferFile,
+        installFile: "timetable-routes-v2.transfer-demands-v2.json",
+        ...(await proof(value.root, value.transferFile)),
+        infraReleaseId: transfers.infraReleaseId,
+        dailyPlanSha256: transfers.dailyPlan.planSha256,
+        transferSetSha256: transfers.transferSetSha256,
+      },
+    ],
+  };
+}
+
 async function rewriteEvidenceSpec(value) {
   value.specBytes = Buffer.from(`${JSON.stringify(value.spec, null, 2)}\n`);
   await write(value.root, value.specFile, value.specBytes);
@@ -1513,9 +1740,9 @@ async function configureReusableOfficialSpecification(value) {
   const descriptor = value.spec.inputs.find(({ id }) => id === "germany-release-spec");
   await write(value.root, descriptor.file, `${JSON.stringify({
     schema: "zugfolge-official-operating-points/v1",
-    releaseId: PREVIOUS_RELEASE_ID,
-    sourceFile: "var/derived/germany-2026.1/infrago-adapter/operating-points.jsonseq",
-    outputDirectory: "var/derived/germany-2026.1/operating-points-open-data-v1",
+    releaseId: value.previousReleaseId,
+    sourceFile: `var/derived/germany-${value.previousReleaseVersion}/infrago-adapter/operating-points.jsonseq`,
+    outputDirectory: `var/derived/germany-${value.previousReleaseVersion}/operating-points-open-data-v1`,
   })}\n`);
   const outputs = [
     ["official-operating-points-report.json", Buffer.from("reused report bytes\n")],
@@ -1523,19 +1750,19 @@ async function configureReusableOfficialSpecification(value) {
   ];
   const artifacts = [];
   for (const [file, bytes] of outputs) {
-    const sourceFile = `var/derived/germany-2026.1/operating-points-open-data-v1/${file}`;
-    const targetFile = `var/derived/germany-2026.2/operating-points-open-data-v1/${file}`;
+    const sourceFile = `var/derived/germany-${value.previousReleaseVersion}/operating-points-open-data-v1/${file}`;
+    const targetFile = `var/derived/germany-${value.releaseVersion}/operating-points-open-data-v1/${file}`;
     await write(value.root, sourceFile, bytes);
     await write(value.root, targetFile, Buffer.from(bytes));
     artifacts.push({ sourceFile, targetFile, ...(await proof(value.root, sourceFile)) });
   }
   const specificationProof = await proof(value.root, descriptor.file);
   Object.assign(descriptor, {
-    version: PREVIOUS_RELEASE_ID,
+    version: value.previousReleaseId,
     reuse: {
       mode: "byte-identical-cross-release",
-      sourceReleaseId: PREVIOUS_RELEASE_ID,
-      targetReleaseId: RELEASE_ID,
+      sourceReleaseId: value.previousReleaseId,
+      targetReleaseId: value.releaseId,
       artifacts,
     },
     expectedBytes: specificationProof.bytes,
@@ -1557,8 +1784,8 @@ function resignDelivery(value, delivery) {
   return signMapDeliveryRelease(unsigned, value.privateKey.export({ type: "pkcs8", format: "pem" }), value.deliveryKeyId);
 }
 
-async function writeLargeCanonicalOperationalInfrastructure(path) {
-  const canonical = canonicalOperationalInfrastructureV2Json(operationalInfrastructureV2());
+async function writeLargeCanonicalOperationalInfrastructure(path, releaseId = RELEASE_ID) {
+  const canonical = canonicalOperationalInfrastructureV2Json(operationalInfrastructureV2(releaseId));
   const marker = '"regionBoundaries":["region:deutschland-ebo"]';
   const markerOffset = canonical.indexOf(marker);
   assert.notEqual(markerOffset, -1);
@@ -1691,7 +1918,8 @@ function manifestEntry(descriptor, observed) {
 
 async function installPackageFixture(value, deploymentRoot, releaseId) {
   const installRoot = join(deploymentRoot, "releases", releaseId);
-  const candidate = releaseId === RELEASE_ID;
+  const candidate = releaseId === value.releaseId;
+  const packageVersion = releaseId.replace("infra-deutschland-", "");
   const sourceDescriptors = !candidate && value.legacyDeliverySources !== undefined
     ? value.legacyDeliverySources
     : value.deliverySources;
@@ -1744,7 +1972,7 @@ async function installPackageFixture(value, deploymentRoot, releaseId) {
       releaseId,
       timetableYear: 2026,
       packageId: "zugfolge-map-deutschland",
-      packageVersion: "2026.1",
+      packageVersion,
       scope: {},
       artifacts,
       bindings: {
@@ -1769,15 +1997,15 @@ async function installPackageFixture(value, deploymentRoot, releaseId) {
     direct.push(manifestEntry(descriptor, await proof(installRoot, descriptor.installPath)));
   }
   const manifest = {
-    schema: candidate && value.spec.schema === "zugfolge-map-release-build-evidence-spec/v2"
+    schema: candidate && value.spec.schema !== "zugfolge-map-release-build-evidence-spec/v1"
       ? "zugfolge-map-package/v2"
       : "zugfolge-map-package/v1",
     packageId: "zugfolge-map-deutschland",
-    version: releaseId.endsWith(".2") ? "2026.2" : "2026.1",
+    version: packageVersion,
     format: "directory-parts",
     partBytes: 100 * 1024 * 1024,
     runtime: {
-      schema: candidate && value.spec.schema === "zugfolge-map-release-build-evidence-spec/v2"
+      schema: candidate && value.spec.schema !== "zugfolge-map-release-build-evidence-spec/v1"
         ? "zugfolge-map-runtime/v2"
         : "zugfolge-map-runtime/v1",
       publicBasePath: `/artifacts/maps/${releaseId}`,
@@ -1791,8 +2019,8 @@ async function installPackageFixture(value, deploymentRoot, releaseId) {
   return { installRoot, manifest };
 }
 
-async function writeActivationPointer(value, deploymentRoot, releaseId = PREVIOUS_RELEASE_ID) {
-  const installPath = releaseId === PREVIOUS_RELEASE_ID
+async function writeActivationPointer(value, deploymentRoot, releaseId = value.previousReleaseId) {
+  const installPath = releaseId === value.previousReleaseId
     ? value.spec.deployment.previousInstallPath
     : value.spec.deployment.candidateInstallPath;
   return write(deploymentRoot, value.spec.deployment.activationPointer, [
@@ -1822,6 +2050,55 @@ test("bindet vollständige Inputs, Werkzeuge, Commits, Ausgaben und die reale BO
   }
 });
 
+test("bindet jedes Build-Evidence-Schema an seine explizit zugelassenen Jahresreleases", async () => {
+  const legacy = await fixture();
+  const operational = await fixtureV2();
+  try {
+    assert.doesNotThrow(() => validateMapReleaseBuildEvidenceSpec(legacy.spec));
+    assert.doesNotThrow(() => validateMapReleaseBuildEvidenceSpec(operational.spec));
+
+    const upgradedLegacy = structuredClone(legacy.spec);
+    upgradedLegacy.schema = "zugfolge-map-release-build-evidence-spec/v2";
+    assert.throws(
+      () => validateMapReleaseBuildEvidenceSpec(upgradedLegacy),
+      /Build-Evidence-v2 ist nicht fuer den Release infra-deutschland-2026\.2 zugelassen/u,
+    );
+
+    const downgradedOperational = structuredClone(operational.spec);
+    downgradedOperational.schema = "zugfolge-map-release-build-evidence-spec/v1";
+    assert.throws(
+      () => validateMapReleaseBuildEvidenceSpec(downgradedOperational),
+      /Build-Evidence-v1 ist nicht fuer den Release infra-deutschland-2026\.3 zugelassen/u,
+    );
+
+    for (const [releaseId, previousReleaseId] of [
+      ["infra-deutschland-2026.6", "infra-deutschland-2026.5"],
+      ["infra-deutschland-2027.2", "infra-deutschland-2027.1"],
+      ["infra-deutschland-2026.05", "infra-deutschland-2026.4"],
+    ]) {
+      const future = structuredClone(operational.spec);
+      future.releaseId = releaseId;
+      future.previousReleaseId = previousReleaseId;
+      assert.throws(
+        () => validateMapReleaseBuildEvidenceSpec(future),
+        /nicht fuer den Release|Jahres-Patchrelease/u,
+      );
+    }
+
+    const futureV3 = structuredClone(operational.spec);
+    futureV3.schema = "zugfolge-map-release-build-evidence-spec/v3";
+    futureV3.releaseId = "infra-deutschland-2026.6";
+    futureV3.previousReleaseId = "infra-deutschland-2026.5";
+    assert.throws(
+      () => validateMapReleaseBuildEvidenceSpec(futureV3),
+      /Build-Evidence-v3 ist nicht fuer den Release infra-deutschland-2026\.6 zugelassen/u,
+    );
+  } finally {
+    await rm(legacy.root, { recursive: true, force: true });
+    await rm(operational.root, { recursive: true, force: true });
+  }
+});
+
 test("bindet Operational-v2 statt Train-Projektion mit Laufzeit-Commits und typisiertem Artefaktinventar", async () => {
   const value = await fixtureV2();
   try {
@@ -1831,10 +2108,10 @@ test("bindet Operational-v2 statt Train-Projektion mit Laufzeit-Commits und typi
     assert.equal(evidence.outputs.some(({ kind }) => kind === "train-map-projection"), false);
     const operational = evidence.outputs.find(({ kind }) => kind === "operational-infrastructure-v2");
     assert.equal(operational.installFile, "operational-infrastructure-v2.json");
-    assert.equal(operational.infraReleaseId, RELEASE_ID);
+    assert.equal(operational.infraReleaseId, value.releaseId);
     assert.equal(operational.stateHash, value.stateHash);
     assert.notEqual(operational.stateHash, operational.sha256);
-    assert.equal(evidence.candidatePackage.packageVersion, "2026.2");
+    assert.equal(evidence.candidatePackage.packageVersion, value.releaseVersion);
     assert.equal(evidence.candidatePackage.planFile, value.signedPlanFile);
     assert.equal(evidence.candidatePackage.releaseManifestFile, value.deliveryOutputFile);
     assert.equal(evidence.candidatePackage.signatureKeyId, value.deliveryKeyId);
@@ -1864,153 +2141,538 @@ test("bindet Operational-v2 statt Train-Projektion mit Laufzeit-Commits und typi
   }
 });
 
-test("Evidence-v3 bindet Transfer-Demands und Movement-Route-Templates als verpflichtende installierbare Ausgaben", async () => {
-  const value = await fixtureV3();
-  try {
-    const evidence = await materialized(value);
-    assert.equal(evidence.schema, "zugfolge-map-release-build-evidence/v3");
-    assert.equal(evidence.outputs.length, 9);
-    const operational = evidence.outputs.find(({ kind }) => kind === "operational-infrastructure-v2");
-    const movement = evidence.outputs.find(({ kind }) => kind === "movement-route-templates-v2");
-    const transfers = evidence.outputs.find(({ kind }) => kind === "timetable-transfer-demands-v2");
-    assert.equal(movement.installFile, "operational-infrastructure-v2.movement-route-templates-v2.json");
-    assert.equal(transfers.installFile, "timetable-routes-v2.transfer-demands-v2.json");
-    assert.equal(movement.operationalStateHash, operational.stateHash);
-    assert.equal(movement.timetableTransferSetSha256, transfers.transferSetSha256);
-    assert.deepEqual(
-      evidence.deliveryInventory.find(({ kind }) => kind === "movement-route-templates-v2"),
-      {
-        id: "operational-movement-routes-2026.2",
-        kind: "movement-route-templates-v2",
-        installPath: movement.installFile,
-        bytes: movement.bytes,
-        sha256: movement.sha256,
-      },
-    );
-    assert.equal((await verifyMapReleaseBuildEvidence(evidence, value.root)).outputs, 9);
-  } finally {
-    await rm(value.root, { recursive: true, force: true });
-  }
-});
+test("Evidence-v3 ist ausschließlich an den echten aktuellen .5-Jahresvertrag gebunden", async () => {
+  const annual = JSON.parse(await readFile(new URL("./map-release-build-evidence.annual-2026.5.spec.json", import.meta.url), "utf8"));
+  assert.doesNotThrow(() => validateMapReleaseBuildEvidenceSpec(annual));
 
-test("Evidence-v3 materialisiert den effektiven Validator mit seinem getrennten Build-Commit", async () => {
-  const value = await fixtureV3();
+  const generic = await fixtureV2();
   try {
-    const validator = await configureOperationalValidatorBuild(value);
-    const evidence = await materialized(value);
-    assert.equal(evidence.schema, "zugfolge-map-release-build-evidence/v3");
-    assert.equal(evidence.commits.operationalValidatorBuild, validator.commit);
-    assert.deepEqual(
-      evidence.tools.find(({ id }) => id === "operational-v2-validator"),
-      {
-        id: "operational-v2-validator",
-        kind: "binary",
-        version: validator.commit,
-        file: validator.file,
-        cacheFile: validator.cacheFile,
-        bytes: validator.validatorProof.bytes,
-        sha256: validator.validatorProof.sha256,
-      },
-    );
-    assert.equal((await verifyMapReleaseBuildEvidence(evidence, value.root)).tools, evidence.tools.length);
-  } finally {
-    await rm(value.root, { recursive: true, force: true });
-  }
-});
-
-test("Evidence-v3 verweigert fehlende Sidecars, semantische Entkopplung und nachträgliche Byteänderungen", async () => {
-  const missingValue = await fixtureV3();
-  try {
-    missingValue.spec.outputs = missingValue.spec.outputs.filter(({ kind }) => kind !== "timetable-transfer-demands-v2");
-    await rewriteEvidenceSpec(missingValue);
-    await assert.rejects(materialized(missingValue), /exakt 9 aktivierungsrelevante Ausgaben/u);
-  } finally {
-    await rm(missingValue.root, { recursive: true, force: true });
-  }
-
-  const forgedMovementValue = await fixtureV3();
-  try {
-    const path = join(forgedMovementValue.root, ...forgedMovementValue.movementFile.split("/"));
-    const forged = JSON.parse(await readFile(path, "utf8"));
-    forged.unvalidatedAlias = true;
-    await writeFile(path, `${JSON.stringify(forged)}\n`);
-    await assert.rejects(
-      materialized(forgedMovementValue),
-      /Movement-Route-Templates-v2 besitzt fehlende oder unbekannte Felder/u,
-    );
-  } finally {
-    await rm(forgedMovementValue.root, { recursive: true, force: true });
-  }
-
-  const forgedTransferValue = await fixtureV3();
-  try {
-    const path = join(forgedTransferValue.root, ...forgedTransferValue.transferFile.split("/"));
-    const forged = JSON.parse(await readFile(path, "utf8"));
-    forged.dailyPlan.planSha256 = "f".repeat(64);
-    await writeFile(path, `${JSON.stringify(forged)}\n`);
-    await assert.rejects(
-      materialized(forgedTransferValue),
-      /dailyPlan\.planSha256 ist nicht reproduzierbar/u,
-    );
-  } finally {
-    await rm(forgedTransferValue.root, { recursive: true, force: true });
-  }
-
-  const legacyTransferValue = await fixtureV3();
-  try {
-    const path = join(legacyTransferValue.root, ...legacyTransferValue.transferFile.split("/"));
-    const legacy = JSON.parse(await readFile(path, "utf8"));
-    legacy.schema = "zugfolge-timetable-transfer-demands/v1";
-    await writeFile(path, `${JSON.stringify(legacy)}\n`);
-    await assert.rejects(
-      materialized(legacyTransferValue),
-      /Timetable-Transfer-Demands verletzt Schema/u,
-    );
-  } finally {
-    await rm(legacyTransferValue.root, { recursive: true, force: true });
-  }
-
-  const detachedRoutesValue = await fixtureV3();
-  try {
-    const timetableRoutesPath = join(detachedRoutesValue.root, ...detachedRoutesValue.timetableRoutesFile.split("/"));
-    const firstRoute = (await readFile(timetableRoutesPath, "utf8")).trim().split("\n")[0];
-    await writeFile(timetableRoutesPath, `${firstRoute}\n`);
-    const changedProof = await proof(detachedRoutesValue.root, detachedRoutesValue.timetableRoutesFile);
-    const inventoryPath = join(detachedRoutesValue.root, ...detachedRoutesValue.cacheInventoryPath.split("/"));
-    const inventory = JSON.parse(await readFile(inventoryPath, "utf8"));
-    const cached = inventory.files.find(({ path }) => path === detachedRoutesValue.timetableRoutesCacheFile);
-    Object.assign(cached, changedProof);
-    await writeFile(inventoryPath, `${JSON.stringify(inventory, null, 2)}\n`);
-    await assert.rejects(
-      materialized(detachedRoutesValue),
-      /existierenden Quell- und Ziel-Passagierfahrwege/u,
-    );
-  } finally {
-    await rm(detachedRoutesValue.root, { recursive: true, force: true });
-  }
-
-  const detachedValue = await fixtureV3();
-  try {
-    const evidence = await materialized(detachedValue);
-    evidence.outputs.find(({ kind }) => kind === "movement-route-templates-v2").timetableTransferSetSha256 = "f".repeat(64);
+    generic.spec.schema = "zugfolge-map-release-build-evidence-spec/v3";
     assert.throws(
-      () => validateMapReleaseBuildEvidence(evidence),
+      () => validateMapReleaseBuildEvidenceSpec(generic.spec),
+      /Build-Evidence-v3 ist nicht fuer den Release infra-deutschland-2026\.3 zugelassen/u,
+    );
+  } finally {
+    await rm(generic.root, { recursive: true, force: true });
+  }
+});
+
+test("der echte .5-Jahresvertrag pinnt den effektiven Validator und Rebuild getrennt und unveränderlich", async () => {
+  const annual = JSON.parse(await readFile(new URL("./map-release-build-evidence.annual-2026.5.spec.json", import.meta.url), "utf8"));
+  const validator = annual.tools.find(({ id }) => id === "operational-v2-validator");
+  const rebuild = annual.tools.find(({ id }) => id === "operational-v2-validator-rebuild");
+  assert.equal(validator.version, "operational-validator-build-commit");
+  assert.equal(validator.expectedBytes, 8_382_277);
+  assert.match(validator.expectedSha256, /^[a-f0-9]{64}$/u);
+  assert.equal(rebuild.version, "operational-validator-rebuild-proof");
+  assert.notEqual(rebuild.file, validator.file);
+
+  const drifted = structuredClone(annual);
+  drifted.tools.find(({ id }) => id === "operational-v2-validator").expectedSha256 = "f".repeat(64);
+  assert.throws(() => validateMapReleaseBuildEvidenceSpec(drifted), /Validator-Binary/u);
+});
+
+test("aktuelle Operational-Authority verifiziert zwei Sigstore-Bundles, alle Rebuild-Subjects und das kausale Outer-Predicate", async () => {
+  const value = await currentAnnualOperationalAuthorityFixture();
+  try {
+    const authority = await materializeCurrentAnnualOperationalAuthority({
+      artifactRoot: value.root,
+      inputs: value.inputs,
+      releaseConfig: value.releaseConfig,
+      rebuildSpec: value.rebuildSpec,
+      outerExecution: value.outerExecution,
+      releaseId: value.releaseId,
+      mapBuildCommit: value.mapBuildCommit,
+      attestationVerifier: value.verifier,
+    });
+    assert.equal(authority.schema, "zugfolge-map-build-operational-authority/v1");
+    assert.equal(authority.rebuild.subjects.length, value.rebuildSpec.authority.attestation.subjects.length);
+    assert.equal(authority.execution.subjects.length, 2);
+    assert.deepEqual(authority.execution.predicate, value.predicate);
+    assert.match(authority.execution.predicateSha256, /^[a-f0-9]{64}$/u);
+    assert.deepEqual(authority.verifier, {
+      bytes: value.verifierProof.bytes,
+      file: value.paths.verifier,
+      id: "operational-attestation-verifier",
+      kind: "derived-input",
+      sha256: value.verifierProof.sha256,
+      version: value.releaseId,
+    });
+    assert.deepEqual(authority.trustedRoot, {
+      bytes: value.trustedRootProof.bytes,
+      file: value.paths.trustedRoot,
+      id: "operational-attestation-trusted-root",
+      kind: "derived-input",
+      sha256: value.trustedRootProof.sha256,
+      version: value.releaseId,
+    });
+    const callsPerVerification = value.rebuildSpec.authority.attestation.subjects.length + 2;
+    assert.equal(value.calls.length, callsPerVerification);
+    for (const call of value.calls) {
+      assert.equal(call.repository, "larynxberlin-rgb/Zugfolge");
+      assert.equal(call.sourceRef, "refs/heads/main");
+      assert.equal(call.sourceDigest, value.mapBuildCommit);
+      assert.equal(call.denySelfHostedRunners, true);
+      assert.equal(call.verifierProof.sha256, value.verifierProof.sha256);
+      assert.equal(call.verifierPath, join(value.root, ...value.paths.verifier.split("/")));
+      assert.equal(call.trustedRootProof.sha256, value.trustedRootProof.sha256);
+      assert.equal(call.trustedRootPath, join(value.root, ...value.paths.trustedRoot.split("/")));
+      assert.equal(call.expectedSubjectName, call.predicateType.includes("operational-v2-execution-authority")
+        ? call.subjectPath.slice(value.root.length + 1).replaceAll("\\", "/")
+        : call.subjectPath.split(/[\\/]/u).at(-1));
+      assert.match(call.signerWorkflow, /larynxberlin-rgb\/Zugfolge\/\.github\/workflows\/(?:operational-validator-rebuild-evidence|operational-v2-execution-authority)\.yml/u);
+    }
+    assert.doesNotThrow(() => validateCurrentAnnualOperationalAuthority(authority, value.inputs, value.mapBuildCommit));
+    await assert.doesNotReject(verifyCurrentAnnualOperationalAuthorityLocal({
+      artifactRoot: value.root,
+      inputs: value.inputs,
+      releaseConfig: value.releaseConfig,
+      rebuildSpec: value.rebuildSpec,
+      outerExecution: value.outerExecution,
+      releaseId: value.releaseId,
+      mapBuildCommit: value.mapBuildCommit,
+      authority,
+      attestationVerifier: value.verifier,
+    }));
+    assert.equal(value.calls.length, callsPerVerification * 2,
+      "lokale Authority-Nachpruefung muss alle Sigstore-Subjects erneut verifizieren");
+
+    const storedOnlyForgery = structuredClone(authority);
+    storedOnlyForgery.execution.predicate.planAuthority.artifact.id += 1;
+    storedOnlyForgery.execution.predicateSha256 = sha256(Buffer.from(
+      JSON.stringify(sortedValue(storedOnlyForgery.execution.predicate)), "utf8",
+    ));
+    assert.doesNotThrow(() => validateCurrentAnnualOperationalAuthority(
+      storedOnlyForgery,
+      value.inputs,
+      value.mapBuildCommit,
+    ));
+    await assert.rejects(verifyCurrentAnnualOperationalAuthorityLocal({
+      artifactRoot: value.root,
+      inputs: value.inputs,
+      releaseConfig: value.releaseConfig,
+      rebuildSpec: value.rebuildSpec,
+      outerExecution: value.outerExecution,
+      releaseId: value.releaseId,
+      mapBuildCommit: value.mapBuildCommit,
+      authority: storedOnlyForgery,
+      attestationVerifier: value.verifier,
+    }), /anderes Predicate als die gespeicherte Authority/u);
+
+    const wrongSource = structuredClone(authority);
+    wrongSource.execution.sourceDigest = "5".repeat(40);
+    assert.throws(
+      () => validateCurrentAnnualOperationalAuthority(wrongSource, value.inputs, value.mapBuildCommit),
+      /geschuetzten GitHub-Sigstore-Authority/u,
+    );
+    const wrongPredicate = structuredClone(authority);
+    wrongPredicate.execution.predicate.planAuthority.plan.sha256 = "f".repeat(64);
+    assert.throws(
+      () => validateCurrentAnnualOperationalAuthority(wrongPredicate, value.inputs, value.mapBuildCommit),
+      /Predicate-Bindung|Predicate\.plan driftet/u,
+    );
+  } finally {
+    await rm(value.root, { recursive: true, force: true });
+  }
+});
+
+test("Operational-Authority-Helper verlangt den externen Map-Build-Commit und hält die Spezifikation commitfrei", async () => {
+  const repositoryRoot = fileURLToPath(new URL("../../", import.meta.url));
+  await assert.rejects(
+    materializeOperationalBuildAuthorityFromBuildEvidenceSpec({ sourceRoot: repositoryRoot }),
+    /mapBuildCommit/u,
+  );
+
+  const root = await mkdtemp(join(tmpdir(), "zugfolge-operational-authority-spec-"));
+  try {
+    const specFile = "tools/tiles/map-release-build-evidence.annual-2026.5.spec.json";
+    const spec = JSON.parse(await readFile(new URL("./map-release-build-evidence.annual-2026.5.spec.json", import.meta.url), "utf8"));
+    spec.commits = { mapBuild: "4".repeat(40) };
+    await write(root, specFile, `${JSON.stringify(spec, null, 2)}\n`);
+    await assert.rejects(
+      materializeOperationalBuildAuthorityFromBuildEvidenceSpec({
+        sourceRoot: root,
+        buildEvidenceSpecFile: specFile,
+        mapBuildCommit: "4".repeat(40),
+      }),
+      /keinen vorab erfundenen Commit/u,
+    );
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("Operational-Authority verweigert falsches Custom Predicate, fehlende Phase-1-Subjects und fremde Completion-Bindungen", async () => {
+  const value = await currentAnnualOperationalAuthorityFixture();
+  try {
+    const ambiguousSubjectVerifier = async (request) => {
+      const bytes = await readFile(request.subjectPath);
+      return [{ verificationResult: { statement: {
+        predicate: request.predicateType.includes("operational-v2-execution-authority")
+          ? value.predicate
+          : { buildType: "fixture" },
+        predicateType: request.predicateType,
+        subject: [
+          { digest: { sha256: sha256(bytes) }, name: request.expectedSubjectName },
+          { digest: { sha256: sha256(bytes) }, name: `extra-${request.expectedSubjectName}` },
+        ],
+      } } }];
+    };
+    await assert.rejects(
+      materializeCurrentAnnualOperationalAuthority({
+        artifactRoot: value.root,
+        inputs: value.inputs,
+        releaseConfig: value.releaseConfig,
+        rebuildSpec: value.rebuildSpec,
+        outerExecution: value.outerExecution,
+        releaseId: value.releaseId,
+        mapBuildCommit: value.mapBuildCommit,
+        attestationVerifier: ambiguousSubjectVerifier,
+      }),
+      /exakte einzelne Subject/u,
+    );
+
+    const wrongPredicateVerifier = async (request) => {
+      const bytes = await readFile(request.subjectPath);
+      return [{ verificationResult: { statement: {
+        predicate: request.predicateType.includes("operational-v2-execution-authority")
+          ? { ...value.predicate, releaseId: "infra-deutschland-2026.4" }
+          : { buildType: "fixture" },
+        predicateType: request.predicateType,
+        subject: [{ digest: { sha256: sha256(bytes) }, name: request.expectedSubjectName }],
+      } } }];
+    };
+    await assert.rejects(
+      materializeCurrentAnnualOperationalAuthority({
+        artifactRoot: value.root,
+        inputs: value.inputs,
+        releaseConfig: value.releaseConfig,
+        rebuildSpec: value.rebuildSpec,
+        outerExecution: value.outerExecution,
+        releaseId: value.releaseId,
+        mapBuildCommit: value.mapBuildCommit,
+        attestationVerifier: wrongPredicateVerifier,
+      }),
+      /geschuetzten Authority-Kontext/u,
+    );
+
+    const missingPhaseOne = structuredClone(value.rebuildSpec);
+    missingPhaseOne.authority.attestation.subjects = missingPhaseOne.authority.attestation.subjects
+      .filter((file) => !file.endsWith(`executor-start-evidence.json.zugfolge-complete.json`));
+    await assert.rejects(
+      materializeCurrentAnnualOperationalAuthority({
+        artifactRoot: value.root,
+        inputs: value.inputs,
+        releaseConfig: value.releaseConfig,
+        rebuildSpec: missingPhaseOne,
+        outerExecution: value.outerExecution,
+        releaseId: value.releaseId,
+        mapBuildCommit: value.mapBuildCommit,
+        attestationVerifier: value.verifier,
+      }),
+      /bindet Phase-1-Subject/u,
+    );
+
+    const completionInput = value.inputs.find(({ id }) => id === "operational-annual-plan-completion");
+    await write(value.root, completionInput.file, serializeMapReleaseBuildEvidence({
+      artifact: { ...value.predicate.planAuthority.plan, sha256: "f".repeat(64) },
+      schema: "zugfolge-germany-annual-create-new-artifact-completion/v1",
+    }));
+    Object.assign(completionInput, await proof(value.root, completionInput.file));
+    await assert.rejects(
+      materializeCurrentAnnualOperationalAuthority({
+        artifactRoot: value.root,
+        inputs: value.inputs,
+        releaseConfig: value.releaseConfig,
+        rebuildSpec: value.rebuildSpec,
+        outerExecution: value.outerExecution,
+        releaseId: value.releaseId,
+        mapBuildCommit: value.mapBuildCommit,
+        attestationVerifier: value.verifier,
+      }),
+      /bindet nicht den erwarteten Artefaktbeleg/u,
+    );
+  } finally {
+    await rm(value.root, { recursive: true, force: true });
+  }
+});
+
+test("gepinnter Attestierungsverifier ignoriert PATH und verweigert Byte- oder Dateiverweisdrift vor dem Prozessstart", async () => {
+  const root = await mkdtemp(join(tmpdir(), "zugfolge-held-gh-verifier-test-"));
+  const verifierPath = join(root, "held-verifier.exe");
+  const swappedVerifierPath = join(root, "swapped-verifier.exe");
+  const trustedRootPath = join(root, "trusted-root.jsonl");
+  const subjectPath = join(root, "subject.bin");
+  const bundlePath = join(root, "bundle.jsonl");
+  const fakePathDirectory = join(root, "fake-path");
+  try {
+    await mkdir(fakePathDirectory);
+    await writeFile(join(fakePathDirectory, "gh.exe"), "PATH replacement must never execute");
+    await writeFile(verifierPath, "held verifier fixture bytes");
+    await writeFile(swappedVerifierPath, "different swapped verifier bytes");
+    await writeFile(trustedRootPath, "held trusted root fixture bytes");
+    await writeFile(subjectPath, "subject");
+    await writeFile(bundlePath, "bundle");
+    const verifierProof = { file: "held-verifier.exe", ...(await proof(root, "held-verifier.exe")) };
+    const trustedRootProof = { file: "trusted-root.jsonl", ...(await proof(root, "trusted-root.jsonl")) };
+    const subjectProof = { file: "subject.bin", ...(await proof(root, "subject.bin")) };
+    const bundleProof = { file: "bundle.jsonl", ...(await proof(root, "bundle.jsonl")) };
+    const previousPath = process.env.PATH;
+    process.env.PATH = fakePathDirectory;
+    let starts = 0;
+    try {
+      const result = await verifyGithubAttestationSubject({
+        subjectPath,
+        subjectProof,
+        bundlePath,
+        bundleProof,
+        verifierPath,
+        verifierProof,
+        trustedRootPath,
+        trustedRootProof,
+        repository: "larynxberlin-rgb/Zugfolge",
+        signerWorkflow: "larynxberlin-rgb/Zugfolge/.github/workflows/fixture.yml",
+        sourceRef: "refs/heads/main",
+        sourceDigest: "7".repeat(40),
+        predicateType: "https://slsa.dev/provenance/v1",
+        denySelfHostedRunners: true,
+        heldProcessRunner: async ({ executable, argumentsList, environment, inputFiles }) => {
+          starts += 1;
+          assert.equal(isAbsolute(executable), true);
+          assert.notEqual(executable, verifierPath);
+          assert.match(executable, /zugfolge-gh-attestation-[^\\/]+[\\/]gh\.exe$/u);
+          assert.equal(environment.PATH, String.raw`C:\Windows\System32;C:\Windows`);
+          assert.equal(Object.hasOwn(environment, "GH_TOKEN"), false);
+          assert.equal(Object.hasOwn(environment, "GITHUB_TOKEN"), false);
+          assert.equal(argumentsList[argumentsList.indexOf("--hostname") + 1], "github.com");
+          const heldTrustedRoot = argumentsList[argumentsList.indexOf("--custom-trusted-root") + 1];
+          assert.equal(dirname(heldTrustedRoot), dirname(executable));
+          assert.deepEqual(inputFiles.map(({ file }) => file), ["subject.bin", "bundle.jsonl", "trusted-root.jsonl"]);
+          return [];
+        },
+      });
+      assert.deepEqual(result, []);
+      assert.equal(starts, 1);
+
+      const rejectBeforeStart = () => {
+        starts += 1;
+        throw new Error("process must not start");
+      };
+      await assert.rejects(verifyGithubAttestationSubject({
+        subjectPath,
+        subjectProof,
+        bundlePath,
+        bundleProof,
+        verifierPath,
+        verifierProof: { ...verifierProof, sha256: "f".repeat(64) },
+        trustedRootPath,
+        trustedRootProof,
+        repository: "larynxberlin-rgb/Zugfolge",
+        signerWorkflow: "larynxberlin-rgb/Zugfolge/.github/workflows/fixture.yml",
+        sourceRef: "refs/heads/main",
+        sourceDigest: "7".repeat(40),
+        predicateType: "https://slsa.dev/provenance/v1",
+        denySelfHostedRunners: true,
+        heldProcessRunner: rejectBeforeStart,
+      }), /gepinnten SHA-256/u);
+      assert.equal(starts, 1);
+      await assert.rejects(verifyGithubAttestationSubject({
+        subjectPath,
+        subjectProof,
+        bundlePath,
+        bundleProof,
+        verifierPath: swappedVerifierPath,
+        verifierProof,
+        trustedRootPath,
+        trustedRootProof,
+        repository: "larynxberlin-rgb/Zugfolge",
+        signerWorkflow: "larynxberlin-rgb/Zugfolge/.github/workflows/fixture.yml",
+        sourceRef: "refs/heads/main",
+        sourceDigest: "7".repeat(40),
+        predicateType: "https://slsa.dev/provenance/v1",
+        denySelfHostedRunners: true,
+        heldProcessRunner: rejectBeforeStart,
+      }), /gepinnte(?:n)? Bytezahl|gepinnten SHA-256/u);
+      assert.equal(starts, 1);
+    } finally {
+      if (previousPath === undefined) delete process.env.PATH;
+      else process.env.PATH = previousPath;
+    }
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("Windows haelt Verifier, Subject, Bundle, Trust-Root und Pfad-Ahnen gegen Replace-Execute-Restore-ABA",
+  { skip: process.platform !== "win32", timeout: 60_000 }, async (t) => {
+    const root = await mkdtemp(join(tmpdir(), "zugfolge-held-gh-verifier-aba-test-"));
+    t.after(() => rm(root, { recursive: true, force: true }));
+    const verifierPath = join(root, "fixture-gh.exe");
+    const trustedRootPath = join(root, "trusted-root.jsonl");
+    const subjectPath = join(root, "subject.bin");
+    const bundlePath = join(root, "bundle.jsonl");
+    const sourcePath = join(root, "fixture-gh.cs");
+    const readyPath = `${subjectPath}.held-ready`;
+    const resumePath = `${subjectPath}.held-resume`;
+    await writeFile(sourcePath, String.raw`
+using System;
+using System.Diagnostics;
+using System.IO;
+using System.Threading;
+public static class HeldGhFixture {
+  public static int Main(string[] arguments) {
+    if (arguments.Length < 3 || arguments[0] != "attestation" || arguments[1] != "verify") return 40;
+    string subject = arguments[2];
+    File.WriteAllText(subject + ".held-ready", Process.GetCurrentProcess().MainModule.FileName);
+    DateTime deadline = DateTime.UtcNow.AddSeconds(30);
+    while (!File.Exists(subject + ".held-resume") && DateTime.UtcNow < deadline) Thread.Sleep(10);
+    if (!File.Exists(subject + ".held-resume")) return 41;
+    Console.Out.Write("[]");
+    return 0;
+  }
+}
+`, { flag: "wx" });
+    const compile = spawnSync(String.raw`C:\Windows\Microsoft.NET\Framework64\v4.0.30319\csc.exe`, [
+      "/nologo", "/target:exe", "/platform:x64", "/optimize+", "/debug-", `/out:${verifierPath}`, sourcePath,
+    ], { cwd: root, encoding: "utf8", windowsHide: true });
+    assert.equal(compile.status, 0, `${compile.stdout}\n${compile.stderr}`);
+    await Promise.all([
+      writeFile(trustedRootPath, "held trusted root fixture bytes", { flag: "wx" }),
+      writeFile(subjectPath, "held subject fixture bytes", { flag: "wx" }),
+      writeFile(bundlePath, "held bundle fixture bytes", { flag: "wx" }),
+    ]);
+    const verifierProof = { file: "fixture-gh.exe", ...(await proof(root, "fixture-gh.exe")) };
+    const trustedRootProof = { file: "trusted-root.jsonl", ...(await proof(root, "trusted-root.jsonl")) };
+    const subjectProof = { file: "subject.bin", ...(await proof(root, "subject.bin")) };
+    const bundleProof = { file: "bundle.jsonl", ...(await proof(root, "bundle.jsonl")) };
+    const verification = verifyGithubAttestationSubject({
+      subjectPath,
+      subjectProof,
+      bundlePath,
+      bundleProof,
+      verifierPath,
+      verifierProof,
+      trustedRootPath,
+      trustedRootProof,
+      repository: "larynxberlin-rgb/Zugfolge",
+      signerWorkflow: "larynxberlin-rgb/Zugfolge/.github/workflows/fixture.yml",
+      sourceRef: "refs/heads/main",
+      sourceDigest: "7".repeat(40),
+      predicateType: "https://slsa.dev/provenance/v1",
+      denySelfHostedRunners: true,
+    });
+    const waitForReady = async () => {
+      const deadline = Date.now() + 20_000;
+      while (Date.now() < deadline) {
+        try { return await readFile(readyPath, "utf8"); }
+        catch (error) { if (error?.code !== "ENOENT") throw error; }
+        await new Promise((resolvePromise) => setTimeout(resolvePromise, 20));
+      }
+      throw new Error("Gehaltene gh-Fixture meldete keinen Prozessstart.");
+    };
+    const assertRenameDenied = async (source, destination, label) => {
+      try {
+        await rename(source, destination);
+      } catch (error) {
+        assert.match(error?.code ?? "", /^(?:EACCES|EBUSY|EPERM)$/u, `${label}: ${error}`);
+        return;
+      }
+      await rename(destination, source);
+      assert.fail(`${label} war trotz gehaltenem Pfad als Replace/Restore-ABA moeglich.`);
+    };
+    try {
+      const isolatedVerifierPath = (await waitForReady()).trim();
+      const isolatedTrustedRootPath = join(dirname(isolatedVerifierPath), "trusted-root.jsonl");
+      await assertRenameDenied(isolatedVerifierPath, `${isolatedVerifierPath}.foreign`, "Private Verifierkopie");
+      await assertRenameDenied(isolatedTrustedRootPath, `${isolatedTrustedRootPath}.foreign`, "Private Trust-Root-Kopie");
+      await assertRenameDenied(subjectPath, `${subjectPath}.foreign`, "Attestierungs-Subject");
+      await assertRenameDenied(bundlePath, `${bundlePath}.foreign`, "Attestierungsbundle");
+      await assertRenameDenied(root, `${root}.foreign`, "Attestierungs-Pfadwurzel");
+      await assert.rejects(writeFile(subjectPath, "foreign subject bytes"),
+        (error) => /^(?:EACCES|EBUSY|EPERM)$/u.test(error?.code ?? ""));
+      await assert.rejects(writeFile(bundlePath, "foreign bundle bytes"),
+        (error) => /^(?:EACCES|EBUSY|EPERM)$/u.test(error?.code ?? ""));
+    } finally {
+      await writeFile(resumePath, "continue", { flag: "wx" }).catch(() => {});
+    }
+    assert.deepEqual(await verification, []);
+  });
+
+test("erstklassige Operational-v2-Sidecars sind bytegenau, schemageprüft und kausal gekoppelt", async () => {
+  const positive = await fixtureV2();
+  try {
+    const sidecars = await firstClassOperationalSidecarFixture(positive);
+    assert.deepEqual(
+      await validateFirstClassOperationalSidecarEvidence({
+        artifactRoot: positive.root,
+        releaseId: positive.releaseId,
+        ...sidecars,
+      }),
+      { inputs: sidecars.inputs.length, outputs: 3 },
+    );
+
+    const missing = structuredClone(sidecars);
+    missing.outputs = missing.outputs.filter(({ kind }) => kind !== "timetable-transfer-demands-v2");
+    await assert.rejects(
+      validateFirstClassOperationalSidecarEvidence({ artifactRoot: positive.root, releaseId: positive.releaseId, ...missing }),
+      /braucht Operational-v2, Movement-Route-Templates-v2 und Timetable-Transfer-Demands-v2/u,
+    );
+
+    const detached = structuredClone(sidecars);
+    detached.outputs.find(({ kind }) => kind === "movement-route-templates-v2").timetableTransferSetSha256 = "f".repeat(64);
+    await assert.rejects(
+      validateFirstClassOperationalSidecarEvidence({ artifactRoot: positive.root, releaseId: positive.releaseId, ...detached }),
       /Release-, Zustands- oder Transferbindung/u,
     );
   } finally {
-    await rm(detachedValue.root, { recursive: true, force: true });
+    await rm(positive.root, { recursive: true, force: true });
   }
 
-  const mutatedValue = await fixtureV3();
+  for (const mutation of [
+    {
+      file: "movementFile",
+      mutate(value) { value.unvalidatedAlias = true; },
+      error: /Movement-Route-Templates-v2 besitzt fehlende oder unbekannte Felder/u,
+    },
+    {
+      file: "transferFile",
+      mutate(value) { value.dailyPlan.planSha256 = "f".repeat(64); },
+      error: /dailyPlan\.planSha256 ist nicht reproduzierbar/u,
+    },
+    {
+      file: "transferFile",
+      mutate(value) { value.schema = "zugfolge-timetable-transfer-demands/v1"; },
+      error: /Timetable-Transfer-Demands verletzt Schema/u,
+    },
+  ]) {
+    const value = await fixtureV2();
+    try {
+      const sidecars = await firstClassOperationalSidecarFixture(value);
+      const file = value[mutation.file];
+      const path = join(value.root, ...file.split("/"));
+      const content = JSON.parse(await readFile(path, "utf8"));
+      mutation.mutate(content);
+      await writeFile(path, `${JSON.stringify(content)}\n`);
+      Object.assign(sidecars.outputs.find(({ file: outputFile }) => outputFile === file), await proof(value.root, file));
+      await assert.rejects(
+        validateFirstClassOperationalSidecarEvidence({ artifactRoot: value.root, releaseId: value.releaseId, ...sidecars }),
+        mutation.error,
+      );
+    } finally {
+      await rm(value.root, { recursive: true, force: true });
+    }
+  }
+
+  const drifted = await fixtureV2();
   try {
-    const evidence = await materialized(mutatedValue);
-    await writeFile(join(mutatedValue.root, ...mutatedValue.transferFile.split("/")), '{"changed":true}\n');
+    const sidecars = await firstClassOperationalSidecarFixture(drifted);
+    await writeFile(join(drifted.root, ...drifted.transferFile.split("/")), '{"changed":true}\n');
     await assert.rejects(
-      verifyMapReleaseBuildEvidence(evidence, mutatedValue.root),
-      /GTFS-Snapshot-Hash|Timetable-Transfer-Demands-v2-Beleg|weicht vom Evidence-Manifest/u,
+      validateFirstClassOperationalSidecarEvidence({ artifactRoot: drifted.root, releaseId: drifted.releaseId, ...sidecars }),
+      /änderte sich zwischen Bytebeleg und semantischer Sidecar-Prüfung/u,
     );
   } finally {
-    await rm(mutatedValue.root, { recursive: true, force: true });
+    await rm(drifted.root, { recursive: true, force: true });
   }
 });
 
@@ -2042,7 +2704,7 @@ test("Operational-v2-Evidence etikettiert wiederverwendete Spezifikationen ehrli
   const unattestedValue = await fixtureV2();
   try {
     const descriptor = unattestedValue.spec.inputs.find(({ id }) => id === "germany-release-spec");
-    descriptor.version = PREVIOUS_RELEASE_ID;
+    descriptor.version = unattestedValue.previousReleaseId;
     await rewriteEvidenceSpec(unattestedValue);
     await assert.rejects(materialized(unattestedValue), /Cross-Release-Wiederverwendungsattestation/u);
   } finally {
@@ -2055,7 +2717,7 @@ test("Operational-v2-Evidence etikettiert wiederverwendete Spezifikationen ehrli
     await rewriteEvidenceSpec(reusedValue);
     const evidence = await materialized(reusedValue);
     const input = evidence.inputs.find(({ id }) => id === "germany-release-spec");
-    assert.equal(input.version, PREVIOUS_RELEASE_ID);
+    assert.equal(input.version, reusedValue.previousReleaseId);
     assert.deepEqual(input.reuse, descriptor.reuse);
     assert.deepEqual(
       { bytes: input.bytes, sha256: input.sha256 },
@@ -2113,7 +2775,7 @@ test("Operational-v2-Evidence bindet Signed-Paketplan und additiven Delivery-Key
   try {
     const planPath = join(planValue.root, ...planValue.signedPlanFile.split("/"));
     const plan = JSON.parse(await readFile(planPath, "utf8"));
-    plan.version = "2026.3";
+    plan.version = "2026.4";
     await writeFile(planPath, `${JSON.stringify(plan, null, 2)}\n`);
     await assert.rejects(materialized(planValue), /Paketidentität oder Version|Jahres-Patchversion/u);
   } finally {
@@ -2353,7 +3015,7 @@ test("Operational-v2-Evidence materialisiert und verifiziert mehr als 64 MiB nur
   const value = await fixtureV2();
   try {
     const path = join(value.root, ...value.operationalFile.split("/"));
-    await writeLargeCanonicalOperationalInfrastructure(path);
+    await writeLargeCanonicalOperationalInfrastructure(path, value.releaseId);
     const operationalProof = await streamedProof(path);
     assert.ok(operationalProof.bytes > 64 * 1024 * 1024);
     const stateHash = operationalProof.sha256 === "e".repeat(64) ? "d".repeat(64) : "e".repeat(64);
@@ -2948,8 +3610,8 @@ test("preflight qualifiziert den v2-Kartenkandidaten, blockiert aber volle Aktiv
     }
     const restore = await proveBuildCacheRestore(evidence, restoreRoot);
 
-    const candidate = await installPackageFixture(value, deploymentRoot, RELEASE_ID);
-    const previous = await installPackageFixture(value, deploymentRoot, PREVIOUS_RELEASE_ID);
+    const candidate = await installPackageFixture(value, deploymentRoot, value.releaseId);
+    const previous = await installPackageFixture(value, deploymentRoot, value.previousReleaseId);
     assert.equal(candidate.manifest.schema, "zugfolge-map-package/v2");
     assert.equal(candidate.manifest.runtime.schema, "zugfolge-map-runtime/v2");
     assert.equal(previous.manifest.schema, "zugfolge-map-package/v1");
@@ -2959,7 +3621,7 @@ test("preflight qualifiziert den v2-Kartenkandidaten, blockiert aber volle Aktiv
     const unsignedRollback = await createMapRollbackAttestation({
       deploymentRoot,
       previousInstallPath: value.spec.deployment.previousInstallPath,
-      previousReleaseId: PREVIOUS_RELEASE_ID,
+      previousReleaseId: value.previousReleaseId,
     });
     const signedRollback = signMapRollbackAttestation(
       unsignedRollback,
@@ -2987,7 +3649,7 @@ test("preflight qualifiziert den v2-Kartenkandidaten, blockiert aber volle Aktiv
         restoreRoot,
         trustedDeliveryKeys: value.trustedDeliveryKeys,
         trustedDeliveryKeysBytes: value.trustedDeliveryKeysBytes,
-        expectedActiveReleaseId: PREVIOUS_RELEASE_ID,
+        expectedActiveReleaseId: value.previousReleaseId,
       }),
       /Operational-v2-Preflight benoetigt disjunkte Alpha-Welt- und Map-\/Infra-Key-Scopes/u,
     );
@@ -3001,11 +3663,11 @@ test("preflight qualifiziert den v2-Kartenkandidaten, blockiert aber volle Aktiv
       trustedDeliveryKeysBytes: value.trustedDeliveryKeysBytes,
       trustedAlphaWorldKeys,
       trustedMapInfraKeys,
-      expectedActiveReleaseId: PREVIOUS_RELEASE_ID,
+      expectedActiveReleaseId: value.previousReleaseId,
     });
     assert.equal(preflight.mapActivationEligible, true);
     assert.equal(preflight.activationEligible, false);
-    assert.equal(preflight.activeReleaseId, PREVIOUS_RELEASE_ID);
+    assert.equal(preflight.activeReleaseId, value.previousReleaseId);
     assert.equal(preflight.verifiedDeliveryArtifacts, evidence.deliveryInventory.length);
     assert.equal(preflight.rollbackEligibilityReason, "runtime-tuple-unbound-v1");
 
@@ -3019,7 +3681,7 @@ test("preflight qualifiziert den v2-Kartenkandidaten, blockiert aber volle Aktiv
         trustedDeliveryKeysBytes: value.trustedDeliveryKeysBytes,
         trustedAlphaWorldKeys: trustedMapInfraKeys,
         trustedMapInfraKeys: trustedAlphaWorldKeys,
-        expectedActiveReleaseId: PREVIOUS_RELEASE_ID,
+        expectedActiveReleaseId: value.previousReleaseId,
       }),
       /Rollback-Attestation-Signaturschlüssel .* ist nicht vertrauenswürdig/u,
     );
@@ -3048,7 +3710,7 @@ test("preflight qualifiziert den v2-Kartenkandidaten, blockiert aber volle Aktiv
       restoreRoot,
       trustedKeysPath,
       cliScopePath,
-      PREVIOUS_RELEASE_ID,
+      value.previousReleaseId,
       "3".repeat(40),
       `sha256:${"4".repeat(64)}`,
       `sha256:${"5".repeat(64)}`,
@@ -3076,7 +3738,7 @@ test("preflight qualifiziert den v2-Kartenkandidaten, blockiert aber volle Aktiv
         restoreProofBytes: restore.proofBytes,
         restoreRoot,
         trustedDeliveryKeysBytes: reducedKeyringBytes,
-        expectedActiveReleaseId: PREVIOUS_RELEASE_ID,
+        expectedActiveReleaseId: value.previousReleaseId,
       }),
       /bytegenau gebundenen candidatePackage-Keyring/u,
     );
@@ -3091,7 +3753,7 @@ test("preflight qualifiziert den v2-Kartenkandidaten, blockiert aber volle Aktiv
           [value.deliveryKeyId]: value.trustedDeliveryKeys[value.deliveryKeyId],
         },
         trustedDeliveryKeysBytes: value.trustedDeliveryKeysBytes,
-        expectedActiveReleaseId: PREVIOUS_RELEASE_ID,
+        expectedActiveReleaseId: value.previousReleaseId,
       }),
       /Keyring-Objekt weicht von seinen übergebenen Datei-Bytes/u,
     );
@@ -3106,7 +3768,7 @@ test("preflight qualifiziert den v2-Kartenkandidaten, blockiert aber volle Aktiv
         restoreProofBytes: restore.proofBytes,
         restoreRoot,
         trustedDeliveryKeysBytes: value.trustedDeliveryKeysBytes,
-        expectedActiveReleaseId: PREVIOUS_RELEASE_ID,
+        expectedActiveReleaseId: value.previousReleaseId,
       }),
       /nicht exakt die in candidatePackage gebundenen Vertrauensanker-IDs/u,
     );
@@ -3122,7 +3784,7 @@ test("preflight qualifiziert den v2-Kartenkandidaten, blockiert aber volle Aktiv
         restoreProofBytes: restore.proofBytes,
         restoreRoot,
         trustedDeliveryKeysBytes: Buffer.from(`${JSON.stringify(changedKeyring, null, 2)}\n`, "utf8"),
-        expectedActiveReleaseId: PREVIOUS_RELEASE_ID,
+        expectedActiveReleaseId: value.previousReleaseId,
       }),
       /bytegenau gebundenen candidatePackage-Keyring/u,
     );

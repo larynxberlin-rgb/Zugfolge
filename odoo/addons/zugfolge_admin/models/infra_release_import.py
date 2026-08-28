@@ -20,6 +20,91 @@ PART_BYTES = 100 * 1024 * 1024
 MAX_MANIFEST_BYTES = 16 * 1024 * 1024
 PACKAGE_SCHEMA = "zugfolge-map-package/v2"
 DELIVERY_SCHEMA = "zugfolge-map-delivery-release/v2"
+LEGACY_DELIVERY_V2_VERSIONS = frozenset(("2026.1", "2026.3", "2026.4"))
+PROVENANCE_DELIVERY_V2_VERSION = "2026.5"
+OPERATIONAL_PROVENANCE_SCHEMA = "zugfolge-germany-operational-v2-provenance/v1"
+OPERATIONAL_EXECUTION_PINS_SCHEMA = "zugfolge-germany-operational-v2-execution-pins/v1"
+OPERATIONAL_EXECUTION_PROOF_SCHEMA = "zugfolge-germany-operational-v2-execution-proof/v1"
+OPERATIONAL_AUTHORITY_SCHEMA = "zugfolge-map-build-operational-authority/v1"
+OPERATIONAL_EXECUTION_AUTHORITY_SCHEMA = "zugfolge-operational-v2-execution-authority/v1"
+OPERATIONAL_REBUILD_ATTESTATION_PREDICATE = "https://slsa.dev/provenance/v1"
+OPERATIONAL_EXECUTION_AUTHORITY_PREDICATE = "https://zugfolge.de/attestations/operational-v2-execution-authority/v1"
+OPERATIONAL_REBUILD_ATTESTATION_WORKFLOW = "larynxberlin-rgb/Zugfolge/.github/workflows/operational-validator-rebuild-evidence.yml"
+OPERATIONAL_EXECUTION_AUTHORITY_WORKFLOW = "larynxberlin-rgb/Zugfolge/.github/workflows/operational-v2-execution-authority.yml"
+OPERATIONAL_REBUILD_ATTESTATION_FILE = "var/derived/germany-2026.5/toolchain/zugfolge-infra-release-rebuild-attestation.sigstore.json"
+OPERATIONAL_EXECUTION_AUTHORITY_FILE = "var/derived/germany-2026.5/toolchain/zugfolge-operational-v2-execution-authority.sigstore.json"
+OPERATIONAL_OUTER_EXECUTION_RECEIPT_FILE = "var/derived/germany-2026.5/operational-infrastructure-v2.outer-execution-receipt.json"
+OPERATIONAL_OUTER_EXECUTION_COMPLETION_FILE = "%s.zugfolge-complete.json" % OPERATIONAL_OUTER_EXECUTION_RECEIPT_FILE
+OPERATIONAL_ANNUAL_PLAN_FILE = "var/derived/germany-2026.5/toolchain/zugfolge-infra-release-annual-plan.json"
+OPERATIONAL_ANNUAL_PLAN_COMPLETION_FILE = "%s.zugfolge-complete.json" % OPERATIONAL_ANNUAL_PLAN_FILE
+OPERATIONAL_ANNUAL_START_EVIDENCE_FILE = "var/derived/germany-2026.5/toolchain/zugfolge-infra-release-annual-executor-start-evidence.json"
+OPERATIONAL_ANNUAL_START_COMPLETION_FILE = "%s.zugfolge-complete.json" % OPERATIONAL_ANNUAL_START_EVIDENCE_FILE
+OPERATIONAL_WINDOWS_ANCHOR_HELPER_FILE = "tools/region-import/germany/operational-windows-anchor-helper.dll"
+OPERATIONAL_RUNNER_BUNDLE_FILE = "tools/region-import/germany/run-capture-operational-infrastructure-v2.anchored-bundle.mjs"
+OPERATIONAL_RUNNER_ENTRYPOINT_FILE = "tools/region-import/germany/run-capture-operational-infrastructure-v2.mjs"
+OPERATIONAL_RUNNER_INVOCATION_MODE = "system-launcher-held-bundle-stdin-v1"
+# FINAL-REPIN 2026.5: Diesen einen Vertrag nach dem letzten attestierten
+# Windows-Lauf atomar aus der finalen Execution-Pins-Datei aktualisieren.
+GERMANY_2026_5_OPERATIONAL_REPIN = {
+    "executionPins": {
+        "file": "tools/region-import/germany/operational-infrastructure-v2-execution-pins.annual-2026.5.json",
+        "bytes": 4_841,
+        "sha256": "be5d372d0b5cd6179848139c3b52c413db2fd60f2e94647eaa7105cce8c5d28b",
+        "schema": OPERATIONAL_EXECUTION_PINS_SCHEMA,
+    },
+    "runtime": {
+        "id": "nodejs-24-operational-runner-v1",
+        "platform": "win32",
+        "bytes": 92_825_416,
+        "sha256": "3602f2bb1a10f2cbab4c36886218a33c1ab3db87290e73b033c46c77147d0237",
+    },
+    "anchorHelper": {
+        "file": OPERATIONAL_WINDOWS_ANCHOR_HELPER_FILE,
+        "bytes": 46_080,
+        "sha256": "1e18d3048d9a778d05a7bd1532d4f84233aa2cb5d13d46ca4583e90811e7165f",
+    },
+    "bundle": {
+        "file": OPERATIONAL_RUNNER_BUNDLE_FILE,
+        "bytes": 603_179,
+        "sha256": "2f824edebed402068b2fe6f1c06e83718883097ea3e5c824285a9afcf6eb0ac5",
+    },
+    "entrypoint": {
+        "file": OPERATIONAL_RUNNER_ENTRYPOINT_FILE,
+        "bytes": 26_431,
+        "sha256": "b14f9c476bf8bb3e0d2a5b44a88d4ed45fa2b5c5df0dca8b6325bf4064237d74",
+    },
+    "validator": {
+        "buildCommit": "aba354ec1937452a491087626ec0adea36ef6695",
+        "preserved": {
+            "file": "var/derived/germany-2026.5/toolchain/zugfolge-infra-release-aba354ec1937452a491087626ec0adea36ef6695-c35e72e352ae573e0416035fc4f0d233af5668864c0bd8df7333337e87bb7fd4.exe",
+            "bytes": 8_382_277,
+            "sha256": "c35e72e352ae573e0416035fc4f0d233af5668864c0bd8df7333337e87bb7fd4",
+        },
+        "executedMode": "windows-exclusive-handle-launch-v1",
+    },
+    "launcher": {
+        "file": "tools/region-import/germany/operational-infrastructure-v2-system-launcher.windows.ps1",
+        "mode": "windows-system-powershell-held-bundle-v1",
+        "sourceBytes": 17_130,
+        "sourceSha256": "2a91b702b042a565a8e2ec5bf3ae039182d1e736e4e8bd4c27b375d06a35276f",
+    },
+    "importClosure": (
+        {"file": "tools/region-import/germany/annual-create-new-artifact.mjs", "bytes": 19_192, "sha256": "742f388c1df04507a9c6c656faf6f5d3c6195209b373b27385464ff3465a7340"},
+        {"file": "tools/region-import/germany/capture-operational-infrastructure-v2-native-receipt.mjs", "bytes": 2_525, "sha256": "4224a650f5673d4c948b4a5d05e84330f975f3f6d0d38a15c353ef960d7930e6"},
+        {"file": "tools/region-import/germany/operational-infrastructure-v2-execution-pins.mjs", "bytes": 162_424, "sha256": "be49874c3a624a0ff39adb9cf928cb98fdde84eecd377556bfad326916ba676a"},
+        {"file": "tools/region-import/germany/operational-infrastructure-v2-outer-execution-receipt.mjs", "bytes": 23_497, "sha256": "19c17314d72359a1114e6c567b91a74fb2b631eddb4f33d3d482bec011855447"},
+        {"file": "tools/region-import/germany/operational-infrastructure-v2-publication.mjs", "bytes": 140_209, "sha256": "b6f92d0143f9e27b58e49248ee65561122154db0b85ebb689323b1847d7716ac"},
+        {"file": "tools/region-import/germany/operational-infrastructure-v2-system-launcher.windows.ps1", "bytes": 17_130, "sha256": "2a91b702b042a565a8e2ec5bf3ae039182d1e736e4e8bd4c27b375d06a35276f"},
+        {"file": "tools/region-import/germany/operational-infrastructure-v2.mjs", "bytes": 93_203, "sha256": "a308b29bdece8fbe7e18b0bb513393834cd6e99ccca5121fe7f12b344a24ab43"},
+        {"file": "tools/region-import/germany/operational-validator-rebuild-evidence.mjs", "bytes": 223_837, "sha256": "3e0f1c9f7a2159e4c7bc1c28193c7f1ff81cfaee933b27f7a27cba9836e227da"},
+        {"file": OPERATIONAL_WINDOWS_ANCHOR_HELPER_FILE, "bytes": 46_080, "sha256": "1e18d3048d9a778d05a7bd1532d4f84233aa2cb5d13d46ca4583e90811e7165f"},
+        {"file": "tools/region-import/germany/publish-operational-infrastructure-v2.mjs", "bytes": 3_180, "sha256": "56ca8cb74f2fb3c6147c128116e26a5147866fa507e1d8113273ef81d3ff7aa4"},
+        {"file": "tools/region-import/germany/run-capture-operational-infrastructure-v2.mjs", "bytes": 26_431, "sha256": "b14f9c476bf8bb3e0d2a5b44a88d4ed45fa2b5c5df0dca8b6325bf4064237d74"},
+        {"file": "tools/region-import/materialize-operational-infrastructure-v2.mjs", "bytes": 22_300, "sha256": "fe504130e303c0859bc87bfaa2c370e2d3bd0835b3c25c9a75b0eab02958955e"},
+        {"file": "tools/region-import/operational-infrastructure-binding.mjs", "bytes": 9_981, "sha256": "a5efe6f0725b9c4ffa82bf42f71f0aa0bf71b8a282802a822dce95ce6b11b16a"},
+        {"file": "tools/tiles/create-new-output.mjs", "bytes": 12_485, "sha256": "8947e01163310e80fc7b38b1163982e49c376424dcde34df1377e7db8c512d45"},
+    ),
+}
 SOURCES_SCHEMA = "zugfolge-map-delivery-sources/v2"
 MAP_ASSET_NOTICES_SCHEMA = "zugfolge-map-asset-notices/v2"
 QUALITY_SCHEMA = "zugfolge-operational-infrastructure-quality-report/v1"
@@ -61,6 +146,333 @@ def _exact_keys(value, expected, label):
 
 def _safe_integer(value, minimum=0):
     return type(value) is int and minimum <= value <= MAX_SAFE_INTEGER
+
+
+def _delivery_v2_generation(version):
+    if version == PROVENANCE_DELIVERY_V2_VERSION:
+        return "integrated-provenance-v2"
+    if version in LEGACY_DELIVERY_V2_VERSIONS:
+        return "legacy-v1"
+    raise ValidationError(_("Paketversion ist nicht als Deutschland-Delivery-v2-Version freigegeben."))
+
+
+def _portable_path(value, label):
+    if (
+        not isinstance(value, str) or not value or len(value) > 512
+        or "\\" in value or "\0" in value or value.startswith("/")
+        or re.match(r"^[a-zA-Z]:", value)
+        or any(segment in ("", ".", "..") for segment in value.split("/"))
+    ):
+        raise ValidationError(_("%s ist kein portabler relativer Pfad.") % label)
+    return value
+
+
+def _operational_file_proof(value, label, with_schema=False):
+    expected = ("file", "bytes", "sha256", "schema") if with_schema else ("file", "bytes", "sha256")
+    proof = _exact_keys(value, expected, label)
+    _portable_path(proof["file"], "%s.file" % label)
+    if not _safe_integer(proof["bytes"], 1) or not isinstance(proof["sha256"], str) or not SHA256.fullmatch(proof["sha256"]):
+        raise ValidationError(_("%s besitzt keinen gueltigen Byte-/SHA-256-Beleg.") % label)
+    if with_schema and (not isinstance(proof["schema"], str) or not proof["schema"]):
+        raise ValidationError(_("%s.schema fehlt.") % label)
+    return proof
+
+
+def _operational_string_list(value, label):
+    if not isinstance(value, list):
+        raise ValidationError(_("%s muss eine Liste sein.") % label)
+    if any(not isinstance(entry, str) or not entry or len(entry) > 1024 or "\0" in entry for entry in value):
+        raise ValidationError(_("%s besitzt einen ungueltigen Eintrag.") % label)
+    return value
+
+
+def _operational_provenance_sha256(value):
+    encoded = (json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False) + "\n").encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def _validate_operational_provenance(value):
+    provenance = _exact_keys(value, (
+        "schema", "producerKind", "releaseEvidenceEligible", "productionActivationEligible",
+        "executionPins", "executionProof",
+    ), "Delivery Operational-v2-Provenienz")
+    if (
+        provenance["schema"] != OPERATIONAL_PROVENANCE_SCHEMA
+        or provenance["producerKind"] != "integrated-runner-v1"
+        or provenance["releaseEvidenceEligible"] is not True
+        or provenance["productionActivationEligible"] is not True
+    ):
+        raise ValidationError(_("Delivery-v2 akzeptiert nur integrierte, evidence- und aktivierungsgeeignete Operational-v2-Provenienz."))
+    pins = _operational_file_proof(provenance["executionPins"], "Delivery Operational-v2-Provenienz.executionPins", with_schema=True)
+    if pins != GERMANY_2026_5_OPERATIONAL_REPIN["executionPins"]:
+        raise ValidationError(_("Delivery Operational-v2-Provenienz bindet nicht die bytegenaue Execution-Pins-Datei des aktuellen Deutschland-Release."))
+    proof = _exact_keys(provenance["executionProof"], (
+        "schema", "executionPinsSha256", "runner", "validator", "rebuild", "invocation", "stdout", "exit",
+    ), "Delivery Operational-v2-Provenienz.executionProof")
+    if proof["schema"] != OPERATIONAL_EXECUTION_PROOF_SCHEMA or proof["executionPinsSha256"] != pins["sha256"]:
+        raise ValidationError(_("Delivery Operational-v2-Provenienz bindet Execution-Pins und Execution-Proof verschieden."))
+    runner = _exact_keys(proof["runner"], ("anchorHelper", "bundle", "entrypoint", "importClosure", "invocation", "launcher", "runtime"), "Delivery Operational-v2-Provenienz.runner")
+    bundle = _operational_file_proof(runner["bundle"], "Delivery Operational-v2-Provenienz.runner.bundle")
+    entrypoint = _operational_file_proof(runner["entrypoint"], "Delivery Operational-v2-Provenienz.runner.entrypoint")
+    if bundle != GERMANY_2026_5_OPERATIONAL_REPIN["bundle"]:
+        raise ValidationError(_("Delivery Operational-v2-Provenienz bindet nicht das bytegenaue gehaltene Runner-Bundle."))
+    if entrypoint != GERMANY_2026_5_OPERATIONAL_REPIN["entrypoint"]:
+        raise ValidationError(_("Delivery Operational-v2-Provenienz bindet nicht den bytegenauen Runner-Entrypoint."))
+    runner_invocation = _exact_keys(runner["invocation"], ("mode", "nodeArguments", "nodeOptions"), "Delivery Operational-v2-Provenienz.runner.invocation")
+    runner_node_arguments = _operational_string_list(runner_invocation["nodeArguments"], "Delivery Operational-v2-Provenienz.runner.invocation.nodeArguments")
+    if (
+        runner_invocation["mode"] != OPERATIONAL_RUNNER_INVOCATION_MODE
+        or runner_node_arguments != ["--input-type=module", "-"]
+        or runner_invocation["nodeOptions"] is not None
+    ):
+        raise ValidationError(_("Delivery Operational-v2-Provenienz.runner.invocation startet nicht exakt das gehaltene ESM-stdin-Bundle."))
+    runtime = _exact_keys(runner["runtime"], ("id", "platform", "bytes", "sha256"), "Delivery Operational-v2-Provenienz.runner.runtime")
+    if (
+        not _safe_integer(runtime["bytes"], 1)
+        or not isinstance(runtime["sha256"], str) or not SHA256.fullmatch(runtime["sha256"])
+        or runtime != GERMANY_2026_5_OPERATIONAL_REPIN["runtime"]
+    ):
+        raise ValidationError(_("Delivery Operational-v2-Provenienz.runner.runtime bindet nicht die bytegenaue Runtime des aktuellen Deutschland-Release."))
+    anchor_helper = _operational_file_proof(runner["anchorHelper"], "Delivery Operational-v2-Provenienz.runner.anchorHelper")
+    if runtime["platform"] != "win32" or anchor_helper != GERMANY_2026_5_OPERATIONAL_REPIN["anchorHelper"]:
+        raise ValidationError(_("Delivery Operational-v2-Provenienz.runner.anchorHelper bindet nicht die bytegenaue Windows-Anchor-Helper-Assembly."))
+    launcher = _exact_keys(runner["launcher"], ("mode", "sourceBytes", "sourceSha256"), "Delivery Operational-v2-Provenienz.runner.launcher")
+    expected_launcher = GERMANY_2026_5_OPERATIONAL_REPIN["launcher"]
+    if (
+        not _safe_integer(launcher["sourceBytes"], 1)
+        or not isinstance(launcher["sourceSha256"], str) or not SHA256.fullmatch(launcher["sourceSha256"])
+        or launcher["mode"] != expected_launcher["mode"]
+        or launcher["sourceBytes"] != expected_launcher["sourceBytes"]
+        or launcher["sourceSha256"] != expected_launcher["sourceSha256"]
+    ):
+        raise ValidationError(_("Delivery Operational-v2-Provenienz.runner.launcher bindet nicht exakt den kanonischen win32-Systemlauncher des aktuellen Deutschland-Release."))
+    if not isinstance(runner["importClosure"], list) or not runner["importClosure"]:
+        raise ValidationError(_("Delivery Operational-v2-Provenienz besitzt keine Runner-Importclosure."))
+    closure = [
+        _operational_file_proof(item, "Delivery Operational-v2-Provenienz.runner.importClosure[%s]" % index)
+        for index, item in enumerate(runner["importClosure"])
+    ]
+    closure_paths = [item["file"] for item in closure]
+    launcher_sources = [item for item in closure if item["file"] == expected_launcher["file"]]
+    anchor_helpers = [item for item in closure if item["file"] == anchor_helper["file"]]
+    if (
+        closure_paths != sorted(set(closure_paths))
+        or not any(item == entrypoint for item in closure)
+        or len(launcher_sources) != 1
+        or launcher_sources[0]["bytes"] != expected_launcher["sourceBytes"]
+        or launcher_sources[0]["sha256"] != expected_launcher["sourceSha256"]
+        or anchor_helpers != [anchor_helper]
+        or tuple(closure) != GERMANY_2026_5_OPERATIONAL_REPIN["importClosure"]
+    ):
+        raise ValidationError(_("Delivery Operational-v2-Provenienz bindet nicht die bytegenaue streng sortierte Importclosure des aktuellen Deutschland-Release."))
+    validator = _exact_keys(proof["validator"], ("buildCommit", "preserved", "executed"), "Delivery Operational-v2-Provenienz.validator")
+    if validator["buildCommit"] != GERMANY_2026_5_OPERATIONAL_REPIN["validator"]["buildCommit"]:
+        raise ValidationError(_("Delivery Operational-v2-Provenienz bindet nicht den Build-Commit des aktuellen preserved Validators."))
+    preserved = _operational_file_proof(validator["preserved"], "Delivery Operational-v2-Provenienz.validator.preserved")
+    if preserved != GERMANY_2026_5_OPERATIONAL_REPIN["validator"]["preserved"]:
+        raise ValidationError(_("Delivery Operational-v2-Provenienz bindet nicht den bytegenauen preserved Validator des aktuellen Deutschland-Release."))
+    executed = _exact_keys(validator["executed"], ("mode", "bytes", "sha256"), "Delivery Operational-v2-Provenienz.validator.executed")
+    if (
+        executed["mode"] != GERMANY_2026_5_OPERATIONAL_REPIN["validator"]["executedMode"]
+        or not _safe_integer(executed["bytes"], 1) or not isinstance(executed["sha256"], str) or not SHA256.fullmatch(executed["sha256"])
+        or executed["bytes"] != preserved["bytes"] or executed["sha256"] != preserved["sha256"]
+    ):
+        raise ValidationError(_("Delivery Operational-v2-Provenienz bindet nicht dieselben preserved und ausgefuehrten Validator-Bytes."))
+    rebuild = _exact_keys(proof["rebuild"], ("specification", "evidence", "sourceCommit"), "Delivery Operational-v2-Provenienz.rebuild")
+    _operational_file_proof(rebuild["specification"], "Delivery Operational-v2-Provenienz.rebuild.specification")
+    _operational_file_proof(rebuild["evidence"], "Delivery Operational-v2-Provenienz.rebuild.evidence", with_schema=True)
+    if rebuild["sourceCommit"] != validator["buildCommit"] or not GIT_COMMIT.fullmatch(str(rebuild["sourceCommit"])):
+        raise ValidationError(_("Delivery Operational-v2-Provenienz bindet Rebuild und Validator an verschiedene Commits."))
+    invocation = _exact_keys(proof["invocation"], ("command", "argumentPrefix", "argumentFiles", "arguments"), "Delivery Operational-v2-Provenienz.invocation")
+    if invocation["command"] != "derive-germany-operational-v2":
+        raise ValidationError(_("Delivery Operational-v2-Provenienz bindet einen falschen nativen Befehl."))
+    argument_prefix = _operational_string_list(invocation["argumentPrefix"], "Delivery Operational-v2-Provenienz.invocation.argumentPrefix")
+    if not isinstance(invocation["argumentFiles"], list):
+        raise ValidationError(_("Delivery Operational-v2-Provenienz.invocation.argumentFiles fehlt."))
+    if argument_prefix or invocation["argumentFiles"]:
+        raise ValidationError(_("Delivery Operational-v2-Provenienz-v1 erlaubt keinen Argumentpraefix und keine Argumentdateien."))
+    for index, item in enumerate(invocation["argumentFiles"]):
+        _operational_file_proof(item, "Delivery Operational-v2-Provenienz.invocation.argumentFiles[%s]" % index)
+    arguments = _operational_string_list(invocation["arguments"], "Delivery Operational-v2-Provenienz.invocation.arguments")
+    if len(arguments) != 5 or arguments[0] != invocation["command"]:
+        raise ValidationError(_("Delivery Operational-v2-Provenienz.invocation.arguments ist unvollstaendig."))
+    for index, argument in enumerate(arguments[1:], start=1):
+        _portable_path(argument, "Delivery Operational-v2-Provenienz.invocation.arguments[%s]" % index)
+    stdout = _exact_keys(proof["stdout"], ("bytes", "sha256", "recordCount", "structuredReceiptSha256"), "Delivery Operational-v2-Provenienz.stdout")
+    if (
+        not _safe_integer(stdout["bytes"], 1)
+        or not isinstance(stdout["sha256"], str) or not SHA256.fullmatch(stdout["sha256"])
+        or not _safe_integer(stdout["recordCount"], 1) or stdout["recordCount"] != 1
+        or not isinstance(stdout["structuredReceiptSha256"], str) or not SHA256.fullmatch(stdout["structuredReceiptSha256"])
+    ):
+        raise ValidationError(_("Delivery Operational-v2-Provenienz.stdout ist kein einzelner strukturierter Validatorbeleg."))
+    exit_proof = _exact_keys(proof["exit"], ("code", "signal"), "Delivery Operational-v2-Provenienz.exit")
+    if not _safe_integer(exit_proof["code"]) or exit_proof != {"code": 0, "signal": None}:
+        raise ValidationError(_("Delivery Operational-v2-Provenienz bindet keinen erfolgreichen signal-freien Validatorabschluss."))
+    return {
+        "value": provenance,
+        "sha256": _operational_provenance_sha256(provenance),
+        "execution_proof_sha256": _operational_provenance_sha256(proof),
+        "validator_sha256": executed["sha256"],
+    }
+
+
+def _operational_authority_sha256(value):
+    encoded = json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def _validate_authority_subjects(value, label):
+    if not isinstance(value, list) or not value:
+        raise ValidationError(_("%s besitzt keine Subjects.") % label)
+    subjects = [
+        _operational_file_proof(subject, "%s[%s]" % (label, index))
+        for index, subject in enumerate(value)
+    ]
+    files = [subject["file"] for subject in subjects]
+    if files != sorted(set(files)):
+        raise ValidationError(_("%s ist nicht eindeutig und kanonisch sortiert.") % label)
+    return subjects
+
+
+def _validate_authority_tool_binding(value, expected, label):
+    binding = _exact_keys(value, ("bytes", "file", "id", "kind", "sha256", "version"), label)
+    _operational_file_proof({key: binding[key] for key in ("file", "bytes", "sha256")}, label)
+    if (
+        binding["id"] != expected["id"]
+        or binding["kind"] != "derived-input"
+        or binding["version"] != "infra-deutschland-2026.5"
+        or binding["file"] != expected["file"]
+        or binding["bytes"] != expected["bytes"]
+        or binding["sha256"] != expected["sha256"]
+    ):
+        raise ValidationError(_("%s driftet vom gepinnten aktuellen Authority-Werkzeugvertrag.") % label)
+
+
+def _validate_authority_block(value, expected, label):
+    block = _exact_keys(value, (
+        "bundle", "denySelfHostedRunners", "predicateType", "repository", "signerWorkflow",
+        "sourceDigest", "sourceRef", "subjects",
+    ), label)
+    bundle = _operational_file_proof(block["bundle"], "%s.bundle" % label)
+    source_digest = block["sourceDigest"]
+    if (
+        bundle["file"] != expected["bundleFile"]
+        or block["denySelfHostedRunners"] is not True
+        or block["predicateType"] != expected["predicateType"]
+        or block["repository"] != "larynxberlin-rgb/Zugfolge"
+        or block["signerWorkflow"] != expected["signerWorkflow"]
+        or block["sourceRef"] != "refs/heads/main"
+        or not isinstance(source_digest, str) or not GIT_COMMIT.fullmatch(source_digest)
+    ):
+        raise ValidationError(_("%s driftet von der geschuetzten GitHub-Sigstore-Authority.") % label)
+    return {
+        "value": block,
+        "bundle": bundle,
+        "subjects": _validate_authority_subjects(block["subjects"], "%s.subjects" % label),
+        "source_digest": source_digest,
+    }
+
+
+def _validate_operational_authority(value):
+    authority = _exact_keys(value, ("execution", "rebuild", "schema", "trustedRoot", "verifier"), "Delivery Operational-v2-Build-Authority")
+    if authority["schema"] != OPERATIONAL_AUTHORITY_SCHEMA:
+        raise ValidationError(_("Delivery Operational-v2-Build-Authority besitzt ein unbekanntes Schema."))
+    _validate_authority_tool_binding(authority["verifier"], {
+        "id": "operational-attestation-verifier",
+        "file": "var/derived/germany-2026.5/toolchain/gh-2.94.0-windows-amd64.exe",
+        "bytes": 40_998_712,
+        "sha256": "91ed1eff1819a96b34bc2ca3adc01822c807ae1bb883c01ad9fdf335bf242b38",
+    }, "Delivery Operational-v2-Build-Authority.verifier")
+    _validate_authority_tool_binding(authority["trustedRoot"], {
+        "id": "operational-attestation-trusted-root",
+        "file": "var/derived/germany-2026.5/toolchain/github-attestation-trusted-root.jsonl",
+        "bytes": 34_634,
+        "sha256": "65ca537f6ed8a47fd0e560c421baa1f6c1efb8b25fc200d8c5c02c0e92eb2b9c",
+    }, "Delivery Operational-v2-Build-Authority.trustedRoot")
+    rebuild = _validate_authority_block(authority["rebuild"], {
+        "bundleFile": OPERATIONAL_REBUILD_ATTESTATION_FILE,
+        "predicateType": OPERATIONAL_REBUILD_ATTESTATION_PREDICATE,
+        "signerWorkflow": OPERATIONAL_REBUILD_ATTESTATION_WORKFLOW,
+    }, "Delivery Operational-v2-Build-Authority.rebuild")
+    execution_value = _exact_keys(authority["execution"], (
+        "bundle", "denySelfHostedRunners", "predicate", "predicateSha256", "predicateType", "repository",
+        "signerWorkflow", "sourceDigest", "sourceRef", "subjects",
+    ), "Delivery Operational-v2-Build-Authority.execution")
+    execution = _validate_authority_block({
+        key: item for key, item in execution_value.items() if key not in ("predicate", "predicateSha256")
+    }, {
+        "bundleFile": OPERATIONAL_EXECUTION_AUTHORITY_FILE,
+        "predicateType": OPERATIONAL_EXECUTION_AUTHORITY_PREDICATE,
+        "signerWorkflow": OPERATIONAL_EXECUTION_AUTHORITY_WORKFLOW,
+    }, "Delivery Operational-v2-Build-Authority.execution")
+    predicate = _exact_keys(execution_value["predicate"], (
+        "executionJob", "origin", "outerExecutionCompletion", "outerExecutionReceipt", "planAuthority",
+        "protectedEnvironment", "releaseId", "requiredPhases", "schema", "source", "verificationScope",
+    ), "Delivery Operational-v2-Build-Authority.execution.predicate")
+    if (
+        predicate["schema"] != OPERATIONAL_EXECUTION_AUTHORITY_SCHEMA
+        or predicate["releaseId"] != "infra-deutschland-2026.5"
+        or predicate["origin"] != "local-held-runner"
+        or predicate["verificationScope"] != "operator-approved-hash-binding-not-source-reexecution-v1"
+        or predicate["protectedEnvironment"] != "operational-release-approval"
+        or predicate["requiredPhases"] != [
+            "materialize-annual-plan-evidence-v1",
+            "execute-annual-operational-v2-v1",
+            "derive-and-capture-v1",
+        ]
+    ):
+        raise ValidationError(_("Delivery Operational-v2-Build-Authority.execution.predicate besitzt keinen exakten geschuetzten Authority-Kontext."))
+    source = _exact_keys(predicate["source"], ("commit", "ref", "repository"), "Delivery Operational-v2-Build-Authority.execution.predicate.source")
+    if (
+        source["repository"] != "larynxberlin-rgb/Zugfolge"
+        or source["ref"] != "refs/heads/main"
+        or source["commit"] != execution["source_digest"]
+        or rebuild["source_digest"] != execution["source_digest"]
+    ):
+        raise ValidationError(_("Delivery Operational-v2-Build-Authority bindet Rebuild, Execution und Predicate nicht an denselben protected-main-Commit."))
+    execution_job = _exact_keys(predicate["executionJob"], ("mode", "timeoutMilliseconds"), "Delivery Operational-v2-Build-Authority.execution.predicate.executionJob")
+    if execution_job != {"mode": "windows-kill-on-job-close-root-exit-bounded-io-v1", "timeoutMilliseconds": 21_600_000}:
+        raise ValidationError(_("Delivery Operational-v2-Build-Authority.execution.predicate besitzt keinen exakten Prozessbaumvertrag."))
+    plan_authority = _exact_keys(predicate["planAuthority"], (
+        "artifact", "bundle", "plan", "planCompletion", "startEvidence", "startEvidenceCompletion",
+    ), "Delivery Operational-v2-Build-Authority.execution.predicate.planAuthority")
+    artifact = _exact_keys(plan_authority["artifact"], ("digest", "id", "workflowRunId"), "Delivery Operational-v2-Build-Authority.execution.predicate.planAuthority.artifact")
+    if (
+        not _safe_integer(artifact["id"], 1)
+        or not _safe_integer(artifact["workflowRunId"], 1)
+        or not isinstance(artifact["digest"], str) or not re.fullmatch(r"sha256:[a-f0-9]{64}", artifact["digest"])
+    ):
+        raise ValidationError(_("Delivery Operational-v2-Build-Authority.execution.predicate besitzt keine eindeutigen GitHub-Artefaktmetadaten."))
+    plan_bundle = _operational_file_proof(plan_authority["bundle"], "Delivery Operational-v2-Build-Authority.execution.predicate.planAuthority.bundle")
+    if plan_bundle != rebuild["bundle"]:
+        raise ValidationError(_("Delivery Operational-v2-Build-Authority.execution.predicate bindet ein anderes Rebuild-Bundle."))
+    for key, expected_file in (
+        ("plan", OPERATIONAL_ANNUAL_PLAN_FILE),
+        ("planCompletion", OPERATIONAL_ANNUAL_PLAN_COMPLETION_FILE),
+        ("startEvidence", OPERATIONAL_ANNUAL_START_EVIDENCE_FILE),
+        ("startEvidenceCompletion", OPERATIONAL_ANNUAL_START_COMPLETION_FILE),
+    ):
+        proof = _operational_file_proof(plan_authority[key], "Delivery Operational-v2-Build-Authority.execution.predicate.planAuthority.%s" % key)
+        if proof["file"] != expected_file or proof not in rebuild["subjects"]:
+            raise ValidationError(_("Delivery Operational-v2-Build-Authority.rebuild bindet Phase-1-Subject %s nicht.") % expected_file)
+    outer_receipt = _operational_file_proof(predicate["outerExecutionReceipt"], "Delivery Operational-v2-Build-Authority.execution.predicate.outerExecutionReceipt")
+    outer_completion = _operational_file_proof(predicate["outerExecutionCompletion"], "Delivery Operational-v2-Build-Authority.execution.predicate.outerExecutionCompletion")
+    if outer_receipt["file"] != OPERATIONAL_OUTER_EXECUTION_RECEIPT_FILE or outer_completion["file"] != OPERATIONAL_OUTER_EXECUTION_COMPLETION_FILE:
+        raise ValidationError(_("Delivery Operational-v2-Build-Authority.execution.predicate bindet nicht Outer-Receipt und Completion."))
+    if execution["subjects"] != sorted((outer_receipt, outer_completion), key=lambda proof: proof["file"]):
+        raise ValidationError(_("Delivery Operational-v2-Build-Authority.execution besitzt nicht exakt Outer-Receipt und Completion als Subjects."))
+    if execution_value["predicateSha256"] != _operational_authority_sha256(predicate):
+        raise ValidationError(_("Delivery Operational-v2-Build-Authority.execution.predicateSha256 bindet das Predicate nicht kanonisch."))
+    return {
+        "value": authority,
+        "sha256": _operational_authority_sha256(authority),
+        "rebuild_attestation_sha256": rebuild["bundle"]["sha256"],
+        "execution_authority_attestation_sha256": execution["bundle"]["sha256"],
+        "outer_execution_receipt_sha256": outer_receipt["sha256"],
+        "outer_execution_completion_sha256": outer_completion["sha256"],
+        "source_commit": execution["source_digest"],
+    }
 
 
 def _quality_error(detail):
@@ -456,6 +868,7 @@ def _parse_package_manifest(raw):
         raise ValidationError(_("Paketmanifest ist nicht kanonisch serialisiert."))
     package_id = _safe_id(manifest.get("packageId"), "packageId")
     version = _safe_id(manifest.get("version"), "version")
+    _delivery_v2_generation(version)
     if manifest.get("partBytes") != PART_BYTES:
         raise ValidationError(_("Jahrespaket muss das 100-MiB-Transportprofil verwenden."))
     artifacts = manifest.get("artifacts")
@@ -627,13 +1040,16 @@ def _qualify_public_delivery(parsed, inventory):
     delivery_value, _delivery_raw = _read_packaged_json(by_kind["release-manifest"], inventory)
     sources, sources_raw = _read_packaged_json(by_kind["source-manifest"], inventory)
     quality, quality_raw = _read_packaged_json(by_kind["quality-manifest"], inventory)
+    current_operational = _delivery_v2_generation(parsed["version"]) == "integrated-provenance-v2"
     delivery = _exact_keys(delivery_value, (
         "schema", "releaseId", "timetableYear", "packageId", "packageVersion", "scope", "artifacts", "bindings",
-        "approvalGates", "releaseHash", "signature",
+        "approvalGates", "releaseHash", "signature", *(("operationalAuthority", "operationalProvenance") if current_operational else ()),
     ), "Delivery-Release")
     if delivery["schema"] != DELIVERY_SCHEMA or delivery["packageId"] != parsed["package_id"] or delivery["packageVersion"] != parsed["version"]:
         raise ValidationError(_("release.json ist kein an dieses Paket gebundener Delivery-Release."))
     release_id = _safe_id(delivery["releaseId"], "Delivery releaseId")
+    if release_id != "infra-deutschland-%s" % parsed["version"]:
+        raise ValidationError(_("Delivery-v2 bindet Paketversion und InfraRelease-ID nicht exakt."))
     year_match = re.match(r"^infra-deutschland-(\d{4})(?:\.|$)", release_id)
     if not year_match or not _safe_integer(delivery["timetableYear"], 2026) or delivery["timetableYear"] != int(year_match.group(1)):
         raise ValidationError(_("Delivery-Release bindet kein konsistentes Fahrplanjahr."))
@@ -646,7 +1062,7 @@ def _qualify_public_delivery(parsed, inventory):
         raise ValidationError(_("Delivery-Release besitzt keinen Operational-v2-Auslieferungsscope."))
     bindings = _exact_keys(delivery["bindings"], (
         "packageManifestSchema", "infraReleaseSchema", "mapReleaseSchema", "infraReleaseHash", "mapReleaseHash",
-        "sourcesSha256", "qualitySha256",
+        "sourcesSha256", "qualitySha256", *(("operationalAuthoritySha256", "operationalProvenanceSha256") if current_operational else ()),
     ), "Delivery bindings")
     if (
         bindings["packageManifestSchema"] != PACKAGE_SCHEMA
@@ -658,6 +1074,17 @@ def _qualify_public_delivery(parsed, inventory):
         or bindings["qualitySha256"] != hashlib.sha256(quality_raw).hexdigest()
     ):
         raise ValidationError(_("Delivery-Release bindet Paketvertrag, Infra-/Map-Release-Huellen, Quellen oder Qualitaet nicht bytegenau."))
+    if current_operational:
+        operational_provenance = _validate_operational_provenance(delivery["operationalProvenance"])
+        operational_authority = _validate_operational_authority(delivery["operationalAuthority"])
+        if (
+            bindings["operationalProvenanceSha256"] != operational_provenance["sha256"]
+            or bindings["operationalAuthoritySha256"] != operational_authority["sha256"]
+        ):
+            raise ValidationError(_("Delivery-Release bindet Operational-v2-Ausfuehrungsprovenienz oder Build-Authority nicht kanonisch."))
+    else:
+        operational_provenance = None
+        operational_authority = None
     expected_artifacts = sorted([
         {
             **{key: entry[key] for key in ("id", "kind", "installPath", "bytes", "sha256")},
@@ -726,6 +1153,15 @@ def _qualify_public_delivery(parsed, inventory):
             "timetable_year": delivery["timetableYear"],
             "signature_status": "missing",
             "activation_eligible": False,
+            "operational_provenance_sha256": operational_provenance["sha256"] if operational_provenance else None,
+            "operational_execution_proof_sha256": operational_provenance["execution_proof_sha256"] if operational_provenance else None,
+            "operational_validator_sha256": operational_provenance["validator_sha256"] if operational_provenance else None,
+            "operational_authority_sha256": operational_authority["sha256"] if operational_authority else None,
+            "operational_rebuild_attestation_sha256": operational_authority["rebuild_attestation_sha256"] if operational_authority else None,
+            "operational_execution_authority_attestation_sha256": operational_authority["execution_authority_attestation_sha256"] if operational_authority else None,
+            "operational_outer_execution_receipt_sha256": operational_authority["outer_execution_receipt_sha256"] if operational_authority else None,
+            "operational_outer_execution_completion_sha256": operational_authority["outer_execution_completion_sha256"] if operational_authority else None,
+            "operational_authority_source_commit": operational_authority["source_commit"] if operational_authority else None,
         }
     signature = _record(delivery["signature"], "Delivery-Signatur")
     if signature_gate.get("status") != "passed":
@@ -758,6 +1194,15 @@ def _qualify_public_delivery(parsed, inventory):
         "timetable_year": delivery["timetableYear"],
         "signature_status": "present",
         "activation_eligible": False,
+        "operational_provenance_sha256": operational_provenance["sha256"] if operational_provenance else None,
+        "operational_execution_proof_sha256": operational_provenance["execution_proof_sha256"] if operational_provenance else None,
+        "operational_validator_sha256": operational_provenance["validator_sha256"] if operational_provenance else None,
+        "operational_authority_sha256": operational_authority["sha256"] if operational_authority else None,
+        "operational_rebuild_attestation_sha256": operational_authority["rebuild_attestation_sha256"] if operational_authority else None,
+        "operational_execution_authority_attestation_sha256": operational_authority["execution_authority_attestation_sha256"] if operational_authority else None,
+        "operational_outer_execution_receipt_sha256": operational_authority["outer_execution_receipt_sha256"] if operational_authority else None,
+        "operational_outer_execution_completion_sha256": operational_authority["outer_execution_completion_sha256"] if operational_authority else None,
+        "operational_authority_source_commit": operational_authority["source_commit"] if operational_authority else None,
     }
 
 
@@ -806,6 +1251,16 @@ class ZugfolgeInfraReleaseImport(models.Model):
     ], readonly=True, copy=False)
     expected_operational_state_hash = fields.Char(readonly=True, copy=False)
     operational_state_hash = fields.Char(readonly=True, copy=False)
+    operational_provenance_sha256 = fields.Char(readonly=True, copy=False)
+    operational_execution_proof_sha256 = fields.Char(readonly=True, copy=False)
+    operational_validator_sha256 = fields.Char(readonly=True, copy=False)
+    operational_authority_status = fields.Selection([("missing", "Build-Authority fehlt"), ("verified", "Build-Authority geprueft")], readonly=True, copy=False)
+    operational_authority_sha256 = fields.Char(readonly=True, copy=False)
+    operational_rebuild_attestation_sha256 = fields.Char(readonly=True, copy=False)
+    operational_execution_authority_attestation_sha256 = fields.Char(readonly=True, copy=False)
+    operational_outer_execution_receipt_sha256 = fields.Char(readonly=True, copy=False)
+    operational_outer_execution_completion_sha256 = fields.Char(readonly=True, copy=False)
+    operational_authority_source_commit = fields.Char(readonly=True, copy=False)
     game_finalization_nonce = fields.Char(readonly=True, copy=False)
     game_finalization_requested_at = fields.Char(readonly=True, copy=False)
     game_finalization_receipt_sha256 = fields.Char(readonly=True, copy=False)
@@ -827,6 +1282,10 @@ class ZugfolgeInfraReleaseImport(models.Model):
         "verified_by_id", "staging_requested_at", "staged_at", "game_stage_result", "signature_status",
         "infra_release_hash", "timetable_year",
         "native_operational_validation_status", "activation_blocker", "expected_operational_state_hash", "operational_state_hash",
+        "operational_provenance_sha256", "operational_execution_proof_sha256", "operational_validator_sha256",
+        "operational_authority_status", "operational_authority_sha256", "operational_rebuild_attestation_sha256",
+        "operational_execution_authority_attestation_sha256", "operational_outer_execution_receipt_sha256",
+        "operational_outer_execution_completion_sha256", "operational_authority_source_commit",
         "game_finalization_nonce", "game_finalization_requested_at", "game_finalization_receipt_sha256", "game_finalization_key_id",
         "activation_eligible",
         "failure_code", "failure_detail", "adoption_request_id",
@@ -935,6 +1394,16 @@ class ZugfolgeInfraReleaseImport(models.Model):
             "verification_inventory_sha256": hashlib.sha256(inventory_bytes).hexdigest(),
             "signature_status": qualification["signature_status"],
             "expected_operational_state_hash": operational_file["stateHash"],
+            "operational_provenance_sha256": qualification["operational_provenance_sha256"],
+            "operational_execution_proof_sha256": qualification["operational_execution_proof_sha256"],
+            "operational_validator_sha256": qualification["operational_validator_sha256"],
+            "operational_authority_status": "missing",
+            "operational_authority_sha256": qualification["operational_authority_sha256"],
+            "operational_rebuild_attestation_sha256": qualification["operational_rebuild_attestation_sha256"],
+            "operational_execution_authority_attestation_sha256": qualification["operational_execution_authority_attestation_sha256"],
+            "operational_outer_execution_receipt_sha256": qualification["operational_outer_execution_receipt_sha256"],
+            "operational_outer_execution_completion_sha256": qualification["operational_outer_execution_completion_sha256"],
+            "operational_authority_source_commit": qualification["operational_authority_source_commit"],
             "activation_eligible": qualification["activation_eligible"],
         }
 
@@ -1024,6 +1493,15 @@ class ZugfolgeInfraReleaseImport(models.Model):
                 "manifestSha256": self.manifest_sha256,
                 "deliveryReleaseId": self.delivery_release_id,
                 "operationalStateHash": self.expected_operational_state_hash,
+                "operationalProvenanceSha256": self.operational_provenance_sha256 or None,
+                "operationalExecutionProofSha256": self.operational_execution_proof_sha256 or None,
+                "operationalValidatorSha256": self.operational_validator_sha256 or None,
+                "operationalAuthoritySha256": self.operational_authority_sha256 or None,
+                "operationalRebuildAttestationSha256": self.operational_rebuild_attestation_sha256 or None,
+                "operationalExecutionAuthorityAttestationSha256": self.operational_execution_authority_attestation_sha256 or None,
+                "operationalOuterExecutionReceiptSha256": self.operational_outer_execution_receipt_sha256 or None,
+                "operationalOuterExecutionCompletionSha256": self.operational_outer_execution_completion_sha256 or None,
+                "operationalAuthoritySourceCommit": self.operational_authority_source_commit or None,
             }, self.game_finalization_nonce)
             expected_remote_signature = "verified" if self.signature_status == "present" else "missing"
             if receipt["signatureStatus"] != expected_remote_signature:
@@ -1035,6 +1513,7 @@ class ZugfolgeInfraReleaseImport(models.Model):
                 "native_operational_validation_status": receipt["nativeOperationalValidationStatus"],
                 "activation_blocker": receipt["activationBlocker"] or False,
                 "operational_state_hash": receipt["operationalStateHash"] or False,
+                "operational_authority_status": receipt.get("operationalAuthorityStatus") or "missing",
                 "game_finalization_requested_at": receipt["requestedAt"],
                 "game_finalization_receipt_sha256": hashlib.sha256(receipt_bytes).hexdigest(),
                 "game_finalization_key_id": receipt["keyId"],
@@ -1049,6 +1528,7 @@ class ZugfolgeInfraReleaseImport(models.Model):
         self._require_reviewer()
         self._require_importer()
         self.ensure_one()
+        current_operational = _delivery_v2_generation(self.package_version) == "integrated-provenance-v2"
         if (
             self.state != "staged"
             or not self.activation_eligible
@@ -1062,6 +1542,24 @@ class ZugfolgeInfraReleaseImport(models.Model):
             or not self.game_finalization_key_id
             or not SHA256.fullmatch(self.infra_release_hash or "")
             or not isinstance(self.timetable_year, int)
+            or self.delivery_release_id != "infra-deutschland-%s" % self.package_version
+            or (
+                current_operational
+                and not all(SHA256.fullmatch(value or "") for value in (
+                    self.operational_provenance_sha256,
+                    self.operational_execution_proof_sha256,
+                    self.operational_validator_sha256,
+                    self.operational_authority_sha256,
+                    self.operational_rebuild_attestation_sha256,
+                    self.operational_execution_authority_attestation_sha256,
+                    self.operational_outer_execution_receipt_sha256,
+                    self.operational_outer_execution_completion_sha256,
+                ))
+            )
+            or (current_operational and (
+                self.operational_authority_status != "verified"
+                or not GIT_COMMIT.fullmatch(self.operational_authority_source_commit or "")
+            ))
             or isinstance(self.timetable_year, bool)
             or self.timetable_year < 2026
         ):

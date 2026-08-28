@@ -38,6 +38,68 @@ afterEach(async () => {
 });
 
 describe("Odoo-Infra-Paketupload", () => {
+  it("versioniert den signierten aktuellen Finalisierungsbeleg mit vollstaendiger Operational-Provenienz als v2", () => {
+    const receipt: InfraPackageFinalizationReceipt = {
+      schema: "zugfolge-infra-package-finalization-receipt/v2",
+      signatureAlgorithm: "HMAC-SHA256",
+      keyId: key.id,
+      nonce: "a".repeat(64),
+      requestedAt: "2026-08-25T08:00:00.000Z",
+      finalizedAt: "2026-08-25T08:00:01.000Z",
+      importId: "annual-2026-5",
+      packageId: "zugfolge-map-deutschland",
+      packageVersion: "2026.5",
+      manifestSha256: "b".repeat(64),
+      deliveryReleaseId: "infra-deutschland-2026.5",
+      operationalStateHash: "c".repeat(64),
+      operationalProvenanceStatus: "verified",
+      operationalProvenanceSha256: "d".repeat(64),
+      operationalExecutionProofSha256: "e".repeat(64),
+      operationalValidatorSha256: "f".repeat(64),
+      operationalAuthorityStatus: "verified",
+      operationalAuthoritySha256: "1".repeat(64),
+      operationalRebuildAttestationSha256: "2".repeat(64),
+      operationalExecutionAuthorityAttestationSha256: "3".repeat(64),
+      operationalOuterExecutionReceiptSha256: "4".repeat(64),
+      operationalOuterExecutionCompletionSha256: "5".repeat(64),
+      operationalAuthoritySourceCommit: "6".repeat(40),
+      signatureStatus: "verified",
+      nativeOperationalValidationStatus: "verified",
+      activationBlocker: null,
+      activationEligible: true,
+    };
+    expect(infraFinalizationReceiptSignature({ key, receipt })).toMatch(/^[a-f0-9]{64}$/u);
+    expect(() => infraFinalizationReceiptSignature({ key, receipt: { ...receipt, schema: "zugfolge-infra-package-finalization-receipt/v1" } })).toThrow(/Paketversion/u);
+    expect(() => infraFinalizationReceiptSignature({ key, receipt: { ...receipt, operationalExecutionProofSha256: null } })).toThrow(/Ausfuehrungsprovenienz/u);
+    expect(() => infraFinalizationReceiptSignature({ key, receipt: { ...receipt, operationalOuterExecutionCompletionSha256: null } })).toThrow(/Authority/u);
+    const unsigned: InfraPackageFinalizationReceipt = {
+      ...receipt,
+      operationalStateHash: null,
+      operationalProvenanceStatus: "missing",
+      operationalProvenanceSha256: null,
+      operationalExecutionProofSha256: null,
+      operationalValidatorSha256: null,
+      operationalAuthorityStatus: "missing",
+      operationalAuthoritySha256: null,
+      operationalRebuildAttestationSha256: null,
+      operationalExecutionAuthorityAttestationSha256: null,
+      operationalOuterExecutionReceiptSha256: null,
+      operationalOuterExecutionCompletionSha256: null,
+      operationalAuthoritySourceCommit: null,
+      signatureStatus: "missing",
+      nativeOperationalValidationStatus: "missing",
+      activationBlocker: "delivery-signature-missing",
+      activationEligible: false,
+    };
+    expect(infraFinalizationReceiptSignature({ key, receipt: unsigned })).toMatch(/^[a-f0-9]{64}$/u);
+    for (const packageVersion of ["2026.2", "2026.6", "2027.1", "2026.5-near-miss"]) {
+      expect(() => infraFinalizationReceiptSignature({
+        key,
+        receipt: { ...receipt, packageVersion, deliveryReleaseId: `infra-deutschland-${packageVersion}` },
+      })).toThrow(/nicht als Deutschland-Delivery-v2-Version freigegeben/u);
+    }
+  });
+
   it("authentifiziert Steuerkörper bytegenau und beginnt idempotent", async () => {
     const root = await mkdtemp(join(tmpdir(), "zugfolge-infra-route-"));
     roots.push(root);
@@ -100,6 +162,17 @@ describe("Odoo-Infra-Paketupload", () => {
         manifestSha256: "b".repeat(64),
         deliveryReleaseId: "infra-deutschland-2026.3",
         operationalStateHash: "c".repeat(64),
+        operationalProvenanceStatus: "missing",
+        operationalProvenanceSha256: null,
+        operationalExecutionProofSha256: null,
+        operationalValidatorSha256: null,
+        operationalAuthorityStatus: "missing",
+        operationalAuthoritySha256: null,
+        operationalRebuildAttestationSha256: null,
+        operationalExecutionAuthorityAttestationSha256: null,
+        operationalOuterExecutionReceiptSha256: null,
+        operationalOuterExecutionCompletionSha256: null,
+        operationalAuthoritySourceCommit: null,
         signatureStatus: "verified",
         nativeOperationalValidationStatus: "verified",
         activationBlocker: null,
@@ -129,6 +202,12 @@ describe("Odoo-Infra-Paketupload", () => {
       deliveryReleaseId: "infra-deutschland-2026.3",
       activationEligible: true,
     });
+    expect(Object.keys(value.finalizationReceipt).sort()).toEqual([
+      "activationBlocker", "activationEligible", "deliveryReleaseId", "finalizedAt", "importId", "keyId",
+      "manifestSha256", "nativeOperationalValidationStatus", "nonce", "operationalStateHash", "packageId",
+      "packageVersion", "requestedAt", "schema", "signatureAlgorithm", "signatureStatus",
+    ]);
+    expect(value).not.toHaveProperty("operationalProvenanceStatus");
     expect(value.finalizationReceiptSignature).toBe(infraFinalizationReceiptSignature({ key, receipt: value.finalizationReceipt }));
     await app.close();
   });
@@ -204,6 +283,17 @@ describe("Odoo-Infra-Paketupload", () => {
       manifestSha256: "b".repeat(64),
       deliveryReleaseId: "infra-deutschland-2026.3",
       operationalStateHash: "c".repeat(64),
+      operationalProvenanceStatus: "missing",
+      operationalProvenanceSha256: null,
+      operationalExecutionProofSha256: null,
+      operationalValidatorSha256: null,
+      operationalAuthorityStatus: "missing",
+      operationalAuthoritySha256: null,
+      operationalRebuildAttestationSha256: null,
+      operationalExecutionAuthorityAttestationSha256: null,
+      operationalOuterExecutionReceiptSha256: null,
+      operationalOuterExecutionCompletionSha256: null,
+      operationalAuthoritySourceCommit: null,
       signatureStatus: "verified",
       nativeOperationalValidationStatus: "verified",
       activationBlocker: null,
@@ -233,6 +323,12 @@ describe("Odoo-Infra-Paketupload", () => {
       activationBlocker: null,
       activationEligible: true,
     });
+    expect(Object.keys(value.finalizationReceipt).sort()).toEqual([
+      "activationBlocker", "activationEligible", "deliveryReleaseId", "finalizedAt", "importId", "keyId",
+      "manifestSha256", "nativeOperationalValidationStatus", "nonce", "operationalStateHash", "packageId",
+      "packageVersion", "requestedAt", "schema", "signatureAlgorithm", "signatureStatus",
+    ]);
+    expect(value).not.toHaveProperty("operationalProvenanceStatus");
     expect(value.finalizationReceiptSignature).toBe(infraFinalizationReceiptSignature({ key, receipt: value.finalizationReceipt }));
     await app.close();
   });

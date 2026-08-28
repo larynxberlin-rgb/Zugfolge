@@ -1,8 +1,10 @@
 import assert from "node:assert/strict";
-import { createHash, generateKeyPairSync } from "node:crypto";
+import { createHash, generateKeyPairSync, sign as signEd25519 } from "node:crypto";
+import { spawnSync } from "node:child_process";
 import { mkdtemp, mkdir, open, readFile, rename, rm, symlink, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import test from "node:test";
 
 import { BASEMAP_VECTOR_LAYERS, expandMapPackagePlan, INFRASTRUCTURE_VECTOR_LAYERS } from "./map-package.mjs";
@@ -10,6 +12,7 @@ import { buildMapAssetTreeProof, validateMapAssetNoticeBindings } from "./map-as
 import {
   buildMapDeliveryRelease,
   buildMapDeliverySources,
+  deliveryReleaseHash,
   serializeDeliveryJson,
   signMapDeliveryRelease,
   verifyMapDeliveryReleaseSignature,
@@ -17,6 +20,19 @@ import {
   writeSignedMapDeliveryRelease,
 } from "./map-delivery-release.mjs";
 import { deriveSignedMapPackagePlan } from "./signed-map-package-plan.mjs";
+import {
+  GERMANY_OPERATIONAL_ANNUAL_LAUNCH_MODE,
+  GERMANY_OPERATIONAL_DIRECT_SYSTEM_LAUNCH_CONTRACT_SCHEMA,
+  GERMANY_OPERATIONAL_EXECUTION_PINS_SCHEMA,
+  GERMANY_OPERATIONAL_WINDOWS_LAUNCHER_SOURCE_FILE,
+  GERMANY_OPERATIONAL_WINDOWS_ANCHOR_HELPER_FILE,
+  germanyOperationalProvenanceSha256,
+  germanyOperationalSystemLauncherSourceProof,
+} from "../region-import/germany/operational-infrastructure-v2-execution-pins.mjs";
+import {
+  operationalBuildAuthoritySha256,
+  validateOperationalBuildAuthority,
+} from "../region-import/germany/operational-build-authority.mjs";
 
 const HASH_A = "a".repeat(64);
 const HASH_B = "b".repeat(64);
@@ -39,6 +55,200 @@ const QUALITY_LAYER_NAMES = [
   "rail_corridors", "operating_points", "stations", "tracks", "platforms",
   "switches", "signals", "blocks", "conflict_resources", "rail_context",
 ];
+
+function sortedValue(value) {
+  if (Array.isArray(value)) return value.map(sortedValue);
+  if (value !== null && typeof value === "object") {
+    return Object.fromEntries(Object.keys(value).sort().map((key) => [key, sortedValue(value[key])]));
+  }
+  return value;
+}
+
+function integratedOperationalProvenance() {
+  const validatorSha256 = "3".repeat(64);
+  const executionPinsSha256 = "2".repeat(64);
+  const launcher = germanyOperationalSystemLauncherSourceProof("win32");
+  return {
+    schema: "zugfolge-germany-operational-v2-provenance/v1",
+    producerKind: "integrated-runner-v1",
+    releaseEvidenceEligible: true,
+    productionActivationEligible: true,
+    executionPins: {
+      file: "tools/region-import/germany/operational-infrastructure-v2-execution-pins.annual-2026.5.json",
+      bytes: 123,
+      sha256: executionPinsSha256,
+      schema: "zugfolge-germany-operational-v2-execution-pins/v1",
+    },
+    executionProof: {
+      schema: "zugfolge-germany-operational-v2-execution-proof/v1",
+      executionPinsSha256,
+      runner: {
+        anchorHelper: {
+          file: GERMANY_OPERATIONAL_WINDOWS_ANCHOR_HELPER_FILE,
+          bytes: 1024,
+          sha256: "e".repeat(64),
+        },
+        bundle: {
+          file: "tools/region-import/germany/run-capture-operational-infrastructure-v2.anchored-bundle.mjs",
+          bytes: 103,
+          sha256: "9".repeat(64),
+        },
+        entrypoint: { file: "tools/region-import/germany/run-capture-operational-infrastructure-v2.mjs", bytes: 101, sha256: "4".repeat(64) },
+        importClosure: [
+          { file: GERMANY_OPERATIONAL_WINDOWS_LAUNCHER_SOURCE_FILE, bytes: launcher.sourceBytes, sha256: launcher.sourceSha256 },
+          { file: "tools/region-import/germany/run-capture-operational-infrastructure-v2.mjs", bytes: 101, sha256: "4".repeat(64) },
+        ].sort((left, right) => left.file.localeCompare(right.file, "en")),
+        invocation: {
+          mode: "system-launcher-held-bundle-stdin-v1",
+          nodeArguments: ["--input-type=module", "-"],
+          nodeOptions: null,
+        },
+        launcher,
+        runtime: {
+          id: "nodejs-24-operational-runner-v1",
+          platform: "win32",
+          bytes: 50_000_000,
+          sha256: "0".repeat(64),
+        },
+      },
+      annualLaunch: {
+        mode: GERMANY_OPERATIONAL_ANNUAL_LAUNCH_MODE,
+        contract: {
+          bytes: 204,
+          file: "tools/region-import/germany/operational-infrastructure-v2-direct-system-launch.annual-2026.5.json",
+          releaseId: "infra-deutschland-2026.5",
+          schema: GERMANY_OPERATIONAL_DIRECT_SYSTEM_LAUNCH_CONTRACT_SCHEMA,
+          sha256: "d".repeat(64),
+        },
+        executionPins: {
+          file: "tools/region-import/germany/operational-infrastructure-v2-execution-pins.annual-2026.5.json",
+          bytes: 123,
+          sha256: executionPinsSha256,
+          schema: GERMANY_OPERATIONAL_EXECUTION_PINS_SCHEMA,
+        },
+        trustedExecutor: {
+          buildCommit: "6".repeat(40),
+          bytes: 8382277,
+          file: "var/derived/germany-2026.5/toolchain/validator.exe",
+          sha256: validatorSha256,
+        },
+      },
+      validator: {
+        buildCommit: "6".repeat(40),
+        preserved: { file: "var/derived/germany-2026.5/toolchain/validator.exe", bytes: 8382277, sha256: validatorSha256 },
+        executed: { mode: "windows-exclusive-handle-launch-v1", bytes: 8382277, sha256: validatorSha256 },
+      },
+      rebuild: {
+        specification: { file: "tools/region-import/germany/operational-validator-rebuild.annual-2026.5.json", bytes: 201, sha256: "7".repeat(64) },
+        evidence: { file: "var/derived/germany-2026.5/toolchain/rebuild-evidence.json", bytes: 202, sha256: "8".repeat(64), schema: "zugfolge-operational-validator-rebuild-evidence/v2" },
+        sourceCommit: "6".repeat(40),
+      },
+      invocation: {
+        command: "derive-germany-operational-v2",
+        argumentPrefix: [],
+        argumentFiles: [],
+        arguments: ["derive-germany-operational-v2", "spec.json", "source", "candidate.json", "report.json"],
+      },
+      stdout: { bytes: 401, sha256: "a".repeat(64), recordCount: 1, structuredReceiptSha256: "b".repeat(64) },
+      exit: { code: 0, signal: null },
+    },
+  };
+}
+
+function operationalAuthority(mapBuildCommit = "4".repeat(40)) {
+  const proof = (file) => ({
+    bytes: Buffer.byteLength(file, "utf8") + 1,
+    file,
+    sha256: createHash("sha256").update(file).digest("hex"),
+  });
+  const plan = proof("var/derived/germany-2026.5/toolchain/zugfolge-infra-release-annual-plan.json");
+  const planCompletion = proof(`${plan.file}.zugfolge-complete.json`);
+  const startEvidence = proof("var/derived/germany-2026.5/toolchain/zugfolge-infra-release-annual-executor-start-evidence.json");
+  const startEvidenceCompletion = proof(`${startEvidence.file}.zugfolge-complete.json`);
+  const outerExecutionReceipt = proof("var/derived/germany-2026.5/operational-infrastructure-v2.outer-execution-receipt.json");
+  const outerExecutionCompletion = proof(`${outerExecutionReceipt.file}.zugfolge-complete.json`);
+  const rebuildBundle = proof("var/derived/germany-2026.5/toolchain/zugfolge-infra-release-rebuild-attestation.sigstore.json");
+  const executionBundle = proof("var/derived/germany-2026.5/toolchain/zugfolge-operational-v2-execution-authority.sigstore.json");
+  const predicate = {
+    executionJob: {
+      mode: "windows-kill-on-job-close-root-exit-bounded-io-v1",
+      timeoutMilliseconds: 21_600_000,
+    },
+    origin: "local-held-runner",
+    outerExecutionCompletion,
+    outerExecutionReceipt,
+    planAuthority: {
+      artifact: { digest: `sha256:${"9".repeat(64)}`, id: 12_345, workflowRunId: 67_890 },
+      bundle: rebuildBundle,
+      plan,
+      planCompletion,
+      startEvidence,
+      startEvidenceCompletion,
+    },
+    protectedEnvironment: "operational-release-approval",
+    releaseId: "infra-deutschland-2026.5",
+    requiredPhases: [
+      "materialize-annual-plan-evidence-v1",
+      "execute-annual-operational-v2-v1",
+      "derive-and-capture-v1",
+    ],
+    schema: "zugfolge-operational-v2-execution-authority/v1",
+    source: {
+      commit: mapBuildCommit,
+      ref: "refs/heads/main",
+      repository: "larynxberlin-rgb/Zugfolge",
+    },
+    verificationScope: "operator-approved-hash-binding-not-source-reexecution-v1",
+  };
+  const block = (bundle, predicateType, signerWorkflow, subjects) => ({
+    bundle,
+    denySelfHostedRunners: true,
+    predicateType,
+    repository: "larynxberlin-rgb/Zugfolge",
+    signerWorkflow,
+    sourceDigest: mapBuildCommit,
+    sourceRef: "refs/heads/main",
+    subjects: [...subjects].sort((left, right) => left.file.localeCompare(right.file, "en")),
+  });
+  const authority = {
+    execution: {
+      ...block(
+        executionBundle,
+        "https://zugfolge.de/attestations/operational-v2-execution-authority/v1",
+        "larynxberlin-rgb/Zugfolge/.github/workflows/operational-v2-execution-authority.yml",
+        [outerExecutionReceipt, outerExecutionCompletion],
+      ),
+      predicate,
+      predicateSha256: createHash("sha256")
+        .update(Buffer.from(JSON.stringify(sortedValue(predicate)), "utf8"))
+        .digest("hex"),
+    },
+    rebuild: block(
+      rebuildBundle,
+      "https://slsa.dev/provenance/v1",
+      "larynxberlin-rgb/Zugfolge/.github/workflows/operational-validator-rebuild-evidence.yml",
+      [plan, planCompletion, startEvidence, startEvidenceCompletion],
+    ),
+    schema: "zugfolge-map-build-operational-authority/v1",
+    trustedRoot: {
+      bytes: 34_634,
+      file: "var/derived/germany-2026.5/toolchain/github-attestation-trusted-root.jsonl",
+      id: "operational-attestation-trusted-root",
+      kind: "derived-input",
+      sha256: "65ca537f6ed8a47fd0e560c421baa1f6c1efb8b25fc200d8c5c02c0e92eb2b9c",
+      version: "infra-deutschland-2026.5",
+    },
+    verifier: {
+      bytes: 40_998_712,
+      file: "var/derived/germany-2026.5/toolchain/gh-2.94.0-windows-amd64.exe",
+      id: "operational-attestation-verifier",
+      kind: "derived-input",
+      sha256: "91ed1eff1819a96b34bc2ca3adc01822c807ae1bb883c01ad9fdf335bf242b38",
+      version: "infra-deutschland-2026.5",
+    },
+  };
+  return validateOperationalBuildAuthority(authority);
+}
 
 function notice(text) {
   return { text, bytes: Buffer.byteLength(text), sha256: createHash("sha256").update(text).digest("hex") };
@@ -557,6 +767,280 @@ test("kombinierter Deliveryvertrag bindet Transfer-v2 lokal bytegenau ohne Signa
     assert.equal((await writeMapDeliveryRelease(result, output)).releaseStatus, "written");
     assert.equal((await writeMapDeliveryRelease(result, output)).releaseStatus, "reused");
     assert.deepEqual(JSON.parse(await readFile(join(output, "release.json"), "utf8")), result.release);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("aktuelle Build- und Signier-CLIs verlangen den expliziten Map-Build-Commit vor Artefakt- oder Keyzugriffen", async () => {
+  const root = await mkdtemp(join(tmpdir(), "zugfolge-delivery-current-cli-"));
+  try {
+    const planPath = join(root, "current-plan.json");
+    await writeFile(planPath, `${JSON.stringify({
+      schema: "zugfolge-map-package-plan/v2",
+      version: "2026.5",
+    })}\n`, "utf8");
+    const build = spawnSync(process.execPath, [
+      fileURLToPath(new URL("./build-map-delivery-release.mjs", import.meta.url)),
+      planPath,
+      root,
+      join(root, "missing-infra.json"),
+      join(root, "missing-map.json"),
+      join(root, "missing-read-model.json"),
+      join(root, "output"),
+    ], { encoding: "utf8" });
+    assert.notEqual(build.status, 0);
+    assert.match(build.stderr, /current 2026\.5 verlangt einen expliziten MAP_BUILD_COMMIT/u);
+    assert.doesNotMatch(build.stderr, /missing-infra|missing-map|missing-read-model/u);
+
+    const sign = spawnSync(process.execPath, [
+      fileURLToPath(new URL("./sign-map-delivery-release.mjs", import.meta.url)),
+      planPath,
+      root,
+      join(root, "private-key-must-not-be-read.pem"),
+      "map-current",
+      join(root, "signed-release.json"),
+    ], { encoding: "utf8" });
+    assert.notEqual(sign.status, 0);
+    assert.match(sign.stderr, /current 2026\.5 verlangt einen expliziten MAP_BUILD_COMMIT/u);
+    assert.doesNotMatch(sign.stderr, /private-key-must-not-be-read/u);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("aktueller Delivery-v2-Signaturpfad akzeptiert nur integrierte Operational-Ausfuehrungsprovenienz", async () => {
+  const root = await fixture();
+  try {
+    const built = await buildMapDeliveryRelease({
+      releaseId: "infra-deutschland-2026.1",
+      timetableYear: 2026,
+      packageSpec: packageSpec(),
+      sourceRoot: root,
+      infraRelease: materializedInfraRelease(),
+      mapRelease: materializedMapRelease(),
+      auxiliaryArtifactProofs: [{ id: "readmodel", bytes: SQLITE_BYTES.length, sha256: SQLITE_SHA256 }],
+    });
+    const operationalProvenance = integratedOperationalProvenance();
+    const authority = operationalAuthority();
+    const current = {
+      ...structuredClone(built.release),
+      releaseId: "infra-deutschland-2026.5",
+      packageVersion: "2026.5",
+      operationalAuthority: authority,
+      operationalProvenance,
+      bindings: {
+        ...built.release.bindings,
+        operationalAuthoritySha256: operationalBuildAuthoritySha256(authority),
+        operationalProvenanceSha256: germanyOperationalProvenanceSha256(operationalProvenance),
+      },
+    };
+    const keys = generateKeyPairSync("ed25519");
+    const privatePem = keys.privateKey.export({ type: "pkcs8", format: "pem" });
+    const publicPem = keys.publicKey.export({ type: "spki", format: "pem" });
+    const signed = signMapDeliveryRelease(current, privatePem, "map-current");
+    assert.equal(verifyMapDeliveryReleaseSignature(signed, publicPem), true);
+
+    const authorityMutations = [
+      ["fehlende Authority", (value) => { delete value.operationalAuthority; }],
+      ["fehlender Authority-Hash", (value) => { delete value.bindings.operationalAuthoritySha256; }],
+      ["mutierter Authority-Hash", (value) => { value.bindings.operationalAuthoritySha256 = "f".repeat(64); }],
+      ["mutiertes Authority-Bundle", (value) => { value.operationalAuthority.rebuild.bundle.sha256 = "f".repeat(64); }],
+      ["mutiertes Authority-Subject", (value) => { value.operationalAuthority.execution.subjects[0].sha256 = "f".repeat(64); }],
+      ["mutierte Outer-Completion", (value) => { value.operationalAuthority.execution.predicate.outerExecutionCompletion.sha256 = "f".repeat(64); }],
+      ["mutierter Source-Commit", (value) => { value.operationalAuthority.execution.predicate.source.commit = "f".repeat(40); }],
+    ];
+    for (const [label, mutate] of authorityMutations) {
+      const drifted = structuredClone(current);
+      mutate(drifted);
+      assert.throws(() => signMapDeliveryRelease(drifted, privatePem, "map-current"), undefined, label);
+
+      const forceResigned = structuredClone(signed);
+      mutate(forceResigned);
+      forceResigned.releaseHash = deliveryReleaseHash(forceResigned);
+      forceResigned.signature.valueBase64 = signEd25519(
+        null,
+        Buffer.from(forceResigned.releaseHash, "hex"),
+        keys.privateKey,
+      ).toString("base64");
+      assert.equal(verifyMapDeliveryReleaseSignature(forceResigned, publicPem), false,
+        `${label} muss auch mit einer kryptografisch nachgezogenen Delivery-Signatur scheitern.`);
+    }
+
+    const forensic = structuredClone(current);
+    forensic.operationalProvenance = {
+      ...forensic.operationalProvenance,
+      producerKind: "forensic-stdin-v1",
+      releaseEvidenceEligible: false,
+      productionActivationEligible: false,
+      executionProof: null,
+    };
+    forensic.bindings.operationalProvenanceSha256 = germanyOperationalProvenanceSha256(forensic.operationalProvenance);
+    assert.throws(
+      () => signMapDeliveryRelease(forensic, privatePem, "map-current"),
+      /nur mit integrierter Operational-v2-Provenienz und Build-Authority/u,
+    );
+
+    const substitutedValidator = structuredClone(current);
+    substitutedValidator.operationalProvenance.executionProof.validator.executed.sha256 = "f".repeat(64);
+    assert.throws(
+      () => signMapDeliveryRelease(substitutedValidator, privatePem, "map-current"),
+      /preserved Validator-Bytes/u,
+    );
+
+    for (const [label, mutate] of [
+      ["Legacy-Runner-Shape", (value) => {
+        value.operationalProvenance.executionProof.runner = {
+          entrypoint: value.operationalProvenance.executionProof.runner.entrypoint,
+          importClosure: value.operationalProvenance.executionProof.runner.importClosure,
+          invocation: { execArgv: [], nodeOptions: null },
+        };
+      }],
+      ["falsche Node-Argumente", (value) => { value.operationalProvenance.executionProof.runner.invocation.nodeArguments = ["--input-type=module", "runner.mjs"]; }],
+      ["falscher Invocation-Modus", (value) => { value.operationalProvenance.executionProof.runner.invocation.mode = "process-execfile-runner-v1"; }],
+      ["falscher Launcher-Modus", (value) => { value.operationalProvenance.executionProof.runner.launcher.mode = "windows-exclusive-handle-launch-v1"; }],
+      ["falscher Launcher-Quellhash", (value) => { value.operationalProvenance.executionProof.runner.launcher.sourceSha256 = "f".repeat(64); }],
+      ["falsche Runtime-ID", (value) => { value.operationalProvenance.executionProof.runner.runtime.id = "nodejs-path-only-v1"; }],
+      ["falsche Plattformkopplung", (value) => { value.operationalProvenance.executionProof.runner.runtime.platform = "linux"; }],
+    ]) {
+      const drifted = structuredClone(current);
+      mutate(drifted);
+      assert.throws(() => signMapDeliveryRelease(drifted, privatePem, "map-current"), undefined, label);
+    }
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("Delivery-v2-Signatur verwirft unbekannte Generationen und falsch gekoppelte Release-IDs", async () => {
+  const root = await fixture();
+  try {
+    const built = await buildMapDeliveryRelease({
+      releaseId: "infra-deutschland-2026.1",
+      timetableYear: 2026,
+      packageSpec: packageSpec(),
+      sourceRoot: root,
+      infraRelease: materializedInfraRelease(),
+      mapRelease: materializedMapRelease(),
+      auxiliaryArtifactProofs: [{ id: "readmodel", bytes: SQLITE_BYTES.length, sha256: SQLITE_SHA256 }],
+    });
+    const privatePem = generateKeyPairSync("ed25519").privateKey.export({ type: "pkcs8", format: "pem" });
+    for (const packageVersion of ["2026.2", "2026.6", "2027.1", "2026.5-near-miss"]) {
+      assert.throws(
+        () => signMapDeliveryRelease({
+          ...structuredClone(built.release),
+          releaseId: `infra-deutschland-${packageVersion}`,
+          packageVersion,
+        }, privatePem, "map-current"),
+        /nicht als Deutschland-Delivery-v2-Version freigegeben/u,
+      );
+    }
+    assert.throws(
+      () => signMapDeliveryRelease({
+        ...structuredClone(built.release),
+        releaseId: "infra-deutschland-2026.4",
+        packageVersion: "2026.3",
+      }, privatePem, "map-current"),
+      /Paketversion und InfraRelease-ID nicht exakt/u,
+    );
+    const legacyWithAuthority = structuredClone(built.release);
+    legacyWithAuthority.operationalAuthority = operationalAuthority();
+    legacyWithAuthority.bindings.operationalAuthoritySha256 = operationalBuildAuthoritySha256(
+      legacyWithAuthority.operationalAuthority,
+    );
+    assert.throws(
+      () => signMapDeliveryRelease(legacyWithAuthority, privatePem, "map-current"),
+      /Legacy-Delivery-v2 darf keine aktuelle Operational-v2-Provenienz oder Build-Authority tragen/u,
+    );
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("aktueller Delivery-v2-Builder verwirft ein forensisches Publication-Receipt vor jeder Paketfreigabe", async () => {
+  const root = await fixture();
+  try {
+    const spec = packageSpec();
+    spec.version = "2026.5";
+    spec.operationalProvenanceSource = {
+      publicationReceiptFile: "public/operational-infrastructure-v2.publication-receipt.json",
+    };
+    spec.operationalAuthoritySource = {
+      buildEvidenceSpecFile: "tools/tiles/map-release-build-evidence.annual-2026.5.spec.json",
+    };
+    await writeFile(join(root, "public", "operational-infrastructure-v2.publication-receipt.json"), "{}\n");
+    const forensic = {
+      ...integratedOperationalProvenance(),
+      producerKind: "forensic-stdin-v1",
+      releaseEvidenceEligible: false,
+      productionActivationEligible: false,
+      executionProof: null,
+    };
+    let verified = false;
+    await assert.rejects(
+      buildMapDeliveryRelease({
+        releaseId: "infra-deutschland-2026.5",
+        timetableYear: 2026,
+        packageSpec: spec,
+        sourceRoot: root,
+        infraRelease: materializedInfraRelease(),
+        mapRelease: materializedMapRelease(),
+        auxiliaryArtifactProofs: [{ id: "readmodel", bytes: SQLITE_BYTES.length, sha256: SQLITE_SHA256 }],
+        mapBuildCommit: "4".repeat(40),
+        materializeOperationalAuthority: async () => operationalAuthority(),
+        verifyOperationalPublication: async ({ expectedReleaseId, publicationReceiptPath }) => {
+          verified = expectedReleaseId === "infra-deutschland-2026.5"
+            && publicationReceiptPath.endsWith("operational-infrastructure-v2.publication-receipt.json");
+          return { receipt: { operationalProvenance: forensic } };
+        },
+      }),
+      /nur atomar integrierte, evidence- und aktivierungsgeeignete/u,
+    );
+    assert.equal(verified, true);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("aktueller Delivery-v2-Builder verwirft einen echten Same-Path-Austausch des Publication-Receipts waehrend der Verifikation", async () => {
+  const root = await fixture();
+  try {
+    const spec = packageSpec();
+    spec.version = "2026.5";
+    spec.operationalProvenanceSource = {
+      publicationReceiptFile: "public/operational-infrastructure-v2.publication-receipt.json",
+    };
+    spec.operationalAuthoritySource = {
+      buildEvidenceSpecFile: "tools/tiles/map-release-build-evidence.annual-2026.5.spec.json",
+    };
+    const publicationReceiptPath = join(root, "public", "operational-infrastructure-v2.publication-receipt.json");
+    const displacedPath = join(root, "public", "operational-infrastructure-v2.publication-receipt.displaced.json");
+    await writeFile(publicationReceiptPath, "{\"generation\":\"original\"}\n");
+    let replacementObserved = false;
+    await assert.rejects(
+      buildMapDeliveryRelease({
+        releaseId: "infra-deutschland-2026.5",
+        timetableYear: 2026,
+        packageSpec: spec,
+        sourceRoot: root,
+        infraRelease: materializedInfraRelease(),
+        mapRelease: materializedMapRelease(),
+        auxiliaryArtifactProofs: [{ id: "readmodel", bytes: SQLITE_BYTES.length, sha256: SQLITE_SHA256 }],
+        mapBuildCommit: "4".repeat(40),
+        materializeOperationalAuthority: async () => operationalAuthority(),
+        verifyOperationalPublication: async ({ publicationReceiptPath: verifiedPath, publicationReceiptBytes }) => {
+          assert.deepEqual(publicationReceiptBytes, Buffer.from('{"generation":"original"}\n'));
+          await rename(verifiedPath, displacedPath);
+          await writeFile(verifiedPath, "{\"generation\":\"replacement\"}\n", { flag: "wx" });
+          replacementObserved = (await readFile(verifiedPath, "utf8")).includes("replacement");
+          return { receipt: { operationalProvenance: integratedOperationalProvenance() } };
+        },
+      }),
+      /änderte sich während des Lesens|änderte einen Pfadbestandteil während des Lesens|verweist nicht mehr auf die geöffnete reguläre Datei|änderte sein reales Ziel/u,
+    );
+    assert.equal(replacementObserved, true);
+    assert.match(await readFile(displacedPath, "utf8"), /original/u);
+    assert.match(await readFile(publicationReceiptPath, "utf8"), /replacement/u);
   } finally {
     await rm(root, { recursive: true, force: true });
   }

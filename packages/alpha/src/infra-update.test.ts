@@ -1,4 +1,4 @@
-import { generateKeyPairSync, sign } from "node:crypto";
+import { createHash, generateKeyPairSync, sign } from "node:crypto";
 
 import { PGlite } from "@electric-sql/pglite";
 import { MIGRATIONS_FOLDER, alphaWorldProfiles, domainEvents, gameAdminRequests, infraReleaseChanges, odooCommandQueue, regionalSimulationStates, worlds } from "@zugfolge/db";
@@ -22,7 +22,6 @@ const VALID_FROM = new Date("2026-01-22T00:00:00.000Z");
 const OLD = "a".repeat(64);
 const PACKAGE_MANIFEST_SHA256 = "1".repeat(64);
 const QUALIFIED_INFRA_RELEASE_HASH = "2".repeat(64);
-const QUALIFIED_DELIVERY_RELEASE_HASH = "3".repeat(64);
 const QUALIFIED_KEY_ID = "delivery-2027";
 const QUALIFIED_KEYS = generateKeyPairSync("ed25519");
 const QUALIFIED_PUBLIC_KEY = QUALIFIED_KEYS.publicKey.export({ type: "spki", format: "pem" }).toString();
@@ -39,7 +38,7 @@ const PREDECESSOR_INFRASTRUCTURE: OperationalInfrastructureBinding = Object.free
 });
 const TARGET_INFRASTRUCTURE: OperationalInfrastructureBinding = Object.freeze({
   schemaVersion: "zugfolge-operational-infrastructure-binding/v2",
-  infraReleaseId: "infra-deutschland-2027.1",
+  infraReleaseId: "infra-deutschland-2026.4",
   file: "operational-infrastructure-v2.json",
   bytes: 8_192,
   sha256: "0".repeat(64),
@@ -107,28 +106,93 @@ async function adminRequest(releaseHash: string, state: "approved" | "dispatched
   return request!;
 }
 
+function canonicalValue(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(canonicalValue);
+  if (value !== null && typeof value === "object") {
+    return Object.fromEntries(Object.keys(value).sort().map((key) => [key, canonicalValue((value as Record<string, unknown>)[key])]));
+  }
+  return value;
+}
+
+function canonicalBytes(value: unknown): Buffer {
+  return Buffer.from(`${JSON.stringify(canonicalValue(value), null, 2)}\n`, "utf8");
+}
+
+function qualifiedSignatureProof(
+  releaseId: string,
+  releaseHash: string,
+  timetableYear: number,
+  infrastructure: OperationalInfrastructureBinding,
+): QualifiedInfraPackageCandidate["signatureProof"] {
+  const signingPayload = {
+    schema: "zugfolge-map-delivery-release/v2",
+    releaseId,
+    timetableYear,
+    packageId: "infra-deutschland-test-package",
+    packageVersion: releaseId.replace("infra-deutschland-", ""),
+    scope: {},
+    artifacts: [{
+      id: "operational-infrastructure-v2",
+      kind: "operational-infrastructure-v2",
+      infraReleaseId: infrastructure.infraReleaseId,
+      installPath: infrastructure.file,
+      bytes: infrastructure.bytes,
+      sha256: infrastructure.sha256,
+      stateHash: infrastructure.stateHash,
+    }],
+    bindings: {
+      packageManifestSchema: "zugfolge-map-package/v2",
+      infraReleaseSchema: "zugfolge-infra-release/v2",
+      mapReleaseSchema: "zugfolge-map-release/v1",
+      infraReleaseHash: releaseHash,
+      mapReleaseHash: "7".repeat(64),
+      sourcesSha256: "8".repeat(64),
+      qualitySha256: "9".repeat(64),
+    },
+    approvalGates: {
+      rights: { status: "passed" },
+      quality: { status: "passed" },
+      signature: { status: "passed", algorithm: "Ed25519", keyId: QUALIFIED_KEY_ID },
+    },
+  };
+  const deliveryReleaseHash = createHash("sha256").update(canonicalBytes(signingPayload)).digest("hex");
+  const valueBase64 = sign(null, Buffer.from(deliveryReleaseHash, "hex"), QUALIFIED_KEYS.privateKey).toString("base64");
+  const deliveryRelease = {
+    ...signingPayload,
+    releaseHash: deliveryReleaseHash,
+    signature: { algorithm: "Ed25519", keyId: QUALIFIED_KEY_ID, valueBase64 },
+  };
+  return {
+    schema: "zugfolge-infra-package-activation-proof/v1",
+    deliveryReleaseId: releaseId,
+    timetableYear,
+    packageManifestSha256: PACKAGE_MANIFEST_SHA256,
+    deliveryReleaseHash,
+    infraReleaseHash: releaseHash,
+    deliveryReleaseBase64: canonicalBytes(deliveryRelease).toString("base64"),
+    algorithm: "Ed25519",
+    keyId: QUALIFIED_KEY_ID,
+    valueBase64,
+    signatureStatus: "verified",
+    nativeOperationalValidationStatus: "verified",
+    operationalStateHash: infrastructure.stateHash,
+  };
+}
+
 function qualifiedPackageCandidate(
   overrides: Partial<QualifiedInfraPackageCandidate> = {},
 ): QualifiedInfraPackageCandidate {
   return {
-    releaseId: "infra-deutschland-2027.1",
+    releaseId: "infra-deutschland-2026.4",
     releaseHash: QUALIFIED_INFRA_RELEASE_HASH,
-    timetableYear: 2027,
+    timetableYear: 2026,
     packageManifestSha256: PACKAGE_MANIFEST_SHA256,
-    signatureProof: {
-      schema: "zugfolge-infra-package-activation-proof/v1",
-      deliveryReleaseId: "infra-deutschland-2027.1",
-      timetableYear: 2027,
-      packageManifestSha256: PACKAGE_MANIFEST_SHA256,
-      deliveryReleaseHash: QUALIFIED_DELIVERY_RELEASE_HASH,
-      infraReleaseHash: QUALIFIED_INFRA_RELEASE_HASH,
-      algorithm: "Ed25519",
-      keyId: QUALIFIED_KEY_ID,
-      valueBase64: sign(null, Buffer.from(QUALIFIED_DELIVERY_RELEASE_HASH, "hex"), QUALIFIED_KEYS.privateKey).toString("base64"),
-      signatureStatus: "verified",
-      nativeOperationalValidationStatus: "verified",
-      operationalStateHash: "4".repeat(64),
-    },
+    signatureProof: qualifiedSignatureProof(
+      "infra-deutschland-2026.4",
+      QUALIFIED_INFRA_RELEASE_HASH,
+      2026,
+      TARGET_INFRASTRUCTURE,
+    ),
     coverageReport: {
       classASections: 0,
       classBSections: 1,
@@ -218,26 +282,16 @@ describe("M9.10 InfraRelease-Uebernahme", () => {
     expect(staged.releaseHash).not.toBe(PACKAGE_MANIFEST_SHA256);
     expect(staged.signature).toMatchObject({ packageManifestSha256: PACKAGE_MANIFEST_SHA256 });
 
-    const competingDeliveryHash = "b".repeat(64);
+    const competingInfrastructure = {
+      ...TARGET_INFRASTRUCTURE,
+      infraReleaseId: "infra-deutschland-2026.3" as const,
+      sha256: "d".repeat(64),
+    };
     const competing = qualifiedPackageCandidate({
-      releaseId: "infra-deutschland-2027.2",
+      releaseId: "infra-deutschland-2026.3",
       releaseHash: "c".repeat(64),
-      signatureProof: {
-        ...candidate.signatureProof,
-        deliveryReleaseId: "infra-deutschland-2027.2",
-        deliveryReleaseHash: competingDeliveryHash,
-        infraReleaseHash: "c".repeat(64),
-        valueBase64: sign(
-          null,
-          Buffer.from(competingDeliveryHash, "hex"),
-          QUALIFIED_KEYS.privateKey,
-        ).toString("base64"),
-      },
-      operationalInfrastructure: {
-        ...TARGET_INFRASTRUCTURE,
-        infraReleaseId: "infra-deutschland-2027.2",
-        sha256: "d".repeat(64),
-      },
+      signatureProof: qualifiedSignatureProof("infra-deutschland-2026.3", "c".repeat(64), 2026, competingInfrastructure),
+      operationalInfrastructure: competingInfrastructure,
     });
     await expect(service.stageQualifiedPackageCandidateAt(WORLD, competing, NEXT_PERIOD_START))
       .rejects.toMatchObject({ code: "infra_period_candidate_conflict" });
@@ -312,15 +366,103 @@ describe("M9.10 InfraRelease-Uebernahme", () => {
       { verify: async () => { throw new Error("darf nicht laufen"); } },
     );
     const valid = qualifiedPackageCandidate();
+    const delivery = JSON.parse(Buffer.from(valid.signatureProof.deliveryReleaseBase64, "base64").toString("utf8"));
+    delivery.signature.valueBase64 = Buffer.alloc(64).toString("base64");
     const forged = qualifiedPackageCandidate({
       signatureProof: {
         ...valid.signatureProof,
         valueBase64: Buffer.alloc(64).toString("base64"),
+        deliveryReleaseBase64: canonicalBytes(delivery).toString("base64"),
       },
     });
 
     await expect(service.stageQualifiedPackageCandidateAt(WORLD, forged, NEXT_PERIOD_START))
       .rejects.toThrow(/keine gueltige vertrauenswuerdige Ed25519-Signatur/);
+    expect(await db.select().from(infraReleaseChanges)).toHaveLength(0);
+  });
+
+  it("verwirft bei identischer gueltiger Signatur jedes substituierte Candidate-Proof-Feld", async () => {
+    const service = new InfraUpdateService(
+      db,
+      { [QUALIFIED_KEY_ID]: QUALIFIED_PUBLIC_KEY },
+      { verify: async () => { throw new Error("darf nicht laufen"); } },
+    );
+    const valid = qualifiedPackageCandidate();
+    const substitutedHash = "f".repeat(64);
+    const substituted = qualifiedPackageCandidate({
+      releaseHash: substitutedHash,
+      signatureProof: {
+        ...valid.signatureProof,
+        infraReleaseHash: substitutedHash,
+      },
+    });
+
+    expect(substituted.signatureProof.valueBase64).toBe(valid.signatureProof.valueBase64);
+    expect(substituted.signatureProof.deliveryReleaseBase64).toBe(valid.signatureProof.deliveryReleaseBase64);
+    await expect(service.stageQualifiedPackageCandidateAt(WORLD, substituted, NEXT_PERIOD_START))
+      .rejects.toThrow(/kanonischen signierten Releasebytes/u);
+    expect(await db.select().from(infraReleaseChanges)).toHaveLength(0);
+  });
+
+  it("weist unbekannte oder zukuenftige Deutschland-Delivery-IDs statt eines Legacy-Downgrades ab", async () => {
+    const service = new InfraUpdateService(
+      db,
+      { [QUALIFIED_KEY_ID]: QUALIFIED_PUBLIC_KEY },
+      { verify: async () => { throw new Error("darf nicht laufen"); } },
+    );
+    const base = qualifiedPackageCandidate();
+    for (const releaseId of ["infra-deutschland-2026.2", "infra-deutschland-2026.6", "infra-deutschland-2027.1", "infra-deutschland-2026.5-near-miss"]) {
+      const candidate = qualifiedPackageCandidate({
+        releaseId,
+        signatureProof: { ...base.signatureProof, deliveryReleaseId: releaseId },
+        operationalInfrastructure: { ...TARGET_INFRASTRUCTURE, infraReleaseId: releaseId },
+      });
+      await expect(service.stageQualifiedPackageCandidateAt(WORLD, candidate, NEXT_PERIOD_START))
+        .rejects.toThrow(/nicht als Deutschland-Delivery-v2-Version freigegeben/u);
+    }
+    expect(await db.select().from(infraReleaseChanges)).toHaveLength(0);
+  });
+
+  it("verweigert dem aktuellen Deutschland-Release einen v1- oder unvollstaendigen Ausfuehrungsprovenienzbeleg", async () => {
+    const service = new InfraUpdateService(
+      db,
+      { [QUALIFIED_KEY_ID]: QUALIFIED_PUBLIC_KEY },
+      { verify: async () => { throw new Error("darf nicht laufen"); } },
+    );
+    const base = qualifiedPackageCandidate();
+    const currentBinding = {
+      ...TARGET_INFRASTRUCTURE,
+      infraReleaseId: "infra-deutschland-2026.5",
+    };
+    const legacyProof = {
+      ...base.signatureProof,
+      deliveryReleaseId: "infra-deutschland-2026.5",
+      timetableYear: 2026,
+    };
+    const legacy = qualifiedPackageCandidate({
+      releaseId: "infra-deutschland-2026.5",
+      timetableYear: 2026,
+      signatureProof: legacyProof,
+      operationalInfrastructure: currentBinding,
+    });
+    await expect(service.stageQualifiedPackageCandidateAt(WORLD, legacy, NEXT_PERIOD_START))
+      .rejects.toThrow(/keinen vollstaendigen Game-Qualifikationsbeleg/);
+
+    const incompleteProof = {
+      ...legacyProof,
+      schema: "zugfolge-infra-package-activation-proof/v2" as const,
+      operationalProvenanceStatus: "verified" as const,
+      operationalProvenanceSha256: "5".repeat(64),
+      operationalExecutionProofSha256: "6".repeat(64),
+    };
+    const incomplete = qualifiedPackageCandidate({
+      releaseId: "infra-deutschland-2026.5",
+      timetableYear: 2026,
+      signatureProof: incompleteProof,
+      operationalInfrastructure: currentBinding,
+    });
+    await expect(service.stageQualifiedPackageCandidateAt(WORLD, incomplete, NEXT_PERIOD_START))
+      .rejects.toThrow(/keinen vollstaendigen Game-Qualifikationsbeleg/);
     expect(await db.select().from(infraReleaseChanges)).toHaveLength(0);
   });
 });

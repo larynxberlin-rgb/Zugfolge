@@ -11,6 +11,16 @@ import {
   verifyMapDeliveryReleaseSignature,
 } from "./map-delivery-release.mjs";
 import {
+  GERMANY_OPERATIONAL_INTEGRATED_PRODUCER_KIND,
+  germanyOperationalProvenanceSha256,
+  validateGermanyOperationalProvenance,
+} from "../region-import/germany/operational-infrastructure-v2-execution-pins.mjs";
+import {
+  materializeOperationalBuildAuthorityFromBuildEvidenceSpec,
+  operationalBuildAuthoritySha256,
+  validateOperationalBuildAuthority,
+} from "../region-import/germany/operational-build-authority.mjs";
+import {
   expandMapPackagePlan,
   validateMapPackageSpec,
   validatePortableRelativePath,
@@ -215,7 +225,14 @@ function validateCurrentInfraArtifacts(infraRelease, currentArtifacts, spec, rel
   }
 }
 
-async function validateCurrentUnsignedDelivery(release, spec, sourceRoot, unsignedSourceFile) {
+async function validateCurrentUnsignedDelivery(
+  release,
+  spec,
+  sourceRoot,
+  unsignedSourceFile,
+  mapBuildCommit,
+  materializeOperationalAuthority,
+) {
   const sourceDescriptors = spec.auxiliaryFiles.filter(({ kind }) => kind === "source-manifest");
   invariant(sourceDescriptors.length === 1, "Aktueller Paketvertrag braucht genau ein Sources-v2-Manifest.");
   const sourceDescriptor = sourceDescriptors[0];
@@ -233,9 +250,11 @@ async function validateCurrentUnsignedDelivery(release, spec, sourceRoot, unsign
     sameJson(release.artifacts, currentArtifacts),
     "Unsigned Delivery-v2-Artefakte stimmen nicht exakt mit dem aktuellen expandierten Paketinventar (ID, Rolle, Installationspfad, Bytes, SHA-256 und Operational-Bindung) ueberein.",
   );
+  const currentOperationalProvenance = release.packageVersion === "2026.5";
   const bindings = exactKeys(release.bindings, [
     "packageManifestSchema", "infraReleaseSchema", "mapReleaseSchema", "sourcesSha256",
     "qualitySha256", "infraReleaseHash", "mapReleaseHash",
+    ...(currentOperationalProvenance ? ["operationalAuthoritySha256", "operationalProvenanceSha256"] : []),
   ], "Unsigned Delivery-v2-Bindungen");
   invariant(
     bindings.packageManifestSchema === "zugfolge-map-package/v2"
@@ -243,6 +262,35 @@ async function validateCurrentUnsignedDelivery(release, spec, sourceRoot, unsign
       && bindings.mapReleaseSchema === "zugfolge-map-release/v1",
     "Unsigned Delivery-v2 bindet nicht die festen Operational-v2-Paket- und Release-Schemata.",
   );
+  if (currentOperationalProvenance) {
+    const provenance = validateGermanyOperationalProvenance(release.operationalProvenance);
+    const authority = validateOperationalBuildAuthority(release.operationalAuthority);
+    invariant(
+      provenance.producerKind === GERMANY_OPERATIONAL_INTEGRATED_PRODUCER_KIND
+        && provenance.releaseEvidenceEligible === true
+        && provenance.productionActivationEligible === true
+        && bindings.operationalProvenanceSha256 === germanyOperationalProvenanceSha256(provenance)
+        && bindings.operationalAuthoritySha256 === operationalBuildAuthoritySha256(authority),
+      "Unsigned Delivery-v2 bindet keine atomar integrierte Provenienz und Operational-Build-Authority.",
+    );
+    invariant(authority.execution.predicate.source.commit === mapBuildCommit,
+      "Unsigned Delivery-v2-Authority bindet nicht den expliziten Map-Build-Commit.");
+    const authorityMaterializer = materializeOperationalAuthority
+      ?? materializeOperationalBuildAuthorityFromBuildEvidenceSpec;
+    const reverifiedAuthority = validateOperationalBuildAuthority(await authorityMaterializer({
+      sourceRoot,
+      buildEvidenceSpecFile: spec.operationalAuthoritySource.buildEvidenceSpecFile,
+      mapBuildCommit,
+    }));
+    invariant(sameJson(reverifiedAuthority, authority),
+      "Unsigned Delivery-v2-Authority ist nicht kanonisch aus den kryptografisch erneut verifizierten Build-Belegen materialisierbar.");
+  } else {
+    invariant(!Object.hasOwn(release, "operationalAuthority")
+      && !Object.hasOwn(bindings, "operationalAuthoritySha256")
+      && !Object.hasOwn(release, "operationalProvenance")
+      && !Object.hasOwn(bindings, "operationalProvenanceSha256"),
+    "Legacy-Delivery-v2 darf keine aktuelle Operational-v2-Provenienz oder Build-Authority tragen.");
+  }
 
   const sources = parseCanonicalDelivery(sourcesBytes, "Aktuelles Sources-v2-Manifest");
   invariant(
@@ -289,6 +337,8 @@ async function validateCurrentUnsignedDelivery(release, spec, sourceRoot, unsign
     infraRelease: infraWrapper,
     mapRelease: mapWrapper,
     auxiliaryArtifactProofs,
+    mapBuildCommit,
+    ...(materializeOperationalAuthority === undefined ? {} : { materializeOperationalAuthority }),
   });
   invariant(
     rebuilt.releaseBytes.equals(serializeDeliveryJson(release)) && rebuilt.sourcesBytes.equals(sourcesBytes),
@@ -503,7 +553,11 @@ function buildSignedPlan(pinnedUnsignedSpec, signedSourceFile, signedBinding) {
   return signedPlan;
 }
 
-export async function preflightUnsignedMapDeliveryRelease(unsignedPlan, sourceRoot) {
+export async function preflightUnsignedMapDeliveryRelease(
+  unsignedPlan,
+  sourceRoot,
+  { mapBuildCommit, materializeOperationalAuthority } = {},
+) {
   invariant(unsignedPlan?.schema === MAP_PACKAGE_PLAN_V2, "Delivery-v2-Signatur verlangt zugfolge-map-package-plan/v2.");
   invariant(unsignedPlan?.runtime?.schema === MAP_RUNTIME_V2, "Delivery-v2-Signatur verlangt unveraendert zugfolge-map-runtime/v2.");
   const descriptor = releaseDescriptor(unsignedPlan);
@@ -515,7 +569,14 @@ export async function preflightUnsignedMapDeliveryRelease(unsignedPlan, sourceRo
   const releaseBinding = { bytes: releaseBytes.length, sha256: sha256(releaseBytes) };
   const release = parseCanonicalDelivery(releaseBytes, "Unsigned Release-Manifest");
   validateUnsignedRelease(release, unsignedPlan, descriptor, releaseBinding);
-  const currentInventory = await validateCurrentUnsignedDelivery(release, packageSpec, sourceRoot, descriptor.sourceFile);
+  const currentInventory = await validateCurrentUnsignedDelivery(
+    release,
+    packageSpec,
+    sourceRoot,
+    descriptor.sourceFile,
+    mapBuildCommit,
+    materializeOperationalAuthority,
+  );
   return {
     release,
     releaseBytes,
@@ -532,6 +593,7 @@ export async function deriveSignedMapPackagePlan(
   sourceRoot,
   trustedKeysSourceFile,
   trustedKeyScopesSourceFile,
+  { mapBuildCommit, materializeOperationalAuthority } = {},
 ) {
   invariant(unsignedPlan?.schema === MAP_PACKAGE_PLAN_V2, "Signed-Paketplan kann nur aus zugfolge-map-package-plan/v2 abgeleitet werden.");
   invariant(unsignedPlan?.runtime?.schema === MAP_RUNTIME_V2, "Signed-Paketplan verlangt unveraendert zugfolge-map-runtime/v2.");
@@ -540,8 +602,11 @@ export async function deriveSignedMapPackagePlan(
   const descriptor = releaseDescriptor(unsignedPlan);
   const signedSourceFile = deriveSignedReleaseSourceFile(descriptor.sourceFile);
 
-  const [unsignedPreflight, signedBytes, trustedKeysBytes, trustedKeyScopesBytes] = await Promise.all([
-    preflightUnsignedMapDeliveryRelease(unsignedPlan, sourceRoot),
+  const unsignedPreflight = await preflightUnsignedMapDeliveryRelease(unsignedPlan, sourceRoot, {
+    mapBuildCommit,
+    materializeOperationalAuthority,
+  });
+  const [signedBytes, trustedKeysBytes, trustedKeyScopesBytes] = await Promise.all([
     readContainedRegularFile(sourceRoot, signedSourceFile, "Signiertes Release-Manifest"),
     readContainedRegularFile(sourceRoot, trustedKeysSourceFile, "Delivery-Keyring"),
     readContainedRegularFile(sourceRoot, trustedKeyScopesSourceFile, "Delivery-Key-Scope-Vertrag"),

@@ -18,7 +18,7 @@ export const GERMANY_OPERATIONAL_NATIVE_REPORT_SCHEMA = "germany-operational-v2-
 export const GERMANY_OPERATIONAL_NATIVE_RECEIPT_SCHEMA = "germany-operational-v2-derivation-receipt-v1";
 export const GERMANY_OPERATIONAL_COMPLETE_ROUTE_COVERAGE = "complete-pinned-timetable-routes";
 export const GERMANY_OPERATIONAL_NATIVE_EXECUTABLE_ENV = "ZUGFOLGE_INFRA_RELEASE_VALIDATOR_PATH";
-export const GERMANY_OPERATIONAL_CANDIDATE_TRIPLET_CLAIM_SCHEMA = "zugfolge-germany-operational-candidate-triplet-claim/v1";
+export const GERMANY_OPERATIONAL_CANDIDATE_TRIPLET_CLAIM_SCHEMA = "zugfolge-germany-operational-candidate-triplet-claim/v2";
 
 const LEGACY_DERIVATION_SCHEMA = "zugfolge-germany-operational-infrastructure-derivation/v1";
 const REPOSITORY_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
@@ -835,7 +835,7 @@ async function assertCandidateTripletParents(parents) {
 }
 
 function validateCandidateTripletClaim(value, { claimMetadata, claimPath, candidate, movementRouteTemplates, report, specification, specificationPath }) {
-  exactKeys(value, ["claim", "files", "infraReleaseId", "nativeReceipt", "parents", "schema", "specification", "staging"], "Candidate-Triplet-Claim");
+  exactKeys(value, ["claim", "files", "infraReleaseId", "nativeReceipt", "operationalProvenance", "parents", "schema", "specification", "staging"], "Candidate-Triplet-Claim");
   invariant(value.schema === GERMANY_OPERATIONAL_CANDIDATE_TRIPLET_CLAIM_SCHEMA, "Candidate-Triplet-Claim besitzt ein unbekanntes Schema.");
   invariant(value.infraReleaseId === specification.infraReleaseId, "Candidate-Triplet-Claim bindet eine falsche InfraRelease-ID.");
   exactKeys(value.specification, ["path", "sha256"], "Candidate-Triplet-Claim.specification");
@@ -867,6 +867,7 @@ function validateCandidateTripletClaim(value, { claimMetadata, claimPath, candid
     invariant(parent.path === expectedParents[index], "Candidate-Triplet-Claim bindet ein falsches Ziel-Elternverzeichnis.");
   }
   validateGermanyOperationalInfrastructureV2NativeReceipt(value.nativeReceipt, specification.infraReleaseId, { expectedMovementRouteTemplatesFile: basename(movementRouteTemplates) });
+  invariant(value.operationalProvenance === null || isRecord(value.operationalProvenance), "Candidate-Triplet-Claim besitzt keine typisierte optionale Operational-Provenienz.");
   return value;
 }
 
@@ -887,7 +888,7 @@ async function readCandidateTripletClaim(arguments_) {
   return value;
 }
 
-async function createCandidateTripletClaim({ candidate, claimPath, hooks, movementRouteTemplates, nativeReceipt, publicationState, report, specification, specificationPath, stagingRoot }) {
+async function createCandidateTripletClaim({ candidate, claimPath, hooks, movementRouteTemplates, nativeReceipt, operationalProvenance, publicationState, report, specification, specificationPath, stagingRoot }) {
   const files = candidateTripletFileLayout({ candidate, movementRouteTemplates, report, stagingRoot });
   for (const id of ["candidate", "movementRouteTemplates", "report"]) {
     const metadata = await lstat(files[id].stagedPath, { bigint: true });
@@ -913,6 +914,7 @@ async function createCandidateTripletClaim({ candidate, claimPath, hooks, moveme
       parents,
       files,
       nativeReceipt,
+      operationalProvenance,
     };
     const bytes = serializeCandidateTripletClaim(claim);
     invariant(bytes.length <= MAX_CANDIDATE_TRIPLET_CLAIM_BYTES, "Candidate-Triplet-Claim ist unerwartet gross.");
@@ -1034,8 +1036,8 @@ async function recoverCandidateTriplet({ candidate, claimPath, hooks, movementRo
   return result;
 }
 
-async function publishCandidateTriplet({ candidate, claimPath, hooks, movementRouteTemplates, nativeReceipt, publicationState, report, specification, specificationPath, stagingRoot }) {
-  const claim = await createCandidateTripletClaim({ candidate, claimPath, hooks, movementRouteTemplates, nativeReceipt, publicationState, report, specification, specificationPath, stagingRoot });
+async function publishCandidateTriplet({ candidate, claimPath, hooks, movementRouteTemplates, nativeReceipt, operationalProvenance, publicationState, report, specification, specificationPath, stagingRoot }) {
+  const claim = await createCandidateTripletClaim({ candidate, claimPath, hooks, movementRouteTemplates, nativeReceipt, operationalProvenance, publicationState, report, specification, specificationPath, stagingRoot });
   const validated = await finalizeCandidateTripletClaim({ claim, hooks, movementRouteTemplates, recovery: false, specification });
   publicationState.stagingRemoved = true;
   publicationState.claimActive = false;
@@ -1052,6 +1054,7 @@ export async function runGermanyOperationalInfrastructureV2({
   movementRouteTemplatesPath,
   deriveNative = spawnGermanyOperationalInfrastructureV2Compiler,
   materialize = materializeOperationalInfrastructureV2,
+  candidateTripletProvenance = async () => null,
   hooks = {},
 }) {
   const kind = validateGermanyOperationalInfrastructureV2Specification(specification);
@@ -1143,6 +1146,10 @@ export async function runGermanyOperationalInfrastructureV2({
         && movementRouteTemplatesValue.operationalStateHash === nativeReceipt.candidate.stateHash,
       "Native Receipt-, Bericht- und Movement-Sidecar-Bindungen laufen auseinander.",
     );
+    const operationalProvenance = candidateTripletMode
+      ? await candidateTripletProvenance({ nativeReceipt, nativeReport })
+      : null;
+    invariant(operationalProvenance === null || isRecord(operationalProvenance), "Candidate-Triplet-Provenienz muss null oder ein Objekt sein.");
 
     if (!nativeReport.activationEligible) {
       if (candidateTripletMode) {
@@ -1152,6 +1159,7 @@ export async function runGermanyOperationalInfrastructureV2({
           hooks,
           movementRouteTemplates,
           nativeReceipt,
+          operationalProvenance,
           publicationState: candidateTripletPublication,
           report,
           specification,
@@ -1174,6 +1182,7 @@ export async function runGermanyOperationalInfrastructureV2({
         hooks,
         movementRouteTemplates,
         nativeReceipt,
+        operationalProvenance,
         publicationState: candidateTripletPublication,
         report,
         specification,

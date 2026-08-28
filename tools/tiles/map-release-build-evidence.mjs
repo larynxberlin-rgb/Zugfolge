@@ -21,6 +21,23 @@ import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 
 import { verifyGermanyOperationalInfrastructureV2PublicationReceipt } from "../region-import/germany/operational-infrastructure-v2-publication.mjs";
+import {
+  GERMANY_ANNUAL_CREATE_NEW_COMPLETION_SUFFIX,
+} from "../region-import/germany/annual-create-new-artifact.mjs";
+import {
+  materializeCurrentAnnualOperationalAuthority,
+  materializeOperationalBuildAuthorityFromBuildEvidenceSpec,
+  operationalBuildAuthoritySha256,
+  validateCurrentAnnualOperationalAuthority,
+  validateOperationalBuildAuthority,
+  verifyCurrentAnnualOperationalAuthorityLocal,
+  verifyGithubAttestationSubject,
+} from "../region-import/germany/operational-build-authority.mjs";
+import {
+  GERMANY_OPERATIONAL_INTEGRATED_PRODUCER_KIND,
+  germanyOperationalProvenanceSha256,
+  validateGermanyOperationalProvenance,
+} from "../region-import/germany/operational-infrastructure-v2-execution-pins.mjs";
 import { verifyOperationalValidatorRebuildEvidence } from "../region-import/germany/operational-validator-rebuild-evidence.mjs";
 import { inspectPublicReadModel } from "./livemap-read-model.mjs";
 import {
@@ -37,6 +54,7 @@ import {
 } from "./map-delivery-release.mjs";
 import {
   expandMapPackagePlan,
+  validateGermanyOperationalDeliveryV2Pair,
   serializeMapPackageManifest,
   validateMapPackageManifest,
   validateMapPackageSpec,
@@ -74,6 +92,16 @@ import {
   DATABASE_CUTOVER_GUARDS,
 } from "../alpha-ops/database-cutover-schema-contract.mjs";
 import { validateKeycloakIdentityHead } from "../alpha-ops/keycloak-public-to-schema.mjs";
+
+export {
+  materializeCurrentAnnualOperationalAuthority,
+  materializeOperationalBuildAuthorityFromBuildEvidenceSpec,
+  operationalBuildAuthoritySha256,
+  validateCurrentAnnualOperationalAuthority,
+  validateOperationalBuildAuthority,
+  verifyCurrentAnnualOperationalAuthorityLocal,
+  verifyGithubAttestationSubject,
+};
 
 const SPEC_SCHEMA_V1 = "zugfolge-map-release-build-evidence-spec/v1";
 const SPEC_SCHEMA_V2 = "zugfolge-map-release-build-evidence-spec/v2";
@@ -188,11 +216,45 @@ const SEMANTIC_LAYERS = Object.freeze([
   "rail_context",
 ]);
 const CURRENT_ANNUAL_V3_RELEASE_ID = "infra-deutschland-2026.5";
-const CURRENT_ANNUAL_V3_OPERATIONAL_VALIDATOR_BUILD_COMMIT = "ee6d7081b32277e46cd6ebb28fc65bd45ce55012";
-const CURRENT_ANNUAL_V3_OPERATIONAL_VALIDATOR_SHA256 = "69f6f13d69cd256464f254804d6d7349acd0f09bbe614ae2b0e38e70664306fc";
-const CURRENT_ANNUAL_V3_OPERATIONAL_VALIDATOR_BYTES = 8_283_251;
-const CURRENT_ANNUAL_V3_OPERATIONAL_VALIDATOR_NORMALIZED_PE_SHA256 = "91e84253399bf8836ec4e6a5688da51f753531a0040831a54b8585e28f1d5363";
+const BUILD_EVIDENCE_RELEASE_IDS_BY_VERSION = Object.freeze({
+  1: Object.freeze(["infra-deutschland-2026.2"]),
+  2: Object.freeze(["infra-deutschland-2026.3", "infra-deutschland-2026.4"]),
+  3: Object.freeze([CURRENT_ANNUAL_V3_RELEASE_ID]),
+});
+const CURRENT_ANNUAL_V3_OPERATIONAL_VALIDATOR_BUILD_COMMIT = "aba354ec1937452a491087626ec0adea36ef6695";
+const CURRENT_ANNUAL_V3_OPERATIONAL_VALIDATOR_SHA256 = "c35e72e352ae573e0416035fc4f0d233af5668864c0bd8df7333337e87bb7fd4";
+const CURRENT_ANNUAL_V3_OPERATIONAL_VALIDATOR_BYTES = 8_382_277;
+const CURRENT_ANNUAL_V3_OPERATIONAL_VALIDATOR_NORMALIZED_PE_SHA256 = "ae39f5a8378641be0d02be56e93bf585a49a6e65bc1f5a02b77cd2bd556d38cb";
 const OPERATIONAL_VALIDATOR_BUILD_COMMIT_VERSION = "operational-validator-build-commit";
+const CURRENT_ANNUAL_V3_REBUILD_ATTESTATION_PREDICATE = "https://slsa.dev/provenance/v1";
+const CURRENT_ANNUAL_V3_EXECUTION_AUTHORITY_PREDICATE =
+  "https://zugfolge.de/attestations/operational-v2-execution-authority/v1";
+const CURRENT_ANNUAL_V3_EXECUTION_AUTHORITY_SCHEMA =
+  "zugfolge-operational-v2-execution-authority/v1";
+const CURRENT_ANNUAL_V3_OPERATIONAL_AUTHORITY_SCHEMA =
+  "zugfolge-map-build-operational-authority/v1";
+const CURRENT_ANNUAL_V3_EXECUTION_AUTHORITY_WORKFLOW =
+  "larynxberlin-rgb/Zugfolge/.github/workflows/operational-v2-execution-authority.yml";
+const CURRENT_ANNUAL_V3_REBUILD_ATTESTATION_WORKFLOW =
+  "larynxberlin-rgb/Zugfolge/.github/workflows/operational-validator-rebuild-evidence.yml";
+const CURRENT_ANNUAL_V3_EXECUTION_AUTHORITY_BUNDLE =
+  "var/derived/germany-2026.5/toolchain/zugfolge-operational-v2-execution-authority.sigstore.json";
+const CURRENT_ANNUAL_V3_ATTESTATION_VERIFIER = Object.freeze({
+  bytes: 40_998_712,
+  cacheFile: "derived/infra-deutschland-2026.5/toolchain/gh-2.94.0-windows-amd64.exe",
+  file: "var/derived/germany-2026.5/toolchain/gh-2.94.0-windows-amd64.exe",
+  sha256: "91ed1eff1819a96b34bc2ca3adc01822c807ae1bb883c01ad9fdf335bf242b38",
+  version: "2.94.0-windows-amd64",
+});
+const CURRENT_ANNUAL_V3_ATTESTATION_TRUSTED_ROOT = Object.freeze({
+  bytes: 34_634,
+  cacheFile: "derived/infra-deutschland-2026.5/toolchain/github-attestation-trusted-root.jsonl",
+  file: "var/derived/germany-2026.5/toolchain/github-attestation-trusted-root.jsonl",
+  sha256: "65ca537f6ed8a47fd0e560c421baa1f6c1efb8b25fc200d8c5c02c0e92eb2b9c",
+});
+const GH_ATTESTATION_MAX_TRUSTED_ROOT_BYTES = 16 * 1024 * 1024;
+const GH_ATTESTATION_MAX_OUTPUT_BYTES = 16 * 1024 * 1024;
+const GH_ATTESTATION_TIMEOUT_MILLISECONDS = 120_000;
 const CURRENT_ANNUAL_V3_INPUTS = Object.freeze([
   ["germany-release-spec", "specification", "tools/region-import/germany/release.annual-2026.5.config.json"],
   ["synthetic-operational-policy", "specification", "tools/region-import/germany/synthetic-operational-b.2026.5.policy.json"],
@@ -204,8 +266,18 @@ const CURRENT_ANNUAL_V3_INPUTS = Object.freeze([
   ["map-build-cache-inventory-plan", "specification", "tools/tiles/map-build-cache-inventory.annual-2026.5.plan.json"],
   ["map-asset-notices-spec", "specification", "tools/tiles/map-asset-notices.annual-2026.5.json"],
   ["operational-native-receipt", "derived-input", "var/derived/germany-2026.5/operational-infrastructure-v2.native-receipt.json"],
+  ["operational-outer-execution-receipt", "derived-input", "var/derived/germany-2026.5/operational-infrastructure-v2.outer-execution-receipt.json"],
+  ["operational-outer-execution-receipt-completion", "derived-input", `var/derived/germany-2026.5/operational-infrastructure-v2.outer-execution-receipt.json${GERMANY_ANNUAL_CREATE_NEW_COMPLETION_SUFFIX}`],
   ["operational-publication-receipt", "derived-input", "var/derived/germany-2026.5/operational-infrastructure-v2.publication-receipt.json"],
+  ["operational-annual-plan", "derived-input", "var/derived/germany-2026.5/toolchain/zugfolge-infra-release-annual-plan.json"],
+  ["operational-annual-plan-completion", "derived-input", `var/derived/germany-2026.5/toolchain/zugfolge-infra-release-annual-plan.json${GERMANY_ANNUAL_CREATE_NEW_COMPLETION_SUFFIX}`],
+  ["operational-annual-executor-start-evidence", "derived-input", "var/derived/germany-2026.5/toolchain/zugfolge-infra-release-annual-executor-start-evidence.json"],
+  ["operational-annual-executor-start-evidence-completion", "derived-input", `var/derived/germany-2026.5/toolchain/zugfolge-infra-release-annual-executor-start-evidence.json${GERMANY_ANNUAL_CREATE_NEW_COMPLETION_SUFFIX}`],
   ["operational-validator-rebuild-evidence", "derived-input", "var/derived/germany-2026.5/toolchain/zugfolge-infra-release-rebuild-evidence.json"],
+  ["operational-validator-rebuild-attestation", "derived-input", "var/derived/germany-2026.5/toolchain/zugfolge-infra-release-rebuild-attestation.sigstore.json"],
+  ["operational-execution-authority-attestation", "derived-input", CURRENT_ANNUAL_V3_EXECUTION_AUTHORITY_BUNDLE],
+  ["operational-attestation-verifier", "derived-input", CURRENT_ANNUAL_V3_ATTESTATION_VERIFIER.file],
+  ["operational-attestation-trusted-root", "derived-input", CURRENT_ANNUAL_V3_ATTESTATION_TRUSTED_ROOT.file],
   ["operational-native-receipt-capture", "repo-contract", "tools/region-import/germany/capture-operational-infrastructure-v2-native-receipt.mjs"],
   ["operational-recovery-publisher", "repo-contract", "tools/region-import/germany/publish-operational-infrastructure-v2.mjs"],
   ["operational-recovery-publisher-implementation", "repo-contract", "tools/region-import/germany/operational-infrastructure-v2-publication.mjs"],
@@ -271,6 +343,13 @@ function evidenceVersion(schema) {
   throw new Error("Unbekanntes Build-Evidence-Manifest.");
 }
 
+function validateBuildEvidenceReleaseGeneration(version, releaseId) {
+  invariant(
+    BUILD_EVIDENCE_RELEASE_IDS_BY_VERSION[version]?.includes(releaseId) === true,
+    `Build-Evidence-v${version} ist nicht fuer den Release ${releaseId} zugelassen.`,
+  );
+}
+
 function outputKindsForVersion(version) {
   if (version === 3) return OUTPUT_KINDS_V3;
   return version === 2 ? OUTPUT_KINDS_V2 : OUTPUT_KINDS_V1;
@@ -322,6 +401,10 @@ function exactObjectKeys(value, keys, label) {
     `${label} besitzt fremde oder fehlende Felder.`,
   );
   return value;
+}
+
+function isRecord(value) {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
 function decodeAlphaValue(value) {
@@ -1029,10 +1112,19 @@ function validateSignedDeliveryContract(value, releaseId, label = "Delivery-Mani
   invariant(signatureBytes.length === 64 && signatureBytes.toString("base64") === signature.valueBase64, `${label} besitzt keine kanonischen Ed25519-Signaturbytes.`);
   invariant(SHA256.test(value.releaseHash) && value.releaseHash === deliveryReleaseHash(value), `${label} besitzt keinen gültigen kanonischen Releasehash.`);
   if (value.schema === DELIVERY_SCHEMA_V2) {
+    const currentOperationalProvenance = validateGermanyOperationalDeliveryV2Pair(
+      value.packageVersion,
+      releaseId,
+      label,
+    ) === "integrated-provenance-v2";
     const expectedBindingKeys = [
       "packageManifestSchema", "infraReleaseSchema", "mapReleaseSchema", "infraReleaseHash", "mapReleaseHash",
       "sourcesSha256", "qualitySha256",
+      ...(currentOperationalProvenance ? ["operationalAuthoritySha256", "operationalProvenanceSha256"] : []),
     ];
+    const operationalAuthority = currentOperationalProvenance
+      ? validateOperationalBuildAuthority(value.operationalAuthority)
+      : undefined;
     invariant(
       value.bindings !== null && typeof value.bindings === "object" && !Array.isArray(value.bindings)
         && Object.keys(value.bindings).sort().join("\u0000") === expectedBindingKeys.sort().join("\u0000")
@@ -1040,9 +1132,25 @@ function validateSignedDeliveryContract(value, releaseId, label = "Delivery-Mani
         && value.bindings.infraReleaseSchema === "zugfolge-infra-release/v2"
         && value.bindings.mapReleaseSchema === "zugfolge-map-release/v1"
         && SHA256.test(value.bindings.infraReleaseHash) && SHA256.test(value.bindings.mapReleaseHash)
-        && SHA256.test(value.bindings.sourcesSha256) && SHA256.test(value.bindings.qualitySha256),
+        && SHA256.test(value.bindings.sourcesSha256) && SHA256.test(value.bindings.qualitySha256)
+        && (!currentOperationalProvenance || (
+          SHA256.test(value.bindings.operationalAuthoritySha256)
+          && value.bindings.operationalAuthoritySha256 === operationalBuildAuthoritySha256(operationalAuthority)
+          &&
+          SHA256.test(value.bindings.operationalProvenanceSha256)
+          && value.bindings.operationalProvenanceSha256 === germanyOperationalProvenanceSha256(value.operationalProvenance)
+        )),
       `${label} bindet InfraRelease und Kartenrelease nicht über ihre kanonischen releaseHash-Werte.`,
     );
+    if (!currentOperationalProvenance) {
+      invariant(
+        !Object.hasOwn(value, "operationalProvenance")
+          && !Object.hasOwn(value.bindings, "operationalProvenanceSha256")
+          && !Object.hasOwn(value, "operationalAuthority")
+          && !Object.hasOwn(value.bindings, "operationalAuthoritySha256"),
+        `${label} darf als Legacy-Delivery-v2 keine aktuelle Operational-v2-Ausfuehrungsprovenienz oder Build-Authority tragen.`,
+      );
+    }
   }
   return { keyId, releaseHash: value.releaseHash };
 }
@@ -1632,6 +1740,14 @@ async function validateFirstClassOperationalSidecarFiles(root, inputs, outputs, 
   );
 }
 
+export async function validateFirstClassOperationalSidecarEvidence({ artifactRoot, inputs, outputs, releaseId }) {
+  invariant(RELEASE_ID.test(releaseId), "Operational-v2-Sidecar-Pruefung braucht einen Jahres-Patchrelease.");
+  invariant(Array.isArray(inputs), "Operational-v2-Sidecar-Pruefung braucht ein Eingabeinventar.");
+  invariant(Array.isArray(outputs), "Operational-v2-Sidecar-Pruefung braucht ein Ausgabeinventar.");
+  await validateFirstClassOperationalSidecarFiles(resolve(artifactRoot), inputs, outputs, releaseId);
+  return { inputs: inputs.length, outputs: 3 };
+}
+
 async function bindOperationalOutputsToArtifactInventory(root, inputs, outputs, releaseId, version) {
   const inventoryInput = inputs.find(({ id }) => id === "infra-release-artifact-inventory");
   invariant(inventoryInput?.kind === "derived-input", "Operational-v2-Evidence braucht das typisierte InfraRelease-Artefaktinventar als abgeleitete Eingabe.");
@@ -1753,7 +1869,15 @@ async function releaseWrapper(root, input, expectedSchema, label) {
   return wrapper;
 }
 
-async function bindDeliveryToReleaseWrappers(root, inputs, outputs, releaseId, version) {
+async function bindDeliveryToReleaseWrappers(
+  root,
+  inputs,
+  outputs,
+  releaseId,
+  version,
+  expectedOperationalProvenance,
+  expectedOperationalAuthority,
+) {
   const infraInput = inputs.find(({ id }) => id === "infra-release-wrapper");
   const mapInput = inputs.find(({ id }) => id === "map-release-wrapper");
   const sourcesInput = inputs.find(({ id }) => id === "delivery-sources");
@@ -1767,6 +1891,16 @@ async function bindDeliveryToReleaseWrappers(root, inputs, outputs, releaseId, v
   const deliveryPath = await containedRealPath(root, deliveryOutput.file, "Delivery-Manifest-Ausgabe");
   const delivery = JSON.parse(await readFile(deliveryPath, "utf8"));
   validateSignedDeliveryContract(delivery, releaseId, "Delivery-Manifest-Ausgabe", 2);
+  if (releaseId === CURRENT_ANNUAL_V3_RELEASE_ID) {
+    validateOperationalBuildAuthority(expectedOperationalAuthority);
+    invariant(
+      JSON.stringify(sortedValue(delivery.operationalProvenance)) === JSON.stringify(sortedValue(expectedOperationalProvenance))
+        && delivery.bindings.operationalProvenanceSha256 === germanyOperationalProvenanceSha256(expectedOperationalProvenance)
+        && JSON.stringify(sortedValue(delivery.operationalAuthority)) === JSON.stringify(sortedValue(expectedOperationalAuthority))
+        && delivery.bindings.operationalAuthoritySha256 === operationalBuildAuthoritySha256(expectedOperationalAuthority),
+      "Delivery-v2 und Build-Evidence binden nicht dieselbe integrierte Operational-v2-Ausfuehrungsprovenienz und Build-Authority.",
+    );
+  }
   invariant(
     delivery.bindings.infraReleaseHash === infra.releaseHash
       && delivery.bindings.mapReleaseHash === map.releaseHash,
@@ -1930,6 +2064,30 @@ function validateCurrentAnnualV3Bindings(spec, version, { resolvedCommits = fals
       `Build-Evidence-v3 für ${spec.releaseId} muss ${id} exakt als ${kind} ${file} binden.`,
     );
   }
+  const verifierInput = spec.inputs.find(({ id }) => id === "operational-attestation-verifier");
+  const verifierKeys = resolvedCommits
+    ? ["bytes", "cacheFile", "file", "id", "kind", "sha256", "version"]
+    : ["cacheFile", "expectedBytes", "expectedSha256", "file", "id", "kind", "version"];
+  exactObjectKeys(verifierInput, verifierKeys, "Operational-Attestierungsverifier-Eingabe");
+  invariant(verifierInput.cacheFile === CURRENT_ANNUAL_V3_ATTESTATION_VERIFIER.cacheFile
+    && (resolvedCommits
+      ? verifierInput.bytes === CURRENT_ANNUAL_V3_ATTESTATION_VERIFIER.bytes
+        && verifierInput.sha256 === CURRENT_ANNUAL_V3_ATTESTATION_VERIFIER.sha256
+      : verifierInput.expectedBytes === CURRENT_ANNUAL_V3_ATTESTATION_VERIFIER.bytes
+        && verifierInput.expectedSha256 === CURRENT_ANNUAL_V3_ATTESTATION_VERIFIER.sha256),
+  `Build-Evidence-v3 fuer ${spec.releaseId} muss GitHub CLI ${CURRENT_ANNUAL_V3_ATTESTATION_VERIFIER.version} bytegenau pinnen.`);
+  const trustedRootInput = spec.inputs.find(({ id }) => id === "operational-attestation-trusted-root");
+  const trustedRootKeys = resolvedCommits
+    ? ["bytes", "cacheFile", "file", "id", "kind", "sha256", "version"]
+    : ["cacheFile", "expectedBytes", "expectedSha256", "file", "id", "kind", "version"];
+  exactObjectKeys(trustedRootInput, trustedRootKeys, "Operational-Attestierungs-Trust-Root-Eingabe");
+  invariant(trustedRootInput.cacheFile === CURRENT_ANNUAL_V3_ATTESTATION_TRUSTED_ROOT.cacheFile
+    && (resolvedCommits
+      ? trustedRootInput.bytes === CURRENT_ANNUAL_V3_ATTESTATION_TRUSTED_ROOT.bytes
+        && trustedRootInput.sha256 === CURRENT_ANNUAL_V3_ATTESTATION_TRUSTED_ROOT.sha256
+      : trustedRootInput.expectedBytes === CURRENT_ANNUAL_V3_ATTESTATION_TRUSTED_ROOT.bytes
+        && trustedRootInput.expectedSha256 === CURRENT_ANNUAL_V3_ATTESTATION_TRUSTED_ROOT.sha256),
+  `Build-Evidence-v3 fuer ${spec.releaseId} muss den GitHub-Attestierungs-Trust-Root bytegenau pinnen.`);
   invariant(
     spec.tools.filter((tool) => (
       tool?.id === CURRENT_ANNUAL_V3_OPERATIONAL_VALIDATOR_TOOL.id
@@ -1976,6 +2134,7 @@ function validateSpecBasics(spec, { requireExpectedInputProofs = false, resolved
   const version = specVersion(spec?.schema);
   const outputKinds = outputKindsForVersion(version);
   parseReleasePair(spec.releaseId, spec.previousReleaseId);
+  validateBuildEvidenceReleaseGeneration(version, spec.releaseId);
   if (version === 1 || resolvedCommits) {
     validateCommit(spec.commits?.semanticExport, "commits.semanticExport");
     validateCommit(spec.commits?.mapBuild, "commits.mapBuild");
@@ -2053,6 +2212,7 @@ export async function materializeMapReleaseBuildEvidence({
   artifactRoot,
   commits,
   validateOperationalInfrastructure = validateOperationalInfrastructureV2Native,
+  attestationVerifier = verifyGithubAttestationSubject,
 }) {
   const version = specVersion(spec?.schema);
   const { outputKinds } = validateSpecBasics(spec, { requireExpectedInputProofs: version === 1 });
@@ -2118,6 +2278,8 @@ export async function materializeMapReleaseBuildEvidence({
 
   let verifiedOperationalPublication;
   let verifiedOperationalValidatorRebuild;
+  let operationalProvenance;
+  let operationalAuthority;
   let currentAnnualReleaseConfig;
   let currentAnnualValidatorRebuildSpec;
   if (version === 3 && spec.releaseId === CURRENT_ANNUAL_V3_RELEASE_ID) {
@@ -2131,6 +2293,13 @@ export async function materializeMapReleaseBuildEvidence({
     });
     invariant(verifiedOperationalPublication.proof.bytes === publicationReceipt.bytes && verifiedOperationalPublication.proof.sha256 === publicationReceipt.sha256,
       "Operational-v2-Publication-Receipt driftet von der Build-Evidence-Eingabe.");
+    operationalProvenance = validateGermanyOperationalProvenance(verifiedOperationalPublication.receipt.operationalProvenance);
+    invariant(
+      operationalProvenance.producerKind === GERMANY_OPERATIONAL_INTEGRATED_PRODUCER_KIND
+        && operationalProvenance.releaseEvidenceEligible === true
+        && operationalProvenance.productionActivationEligible === true,
+      "Build-Evidence-v3 akzeptiert nur atomar integrierte, evidence- und aktivierungsgeeignete Operational-v2-Provenienz.",
+    );
     invariant(verifiedOperationalPublication.receipt.nativeReceipt.file === nativeReceipt.file
       && verifiedOperationalPublication.receipt.nativeReceipt.bytes === nativeReceipt.bytes
       && verifiedOperationalPublication.receipt.nativeReceipt.sha256 === nativeReceipt.sha256,
@@ -2254,6 +2423,16 @@ export async function materializeMapReleaseBuildEvidence({
         && captureInput.sha256 === captureEntrypoint.sha256,
       "Native-Receipt-Capture-Entrypoint driftet vom Build-Evidence-Repositoryvertrag.",
     );
+    operationalAuthority = await materializeCurrentAnnualOperationalAuthority({
+      artifactRoot: root,
+      inputs,
+      releaseConfig,
+      rebuildSpec: validatorRebuildSpec,
+      outerExecution: verifiedOperationalPublication.outerExecution,
+      releaseId: spec.releaseId,
+      mapBuildCommit: commitBinding.mapBuild,
+      attestationVerifier,
+    });
   }
 
   const inventoryInput = inputs.find(({ id }) => id === spec.buildCache.inventoryInputId);
@@ -2381,7 +2560,15 @@ export async function materializeMapReleaseBuildEvidence({
   }
   if (operationalEvidenceVersion(version)) {
     await bindOperationalOutputsToArtifactInventory(root, inputs, outputs, spec.releaseId, version);
-    await bindDeliveryToReleaseWrappers(root, inputs, outputs, spec.releaseId, version);
+    await bindDeliveryToReleaseWrappers(
+      root,
+      inputs,
+      outputs,
+      spec.releaseId,
+      version,
+      operationalProvenance,
+      operationalAuthority,
+    );
   }
   const deliveryInventory = await deliveryInventoryFromOutput(root, outputs, spec.releaseId);
   const candidatePackage = operationalEvidenceVersion(version)
@@ -2421,6 +2608,11 @@ export async function materializeMapReleaseBuildEvidence({
     outputs: outputs.sort((left, right) => left.id.localeCompare(right.id, "en")),
     ...(candidatePackage === undefined ? {} : { candidatePackage }),
     deliveryInventory,
+    ...(operationalProvenance === undefined ? {} : {
+      operationalAuthority: structuredClone(operationalAuthority),
+      operationalProvenance: structuredClone(operationalProvenance),
+      operationalProvenanceSha256: germanyOperationalProvenanceSha256(operationalProvenance),
+    }),
     regressions: {
       forbiddenPublicTokens: [...spec.regressions.forbiddenPublicTokens].sort(),
       requiredEboSignalFeatureIds: [...spec.regressions.requiredEboSignalFeatureIds].sort(),
@@ -2545,6 +2737,17 @@ export function validateMapReleaseBuildEvidence(evidence) {
     invariant(evidence.inputs.some(({ id, kind }) => id === "map-release-wrapper" && kind === "derived-input"), "Operational-v2-Evidence besitzt keine Kartenrelease-Hülle.");
     invariant(evidence.inputs.some(({ id, kind }) => id === "delivery-sources" && kind === "derived-input"), "Operational-v2-Evidence besitzt keinen Delivery-Quellenvertrag.");
   }
+  if (version === 3 && evidence.releaseId === CURRENT_ANNUAL_V3_RELEASE_ID) {
+    const provenance = validateGermanyOperationalProvenance(evidence.operationalProvenance);
+    invariant(
+      provenance.producerKind === GERMANY_OPERATIONAL_INTEGRATED_PRODUCER_KIND
+        && provenance.releaseEvidenceEligible === true
+        && provenance.productionActivationEligible === true
+        && evidence.operationalProvenanceSha256 === germanyOperationalProvenanceSha256(provenance),
+      "Aktuelles Build-Evidence-v3 besitzt keine integrierte, aktivierungsgeeignete Operational-v2-Provenienzbindung.",
+    );
+    validateCurrentAnnualOperationalAuthority(evidence.operationalAuthority, evidence.inputs, evidence.commits.mapBuild);
+  }
   invariant(new Set(evidence.outputs.map(({ installFile }) => installFile)).size === evidence.outputs.length, "Ausgaben besitzen doppelte Installationspfade.");
   const deliveryInventory = normalizeDeliveryInventory({
     schema: deliverySchemaForVersion(version),
@@ -2603,7 +2806,10 @@ export function validateMapReleaseBuildEvidence(evidence) {
 export async function verifyMapReleaseBuildEvidence(
   evidence,
   artifactRoot,
-  { validateOperationalInfrastructure = validateOperationalInfrastructureV2Native } = {},
+  {
+    validateOperationalInfrastructure = validateOperationalInfrastructureV2Native,
+    attestationVerifier = verifyGithubAttestationSubject,
+  } = {},
 ) {
   validateMapReleaseBuildEvidence(evidence);
   const version = evidenceVersion(evidence.schema);
@@ -2694,6 +2900,12 @@ export async function verifyMapReleaseBuildEvidence(
     });
     invariant(verifiedPublication.proof.bytes === publicationReceiptInput.bytes && verifiedPublication.proof.sha256 === publicationReceiptInput.sha256,
       "Operational-v2-Publication-Receipt weicht vom Evidence-Manifest ab.");
+    const verifiedProvenance = validateGermanyOperationalProvenance(verifiedPublication.receipt.operationalProvenance);
+    invariant(
+      germanyOperationalProvenanceSha256(verifiedProvenance) === evidence.operationalProvenanceSha256
+        && JSON.stringify(sortedValue(verifiedProvenance)) === JSON.stringify(sortedValue(evidence.operationalProvenance)),
+      "Operational-v2-Publication-Receipt und Build-Evidence-v3 binden nicht dieselbe integrierte Ausfuehrungsprovenienz.",
+    );
     invariant(
       verifiedPublication.receipt.nativeReceipt.file === nativeReceiptInput.file
         && verifiedPublication.receipt.nativeReceipt.bytes === nativeReceiptInput.bytes
@@ -2787,6 +2999,17 @@ export async function verifyMapReleaseBuildEvidence(
       && rebuiltTool.bytes === verifiedRebuild.receipt.binaries.rebuilt.bytes
       && rebuiltTool.sha256 === verifiedRebuild.receipt.binaries.rebuilt.sha256,
     "Evidence-Manifest bindet nicht das rebuilt Validator-Binary des Rebuild-Receipts.");
+    await verifyCurrentAnnualOperationalAuthorityLocal({
+      artifactRoot: root,
+      inputs: evidence.inputs,
+      releaseConfig,
+      rebuildSpec,
+      outerExecution: verifiedPublication.outerExecution,
+      releaseId: evidence.releaseId,
+      mapBuildCommit: evidence.commits.mapBuild,
+      authority: evidence.operationalAuthority,
+      attestationVerifier,
+    });
   }
   for (const output of evidence.outputs) {
     const proof = await outputProof(
@@ -2823,7 +3046,15 @@ export async function verifyMapReleaseBuildEvidence(
   }
   if (operationalEvidenceVersion(version)) {
     await bindOperationalOutputsToArtifactInventory(root, evidence.inputs, evidence.outputs, evidence.releaseId, version);
-    await bindDeliveryToReleaseWrappers(root, evidence.inputs, evidence.outputs, evidence.releaseId, version);
+    await bindDeliveryToReleaseWrappers(
+      root,
+      evidence.inputs,
+      evidence.outputs,
+      evidence.releaseId,
+      version,
+      evidence.operationalProvenance,
+      evidence.operationalAuthority,
+    );
   }
   const deliveryInventory = await deliveryInventoryFromOutput(root, evidence.outputs, evidence.releaseId);
   invariant(JSON.stringify(sortedValue(deliveryInventory)) === JSON.stringify(sortedValue(evidence.deliveryInventory)), "Delivery-Manifestinventar weicht vom Evidence-Manifest ab.");
@@ -3783,6 +4014,16 @@ export async function preflightMapReleaseActivation({
   const delivery = JSON.parse(deliveryBytes.toString("utf8"));
   invariant(deliveryBytes.equals(serializeDeliveryJson(delivery)), "Installiertes Delivery-Manifest ist nicht kanonisch serialisiert.");
   const signed = validateSignedDeliveryContract(delivery, evidence.releaseId, "Installiertes Delivery-Manifest");
+  if (evidence.releaseId === CURRENT_ANNUAL_V3_RELEASE_ID) {
+    validateOperationalBuildAuthority(evidence.operationalAuthority);
+    invariant(
+      JSON.stringify(sortedValue(delivery.operationalAuthority))
+        === JSON.stringify(sortedValue(evidence.operationalAuthority))
+        && delivery.bindings.operationalAuthoritySha256
+          === operationalBuildAuthoritySha256(evidence.operationalAuthority),
+      "Installiertes Delivery-Manifest und Build-Evidence binden nicht dieselbe Operational-Build-Authority.",
+    );
+  }
   const publicKey = trustedDeliveryPublicKey(runtimeTrustedMapInfraKeys, signed.keyId);
   invariant(verifyMapDeliveryReleaseSignature(delivery, publicKey), "Installiertes Delivery-Manifest besitzt keine gültige vertrauenswürdige Ed25519-Signatur.");
   const packageInventory = candidate.inventory

@@ -1,4 +1,4 @@
-import { createPublicKey, verify } from "node:crypto";
+import { createHash, createPublicKey, verify } from "node:crypto";
 
 import {
   alphaWorldProfiles,
@@ -48,18 +48,35 @@ export interface QualifiedInfraPackageCandidate {
   readonly timetableYear: number;
   readonly packageManifestSha256: string;
   readonly signatureProof: Readonly<Record<string, unknown>> & {
-    readonly schema: "zugfolge-infra-package-activation-proof/v1";
+    readonly schema: "zugfolge-infra-package-activation-proof/v1" | "zugfolge-infra-package-activation-proof/v2";
     readonly deliveryReleaseId: string;
     readonly timetableYear: number;
+    // manifest.json contains release.json and therefore cannot be part of the
+    // Delivery signature preimage without a hash cycle. It remains bound by
+    // the same-process Game finalization; every activation-relevant release,
+    // authority, provenance and Operational-v2 hash is re-derived below from
+    // the exact canonical signed release bytes.
     readonly packageManifestSha256: string;
     readonly deliveryReleaseHash: string;
     readonly infraReleaseHash: string;
+    readonly deliveryReleaseBase64: string;
     readonly algorithm: "Ed25519";
     readonly keyId: string;
     readonly valueBase64: string;
     readonly signatureStatus: "verified";
     readonly nativeOperationalValidationStatus: "verified";
     readonly operationalStateHash: string;
+    readonly operationalProvenanceStatus?: "verified";
+    readonly operationalProvenanceSha256?: string;
+    readonly operationalExecutionProofSha256?: string;
+    readonly operationalValidatorSha256?: string;
+    readonly operationalAuthorityStatus?: "verified";
+    readonly operationalAuthoritySha256?: string;
+    readonly operationalRebuildAttestationSha256?: string;
+    readonly operationalExecutionAuthorityAttestationSha256?: string;
+    readonly operationalOuterExecutionReceiptSha256?: string;
+    readonly operationalOuterExecutionCompletionSha256?: string;
+    readonly operationalAuthoritySourceCommit?: string;
   };
   readonly coverageReport: Readonly<Record<string, unknown>> & {
     readonly classASections: number;
@@ -111,6 +128,32 @@ export interface InfraActivationSafety {
 const SHA256 = /^[a-f0-9]{64}$/;
 const SAFE_RELEASE_ID = /^[a-z0-9](?:[a-z0-9._-]{0,126}[a-z0-9])?$/;
 
+function canonicalValue(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(canonicalValue);
+  if (value !== null && typeof value === "object") {
+    return Object.fromEntries(Object.keys(value).sort().map((key) => [
+      key,
+      canonicalValue((value as Record<string, unknown>)[key]),
+    ]));
+  }
+  return value;
+}
+
+function sha256(value: Buffer | string): string {
+  return createHash("sha256").update(value).digest("hex");
+}
+
+function deliveryReleaseHash(value: Readonly<Record<string, unknown>>): string {
+  const payload = { ...value };
+  delete payload["releaseHash"];
+  delete payload["signature"];
+  return sha256(`${JSON.stringify(canonicalValue(payload), null, 2)}\n`);
+}
+
+function canonicalContractHash(value: unknown, newline: boolean): string {
+  return sha256(`${JSON.stringify(canonicalValue(value))}${newline ? "\n" : ""}`);
+}
+
 function record(value: unknown, detail: string): Readonly<Record<string, unknown>> {
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
     throw new AlphaValidationError(detail);
@@ -154,6 +197,12 @@ function sameOperationalInfrastructure(
     && left.stateHash === right.stateHash;
 }
 
+function germanyDeliveryV2GenerationFromReleaseId(releaseId: string): "legacy-v1" | "integrated-provenance-v2" {
+  if (releaseId === "infra-deutschland-2026.5") return "integrated-provenance-v2";
+  if (["infra-deutschland-2026.1", "infra-deutschland-2026.3", "infra-deutschland-2026.4"].includes(releaseId)) return "legacy-v1";
+  throw new AlphaValidationError("InfraRelease-ID ist nicht als Deutschland-Delivery-v2-Version freigegeben.");
+}
+
 export class InfraUpdateService {
   constructor(
     private readonly db: AlphaDatabase,
@@ -172,21 +221,135 @@ export class InfraUpdateService {
     }
   }
 
+  private verifyQualifiedDeliveryRelease(
+    candidate: QualifiedInfraPackageCandidate,
+    currentOperationalProvenance: boolean,
+  ): void {
+    const proof = candidate.signatureProof;
+    let deliveryBytes: Buffer;
+    let delivery: Readonly<Record<string, unknown>>;
+    try {
+      deliveryBytes = Buffer.from(proof.deliveryReleaseBase64, "base64");
+      if (deliveryBytes.length === 0
+        || deliveryBytes.length > 16 * 1024 * 1024
+        || deliveryBytes.toString("base64") !== proof.deliveryReleaseBase64) throw new Error("non-canonical base64");
+      delivery = record(JSON.parse(deliveryBytes.toString("utf8")), "Delivery-v2-Qualifikationsbeleg enthaelt keinen signierten Releasevertrag.");
+      if (!deliveryBytes.equals(Buffer.from(`${JSON.stringify(canonicalValue(delivery), null, 2)}\n`, "utf8"))) {
+        throw new Error("non-canonical JSON");
+      }
+    } catch {
+      throw new AlphaValidationError("Delivery-v2-Qualifikationsbeleg enthaelt keine kanonischen Releasebytes.");
+    }
+    const expectedDeliveryKeys = [
+      "schema", "releaseId", "timetableYear", "packageId", "packageVersion", "scope", "artifacts", "bindings",
+      "approvalGates", "releaseHash", "signature",
+      ...(currentOperationalProvenance ? ["operationalAuthority", "operationalProvenance"] : []),
+    ].sort().join(",");
+    const signature = record(delivery["signature"], "Delivery-v2-Release besitzt keine Signatur.");
+    const gates = record(delivery["approvalGates"], "Delivery-v2-Release besitzt keine Freigabegates.");
+    const signatureGate = record(gates["signature"], "Delivery-v2-Release besitzt kein Signaturgate.");
+    const bindings = record(delivery["bindings"], "Delivery-v2-Release besitzt keine Hashbindungen.");
+    if (
+      Object.keys(delivery).sort().join(",") !== expectedDeliveryKeys
+      || delivery["schema"] !== "zugfolge-map-delivery-release/v2"
+      || delivery["releaseId"] !== candidate.releaseId
+      || delivery["timetableYear"] !== candidate.timetableYear
+      || delivery["releaseHash"] !== proof.deliveryReleaseHash
+      || deliveryReleaseHash(delivery) !== proof.deliveryReleaseHash
+      || signature["algorithm"] !== "Ed25519"
+      || signature["keyId"] !== proof.keyId
+      || signature["valueBase64"] !== proof.valueBase64
+      || signatureGate["status"] !== "passed"
+      || signatureGate["algorithm"] !== "Ed25519"
+      || signatureGate["keyId"] !== proof.keyId
+      || bindings["infraReleaseHash"] !== candidate.releaseHash
+      || bindings["infraReleaseHash"] !== proof.infraReleaseHash
+    ) {
+      throw new AlphaValidationError("Delivery-v2-Kandidat driftet von den kanonischen signierten Releasebytes.");
+    }
+
+    if (!Array.isArray(delivery["artifacts"])) {
+      throw new AlphaValidationError("Signierter Delivery-v2-Release besitzt kein Artefaktinventar.");
+    }
+    const operationalArtifacts = delivery["artifacts"].map((entry) => record(entry, "Delivery-v2-Artefakt ist ungueltig."))
+      .filter((entry) => entry["kind"] === "operational-infrastructure-v2");
+    const operationalArtifact = operationalArtifacts[0];
+    if (operationalArtifacts.length !== 1
+      || operationalArtifact === undefined
+      || operationalArtifact["infraReleaseId"] !== candidate.operationalInfrastructure.infraReleaseId
+      || operationalArtifact["installPath"] !== candidate.operationalInfrastructure.file
+      || operationalArtifact["bytes"] !== candidate.operationalInfrastructure.bytes
+      || operationalArtifact["sha256"] !== candidate.operationalInfrastructure.sha256
+      || operationalArtifact["stateHash"] !== candidate.operationalInfrastructure.stateHash
+      || operationalArtifact["stateHash"] !== proof.operationalStateHash) {
+      throw new AlphaValidationError("Operational-v2-Aktivierungsbindung driftet vom signierten Delivery-Artefakt.");
+    }
+
+    if (!currentOperationalProvenance) return;
+    const provenance = record(delivery["operationalProvenance"], "Signierter Delivery-v2-Release besitzt keine Operational-Provenienz.");
+    const executionProof = record(provenance["executionProof"], "Signierte Operational-Provenienz besitzt keinen Execution-Proof.");
+    const validator = record(executionProof["validator"], "Signierter Execution-Proof besitzt keinen Validatorbeleg.");
+    const executed = record(validator["executed"], "Signierter Execution-Proof besitzt keinen ausgefuehrten Validatorbeleg.");
+    const authority = record(delivery["operationalAuthority"], "Signierter Delivery-v2-Release besitzt keine Operational-Authority.");
+    const rebuild = record(authority["rebuild"], "Signierte Operational-Authority besitzt keinen Rebuildbeleg.");
+    const rebuildBundle = record(rebuild["bundle"], "Signierter Rebuildbeleg besitzt kein Attestation-Bundle.");
+    const execution = record(authority["execution"], "Signierte Operational-Authority besitzt keinen Executionbeleg.");
+    const executionBundle = record(execution["bundle"], "Signierter Executionbeleg besitzt kein Attestation-Bundle.");
+    const predicate = record(execution["predicate"], "Signierter Executionbeleg besitzt kein Predicate.");
+    const outerReceipt = record(predicate["outerExecutionReceipt"], "Signiertes Predicate besitzt keinen Outer-Receipt-Beleg.");
+    const outerCompletion = record(predicate["outerExecutionCompletion"], "Signiertes Predicate besitzt keinen Outer-Completion-Beleg.");
+    if (
+      bindings["operationalProvenanceSha256"] !== proof.operationalProvenanceSha256
+      || bindings["operationalAuthoritySha256"] !== proof.operationalAuthoritySha256
+      || canonicalContractHash(provenance, true) !== proof.operationalProvenanceSha256
+      || canonicalContractHash(executionProof, true) !== proof.operationalExecutionProofSha256
+      || executed["sha256"] !== proof.operationalValidatorSha256
+      || canonicalContractHash(authority, false) !== proof.operationalAuthoritySha256
+      || rebuildBundle["sha256"] !== proof.operationalRebuildAttestationSha256
+      || executionBundle["sha256"] !== proof.operationalExecutionAuthorityAttestationSha256
+      || outerReceipt["sha256"] !== proof.operationalOuterExecutionReceiptSha256
+      || outerCompletion["sha256"] !== proof.operationalOuterExecutionCompletionSha256
+      || execution["sourceDigest"] !== proof.operationalAuthoritySourceCommit
+    ) {
+      throw new AlphaValidationError("Operational-v2-Provenienz oder Build-Authority driftet vom signierten Delivery-v2-Release.");
+    }
+  }
+
   private verifyQualifiedPackageProof(candidate: QualifiedInfraPackageCandidate): void {
     const proof = candidate.signatureProof;
+    const currentOperationalProvenance = germanyDeliveryV2GenerationFromReleaseId(candidate.releaseId) === "integrated-provenance-v2";
     const expectedProofKeys = [
       "schema", "deliveryReleaseId", "timetableYear", "packageManifestSha256", "deliveryReleaseHash",
-      "infraReleaseHash", "algorithm", "keyId", "valueBase64", "signatureStatus",
+      "infraReleaseHash", "deliveryReleaseBase64", "algorithm", "keyId", "valueBase64", "signatureStatus",
       "nativeOperationalValidationStatus", "operationalStateHash",
+      ...(currentOperationalProvenance ? [
+        "operationalProvenanceStatus", "operationalProvenanceSha256", "operationalExecutionProofSha256", "operationalValidatorSha256",
+        "operationalAuthorityStatus", "operationalAuthoritySha256", "operationalRebuildAttestationSha256",
+        "operationalExecutionAuthorityAttestationSha256", "operationalOuterExecutionReceiptSha256",
+        "operationalOuterExecutionCompletionSha256", "operationalAuthoritySourceCommit",
+      ] : []),
     ].sort().join(",");
     if (Object.keys(proof).sort().join(",") !== expectedProofKeys
-      || proof.schema !== "zugfolge-infra-package-activation-proof/v1"
+      || proof.schema !== (currentOperationalProvenance ? "zugfolge-infra-package-activation-proof/v2" : "zugfolge-infra-package-activation-proof/v1")
       || proof.deliveryReleaseId !== candidate.releaseId
       || proof.timetableYear !== candidate.timetableYear
       || proof.packageManifestSha256 !== candidate.packageManifestSha256
       || proof.infraReleaseHash !== candidate.releaseHash
       || !/^[a-f0-9]{64}$/.test(proof.deliveryReleaseHash)
       || !/^[a-f0-9]{64}$/.test(proof.operationalStateHash)
+      || (currentOperationalProvenance && (
+        proof.operationalProvenanceStatus !== "verified"
+        || !/^[a-f0-9]{64}$/.test(proof.operationalProvenanceSha256 ?? "")
+        || !/^[a-f0-9]{64}$/.test(proof.operationalExecutionProofSha256 ?? "")
+        || !/^[a-f0-9]{64}$/.test(proof.operationalValidatorSha256 ?? "")
+        || proof.operationalAuthorityStatus !== "verified"
+        || !/^[a-f0-9]{64}$/.test(proof.operationalAuthoritySha256 ?? "")
+        || !/^[a-f0-9]{64}$/.test(proof.operationalRebuildAttestationSha256 ?? "")
+        || !/^[a-f0-9]{64}$/.test(proof.operationalExecutionAuthorityAttestationSha256 ?? "")
+        || !/^[a-f0-9]{64}$/.test(proof.operationalOuterExecutionReceiptSha256 ?? "")
+        || !/^[a-f0-9]{64}$/.test(proof.operationalOuterExecutionCompletionSha256 ?? "")
+        || !/^[a-f0-9]{40}$/.test(proof.operationalAuthoritySourceCommit ?? "")
+      ))
       || proof.algorithm !== "Ed25519"
       || !/^[a-z0-9](?:[a-z0-9._-]{0,126}[a-z0-9])?$/.test(proof.keyId)
       || !/^[A-Za-z0-9+/]{86}==$/.test(proof.valueBase64)
@@ -194,6 +357,7 @@ export class InfraUpdateService {
       || proof.nativeOperationalValidationStatus !== "verified") {
       throw new AlphaValidationError("Delivery-v2-Kandidat besitzt keinen vollstaendigen Game-Qualifikationsbeleg.");
     }
+    this.verifyQualifiedDeliveryRelease(candidate, currentOperationalProvenance);
     const trustedKeyPem = this.trustedKeys[proof.keyId];
     if (trustedKeyPem === undefined) throw new AlphaValidationError("Delivery-v2-Signaturschluessel ist nicht im Trust-Store benannt.");
     let publicKey;
@@ -255,6 +419,11 @@ export class InfraUpdateService {
     candidate: QualifiedInfraPackageCandidate,
     requestedPeriodStart: Date,
   ) {
+    try {
+      candidate = structuredClone(candidate);
+    } catch {
+      throw new AlphaValidationError("Delivery-v2-Kandidat ist keine geschlossene serialisierbare Momentaufnahme.");
+    }
     if (!/^[a-f0-9]{64}$/.test(candidate.releaseHash) || !/^[a-f0-9]{64}$/.test(candidate.packageManifestSha256)) {
       throw new AlphaValidationError("Delivery-v2-Kandidat besitzt keine gueltige Hashbindung.");
     }

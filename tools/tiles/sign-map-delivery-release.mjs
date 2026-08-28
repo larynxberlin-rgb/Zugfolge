@@ -11,14 +11,23 @@ import {
   preflightUnsignedMapDeliveryRelease,
 } from "./signed-map-package-plan.mjs";
 
-const [planPath, sourceRoot, privateKeyPath, keyId, outputPath, ...extra] = process.argv.slice(2);
-if (!planPath || !sourceRoot || !privateKeyPath || !keyId || !outputPath || extra.length > 0) {
-  throw new Error("Aufruf: sign-map-delivery-release.mjs UNSIGNED_PLAN.json QUELLWURZEL PRIVATE_KEY.pem KEY_ID SIGNED_RELEASE.json");
-}
-
+const usage = "Aufruf: sign-map-delivery-release.mjs UNSIGNED_PLAN.json QUELLWURZEL PRIVATE_KEY.pem KEY_ID [MAP_BUILD_COMMIT] SIGNED_RELEASE.json";
+const arguments_ = process.argv.slice(2);
+if (![5, 6].includes(arguments_.length)) throw new Error(usage);
+const [planPath, sourceRoot, privateKeyPath, keyId] = arguments_;
 const unsignedPlan = JSON.parse(await readFile(resolve(planPath), "utf8"));
+const currentAnnualDelivery = unsignedPlan?.schema === "zugfolge-map-package-plan/v2"
+  && unsignedPlan.version === "2026.5";
+if (arguments_.length !== (currentAnnualDelivery ? 6 : 5)) {
+  throw new Error(`${usage}; current 2026.5 verlangt einen expliziten MAP_BUILD_COMMIT.`);
+}
+const mapBuildCommit = currentAnnualDelivery ? arguments_[4] : undefined;
+if (currentAnnualDelivery && !/^[a-f0-9]{40}$/u.test(mapBuildCommit)) {
+  throw new Error("current 2026.5 verlangt einen expliziten exakten MAP_BUILD_COMMIT.");
+}
+const outputPath = arguments_.at(-1);
 const resolvedSourceRoot = resolve(sourceRoot);
-const preflight = await preflightUnsignedMapDeliveryRelease(unsignedPlan, resolvedSourceRoot);
+const preflight = await preflightUnsignedMapDeliveryRelease(unsignedPlan, resolvedSourceRoot, { mapBuildCommit });
 const expectedOutputPath = resolve(
   resolvedSourceRoot,
   ...deriveSignedReleaseSourceFile(preflight.releaseSourceFile).split("/"),

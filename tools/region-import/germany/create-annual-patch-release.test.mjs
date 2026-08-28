@@ -1,15 +1,41 @@
 import assert from "node:assert/strict";
-import { link, lstat, mkdir, mkdtemp, open, readFile, readdir, rename, rm, unlink, writeFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { copyFile, link, lstat, mkdir, mkdtemp, open, readFile, readdir, rename, rm, unlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 
-import { createAnnualPatchRelease } from "./create-annual-patch-release.mjs";
+import {
+  createAnnualPatchRelease,
+  createCurrentOperationalDependencyContractClosure,
+} from "./create-annual-patch-release.mjs";
 
+const HERE = dirname(fileURLToPath(import.meta.url));
+const REPOSITORY_ROOT = resolve(HERE, "../../..");
+const OPERATIONAL_EXECUTION_IMPORT_CLOSURE = Object.freeze([
+  "tools/region-import/germany/annual-create-new-artifact.mjs",
+  "tools/region-import/germany/capture-operational-infrastructure-v2-native-receipt.mjs",
+  "tools/region-import/germany/operational-infrastructure-v2-execution-pins.mjs",
+  "tools/region-import/germany/operational-infrastructure-v2-outer-execution-receipt.mjs",
+  "tools/region-import/germany/operational-infrastructure-v2-publication.mjs",
+  "tools/region-import/germany/operational-infrastructure-v2-direct-system-launch.windows.ps1",
+  "tools/region-import/germany/operational-infrastructure-v2-system-launcher.linux.py",
+  "tools/region-import/germany/operational-infrastructure-v2-system-launcher.windows.ps1",
+  "tools/region-import/germany/operational-infrastructure-v2.mjs",
+  "tools/region-import/germany/operational-validator-rebuild-evidence.mjs",
+  "tools/region-import/germany/operational-windows-anchor-helper.dll",
+  "tools/region-import/germany/print-operational-infrastructure-v2-system-launch-command.mjs",
+  "tools/region-import/germany/publish-operational-infrastructure-v2.mjs",
+  "tools/region-import/germany/run-capture-operational-infrastructure-v2.mjs",
+  "tools/region-import/materialize-operational-infrastructure-v2.mjs",
+  "tools/region-import/operational-infrastructure-binding.mjs",
+  "tools/tiles/create-new-output.mjs",
+]);
+const OPERATIONAL_EXECUTION_RUNNER_BUNDLE = "tools/region-import/germany/run-capture-operational-infrastructure-v2.anchored-bundle.mjs";
 const PENDING_REAL_BUILD = "PENDING_REAL_ANNUAL_RELEASE_BUILD";
 const CHECKED_IN_VALIDATOR_REBUILD_SPEC = join(
-  dirname(fileURLToPath(import.meta.url)),
+  HERE,
   "operational-validator-rebuild.annual-2026.5.json",
 );
 const GTFS_SNAPSHOT_BYTES = 14_797_184;
@@ -28,11 +54,30 @@ const CANONICAL_HARDENING_FILES = Object.freeze([
   "tools/tiles/map-release-build-evidence.annual-{patch}.spec.json",
   "tools/region-import/germany/release.annual-{patch}.config.json",
   "tools/region-import/germany/operational-validator-rebuild.annual-{patch}.json",
+  "tools/region-import/germany/operational-infrastructure-v2-execution-pins.annual-{patch}.json",
+  "tools/region-import/germany/operational-infrastructure-v2-direct-system-launch.annual-{patch}.json",
 ]);
 const CANONICAL_HARDENING_TEXT_FILES = Object.freeze([
   "tools/audits/germany-{patch}-alpha-world-runtime.real.test.mjs",
   "tools/audits/germany-{patch}-signed-game-staging.real.test.mjs",
 ]);
+
+test("eingecheckte 2026.5-Operational-Closure entspricht dem gemeinsamen finalen Repin bytegenau", async () => {
+  const files = await createCurrentOperationalDependencyContractClosure({
+    repositoryRoot: REPOSITORY_ROOT,
+    targetPatch: "2026.5",
+  });
+  assert.deepEqual(Object.keys(files).sort(), [
+    "tools/region-import/germany/operational-infrastructure-v2-direct-system-launch.annual-2026.5.json",
+    "tools/region-import/germany/operational-infrastructure-v2-execution-pins.annual-2026.5.json",
+    "tools/region-import/germany/operational-validator-rebuild.annual-2026.5.json",
+    "tools/region-import/germany/release.annual-2026.5.config.json",
+  ]);
+  for (const [file, content] of Object.entries(files)) {
+    assert.deepEqual(await readFile(join(REPOSITORY_ROOT, ...file.split("/"))), Buffer.from(content, "utf8"),
+      `${file} driftet vom gemeinsamen finalen Operational-v2-Repin.`);
+  }
+});
 
 async function fixture(t) {
   const root = await mkdtemp(join(tmpdir(), "zugfolge-annual-patch-"));
@@ -332,6 +377,7 @@ async function baselineHardeningFixture(t) {
       schema: "zugfolge-map-package-plan/v2",
       packageId: "zugfolge-map-deutschland",
       version: "2026.4",
+      artifacts: [],
       auxiliaryFiles: [
         {
           id: "operational-infrastructure-2026.4",
@@ -365,6 +411,15 @@ async function baselineHardeningFixture(t) {
     await writeFile(target, bytes, { flag: "wx" });
     sourceBytes.set(relativePath, bytes);
   }
+  for (const relativePath of OPERATIONAL_EXECUTION_IMPORT_CLOSURE) {
+    const target = join(root, ...relativePath.split("/"));
+    await mkdir(dirname(target), { recursive: true });
+    await copyFile(join(REPOSITORY_ROOT, ...relativePath.split("/")), target);
+  }
+  {
+    const target = join(root, ...OPERATIONAL_EXECUTION_RUNNER_BUNDLE.split("/"));
+    await copyFile(join(REPOSITORY_ROOT, ...OPERATIONAL_EXECUTION_RUNNER_BUNDLE.split("/")), target);
+  }
   return { root, sourceBytes };
 }
 
@@ -389,6 +444,8 @@ test("migriert die hermetische 58b2f5c-.4-Form target-only und laesst alle Quell
     "tools/tiles/map-release-build-evidence.annual-2026.5.spec.json",
     "tools/region-import/germany/release.annual-2026.5.config.json",
     "tools/region-import/germany/operational-validator-rebuild.annual-2026.5.json",
+    "tools/region-import/germany/operational-infrastructure-v2-execution-pins.annual-2026.5.json",
+    "tools/region-import/germany/operational-infrastructure-v2-direct-system-launch.annual-2026.5.json",
     "tools/audits/germany-2026.5-alpha-world-runtime.real.test.mjs",
     "tools/audits/germany-2026.5-signed-game-staging.real.test.mjs",
   ]);
@@ -495,6 +552,20 @@ test("migriert die hermetische 58b2f5c-.4-Form target-only und laesst alle Quell
   assert.equal(timetable.transferOutput, "var/derived/germany-2026.5/timetable-routes-v2.transfer-demands-v2.json");
 
   const cachePlan = JSON.parse(await readFile(join(root, result.files[5]), "utf8"));
+  const operationalReleaseEvidenceFiles = [
+    ["operational-native-receipt", "operational-infrastructure-v2.native-receipt.json"],
+    ["operational-publication-receipt", "operational-infrastructure-v2.publication-receipt.json"],
+    ["operational-outer-execution-receipt", "operational-infrastructure-v2.outer-execution-receipt.json"],
+    ["operational-outer-execution-receipt-completion", "operational-infrastructure-v2.outer-execution-receipt.json.zugfolge-complete.json"],
+    ["operational-annual-plan", "toolchain/zugfolge-infra-release-annual-plan.json"],
+    ["operational-annual-plan-completion", "toolchain/zugfolge-infra-release-annual-plan.json.zugfolge-complete.json"],
+    ["operational-annual-executor-start-evidence", "toolchain/zugfolge-infra-release-annual-executor-start-evidence.json"],
+    ["operational-annual-executor-start-evidence-completion", "toolchain/zugfolge-infra-release-annual-executor-start-evidence.json.zugfolge-complete.json"],
+    ["operational-validator-rebuild-attestation", "toolchain/zugfolge-infra-release-rebuild-attestation.sigstore.json"],
+    ["operational-execution-authority-attestation", "toolchain/zugfolge-operational-v2-execution-authority.sigstore.json"],
+    ["operational-attestation-verifier", "toolchain/gh-2.94.0-windows-amd64.exe"],
+    ["operational-attestation-trusted-root", "toolchain/github-attestation-trusted-root.jsonl"],
+  ];
   assert.deepEqual(
     cachePlan.files.filter(({ sourceFile }) => sourceFile.includes("timetable-routes-v2.derivation-report")),
     [{
@@ -508,28 +579,43 @@ test("migriert die hermetische 58b2f5c-.4-Form target-only und laesst alle Quell
   ]) {
     assert.equal(cachePlan.files.filter(({ sourceFile }) => sourceFile.endsWith(`/${fileName}`)).length, 1);
   }
+  for (const [, fileName] of operationalReleaseEvidenceFiles) {
+    assert.deepEqual(
+      cachePlan.files.filter(({ sourceFile }) => sourceFile.endsWith(`/${fileName}`)),
+      [{
+        sourceFile: `var/derived/germany-2026.5/${fileName}`,
+        cacheFile: `derived/infra-deutschland-2026.5/${fileName}`,
+      }],
+    );
+  }
   assert.ok(cachePlan.files.some(({ sourceFile, cacheFile }) => (
-    sourceFile === "var/derived/germany-2026.5/toolchain/zugfolge-infra-release-ee6d7081b32277e46cd6ebb28fc65bd45ce55012-69f6f13d69cd256464f254804d6d7349acd0f09bbe614ae2b0e38e70664306fc.exe"
-      && cacheFile === "tools/zugfolge-infra-release/infra-deutschland-2026.5/ee6d7081b32277e46cd6ebb28fc65bd45ce55012/69f6f13d69cd256464f254804d6d7349acd0f09bbe614ae2b0e38e70664306fc/zugfolge-infra-release.exe"
+    sourceFile === "var/derived/germany-2026.5/toolchain/zugfolge-infra-release-aba354ec1937452a491087626ec0adea36ef6695-c35e72e352ae573e0416035fc4f0d233af5668864c0bd8df7333337e87bb7fd4.exe"
+      && cacheFile === "tools/zugfolge-infra-release/infra-deutschland-2026.5/aba354ec1937452a491087626ec0adea36ef6695/c35e72e352ae573e0416035fc4f0d233af5668864c0bd8df7333337e87bb7fd4/zugfolge-infra-release.exe"
   )));
   assert.ok(cachePlan.files.some(({ sourceFile, cacheFile }) => (
     sourceFile === "var/derived/germany-2026.5/toolchain/zugfolge-infra-release-rebuild-evidence.json"
       && cacheFile === "derived/infra-deutschland-2026.5/toolchain/zugfolge-infra-release-rebuild-evidence.json"
   )));
   assert.ok(cachePlan.files.some(({ sourceFile, cacheFile }) => (
-    sourceFile === "var/derived/germany-2026.5/toolchain/zugfolge-infra-release-source-ee6d7081b32277e46cd6ebb28fc65bd45ce55012-556c906567dd436de091390b66cf9538e82febd237f70b0d353b286480852b2a.tar"
-      && cacheFile === "derived/infra-deutschland-2026.5/toolchain/zugfolge-infra-release-source-ee6d7081b32277e46cd6ebb28fc65bd45ce55012-556c906567dd436de091390b66cf9538e82febd237f70b0d353b286480852b2a.tar"
+    sourceFile === "var/derived/germany-2026.5/toolchain/zugfolge-infra-release-source-aba354ec1937452a491087626ec0adea36ef6695-3f267637dcd52dded45ca921d27863149b3fd2919b7bb2e9d881b381c04565af.tar"
+      && cacheFile === "derived/infra-deutschland-2026.5/toolchain/zugfolge-infra-release-source-aba354ec1937452a491087626ec0adea36ef6695-3f267637dcd52dded45ca921d27863149b3fd2919b7bb2e9d881b381c04565af.tar"
   )));
   assert.ok(cachePlan.files.some(({ sourceFile, cacheFile }) => (
-    sourceFile === "var/derived/germany-2026.5/toolchain/zugfolge-infra-release-rebuild-provenance-ee6d7081b32277e46cd6ebb28fc65bd45ce55012.json"
-      && cacheFile === "derived/infra-deutschland-2026.5/toolchain/zugfolge-infra-release-rebuild-provenance-ee6d7081b32277e46cd6ebb28fc65bd45ce55012.json"
+    sourceFile === "var/derived/germany-2026.5/toolchain/zugfolge-infra-release-rebuild-provenance-aba354ec1937452a491087626ec0adea36ef6695.json"
+      && cacheFile === "derived/infra-deutschland-2026.5/toolchain/zugfolge-infra-release-rebuild-provenance-aba354ec1937452a491087626ec0adea36ef6695.json"
   )));
   assert.ok(cachePlan.files.some(({ sourceFile, cacheFile }) => (
-    sourceFile === "var/derived/germany-2026.5/toolchain/zugfolge-infra-release-rebuild-ee6d7081b32277e46cd6ebb28fc65bd45ce55012-official.exe"
-      && cacheFile === "tools/zugfolge-infra-release/infra-deutschland-2026.5/ee6d7081b32277e46cd6ebb28fc65bd45ce55012/official/zugfolge-infra-release.exe"
+    sourceFile === "var/derived/germany-2026.5/toolchain/zugfolge-infra-release-rebuild-aba354ec1937452a491087626ec0adea36ef6695-official.exe"
+      && cacheFile === "tools/zugfolge-infra-release/infra-deutschland-2026.5/aba354ec1937452a491087626ec0adea36ef6695/official/zugfolge-infra-release.exe"
   )));
 
   const mapPackage = JSON.parse(await readFile(join(root, result.files[6]), "utf8"));
+  assert.deepEqual(mapPackage.operationalProvenanceSource, {
+    publicationReceiptFile: "var/derived/germany-2026.5/operational-infrastructure-v2.publication-receipt.json",
+  });
+  assert.deepEqual(mapPackage.operationalAuthoritySource, {
+    buildEvidenceSpecFile: "tools/tiles/map-release-build-evidence.annual-2026.5.spec.json",
+  });
   assert.deepEqual(mapPackage.auxiliaryFiles.map(({ kind }) => kind), [
     "operational-infrastructure-v2",
     "movement-route-templates-v2",
@@ -553,6 +639,24 @@ test("migriert die hermetische 58b2f5c-.4-Form target-only und laesst alle Quell
       file: "var/derived/germany-2026.5/timetable-routes-v2.derivation-report-v4.json",
       cacheFile: "derived/infra-deutschland-2026.5/timetable-routes-v2.derivation-report-v4.json",
     }],
+  );
+  assert.deepEqual(
+    evidence.inputs.filter(({ id }) => operationalReleaseEvidenceFiles.some(([expectedId]) => expectedId === id)),
+    operationalReleaseEvidenceFiles.map(([id, fileName]) => ({
+      id,
+      kind: "derived-input",
+      version: "infra-deutschland-2026.5",
+      file: `var/derived/germany-2026.5/${fileName}`,
+      cacheFile: `derived/infra-deutschland-2026.5/${fileName}`,
+      ...(id === "operational-attestation-verifier" ? {
+        expectedBytes: 40_998_712,
+        expectedSha256: "91ed1eff1819a96b34bc2ca3adc01822c807ae1bb883c01ad9fdf335bf242b38",
+      } : {}),
+      ...(id === "operational-attestation-trusted-root" ? {
+        expectedBytes: 34_634,
+        expectedSha256: "65ca537f6ed8a47fd0e560c421baa1f6c1efb8b25fc200d8c5c02c0e92eb2b9c",
+      } : {}),
+    })),
   );
   assert.deepEqual(evidence.candidatePackage.retainedTrustedKeyIds, [
     "zugfolge-alpha-2026",
@@ -598,27 +702,32 @@ test("migriert die hermetische 58b2f5c-.4-Form target-only und laesst alle Quell
     id: "operational-v2-validator",
     kind: "binary",
     version: "operational-validator-build-commit",
-    file: "var/derived/germany-2026.5/toolchain/zugfolge-infra-release-ee6d7081b32277e46cd6ebb28fc65bd45ce55012-69f6f13d69cd256464f254804d6d7349acd0f09bbe614ae2b0e38e70664306fc.exe",
-    cacheFile: "tools/zugfolge-infra-release/infra-deutschland-2026.5/ee6d7081b32277e46cd6ebb28fc65bd45ce55012/69f6f13d69cd256464f254804d6d7349acd0f09bbe614ae2b0e38e70664306fc/zugfolge-infra-release.exe",
-    expectedBytes: 8_283_251,
-    expectedSha256: "69f6f13d69cd256464f254804d6d7349acd0f09bbe614ae2b0e38e70664306fc",
+    file: "var/derived/germany-2026.5/toolchain/zugfolge-infra-release-aba354ec1937452a491087626ec0adea36ef6695-c35e72e352ae573e0416035fc4f0d233af5668864c0bd8df7333337e87bb7fd4.exe",
+    cacheFile: "tools/zugfolge-infra-release/infra-deutschland-2026.5/aba354ec1937452a491087626ec0adea36ef6695/c35e72e352ae573e0416035fc4f0d233af5668864c0bd8df7333337e87bb7fd4/zugfolge-infra-release.exe",
+    expectedBytes: 8_382_277,
+    expectedSha256: "c35e72e352ae573e0416035fc4f0d233af5668864c0bd8df7333337e87bb7fd4",
   });
   assert.deepEqual(evidence.tools[1], {
     id: "operational-v2-validator-rebuild",
     kind: "binary",
     version: "operational-validator-rebuild-proof",
-    file: "var/derived/germany-2026.5/toolchain/zugfolge-infra-release-rebuild-ee6d7081b32277e46cd6ebb28fc65bd45ce55012-official.exe",
-    cacheFile: "tools/zugfolge-infra-release/infra-deutschland-2026.5/ee6d7081b32277e46cd6ebb28fc65bd45ce55012/official/zugfolge-infra-release.exe",
+    file: "var/derived/germany-2026.5/toolchain/zugfolge-infra-release-rebuild-aba354ec1937452a491087626ec0adea36ef6695-official.exe",
+    cacheFile: "tools/zugfolge-infra-release/infra-deutschland-2026.5/aba354ec1937452a491087626ec0adea36ef6695/official/zugfolge-infra-release.exe",
   });
 
   const releaseConfig = JSON.parse(await readFile(
     join(root, "tools/region-import/germany/release.annual-2026.5.config.json"),
     "utf8",
   ));
-  assert.deepEqual(releaseConfig.pipeline.operationalDeriver, {
-    primaryRunner: "tools/region-import/germany/run-operational-infrastructure-v2.mjs",
-    primaryRunnerMode: "candidate-triplet",
+  const { directSystemLaunch, ...operationalDeriverWithoutDirectSystemLaunch } = releaseConfig.pipeline.operationalDeriver;
+  assert.deepEqual(operationalDeriverWithoutDirectSystemLaunch, {
+    primaryRunner: "tools/region-import/germany/run-capture-operational-infrastructure-v2.anchored-bundle.mjs",
+    primaryRunnerMode: "system-launcher-held-bundle-stdin-v1",
+    systemCommandBuilder: "tools/region-import/germany/print-operational-infrastructure-v2-system-launch-command.mjs",
+    systemCommandBuilderMode: "source-only-print-direct-command-v1",
+    executionPins: "tools/region-import/germany/operational-infrastructure-v2-execution-pins.annual-2026.5.json",
     specification: "tools/region-import/germany/operational-infrastructure.annual-2026.5.json",
+    sourceRoot: ".",
     candidate: "var/derived/germany-2026.5/operational-infrastructure-v2.candidate.json",
     candidateMovementRouteTemplates: "var/derived/germany-2026.5/operational-infrastructure-v2.candidate.movement-route-templates-v2.json",
     report: "var/derived/germany-2026.5/operational-infrastructure-v2.derivation-report.json",
@@ -626,15 +735,15 @@ test("migriert die hermetische 58b2f5c-.4-Form target-only und laesst alle Quell
     recoveryPublisher: {
       captureEntrypoint: "tools/region-import/germany/capture-operational-infrastructure-v2-native-receipt.mjs",
       entrypoint: "tools/region-import/germany/publish-operational-infrastructure-v2.mjs",
-      validatorExecutable: "var/derived/germany-2026.5/toolchain/zugfolge-infra-release-ee6d7081b32277e46cd6ebb28fc65bd45ce55012-69f6f13d69cd256464f254804d6d7349acd0f09bbe614ae2b0e38e70664306fc.exe",
-      validatorBuildCommit: "ee6d7081b32277e46cd6ebb28fc65bd45ce55012",
-      validatorBytes: 8_283_251,
-      validatorSha256: "69f6f13d69cd256464f254804d6d7349acd0f09bbe614ae2b0e38e70664306fc",
+      validatorExecutable: "var/derived/germany-2026.5/toolchain/zugfolge-infra-release-aba354ec1937452a491087626ec0adea36ef6695-c35e72e352ae573e0416035fc4f0d233af5668864c0bd8df7333337e87bb7fd4.exe",
+      validatorBuildCommit: "aba354ec1937452a491087626ec0adea36ef6695",
+      validatorBytes: 8_382_277,
+      validatorSha256: "c35e72e352ae573e0416035fc4f0d233af5668864c0bd8df7333337e87bb7fd4",
       validatorRebuildSpecification: "tools/region-import/germany/operational-validator-rebuild.annual-2026.5.json",
       validatorRebuildEvidence: "var/derived/germany-2026.5/toolchain/zugfolge-infra-release-rebuild-evidence.json",
-      validatorRebuildExecutable: "var/derived/germany-2026.5/toolchain/zugfolge-infra-release-rebuild-ee6d7081b32277e46cd6ebb28fc65bd45ce55012-official.exe",
-      validatorRebuildExpectedBytes: 8_283_251,
-      validatorNormalizedPeSha256: "91e84253399bf8836ec4e6a5688da51f753531a0040831a54b8585e28f1d5363",
+      validatorRebuildExecutable: "var/derived/germany-2026.5/toolchain/zugfolge-infra-release-rebuild-aba354ec1937452a491087626ec0adea36ef6695-official.exe",
+      validatorRebuildExpectedBytes: 8_382_277,
+      validatorNormalizedPeSha256: "ae39f5a8378641be0d02be56e93bf585a49a6e65bc1f5a02b77cd2bd556d38cb",
       executionInventory: {
         wrapper: "tools/region-import/germany/publish-operational-infrastructure-v2.mjs",
         implementation: "tools/region-import/germany/operational-infrastructure-v2-publication.mjs",
@@ -644,36 +753,179 @@ test("migriert die hermetische 58b2f5c-.4-Form target-only und laesst alle Quell
         operationalBinding: "tools/region-import/operational-infrastructure-binding.mjs",
         validatorRebuildBootstrap: "tools/region-import/germany/operational-validator-rebuild-bootstrap.mjs",
         validatorRebuildVerifier: "tools/region-import/germany/operational-validator-rebuild-evidence.mjs",
+        executionPinsImplementation: "tools/region-import/germany/operational-infrastructure-v2-execution-pins.mjs",
+        annualCreateNewArtifact: "tools/region-import/germany/annual-create-new-artifact.mjs",
+        outerExecutionReceiptVerifier: "tools/region-import/germany/operational-infrastructure-v2-outer-execution-receipt.mjs",
       },
       nativeReceipt: "var/derived/germany-2026.5/operational-infrastructure-v2.native-receipt.json",
+      outerExecutionReceipt: "var/derived/germany-2026.5/operational-infrastructure-v2.outer-execution-receipt.json",
       publicationReceipt: "var/derived/germany-2026.5/operational-infrastructure-v2.publication-receipt.json",
     },
   });
 
-  const validatorRebuild = JSON.parse(await readFile(join(root, result.files[9]), "utf8"));
+  const validatorRebuildBytes = await readFile(join(root, result.files[9]));
+  const validatorRebuild = JSON.parse(validatorRebuildBytes.toString("utf8"));
+  const executionPinsBytes = await readFile(join(root, result.files[10]));
+  const executionPins = JSON.parse(executionPinsBytes.toString("utf8"));
   assert.deepEqual(
-    await readFile(join(root, result.files[9])),
+    validatorRebuildBytes,
     await readFile(CHECKED_IN_VALIDATOR_REBUILD_SPEC),
     "Generator und eingecheckter Validator-Rebuild-Vertrag muessen byteidentisch sein.",
   );
   assert.deepEqual(Object.keys(validatorRebuild).sort(), [
+    "authority",
     "binaries",
     "build",
     "pe",
     "producer",
     "provenance",
+    "receipt",
     "releaseId",
     "schema",
     "source",
     "toolchain",
   ]);
   assert.equal(validatorRebuild.releaseId, "infra-deutschland-2026.5");
-  assert.equal(validatorRebuild.source.commit, "ee6d7081b32277e46cd6ebb28fc65bd45ce55012");
-  assert.equal(validatorRebuild.binaries.preserved.sha256, "69f6f13d69cd256464f254804d6d7349acd0f09bbe614ae2b0e38e70664306fc");
-  assert.equal(validatorRebuild.pe.normalizedSha256, "91e84253399bf8836ec4e6a5688da51f753531a0040831a54b8585e28f1d5363");
-  assert.equal(validatorRebuild.producer.implementation.sha256, "0dcac3ff4a921841922979c0e641716815341131f33105d6b9ed02a2b469d023");
+  assert.equal(validatorRebuild.schema, "zugfolge-operational-validator-rebuild-spec/v3");
+  assert.deepEqual(validatorRebuild.authority, {
+    annualExecutorPlan: {
+      arguments: [
+        "plan",
+        "tools/region-import/germany/release.annual-2026.5.config.json",
+        "tools/region-import/germany/source-catalog.json",
+        "tools/guards/quellenregister.json",
+      ],
+      directContractFile: "tools/region-import/germany/operational-infrastructure-v2-direct-system-launch.annual-2026.5.json",
+      maxOutputBytes: 4_194_304,
+      mode: "held-helper-independent-supervisor-plan-only-v1",
+      planFile: "var/derived/germany-2026.5/toolchain/zugfolge-infra-release-annual-plan.json",
+      startEvidenceFile: "var/derived/germany-2026.5/toolchain/zugfolge-infra-release-annual-executor-start-evidence.json",
+      startEvidenceSchema: "zugfolge-operational-validator-annual-executor-start-evidence/v1",
+      timeoutMilliseconds: 120_000,
+    },
+    artifactAttestation: "github-sigstore-build-provenance-required-v1",
+    attestation: {
+      bundleFile: "var/derived/germany-2026.5/toolchain/zugfolge-infra-release-rebuild-attestation.sigstore.json",
+      predicateType: "https://slsa.dev/provenance/v1",
+      subjects: [
+        "var/derived/germany-2026.5/toolchain/zugfolge-infra-release-rebuild-aba354ec1937452a491087626ec0adea36ef6695-official.exe",
+        "var/derived/germany-2026.5/toolchain/zugfolge-infra-release-rebuild-provenance-aba354ec1937452a491087626ec0adea36ef6695.json",
+        "var/derived/germany-2026.5/toolchain/zugfolge-infra-release-rebuild-evidence.json",
+        "var/derived/germany-2026.5/toolchain/zugfolge-infra-release-aba354ec1937452a491087626ec0adea36ef6695-c35e72e352ae573e0416035fc4f0d233af5668864c0bd8df7333337e87bb7fd4.exe",
+        "tools/region-import/germany/operational-infrastructure-v2-direct-system-launch.annual-2026.5.json",
+        "var/derived/germany-2026.5/toolchain/zugfolge-infra-release-annual-plan.json",
+        "var/derived/germany-2026.5/toolchain/zugfolge-infra-release-annual-plan.json.zugfolge-complete.json",
+        "var/derived/germany-2026.5/toolchain/zugfolge-infra-release-annual-executor-start-evidence.json",
+        "var/derived/germany-2026.5/toolchain/zugfolge-infra-release-annual-executor-start-evidence.json.zugfolge-complete.json",
+      ],
+      verification: {
+        command: "gh attestation verify",
+        denySelfHostedRunners: true,
+        signerWorkflow: "larynxberlin-rgb/Zugfolge/.github/workflows/operational-validator-rebuild-evidence.yml",
+      },
+    },
+    environment: "github-hosted-fresh-windows-vm-v1",
+    event: "workflow_dispatch",
+    repository: "larynxberlin-rgb/Zugfolge",
+    requiredRef: "refs/heads/main",
+    runnerImages: ["windows-2025", "windows-2022"],
+    workflowFile: ".github/workflows/operational-validator-rebuild-evidence.yml",
+  });
+  assert.equal(validatorRebuild.source.commit, "aba354ec1937452a491087626ec0adea36ef6695");
+  assert.deepEqual(validatorRebuild.source.tree, {
+    fileCount: 1_325,
+    manifestSha256: "3276cda6c04f5e48d89c4e7686900a263e8b2ba0a13ce9393d1d096f1dacf1c5",
+    totalBytes: 24_541_942,
+  });
+  assert.equal(validatorRebuild.source.vendor.archive.sha256, "17611dd9dca437185a59e6696efe21cc64d9e86b03d48fcebe6d5546688cc5f9");
+  assert.equal(validatorRebuild.source.vendor.cargoConfig.sha256, "77e9219c27274120197571fd165cbe4121963b5ad3bc0b20b383c86ef0ce6c2b");
+  assert.equal(validatorRebuild.source.vendor.remapPrefix, "C:\\Users\\laryn\\.cargo\\registry\\src\\index.crates.io-1949cf8c6b5b557f");
+  assert.equal(validatorRebuild.toolchain.anchor.mode, "windows-powershell-held-helper-private-dacl-mitigated-v3");
+  assert.deepEqual(validatorRebuild.toolchain.anchor.helperAssembly, executionPins.runner.anchorHelper);
+  assert.equal(validatorRebuild.toolchain.manifest.sha256, "48778f5992c78401aa46f33e99ce96c6e58c5a6fd93c331f788ec73e24fb0d38");
+  assert.equal(validatorRebuild.toolchain.root, "C:\\zugfolge-operational-toolchain\\1.94.1-x86_64-pc-windows-gnu");
+  assert.deepEqual(validatorRebuild.build.command.slice(0, 7), [
+    "cargo", "--config", "$PINNED_CARGO_CONFIG", "build", "--manifest-path", "$PINNED_CARGO_MANIFEST", "--locked",
+  ]);
+  assert.deepEqual(validatorRebuild.build.environmentPolicy.allowedInherited, []);
+  assert.equal(validatorRebuild.build.environmentPolicy.fixed.CARGO_BUILD_JOBS, "1");
+  assert.equal(validatorRebuild.build.processLimits.maxOutputBytes, 16_777_216);
+  assert.equal(validatorRebuild.binaries.preserved.sha256, "c35e72e352ae573e0416035fc4f0d233af5668864c0bd8df7333337e87bb7fd4");
+  assert.equal(validatorRebuild.pe.normalizedSha256, "ae39f5a8378641be0d02be56e93bf585a49a6e65bc1f5a02b77cd2bd556d38cb");
+  assert.deepEqual(Object.keys(validatorRebuild.producer), ["bundle", "entrypoint", "executionPins", "implementation"]);
+  assert.deepEqual(validatorRebuild.producer.bundle, executionPins.runner.bundle);
+  assert.deepEqual(validatorRebuild.producer.entrypoint, executionPins.runner.entrypoint);
+  assert.deepEqual(validatorRebuild.producer.executionPins, {
+    bytes: executionPinsBytes.length,
+    file: "tools/region-import/germany/operational-infrastructure-v2-execution-pins.annual-2026.5.json",
+    sha256: createHash("sha256").update(executionPinsBytes).digest("hex"),
+  });
+  assert.deepEqual(
+    validatorRebuild.producer.implementation,
+    executionPins.runner.importClosure.find(({ file }) => file === "tools/region-import/germany/operational-validator-rebuild-evidence.mjs"),
+  );
+  assert.deepEqual(validatorRebuild.receipt, {
+    file: "var/derived/germany-2026.5/toolchain/zugfolge-infra-release-rebuild-evidence.json",
+  });
 
-  const alphaAudit = await readFile(join(root, result.files[10]), "utf8");
+  assert.equal(executionPins.schema, "zugfolge-germany-operational-v2-execution-pins/v1");
+  assert.equal(executionPins.releaseId, "infra-deutschland-2026.5");
+  assert.deepEqual(executionPins.runner.roots.map(({ file }) => file), [
+    "tools/region-import/germany/capture-operational-infrastructure-v2-native-receipt.mjs",
+    "tools/region-import/germany/publish-operational-infrastructure-v2.mjs",
+    "tools/region-import/germany/run-capture-operational-infrastructure-v2.mjs",
+  ]);
+  assert.deepEqual(executionPins.runner.importClosure.map(({ file }) => file), [
+    "tools/region-import/germany/annual-create-new-artifact.mjs",
+    "tools/region-import/germany/capture-operational-infrastructure-v2-native-receipt.mjs",
+    "tools/region-import/germany/operational-infrastructure-v2-execution-pins.mjs",
+    "tools/region-import/germany/operational-infrastructure-v2-outer-execution-receipt.mjs",
+    "tools/region-import/germany/operational-infrastructure-v2-publication.mjs",
+    "tools/region-import/germany/operational-infrastructure-v2-system-launcher.windows.ps1",
+    "tools/region-import/germany/operational-infrastructure-v2.mjs",
+    "tools/region-import/germany/operational-validator-rebuild-evidence.mjs",
+    "tools/region-import/germany/operational-windows-anchor-helper.dll",
+    "tools/region-import/germany/publish-operational-infrastructure-v2.mjs",
+    "tools/region-import/germany/run-capture-operational-infrastructure-v2.mjs",
+    "tools/region-import/materialize-operational-infrastructure-v2.mjs",
+    "tools/region-import/operational-infrastructure-binding.mjs",
+    "tools/tiles/create-new-output.mjs",
+  ]);
+  assert.deepEqual(
+    executionPins.runner.anchorHelper,
+    executionPins.runner.importClosure.find(({ file }) => file === "tools/region-import/germany/operational-windows-anchor-helper.dll"),
+  );
+  assert.equal(executionPins.validator.rebuildSpecification, result.files[9]);
+  assert.equal(executionPins.validator.rebuildEvidence, "var/derived/germany-2026.5/toolchain/zugfolge-infra-release-rebuild-evidence.json");
+  const directSystemLaunchBytes = await readFile(join(root, result.files[11]));
+  const directSystemLaunchContract = JSON.parse(directSystemLaunchBytes.toString("utf8"));
+  assert.deepEqual(directSystemLaunchContract.executionPins, {
+    file: "tools/region-import/germany/operational-infrastructure-v2-execution-pins.annual-2026.5.json",
+    bytes: executionPinsBytes.length,
+    sha256: createHash("sha256").update(executionPinsBytes).digest("hex"),
+    schema: "zugfolge-germany-operational-v2-execution-pins/v1",
+  });
+  const expectedTrustedExecutor = {
+    file: executionPins.validator.file,
+    buildCommit: executionPins.validator.buildCommit,
+    bytes: executionPins.validator.bytes,
+    sha256: executionPins.validator.sha256,
+  };
+  assert.deepEqual(directSystemLaunchContract.trustedExecutor, expectedTrustedExecutor);
+  assert.deepEqual(directSystemLaunch, {
+    platform: "win32",
+    contract: {
+      file: "tools/region-import/germany/operational-infrastructure-v2-direct-system-launch.annual-2026.5.json",
+      bytes: directSystemLaunchBytes.length,
+      sha256: createHash("sha256").update(directSystemLaunchBytes).digest("hex"),
+      schema: "zugfolge-operational-v2-direct-system-launch-contract/v1",
+      releaseId: "infra-deutschland-2026.5",
+      executionPins: directSystemLaunchContract.executionPins,
+      trustedExecutor: expectedTrustedExecutor,
+    },
+  });
+
+  const alphaAudit = await readFile(join(root, result.files[12]), "utf8");
   assert.match(alphaAudit, /validateAlphaWorldBuildConfiguration/u);
   assert.match(alphaAudit, /releaseBoundAlphaWorldBuilderInputs/u);
   assert.match(alphaAudit, /buildAlphaWorld\(builderInputs\.argv\)/u);
@@ -692,7 +944,7 @@ test("migriert die hermetische 58b2f5c-.4-Form target-only und laesst alle Quell
   assert.match(alphaAudit, /  stateHash: "PENDING_REAL_ANNUAL_RELEASE_BUILD",/u);
   assert.match(alphaAudit, /throw new Error\("PENDING_REAL_ANNUAL_RELEASE_BUILD: Deutschland-Alpha-Real-Audit 2026\.5/u);
 
-  const stagingAudit = await readFile(join(root, result.files[11]), "utf8");
+  const stagingAudit = await readFile(join(root, result.files[13]), "utf8");
   assert.match(stagingAudit, /operationalStateHash: "PENDING_REAL_ANNUAL_RELEASE_BUILD"/u);
   assert.match(stagingAudit, /Erwartete \.5-Manifestbytezahl ist ungueltig\./u);
   assert.match(stagingAudit, /Erwarteter \.5-Manifest-SHA-256 ist ungueltig\./u);
@@ -702,6 +954,212 @@ test("migriert die hermetische 58b2f5c-.4-Form target-only und laesst alle Quell
   assert.match(stagingAudit, /parsed\["zugfolge-map-deutschland-2026\.5"\]/u);
   assert.match(stagingAudit, /Object\.hasOwn\(parsed, "zugfolge-map-deutschland-2026\.3"\), false/u);
   assert.match(stagingAudit, /throw new Error\("PENDING_REAL_ANNUAL_RELEASE_BUILD: Deutschland-Signed-Game-Staging-Audit 2026\.5/u);
+});
+
+test("publiziert Pins, Direct-Contract und Release-Config aus einem byteidentischen Dependency-Snapshot", async (t) => {
+  const { root } = await baselineHardeningFixture(t);
+  const atomicFiles = [
+    "tools/region-import/germany/release.annual-{patch}.config.json",
+    "tools/region-import/germany/operational-infrastructure-v2-execution-pins.annual-{patch}.json",
+    "tools/region-import/germany/operational-infrastructure-v2-direct-system-launch.annual-{patch}.json",
+  ];
+  let snapshotCount = 0;
+  const result = await createAnnualPatchRelease({
+    repositoryRoot: root,
+    sourcePatch: "2026.4",
+    targetPatch: "2026.5",
+    files: atomicFiles,
+    textFiles: [],
+    hooks: {
+      afterOperationalDependencySnapshot: () => {
+        snapshotCount += 1;
+      },
+    },
+  });
+  assert.equal(snapshotCount, 1);
+  assert.deepEqual(result.files, atomicFiles.map((template) => template.replace("{patch}", "2026.5")));
+
+  const releaseConfig = JSON.parse(await readFile(join(root, result.files[0]), "utf8"));
+  const executionPinsBytes = await readFile(join(root, result.files[1]));
+  const directSystemLaunchBytes = await readFile(join(root, result.files[2]));
+  const directSystemLaunch = JSON.parse(directSystemLaunchBytes.toString("utf8"));
+  assert.deepEqual(directSystemLaunch.executionPins, {
+    file: result.files[1],
+    bytes: executionPinsBytes.length,
+    sha256: createHash("sha256").update(executionPinsBytes).digest("hex"),
+    schema: "zugfolge-germany-operational-v2-execution-pins/v1",
+  });
+  const executionPins = JSON.parse(executionPinsBytes.toString("utf8"));
+  const expectedTrustedExecutor = {
+    file: executionPins.validator.file,
+    buildCommit: executionPins.validator.buildCommit,
+    bytes: executionPins.validator.bytes,
+    sha256: executionPins.validator.sha256,
+  };
+  assert.deepEqual(directSystemLaunch.trustedExecutor, expectedTrustedExecutor);
+  assert.deepEqual(releaseConfig.pipeline.operationalDeriver.directSystemLaunch.contract, {
+    file: result.files[2],
+    bytes: directSystemLaunchBytes.length,
+    sha256: createHash("sha256").update(directSystemLaunchBytes).digest("hex"),
+    schema: "zugfolge-operational-v2-direct-system-launch-contract/v1",
+    releaseId: "infra-deutschland-2026.5",
+    executionPins: directSystemLaunch.executionPins,
+    trustedExecutor: expectedTrustedExecutor,
+  });
+});
+
+test("verweigert jede unvollstaendige Pins-Direct-Config-Jahresrelease-Closure vor der Mutation", async (t) => {
+  const { root } = await baselineHardeningFixture(t);
+  const releaseConfigTemplate = "tools/region-import/germany/release.annual-{patch}.config.json";
+  const rebuildTemplate = "tools/region-import/germany/operational-validator-rebuild.annual-{patch}.json";
+  await assert.rejects(
+    createAnnualPatchRelease({
+      repositoryRoot: root,
+      sourcePatch: "2026.4",
+      targetPatch: "2026.5",
+      files: [releaseConfigTemplate],
+      textFiles: [],
+    }),
+    /unteilbare Jahresrelease-Closure/u,
+  );
+  await assert.rejects(
+    readFile(join(root, releaseConfigTemplate.replace("{patch}", "2026.5"))),
+    /ENOENT/u,
+  );
+  await assert.rejects(
+    createAnnualPatchRelease({
+      repositoryRoot: root,
+      sourcePatch: "2026.4",
+      targetPatch: "2026.5",
+      files: [rebuildTemplate],
+      textFiles: [],
+    }),
+    /Operational-Validator-Rebuild-v3 muss gemeinsam mit der unteilbaren Operational-v2-Dependency-Closure/u,
+  );
+  await assert.rejects(
+    readFile(join(root, rebuildTemplate.replace("{patch}", "2026.5"))),
+    /ENOENT/u,
+  );
+});
+
+test("verweigert Dependency-Drift zwischen vorbereiteten Release-Config- und Pins-Vertraegen vor jeder Veroeffentlichung", async (t) => {
+  const { root } = await baselineHardeningFixture(t);
+  const atomicFiles = [
+    "tools/region-import/germany/release.annual-{patch}.config.json",
+    "tools/region-import/germany/operational-infrastructure-v2-execution-pins.annual-{patch}.json",
+    "tools/region-import/germany/operational-infrastructure-v2-direct-system-launch.annual-{patch}.json",
+  ];
+  const mutatedDependency = join(
+    root,
+    "tools/region-import/germany/run-capture-operational-infrastructure-v2.mjs",
+  );
+  let publicationCount = 0;
+  let mutationCount = 0;
+
+  await assert.rejects(
+    createAnnualPatchRelease({
+      repositoryRoot: root,
+      sourcePatch: "2026.4",
+      targetPatch: "2026.5",
+      files: atomicFiles,
+      textFiles: [],
+      publishLink: async (...arguments_) => {
+        publicationCount += 1;
+        return link(...arguments_);
+      },
+      hooks: {
+        afterPreparedContract: async ({ template }) => {
+          if (template !== "tools/region-import/germany/release.annual-{patch}.config.json") return;
+          mutationCount += 1;
+          await writeFile(mutatedDependency, "// absichtlicher Snapshot-Drift\n", "utf8");
+        },
+      },
+    }),
+    /Dependency-Byte-Snapshot driftete vor der Veroeffentlichung.*run-capture-operational-infrastructure-v2\.mjs/u,
+  );
+  assert.equal(mutationCount, 1);
+  assert.equal(publicationCount, 0, "Snapshot-Drift darf keinen einzigen Zielvertrag publizieren.");
+  for (const template of atomicFiles) {
+    await assert.rejects(
+      readFile(join(root, template.replace("{patch}", "2026.5"))),
+      /ENOENT/u,
+      `${template} wurde trotz Snapshot-Drift publiziert.`,
+    );
+  }
+});
+
+test("rollt Dependency-Drift nach allen Publish-Links atomar zurueck", async (t) => {
+  const { root } = await baselineHardeningFixture(t);
+  const atomicFiles = [
+    "tools/region-import/germany/release.annual-{patch}.config.json",
+    "tools/region-import/germany/operational-infrastructure-v2-execution-pins.annual-{patch}.json",
+    "tools/region-import/germany/operational-infrastructure-v2-direct-system-launch.annual-{patch}.json",
+  ];
+  const mutatedDependency = join(
+    root,
+    "tools/region-import/germany/run-capture-operational-infrastructure-v2.mjs",
+  );
+  await assert.rejects(
+    createAnnualPatchRelease({
+      repositoryRoot: root,
+      sourcePatch: "2026.4",
+      targetPatch: "2026.5",
+      files: atomicFiles,
+      textFiles: [],
+      hooks: {
+        afterPublishedTargets: async () => {
+          await writeFile(mutatedDependency, "// Snapshot-Drift nach Publish\n", "utf8");
+        },
+      },
+    }),
+    /Dependency-Byte-Snapshot driftete vor der Veroeffentlichung.*run-capture-operational-infrastructure-v2\.mjs/u,
+  );
+  for (const template of atomicFiles) {
+    await assert.rejects(
+      readFile(join(root, template.replace("{patch}", "2026.5"))),
+      /ENOENT/u,
+      `${template} blieb nach spaetem Dependency-Drift bestehen.`,
+    );
+  }
+});
+
+test("rollt Dependency-Drift waehrend der Staging-Bereinigung im finalen Crosscheck zurueck", async (t) => {
+  const { root } = await baselineHardeningFixture(t);
+  const atomicFiles = [
+    "tools/region-import/germany/release.annual-{patch}.config.json",
+    "tools/region-import/germany/operational-infrastructure-v2-execution-pins.annual-{patch}.json",
+    "tools/region-import/germany/operational-infrastructure-v2-direct-system-launch.annual-{patch}.json",
+  ];
+  const mutatedDependency = join(
+    root,
+    "tools/region-import/germany/run-capture-operational-infrastructure-v2.mjs",
+  );
+  let mutated = false;
+  await assert.rejects(
+    createAnnualPatchRelease({
+      repositoryRoot: root,
+      sourcePatch: "2026.4",
+      targetPatch: "2026.5",
+      files: atomicFiles,
+      textFiles: [],
+      hooks: {
+        beforeOwnedFileQuarantine: async ({ owned }) => {
+          if (mutated || !owned.path.endsWith(".stage")) return;
+          mutated = true;
+          await writeFile(mutatedDependency, "// Snapshot-Drift waehrend Cleanup\n", "utf8");
+        },
+      },
+    }),
+    /Dependency-Byte-Snapshot driftete vor der Veroeffentlichung.*run-capture-operational-infrastructure-v2\.mjs/u,
+  );
+  assert.equal(mutated, true);
+  for (const template of atomicFiles) {
+    await assert.rejects(
+      readFile(join(root, template.replace("{patch}", "2026.5"))),
+      /ENOENT/u,
+      `${template} blieb nach Dependency-Drift waehrend Cleanup bestehen.`,
+    );
+  }
 });
 
 test("verweigert einen als Alt-Key eingemischten neuen .5-Delivery-Key vor jeder Mutation", async (t) => {
@@ -840,24 +1298,24 @@ test("erstellt den vollstaendigen direkten Jahrespatch create-new und laesst Que
     assert.equal(cachePlan.files.filter(({ cacheFile }) => cacheFile.split("/").at(-1) === fileName).length, 1);
   }
   assert.ok(cachePlan.files.some(({ sourceFile, cacheFile }) => (
-    sourceFile === "var/derived/germany-2026.5/toolchain/zugfolge-infra-release-ee6d7081b32277e46cd6ebb28fc65bd45ce55012-69f6f13d69cd256464f254804d6d7349acd0f09bbe614ae2b0e38e70664306fc.exe"
-      && cacheFile === "tools/zugfolge-infra-release/infra-deutschland-2026.5/ee6d7081b32277e46cd6ebb28fc65bd45ce55012/69f6f13d69cd256464f254804d6d7349acd0f09bbe614ae2b0e38e70664306fc/zugfolge-infra-release.exe"
+    sourceFile === "var/derived/germany-2026.5/toolchain/zugfolge-infra-release-aba354ec1937452a491087626ec0adea36ef6695-c35e72e352ae573e0416035fc4f0d233af5668864c0bd8df7333337e87bb7fd4.exe"
+      && cacheFile === "tools/zugfolge-infra-release/infra-deutschland-2026.5/aba354ec1937452a491087626ec0adea36ef6695/c35e72e352ae573e0416035fc4f0d233af5668864c0bd8df7333337e87bb7fd4/zugfolge-infra-release.exe"
   )));
   assert.ok(cachePlan.files.some(({ sourceFile, cacheFile }) => (
     sourceFile === "var/derived/germany-2026.5/toolchain/zugfolge-infra-release-rebuild-evidence.json"
       && cacheFile === "derived/infra-deutschland-2026.5/toolchain/zugfolge-infra-release-rebuild-evidence.json"
   )));
   assert.ok(cachePlan.files.some(({ sourceFile, cacheFile }) => (
-    sourceFile === "var/derived/germany-2026.5/toolchain/zugfolge-infra-release-source-ee6d7081b32277e46cd6ebb28fc65bd45ce55012-556c906567dd436de091390b66cf9538e82febd237f70b0d353b286480852b2a.tar"
-      && cacheFile === "derived/infra-deutschland-2026.5/toolchain/zugfolge-infra-release-source-ee6d7081b32277e46cd6ebb28fc65bd45ce55012-556c906567dd436de091390b66cf9538e82febd237f70b0d353b286480852b2a.tar"
+    sourceFile === "var/derived/germany-2026.5/toolchain/zugfolge-infra-release-source-aba354ec1937452a491087626ec0adea36ef6695-3f267637dcd52dded45ca921d27863149b3fd2919b7bb2e9d881b381c04565af.tar"
+      && cacheFile === "derived/infra-deutschland-2026.5/toolchain/zugfolge-infra-release-source-aba354ec1937452a491087626ec0adea36ef6695-3f267637dcd52dded45ca921d27863149b3fd2919b7bb2e9d881b381c04565af.tar"
   )));
   assert.ok(cachePlan.files.some(({ sourceFile, cacheFile }) => (
-    sourceFile === "var/derived/germany-2026.5/toolchain/zugfolge-infra-release-rebuild-provenance-ee6d7081b32277e46cd6ebb28fc65bd45ce55012.json"
-      && cacheFile === "derived/infra-deutschland-2026.5/toolchain/zugfolge-infra-release-rebuild-provenance-ee6d7081b32277e46cd6ebb28fc65bd45ce55012.json"
+    sourceFile === "var/derived/germany-2026.5/toolchain/zugfolge-infra-release-rebuild-provenance-aba354ec1937452a491087626ec0adea36ef6695.json"
+      && cacheFile === "derived/infra-deutschland-2026.5/toolchain/zugfolge-infra-release-rebuild-provenance-aba354ec1937452a491087626ec0adea36ef6695.json"
   )));
   assert.ok(cachePlan.files.some(({ sourceFile, cacheFile }) => (
-    sourceFile === "var/derived/germany-2026.5/toolchain/zugfolge-infra-release-rebuild-ee6d7081b32277e46cd6ebb28fc65bd45ce55012-official.exe"
-      && cacheFile === "tools/zugfolge-infra-release/infra-deutschland-2026.5/ee6d7081b32277e46cd6ebb28fc65bd45ce55012/official/zugfolge-infra-release.exe"
+    sourceFile === "var/derived/germany-2026.5/toolchain/zugfolge-infra-release-rebuild-aba354ec1937452a491087626ec0adea36ef6695-official.exe"
+      && cacheFile === "tools/zugfolge-infra-release/infra-deutschland-2026.5/aba354ec1937452a491087626ec0adea36ef6695/official/zugfolge-infra-release.exe"
   )));
   const buildEvidence = JSON.parse(await readFile(join(root, result.files[3]), "utf8"));
   assert.equal(buildEvidence.schema, "zugfolge-map-release-build-evidence-spec/v3");
@@ -884,17 +1342,17 @@ test("erstellt den vollstaendigen direkten Jahrespatch create-new und laesst Que
     id: "operational-v2-validator",
     kind: "binary",
     version: "operational-validator-build-commit",
-    file: "var/derived/germany-2026.5/toolchain/zugfolge-infra-release-ee6d7081b32277e46cd6ebb28fc65bd45ce55012-69f6f13d69cd256464f254804d6d7349acd0f09bbe614ae2b0e38e70664306fc.exe",
-    cacheFile: "tools/zugfolge-infra-release/infra-deutschland-2026.5/ee6d7081b32277e46cd6ebb28fc65bd45ce55012/69f6f13d69cd256464f254804d6d7349acd0f09bbe614ae2b0e38e70664306fc/zugfolge-infra-release.exe",
-    expectedBytes: 8_283_251,
-    expectedSha256: "69f6f13d69cd256464f254804d6d7349acd0f09bbe614ae2b0e38e70664306fc",
+    file: "var/derived/germany-2026.5/toolchain/zugfolge-infra-release-aba354ec1937452a491087626ec0adea36ef6695-c35e72e352ae573e0416035fc4f0d233af5668864c0bd8df7333337e87bb7fd4.exe",
+    cacheFile: "tools/zugfolge-infra-release/infra-deutschland-2026.5/aba354ec1937452a491087626ec0adea36ef6695/c35e72e352ae573e0416035fc4f0d233af5668864c0bd8df7333337e87bb7fd4/zugfolge-infra-release.exe",
+    expectedBytes: 8_382_277,
+    expectedSha256: "c35e72e352ae573e0416035fc4f0d233af5668864c0bd8df7333337e87bb7fd4",
   });
   assert.deepEqual(buildEvidence.tools[1], {
     id: "operational-v2-validator-rebuild",
     kind: "binary",
     version: "operational-validator-rebuild-proof",
-    file: "var/derived/germany-2026.5/toolchain/zugfolge-infra-release-rebuild-ee6d7081b32277e46cd6ebb28fc65bd45ce55012-official.exe",
-    cacheFile: "tools/zugfolge-infra-release/infra-deutschland-2026.5/ee6d7081b32277e46cd6ebb28fc65bd45ce55012/official/zugfolge-infra-release.exe",
+    file: "var/derived/germany-2026.5/toolchain/zugfolge-infra-release-rebuild-aba354ec1937452a491087626ec0adea36ef6695-official.exe",
+    cacheFile: "tools/zugfolge-infra-release/infra-deutschland-2026.5/aba354ec1937452a491087626ec0adea36ef6695/official/zugfolge-infra-release.exe",
   });
   assert.deepEqual(buildEvidence.outputs.slice(-2), [
     {
@@ -982,6 +1440,38 @@ test("entfernt eine partiell geschriebene eigene Stagingdatei und publiziert kei
   assert.deepEqual(await readFile(sourcePath), sourceBefore);
   const releaseControlFiles = await readdir(join(root, "tools/region-import/germany"));
   assert.equal(releaseControlFiles.some((name) => name.startsWith(".annual-patch-release-2026.5")), false);
+});
+
+test("rollt gleichlange In-place-Manipulation im Publish-Link vor Erfolg vollstaendig zurueck", async (t) => {
+  const { files, root, textFiles } = await fixture(t);
+  let publicationCount = 0;
+  await assert.rejects(
+    createAnnualPatchRelease({
+      repositoryRoot: root,
+      sourcePatch: "2026.4",
+      targetPatch: "2026.5",
+      files,
+      textFiles,
+      publishLink: async (stagingPath, targetPath) => {
+        publicationCount += 1;
+        if (publicationCount === 1) {
+          const manipulated = Buffer.from(await readFile(stagingPath));
+          manipulated[0] ^= 0x01;
+          await writeFile(stagingPath, manipulated);
+        }
+        await link(stagingPath, targetPath);
+      },
+    }),
+    /nicht die vorbereiteten Zielbytes/u,
+  );
+  assert.equal(publicationCount, 1);
+  for (const template of [...files, ...textFiles]) {
+    await assert.rejects(
+      readFile(join(root, template.replace("{patch}", "2026.5"))),
+      /ENOENT/u,
+      `${template} blieb nach manipulierter Veroeffentlichung bestehen.`,
+    );
+  }
 });
 
 test("uebernimmt bei fehlgeschlagenem Handle-stat keine fremde Pfadidentitaet fuer Cleanup", async (t) => {

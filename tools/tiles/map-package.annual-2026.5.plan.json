@@ -9,6 +9,12 @@
     "basemapStyleUrl": "/artifacts/maps/infra-deutschland-2026.5/style.json",
     "infrastructurePmtilesUrl": "/artifacts/maps/infra-deutschland-2026.5/infra-deutschland-2026.5.pmtiles"
   },
+  "operationalProvenanceSource": {
+    "publicationReceiptFile": "var/derived/germany-2026.5/operational-infrastructure-v2.publication-receipt.json"
+  },
+  "operationalAuthoritySource": {
+    "buildEvidenceSpecFile": "tools/tiles/map-release-build-evidence.annual-2026.5.spec.json"
+  },
   "artifacts": [
     {
       "id": "welt-basiskarte",

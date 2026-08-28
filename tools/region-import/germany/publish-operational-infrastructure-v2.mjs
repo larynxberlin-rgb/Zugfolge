@@ -21,9 +21,9 @@ if (mode === "preflight" || mode === "recover") {
     : await recoverGermanyOperationalInfrastructureV2Publication({ outputPath: resolve(outputPath), publicationReceiptPath: resolve(publicationReceiptPath) });
   process.stdout.write(`${JSON.stringify({ status: result.status })}\n`);
 } else if (mode === "publish") {
-  const [specificationPath, candidatePath, candidateMovementRouteTemplatesPath, reportPath, nativeReceiptPath, validatorRebuildSpecificationPath, validatorRebuildEvidencePath, outputPath, publicationReceiptPath, ...extra] = arguments_;
-  if (!specificationPath || !candidatePath || !candidateMovementRouteTemplatesPath || !reportPath || !nativeReceiptPath || !validatorRebuildSpecificationPath || !validatorRebuildEvidencePath || !outputPath || !publicationReceiptPath || extra.length > 0) {
-    throw new Error("Aufruf: publish-operational-infrastructure-v2.mjs publish SPEC.json CANDIDATE.json CANDIDATE-SIDECAR.json REPORT.json NATIVE-RECEIPT.json VALIDATOR-REBUILD-SPEC.json VALIDATOR-REBUILD-EVIDENCE.json OUTPUT/operational-infrastructure-v2.json OUTPUT/publication-receipt.json");
+  const [specificationPath, candidatePath, candidateMovementRouteTemplatesPath, reportPath, nativeReceiptPath, outerExecutionReceiptPath, validatorRebuildSpecificationPath, validatorRebuildEvidencePath, outputPath, publicationReceiptPath, ...extra] = arguments_;
+  if (!specificationPath || !candidatePath || !candidateMovementRouteTemplatesPath || !reportPath || !nativeReceiptPath || !outerExecutionReceiptPath || !validatorRebuildSpecificationPath || !validatorRebuildEvidencePath || !outputPath || !publicationReceiptPath || extra.length > 0) {
+    throw new Error("Aufruf: publish-operational-infrastructure-v2.mjs publish SPEC.json CANDIDATE.json CANDIDATE-SIDECAR.json REPORT.json NATIVE-RECEIPT.json OUTER-EXECUTION-RECEIPT.json VALIDATOR-REBUILD-SPEC.json VALIDATOR-REBUILD-EVIDENCE.json OUTPUT/operational-infrastructure-v2.json OUTPUT/publication-receipt.json");
   }
   const result = await publishGermanyOperationalInfrastructureV2FromNativeReceipt({
     specificationPath: resolve(specificationPath),
@@ -31,6 +31,7 @@ if (mode === "preflight" || mode === "recover") {
     candidateMovementRouteTemplatesPath: resolve(candidateMovementRouteTemplatesPath),
     reportPath: resolve(reportPath),
     nativeReceiptPath: resolve(nativeReceiptPath),
+    outerExecutionReceiptPath: resolve(outerExecutionReceiptPath),
     validatorRebuildSpecificationPath: resolve(validatorRebuildSpecificationPath),
     validatorRebuildEvidencePath: resolve(validatorRebuildEvidencePath),
     outputPath: resolve(outputPath),

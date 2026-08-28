@@ -9,9 +9,25 @@ import { lstat, mkdir, open, readFile, realpath } from "node:fs/promises";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 
 import { validateMapAssetNoticeBindings, validateMapAssetNotices } from "./map-asset-notices.mjs";
-import { validateMapPackageSpec, validatePortableRelativePath } from "./map-package.mjs";
+import {
+  validateGermanyOperationalDeliveryV2Pair,
+  validateMapPackageSpec,
+  validatePortableRelativePath,
+} from "./map-package.mjs";
+import { verifyGermanyOperationalInfrastructureV2PublicationReceipt } from "../region-import/germany/operational-infrastructure-v2-publication.mjs";
+import {
+  GERMANY_OPERATIONAL_INTEGRATED_PRODUCER_KIND,
+  germanyOperationalProvenanceSha256,
+  validateGermanyOperationalProvenance,
+} from "../region-import/germany/operational-infrastructure-v2-execution-pins.mjs";
+import {
+  materializeOperationalBuildAuthorityFromBuildEvidenceSpec,
+  operationalBuildAuthoritySha256,
+  validateOperationalBuildAuthority,
+} from "../region-import/germany/operational-build-authority.mjs";
 
 const SHA256 = /^[a-f0-9]{64}$/;
+const COMMIT = /^[a-f0-9]{40}$/;
 const DELIVERY_SCHEMA_V1 = "zugfolge-map-delivery-release/v1";
 const DELIVERY_SCHEMA_V2 = "zugfolge-map-delivery-release/v2";
 const SOURCES_SCHEMA = "zugfolge-map-delivery-sources/v2";
@@ -37,6 +53,7 @@ const LARGE_AUXILIARY_KINDS = new Set([
   TIMETABLE_TRANSFER_DEMANDS_KIND,
 ]);
 const FORBIDDEN_PUBLIC_REFERENCE = /(?:trassenfinder|(?:^|[\s/_.-])apn(?:$|[\s/_.-]))/i;
+const MAX_OPERATIONAL_PUBLICATION_RECEIPT_BYTES = 64 * 1024 * 1024;
 
 function invariant(condition, message) {
   if (!condition) throw new Error(message);
@@ -113,6 +130,27 @@ export function signMapDeliveryRelease(release, privateKeyPem, keyId) {
   invariant(typeof keyId === "string" && /^[a-z0-9][a-z0-9._-]*$/.test(keyId), "Delivery-Signaturschluessel besitzt keine stabile ID.");
   invariant(release?.approvalGates?.rights?.status === "passed" && release?.approvalGates?.quality?.status === "passed", "Delivery-Release darf ohne Rechte- und Qualitaetsfreigabe nicht signiert werden.");
   if (release?.schema === DELIVERY_SCHEMA_V2) {
+    const generation = validateGermanyOperationalDeliveryV2Pair(release.packageVersion, release.releaseId, "Delivery-v2-Signaturkandidat");
+    if (generation === "integrated-provenance-v2") {
+      const provenance = validateGermanyOperationalProvenance(release.operationalProvenance);
+      const authority = validateOperationalBuildAuthority(release.operationalAuthority);
+      invariant(
+        provenance.producerKind === GERMANY_OPERATIONAL_INTEGRATED_PRODUCER_KIND
+          && provenance.releaseEvidenceEligible === true
+          && provenance.productionActivationEligible === true
+          && release.bindings?.operationalProvenanceSha256 === germanyOperationalProvenanceSha256(provenance)
+          && release.bindings?.operationalAuthoritySha256 === operationalBuildAuthoritySha256(authority),
+        "Aktueller Delivery-v2-Release darf nur mit integrierter Operational-v2-Provenienz und Build-Authority signiert werden.",
+      );
+    } else {
+      invariant(
+        !Object.hasOwn(release, "operationalProvenance")
+          && !Object.hasOwn(release.bindings ?? {}, "operationalProvenanceSha256")
+          && !Object.hasOwn(release, "operationalAuthority")
+          && !Object.hasOwn(release.bindings ?? {}, "operationalAuthoritySha256"),
+        "Legacy-Delivery-v2 darf keine aktuelle Operational-v2-Provenienz oder Build-Authority tragen.",
+      );
+    }
     const signatureGate = release?.approvalGates?.signature;
     exactKeys(signatureGate, ["status", "reason"], "Unsigniertes Delivery-v2-Signaturgate");
     invariant(
@@ -151,6 +189,27 @@ export function verifyMapDeliveryReleaseSignature(release, publicKeyPem) {
     if (release?.schema === DELIVERY_SCHEMA_V2) {
       exactKeys(release?.approvalGates?.signature, ["status", "algorithm", "keyId"], "Signiertes Delivery-v2-Signaturgate");
       exactKeys(release?.signature, ["algorithm", "keyId", "valueBase64"], "Signierte Delivery-v2-Signatur");
+      const generation = validateGermanyOperationalDeliveryV2Pair(release.packageVersion, release.releaseId, "Signierter Delivery-v2-Release");
+      if (generation === "integrated-provenance-v2") {
+        const provenance = validateGermanyOperationalProvenance(release.operationalProvenance);
+        const authority = validateOperationalBuildAuthority(release.operationalAuthority);
+        invariant(
+          provenance.producerKind === GERMANY_OPERATIONAL_INTEGRATED_PRODUCER_KIND
+            && provenance.releaseEvidenceEligible === true
+            && provenance.productionActivationEligible === true
+            && release.bindings?.operationalProvenanceSha256 === germanyOperationalProvenanceSha256(provenance)
+            && release.bindings?.operationalAuthoritySha256 === operationalBuildAuthoritySha256(authority),
+          "Signierter aktueller Delivery-v2-Release besitzt keine integrierte Provenienz und Build-Authority.",
+        );
+      } else {
+        invariant(
+          !Object.hasOwn(release, "operationalProvenance")
+            && !Object.hasOwn(release.bindings ?? {}, "operationalProvenanceSha256")
+            && !Object.hasOwn(release, "operationalAuthority")
+            && !Object.hasOwn(release.bindings ?? {}, "operationalAuthoritySha256"),
+          "Signierter Legacy-Delivery-v2-Release darf keine aktuelle Operational-v2-Provenienz oder Build-Authority tragen.",
+        );
+      }
     }
     const signature = Buffer.from(release?.signature?.valueBase64 ?? "", "base64");
     return publicKey.asymmetricKeyType === "ed25519"
@@ -394,6 +453,50 @@ async function readContainedFile(source, portablePath, label, maximumBytes) {
     invariant(BigInt(bytes.length) === opened.handleMetadata.size, `${label} änderte seine Bytezahl während des Lesens.`);
     await finishContainedFileRead(source, opened, label);
     return { bytes, sha256: sha256Bytes(bytes) };
+  } finally {
+    await opened.handle.close();
+  }
+}
+
+async function verifiedOperationalProvenance(
+  source,
+  packageSpec,
+  releaseId,
+  verifyPublication = verifyGermanyOperationalInfrastructureV2PublicationReceipt,
+) {
+  const descriptor = packageSpec.operationalProvenanceSource;
+  if (descriptor === undefined) return undefined;
+  const opened = await openContainedRegularFile(
+    source,
+    descriptor.publicationReceiptFile,
+    "Operational-v2-Publication-Receipt fuer Delivery",
+  );
+  try {
+    invariant(opened.handleMetadata.size > 0n, "Operational-v2-Publication-Receipt fuer Delivery ist leer.");
+    invariant(
+      opened.handleMetadata.size <= BigInt(MAX_OPERATIONAL_PUBLICATION_RECEIPT_BYTES),
+      "Operational-v2-Publication-Receipt fuer Delivery ist unerwartet gross.",
+    );
+    const publicationReceiptBytes = await opened.handle.readFile();
+    invariant(
+      BigInt(publicationReceiptBytes.length) === opened.handleMetadata.size,
+      "Operational-v2-Publication-Receipt fuer Delivery aenderte seine Bytezahl waehrend des Lesens.",
+    );
+    const verified = await verifyPublication({
+      workspaceRoot: source.canonical,
+      publicationReceiptPath: opened.canonicalPath,
+      publicationReceiptBytes,
+      expectedReleaseId: releaseId,
+    });
+    await finishContainedFileRead(source, opened, "Operational-v2-Publication-Receipt fuer Delivery");
+    const provenance = validateGermanyOperationalProvenance(verified.receipt.operationalProvenance);
+    invariant(
+      provenance.producerKind === GERMANY_OPERATIONAL_INTEGRATED_PRODUCER_KIND
+        && provenance.releaseEvidenceEligible === true
+        && provenance.productionActivationEligible === true,
+      "Delivery-v2 akzeptiert nur atomar integrierte, evidence- und aktivierungsgeeignete Operational-v2-Provenienz.",
+    );
+    return structuredClone(provenance);
   } finally {
     await opened.handle.close();
   }
@@ -756,12 +859,41 @@ export async function buildMapDeliveryRelease({
   infraRelease: infraInput,
   mapRelease: mapInput,
   auxiliaryArtifactProofs = [],
+  mapBuildCommit,
+  verifyOperationalPublication = verifyGermanyOperationalInfrastructureV2PublicationReceipt,
+  materializeOperationalAuthority = materializeOperationalBuildAuthorityFromBuildEvidenceSpec,
 }) {
   invariant(typeof releaseId === "string" && releaseId !== "", "Delivery-Release ohne releaseId.");
   invariant(Number.isSafeInteger(timetableYear) && timetableYear >= 2026, "Delivery-Release ohne Fahrplanjahr.");
   const packageSpec = validateMapPackageSpec(packageSpecInput);
   const source = await secureSourceRoot(sourceRoot);
   const operationalV2 = packageSpec.schema === PACKAGE_SPEC_V2;
+  const generation = operationalV2
+    ? validateGermanyOperationalDeliveryV2Pair(packageSpec.version, releaseId, "Delivery-v2-Builder")
+    : undefined;
+  if (generation === "integrated-provenance-v2") {
+    invariant(COMMIT.test(mapBuildCommit),
+      "Aktueller Delivery-v2-Builder braucht den expliziten exakten Map-Build-Commit.");
+  }
+  invariant(typeof materializeOperationalAuthority === "function",
+    "Delivery-v2-Builder besitzt keinen Operational-Authority-Materializer.");
+  const [operationalProvenance, operationalAuthority] = await Promise.all([
+    operationalV2
+      ? verifiedOperationalProvenance(source, packageSpec, releaseId, verifyOperationalPublication)
+      : undefined,
+    generation === "integrated-provenance-v2"
+      ? materializeOperationalAuthority({
+        sourceRoot: source.canonical,
+        buildEvidenceSpecFile: packageSpec.operationalAuthoritySource.buildEvidenceSpecFile,
+        mapBuildCommit,
+      })
+      : undefined,
+  ]);
+  if (generation === "integrated-provenance-v2") {
+    const authority = validateOperationalBuildAuthority(operationalAuthority);
+    invariant(authority.execution.predicate.source.commit === mapBuildCommit,
+      "Operational-Build-Authority bindet nicht den expliziten Map-Build-Commit.");
+  }
   const infraMaterialization = materializedRelease(infraInput, "zugfolge-infra-release/v2", "InfraRelease", operationalV2);
   const mapMaterialization = materializedRelease(mapInput, "zugfolge-map-release/v1", "Kartenrelease", operationalV2);
   const infraRelease = infraMaterialization.release;
@@ -834,6 +966,8 @@ export async function buildMapDeliveryRelease({
       playableArea: "configured-separately-by-world",
     },
     artifacts,
+    ...(operationalProvenance === undefined ? {} : { operationalProvenance }),
+    ...(operationalAuthority === undefined ? {} : { operationalAuthority }),
     bindings: {
       packageManifestSchema: packageSpec.schema === PACKAGE_SPEC_V2 ? PACKAGE_SCHEMA_V2 : PACKAGE_SCHEMA_V1,
       infraReleaseSchema: infraRelease.schema,
@@ -843,6 +977,12 @@ export async function buildMapDeliveryRelease({
       ...(operationalV2 ? {
         infraReleaseHash: infraMaterialization.releaseHash,
         mapReleaseHash: mapMaterialization.releaseHash,
+        ...(operationalProvenance === undefined ? {} : {
+          operationalProvenanceSha256: germanyOperationalProvenanceSha256(operationalProvenance),
+        }),
+        ...(operationalAuthority === undefined ? {} : {
+          operationalAuthoritySha256: operationalBuildAuthoritySha256(operationalAuthority),
+        }),
       } : {}),
     },
     approvalGates: {

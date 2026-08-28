@@ -1,44 +1,62 @@
 # Fester Arbeits-Prompt: Deutschland-InfraRelease zum Fahrplanwechsel
 
 Diesen Prompt einmal jährlich in einem neuen, protokollierten Codex-Task
-verwenden. `<FAHRPLANJAHR>`, `<STICHTAG_UTC>`, `<QUELLWURZEL>`,
-`<ARTEFAKTWURZEL>`, `<INFRARELEASE_ID>`, `<OPERATIONAL_CANDIDATE>`,
-`<OPERATIONAL_CANDIDATE_SIDECAR>`,
-`<ANNUAL_RELEASE_CONFIG>`, `<ANNUAL_ARTIFACT_SPEC>`,
-`<OPERATIONAL_ARTIFACT_ID>`, `<RELEASE_ARTIFACT_INVENTORY>`,
-`<TIMETABLE_ROUTE_SPEC>`, `<SYNTHETIC_CLOSURE_SPEC>`,
-`<OPERATIONAL_QUALITY_SPEC>`, `<SOURCE_CAPTURE_MANIFEST>`,
-`<MAP_PACKAGE_PLAN>`, `<OPERATIONAL_VALIDATOR_BUILD_COMMIT>` sowie
-`<DELIVERY_KEY_ID>` müssen vor dem Start konkret
-ersetzt werden; kein
-Platzhalter darf in einem Kandidaten verbleiben.
+verwenden. Vor dem Start müssen folgende Pflichtplatzhalter aus dem
+eingecheckten Jahresvertrag und seinen dort gebundenen Spezifikationen konkret
+aufgelöst werden; kein Platzhalter darf in einem Kandidaten verbleiben:
+
+- `<FAHRPLANJAHR>`, `<STICHTAG_UTC>`, `<QUELLWURZEL>`,
+  `<ARTEFAKTWURZEL>` und `<INFRARELEASE_ID>`;
+- `<ANNUAL_RELEASE_CONFIG>`, `<ANNUAL_ARTIFACT_SPEC>`,
+  `<BUILD_EVIDENCE_SPEC>`, `<MAP_PACKAGE_PLAN>`,
+  `<MAP_ASSET_NOTICES_SPEC>`, `<SOURCE_CAPTURE_MANIFEST>`,
+  `<TIMETABLE_ROUTE_SPEC>`, `<SYNTHETIC_CLOSURE_SPEC>` und
+  `<OPERATIONAL_QUALITY_SPEC>`;
+- `<OPERATIONAL_ARTIFACT_ID>`, `<RELEASE_ARTIFACT_INVENTORY>`,
+  `<OPERATIONAL_CANDIDATE>`, `<OPERATIONAL_CANDIDATE_SIDECAR>`,
+  `<OPERATIONAL_DERIVER_SPECIFICATION>`, `<OPERATIONAL_DERIVER_REPORT>`,
+  `<OPERATIONAL_DERIVER_OUTPUT>`,
+  `<OPERATIONAL_EXECUTION_PINS>`,
+  `<OPERATIONAL_DIRECT_SYSTEM_LAUNCH_CONTRACT>`,
+  `<OPERATIONAL_LAUNCH_CONTEXT>`, `<OPERATIONAL_ANNUAL_PLAN>`,
+  `<OPERATIONAL_ANNUAL_START_EVIDENCE>`,
+  `<OPERATIONAL_NATIVE_RECEIPT>`, `<OPERATIONAL_OUTER_EXECUTION_RECEIPT>` und
+  `<OPERATIONAL_PUBLICATION_RECEIPT>`;
+- `<OPERATIONAL_VALIDATOR_PATH>`,
+  `<PINNED_ZUGFOLGE_INFRA_RELEASE>`, `<SOURCE_CATALOG>`, `<RIGHTS_LEDGER>`,
+  `<OPERATIONAL_VALIDATOR_BUILD_COMMIT>`,
+  `<OPERATIONAL_VALIDATOR_REBUILD_SPEC>` und
+  `<OPERATIONAL_VALIDATOR_REBUILD_EVIDENCE>`;
+- `<OPERATIONAL_REBUILD_ATTESTATION_BUNDLE>`,
+  `<OPERATIONAL_EXECUTION_AUTHORITY_BUNDLE>`,
+  `<OPERATIONAL_ATTESTATION_VERIFIER>` und
+  `<OPERATIONAL_ATTESTATION_TRUSTED_ROOT>`;
+- `<SEMANTIC_TILE_INPUTS>`, `<SEMANTIC_TILE_INPUT_ROOT>`,
+  `<SEMANTIC_PMTILES_OUTPUT>`, `<GDAL_RUNTIME_MANIFEST>` und
+  `<DELIVERY_KEY_ID>`.
+
 `<OPERATIONAL_CANDIDATE>` ist der Pfad zu einem fachlich aus den gepinnten
 Deutschlanddaten abgeleiteten, weltfreien `OperationalInfraRelease`, nicht zu
 einer Deploymenthülle. `<OPERATIONAL_CANDIDATE_SIDECAR>` ist ausschließlich
 der vom nativen Ableiter aus diesem Candidate-Dateinamen erzeugte
-`.movement-route-templates-v2.json`-Pfad. `<ANNUAL_RELEASE_CONFIG>` ist der eingecheckte
-Jahresvertrag für genau `<INFRARELEASE_ID>` und `<FAHRPLANJAHR>`; die generische
-Beispielkonfiguration darf ihn nicht ersetzen. Führe alle Befehle aus dem
-Repository-Wurzelverzeichnis aus; `<ARTEFAKTWURZEL>` und die `sourceFile`-Pfade
-der Jahresspezifikation müssen darunter liegen.
+`.movement-route-templates-v2.json`-Pfad. `<ANNUAL_RELEASE_CONFIG>` ist der
+eingecheckte Jahresvertrag für genau `<INFRARELEASE_ID>` und
+`<FAHRPLANJAHR>`; eine generische Beispielkonfiguration darf ihn nicht
+ersetzen. Führe alle Befehle aus dem Repository-Wurzelverzeichnis aus;
+`<ARTEFAKTWURZEL>` und die `sourceFile`-Pfade der Jahresspezifikationen müssen
+darunter liegen.
 
-Für den aktuell konkretisierten Lauf gelten zusätzlich unveränderlich
-`<FAHRPLANJAHR>=2026`,
-`<INFRARELEASE_ID>=infra-deutschland-2026.5`, Paketversion `2026.5`,
-`<OPERATIONAL_VALIDATOR_BUILD_COMMIT>=ee6d7081b32277e46cd6ebb28fc65bd45ce55012`,
-`<DELIVERY_KEY_ID>=zugfolge-map-deutschland-2026.5` und ausschließlich
-`zugfolge-map-runtime/v2`. `infra-deutschland-2026.4` ist der bytegleich zu
-erhaltende Vorgängerstand und Vertrauensanker, niemals aktuelles Ausgabeziel.
-Der aktuelle Asset-Notice-Vertrag ist ausschließlich
-`tools/tiles/map-asset-notices.annual-2026.5.json`; Karten-Capture und
-Static-Sources-Builder erhalten genau diesen Pfad. Die ausführbare
-GDAL-Laufzeit ist ausschließlich über
-`tools/tiles/gdal-runtime.3.13.2-win32-x64.manifest.json` gebunden.
-Keine `.4`-Spezifikation, kein `.4`-Artefakt und kein vorhandener `.4`-Public-
-Key oder Scope darf für `.5` überschrieben, umbenannt, neu gepackt oder
-stillschweigend ersetzt werden. Jede aktuelle `.5`-Ausgabe entsteht
-create-new; bytegleiche Vorjahresdaten gelangen nur über den nachfolgend
-geprüften Cross-Release-Vertrag in den neuen `.5`-Zielbaum.
+Löse Release-ID, Fahrplanjahr, Paketversion, Delivery-Key, Validator,
+Execution-Pins, Rebuild-Verträge, Receipts, Asset-Notices, semantische
+Eingaben und alle Ausgabeziele ausschließlich aus dem aktuellen
+Jahresvertrag, `<BUILD_EVIDENCE_SPEC>` und `<MAP_PACKAGE_PLAN>` auf. Kopiere
+keine Pfade, Bytezahlen oder SHA-256-Werte aus einem früheren Lauf in den
+aktiven Vertrag. Ein Vorgängerstand bleibt nur dort zulässig, wo der aktuelle
+Build-Evidence-Vertrag ihn ausdrücklich als historischen oder bytegleichen
+Cross-Release-Input mit Quell- und Zielrelease bindet. Kein Vorgängerartefakt,
+-schlüssel oder -scope darf als aktuelles Ausgabeziel überschrieben,
+umbenannt, neu gepackt oder stillschweigend ersetzt werden. Jede aktuelle
+Ausgabe entsteht create-new.
 
 Validiere vor dem ersten Build alle aktiven Jahresbindungen gemeinsam und
 brich bei jeder Abweichung ab:
@@ -63,8 +81,18 @@ brich bei jeder Abweichung ab:
   `<INFRARELEASE_ID>` abgeleitete exakte Paketversion und ausschließlich
   `zugfolge-map-runtime/v2`. Paket-ID, Runtimepfade, Release-Descriptor und
   alle aktuellen Ausgabeziele müssen zu demselben Jahreskandidaten gehören.
-- Binde den für `<INFRARELEASE_ID>` eingecheckten Jahresvertrag unter
-  `tools/tiles/` unverändert an `$BUILD_EVIDENCE_SPEC`. Neue vollständige
+- `<MAP_ASSET_NOTICES_SPEC>` ist exakt die Eingabe
+  `map-asset-notices-spec` aus `<BUILD_EVIDENCE_SPEC>`; Karten-Capture und
+  Static-Sources-Builder erhalten denselben Pfad. `<GDAL_RUNTIME_MANIFEST>`
+  ist exakt das Manifest des dort gebundenen PMTiles-Runtime-Bundles.
+  `<SEMANTIC_TILE_INPUTS>` ist das aktuelle, create-new materialisierte
+  `inputs.json` der dort gebundenen semantischen Assembly,
+  `<SEMANTIC_TILE_INPUT_ROOT>` sein Elternverzeichnis und
+  `<SEMANTIC_PMTILES_OUTPUT>` exakt die Ausgabe `semantic-pmtiles`. Alle vier
+  Werte müssen zu `<INFRARELEASE_ID>` gehören; ein Quellpfad aus einer
+  deklarierten Cross-Release-Wiederverwendung ist nicht selbst das aktuelle
+  Eingabe- oder Ausgabeziel.
+- Binde `<BUILD_EVIDENCE_SPEC>` unverändert an `$BUILD_EVIDENCE_SPEC`. Neue vollständige
   Operational-v2-Lieferungen verlangen
   `schema=zugfolge-map-release-build-evidence-spec/v3`; v1 und v2 sind nur
   historische Verifikationsverträge. Der v3-Vertrag muss genau neun
@@ -279,26 +307,33 @@ Deterministischer Build und Prüfung:
    Felder, fehlende Routenbindungen oder ein unvollständiges Cover blockieren
    den Kandidaten.
 
-   Für den gemessenen `.5`-Zielkorpus gelten als Ergebnis-Pins: 52 Lose, 1.677
-   JourneyChains und geplante Übergänge, 197 Umläufe, 1.595 Turnarounds, 82
-   Transfers in 39 Losen. Der GTFS-Snapshot hat 14.797.184 Byte, Datei-SHA-256
-   `cbebbcb73e1807df793c26411873b2df442e6ce38d28fd0593a78e5ae93912c5`
-   und Snapshot-Hash
-   `811fcafe581e73409b373ec5e2568dbb44048d604be834d1aa998abe4a35a8a7`.
-   Der V2-Transfer-Sidecar hat 6.697.294 Byte und SHA-256
-   `2c8c688a9ce963afbdca75fee526b581bc21be402aabcbaf1abd09ea65418cdf`;
-   sein DailyPlan-Hash ist
-   `b00e03a0af2542ac7f986cc5394b0564893a65ddee24e6ba9abee9f687fb1c7e`
-   und sein `transferSetSha256`
-   `67b2e459fb4a02a91b981a85c18780bc4f16613bbfb89ed393ef54ca935dabfe`.
-   Diese Werte sind reale `.5`-Zielmessungen, keine aus `.4` kopierten oder
-   ausstehend markierten Platzhalter.
+   Übernimm die erwarteten Mengen, Bytezahlen und SHA-256-Werte ausschließlich
+   aus `<TIMETABLE_ROUTE_SPEC>` und den darin gebundenen aktuellen Inputs.
+   Prüfe sie gegen die tatsächlich neu erzeugten Ausgaben. Ein Messwert aus
+   einem früheren Jahreslauf ist weder ein Default noch ein zulässiger
+   Ersatz-Pin. Abweichungen blockieren den Kandidaten oder verlangen eine
+   fachlich geprüfte Änderung des eingecheckten Jahresvertrags; sie werden nie
+   nur in diesem Prompt aktualisiert.
 
    Lies anschließend den strikt validierten Subvertrag
    `pipeline.operationalDeriver` aus `<ANNUAL_RELEASE_CONFIG>`. Sein
    `primaryRunner` muss exakt
-   `tools/region-import/germany/run-operational-infrastructure-v2.mjs` sein;
-   seine `specification` muss
+   `tools/region-import/germany/run-capture-operational-infrastructure-v2.anchored-bundle.mjs`
+   und `primaryRunnerMode` muss exakt
+   `system-launcher-held-bundle-stdin-v1` sein. Das `primaryRunner`-File ist
+   dabei ausschließlich gepinntes Bundle-Datenmaterial und niemals selbst
+   ein ausführbarer Entrypoint. `systemCommandBuilder` muss
+   exakt
+   `tools/region-import/germany/print-operational-infrastructure-v2-system-launch-command.mjs`
+   und `systemCommandBuilderMode` muss exakt
+   `source-only-print-direct-command-v1` sein. Dieser Builder ist ausdrücklich
+   kausal und releasebeweisfähig, mit seinem exakten File-Proof in
+   `runner.roots` und `runner.importClosure` gebunden, aber selbst kein
+   mutierender Jahreslauf-Entrypoint. Der direkte Aufruf
+   der gleichnamigen Runner-`.mjs`-Quelle ist ebenfalls nicht releasefähig und
+   muss vor jeder Artefakterzeugung abbrechen. Der Wert
+   `executionPins` muss exakt `<OPERATIONAL_EXECUTION_PINS>` bezeichnen; seine
+   `specification` muss
    `schema=zugfolge-germany-operational-infrastructure-derivation/v2`,
    `mode=deterministic-conservative-v1`, denselben `<INFRARELEASE_ID>` und die
    Policy `synthetic-operational-b/v2` binden. Die sechs normalisierten
@@ -316,86 +351,79 @@ Deterministischer Build und Prüfung:
    `candidateMovementRouteTemplates` muss exakt
    `<OPERATIONAL_CANDIDATE_SIDECAR>` entsprechen. Der getrennte
    `recoveryPublisher` muss die eingecheckten Capture-/Publisher-EntryPoints
-   sowie die create-new-Ziele
-   `<ARTEFAKTWURZEL>/operational-infrastructure-v2.native-receipt.json` und
-   `<ARTEFAKTWURZEL>/operational-infrastructure-v2.publication-receipt.json`
-   binden. Zusätzlich muss er den tatsächlich ausgeführten Validatorpfad,
-   `<OPERATIONAL_VALIDATOR_BUILD_COMMIT>` und die vollständige lokale
-   Importclosure aus Publisher-Wrapper, Publisher-Implementierung, Deriver,
-   Materializer, Create-new-Vertrag und
-   `operational-infrastructure-binding.mjs` sowie den typisierten
-   Validator-Rebuild-Bootstrap und -Verifier deklarieren. Der Binding-Vertrag
-   darf keine ignorierte `packages/*/dist`-Laufzeitdatei laden. Binde
-   `specification`, `report` und `output` unverändert aus diesem Subvertrag an
-   `$OPERATIONAL_DERIVER_SPECIFICATION`, `$OPERATIONAL_DERIVER_REPORT` und
-   `$OPERATIONAL_DERIVER_OUTPUT`. Der Primärlauf verwendet ausschließlich den
-   expliziten `candidate-triplet`-Modus mit dem konfigurierten Candidate-Sidecar;
-   er darf weder das finale Operational-v2-Artefakt noch dessen finales Sidecar
-   veröffentlichen. Nur wenn noch kein natives Candidate-Triplet existiert,
-   materialisiere zuerst das optimierte native Binary create-new unter einem
-   commit- und hashbenannten Pfad, protokolliere dessen vollständigen
-   Build-Commit als `<OPERATIONAL_VALIDATOR_BUILD_COMMIT>` und setze
-   ausschließlich diesen unveränderlichen Pfad explizit; Deutschland-Candidate
-   und Closure dürfen weder aus einem veränderlichen `target/release`-Pfad
-   noch versehentlich mehrfach über `cargo run` im Debugprofil validiert werden:
+   sowie `<OPERATIONAL_VALIDATOR_PATH>`,
+   `<OPERATIONAL_VALIDATOR_BUILD_COMMIT>`,
+   `<OPERATIONAL_VALIDATOR_REBUILD_SPEC>`,
+   `<OPERATIONAL_VALIDATOR_REBUILD_EVIDENCE>`,
+   `<OPERATIONAL_NATIVE_RECEIPT>` und
+   `<OPERATIONAL_PUBLICATION_RECEIPT>` exakt binden. Seine lokale
+   Ausführungsinventur umfasst Publisher-Wrapper, Publisher-Implementierung,
+   Deriver, Materializer, Create-new-Vertrag,
+   `operational-infrastructure-binding.mjs`, Execution-Pins-Implementierung
+   sowie den typisierten Validator-Rebuild-Bootstrap und -Verifier. Der
+   Binding-Vertrag darf keine ignorierte `packages/*/dist`-Laufzeitdatei
+   laden. Binde `specification`, `report` und `output` unverändert aus diesem
+   Subvertrag an `<OPERATIONAL_DERIVER_SPECIFICATION>`,
+   `<OPERATIONAL_DERIVER_REPORT>` und `<OPERATIONAL_DERIVER_OUTPUT>`.
 
-   ```sh
-   export ZUGFOLGE_INFRA_RELEASE_VALIDATOR_PATH="$PWD/var/derived/germany-2026.5/toolchain/zugfolge-infra-release-ee6d7081b32277e46cd6ebb28fc65bd45ce55012-69f6f13d69cd256464f254804d6d7349acd0f09bbe614ae2b0e38e70664306fc.exe"
-   node tools/region-import/germany/run-operational-infrastructure-v2.mjs candidate-triplet "$OPERATIONAL_DERIVER_SPECIFICATION" . <OPERATIONAL_CANDIDATE> <OPERATIONAL_CANDIDATE_SIDECAR> "$OPERATIONAL_DERIVER_REPORT"
-   ```
+   `<OPERATIONAL_EXECUTION_PINS>` muss das Schema
+   `zugfolge-germany-operational-v2-execution-pins/v1` und dieselbe Release-ID
+   tragen. `runner.bundle`, `runner.entrypoint`, jedes Element aus `runner.roots` und jedes
+   Element aus `runner.importClosure` ist ein vollständiger File-Proof aus
+   `file`, `bytes` und `sha256`. Roots und Importclosure sind sortiert und
+   eindeutig; der EntryPoint und jeder Root müssen mit denselben Byte-Pins in
+   der vollständigen statischen ESM-Closure vorkommen. Nur `node:`- und
+   relative statische Imports sind zulässig; Dynamic Imports, CommonJS,
+   Bare-/`file:`-Loader sowie Symlink-/Junction-Ahnen blockieren den Lauf.
+   Runner und Importclosure werden vor und nach dem Kindprozess gegen dieselben
+   unveränderlichen Pins geprüft. `runner.invocation` muss exakt
+   `mode=system-launcher-held-bundle-stdin-v1`,
+   `nodeArguments=["--input-type=module","-"]` und `nodeOptions=null`
+   binden. `runner.launcher` bindet Modus, Bytezahl und SHA-256 des kanonischen
+   inline System-Bootstraps; `runner.runtime` bindet ausschließlich logische
+   Node-24-ID, Zielplattform, Bytezahl und SHA-256, niemals einen lokalen
+   absoluten Pfad. Der Systembootstrap hält und hasht Bundle und Runtime vor
+   dem Start, prüft Node 24 kausal aus denselben gehaltenen beziehungsweise
+   versiegelten Bytes und startet das Bundle nur über stdin bei vollständig
+   bereinigter Umgebung.
 
-   Falls eine vorab genehmigte, langlaufende native Ableitung das vollständige
-   Triplet create-new unter dem Candidate-, dem daraus abgeleiteten
-   Candidate-Movement-Sidecar- und dem Berichtspfad erzeugt hat, darf der
-   native Lauf nicht wiederholt und das Sidecar nicht manuell kopiert,
-   umbenannt oder verlinkt werden. Die aktuelle 2026.5-Ableitung läuft noch;
-   Candidate, Candidate-Sidecar und Bericht sind noch nicht atomar publiziert.
-   Bis zu Prozessende, erfolgreichem Exit und allen drei create-new Dateien
-   existiert deshalb weder ein Candidate- noch ein Releasebeleg. Der laufende
-   Prozess wurde aus einem veränderlichen `target/release`-Pfad gestartet;
-   eine später hashgleiche preserved Kopie beweist ohne die noch offene
-   integrierte Runner-Capture-Kopplung nicht, welches Binary das Triplet
-   tatsächlich erzeugt hat. Ein daraus nachträglich gebildetes stdin-Receipt
-   bleibt forensisch und ist nicht releasefähig.
-
-   Für den künftig integrierten Lauf ist ausschließlich die create-new erhaltene Datei
-   `var/derived/germany-2026.5/toolchain/zugfolge-infra-release-ee6d7081b32277e46cd6ebb28fc65bd45ce55012-69f6f13d69cd256464f254804d6d7349acd0f09bbe614ae2b0e38e70664306fc.exe`
-   mit 8.283.251 Bytes und SHA-256
-   `69f6f13d69cd256464f254804d6d7349acd0f09bbe614ae2b0e38e70664306fc`
-   zulässig. Sie darf bis zur commitbenannten Buildcache-Inventarisierung weder
-   neu gebaut, überschrieben noch als `$MAP_BUILD_COMMIT` umetikettiert werden.
-   Das Buildcache-Inventar führt dieselben Bytes unter
-   `tools/zugfolge-infra-release/infra-deutschland-2026.5/ee6d7081b32277e46cd6ebb28fc65bd45ce55012/69f6f13d69cd256464f254804d6d7349acd0f09bbe614ae2b0e38e70664306fc/zugfolge-infra-release.exe`;
-   ein späterer Build unter `target/release` darf diesen unveränderlichen
-   Capture-Pfad nicht ersetzen.
-   Der offizielle Rebuild wird als zweite unveränderliche Datei
-   `var/derived/germany-2026.5/toolchain/zugfolge-infra-release-rebuild-ee6d7081b32277e46cd6ebb28fc65bd45ce55012-official.exe`
-   create-new erzeugt. Sein Raw-SHA-256 wird nicht vor dem Build behauptet,
-   sondern erst aus den tatsächlich publizierten Bytes in das portable
-   Rebuild-Receipt übernommen. Vor Capture und Publikation muss der typisierte
-   Rebuild-Vertrag
-   `tools/region-import/germany/operational-validator-rebuild.annual-2026.5.json`
-   gegen das lokale Quellrepository materialisiert und danach unabhängig
-   verifiziert sein. Der minimale Bootstrap wird durch den aufrufenden,
+   Der Validatorblock der Execution-Pins muss Pfad, Bytezahl, SHA-256,
+   `<OPERATIONAL_VALIDATOR_BUILD_COMMIT>`,
+   `<OPERATIONAL_VALIDATOR_REBUILD_SPEC>` und
+   `<OPERATIONAL_VALIDATOR_REBUILD_EVIDENCE>` exakt mit dem Jahresvertrag und
+   dem Build-Evidence-Vertrag abgleichen. Nur das dort bytegebundene,
+   commit- und hashbenannte Release-Binary ist zulässig. Ein veränderlicher
+   `target/release`-Pfad, `cargo run` oder ein nachträglich umetikettiertes
+   Binary ist kein Releasebeleg. Preserved Binary, offizieller Rebuild und
+   deren Belege dürfen bis zur Buildcache-Inventarisierung weder überschrieben
+   noch unter einem anderen Commit geführt werden.
+   Der offizielle Rebuild wird an dem in
+   `<OPERATIONAL_VALIDATOR_REBUILD_SPEC>` gebundenen create-new-Ziel erzeugt.
+   Sein Raw-SHA-256 wird nicht vor dem Build behauptet, sondern erst aus den
+   tatsächlich publizierten Bytes in das portable Rebuild-Receipt
+   `<OPERATIONAL_VALIDATOR_REBUILD_EVIDENCE>` übernommen. Vor Capture und
+   Publikation muss der typisierte Rebuild-Vertrag gegen das lokale
+   Quellrepository materialisiert und danach unabhängig verifiziert sein. Der
+   minimale Bootstrap wird durch den aufrufenden,
    eingecheckten EntryPoint gegen die externen Spec-Pins geprüft, bevor seine
    lokale Importclosure aus gehaltenen Bytes geladen wird; ein direkt
    aufgerufener Bootstrap kann seine eigenen bereits laufenden Bytes nicht
    selbst beglaubigen und ist deshalb kein Releasebeleg. Der Materialisierer
    erzeugt über `git archive` aus exakt
-   `ee6d7081b32277e46cd6ebb28fc65bd45ce55012` einen privaten sauberen
+   `<OPERATIONAL_VALIDATOR_BUILD_COMMIT>` einen privaten sauberen
    Quellbaum und baut mit leerem externen Target-Verzeichnis und dem exakt
    spezifizierten `cargo build --locked --release` unter kontrollierter
    Umgebung. Sein create-new Receipt bindet Source-Archiv und -Baum,
    `Cargo.lock`, Cargo/Rustc/Target/Profile, Buildumgebung und -logs, beide
    Raw-Binaries, die PE-Sections und die ausschließlich erlaubten
    COFF-TimeDateStamp- und OptionalHeader-CheckSum-Normalisierungen. Beide
-   normalisierten Binaries müssen
-   SHA-256 `91e84253399bf8836ec4e6a5688da51f753531a0040831a54b8585e28f1d5363`
+   normalisierten Binaries müssen den in
+   `<OPERATIONAL_VALIDATOR_REBUILD_SPEC>` gebundenen normalisierten SHA-256
    besitzen:
 
    ```sh
-   node tools/region-import/germany/operational-validator-rebuild-evidence-cli.mjs materialize tools/region-import/germany/operational-validator-rebuild.annual-2026.5.json "$OPERATIONAL_VALIDATOR_SOURCE_REPOSITORY" var/derived/germany-2026.5/toolchain/zugfolge-infra-release-rebuild-evidence.json .
-   node tools/region-import/germany/operational-validator-rebuild-evidence-cli.mjs verify tools/region-import/germany/operational-validator-rebuild.annual-2026.5.json var/derived/germany-2026.5/toolchain/zugfolge-infra-release-rebuild-evidence.json .
+   node tools/region-import/germany/operational-validator-rebuild-evidence-cli.mjs materialize <OPERATIONAL_VALIDATOR_REBUILD_SPEC> "$OPERATIONAL_VALIDATOR_SOURCE_REPOSITORY" <OPERATIONAL_VALIDATOR_REBUILD_EVIDENCE> .
+   node tools/region-import/germany/operational-validator-rebuild-evidence-cli.mjs verify <OPERATIONAL_VALIDATOR_REBUILD_SPEC> <OPERATIONAL_VALIDATOR_REBUILD_EVIDENCE> .
    ```
 
    Ein falscher Commit oder `Cargo.lock`, ein abweichender Buildbefehl,
@@ -409,27 +437,147 @@ Deterministischer Build und Prüfung:
    den getrennten Commit `operationalValidatorBuild`; zusätzlich binden sie
    Rebuild-Spezifikation, Rebuild-Bootstrap, portables Rebuild-Receipt und
    unveränderliches offizielles Rebuild-Binary.
-   Die kompakte JSON-Zeile des nativen Prozesses muss als **strukturierter
-   Wert** unmittelbar von demselben Runner an den Capture-Schritt übergeben
-   werden, der zuvor das bytegeprüfte preserved Validator-Binary gestartet
-   hat. Die derzeit getrennte stdin-Schnittstelle ist nur ein forensischer
-   Recovery-/Testpfad: Sie kann für sich allein nicht beweisen, dass genau das
-   separat gehashte Binary das gelieferte Receipt erzeugt hat, und darf daher
-   weder Publication noch den finalen Release-Gate grün schalten. Solche
-   Receipts gelten als `releaseEvidenceEligible=false` und
-   `productionActivationEligible=false`; Publisher und Build-Evidence müssen
-   sie fail-closed abweisen. Bis der
-   versionierte Execution-Pins-Vertrag und ein integrierter
-   Runner→preserved-Binary→Capture-Aufruf implementiert und negativ getestet
-   sind, bleibt der folgende Ablauf ausdrücklich gesperrt und dient nur der
-   Beschreibung der noch zu schließenden Schnittstelle:
+   Prüfe vor der Ableitung, dass Candidate, Candidate-Sidecar, Bericht,
+   `<OPERATIONAL_NATIVE_RECEIPT>`, finales Operational-v2-Artefakt, finales
+   Sidecar und `<OPERATIONAL_PUBLICATION_RECEIPT>` noch nicht existieren. Ein
+   älteres Candidate-Triplet aus einem getrennten oder veränderlichen Runner
+   ist nur forensische Evidenz; verschiebe es mit Hashprotokoll aus den aktiven
+   create-new-Zielen und verwende es nicht als Releaseinput.
 
-   ```sh
-   export ZUGFOLGE_INFRA_RELEASE_VALIDATOR_PATH="$PWD/var/derived/germany-2026.5/toolchain/zugfolge-infra-release-ee6d7081b32277e46cd6ebb28fc65bd45ce55012-69f6f13d69cd256464f254804d6d7349acd0f09bbe614ae2b0e38e70664306fc.exe"
-   printf '%s\n' "$NATIVE_RECEIPT_JSON" | node tools/region-import/germany/capture-operational-infrastructure-v2-native-receipt.mjs "$OPERATIONAL_DERIVER_SPECIFICATION" <OPERATIONAL_CANDIDATE> <OPERATIONAL_CANDIDATE_SIDECAR> "$OPERATIONAL_DERIVER_REPORT" "$ZUGFOLGE_INFRA_RELEASE_VALIDATOR_PATH" tools/region-import/germany/operational-validator-rebuild.annual-2026.5.json var/derived/germany-2026.5/toolchain/zugfolge-infra-release-rebuild-evidence.json <ARTEFAKTWURZEL>/operational-infrastructure-v2.native-receipt.json
-   node tools/region-import/germany/publish-operational-infrastructure-v2.mjs preflight "$OPERATIONAL_DERIVER_OUTPUT" <ARTEFAKTWURZEL>/operational-infrastructure-v2.publication-receipt.json
-   node tools/region-import/germany/publish-operational-infrastructure-v2.mjs publish "$OPERATIONAL_DERIVER_SPECIFICATION" <OPERATIONAL_CANDIDATE> <OPERATIONAL_CANDIDATE_SIDECAR> "$OPERATIONAL_DERIVER_REPORT" <ARTEFAKTWURZEL>/operational-infrastructure-v2.native-receipt.json tools/region-import/germany/operational-validator-rebuild.annual-2026.5.json var/derived/germany-2026.5/toolchain/zugfolge-infra-release-rebuild-evidence.json "$OPERATIONAL_DERIVER_OUTPUT" <ARTEFAKTWURZEL>/operational-infrastructure-v2.publication-receipt.json
+   Führe danach ausschließlich den integrierten V2-Pfad mit den zuvor exakt
+   aus `<ANNUAL_RELEASE_CONFIG>` gebundenen Argumenten aus. Der Runner prüft
+   `<OPERATIONAL_EXECUTION_PINS>` sowie die gehaltenen Runner- und
+   Validatorbytes vor und nach dem Kindprozess, übergibt dessen eine
+   strukturierte JSON-Ausgabe unmittelbar an den Capture-Schritt und erzeugt
+   `<OPERATIONAL_NATIVE_RECEIPT>` create-new. Erst dieses Receipt darf der
+   Publisher akzeptieren:
+
+   ```text
+   node tools/region-import/germany/publish-operational-infrastructure-v2.mjs preflight <OPERATIONAL_DERIVER_OUTPUT> <OPERATIONAL_PUBLICATION_RECEIPT>
    ```
+
+   Materialisiere die in `<OPERATIONAL_EXECUTION_PINS>` mit Bytezahl und
+   SHA-256 gebundene Node-24-Runtime create-new als
+   `<ARTEFAKTWURZEL>/toolchain/nodejs-24-operational-runner-v1.exe` und prüfe
+   ihre Bytes vor und nach dem Kopieren.
+   Starte die sichere lokale CLI ausschließlich mit genau dieser gehaltenen
+   Runtime. Schreibe ihren portablen repositoryrelativen Pfad sowie die sieben
+   Runnerargumente in einen exakten
+   `zugfolge-operational-v2-direct-system-launch-context/v1`. Die
+   Arbeitswurzel ist kein neunter Operatorinput: Der gepinnte Rust-Executor
+   leitet sie kausal aus seiner eigenen im Annual-Plan belegten Dateilokation
+   ab. Der Kontext wird intern einmal als kanonisches UTF-8-JSON/Base64
+   transportiert; absolute oder rohe Pfadwerte gelangen nie in eine
+   Shell-Kommandozeile.
+
+   Vor Phase 1 und vor dem Merge des später geschützten `main`-Commits muss die
+   Trust-Vorbereitung abgeschlossen sein. Sichere dazu die kanonisch sortierte
+   Menge und die öffentlichen PEM-Bytes aller vorhandenen Einträge aus
+   `ops/keys/trusted-delivery-keys.json` sowie ihre Scopes. Erzeuge nach
+   namentlicher Key-Registrierungsfreigabe ein neues Ed25519-Keypair;
+   `$DELIVERY_PRIVATE_KEY` liegt außerhalb von Repository, Worktree, Quell- und
+   Artefaktwurzel, Buildcache, Transportpaket, Laufprotokoll und Deploymenthost.
+   Der private Pfad und das private Schlüsselmaterial werden weder in Evidence
+   noch in der Abschlussdokumentation ausgegeben. `$DELIVERY_KEY_ID` ist
+   ausschließlich aus der aktuellen Paketversion abgeleitet. Prüfe vor dem
+   Commit kryptographisch, dass privater und öffentlicher Schlüssel
+   zusammengehören. Checke ausschließlich die öffentliche PEM-Datei unter
+   `ops/keys/` ein und ergänze `$DELIVERY_KEY_ID` im selben Commit additiv in
+   `ops/keys/trusted-delivery-keys.json` sowie ausschließlich im passenden Scope
+   von `ops/keys/trusted-delivery-key-scopes.json`. Diese Registrierung ist noch
+   keine Delivery-Signatur und keine Releasefreigabe.
+
+   Jeder zuvor vorhandene Schlüssel, seine PEM-Bytes und seine bisherigen
+   Scopes müssen unverändert erhalten bleiben; Entfernen, Ersetzen,
+   Umsortierungsverlust oder stillschweigendes Widerrufen eines Altankers
+   blockiert den Lauf. Der `candidatePackage.retainedTrustedKeyIds`-Vertrag von
+   `$BUILD_EVIDENCE_SPEC` nennt jeden vor diesem Lauf vorhandenen
+   Vertrauensanker eindeutig und kanonisch sortiert; der neue
+   Kandidatenschlüssel darf darin nicht als Altanker erscheinen. Erst der
+   Commit mit dieser additiven Trust-Registrierung darf geschützt gemergt und
+   anschließend unverändert für beide Authority-Phasen, Kartenbuild, Signatur
+   und Paketierung verwendet werden.
+
+   Der releasefähige Start besteht aus zwei getrennten, commitgleichen
+   Authority-Phasen und der dazwischen lokal gehaltenen Ausführung. Beide
+   GitHub-Phasen laufen ausschließlich per `workflow_dispatch` auf dem
+   geschützten `main`-Commit. Ein Branch-, Pull-Request-, Self-hosted- oder
+   abweichender Commitlauf ist nicht releasefähig.
+
+   Phase 1 ist
+   `.github/workflows/operational-validator-rebuild-evidence.yml`. Sie baut
+   das in `<OPERATIONAL_VALIDATOR_REBUILD_SPEC>` gebundene Binary auf einem
+   frischen GitHub-hosted Windows-Runner reproduzierbar nach, materialisiert
+   mit `<PINNED_ZUGFOLGE_INFRA_RELEASE>` ausschließlich den Annual-Plan
+   `<OPERATIONAL_ANNUAL_PLAN>` und den Executor-Startbeleg
+   `<OPERATIONAL_ANNUAL_START_EVIDENCE>` und erzeugt für beide Dateien sowie
+   ihre create-new Completion-Belege eine gemeinsame GitHub-Sigstore-
+   Build-Provenienz. Lade das vollständige Evidence-Artefakt und das getrennte
+   minimale Plan-Authority-Artefakt über ihre numerischen GitHub-Artifact-IDs.
+   Prüfe vor dem Entpacken GitHub-Metadaten, Workflow, `main`-Commit,
+   erfolgreichen Abschluss und Archivdigest; danach muss das jeweilige
+   Dateiinventar exakt dem eingecheckten Rebuild-Vertrag entsprechen. Das
+   Sigstore-Bundle wird unverändert als
+   `<OPERATIONAL_REBUILD_ATTESTATION_BUNDLE>` gehalten. Eine lokal selbst
+   erzeugte Plan- oder Startdatei ist kein Ersatz.
+
+   Führe anschließend auf Windows ausschließlich die sichere lokale CLI mit
+   genau diesen heruntergeladenen, erneut bytegeprüften Plan-/Startbelegen aus:
+
+   ```powershell
+   & ".\<ARTEFAKTWURZEL>\toolchain\nodejs-24-operational-runner-v1.exe" tools/region-import/germany/run-operational-infrastructure-v2-annual-execution.mjs execute <OPERATIONAL_EXECUTION_PINS> <OPERATIONAL_DIRECT_SYSTEM_LAUNCH_CONTRACT> <ANNUAL_RELEASE_CONFIG> <SOURCE_CATALOG> <RIGHTS_LEDGER> <OPERATIONAL_LAUNCH_CONTEXT> <OPERATIONAL_ANNUAL_PLAN> <OPERATIONAL_ANNUAL_START_EVIDENCE> <OPERATIONAL_OUTER_EXECUTION_RECEIPT>
+   ```
+
+   Die CLI prüft Pins, Direct-Contract, Plan, Startbeleg und sämtliche
+   Completion-Belege über gehaltene Bytes. Sie startet den byte- und
+   commitgebundenen Rust-Executor ausschließlich über den gepinnten
+   System32-Launcher mit vollständig ersetzter Umgebung und einem
+   `windows-kill-on-job-close-root-exit-bounded-io-v1`-Job. Der
+   Rust-Executor führt ausschließlich den bereits autorisierten Plan aus; er
+   darf keinen neuen Plan bilden. Erfolg erzeugt create-new
+   `<OPERATIONAL_OUTER_EXECUTION_RECEIPT>` und dessen Completion-Beleg. Der
+   Outer-Beleg bindet denselben Annual-Launch-Vertrag bis in das integrierte
+   Native-Receipt; ein gemischter, forensischer oder fremder Inner-/Outer-Lauf
+   scheitert.
+
+   Phase 2 ist `.github/workflows/operational-v2-execution-authority.yml`.
+   Sie läuft auf exakt demselben geschützten `main`-Commit und in der
+   geschützten Umgebung `operational-release-approval`. Übergib ausschließlich
+   die numerische ID des minimalen Phase-1-Artefakts sowie Bytezahl und
+   SHA-256 von Outer- und Completion-Beleg. Diese Phase führt die lokalen
+   Quellen ausdrücklich **nicht** erneut aus; ihr enger
+   `verificationScope=operator-approved-hash-binding-not-source-reexecution-v1`
+   attestiert nach manueller Freigabe nur die beiden gehaltenen Hashes gegen
+   denselben Phase-1-Plan und Commit. Lade das Ergebnis create-new als
+   `<OPERATIONAL_EXECUTION_AUTHORITY_BUNDLE>` und verifiziere beide
+   Singleton-Attestierungen lokal erneut mit dem bytegepinnten
+   `<OPERATIONAL_ATTESTATION_VERIFIER>` und dem bytegepinnten
+   `<OPERATIONAL_ATTESTATION_TRUSTED_ROOT>`. Erst diese vollständige Kette darf
+   in Build-Evidence, Delivery-v2, Paketierung und Aktivierung gelangen.
+
+   `print-operational-infrastructure-v2-system-launch-command.mjs` ist nur ein
+   optionaler Diagnosevergleich. Er meldet zwingend `causal=false`,
+   `releaseEvidenceEligible=false` und `releaseExecutionEligible=false`, steht
+   weder in `runner.roots` noch in `runner.importClosure`, und sein ausgegebener
+   Command-Block darf niemals ausgeführt, gepiped oder als Receiptquelle
+   akzeptiert werden.
+
+   Nach einem Exit 0 des direkten OS-Befehls und erfolgreicher Prüfung des
+   create-new Native-Receipts darf publiziert werden:
+
+   ```text
+   node tools/region-import/germany/publish-operational-infrastructure-v2.mjs publish <OPERATIONAL_DERIVER_SPECIFICATION> <OPERATIONAL_CANDIDATE> <OPERATIONAL_CANDIDATE_SIDECAR> <OPERATIONAL_DERIVER_REPORT> <OPERATIONAL_NATIVE_RECEIPT> <OPERATIONAL_VALIDATOR_REBUILD_SPEC> <OPERATIONAL_VALIDATOR_REBUILD_EVIDENCE> <OPERATIONAL_DERIVER_OUTPUT> <OPERATIONAL_PUBLICATION_RECEIPT>
+   ```
+
+   `capture-operational-infrastructure-v2-native-receipt.mjs` mit einer über
+   stdin zugelieferten nativen JSON-Zeile bleibt ausdrücklich ein
+   **nicht releasefähiger Forensik-/Testpfad**. Er erzeugt ausschließlich
+   `producerKind=forensic-stdin-v1`, `releaseEvidenceEligible=false`,
+   `productionActivationEligible=false` und `executionProof=null`. Schreibe
+   seine Ausgabe nur in einen getrennten Scratchpfad außerhalb der aktiven
+   Jahresartefakte; sie darf weder `<OPERATIONAL_NATIVE_RECEIPT>` ersetzen
+   noch an den Publisher, Build-Evidence, Signatur- oder Aktivierungspfad
+   weitergereicht werden.
 
    Das kanonische create-new Native-Receipt bindet die strukturierten nativen
    Receiptfelder quer an Spezifikations-, Candidate-, Candidate-Sidecar- und
@@ -443,11 +591,12 @@ Deterministischer Build und Prüfung:
    Operational-/Sidecar-State, Transfer-Set, Publisher-Entrypoint und
    das vollständige Ausführungsinventar aus Wrapper, Publishermodul,
    Operational-Deriver, Materialisierer, create-new-Helper,
-   `operational-infrastructure-binding.mjs`, Validator-Rebuild-Bootstrap und
-   -Verifier sowie effektivem preserved Validator-Binary. Native- und
-   Publication-Receipt binden denselben typisiert verifizierten Rebuild-Beleg;
-   erst die noch offene integrierte Runner-Capture-Kopplung belegt zusätzlich,
-   dass dieses Binary das native Receipt tatsächlich erzeugt hat.
+   `operational-infrastructure-binding.mjs`, Execution-Pins-Vertrag,
+   Validator-Rebuild-Bootstrap und -Verifier sowie effektivem preserved
+   Validator-Binary. Native- und Publication-Receipt binden denselben
+   typisiert verifizierten Rebuild-Beleg. Nur die integrierte
+   Runner-Capture-Kopplung darf `releaseEvidenceEligible=true` und
+   `productionActivationEligible=true` belegen.
    Build-Evidence und Buildcache müssen genau dieselben
    Repo-Bytes, den tatsächlichen Validator und den Map-Build-Commit binden.
 
@@ -459,7 +608,7 @@ Deterministischer Build und Prüfung:
    `complete-cleanup-required` darf der typisierte Recovery-Befehl laufen:
 
    ```sh
-   node tools/region-import/germany/publish-operational-infrastructure-v2.mjs recover "$OPERATIONAL_DERIVER_OUTPUT" <ARTEFAKTWURZEL>/operational-infrastructure-v2.publication-receipt.json
+   node tools/region-import/germany/publish-operational-infrastructure-v2.mjs recover <OPERATIONAL_DERIVER_OUTPUT> <OPERATIONAL_PUBLICATION_RECEIPT>
    ```
 
    Recovery entfernt ausschließlich Links und Claim/Staging mit der im Claim
@@ -516,7 +665,7 @@ Deterministischer Build und Prüfung:
    strikten JavaScript-Vertrag und den nativen Rust-Vertrag, gleicht beide
    kanonischen Hashes ab, prüft unveränderte Eingabebytes und veröffentlicht
    Candidate, Movement-Route-Templates-v2, Bericht und
-   `$OPERATIONAL_DERIVER_OUTPUT` gemeinsam mit Create-new-Semantik. Bei einem
+   `<OPERATIONAL_DERIVER_OUTPUT>` gemeinsam mit Create-new-Semantik. Bei einem
    bereits vollständig vorhandenen nativen Triplet übernimmt stattdessen
    ausschließlich der oben benannte receiptgebundene RecoveryPublisher dieselben
    Gates für die finale Paarung und belegt den tatsächlich benutzten Sonderpfad
@@ -697,9 +846,14 @@ Deterministischer Build und Prüfung:
    nach
    `<ARTEFAKTWURZEL>/map-release-free-v2/public/map-release.json`.
 
-   Erzeuge den unsigned Deliveryvertrag mit
-   `build-map-delivery-release.mjs` in
-   `<ARTEFAKTWURZEL>/map-release-free-v2/delivery-unsigned/`. Damit sind dessen
+   Erzeuge den unsigned Deliveryvertrag mit dem exakten Karten-Build-Commit in
+   `<ARTEFAKTWURZEL>/map-release-free-v2/delivery-unsigned/`:
+
+   ```sh
+   node tools/tiles/build-map-delivery-release.mjs <MAP_PACKAGE_PLAN> . <ARTEFAKTWURZEL>/map-release-free-v2/public/infra-release.json <ARTEFAKTWURZEL>/map-release-free-v2/public/map-release.json <ARTEFAKTWURZEL>/map-release-free-v2/public/read-model.sqlite.report.json "$MAP_BUILD_COMMIT" <ARTEFAKTWURZEL>/map-release-free-v2/delivery-unsigned
+   ```
+
+   Damit sind dessen
    Paketquellen exakt `delivery-unsigned/release.json` und
    `delivery-unsigned/sources.json`. Sein Inventar muss Operational-v2,
    Movement-Route-Templates-v2 und Timetable-Transfer-Demands-v2 jeweils genau
@@ -715,7 +869,7 @@ Deterministischer Build und Prüfung:
    abweichender Datei ist unzulässig:
 
    ```sh
-   node tools/tiles/build-gdal-semantic-pmtiles.mjs var/derived/germany-2026.5/semantic-tile-inputs-free-v2/inputs.json var/derived/germany-2026.5/semantic-tile-inputs-free-v2 var/derived/germany-2026.5/map-release-free-v2/infra-deutschland-2026.5.pmtiles tools/tiles/gdal-runtime.3.13.2-win32-x64.manifest.json .
+   node tools/tiles/build-gdal-semantic-pmtiles.mjs <SEMANTIC_TILE_INPUTS> <SEMANTIC_TILE_INPUT_ROOT> <SEMANTIC_PMTILES_OUTPUT> <GDAL_RUNTIME_MANIFEST> .
    ```
 
    Binde nach allen Quellen-, Sidecar- und unsigned Ausgaben den für
@@ -756,40 +910,29 @@ Deterministischer Build und Prüfung:
     nicht lediglich eine Fixture bestanden hat und alle verbleibenden
     Abnahmebelege erfüllt sind.
 
-    Sichere vor der Trust-Änderung die kanonisch sortierte Menge und die
-    öffentlichen PEM-Bytes aller vorhandenen Einträge aus
-    `ops/keys/trusted-delivery-keys.json` sowie ihre Scopes. Erzeuge nach der
-    Freigabe ein neues Ed25519-Keypair; `$DELIVERY_PRIVATE_KEY` liegt außerhalb
-    von Repository, Worktree, Quell- und Artefaktwurzel, Buildcache,
-    Transportpaket, Laufprotokoll und Deploymenthost. Der private Pfad und das
-    private Schlüsselmaterial werden weder in Evidence noch in der
-    Abschlussdokumentation ausgegeben. `$DELIVERY_KEY_ID` ist ausschließlich
-    aus der aktuellen Paketversion abgeleitet und sein öffentlicher Schlüssel
-    wird als eigene PEM-Datei unter `ops/keys/` eingecheckt. Signiere
-    Delivery-v2 create-new am reservierten öffentlichen Ziel:
+    Nach dem geschützten Merge, beiden erfolgreichen Authority-Phasen, dem
+    vollständigen unsigned Preflight und der namentlichen
+    Delivery-Signaturfreigabe muss `$MAP_BUILD_COMMIT` exakt der unveränderte
+    geschützte `main`-Commit mit der bereits additiv registrierten öffentlichen
+    PEM-Datei sein. Signiere erst dann Delivery-v2 create-new am reservierten
+    öffentlichen Ziel:
 
     ```sh
-    node tools/tiles/sign-map-delivery-release.mjs <MAP_PACKAGE_PLAN> . "$DELIVERY_PRIVATE_KEY" "$DELIVERY_KEY_ID" <ARTEFAKTWURZEL>/map-release-free-v2/public/release.json
+    node tools/tiles/sign-map-delivery-release.mjs <MAP_PACKAGE_PLAN> . "$DELIVERY_PRIVATE_KEY" "$DELIVERY_KEY_ID" "$MAP_BUILD_COMMIT" <ARTEFAKTWURZEL>/map-release-free-v2/public/release.json
     ```
 
-    Prüfe die erzeugte Ed25519-Signatur zunächst gegen den neuen öffentlichen
-    Schlüssel. Ergänze danach `$DELIVERY_KEY_ID` additiv in
-    `ops/keys/trusted-delivery-keys.json` und ausschließlich im passenden Scope
-    von `ops/keys/trusted-delivery-key-scopes.json`. Jeder zuvor vorhandene
-    Schlüssel, seine PEM-Bytes und seine bisherigen Scopes müssen unverändert
-    erhalten bleiben; Entfernen, Ersetzen, Umsortierungsverlust oder
-    stillschweigendes Widerrufen eines Altankers blockiert den Lauf. Der
-    `candidatePackage.retainedTrustedKeyIds`-Vertrag von
-    `$BUILD_EVIDENCE_SPEC` nennt jeden vor diesem Lauf vorhandenen
-    Vertrauensanker eindeutig und kanonisch sortiert; der neue
-    Kandidatenschlüssel darf darin nicht als Altanker erscheinen.
+    Prüfe die erzeugte Ed25519-Signatur gegen die bereits im selben geschützten
+    Commit registrierte öffentliche PEM-Datei und anschließend gegen den
+    vollständigen additiven Keyring samt Scope. Jede Abweichung zwischen
+    privatem Signierschlüssel, öffentlicher PEM-Datei, Keyring oder Scope
+    blockiert den Lauf.
 
     Leite erst nach dieser additiven Registrierung den Signed-Paketplan
     ausschließlich reproduzierbar ab; kopiere oder editiere den Jahresplan
     nicht von Hand:
 
     ```sh
-    node tools/tiles/signed-map-package-plan-cli.mjs <MAP_PACKAGE_PLAN> . ops/keys/trusted-delivery-keys.json ops/keys/trusted-delivery-key-scopes.json <ARTEFAKTWURZEL>/map-release-free-v2/signed-package-plan.json
+    node tools/tiles/signed-map-package-plan-cli.mjs <MAP_PACKAGE_PLAN> . ops/keys/trusted-delivery-keys.json ops/keys/trusted-delivery-key-scopes.json "$MAP_BUILD_COMMIT" <ARTEFAKTWURZEL>/map-release-free-v2/signed-package-plan.json
     ```
 
     Der Generator muss den Jahresplan deterministisch zu
@@ -880,7 +1023,7 @@ Deterministischer Build und Prüfung:
 
    Vor jeder zustandsändernden Installation oder Aktivierung ist unmittelbar
    davor eine neue ausdrückliche Freigabe einzuholen. Sie muss Zielhost, vollen
-   40-stelligen Commit, `infra-deutschland-2026.5`, Paketmanifest-SHA und die
+   40-stelligen Commit, `<INFRARELEASE_ID>`, Paketmanifest-SHA und die
    konkret freigegebene Aktion nennen. Vor der ersten Mutation müssen das neue,
    bisher fehlende `.5`-Installationsverzeichnis, der unverändert aktive
    Vorgängerpointer und vollständiges Rollbackmaterial feststehen. Ein

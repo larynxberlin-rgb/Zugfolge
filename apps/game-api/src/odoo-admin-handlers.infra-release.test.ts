@@ -61,6 +61,7 @@ const candidate: QualifiedInfraPackageCandidate = Object.freeze({
     packageManifestSha256: PACKAGE_MANIFEST_SHA256,
     deliveryReleaseHash: DELIVERY_RELEASE_HASH,
     infraReleaseHash: INFRA_RELEASE_HASH,
+    deliveryReleaseBase64: "e30K",
     algorithm: "Ed25519",
     keyId: DELIVERY_KEY_ID,
     valueBase64: sign(null, Buffer.from(DELIVERY_RELEASE_HASH, "hex"), DELIVERY_KEYS.privateKey).toString("base64"),

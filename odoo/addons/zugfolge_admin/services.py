@@ -19,11 +19,29 @@ FINALIZATION_NONCE = re.compile(r"^[a-f0-9]{64}$")
 SAFE_KEY_ID = re.compile(r"^[a-z0-9](?:[a-z0-9._-]{0,126}[a-z0-9])?$")
 UTC_MILLISECONDS = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$")
 FINALIZATION_MAX_DURATION_SECONDS = 65 * 60
-FINALIZATION_RECEIPT_FIELDS = {
+FINALIZATION_RECEIPT_V1_FIELDS = {
     "schema", "signatureAlgorithm", "keyId", "nonce", "requestedAt", "finalizedAt", "importId",
     "packageId", "packageVersion", "manifestSha256", "deliveryReleaseId", "operationalStateHash",
     "signatureStatus", "nativeOperationalValidationStatus", "activationBlocker", "activationEligible",
 }
+FINALIZATION_RECEIPT_V2_PROVENANCE_FIELDS = {
+    "operationalProvenanceStatus", "operationalProvenanceSha256",
+    "operationalExecutionProofSha256", "operationalValidatorSha256",
+    "operationalAuthorityStatus", "operationalAuthoritySha256",
+    "operationalRebuildAttestationSha256", "operationalExecutionAuthorityAttestationSha256",
+    "operationalOuterExecutionReceiptSha256", "operationalOuterExecutionCompletionSha256",
+    "operationalAuthoritySourceCommit",
+}
+LEGACY_DELIVERY_V2_VERSIONS = frozenset(("2026.1", "2026.3", "2026.4"))
+PROVENANCE_DELIVERY_V2_VERSION = "2026.5"
+
+
+def _delivery_v2_generation(version):
+    if version == PROVENANCE_DELIVERY_V2_VERSION:
+        return "integrated-provenance-v2"
+    if version in LEGACY_DELIVERY_V2_VERSIONS:
+        return "legacy-v1"
+    raise UserError("Paketversion ist nicht als Deutschland-Delivery-v2-Version freigegeben.")
 
 
 def _parameter(env, key):
@@ -116,10 +134,16 @@ def verify_infra_finalization_receipt(env, result, expected, expected_nonce):
         raise UserError("Game hat keinen strukturierten Finalisierungsbeleg geliefert.")
     receipt = result.get("finalizationReceipt")
     receipt_signature = result.get("finalizationReceiptSignature")
-    if not isinstance(receipt, dict) or set(receipt) != FINALIZATION_RECEIPT_FIELDS:
+    expected_version = expected.get("packageVersion")
+    current_operational = _delivery_v2_generation(expected_version) == "integrated-provenance-v2"
+    if expected.get("deliveryReleaseId") != "infra-deutschland-%s" % expected_version:
+        raise UserError("Gepruefter Import bindet Paketversion und InfraRelease-ID nicht exakt.")
+    expected_fields = FINALIZATION_RECEIPT_V1_FIELDS | (FINALIZATION_RECEIPT_V2_PROVENANCE_FIELDS if current_operational else set())
+    if not isinstance(receipt, dict) or set(receipt) != expected_fields:
         raise UserError("Game hat keinen vollstaendigen Finalisierungsbeleg geliefert.")
     key_id, secret = _infra_credentials(env)
-    if receipt.get("schema") != "zugfolge-infra-package-finalization-receipt/v1" or receipt.get("signatureAlgorithm") != "HMAC-SHA256" or receipt.get("keyId") != key_id:
+    expected_schema = "zugfolge-infra-package-finalization-receipt/v2" if current_operational else "zugfolge-infra-package-finalization-receipt/v1"
+    if receipt.get("schema") != expected_schema or receipt.get("signatureAlgorithm") != "HMAC-SHA256" or receipt.get("keyId") != key_id:
         raise UserError("Game-Finalisierungsbeleg besitzt keine vertraute HMAC-Schluesselbindung.")
     if not isinstance(receipt_signature, str) or not SHA256.fullmatch(receipt_signature):
         raise UserError("Game-Finalisierungsbeleg besitzt keine gueltige HMAC-Signatur.")
@@ -134,6 +158,7 @@ def verify_infra_finalization_receipt(env, result, expected, expected_nonce):
     if finalization_duration < -5 * 60 or finalization_duration > FINALIZATION_MAX_DURATION_SECONDS:
         raise UserError("Game-Finalisierungsbeleg verletzt das gebundene Zeitfenster.")
 
+    signature_status = receipt.get("signatureStatus")
     bindings = {
         "importId": "importId",
         "packageId": "packageId",
@@ -141,6 +166,18 @@ def verify_infra_finalization_receipt(env, result, expected, expected_nonce):
         "manifestSha256": "manifestSha256",
         "deliveryReleaseId": "deliveryReleaseId",
     }
+    if current_operational and signature_status == "verified":
+        bindings.update({
+            "operationalProvenanceSha256": "operationalProvenanceSha256",
+            "operationalExecutionProofSha256": "operationalExecutionProofSha256",
+            "operationalValidatorSha256": "operationalValidatorSha256",
+            "operationalAuthoritySha256": "operationalAuthoritySha256",
+            "operationalRebuildAttestationSha256": "operationalRebuildAttestationSha256",
+            "operationalExecutionAuthorityAttestationSha256": "operationalExecutionAuthorityAttestationSha256",
+            "operationalOuterExecutionReceiptSha256": "operationalOuterExecutionReceiptSha256",
+            "operationalOuterExecutionCompletionSha256": "operationalOuterExecutionCompletionSha256",
+            "operationalAuthoritySourceCommit": "operationalAuthoritySourceCommit",
+        })
     for receipt_key, expected_key in bindings.items():
         if receipt.get(receipt_key) != expected.get(expected_key):
             raise UserError("Game-Finalisierungsbeleg weicht bei %s vom geprueften Import ab." % receipt_key)
@@ -150,20 +187,63 @@ def verify_infra_finalization_receipt(env, result, expected, expected_nonce):
     status_fields = (
         "operationalStateHash", "signatureStatus", "nativeOperationalValidationStatus",
         "activationBlocker", "activationEligible",
+        *(tuple(sorted(FINALIZATION_RECEIPT_V2_PROVENANCE_FIELDS)) if current_operational else ()),
     )
     if any(result.get(field) != receipt.get(field) for field in status_fields):
         raise UserError("Game-Antwort und signierter Finalisierungsbeleg widersprechen sich im Qualifikationsstatus.")
-    signature_status = receipt.get("signatureStatus")
     native_status = receipt.get("nativeOperationalValidationStatus")
     state_hash = receipt.get("operationalStateHash")
     blocker = receipt.get("activationBlocker")
     eligible = receipt.get("activationEligible")
     if signature_status == "missing":
-        consistent = native_status == "missing" and state_hash is None and blocker == "delivery-signature-missing" and eligible is False
+        current_provenance_consistent = not current_operational or (
+            receipt.get("operationalProvenanceStatus") == "missing"
+            and receipt.get("operationalProvenanceSha256") is None
+            and receipt.get("operationalExecutionProofSha256") is None
+            and receipt.get("operationalValidatorSha256") is None
+            and receipt.get("operationalAuthorityStatus") == "missing"
+            and receipt.get("operationalAuthoritySha256") is None
+            and receipt.get("operationalRebuildAttestationSha256") is None
+            and receipt.get("operationalExecutionAuthorityAttestationSha256") is None
+            and receipt.get("operationalOuterExecutionReceiptSha256") is None
+            and receipt.get("operationalOuterExecutionCompletionSha256") is None
+            and receipt.get("operationalAuthoritySourceCommit") is None
+        )
+        consistent = current_provenance_consistent and native_status == "missing" and state_hash is None and blocker == "delivery-signature-missing" and eligible is False
     elif signature_status == "verified" and native_status == "missing":
-        consistent = state_hash is None and blocker == "operational-v2-native-validation-missing" and eligible is False
+        current_provenance_consistent = not current_operational or (
+            receipt.get("operationalProvenanceStatus") == "verified"
+            and receipt.get("operationalAuthorityStatus") == "verified"
+            and all(
+                isinstance(receipt.get(field), str) and SHA256.fullmatch(receipt[field])
+                for field in (
+                    "operationalProvenanceSha256", "operationalExecutionProofSha256", "operationalValidatorSha256",
+                    "operationalAuthoritySha256", "operationalRebuildAttestationSha256",
+                    "operationalExecutionAuthorityAttestationSha256", "operationalOuterExecutionReceiptSha256",
+                    "operationalOuterExecutionCompletionSha256",
+                )
+            )
+            and isinstance(receipt.get("operationalAuthoritySourceCommit"), str)
+            and re.fullmatch(r"[a-f0-9]{40}", receipt["operationalAuthoritySourceCommit"])
+        )
+        consistent = current_provenance_consistent and state_hash is None and blocker == "operational-v2-native-validation-missing" and eligible is False
     elif signature_status == "verified" and native_status == "verified":
-        consistent = isinstance(state_hash, str) and SHA256.fullmatch(state_hash) and state_hash == expected.get("operationalStateHash") and blocker is None and eligible is True
+        current_provenance_consistent = not current_operational or (
+            receipt.get("operationalProvenanceStatus") == "verified"
+            and receipt.get("operationalAuthorityStatus") == "verified"
+            and all(
+                isinstance(receipt.get(field), str) and SHA256.fullmatch(receipt[field])
+                for field in (
+                    "operationalProvenanceSha256", "operationalExecutionProofSha256", "operationalValidatorSha256",
+                    "operationalAuthoritySha256", "operationalRebuildAttestationSha256",
+                    "operationalExecutionAuthorityAttestationSha256", "operationalOuterExecutionReceiptSha256",
+                    "operationalOuterExecutionCompletionSha256",
+                )
+            )
+            and isinstance(receipt.get("operationalAuthoritySourceCommit"), str)
+            and re.fullmatch(r"[a-f0-9]{40}", receipt["operationalAuthoritySourceCommit"])
+        )
+        consistent = current_provenance_consistent and isinstance(state_hash, str) and SHA256.fullmatch(state_hash) and state_hash == expected.get("operationalStateHash") and blocker is None and eligible is True
     else:
         consistent = False
     if not consistent:

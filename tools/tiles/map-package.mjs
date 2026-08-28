@@ -28,6 +28,15 @@ import { validateMapAssetNoticeBindings, validateMapAssetNotices } from "./map-a
 import { validateStaticMapQuality } from "./static-map-quality.mjs";
 import { inspectTrainMapProjection } from "./train-map-projection.mjs";
 import { validateOperationalInfrastructureV2NativeReceipt } from "../region-import/materialize-operational-infrastructure-v2.mjs";
+import {
+  GERMANY_OPERATIONAL_INTEGRATED_PRODUCER_KIND,
+  germanyOperationalProvenanceSha256,
+  validateGermanyOperationalProvenance,
+} from "../region-import/germany/operational-infrastructure-v2-execution-pins.mjs";
+import {
+  operationalBuildAuthoritySha256,
+  validateOperationalBuildAuthority,
+} from "../region-import/germany/operational-build-authority.mjs";
 
 const SHA256 = /^[a-f0-9]{64}$/;
 const SAFE_ID = /^[a-z0-9](?:[a-z0-9._-]{0,126}[a-z0-9])?$/;
@@ -42,6 +51,8 @@ const PACKAGE_MANIFEST_V2 = "zugfolge-map-package/v2";
 const STATIC_MAP_PACKAGE_MANIFEST_V2 = "zugfolge-static-map-package/v2";
 const ANNUAL_PACKAGE_VERSION = /^(?<year>20\d{2})\.(?<patch>[1-9]\d*)$/u;
 const STATIC_ANNUAL_PACKAGE_VERSION = /^(?<year>20\d{2})\.(?<patch>[1-9]\d*)-v2-unsigned$/u;
+const LEGACY_DELIVERY_V2_VERSIONS = new Set(["2026.1", "2026.3", "2026.4"]);
+const PROVENANCE_DELIVERY_V2_VERSION = "2026.5";
 const ANNUAL_PACKAGE_SCHEMAS = new Set([
   PACKAGE_PLAN_V1,
   PACKAGE_PLAN_V2,
@@ -188,6 +199,61 @@ function isMapRuntimeV2PackageSchema(schema) {
 
 function isAssetNoticePackageSchema(schema) {
   return isStaticMapPackageSchema(schema) || [PACKAGE_SPEC_V2, PACKAGE_MANIFEST_V2].includes(schema);
+}
+
+export function germanyOperationalDeliveryV2Generation(version, label = "Delivery-v2-Paketversion") {
+  invariant(typeof version === "string", `${label} fehlt.`);
+  if (version === PROVENANCE_DELIVERY_V2_VERSION) return "integrated-provenance-v2";
+  if (LEGACY_DELIVERY_V2_VERSIONS.has(version)) return "legacy-v1";
+  throw new Error(`${label} ist nicht als Deutschland-Delivery-v2-Version freigegeben.`);
+}
+
+export function validateGermanyOperationalDeliveryV2Pair(version, releaseId, label = "Delivery-v2") {
+  const generation = germanyOperationalDeliveryV2Generation(version, `${label}.packageVersion`);
+  invariant(releaseId === `infra-deutschland-${version}`, `${label} bindet Paketversion und InfraRelease-ID nicht exakt.`);
+  return generation;
+}
+
+function validateOperationalProvenanceSource(value, schema, version, label = "operationalProvenanceSource") {
+  if (![PACKAGE_PLAN_V2, PACKAGE_SPEC_V2].includes(schema)) {
+    invariant(value === undefined, `${label} ist ausschließlich im integrierten Operational-v2-Paketvertrag zulässig.`);
+    return undefined;
+  }
+  const generation = germanyOperationalDeliveryV2Generation(version);
+  if (generation === "legacy-v1") {
+    invariant(value === undefined, `${label} ist fuer bekannte Legacy-Delivery-v2-Versionen nicht zulaessig.`);
+    return undefined;
+  }
+  invariant(value !== null && typeof value === "object" && !Array.isArray(value), `${label} fehlt im aktuellen Deutschland-Operational-v2-Vertrag.`);
+  invariant(Object.keys(value).sort().join(",") === "publicationReceiptFile", `${label} besitzt unerwartete oder fehlende Felder.`);
+  validatePortableRelativePath(value.publicationReceiptFile, `${label}.publicationReceiptFile`);
+  invariant(
+    value.publicationReceiptFile.endsWith("/operational-infrastructure-v2.publication-receipt.json"),
+    `${label} muss das typisierte Operational-v2-Publication-Receipt benennen.`,
+  );
+  return value;
+}
+
+function validateOperationalAuthoritySource(value, schema, version, label = "operationalAuthoritySource") {
+  if (![PACKAGE_PLAN_V2, PACKAGE_SPEC_V2].includes(schema)) {
+    invariant(value === undefined, `${label} ist ausschließlich im aktuellen integrierten Operational-v2-Paketvertrag zulässig.`);
+    return undefined;
+  }
+  const generation = germanyOperationalDeliveryV2Generation(version);
+  if (generation === "legacy-v1") {
+    invariant(value === undefined, `${label} ist fuer bekannte Legacy-Delivery-v2-Versionen nicht zulaessig.`);
+    return undefined;
+  }
+  invariant(value !== null && typeof value === "object" && !Array.isArray(value),
+    `${label} fehlt im aktuellen Deutschland-Operational-v2-Vertrag.`);
+  invariant(Object.keys(value).sort().join(",") === "buildEvidenceSpecFile",
+    `${label} besitzt unerwartete oder fehlende Felder.`);
+  validatePortableRelativePath(value.buildEvidenceSpecFile, `${label}.buildEvidenceSpecFile`);
+  invariant(
+    value.buildEvidenceSpecFile === "tools/tiles/map-release-build-evidence.annual-2026.5.spec.json",
+    `${label} muss die exakte aktuelle Build-Evidence-v3-Spezifikation benennen.`,
+  );
+  return value;
 }
 
 function validateStaticMapClaims(claims, label = "claims") {
@@ -475,6 +541,8 @@ export function validateMapPackageSpec(spec) {
   } else {
     invariant(normalized.releaseId === undefined && normalized.claims === undefined && normalized.cutover === undefined, "Infra-/Legacy-Paketvertraege duerfen keine statischen Kartenrelease-Claims einschleusen.");
   }
+  validateOperationalProvenanceSource(normalized.operationalProvenanceSource, normalized.schema, normalized.version);
+  validateOperationalAuthoritySource(normalized.operationalAuthoritySource, normalized.schema, normalized.version);
   invariant(Number.isSafeInteger(normalized.partBytes) && normalized.partBytes > 0 && normalized.partBytes < MAX_MAP_PACKAGE_PART_BYTES, "Teilgröße muss positiv und kleiner als 2 GiB sein.");
   invariant(Array.isArray(normalized.artifacts) && normalized.artifacts.length === 2, "Kartenpaket braucht genau zwei PMTiles-Artefakte.");
   validateAuxiliaryComposition(normalized.auxiliaryFiles, normalized.schema);
@@ -653,6 +721,8 @@ async function inventoryAuxiliaryTree(sourceRoots, tree) {
 export async function expandMapPackagePlan(plan, sourceRoot) {
   invariant([PACKAGE_PLAN_V1, PACKAGE_PLAN_V2, STATIC_MAP_PACKAGE_PLAN_V2].includes(plan?.schema), "Unbekanntes Kartenpaket-Plan-Schema.");
   assertNoPrivateMetadata(plan);
+  validateOperationalProvenanceSource(plan.operationalProvenanceSource, plan.schema, plan.version);
+  validateOperationalAuthoritySource(plan.operationalAuthoritySource, plan.schema, plan.version);
   invariant(Array.isArray(plan.auxiliaryFiles), "Kartenpaket-Plan braucht direkte Hilfsdateien.");
   invariant(Array.isArray(plan.auxiliaryTrees) && plan.auxiliaryTrees.length > 0, "Kartenpaket-Plan braucht lokale Glyphen-/Sprite-Verzeichnisse.");
   const resolvedSourceRoots = await resolveSourceRoots(sourceRoot);
@@ -720,6 +790,12 @@ export async function expandMapPackagePlan(plan, sourceRoot) {
     ...(plan.schema === STATIC_MAP_PACKAGE_PLAN_V2 ? { releaseId: plan.releaseId, claims: plan.claims, cutover: plan.cutover } : {}),
     ...(plan.partBytes === undefined ? {} : { partBytes: plan.partBytes }),
     runtime: plan.runtime,
+    ...(plan.schema === PACKAGE_PLAN_V2 && plan.operationalProvenanceSource !== undefined
+      ? { operationalProvenanceSource: plan.operationalProvenanceSource }
+      : {}),
+    ...(plan.schema === PACKAGE_PLAN_V2 && plan.operationalAuthoritySource !== undefined
+      ? { operationalAuthoritySource: plan.operationalAuthoritySource }
+      : {}),
     artifacts: plan.artifacts,
     auxiliaryFiles: [...directAuxiliaryFiles, ...expandedTrees],
   };
@@ -731,6 +807,7 @@ export function validateMapPackageManifest(manifest) {
   assertNoPrivateMetadata(manifest);
   validateId(manifest.packageId, "Paket-ID");
   validateId(manifest.version, "Paketversion");
+  if (manifest.schema === PACKAGE_MANIFEST_V2) germanyOperationalDeliveryV2Generation(manifest.version);
   if (isStaticMapPackageSchema(manifest.schema)) {
     validateId(manifest.releaseId, "Kartenrelease-ID");
     validateStaticMapClaims(manifest.claims);
@@ -1246,6 +1323,11 @@ function validateStaticMapReleaseBinding(contract, releaseDocument) {
 function validateDeliveryV2PackageBinding(contract, releaseDocument) {
   if (![PACKAGE_SPEC_V2, PACKAGE_MANIFEST_V2].includes(contract.schema)) return;
   invariant(releaseDocument?.schema === DELIVERY_RELEASE_SCHEMA_V2, "Integriertes Operational-v2-Paket braucht genau einen Delivery-v2-Releasevertrag.");
+  const generation = validateGermanyOperationalDeliveryV2Pair(
+    contract.version,
+    releaseDocument.releaseId,
+    "Delivery-v2-Paketbindung",
+  );
   invariant(
     releaseDocument.packageId === contract.packageId
       && releaseDocument.packageVersion === contract.version
@@ -1285,6 +1367,26 @@ function validateDeliveryV2PackageBinding(contract, releaseDocument) {
       && SHA256.test(releaseDocument.bindings?.mapReleaseHash),
     "Delivery-v2 bindet nicht denselben Operational-v2-Zustand oder keine Infra-/Kartenrelease-Hashes.",
   );
+  if (generation === "integrated-provenance-v2") {
+    const provenance = validateGermanyOperationalProvenance(releaseDocument.operationalProvenance);
+    const authority = validateOperationalBuildAuthority(releaseDocument.operationalAuthority);
+    invariant(
+      provenance.producerKind === GERMANY_OPERATIONAL_INTEGRATED_PRODUCER_KIND
+        && provenance.releaseEvidenceEligible === true
+        && provenance.productionActivationEligible === true
+        && releaseDocument.bindings?.operationalProvenanceSha256 === germanyOperationalProvenanceSha256(provenance)
+        && releaseDocument.bindings?.operationalAuthoritySha256 === operationalBuildAuthoritySha256(authority),
+      "Delivery-v2-Paket bindet keine atomar integrierte Provenienz und Operational-Build-Authority.",
+    );
+  } else {
+    invariant(
+      !Object.hasOwn(releaseDocument, "operationalProvenance")
+        && !Object.hasOwn(releaseDocument.bindings ?? {}, "operationalProvenanceSha256")
+        && !Object.hasOwn(releaseDocument, "operationalAuthority")
+        && !Object.hasOwn(releaseDocument.bindings ?? {}, "operationalAuthoritySha256"),
+      "Legacy-Delivery-v2-Paket darf keine aktuelle Operational-v2-Provenienz oder Build-Authority tragen.",
+    );
+  }
 }
 
 function createAuxiliaryContentValidator(descriptor) {

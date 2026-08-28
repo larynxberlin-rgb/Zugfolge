@@ -23,13 +23,14 @@ async function readStructuredReceipt() {
   }
 }
 
-const [specificationPath, candidatePath, candidateMovementRouteTemplatesPath, reportPath, nativeExecutablePath, validatorRebuildSpecificationPath, validatorRebuildEvidencePath, outputPath, ...extra] = process.argv.slice(2);
-if (!specificationPath || !candidatePath || !candidateMovementRouteTemplatesPath || !reportPath || !nativeExecutablePath || !validatorRebuildSpecificationPath || !validatorRebuildEvidencePath || !outputPath || extra.length > 0) {
-  throw new Error("Aufruf: capture-operational-infrastructure-v2-native-receipt.mjs SPEC.json CANDIDATE.json CANDIDATE-SIDECAR.json REPORT.json NATIVE-EXECUTABLE VALIDATOR-REBUILD-SPEC.json VALIDATOR-REBUILD-EVIDENCE.json OUTPUT.native-receipt.json < RECEIPT.json");
+const [executionPinsPath, specificationPath, candidatePath, candidateMovementRouteTemplatesPath, reportPath, nativeExecutablePath, validatorRebuildSpecificationPath, validatorRebuildEvidencePath, outputPath, ...extra] = process.argv.slice(2);
+if (!executionPinsPath || !specificationPath || !candidatePath || !candidateMovementRouteTemplatesPath || !reportPath || !nativeExecutablePath || !validatorRebuildSpecificationPath || !validatorRebuildEvidencePath || !outputPath || extra.length > 0) {
+  throw new Error("Aufruf: capture-operational-infrastructure-v2-native-receipt.mjs EXECUTION-PINS.json SPEC.json CANDIDATE.json CANDIDATE-SIDECAR.json REPORT.json NATIVE-EXECUTABLE VALIDATOR-REBUILD-SPEC.json VALIDATOR-REBUILD-EVIDENCE.json OUTPUT.native-receipt.json < RECEIPT.json");
 }
 
 const result = await captureGermanyOperationalInfrastructureV2NativeReceipt({
   nativeReceipt: await readStructuredReceipt(),
+  executionPinsPath: resolve(executionPinsPath),
   specificationPath: resolve(specificationPath),
   candidatePath: resolve(candidatePath),
   candidateMovementRouteTemplatesPath: resolve(candidateMovementRouteTemplatesPath),

@@ -22,18 +22,35 @@ import {
   OperationalInfrastructureDerivationBlockedError,
   OperationalInfrastructureDerivationIncompleteError,
   assessGermanyOperationalInfrastructureV2Readiness,
+  runGermanyOperationalInfrastructureV2,
   validateGermanyOperationalInfrastructureV2NativeReceipt,
   validateGermanyOperationalInfrastructureV2NativeReport,
   validateGermanyOperationalInfrastructureV2Specification,
 } from "./operational-infrastructure-v2.mjs";
+import {
+  executeGermanyOperationalPinnedValidator,
+  forensicGermanyOperationalProvenance,
+  GERMANY_OPERATIONAL_EXECUTION_PINS_SCHEMA,
+  GERMANY_OPERATIONAL_INTEGRATED_PRODUCER_KIND,
+  integratedGermanyOperationalProvenance,
+  loadGermanyOperationalExecutionPins,
+  proveGermanyOperationalExecutionContext,
+  validateGermanyOperationalExecutionProofAgainstPins,
+  validateGermanyOperationalProvenance,
+} from "./operational-infrastructure-v2-execution-pins.mjs";
+import {
+  GERMANY_OPERATIONAL_OUTER_EXECUTION_RECEIPT_SCHEMA,
+  verifyGermanyOperationalOuterExecutionReceipt,
+} from "./operational-infrastructure-v2-outer-execution-receipt.mjs";
 import { verifyOperationalValidatorRebuildEvidence } from "./operational-validator-rebuild-evidence.mjs";
 
-export const GERMANY_OPERATIONAL_NATIVE_RECEIPT_CAPTURE_SCHEMA = "zugfolge-germany-operational-v2-native-receipt-capture/v1";
+export const GERMANY_OPERATIONAL_NATIVE_RECEIPT_CAPTURE_SCHEMA = "zugfolge-germany-operational-v2-native-receipt-capture/v2";
 export const GERMANY_OPERATIONAL_NATIVE_RECEIPT_CAPTURE_CLAIM_SCHEMA = "zugfolge-germany-operational-v2-native-receipt-capture-claim/v1";
-export const GERMANY_OPERATIONAL_PUBLICATION_RECEIPT_SCHEMA = "zugfolge-germany-operational-v2-publication-receipt/v1";
+export const GERMANY_OPERATIONAL_PUBLICATION_RECEIPT_SCHEMA = "zugfolge-germany-operational-v2-publication-receipt/v2";
 export const GERMANY_OPERATIONAL_PUBLICATION_CLAIM_SCHEMA = "zugfolge-germany-operational-v2-publication-claim/v2";
 export const GERMANY_OPERATIONAL_PUBLICATION_ENTRYPOINT = "tools/region-import/germany/publish-operational-infrastructure-v2.mjs";
 export const GERMANY_OPERATIONAL_NATIVE_RECEIPT_CAPTURE_ENTRYPOINT = "tools/region-import/germany/capture-operational-infrastructure-v2-native-receipt.mjs";
+export const GERMANY_OPERATIONAL_INTEGRATED_RUNNER_ENTRYPOINT = "tools/region-import/germany/run-capture-operational-infrastructure-v2.mjs";
 export const GERMANY_OPERATIONAL_VALIDATOR_REBUILD_EVIDENCE_SCHEMA = "zugfolge-operational-validator-rebuild-evidence/v2";
 export const GERMANY_OPERATIONAL_PUBLICATION_EXECUTION_FILES = Object.freeze({
   wrapper: GERMANY_OPERATIONAL_PUBLICATION_ENTRYPOINT,
@@ -44,6 +61,9 @@ export const GERMANY_OPERATIONAL_PUBLICATION_EXECUTION_FILES = Object.freeze({
   operationalBinding: "tools/region-import/operational-infrastructure-binding.mjs",
   validatorRebuildBootstrap: "tools/region-import/germany/operational-validator-rebuild-bootstrap.mjs",
   validatorRebuildVerifier: "tools/region-import/germany/operational-validator-rebuild-evidence.mjs",
+  executionPinsImplementation: "tools/region-import/germany/operational-infrastructure-v2-execution-pins.mjs",
+  annualCreateNewArtifact: "tools/region-import/germany/annual-create-new-artifact.mjs",
+  outerExecutionReceiptVerifier: "tools/region-import/germany/operational-infrastructure-v2-outer-execution-receipt.mjs",
 });
 
 const REPOSITORY_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
@@ -61,6 +81,7 @@ const SIDECAR_FILE = "operational-infrastructure-v2.movement-route-templates-v2.
 const PUBLICATION_RECEIPT_FILE = "operational-infrastructure-v2.publication-receipt.json";
 const NATIVE_RECEIPT_FILE = "operational-infrastructure-v2.native-receipt.json";
 const OWNERSHIP_ANCHOR_SUFFIX = ".ownership-anchor";
+const OPERATIONAL_RUNNER_BUILD_CONTEXT = "source-noneligible-v1";
 const PUBLICATION_STAGED_SOURCE_FILES = Object.freeze([
   SIDECAR_FILE,
   OPERATIONAL_FILE,
@@ -335,6 +356,18 @@ async function smallJsonSource(pathInput, label) {
   }
 }
 
+function smallJsonBytes(bytesInput, label) {
+  invariant(Buffer.isBuffer(bytesInput), `${label} muss als unveraenderlicher Bytepuffer vorliegen.`);
+  invariant(bytesInput.length > 0, `${label} ist leer.`);
+  invariant(bytesInput.length <= MAX_SMALL_JSON_BYTES, `${label} ueberschreitet das Limit fuer typisierte JSON-Metadaten.`);
+  const bytes = Buffer.from(bytesInput);
+  return {
+    bytes,
+    value: parseJson(bytes, label),
+    proof: { bytes: bytes.length, sha256: createHash("sha256").update(bytes).digest("hex") },
+  };
+}
+
 function validatePortableRelativePath(value, label) {
   nonEmptyString(value, label);
   invariant(!isAbsolute(value) && !value.includes("\\") && !value.split("/").includes("..") && value !== ".", `${label} muss ein sicherer Workspace-relativer POSIX-Pfad sein.`);
@@ -605,7 +638,7 @@ async function loadAndVerifyValidatorRebuild({
 }
 
 function validateCaptureReceipt(value, expectedReleaseId) {
-  exactKeys(value, ["schema", "infraReleaseId", "nativeReceipt", "specification", "sources", "producer", "validatorRebuild"], "Native-Receipt-Capture");
+  exactKeys(value, ["schema", "infraReleaseId", "operationalProvenance", "nativeReceipt", "specification", "sources", "producer", "validatorRebuild"], "Native-Receipt-Capture");
   invariant(value.schema === GERMANY_OPERATIONAL_NATIVE_RECEIPT_CAPTURE_SCHEMA, "Native-Receipt-Capture besitzt ein unbekanntes Schema.");
   invariant(value.infraReleaseId === expectedReleaseId, "Native-Receipt-Capture bindet nicht die erwartete InfraRelease-ID.");
   validateFileProof(value.specification, "Native-Receipt-Capture.specification");
@@ -627,6 +660,18 @@ function validateCaptureReceipt(value, expectedReleaseId) {
   const nativeReceipt = validateGermanyOperationalInfrastructureV2NativeReceipt(value.nativeReceipt, expectedReleaseId, {
     expectedMovementRouteTemplatesFile: expectedSidecarFile,
   });
+  const operationalProvenance = validateGermanyOperationalProvenance(value.operationalProvenance, { nativeReceipt });
+  if (operationalProvenance.producerKind === GERMANY_OPERATIONAL_INTEGRATED_PRODUCER_KIND) {
+    invariant(sameCanonicalValue(operationalProvenance.executionProof.validator.preserved, value.producer.executable),
+      "Native-Receipt-Capture bindet Execution-Proof und Validator-Binary verschieden.");
+    invariant(sameCanonicalValue(operationalProvenance.executionProof.rebuild, {
+      specification: value.validatorRebuild.specification,
+      evidence: value.validatorRebuild.evidence,
+      sourceCommit: value.validatorRebuild.sourceCommit,
+    }), "Native-Receipt-Capture bindet Execution-Proof und Validator-Rebuild verschieden.");
+    invariant(sameCanonicalValue(operationalProvenance.executionProof.runner.entrypoint, value.producer.captureEntrypoint),
+      "Native-Receipt-Capture bindet integrierten Runner und Capture-Entrypoint verschieden.");
+  }
   invariant(nativeReceipt.candidate.bytes === value.sources.candidate.bytes
     && nativeReceipt.candidate.sha256 === value.sources.candidate.sha256
     && nativeReceipt.candidate.stateHash === value.sources.candidate.stateHash,
@@ -640,6 +685,10 @@ function validateCaptureReceipt(value, expectedReleaseId) {
     && nativeReceipt.movementRouteTemplates.timetableTransferSetSha256 === value.sources.movementRouteTemplates.timetableTransferSetSha256,
   "Native-Receipt-Capture bindet Movement-Sidecar und natives Receipt verschieden.");
   return value;
+}
+
+export function validateGermanyOperationalInfrastructureV2NativeReceiptCapture(value, expectedReleaseId) {
+  return validateCaptureReceipt(value, expectedReleaseId);
 }
 
 function validateNativeTripletBindings({ specification, specificationProof, capture, report, candidateProof, movementProof, reportProof }) {
@@ -693,6 +742,37 @@ async function loadAndValidateCapture({
   if (kind !== "conservative") throw new OperationalInfrastructureDerivationBlockedError(assessGermanyOperationalInfrastructureV2Readiness(specificationSource.value));
   const capture = validateCaptureReceipt(captureSource.value, specificationSource.value.infraReleaseId);
   invariant(captureSource.bytes.equals(serializeGermanyOperationalPublicationJson(capture)), "Native-Receipt-Capture ist nicht kanonisch serialisiert.");
+  const executionPinsSource = await loadGermanyOperationalExecutionPins({
+    workspaceRoot,
+    executionPinsPath: resolvePortablePath(workspaceRoot, capture.operationalProvenance.executionPins.file, "Native-Receipt-Capture-Execution-Pins"),
+    expectedReleaseId: capture.infraReleaseId,
+  });
+  invariant(sameCanonicalValue(executionPinsSource.proof, capture.operationalProvenance.executionPins),
+    "Native-Receipt-Capture-Execution-Pins drifteten von ihrem Bytebeleg.");
+  if (capture.operationalProvenance.producerKind === GERMANY_OPERATIONAL_INTEGRATED_PRODUCER_KIND) {
+    validateGermanyOperationalExecutionProofAgainstPins(
+      capture.operationalProvenance.executionProof,
+      executionPinsSource.value,
+      { nativeReceipt: capture.nativeReceipt },
+    );
+    const currentRunnerProof = await proveGermanyOperationalExecutionContext({
+      workspaceRoot,
+      executionPins: executionPinsSource.value,
+      verifyCurrentInvocation: false,
+    });
+    invariant(sameCanonicalValue(currentRunnerProof, capture.operationalProvenance.executionProof.runner),
+      "Native-Receipt-Capture-Runner-/Importclosure driftete vom integrierten Ausfuehrungsbeleg.");
+    for (const argumentFile of capture.operationalProvenance.executionProof.invocation.argumentFiles) {
+      proofMatches(
+        await regularFileProof(
+          resolvePortablePath(workspaceRoot, argumentFile.file, "Native-Receipt-Capture-Argumentdatei"),
+          "Native-Receipt-Capture-Argumentdatei",
+        ),
+        argumentFile,
+        "Native-Receipt-Capture-Argumentdatei",
+      );
+    }
+  }
   const expectedFiles = {
     specification: portableRelativePath(workspaceRoot, specificationPath, "Operational-v2-Spezifikation"),
     nativeReceipt: portableRelativePath(workspaceRoot, nativeReceiptPath, "Native-Receipt-Capture"),
@@ -987,8 +1067,10 @@ async function recoverCaptureClaimIfPresent({ parent, output, expectedProof, exp
   return { path: output, receipt: expectedReceipt, ...expectedProof, recovery: "completed" };
 }
 
-export async function captureGermanyOperationalInfrastructureV2NativeReceipt({
+async function captureGermanyOperationalInfrastructureV2NativeReceiptCore({
   nativeReceipt,
+  operationalProvenance,
+  executionPinsSource,
   specificationPath,
   candidatePath,
   candidateMovementRouteTemplatesPath,
@@ -999,13 +1081,14 @@ export async function captureGermanyOperationalInfrastructureV2NativeReceipt({
   outputPath,
   workspaceRoot = REPOSITORY_ROOT,
   captureEntrypointPath = resolve(REPOSITORY_ROOT, GERMANY_OPERATIONAL_NATIVE_RECEIPT_CAPTURE_ENTRYPOINT),
+  expectedCaptureEntrypoint = GERMANY_OPERATIONAL_NATIVE_RECEIPT_CAPTURE_ENTRYPOINT,
   verifyValidatorRebuildEvidence = verifyOperationalValidatorRebuildEvidence,
   hooks = {},
 }) {
   const root = resolve(workspaceRoot);
   const [executableProof, captureEntrypoint] = await Promise.all([
     regularFileProof(nativeExecutablePath, "Nativer Operational-v2-Compiler vor Validator-Ausfuehrung"),
-    captureScriptProof(root, captureEntrypointPath, GERMANY_OPERATIONAL_NATIVE_RECEIPT_CAPTURE_ENTRYPOINT),
+    captureScriptProof(root, captureEntrypointPath, expectedCaptureEntrypoint),
   ]);
   const executableBinding = {
     file: portableRelativePath(root, nativeExecutablePath, "Nativer Operational-v2-Compiler"),
@@ -1016,6 +1099,12 @@ export async function captureGermanyOperationalInfrastructureV2NativeReceipt({
   const specification = await smallJsonSource(specificationPath, "Operational-v2-Spezifikation");
   const kind = validateGermanyOperationalInfrastructureV2Specification(specification.value);
   if (kind !== "conservative") throw new OperationalInfrastructureDerivationBlockedError(assessGermanyOperationalInfrastructureV2Readiness(specification.value));
+  const executionPins = executionPinsSource?.value;
+  invariant(executionPins?.schema === GERMANY_OPERATIONAL_EXECUTION_PINS_SCHEMA
+    && executionPins.releaseId === specification.value.infraReleaseId,
+  "Native-Receipt-Capture besitzt keine passenden versionierten Execution-Pins.");
+  invariant(sameCanonicalValue(operationalProvenance?.executionPins, executionPinsSource.proof),
+    "Native-Receipt-Capture-Provenienz bindet andere Execution-Pins-Bytes.");
   const expectedSidecarFile = nativeCandidateSidecarName(candidatePath);
   invariant(basename(candidateMovementRouteTemplatesPath) === expectedSidecarFile
     && resolve(candidateMovementRouteTemplatesPath) === join(dirname(resolve(candidatePath)), expectedSidecarFile),
@@ -1039,9 +1128,17 @@ export async function captureGermanyOperationalInfrastructureV2NativeReceipt({
     expectedValidator: executableBinding,
     verifyValidatorRebuildEvidence,
   });
+  invariant(executionPins.validator.file === executableBinding.file
+    && executionPins.validator.bytes === executableBinding.bytes
+    && executionPins.validator.sha256 === executableBinding.sha256
+    && executionPins.validator.buildCommit === validatorRebuild.binding.sourceCommit
+    && executionPins.validator.rebuildSpecification === validatorRebuild.binding.specification.file
+    && executionPins.validator.rebuildEvidence === validatorRebuild.binding.evidence.file,
+  "Native-Receipt-Capture driftet von Validator-, Rebuild- oder Commit-Pins.");
   const capture = validateCaptureReceipt({
     schema: GERMANY_OPERATIONAL_NATIVE_RECEIPT_CAPTURE_SCHEMA,
     infraReleaseId: specification.value.infraReleaseId,
+    operationalProvenance,
     nativeReceipt: validatedNativeReceipt,
     specification: { file: portableRelativePath(root, specificationPath, "Operational-v2-Spezifikation"), ...specification.proof },
     sources: {
@@ -1205,6 +1302,176 @@ export async function captureGermanyOperationalInfrastructureV2NativeReceipt({
   if (finalAuditError) throw finalAuditError;
   if (finalCloseError) throw finalCloseError;
   return result;
+}
+
+export async function captureGermanyOperationalInfrastructureV2NativeReceipt({
+  nativeReceipt,
+  executionPinsPath,
+  specificationPath,
+  candidatePath,
+  candidateMovementRouteTemplatesPath,
+  reportPath,
+  nativeExecutablePath,
+  validatorRebuildSpecificationPath,
+  validatorRebuildEvidencePath,
+  outputPath,
+  workspaceRoot = REPOSITORY_ROOT,
+  captureEntrypointPath = resolve(REPOSITORY_ROOT, GERMANY_OPERATIONAL_NATIVE_RECEIPT_CAPTURE_ENTRYPOINT),
+  verifyValidatorRebuildEvidence = verifyOperationalValidatorRebuildEvidence,
+  hooks = {},
+}) {
+  const root = resolve(workspaceRoot);
+  const specification = await smallJsonSource(specificationPath, "Operational-v2-Spezifikation fuer forensischen Capture");
+  validateGermanyOperationalInfrastructureV2Specification(specification.value);
+  const executionPinsSource = await loadGermanyOperationalExecutionPins({
+    workspaceRoot: root,
+    executionPinsPath,
+    expectedReleaseId: specification.value.infraReleaseId,
+  });
+  return captureGermanyOperationalInfrastructureV2NativeReceiptCore({
+    nativeReceipt,
+    operationalProvenance: forensicGermanyOperationalProvenance(executionPinsSource.proof),
+    executionPinsSource,
+    specificationPath,
+    candidatePath,
+    candidateMovementRouteTemplatesPath,
+    reportPath,
+    nativeExecutablePath,
+    validatorRebuildSpecificationPath,
+    validatorRebuildEvidencePath,
+    outputPath,
+    workspaceRoot: root,
+    captureEntrypointPath,
+    expectedCaptureEntrypoint: GERMANY_OPERATIONAL_NATIVE_RECEIPT_CAPTURE_ENTRYPOINT,
+    verifyValidatorRebuildEvidence,
+    hooks,
+  });
+}
+
+export async function runAndCaptureGermanyOperationalInfrastructureV2({
+  executionPinsPath,
+  specificationPath,
+  sourceRoot,
+  candidatePath,
+  candidateMovementRouteTemplatesPath,
+  reportPath,
+  outputPath,
+  workspaceRoot = REPOSITORY_ROOT,
+  runnerEntrypointPath = resolve(REPOSITORY_ROOT, GERMANY_OPERATIONAL_INTEGRATED_RUNNER_ENTRYPOINT),
+  verifyValidatorRebuildEvidence = verifyOperationalValidatorRebuildEvidence,
+  hooks = {},
+}) {
+  invariant(OPERATIONAL_RUNNER_BUILD_CONTEXT === "anchored-stdin-bundle-v1",
+    "Release-faehiger Operational-v2-Run-and-Capture darf nur aus dem kausal gehaltenen ESM-Bundle laufen.");
+  const root = resolve(workspaceRoot);
+  const specificationSource = await smallJsonSource(specificationPath, "Operational-v2-Spezifikation fuer integrierten Runner");
+  const kind = validateGermanyOperationalInfrastructureV2Specification(specificationSource.value);
+  if (kind !== "conservative") throw new OperationalInfrastructureDerivationBlockedError(assessGermanyOperationalInfrastructureV2Readiness(specificationSource.value));
+  const executionPinsSource = await loadGermanyOperationalExecutionPins({
+    workspaceRoot: root,
+    executionPinsPath,
+    expectedReleaseId: specificationSource.value.infraReleaseId,
+  });
+  const pins = executionPinsSource.value;
+  const runnerEntrypoint = portableRelativePath(root, runnerEntrypointPath, "Operational-v2-integrierter Runner-Entrypoint");
+  invariant(runnerEntrypoint === GERMANY_OPERATIONAL_INTEGRATED_RUNNER_ENTRYPOINT
+    && pins.runner.entrypoint.file === runnerEntrypoint,
+  "Operational-v2-Execution-Pins bindet nicht den festgelegten integrierten Runner.");
+  const runnerProof = await proveGermanyOperationalExecutionContext({ workspaceRoot: root, executionPins: pins });
+  const nativeExecutablePath = resolvePortablePath(root, pins.validator.file, "Operational-v2-Execution-Pins.validator.file");
+  const validatorRebuildSpecificationPath = resolvePortablePath(root, pins.validator.rebuildSpecification, "Operational-v2-Execution-Pins.validator.rebuildSpecification");
+  const validatorRebuildEvidencePath = resolvePortablePath(root, pins.validator.rebuildEvidence, "Operational-v2-Execution-Pins.validator.rebuildEvidence");
+  const executableProof = await regularFileProof(nativeExecutablePath, "Operational-v2-preserved-Validator vor integriertem Runner");
+  const executableBinding = { file: pins.validator.file, ...executableProof };
+  invariant(executableBinding.bytes === pins.validator.bytes && executableBinding.sha256 === pins.validator.sha256,
+    "Operational-v2-preserved-Validator driftet von Execution-Pins.");
+  const validatorRebuild = await loadAndVerifyValidatorRebuild({
+    workspaceRoot: root,
+    validatorRebuildSpecificationPath,
+    validatorRebuildEvidencePath,
+    expectedReleaseId: specificationSource.value.infraReleaseId,
+    expectedValidator: executableBinding,
+    verifyValidatorRebuildEvidence,
+  });
+  invariant(validatorRebuild.binding.sourceCommit === pins.validator.buildCommit,
+    "Operational-v2-Execution-Pins und Validator-Rebuild binden verschiedene Build-Commits.");
+
+  let execution;
+  let captureResult;
+  const externalBeforeCleanup = hooks.beforeCandidateTripletCleanup;
+  const runnerHooks = {
+    ...hooks,
+    beforeCandidateTripletCleanup: async ({ claim, recovery }) => {
+      const provenance = validateGermanyOperationalProvenance(claim.operationalProvenance, { nativeReceipt: claim.nativeReceipt });
+      invariant(provenance.producerKind === GERMANY_OPERATIONAL_INTEGRATED_PRODUCER_KIND
+        && provenance.releaseEvidenceEligible === true
+        && provenance.productionActivationEligible === true,
+      "Candidate-Triplet-Recovery besitzt keine releasefaehige integrierte Provenienz.");
+      invariant(sameCanonicalValue(provenance.executionPins, executionPinsSource.proof),
+        "Candidate-Triplet-Recovery bindet andere Execution-Pins.");
+      validateGermanyOperationalExecutionProofAgainstPins(
+        provenance.executionProof,
+        pins,
+        { nativeReceipt: claim.nativeReceipt },
+      );
+      const currentRunnerProof = await proveGermanyOperationalExecutionContext({ workspaceRoot: root, executionPins: pins });
+      invariant(sameCanonicalValue(provenance.executionProof.runner, currentRunnerProof),
+        "Candidate-Triplet-Recovery-Importclosure driftet vom aktuellen gepinnten Runner.");
+      captureResult = await captureGermanyOperationalInfrastructureV2NativeReceiptCore({
+        nativeReceipt: claim.nativeReceipt,
+        operationalProvenance: provenance,
+        executionPinsSource,
+        specificationPath,
+        candidatePath,
+        candidateMovementRouteTemplatesPath,
+        reportPath,
+        nativeExecutablePath,
+        validatorRebuildSpecificationPath,
+        validatorRebuildEvidencePath,
+        outputPath,
+        workspaceRoot: root,
+        captureEntrypointPath: runnerEntrypointPath,
+        expectedCaptureEntrypoint: GERMANY_OPERATIONAL_INTEGRATED_RUNNER_ENTRYPOINT,
+        verifyValidatorRebuildEvidence,
+        hooks: hooks.capture ?? {},
+      });
+      await externalBeforeCleanup?.({ claim, recovery, captureResult });
+    },
+  };
+  const result = await runGermanyOperationalInfrastructureV2({
+    specification: specificationSource.value,
+    specificationPath,
+    sourceRoot,
+    candidatePath,
+    movementRouteTemplatesPath: candidateMovementRouteTemplatesPath,
+    reportPath,
+    deriveNative: async (stagedSpecificationPath, stagedSourceRoot, stagedCandidatePath, stagedReportPath) => {
+      execution = await executeGermanyOperationalPinnedValidator({
+        workspaceRoot: root,
+        executionPinsSource,
+        runnerProof,
+        validatorRebuild: validatorRebuild.binding,
+        specificationPath: stagedSpecificationPath,
+        sourceRoot: stagedSourceRoot,
+        candidatePath: stagedCandidatePath,
+        reportPath: stagedReportPath,
+      });
+      return execution.nativeReceipt;
+    },
+    candidateTripletProvenance: async ({ nativeReceipt, nativeReport }) => {
+      invariant(execution !== undefined, "Integrierter Operational-v2-Runner besitzt keinen unmittelbaren Native-Prozessbeleg.");
+      invariant(nativeReport.activationEligible === true && nativeReport.unresolvedRequired === 0,
+        "Integrierter Operational-v2-Runner erzeugt fuer einen offenen Candidate kein releasefaehiges Receipt.");
+      return integratedGermanyOperationalProvenance({
+        executionPinsProof: executionPinsSource.proof,
+        executionProof: execution.executionProof,
+        nativeReceipt,
+      });
+    },
+    hooks: runnerHooks,
+  });
+  invariant(captureResult !== undefined, "Integrierter Operational-v2-Runner beendete sich ohne atomaren Native-Receipt-Capture.");
+  return { result, capture: captureResult };
 }
 
 function publicationPaths(outputPath, publicationReceiptPath) {
@@ -1544,16 +1811,37 @@ async function rollbackOwnedPublishedEntries(parent, entries, hooks = {}) {
 }
 
 function validatePublicationReceipt(value, expectedReleaseId) {
-  exactKeys(value, ["schema", "status", "publicationMode", "infraReleaseId", "specification", "nativeReceipt", "sources", "published", "state", "publisher", "validatorRebuild"], "Operational-v2-Publication-Receipt");
+  exactKeys(value, [
+    "schema", "status", "publicationMode", "infraReleaseId", "operationalProvenance", "specification",
+    "nativeReceipt", "sources", "published", "state", "publisher", "validatorRebuild",
+    ...(expectedReleaseId === "infra-deutschland-2026.5" ? ["outerExecutionReceipt"] : []),
+  ], "Operational-v2-Publication-Receipt");
   invariant(value.schema === GERMANY_OPERATIONAL_PUBLICATION_RECEIPT_SCHEMA, "Operational-v2-Publication-Receipt besitzt ein unbekanntes Schema.");
   invariant(value.status === "published" && value.publicationMode === "create-new-recovery-v1", "Operational-v2-Publication-Receipt besitzt keinen erfolgreichen create-new-Status.");
   invariant(value.infraReleaseId === expectedReleaseId, "Operational-v2-Publication-Receipt bindet eine falsche Release-ID.");
+  const operationalProvenance = validateGermanyOperationalProvenance(value.operationalProvenance);
+  invariant(operationalProvenance.producerKind === GERMANY_OPERATIONAL_INTEGRATED_PRODUCER_KIND
+    && operationalProvenance.releaseEvidenceEligible === true
+    && operationalProvenance.productionActivationEligible === true,
+  "Operational-v2-Publication-Receipt darf nur integrierte release- und aktivierungsfaehige Provenienz binden.");
   validateFileProof(value.specification, "Operational-v2-Publication-Receipt.specification");
   exactKeys(value.nativeReceipt, ["file", "bytes", "sha256", "schema"], "Operational-v2-Publication-Receipt.nativeReceipt");
   validatePortableRelativePath(value.nativeReceipt.file, "Operational-v2-Publication-Receipt.nativeReceipt.file");
   positiveInteger(value.nativeReceipt.bytes, "Operational-v2-Publication-Receipt.nativeReceipt.bytes");
   sha256(value.nativeReceipt.sha256, "Operational-v2-Publication-Receipt.nativeReceipt.sha256");
   invariant(value.nativeReceipt.schema === GERMANY_OPERATIONAL_NATIVE_RECEIPT_CAPTURE_SCHEMA, "Operational-v2-Publication-Receipt bindet ein falsches Native-Receipt-Schema.");
+  if (expectedReleaseId === "infra-deutschland-2026.5") {
+    exactKeys(value.outerExecutionReceipt, ["bytes", "file", "schema", "sha256"],
+      "Operational-v2-Publication-Receipt.outerExecutionReceipt");
+    validatePortableRelativePath(value.outerExecutionReceipt.file,
+      "Operational-v2-Publication-Receipt.outerExecutionReceipt.file");
+    positiveInteger(value.outerExecutionReceipt.bytes,
+      "Operational-v2-Publication-Receipt.outerExecutionReceipt.bytes");
+    sha256(value.outerExecutionReceipt.sha256,
+      "Operational-v2-Publication-Receipt.outerExecutionReceipt.sha256");
+    invariant(value.outerExecutionReceipt.schema === GERMANY_OPERATIONAL_OUTER_EXECUTION_RECEIPT_SCHEMA,
+      "Operational-v2-Publication-Receipt bindet ein falsches Outer-Execution-Receipt-Schema.");
+  }
   validateValidatorRebuildBinding(value.validatorRebuild, "Operational-v2-Publication-Receipt.validatorRebuild");
   exactKeys(value.sources, ["candidate", "movementRouteTemplates", "report"], "Operational-v2-Publication-Receipt.sources");
   validateStateFileProof(value.sources.candidate, "Operational-v2-Publication-Receipt.sources.candidate");
@@ -1602,13 +1890,16 @@ function validatePublicationReceipt(value, expectedReleaseId) {
 export async function verifyGermanyOperationalInfrastructureV2PublicationReceipt({
   workspaceRoot = REPOSITORY_ROOT,
   publicationReceiptPath,
+  publicationReceiptBytes,
   expectedReleaseId,
   verifyValidatorRebuildEvidence = verifyOperationalValidatorRebuildEvidence,
 }) {
   const root = resolve(workspaceRoot);
   const receiptPath = resolve(publicationReceiptPath);
   invariant(basename(receiptPath) === PUBLICATION_RECEIPT_FILE, `Operational-v2-Publication-Receipt muss ${PUBLICATION_RECEIPT_FILE} heissen.`);
-  const source = await smallJsonSource(receiptPath, "Operational-v2-Publication-Receipt");
+  const source = publicationReceiptBytes === undefined
+    ? await smallJsonSource(receiptPath, "Operational-v2-Publication-Receipt")
+    : smallJsonBytes(publicationReceiptBytes, "Operational-v2-Publication-Receipt aus gehaltenem Delivery-Handle");
   const receipt = validatePublicationReceipt(source.value, expectedReleaseId);
   invariant(source.bytes.equals(serializeGermanyOperationalPublicationJson(receipt)), "Operational-v2-Publication-Receipt ist nicht kanonisch serialisiert.");
   const receiptParent = dirname(receiptPath);
@@ -1632,6 +1923,9 @@ export async function verifyGermanyOperationalInfrastructureV2PublicationReceipt
     ["publiziertes Movement-Sidecar", receipt.published.movementRouteTemplates],
     ["Operational-Validator-Rebuild-Spezifikation", receipt.validatorRebuild.specification],
     ["Operational-Validator-Rebuild-Receipt", receipt.validatorRebuild.evidence],
+    ...(receipt.outerExecutionReceipt === undefined
+      ? []
+      : [["Operational-v2-Outer-Execution-Receipt", receipt.outerExecutionReceipt]]),
   ]) {
     proofMatches(await regularFileProof(resolvePortablePath(root, proof.file, `Operational-v2-Publication-Receipt.${label}`), label), proof, label);
   }
@@ -1666,7 +1960,26 @@ export async function verifyGermanyOperationalInfrastructureV2PublicationReceipt
   );
   invariant(sameCanonicalValue(capture.capture.validatorRebuild, receipt.validatorRebuild),
     "Publication-Receipt und Native-Receipt-Capture binden verschiedene Validator-Rebuild-Belege.");
-  return { receipt, proof: source.proof, captureReceipt: capture.capture };
+  invariant(sameCanonicalValue(capture.capture.operationalProvenance, receipt.operationalProvenance),
+    "Publication-Receipt und Native-Receipt-Capture binden verschiedene Operational-Provenienz.");
+  let outerExecution;
+  if (receipt.outerExecutionReceipt !== undefined) {
+    outerExecution = await verifyGermanyOperationalOuterExecutionReceipt({
+      workspaceRoot: root,
+      outerReceiptPath: resolvePortablePath(root, receipt.outerExecutionReceipt.file,
+        "Operational-v2-Outer-Execution-Receipt"),
+      expectedReleaseId: receipt.infraReleaseId,
+      nativeReceiptCapture: capture.capture,
+      nativeReceiptProof: {
+        bytes: receipt.nativeReceipt.bytes,
+        file: receipt.nativeReceipt.file,
+        sha256: receipt.nativeReceipt.sha256,
+      },
+    });
+    proofMatches(outerExecution.proof, receipt.outerExecutionReceipt,
+      "Operational-v2-Outer-Execution-Receipt");
+  }
+  return { receipt, proof: source.proof, captureReceipt: capture.capture, outerExecution };
 }
 
 async function runHook(hooks, name, context) {
@@ -1679,6 +1992,7 @@ export async function publishGermanyOperationalInfrastructureV2FromNativeReceipt
   candidateMovementRouteTemplatesPath,
   reportPath,
   nativeReceiptPath,
+  outerExecutionReceiptPath,
   validatorRebuildSpecificationPath,
   validatorRebuildEvidencePath,
   outputPath,
@@ -1722,7 +2036,30 @@ export async function publishGermanyOperationalInfrastructureV2FromNativeReceipt
     validatorRebuildEvidencePath,
     verifyValidatorRebuildEvidence,
   });
+  invariant(capture.capture.operationalProvenance.producerKind === GERMANY_OPERATIONAL_INTEGRATED_PRODUCER_KIND
+    && capture.capture.operationalProvenance.releaseEvidenceEligible === true
+    && capture.capture.operationalProvenance.productionActivationEligible === true,
+  "Forensischer Native-Receipt-Capture darf keine Operational-v2-Publikation speisen.");
   executionInventoryMatches(capture.capture.producer.executionInventory, executionInventoryBefore, "Native-Receipt-Capture-Ausfuehrungsinventar");
+  let verifiedOuterExecution;
+  if (capture.capture.infraReleaseId === "infra-deutschland-2026.5") {
+    invariant(typeof outerExecutionReceiptPath === "string" && outerExecutionReceiptPath.length > 0,
+      "Deutschland-2026.5-Publikation benoetigt das abgeschlossene Annual Outer-Execution-Receipt.");
+    verifiedOuterExecution = await verifyGermanyOperationalOuterExecutionReceipt({
+      workspaceRoot: root,
+      outerReceiptPath: resolve(outerExecutionReceiptPath),
+      expectedReleaseId: capture.capture.infraReleaseId,
+      nativeReceiptCapture: capture.capture,
+      nativeReceiptProof: {
+        bytes: capture.captureSource.proof.bytes,
+        file: capture.expectedFiles.nativeReceipt,
+        sha256: capture.captureSource.proof.sha256,
+      },
+    });
+  } else {
+    invariant(outerExecutionReceiptPath === undefined,
+      "Aeltere Operational-v2-Publikation darf keinen ungeprueften Outer-Execution-Receipt-Pfad erhalten.");
+  }
   if (!capture.report.activationEligible) {
     throw new OperationalInfrastructureDerivationIncompleteError({
       nativeReceipt: capture.capture.nativeReceipt,
@@ -1914,6 +2251,21 @@ export async function publishGermanyOperationalInfrastructureV2FromNativeReceipt
     proofMatches(finalReportProof, capture.reportSource.proof, "Operational-v2-Ableitungsbericht nach Publikation");
     proofMatches(finalSpecificationProof, capture.specificationSource.proof, "Operational-v2-Spezifikation nach Publikation");
     proofMatches(finalCaptureProof, capture.captureSource.proof, "Native-Receipt-Capture nach Publikation");
+    if (verifiedOuterExecution !== undefined) {
+      const finalOuterExecution = await verifyGermanyOperationalOuterExecutionReceipt({
+        workspaceRoot: root,
+        outerReceiptPath: resolve(outerExecutionReceiptPath),
+        expectedReleaseId: capture.capture.infraReleaseId,
+        nativeReceiptCapture: capture.capture,
+        nativeReceiptProof: {
+          bytes: finalCaptureProof.bytes,
+          file: capture.expectedFiles.nativeReceipt,
+          sha256: finalCaptureProof.sha256,
+        },
+      });
+      proofMatches(finalOuterExecution.proof, verifiedOuterExecution.proof,
+        "Operational-v2-Outer-Execution-Receipt nach Publikation");
+    }
     executionInventoryMatches(
       finalExecutionInventory,
       executionInventoryBefore,
@@ -1925,8 +2277,15 @@ export async function publishGermanyOperationalInfrastructureV2FromNativeReceipt
       status: "published",
       publicationMode: "create-new-recovery-v1",
       infraReleaseId: capture.capture.infraReleaseId,
+      operationalProvenance: capture.capture.operationalProvenance,
       specification: { file: capture.expectedFiles.specification, ...finalSpecificationProof },
       nativeReceipt: { file: capture.expectedFiles.nativeReceipt, ...finalCaptureProof, schema: capture.capture.schema },
+      ...(verifiedOuterExecution === undefined ? {} : {
+        outerExecutionReceipt: {
+          ...verifiedOuterExecution.proof,
+          schema: GERMANY_OPERATIONAL_OUTER_EXECUTION_RECEIPT_SCHEMA,
+        },
+      }),
       validatorRebuild: capture.capture.validatorRebuild,
       sources: {
         candidate: { ...capture.capture.sources.candidate, ...finalCandidateProof },

@@ -22,6 +22,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 
 import {
   captureGermanyOperationalInfrastructureV2NativeReceipt,
+  GERMANY_OPERATIONAL_INTEGRATED_RUNNER_ENTRYPOINT,
   GERMANY_OPERATIONAL_NATIVE_RECEIPT_CAPTURE_ENTRYPOINT,
   GERMANY_OPERATIONAL_NATIVE_RECEIPT_CAPTURE_SCHEMA,
   GERMANY_OPERATIONAL_PUBLICATION_ENTRYPOINT,
@@ -31,9 +32,30 @@ import {
   inspectGermanyOperationalInfrastructureV2Publication,
   publishGermanyOperationalInfrastructureV2FromNativeReceipt,
   recoverGermanyOperationalInfrastructureV2Publication,
+  runAndCaptureGermanyOperationalInfrastructureV2,
   serializeGermanyOperationalPublicationJson,
   verifyGermanyOperationalInfrastructureV2PublicationReceipt,
 } from "./operational-infrastructure-v2-publication.mjs";
+import {
+  createGermanyOperationalAnchoredRunnerInvocation,
+  decodeGermanyOperationalAnchoredRunnerResult,
+  GERMANY_OPERATIONAL_EXECUTION_RUNNER_BUNDLE,
+  GERMANY_OPERATIONAL_EXECUTION_PROOF_SCHEMA,
+  GERMANY_OPERATIONAL_EXECUTION_PINS_SCHEMA,
+  GERMANY_OPERATIONAL_ANNUAL_LAUNCH_MODE,
+  GERMANY_OPERATIONAL_DIRECT_SYSTEM_LAUNCH_CONTRACT_SCHEMA,
+  GERMANY_OPERATIONAL_FORENSIC_PRODUCER_KIND,
+  GERMANY_OPERATIONAL_WINDOWS_ANCHOR_HELPER_FILE,
+  GERMANY_OPERATIONAL_WINDOWS_LAUNCHER_SOURCE_FILE,
+  GERMANY_OPERATIONAL_LINUX_LAUNCHER_SOURCE_FILE,
+  germanyOperationalSystemLauncherSourceProof,
+  germanyOperationalStructuredValueSha256,
+  integratedGermanyOperationalProvenance,
+  loadGermanyOperationalExecutionPins,
+  proveGermanyOperationalExecutionContext,
+  serializeGermanyOperationalExecutionPins,
+} from "./operational-infrastructure-v2-execution-pins.mjs";
+import { buildGermanyOperationalAnchoredBundleFromEntrypoint } from "./build-operational-infrastructure-v2-runner-bundle.mjs";
 import {
   GERMANY_OPERATIONAL_COMPLETE_ROUTE_COVERAGE,
   GERMANY_OPERATIONAL_CONSERVATIVE_MODE,
@@ -41,12 +63,16 @@ import {
   GERMANY_OPERATIONAL_CONSERVATIVE_SCHEMA,
   GERMANY_OPERATIONAL_NATIVE_RECEIPT_SCHEMA,
   GERMANY_OPERATIONAL_NATIVE_REPORT_SCHEMA,
+  runGermanyOperationalInfrastructureV2,
 } from "./operational-infrastructure-v2.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const CAPTURE_SCRIPT = join(HERE, "capture-operational-infrastructure-v2-native-receipt.mjs");
 const PUBLISHER_SCRIPT = join(HERE, "publish-operational-infrastructure-v2.mjs");
+const INTEGRATED_RUNNER_SCRIPT = join(HERE, "run-capture-operational-infrastructure-v2.mjs");
 const PUBLICATION_MODULE = join(HERE, "operational-infrastructure-v2-publication.mjs");
+const EXECUTION_PINS_MODULE = join(HERE, "operational-infrastructure-v2-execution-pins.mjs");
+const WINDOWS_ANCHOR_HELPER = join(HERE, "operational-windows-anchor-helper.dll");
 const EXECUTION_SOURCE_FILES = Object.freeze({
   wrapper: PUBLISHER_SCRIPT,
   implementation: PUBLICATION_MODULE,
@@ -56,6 +82,9 @@ const EXECUTION_SOURCE_FILES = Object.freeze({
   operationalBinding: join(HERE, "..", "operational-infrastructure-binding.mjs"),
   validatorRebuildBootstrap: join(HERE, "operational-validator-rebuild-bootstrap.mjs"),
   validatorRebuildVerifier: join(HERE, "operational-validator-rebuild-evidence.mjs"),
+  executionPinsImplementation: EXECUTION_PINS_MODULE,
+  annualCreateNewArtifact: join(HERE, "annual-create-new-artifact.mjs"),
+  outerExecutionReceiptVerifier: join(HERE, "operational-infrastructure-v2-outer-execution-receipt.mjs"),
 });
 const RELEASE_ID = "infra-deutschland-2026.3";
 const STATE_HASH = "1".repeat(64);
@@ -261,7 +290,7 @@ async function createLargeFile(path, bytes) {
   return { bytes, sha256: digest.digest("hex") };
 }
 
-async function fixture(t, { sidecarBytes } = {}) {
+async function fixture(t, { integratedRunnerHarness = false, sidecarBytes } = {}) {
   const root = await mkdtemp(join(tmpdir(), "zugfolge-operational-publication-"));
   t.after(() => rm(root, { recursive: true, force: true }));
   const entrypointRoot = join(root, "tools", "region-import", "germany");
@@ -269,12 +298,67 @@ async function fixture(t, { sidecarBytes } = {}) {
   await Promise.all([mkdir(entrypointRoot, { recursive: true }), mkdir(derived, { recursive: true })]);
   const captureEntrypointPath = join(root, ...GERMANY_OPERATIONAL_NATIVE_RECEIPT_CAPTURE_ENTRYPOINT.split("/"));
   const publisherEntrypointPath = join(root, ...GERMANY_OPERATIONAL_PUBLICATION_ENTRYPOINT.split("/"));
-  await copyFile(CAPTURE_SCRIPT, captureEntrypointPath);
+  const runnerEntrypointPath = join(root, ...GERMANY_OPERATIONAL_INTEGRATED_RUNNER_ENTRYPOINT.split("/"));
+  const runnerBundlePath = join(root, ...GERMANY_OPERATIONAL_EXECUTION_RUNNER_BUNDLE.split("/"));
+  await Promise.all([
+    copyFile(CAPTURE_SCRIPT, captureEntrypointPath),
+    copyFile(INTEGRATED_RUNNER_SCRIPT, runnerEntrypointPath),
+    ...(process.platform === "win32" ? [copyFile(
+      WINDOWS_ANCHOR_HELPER,
+      join(root, ...GERMANY_OPERATIONAL_WINDOWS_ANCHOR_HELPER_FILE.split("/")),
+    )] : []),
+    copyFile(
+      join(HERE, process.platform === "win32"
+        ? "operational-infrastructure-v2-system-launcher.windows.ps1"
+        : "operational-infrastructure-v2-system-launcher.linux.py"),
+      join(root, ...(process.platform === "win32"
+        ? GERMANY_OPERATIONAL_WINDOWS_LAUNCHER_SOURCE_FILE
+        : GERMANY_OPERATIONAL_LINUX_LAUNCHER_SOURCE_FILE).split("/")),
+    ),
+  ]);
   await Promise.all(Object.entries(GERMANY_OPERATIONAL_PUBLICATION_EXECUTION_FILES).map(async ([id, file]) => {
     const target = join(root, ...file.split("/"));
     await mkdir(dirname(target), { recursive: true });
     await copyFile(EXECUTION_SOURCE_FILES[id], target);
   }));
+  if (integratedRunnerHarness) {
+    const harnessPath = join(entrypointRoot, "anchored-runner-harness.mjs");
+    await writeFile(harnessPath, `
+      import { createHash } from "node:crypto";
+      import { readFile } from "node:fs/promises";
+      import { join, resolve } from "node:path";
+      import { runAndCaptureGermanyOperationalInfrastructureV2 } from "./operational-infrastructure-v2-publication.mjs";
+      const sha256 = (value) => createHash("sha256").update(value).digest("hex");
+      const verifyValidatorRebuildEvidence = async ({ spec, receiptPath, workspaceRoot }) => {
+        const bytes = await readFile(receiptPath);
+        const receipt = JSON.parse(bytes.toString("utf8"));
+        if (receipt.schema !== ${JSON.stringify(GERMANY_OPERATIONAL_VALIDATOR_REBUILD_EVIDENCE_SCHEMA)}
+          || receipt.releaseId !== ${JSON.stringify(RELEASE_ID)}
+          || receipt.fixtureSpecSha256 !== sha256(Buffer.from(JSON.stringify(spec) + "\\n", "utf8"))) throw new Error("fixture rebuild mismatch");
+        for (const binary of Object.values(receipt.binaries)) {
+          const binaryBytes = await readFile(join(workspaceRoot, ...binary.file.split("/")));
+          if (binaryBytes.length !== binary.bytes || sha256(binaryBytes) !== binary.sha256) throw new Error("fixture binary mismatch");
+        }
+        const implementation = receipt.producer.implementation;
+        const implementationBytes = await readFile(join(workspaceRoot, ...implementation.file.split("/")));
+        if (implementationBytes.length !== implementation.bytes || sha256(implementationBytes) !== implementation.sha256) throw new Error("fixture implementation mismatch");
+        return { proof: { bytes: bytes.length, sha256: sha256(bytes) }, receipt };
+      };
+      const args = Array.from({ length: 7 }, (_, index) => process.env[\`ZUGFOLGE_OPERATIONAL_RUNNER_CLI_\${index}\`]);
+      const workspaceRoot = process.env.ZUGFOLGE_OPERATIONAL_RUNNER_WORKSPACE_ROOT;
+      await runAndCaptureGermanyOperationalInfrastructureV2({
+        executionPinsPath: resolve(args[0]), specificationPath: resolve(args[1]), sourceRoot: resolve(args[2]),
+        candidatePath: resolve(args[3]), candidateMovementRouteTemplatesPath: resolve(args[4]), reportPath: resolve(args[5]),
+        outputPath: resolve(args[6]), workspaceRoot: resolve(workspaceRoot),
+        runnerEntrypointPath: resolve(workspaceRoot, ${JSON.stringify(GERMANY_OPERATIONAL_INTEGRATED_RUNNER_ENTRYPOINT)}),
+        verifyValidatorRebuildEvidence,
+      });
+    `, { flag: "wx" });
+    const harness = await buildGermanyOperationalAnchoredBundleFromEntrypoint({ entrypoint: harnessPath, expectedContextMarkers: 1 });
+    await writeFile(runnerBundlePath, harness, { flag: "wx" });
+  } else {
+    await copyFile(join(HERE, "run-capture-operational-infrastructure-v2.anchored-bundle.mjs"), runnerBundlePath);
+  }
   const nativeExecutablePath = join(root, "tools", "native", "zugfolge-infra-release.exe");
   await mkdir(dirname(nativeExecutablePath), { recursive: true });
   const nativeExecutableBytes = Buffer.from("native-binary-fixture\n", "utf8");
@@ -290,9 +374,14 @@ async function fixture(t, { sidecarBytes } = {}) {
   const outputPath = join(derived, "operational-infrastructure-v2.json");
   const movementRouteTemplatesPath = join(derived, "operational-infrastructure-v2.movement-route-templates-v2.json");
   const publicationReceiptPath = join(derived, "operational-infrastructure-v2.publication-receipt.json");
+  const sourceRoot = join(root, "var", "input");
   const validatorRebuildSpecificationPath = join(entrypointRoot, "operational-validator-rebuild.fixture.json");
   const validatorRebuildEvidencePath = join(derived, "toolchain", "zugfolge-infra-release-rebuild-evidence.json");
-  await mkdir(dirname(validatorRebuildEvidencePath), { recursive: true });
+  const executionPinsPath = join(entrypointRoot, "operational-infrastructure-v2-execution-pins.fixture.json");
+  await Promise.all([
+    mkdir(dirname(validatorRebuildEvidencePath), { recursive: true }),
+    mkdir(sourceRoot, { recursive: true }),
+  ]);
   const validatorRebuildSpec = { fixture: "typed-validator-rebuild", releaseId: RELEASE_ID };
   const validatorRebuildSpecificationBytes = Buffer.from(`${JSON.stringify(validatorRebuildSpec)}\n`, "utf8");
   await writeFile(validatorRebuildSpecificationPath, validatorRebuildSpecificationBytes, { flag: "wx" });
@@ -329,6 +418,87 @@ async function fixture(t, { sidecarBytes } = {}) {
     fixtureSpecSha256: sha256(validatorRebuildSpecificationBytes),
   };
   await writeFile(validatorRebuildEvidencePath, `${JSON.stringify(validatorRebuildReceipt)}\n`, { flag: "wx" });
+  const runnerRootFiles = [
+    GERMANY_OPERATIONAL_NATIVE_RECEIPT_CAPTURE_ENTRYPOINT,
+    GERMANY_OPERATIONAL_PUBLICATION_ENTRYPOINT,
+    GERMANY_OPERATIONAL_INTEGRATED_RUNNER_ENTRYPOINT,
+  ].sort((left, right) => left.localeCompare(right, "en"));
+  const importClosureFiles = [
+    GERMANY_OPERATIONAL_NATIVE_RECEIPT_CAPTURE_ENTRYPOINT,
+    GERMANY_OPERATIONAL_PUBLICATION_EXECUTION_FILES.executionPinsImplementation,
+    GERMANY_OPERATIONAL_PUBLICATION_EXECUTION_FILES.implementation,
+    GERMANY_OPERATIONAL_PUBLICATION_EXECUTION_FILES.operationalDeriver,
+    GERMANY_OPERATIONAL_PUBLICATION_EXECUTION_FILES.validatorRebuildVerifier,
+    GERMANY_OPERATIONAL_PUBLICATION_ENTRYPOINT,
+    GERMANY_OPERATIONAL_INTEGRATED_RUNNER_ENTRYPOINT,
+    GERMANY_OPERATIONAL_PUBLICATION_EXECUTION_FILES.materializer,
+    GERMANY_OPERATIONAL_PUBLICATION_EXECUTION_FILES.operationalBinding,
+    GERMANY_OPERATIONAL_PUBLICATION_EXECUTION_FILES.createNewOutput,
+    GERMANY_OPERATIONAL_PUBLICATION_EXECUTION_FILES.annualCreateNewArtifact,
+    GERMANY_OPERATIONAL_PUBLICATION_EXECUTION_FILES.outerExecutionReceiptVerifier,
+    ...(process.platform === "win32" ? [GERMANY_OPERATIONAL_WINDOWS_ANCHOR_HELPER_FILE] : []),
+    process.platform === "win32"
+      ? GERMANY_OPERATIONAL_WINDOWS_LAUNCHER_SOURCE_FILE
+      : GERMANY_OPERATIONAL_LINUX_LAUNCHER_SOURCE_FILE,
+  ].sort((left, right) => left.localeCompare(right, "en"));
+  const importClosure = await Promise.all(importClosureFiles.map(async (file) => {
+    const bytes = await readFile(join(root, ...file.split("/")));
+    return { file, bytes: bytes.length, sha256: sha256(bytes) };
+  }));
+  const closureProof = new Map(importClosure.map((entry) => [entry.file, entry]));
+  const runnerBundleBytes = await readFile(runnerBundlePath);
+  const runtimeBytes = await readFile(process.execPath);
+  const executionPins = {
+    schema: GERMANY_OPERATIONAL_EXECUTION_PINS_SCHEMA,
+    releaseId: RELEASE_ID,
+    runner: {
+      anchorHelper: process.platform === "win32"
+        ? closureProof.get(GERMANY_OPERATIONAL_WINDOWS_ANCHOR_HELPER_FILE)
+        : null,
+      bundle: {
+        file: GERMANY_OPERATIONAL_EXECUTION_RUNNER_BUNDLE,
+        bytes: runnerBundleBytes.length,
+        sha256: sha256(runnerBundleBytes),
+      },
+      entrypoint: closureProof.get(GERMANY_OPERATIONAL_INTEGRATED_RUNNER_ENTRYPOINT),
+      roots: runnerRootFiles.map((file) => closureProof.get(file)),
+      importClosure,
+      invocation: {
+        mode: "system-launcher-held-bundle-stdin-v1",
+        nodeArguments: ["--input-type=module", "-"],
+        nodeOptions: null,
+      },
+      launcher: germanyOperationalSystemLauncherSourceProof(process.platform),
+      runtime: {
+        id: "nodejs-24-operational-runner-v1",
+        platform: process.platform,
+        bytes: runtimeBytes.length,
+        sha256: sha256(runtimeBytes),
+      },
+    },
+    validator: {
+      file: "tools/native/zugfolge-infra-release.exe",
+      buildCommit: "e".repeat(40),
+      bytes: nativeExecutableBytes.length,
+      sha256: sha256(nativeExecutableBytes),
+      rebuildSpecification: "tools/region-import/germany/operational-validator-rebuild.fixture.json",
+      rebuildEvidence: "var/derived/germany-2026.3/toolchain/zugfolge-infra-release-rebuild-evidence.json",
+    },
+    command: {
+      name: "derive-germany-operational-v2",
+      argumentPrefix: [],
+      argumentFiles: [],
+      arguments: [
+        "derive-germany-operational-v2",
+        "{specification}",
+        "{sourceRoot}",
+        "{candidate}",
+        "{report}",
+      ],
+      stdoutMaxBytes: 262_144,
+    },
+  };
+  await writeFile(executionPinsPath, serializeGermanyOperationalExecutionPins(executionPins, RELEASE_ID), { flag: "wx" });
   const spec = specification();
   const specificationBytes = Buffer.from(`${JSON.stringify(spec)}\n`, "utf8");
   const candidateBytes = Buffer.from(`${JSON.stringify(candidate())}\n`, "utf8");
@@ -358,13 +528,14 @@ async function fixture(t, { sidecarBytes } = {}) {
     activationEligible: true,
     unresolvedRequired: 0,
   };
-  const paths = { root, specificationPath, candidatePath, candidateMovementRouteTemplatesPath, reportPath, nativeReceiptPath, outputPath, movementRouteTemplatesPath, publicationReceiptPath, nativeExecutablePath, validatorRebuildExecutablePath, validatorRebuildSpecificationPath, validatorRebuildEvidencePath, captureEntrypointPath, publisherEntrypointPath };
+  const paths = { root, specificationPath, sourceRoot, candidatePath, candidateMovementRouteTemplatesPath, reportPath, nativeReceiptPath, outputPath, movementRouteTemplatesPath, publicationReceiptPath, nativeExecutablePath, validatorRebuildExecutablePath, validatorRebuildSpecificationPath, validatorRebuildEvidencePath, executionPinsPath, captureEntrypointPath, runnerEntrypointPath, runnerBundlePath, publisherEntrypointPath };
   return { paths, nativeReceipt, candidateBytes, movementBytes };
 }
 
-async function capture(fixtureValue, nativeReceipt = fixtureValue.nativeReceipt, options = {}) {
+async function captureForensic(fixtureValue, nativeReceipt = fixtureValue.nativeReceipt, options = {}) {
   return captureGermanyOperationalInfrastructureV2NativeReceipt({
     nativeReceipt,
+    executionPinsPath: fixtureValue.paths.executionPinsPath,
     specificationPath: fixtureValue.paths.specificationPath,
     candidatePath: fixtureValue.paths.candidatePath,
     candidateMovementRouteTemplatesPath: fixtureValue.paths.candidateMovementRouteTemplatesPath,
@@ -378,6 +549,106 @@ async function capture(fixtureValue, nativeReceipt = fixtureValue.nativeReceipt,
     verifyValidatorRebuildEvidence: fixtureVerifyValidatorRebuildEvidence,
     ...options,
   });
+}
+
+async function capture(fixtureValue, nativeReceipt = fixtureValue.nativeReceipt, options = {}) {
+  const captured = await captureForensic(fixtureValue, nativeReceipt, options);
+  const executionPinsSource = await loadGermanyOperationalExecutionPins({
+    workspaceRoot: fixtureValue.paths.root,
+    executionPinsPath: fixtureValue.paths.executionPinsPath,
+    expectedReleaseId: RELEASE_ID,
+  });
+  const runner = await proveGermanyOperationalExecutionContext({
+    workspaceRoot: fixtureValue.paths.root,
+    executionPins: executionPinsSource.value,
+    verifyCurrentInvocation: false,
+  });
+  const stdoutBytes = Buffer.from(`${JSON.stringify(captured.receipt.nativeReceipt)}\n`, "utf8");
+  const executionProof = {
+    schema: GERMANY_OPERATIONAL_EXECUTION_PROOF_SCHEMA,
+    executionPinsSha256: executionPinsSource.proof.sha256,
+    ...(process.platform === "win32" ? {
+      annualLaunch: {
+        mode: GERMANY_OPERATIONAL_ANNUAL_LAUNCH_MODE,
+        contract: {
+          bytes: 1,
+          file: "tools/region-import/germany/operational-infrastructure-v2-direct-system-launch.fixture.json",
+          releaseId: RELEASE_ID,
+          schema: GERMANY_OPERATIONAL_DIRECT_SYSTEM_LAUNCH_CONTRACT_SCHEMA,
+          sha256: "a".repeat(64),
+        },
+        executionPins: {
+          ...executionPinsSource.proof,
+          schema: GERMANY_OPERATIONAL_EXECUTION_PINS_SCHEMA,
+        },
+        trustedExecutor: {
+          buildCommit: executionPinsSource.value.validator.buildCommit,
+          bytes: executionPinsSource.value.validator.bytes,
+          file: executionPinsSource.value.validator.file,
+          sha256: executionPinsSource.value.validator.sha256,
+        },
+      },
+    } : {}),
+    runner,
+    validator: {
+      buildCommit: executionPinsSource.value.validator.buildCommit,
+      preserved: captured.receipt.producer.executable,
+      executed: {
+        mode: process.platform === "linux"
+          ? "linux-sealed-memfd-launch-v1"
+          : "windows-exclusive-handle-launch-v1",
+        bytes: captured.receipt.producer.executable.bytes,
+        sha256: captured.receipt.producer.executable.sha256,
+      },
+    },
+    rebuild: {
+      specification: captured.receipt.validatorRebuild.specification,
+      evidence: captured.receipt.validatorRebuild.evidence,
+      sourceCommit: captured.receipt.validatorRebuild.sourceCommit,
+    },
+    invocation: {
+      command: executionPinsSource.value.command.name,
+      argumentPrefix: [],
+      argumentFiles: [],
+      arguments: [
+        executionPinsSource.value.command.name,
+        "tools/region-import/germany/specification.json",
+        "var/input",
+        "var/derived/germany-2026.3/operational-infrastructure-v2.candidate.json",
+        "var/derived/germany-2026.3/operational-infrastructure-v2.derivation-report.json",
+      ],
+    },
+    stdout: {
+      bytes: stdoutBytes.length,
+      sha256: sha256(stdoutBytes),
+      recordCount: 1,
+      structuredReceiptSha256: germanyOperationalStructuredValueSha256(captured.receipt.nativeReceipt),
+    },
+    exit: { code: 0, signal: null },
+  };
+  const operationalProvenance = integratedGermanyOperationalProvenance({
+    executionPinsProof: executionPinsSource.proof,
+    executionProof,
+    nativeReceipt: captured.receipt.nativeReceipt,
+  });
+  const receipt = {
+    ...captured.receipt,
+    operationalProvenance,
+    producer: {
+      ...captured.receipt.producer,
+      captureEntrypoint: runner.entrypoint,
+    },
+  };
+  const bytes = serializeGermanyOperationalPublicationJson(receipt);
+  await unlink(fixtureValue.paths.nativeReceiptPath);
+  await writeFile(fixtureValue.paths.nativeReceiptPath, bytes, { flag: "wx" });
+  return {
+    path: fixtureValue.paths.nativeReceiptPath,
+    receipt,
+    bytes: bytes.length,
+    sha256: sha256(bytes),
+    ...(captured.recovery === undefined ? {} : { recovery: captured.recovery }),
+  };
 }
 
 async function publish(fixtureValue, options = {}) {
@@ -472,6 +743,7 @@ async function spawnCaptureKillpoint(value, hookName, status = 76) {
     const hash = (bytes) => createHash("sha256").update(bytes).digest("hex");
     await captureGermanyOperationalInfrastructureV2NativeReceipt({
       nativeReceipt,
+      executionPinsPath: input.executionPinsPath,
       specificationPath: input.specificationPath,
       candidatePath: input.candidatePath,
       candidateMovementRouteTemplatesPath: input.candidateMovementRouteTemplatesPath,
@@ -515,6 +787,125 @@ test("Capture und Publisher binden natives Receipt, Triplet, finale Paarung und 
   assert.equal((await inspectGermanyOperationalInfrastructureV2Publication({ outputPath: value.paths.outputPath, publicationReceiptPath: value.paths.publicationReceiptPath, workspaceRoot: value.paths.root, verifyValidatorRebuildEvidence: fixtureVerifyValidatorRebuildEvidence })).status, "complete");
 });
 
+test("Publication-Verifier prueft explizit gehaltene Receipt-Bytes statt eines ausgetauschten Same-Path-Ziels", async (t) => {
+  const value = await fixture(t);
+  await capture(value);
+  await publish(value);
+  const heldBytes = await readFile(value.paths.publicationReceiptPath);
+  const displaced = `${value.paths.publicationReceiptPath}.displaced`;
+  await rename(value.paths.publicationReceiptPath, displaced);
+  await writeFile(value.paths.publicationReceiptPath, '{"schema":"foreign-replacement"}\n', { flag: "wx" });
+  try {
+    const verified = await verifyGermanyOperationalInfrastructureV2PublicationReceipt({
+      workspaceRoot: value.paths.root,
+      publicationReceiptPath: value.paths.publicationReceiptPath,
+      publicationReceiptBytes: heldBytes,
+      expectedReleaseId: RELEASE_ID,
+      verifyValidatorRebuildEvidence: fixtureVerifyValidatorRebuildEvidence,
+    });
+    assert.equal(verified.receipt.schema, GERMANY_OPERATIONAL_PUBLICATION_RECEIPT_SCHEMA);
+    assert.deepEqual(verified.proof, { bytes: heldBytes.length, sha256: sha256(heldBytes) });
+  } finally {
+    await rm(value.paths.publicationReceiptPath);
+    await rename(displaced, value.paths.publicationReceiptPath);
+  }
+});
+
+test("stdin-Capture bleibt forensisch und darf den integrierten Publisher nicht speisen", async (t) => {
+  const value = await fixture(t);
+  const captured = await captureForensic(value);
+  assert.equal(captured.receipt.operationalProvenance.producerKind, GERMANY_OPERATIONAL_FORENSIC_PRODUCER_KIND);
+  assert.equal(captured.receipt.operationalProvenance.releaseEvidenceEligible, false);
+  assert.equal(captured.receipt.operationalProvenance.productionActivationEligible, false);
+  assert.equal(captured.receipt.operationalProvenance.executionProof, null);
+  await assert.rejects(publish(value), /Forensischer Native-Receipt-Capture/u);
+  await assertNoVisiblePair(value.paths);
+});
+
+test("integrierte Candidate-Recovery verwirft manipulierten Execution-Proof und erhaelt Claim sowie Staging", async (t) => {
+  const value = await fixture(t, { integratedRunnerHarness: true });
+  const captured = await capture(value);
+  const tamperedProvenance = structuredClone(captured.receipt.operationalProvenance);
+  tamperedProvenance.executionProof.runner.importClosure[0].sha256 = "0".repeat(64);
+  const [candidateBytes, movementBytes, reportBytes] = await Promise.all([
+    readFile(value.paths.candidatePath),
+    readFile(value.paths.candidateMovementRouteTemplatesPath),
+    readFile(value.paths.reportPath),
+  ]);
+  await Promise.all([
+    unlink(value.paths.candidatePath),
+    unlink(value.paths.candidateMovementRouteTemplatesPath),
+    unlink(value.paths.reportPath),
+    unlink(value.paths.nativeReceiptPath),
+  ]);
+  await assert.rejects(
+    runGermanyOperationalInfrastructureV2({
+      specification: specification(),
+      specificationPath: value.paths.specificationPath,
+      sourceRoot: value.paths.sourceRoot,
+      candidatePath: value.paths.candidatePath,
+      movementRouteTemplatesPath: value.paths.candidateMovementRouteTemplatesPath,
+      reportPath: value.paths.reportPath,
+      deriveNative: async (_specificationPath, _sourceRoot, stagedCandidatePath, stagedReportPath) => {
+        await Promise.all([
+          writeFile(stagedCandidatePath, candidateBytes, { flag: "wx" }),
+          writeFile(join(dirname(stagedCandidatePath), basename(value.paths.candidateMovementRouteTemplatesPath)), movementBytes, { flag: "wx" }),
+          writeFile(stagedReportPath, reportBytes, { flag: "wx" }),
+        ]);
+        return value.nativeReceipt;
+      },
+      candidateTripletProvenance: async () => tamperedProvenance,
+      hooks: {
+        afterCandidateTripletLink: ({ index }) => {
+          if (index === 1) throw new Error("simulierter integrierter Recovery-Killpoint");
+        },
+      },
+    }),
+    /simulierter integrierter Recovery-Killpoint/u,
+  );
+  const claimPath = join(dirname(value.paths.candidatePath), ".operational-infrastructure-v2.candidate-triplet.claim.json");
+  const claimBefore = await readFile(claimPath);
+  const stagingBefore = (await readdir(dirname(value.paths.candidatePath))).filter((name) => name.startsWith(".operational-v2-derive-"));
+  assert.equal(stagingBefore.length, 1);
+  const invocation = await createGermanyOperationalAnchoredRunnerInvocation({
+    workspaceRoot: value.paths.root,
+    executionPinsPath: value.paths.executionPinsPath,
+    nodePath: process.execPath,
+    ...(process.platform === "win32" ? {
+      annualLaunchProofBase64: Buffer.from(
+        JSON.stringify(canonicalValue(captured.receipt.operationalProvenance.executionProof.annualLaunch)),
+        "utf8",
+      ).toString("base64"),
+    } : {}),
+    arguments: [
+      value.paths.executionPinsPath,
+      value.paths.specificationPath,
+      value.paths.sourceRoot,
+      value.paths.candidatePath,
+      value.paths.candidateMovementRouteTemplatesPath,
+      value.paths.reportPath,
+      value.paths.nativeReceiptPath,
+    ],
+  });
+  const launched = spawnSync(invocation.command, invocation.arguments, {
+    cwd: invocation.cwd,
+    encoding: "utf8",
+    env: invocation.env,
+    maxBuffer: 4 * 1024 * 1024,
+    shell: false,
+    windowsHide: true,
+  });
+  const anchored = decodeGermanyOperationalAnchoredRunnerResult(launched, invocation.expected);
+  assert.notEqual(anchored.status, 0);
+  assert.match(anchored.stderr.toString("utf8"), /Execution-Proof bindet andere Importclosure-Bytes|Recovery-Importclosure driftet/u);
+  assert.deepEqual(await readFile(claimPath), claimBefore);
+  assert.deepEqual(
+    (await readdir(dirname(value.paths.candidatePath))).filter((name) => name.startsWith(".operational-v2-derive-")),
+    stagingBefore,
+  );
+  assert.equal(await exists(value.paths.nativeReceiptPath), false);
+});
+
 test("Publication-Receipt ist an sein kanonisches Geschwisterpaar gebunden", async (t) => {
   const value = await fixture(t);
   await capture(value);
@@ -535,11 +926,17 @@ test("Publication-Receipt ist an sein kanonisches Geschwisterpaar gebunden", asy
 });
 
 test("statische lokale Import-Closure ist vollstaendig inventarisiert und frei von ignoriertem Alpha-dist", async () => {
-  const closure = await localModuleClosure([CAPTURE_SCRIPT, PUBLISHER_SCRIPT, EXECUTION_SOURCE_FILES.validatorRebuildBootstrap]);
+  const closure = await localModuleClosure([
+    CAPTURE_SCRIPT,
+    PUBLISHER_SCRIPT,
+    INTEGRATED_RUNNER_SCRIPT,
+    EXECUTION_SOURCE_FILES.validatorRebuildBootstrap,
+  ]);
   assert.deepEqual(
     [...closure].sort(),
     [
       CAPTURE_SCRIPT,
+      INTEGRATED_RUNNER_SCRIPT,
       ...Object.values(EXECUTION_SOURCE_FILES),
     ].map((file) => resolve(file)).sort(),
   );

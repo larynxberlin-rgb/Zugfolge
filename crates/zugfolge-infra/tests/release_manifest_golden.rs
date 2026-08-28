@@ -1,7 +1,7 @@
 //! Golden-Master- und Fail-closed-Nachweis des Rust-Releasecompilers.
 
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::atomic::{AtomicU64, Ordering};
 
@@ -563,7 +563,81 @@ fn jahresplan_endet_mit_holdout_und_signatur() {
         .iter()
         .find(|stage| stage["id"] == "operational-v2-derivation")
         .expect("Operational-v2-Ableitungsstufe");
-    assert_eq!(derivation["executionMode"], "candidate-triplet");
+    assert_eq!(
+        derivation["executionMode"],
+        "held-contract-direct-system-launch-v1"
+    );
+    assert_eq!(
+        derivation["directSystemLaunch"]["commandMaterialization"]["mode"],
+        "source-only-print-direct-command-v1"
+    );
+    assert_eq!(
+        derivation["executionPins"],
+        "tools/region-import/germany/operational-infrastructure-v2-execution-pins.annual-2027.1.json"
+    );
+    assert!(
+        derivation.get("entrypoint").is_none(),
+        "das gehaltene Bundle-Datenfile darf kein mutierender Entrypoint sein"
+    );
+    assert_eq!(derivation["runnerBundle"]["role"], "held-stdin-data-only");
+    assert_eq!(derivation["runnerBundle"]["executable"], false);
+    assert_eq!(
+        derivation["directSystemLaunch"]["command"],
+        r"C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe"
+    );
+    assert_eq!(derivation["directSystemLaunch"]["arguments"][0], "-NoLogo");
+    assert_eq!(
+        derivation["directSystemLaunch"]["arguments"][5],
+        "-EncodedCommand"
+    );
+    assert!(
+        derivation["directSystemLaunch"]["arguments"][6]
+            .as_str()
+            .is_some_and(|encoded| !encoded.is_empty() && encoded.len() < 32_000),
+        "der Annual-Plan muss den vollstaendigen direkt startbaren EncodedCommand enthalten"
+    );
+    assert_eq!(
+        derivation["directSystemLaunch"]["environmentMode"],
+        "replace-exactly-no-inheritance-v1"
+    );
+    assert_eq!(
+        derivation["directSystemLaunch"]["environment"]["TEMP"],
+        r"C:\Windows\System32"
+    );
+    assert_eq!(
+        derivation["directSystemLaunch"]["environment"]["ZUGFOLGE_OPERATIONAL_LAUNCH_CONTEXT_BASE64"],
+        "{launchContextBase64}"
+    );
+    assert_eq!(
+        derivation["directSystemLaunch"]["commandMaterialization"]["producer"]["causal"],
+        false
+    );
+    assert_eq!(
+        derivation["directSystemLaunch"]["commandMaterialization"]["producer"]["releaseEvidenceEligible"],
+        false
+    );
+    assert_eq!(
+        derivation["directSystemLaunch"]["commandMaterialization"]["releaseExecutionEligible"],
+        false
+    );
+    assert_eq!(
+        derivation["directSystemLaunch"]["dynamicBindings"]
+            .as_array()
+            .map(Vec::len),
+        Some(1)
+    );
+    assert_eq!(
+        derivation["directSystemLaunch"]["dynamicBindings"][0]["schema"],
+        "zugfolge-operational-v2-direct-system-launch-context/v1"
+    );
+    assert_eq!(
+        derivation["directSystemLaunch"]["contract"]["openMode"],
+        "share-read-deny-write-delete-held-through-child-exit-v1"
+    );
+    assert_eq!(
+        derivation["directSystemLaunch"]["contract"]["releaseId"],
+        "infra-deutschland-2027.1"
+    );
     for (left, right) in [
         (
             "operational-v2-derivation",
@@ -591,13 +665,53 @@ fn jahresplan_endet_mit_holdout_und_signatur() {
         .iter()
         .find(|stage| stage["id"] == "operational-v2-validator-rebuild-evidence")
         .expect("Validator-Rebuild-Stufe");
+    assert!(
+        rebuild.get("entrypoint").is_none() && rebuild.get("bootstrap").is_none(),
+        "die mutierende Rebuild-Phase darf keinen separat startbaren CLI- oder Bootstrap-Pfad emittieren"
+    );
+    assert_eq!(
+        rebuild["executionMode"],
+        "internal-os-anchored-single-bundle-phase-v1"
+    );
+    assert_eq!(
+        rebuild["runner"]["bundle"],
+        derivation["runnerBundle"]["file"]
+    );
+    assert_eq!(
+        rebuild["runner"]["invocationMode"],
+        derivation["runnerBundle"]["invocationMode"]
+    );
+    assert_eq!(
+        rebuild["runner"]["executionPins"],
+        derivation["executionPins"]
+    );
+    assert_eq!(
+        rebuild["runner"]["systemLaunchContract"],
+        derivation["directSystemLaunch"]["contract"]["file"]
+    );
+    assert_eq!(
+        rebuild["runner"]["phase"]["implementation"],
+        "tools/region-import/germany/operational-validator-rebuild-evidence.mjs"
+    );
+    assert_eq!(
+        rebuild["runner"]["phase"]["export"],
+        "materializeOperationalValidatorRebuildEvidence"
+    );
+    assert_eq!(
+        rebuild["runner"]["phase"]["loadingMode"],
+        "embedded-in-held-runner-bundle-v1"
+    );
+    assert_eq!(
+        rebuild["runner"]["phase"]["order"],
+        "before-native-validator"
+    );
     assert_eq!(
         rebuild["specificationSchema"],
-        "zugfolge-operational-validator-rebuild-spec/v2"
+        "zugfolge-operational-validator-rebuild-spec/v3"
     );
     assert_eq!(
         rebuild["receiptSchema"],
-        "zugfolge-operational-validator-rebuild-evidence/v2"
+        "zugfolge-operational-validator-rebuild-evidence/v3"
     );
     assert_eq!(rebuild["rebuiltValidatorRawProof"], "from-portable-receipt");
     assert_eq!(stages[stages.len() - 2]["id"], "independent-validation");
@@ -613,8 +727,86 @@ fn operational_deriver_subvertrag_ist_exakt_und_releasegebunden() {
         "../../../tools/region-import/germany/release.annual-2026.5.config.json"
     ))
     .expect("gueltige 2026.5-Jahreskonfiguration");
-    build_annual_infra_plan(&current, &catalog, &rights)
+    let current_plan = build_annual_infra_plan(&current, &catalog, &rights)
         .expect("2026.5 bindet PrimaryRunner und RecoveryPublisher exakt");
+    let current_stages = current_plan["stages"].as_array().expect("2026.5-Stufen");
+    let current_derivation = current_stages
+        .iter()
+        .find(|stage| stage["id"] == "operational-v2-derivation")
+        .expect("systemverankerte Operational-v2-Ableitung");
+    assert!(current_derivation.get("entrypoint").is_none());
+    assert_eq!(
+        current_derivation["runnerBundle"]["file"],
+        "tools/region-import/germany/run-capture-operational-infrastructure-v2.anchored-bundle.mjs"
+    );
+    assert_eq!(
+        current_derivation["executionMode"],
+        "held-contract-direct-system-launch-v1"
+    );
+    assert_eq!(
+        current_derivation["directSystemLaunch"]["commandMaterialization"]["entrypoint"],
+        "tools/region-import/germany/print-operational-infrastructure-v2-system-launch-command.mjs"
+    );
+    assert_eq!(
+        current_derivation["directSystemLaunch"]["commandMaterialization"]["mode"],
+        "source-only-print-direct-command-v1"
+    );
+    assert_eq!(
+        current_derivation["directSystemLaunch"]["commandMaterialization"]["releaseExecutionEligible"],
+        false
+    );
+    assert_eq!(
+        current_derivation["directSystemLaunch"]["contract"]["file"],
+        "tools/region-import/germany/operational-infrastructure-v2-direct-system-launch.annual-2026.5.json"
+    );
+    assert_eq!(
+        current_derivation["executionPins"],
+        "tools/region-import/germany/operational-infrastructure-v2-execution-pins.annual-2026.5.json"
+    );
+    assert_eq!(
+        current_derivation["operationalBindings"],
+        json!({
+            "schema": "zugfolge-operational-v2-annual-plan-bindings/v1",
+            "executionPinsPath": "tools/region-import/germany/operational-infrastructure-v2-execution-pins.annual-2026.5.json",
+            "specificationPath": "tools/region-import/germany/operational-infrastructure.annual-2026.5.json",
+            "sourceRoot": ".",
+            "candidatePath": "var/derived/germany-2026.5/operational-infrastructure-v2.candidate.json",
+            "candidateSidecarPath": "var/derived/germany-2026.5/operational-infrastructure-v2.candidate.movement-route-templates-v2.json",
+            "reportPath": "var/derived/germany-2026.5/operational-infrastructure-v2.derivation-report.json",
+            "nativeReceiptPath": "var/derived/germany-2026.5/operational-infrastructure-v2.native-receipt.json",
+            "outerExecutionReceiptPath": "var/derived/germany-2026.5/operational-infrastructure-v2.outer-execution-receipt.json",
+            "publishedOutputPath": "var/derived/germany-2026.5/operational-infrastructure-v2.json",
+            "publicationReceiptPath": "var/derived/germany-2026.5/operational-infrastructure-v2.publication-receipt.json",
+        })
+    );
+    let current_rebuild = current_stages
+        .iter()
+        .find(|stage| stage["id"] == "operational-v2-validator-rebuild-evidence")
+        .expect("interne 2026.5-Rebuild-Phase");
+    assert!(
+        current_rebuild.get("entrypoint").is_none() && current_rebuild.get("bootstrap").is_none(),
+        "2026.5 darf keinen separat mutierenden Rebuild-CLI-Pfad emittieren"
+    );
+    assert_eq!(
+        current_rebuild["executionMode"],
+        "internal-os-anchored-single-bundle-phase-v1"
+    );
+    assert_eq!(
+        current_rebuild["runner"]["bundle"],
+        current_derivation["runnerBundle"]["file"]
+    );
+    assert_eq!(
+        current_rebuild["runner"]["phase"]["export"],
+        "materializeOperationalValidatorRebuildEvidence"
+    );
+    assert_eq!(
+        current_rebuild["specificationSchema"],
+        "zugfolge-operational-validator-rebuild-spec/v3"
+    );
+    assert_eq!(
+        current_rebuild["receiptSchema"],
+        "zugfolge-operational-validator-rebuild-evidence/v3"
+    );
 
     let mut unbekanntes_feld = config.clone();
     unbekanntes_feld["pipeline"]["operationalDeriver"]["stateHash"] = Value::String("0".repeat(64));
@@ -638,12 +830,99 @@ fn operational_deriver_subvertrag_ist_exakt_und_releasegebunden() {
         Value::String("materialize".to_owned());
     assert!(build_annual_infra_plan(&falscher_primary_runner_modus, &catalog, &rights).is_err());
 
+    let mut fehlender_system_command_builder = config.clone();
+    fehlender_system_command_builder["pipeline"]["operationalDeriver"]
+        .as_object_mut()
+        .expect("OperationalDeriver")
+        .remove("systemCommandBuilder");
+    assert!(build_annual_infra_plan(&fehlender_system_command_builder, &catalog, &rights).is_err());
+
+    let mut falscher_system_command_builder = config.clone();
+    falscher_system_command_builder["pipeline"]["operationalDeriver"]["systemCommandBuilder"] =
+        Value::String(
+            "tools/region-import/germany/run-capture-operational-infrastructure-v2.mjs".to_owned(),
+        );
+    assert!(build_annual_infra_plan(&falscher_system_command_builder, &catalog, &rights).is_err());
+
+    let mut falscher_system_command_builder_modus = config.clone();
+    falscher_system_command_builder_modus["pipeline"]["operationalDeriver"]["systemCommandBuilderMode"] =
+        Value::String("execute-repo-js".to_owned());
+    assert!(
+        build_annual_infra_plan(&falscher_system_command_builder_modus, &catalog, &rights).is_err()
+    );
+
+    let mut fehlender_direct_system_launch = config.clone();
+    fehlender_direct_system_launch["pipeline"]["operationalDeriver"]
+        .as_object_mut()
+        .expect("OperationalDeriver")
+        .remove("directSystemLaunch");
+    assert!(build_annual_infra_plan(&fehlender_direct_system_launch, &catalog, &rights).is_err());
+
+    let mut driftender_direct_system_launch = config.clone();
+    driftender_direct_system_launch["pipeline"]["operationalDeriver"]["directSystemLaunch"]["contract"]
+        ["file"] =
+        Value::String("tools/region-import/germany/fremder-direct-system-launch.json".to_owned());
+    assert!(build_annual_infra_plan(&driftender_direct_system_launch, &catalog, &rights).is_err());
+
+    let mut ungueltiger_direct_system_launch_hash = config.clone();
+    ungueltiger_direct_system_launch_hash["pipeline"]["operationalDeriver"]["directSystemLaunch"]
+        ["contract"]["sha256"] = Value::String("0".repeat(63));
+    assert!(
+        build_annual_infra_plan(&ungueltiger_direct_system_launch_hash, &catalog, &rights).is_err()
+    );
+
+    let mut driftende_direct_system_launch_release_id = config.clone();
+    driftende_direct_system_launch_release_id["pipeline"]["operationalDeriver"]["directSystemLaunch"]
+        ["contract"]["releaseId"] = Value::String("infra-deutschland-2027.2".to_owned());
+    assert!(
+        build_annual_infra_plan(
+            &driftende_direct_system_launch_release_id,
+            &catalog,
+            &rights
+        )
+        .is_err()
+    );
+
+    let mut driftender_direct_system_launch_execution_pins = config.clone();
+    driftender_direct_system_launch_execution_pins["pipeline"]["operationalDeriver"]["directSystemLaunch"]
+        ["contract"]["executionPins"]["sha256"] = Value::String("7".repeat(63));
+    assert!(
+        build_annual_infra_plan(
+            &driftender_direct_system_launch_execution_pins,
+            &catalog,
+            &rights
+        )
+        .is_err()
+    );
+
+    let mut driftende_execution_pins = config.clone();
+    driftende_execution_pins["pipeline"]["operationalDeriver"]["executionPins"] =
+        Value::String(
+            "tools/region-import/germany/operational-infrastructure-v2-execution-pins.annual-anderer-release.json"
+                .to_owned(),
+        );
+    assert!(build_annual_infra_plan(&driftende_execution_pins, &catalog, &rights).is_err());
+
+    let mut driftende_quellwurzel = config.clone();
+    driftende_quellwurzel["pipeline"]["operationalDeriver"]["sourceRoot"] =
+        Value::String("var/derived/germany-2027.1".to_owned());
+    assert!(build_annual_infra_plan(&driftende_quellwurzel, &catalog, &rights).is_err());
+
     let mut fehlendes_native_receipt = config.clone();
     fehlendes_native_receipt["pipeline"]["operationalDeriver"]["recoveryPublisher"]
         .as_object_mut()
         .expect("RecoveryPublisher")
         .remove("nativeReceipt");
     assert!(build_annual_infra_plan(&fehlendes_native_receipt, &catalog, &rights).is_err());
+
+    let mut fehlendes_outer_execution_receipt = config.clone();
+    fehlendes_outer_execution_receipt["pipeline"]["operationalDeriver"]["recoveryPublisher"]
+        .as_object_mut()
+        .expect("RecoveryPublisher")
+        .remove("outerExecutionReceipt");
+    assert!(
+        build_annual_infra_plan(&fehlendes_outer_execution_receipt, &catalog, &rights).is_err()
+    );
 
     let mut driftendes_publication_receipt = config.clone();
     driftendes_publication_receipt["pipeline"]["operationalDeriver"]["recoveryPublisher"]["publicationReceipt"] =
@@ -701,6 +980,192 @@ fn operational_deriver_subvertrag_ist_exakt_und_releasegebunden() {
         .expect("Pipelineobjekt")
         .remove("operationalDeriver");
     assert!(build_annual_infra_plan(&fehlender_subvertrag, &catalog, &rights).is_err());
+}
+
+#[cfg(windows)]
+#[test]
+fn gepinnter_rust_executor_startet_exakten_annual_plan_mit_ersatzumgebung() {
+    fn base64(bytes: &[u8]) -> String {
+        const ALPHABET: &[u8; 64] =
+            b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+        let mut output = String::with_capacity(bytes.len().div_ceil(3) * 4);
+        for chunk in bytes.chunks(3) {
+            let a = chunk[0];
+            let b = chunk.get(1).copied().unwrap_or_default();
+            let c = chunk.get(2).copied().unwrap_or_default();
+            output.push(ALPHABET[(a >> 2) as usize] as char);
+            output.push(ALPHABET[(((a & 3) << 4) | (b >> 4)) as usize] as char);
+            output.push(if chunk.len() > 1 {
+                ALPHABET[(((b & 15) << 2) | (c >> 6)) as usize] as char
+            } else {
+                '='
+            });
+            output.push(if chunk.len() > 2 {
+                ALPHABET[(c & 63) as usize] as char
+            } else {
+                '='
+            });
+        }
+        output
+    }
+
+    static NEXT_DIRECTORY: AtomicU64 = AtomicU64::new(0);
+    let suffix = NEXT_DIRECTORY.fetch_add(1, Ordering::Relaxed);
+    let root = std::env::temp_dir().join(format!(
+        "zugfolge-annual-direct-executor-{}-{suffix}",
+        std::process::id()
+    ));
+    let contract_relative = "tools/region-import/germany/operational-infrastructure-v2-direct-system-launch.annual-2027.1.json";
+    let contract_path = root.join(contract_relative);
+    let marker = root.join("direct-plan.marker");
+    fs::create_dir_all(contract_path.parent().expect("Contract-Elternpfad"))
+        .expect("Contract-Elternpfad anlegen");
+
+    let (mut config, catalog, rights, ..) = fixture();
+    let executable_source = Path::new(env!("CARGO_BIN_EXE_zugfolge-infra-release"));
+    let executable_bytes = fs::read(executable_source).expect("Test-Releasecompiler lesen");
+    let executable_sha256 = Sha256::digest(&executable_bytes)
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect::<String>();
+    let build_commit = "5555555555555555555555555555555555555555";
+    let executable_relative = format!(
+        "var/derived/germany-2027.1/toolchain/zugfolge-infra-release-{build_commit}-{executable_sha256}.exe"
+    );
+    let executable_path = root.join(&executable_relative);
+    fs::create_dir_all(executable_path.parent().expect("Executor-Elternpfad"))
+        .expect("Executor-Elternpfad anlegen");
+    fs::copy(executable_source, &executable_path).expect("gepinnten Testexecutor kopieren");
+    let outer_launcher_path = root.join(
+        "tools/region-import/germany/operational-infrastructure-v2-direct-contract-launcher.windows.ps1",
+    );
+    fs::create_dir_all(
+        outer_launcher_path
+            .parent()
+            .expect("Outer-Launcher-Elternpfad"),
+    )
+    .expect("Outer-Launcher-Elternpfad anlegen");
+    fs::copy(
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(
+            "../../tools/region-import/germany/operational-infrastructure-v2-direct-contract-launcher.windows.ps1",
+        ),
+        &outer_launcher_path,
+    )
+    .expect("Outer-Launcher kopieren");
+
+    let marker_literal = marker.to_string_lossy().replace('\'', "''");
+    let bootstrap = format!(
+        "param($Contract,$Context,[string]$WorkspaceRoot);[IO.File]::WriteAllText('{marker_literal}','direct-plan-ok')"
+    );
+    let bootstrap_sha256 = Sha256::digest(bootstrap.as_bytes())
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect::<String>();
+    let execution_pins = json!({
+        "file": "tools/region-import/germany/operational-infrastructure-v2-execution-pins.annual-2027.1.json",
+        "bytes": 987,
+        "sha256": "8888888888888888888888888888888888888888888888888888888888888888",
+        "schema": "zugfolge-germany-operational-v2-execution-pins/v1",
+    });
+    let contract = json!({
+        "schema": "zugfolge-operational-v2-direct-system-launch-contract/v1",
+        "releaseId": "infra-deutschland-2027.1",
+        "platform": "win32",
+        "executionPins": execution_pins,
+        "trustedExecutor": {
+            "file": executable_relative,
+            "buildCommit": build_commit,
+            "bytes": executable_bytes.len(),
+            "sha256": executable_sha256,
+        },
+        "launcher": {
+            "file": "tools/region-import/germany/operational-infrastructure-v2-system-launcher.windows.ps1",
+            "mode": "windows-system-powershell-held-bundle-v1",
+            "sourceBytes": 1,
+            "sourceSha256": "2222222222222222222222222222222222222222222222222222222222222222",
+        },
+        "dynamicBindings": [{
+            "id": "launchContext",
+            "environment": "ZUGFOLGE_OPERATIONAL_LAUNCH_CONTEXT_BASE64",
+            "encoding": "canonical-json-utf8-base64-v1",
+            "schema": "zugfolge-operational-v2-direct-system-launch-context/v1",
+            "properties": [
+                "candidatePath", "candidateSidecarPath", "executionPinsPath",
+                "nativeReceiptPath", "reportPath", "runtimePath", "schema", "sourceRoot",
+                "specificationPath"
+            ],
+        }],
+        "bootstrap": {
+            "mode": "held-contract-inline-powershell-v1",
+            "sourceEncoding": "utf-8",
+            "sourceBase64": base64(bootstrap.as_bytes()),
+            "sourceBytes": bootstrap.len(),
+            "sourceSha256": bootstrap_sha256,
+        },
+    });
+    let mut contract_bytes = serde_json::to_vec(&contract).expect("Contract serialisieren");
+    contract_bytes.push(b'\n');
+    fs::write(&contract_path, &contract_bytes).expect("Contract schreiben");
+    let contract_sha256 = Sha256::digest(&contract_bytes)
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect::<String>();
+
+    config["pipeline"]["operationalDeriver"]["recoveryPublisher"]["validatorExecutable"] =
+        Value::String(executable_relative);
+    config["pipeline"]["operationalDeriver"]["recoveryPublisher"]["validatorBytes"] =
+        Value::from(executable_bytes.len());
+    config["pipeline"]["operationalDeriver"]["recoveryPublisher"]["validatorSha256"] =
+        Value::String(executable_sha256);
+    config["pipeline"]["operationalDeriver"]["directSystemLaunch"]["contract"] = json!({
+        "file": contract_relative,
+        "bytes": contract_bytes.len(),
+        "sha256": contract_sha256,
+        "schema": "zugfolge-operational-v2-direct-system-launch-contract/v1",
+        "releaseId": "infra-deutschland-2027.1",
+        "executionPins": contract["executionPins"].clone(),
+        "trustedExecutor": contract["trustedExecutor"].clone(),
+    });
+    let context = json!({
+        "schema": "zugfolge-operational-v2-direct-system-launch-context/v1",
+        "runtimePath": r"C:\runtime\node.exe",
+        "executionPinsPath": "pins.json",
+        "specificationPath": "spec.json",
+        "sourceRoot": "source",
+        "candidatePath": "candidate.json",
+        "candidateSidecarPath": "candidate-sidecar.json",
+        "reportPath": "report.json",
+        "nativeReceiptPath": "native-receipt.json",
+    });
+    let config_path = root.join("config.json");
+    let catalog_path = root.join("catalog.json");
+    let rights_path = root.join("rights.json");
+    let context_path = root.join("context.json");
+    fs::write(&config_path, serde_json::to_vec(&config).unwrap()).unwrap();
+    fs::write(&catalog_path, serde_json::to_vec(&catalog).unwrap()).unwrap();
+    fs::write(&rights_path, serde_json::to_vec(&rights).unwrap()).unwrap();
+    fs::write(&context_path, serde_json::to_vec(&context).unwrap()).unwrap();
+
+    let result = Command::new(&executable_path)
+        .args([
+            "run-annual-operational-v2",
+            config_path.to_str().unwrap(),
+            catalog_path.to_str().unwrap(),
+            rights_path.to_str().unwrap(),
+            context_path.to_str().unwrap(),
+        ])
+        .env("COMPLUS_InstallRoot", r"C:\definitely-missing")
+        .env("DOTNET_STARTUP_HOOKS", r"C:\attacker\hook.dll")
+        .output()
+        .expect("gepinnten Rust-Executor starten");
+    assert!(
+        result.status.success(),
+        "stdout={} stderr={}",
+        String::from_utf8_lossy(&result.stdout),
+        String::from_utf8_lossy(&result.stderr)
+    );
+    assert_eq!(fs::read_to_string(&marker).unwrap(), "direct-plan-ok");
+    fs::remove_dir_all(&root).expect("Testbaum entfernen");
 }
 
 #[test]
@@ -809,7 +1274,9 @@ fn deutschland_2026_patch_4_verweigert_historisches_source_capture_v1() {
     config["release"]["releaseId"] = Value::String("infra-deutschland-2026.4".to_owned());
     config["release"]["timetableYear"] = Value::from(2026);
     let deriver = &mut config["pipeline"]["operationalDeriver"];
-    deriver["entrypoint"] = deriver["primaryRunner"].take();
+    deriver["entrypoint"] = Value::String(
+        "tools/region-import/germany/run-operational-infrastructure-v2.mjs".to_owned(),
+    );
     deriver
         .as_object_mut()
         .expect("OperationalDeriver")
@@ -818,6 +1285,26 @@ fn deutschland_2026_patch_4_verweigert_historisches_source_capture_v1() {
         .as_object_mut()
         .expect("OperationalDeriver")
         .remove("primaryRunnerMode");
+    deriver
+        .as_object_mut()
+        .expect("OperationalDeriver")
+        .remove("systemCommandBuilder");
+    deriver
+        .as_object_mut()
+        .expect("OperationalDeriver")
+        .remove("systemCommandBuilderMode");
+    deriver
+        .as_object_mut()
+        .expect("OperationalDeriver")
+        .remove("directSystemLaunch");
+    deriver
+        .as_object_mut()
+        .expect("OperationalDeriver")
+        .remove("executionPins");
+    deriver
+        .as_object_mut()
+        .expect("OperationalDeriver")
+        .remove("sourceRoot");
     deriver
         .as_object_mut()
         .expect("OperationalDeriver")
@@ -838,6 +1325,29 @@ fn deutschland_2026_patch_4_verweigert_historisches_source_capture_v1() {
     );
     deriver["output"] =
         Value::String("var/derived/germany-2026.4/operational-infrastructure-v2.json".to_owned());
+
+    let legacy_plan = build_annual_infra_plan(&config, &catalog, &rights)
+        .expect("2026.4-Jahresplan ohne Current-Rebuild-Phase");
+    assert!(
+        legacy_plan["stages"]
+            .as_array()
+            .expect("2026.4-Stufen")
+            .iter()
+            .all(|stage| stage["id"] != "operational-v2-validator-rebuild-evidence"),
+        "2026.4 darf weder den v3-Rebuild-Vertrag noch eine interne Current-Bundle-Phase emittieren"
+    );
+
+    let mut config_mit_systemlauncher = config.clone();
+    config_mit_systemlauncher["pipeline"]["operationalDeriver"]["systemCommandBuilder"] =
+        Value::String(
+            "tools/region-import/germany/print-operational-infrastructure-v2-system-launch-command.mjs"
+                .to_owned(),
+        );
+    assert!(
+        build_annual_infra_plan(&config_mit_systemlauncher, &catalog, &rights).is_err(),
+        "2026.4 darf selbst einen korrekt benannten neuen SystemCommandBuilder nicht akzeptieren"
+    );
+
     let operational = artifacts
         .as_array_mut()
         .expect("Artefaktliste")
