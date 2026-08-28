@@ -223,10 +223,17 @@ async function fixtureVerifyValidatorRebuildEvidence({ spec, receiptPath, worksp
   return { proof: { bytes: bytes.length, sha256: sha256(bytes) }, receipt };
 }
 
-async function fixtureMaterializer({ candidatePath, expectedReleaseId, outputPath, validatorExecutablePath }) {
+async function fixtureMaterializer({ candidatePath, expectedReleaseId, outputPath, validatorExecutablePath, anchorOutput }) {
   const source = await readFile(candidatePath);
   assert.equal(JSON.parse(source).id, expectedReleaseId);
-  await writeFile(outputPath, source, { flag: "wx" });
+  const outputHandle = await open(outputPath, "wx", 0o600);
+  try {
+    await outputHandle.writeFile(source);
+    await outputHandle.sync();
+    await anchorOutput({ outputPath, handle: outputHandle, identity: await outputHandle.stat({ bigint: true }) });
+  } finally {
+    await outputHandle.close();
+  }
   return {
     sourceBytes: source.length,
     sourceSha256: sha256(source),
@@ -415,7 +422,7 @@ async function localModuleClosure(entrypoints) {
 async function spawnPublisherKillpoint(value, hookName, status = 73) {
   const child = join(value.paths.root, `killpoint-${hookName}.mjs`);
   await writeFile(child, `
-    import { readFile, writeFile } from "node:fs/promises";
+    import { open, readFile, writeFile } from "node:fs/promises";
     import { createHash } from "node:crypto";
     import { publishGermanyOperationalInfrastructureV2FromNativeReceipt } from ${JSON.stringify(pathToFileURL(PUBLICATION_MODULE).href)};
     const input = ${JSON.stringify(value.paths)};
@@ -432,9 +439,16 @@ async function spawnPublisherKillpoint(value, hookName, status = 73) {
       publicationReceiptPath: input.publicationReceiptPath,
       workspaceRoot: input.root,
       publisherEntrypointPath: input.publisherEntrypointPath,
-      materialize: async ({ candidatePath, outputPath, validatorExecutablePath }) => {
+      materialize: async ({ candidatePath, outputPath, validatorExecutablePath, anchorOutput }) => {
         const bytes = await readFile(candidatePath);
-        await writeFile(outputPath, bytes, { flag: "wx" });
+        const handle = await open(outputPath, "wx", 0o600);
+        try {
+          await handle.writeFile(bytes);
+          await handle.sync();
+          await anchorOutput({ outputPath, handle, identity: await handle.stat({ bigint: true }) });
+        } finally {
+          await handle.close();
+        }
         return { sourceBytes: bytes.length, sourceSha256: hash(bytes), bytes: bytes.length, sha256: hash(bytes), stateHash: ${JSON.stringify(STATE_HASH)}, validatorExecutablePath };
       },
       verifyValidatorRebuildEvidence: async ({ receiptPath }) => {
@@ -720,6 +734,41 @@ test("Quelltausch direkt nach create-new Link und finaler Cleanup-Tausch liefern
     },
   }), /fremd ersetzt|veraendert|finalen Inspektion/u);
   assert.equal(await readFile(finalSwap.paths.outputPath, "utf8"), "foreign-final-output\n");
+});
+
+test("erster Sidecar-Ownership-Anker ist vor Linux-Inode-Reuse handlegebunden", async (t) => {
+  const value = await fixture(t);
+  await capture(value);
+  let replaced = false;
+  await assert.rejects(publish(value, {
+    hooks: {
+      beforeOwnershipAnchorLink: async (context) => {
+        assert.equal(Object.hasOwn(context, "handle"), false);
+        const { file, sourcePath } = context;
+        if (replaced || file !== basename(value.paths.movementRouteTemplatesPath)) return;
+        replaced = true;
+        await unlink(sourcePath);
+        await writeFile(sourcePath, "foreign-before-first-anchor\n", { flag: "wx" });
+      },
+    },
+  }), /Ownership-Verankerung|fremd ersetzt|Cleanup/u);
+  assert.equal(replaced, true);
+  await assertNoVisiblePair(value.paths);
+  const cleanupRoots = (await readdir(dirname(value.paths.outputPath)))
+    .filter((name) => name.startsWith(".operational-v2-owned-cleanup-"));
+  let foreignPreserved = false;
+  for (const name of cleanupRoots) {
+    const pending = [join(dirname(value.paths.outputPath), name)];
+    while (pending.length > 0) {
+      const directory = pending.pop();
+      for (const entry of await readdir(directory, { withFileTypes: true })) {
+        const path = join(directory, entry.name);
+        if (entry.isDirectory()) pending.push(path);
+        else if ((await readFile(path, "utf8")) === "foreign-before-first-anchor\n") foreignPreserved = true;
+      }
+    }
+  }
+  assert.equal(foreignPreserved, true);
 });
 
 test("Directory-Cleanup loescht beim Check-Rename-Race keinen fremden Staging-Ersatz", async (t) => {

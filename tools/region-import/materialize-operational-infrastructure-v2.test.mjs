@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { access, lstat, mkdtemp, open, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { access, link, lstat, mkdtemp, open, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -187,6 +187,48 @@ test("materialisiert erst nach übereinstimmender nativer Validierung kanonische
   }
 });
 
+test("verankert die echte Materialisierung mit dem gehaltenen Prüf-Handle", async () => {
+  const root = await mkdtemp(join(tmpdir(), "zugfolge-materialize-operational-v2-anchor-"));
+  try {
+    const candidatePath = join(root, "candidate.json");
+    const outputPath = join(root, "release", "operational-infrastructure-v2.json");
+    const anchorPath = join(root, "release", ".operational-infrastructure-v2.json.owned-anchor");
+    let anchorObserved = false;
+    await writeFile(candidatePath, JSON.stringify(candidate()));
+    const receipt = await materializeOperationalInfrastructureV2({
+      candidatePath,
+      expectedReleaseId: RELEASE_ID,
+      outputPath,
+      validateNative: (path, releaseId, nativeOutputPath) => nativeReceipt(path, releaseId, nativeOutputPath),
+      anchorOutput: async ({ outputPath: anchoredOutputPath, handle, identity }) => {
+        const [held, visible] = await Promise.all([
+          handle.stat({ bigint: true }),
+          lstat(anchoredOutputPath, { bigint: true }),
+        ]);
+        assert.equal(held.dev, identity.dev);
+        assert.equal(held.ino, identity.ino);
+        assert.equal(visible.dev, identity.dev);
+        assert.equal(visible.ino, identity.ino);
+        await link(anchoredOutputPath, anchorPath);
+        const anchor = await lstat(anchorPath, { bigint: true });
+        assert.equal(anchor.dev, identity.dev);
+        assert.equal(anchor.ino, identity.ino);
+        anchorObserved = true;
+      },
+    });
+    assert.equal(anchorObserved, true);
+    const [output, anchor] = await Promise.all([
+      lstat(outputPath, { bigint: true }),
+      lstat(anchorPath, { bigint: true }),
+    ]);
+    assert.equal(output.dev, anchor.dev);
+    assert.equal(output.ino, anchor.ino);
+    assert.equal(sha256(await readFile(anchorPath)), receipt.sha256);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test("materialisiert einen Candidate oberhalb 64 MiB ausschließlich über den nativen Streamingpfad", { timeout: 120_000 }, async () => {
   const root = await mkdtemp(join(tmpdir(), "zugfolge-materialize-operational-v2-streaming-"));
   try {
@@ -256,6 +298,39 @@ test("verwirft eine nach Receipt-Erzeugung manipulierte native Ausgabe", async (
       /Ausgabe-Bytes gebunden/u,
     );
     await assert.rejects(access(outputPath));
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("verweigert eine fremde Temporausgabe unmittelbar vor dem ersten create-new-Link", async () => {
+  const root = await mkdtemp(join(tmpdir(), "zugfolge-materialize-operational-v2-prelink-race-"));
+  try {
+    const candidatePath = join(root, "candidate.json");
+    const outputPath = join(root, "operational-infrastructure-v2.json");
+    let foreignTemporaryPath;
+    let preservedOwnedTemporaryPath;
+    await writeFile(candidatePath, JSON.stringify(candidate()));
+    await assert.rejects(
+      materializeOperationalInfrastructureV2({
+        candidatePath,
+        expectedReleaseId: RELEASE_ID,
+        outputPath,
+        validateNative: (path, releaseId, nativeOutputPath) => nativeReceipt(path, releaseId, nativeOutputPath),
+        hooks: {
+          beforeOutputLink: async ({ temporaryOutput }) => {
+            foreignTemporaryPath = temporaryOutput;
+            preservedOwnedTemporaryPath = `${temporaryOutput}.preserved-owned`;
+            await rename(temporaryOutput, preservedOwnedTemporaryPath);
+            await writeFile(temporaryOutput, "fremde-prelink-datei\n", { flag: "wx" });
+          },
+        },
+      }),
+      /handlegebundenen create-new-Link|fremd ersetzt|identitaetsgebunden/u,
+    );
+    assert.equal(await readFile(foreignTemporaryPath, "utf8"), "fremde-prelink-datei\n");
+    assert.ok((await lstat(preservedOwnedTemporaryPath)).isFile());
+    await assert.rejects(access(outputPath), (error) => error?.code === "ENOENT");
   } finally {
     await rm(root, { recursive: true, force: true });
   }

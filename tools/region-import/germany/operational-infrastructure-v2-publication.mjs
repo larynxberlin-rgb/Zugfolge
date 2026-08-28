@@ -213,23 +213,51 @@ async function assertOwnedStableRegularFile(path, expectedMetadata, label) {
   return metadata;
 }
 
-async function anchorOwnedStagedFile(staging, file, stagedFiles, label) {
+async function anchorHeldOwnedStagedFile(staging, file, stagedFiles, handle, label, hooks = {}) {
   const sourcePath = join(staging, file);
   const anchorFile = ownershipAnchorFile(file);
   const anchorPath = join(staging, anchorFile);
   const expectedIdentity = stagedFiles[file];
   invariant(expectedIdentity !== undefined, `${label} besitzt vor der Ownership-Verankerung keine erwartete Identitaet.`);
+  const [heldBefore, sourceBefore] = await Promise.all([
+    handle.stat({ bigint: true }),
+    lstat(sourcePath, { bigint: true }),
+  ]);
+  invariant(
+    heldBefore.isFile()
+      && sourceBefore.isFile()
+      && !sourceBefore.isSymbolicLink()
+      && sameStableMetadata(heldBefore, sourceBefore)
+      && sameIdentity(heldBefore, expectedIdentity),
+    `${label} driftete vor seiner handlegebundenen Ownership-Verankerung.`,
+  );
+  await runHook(hooks, "beforeOwnershipAnchorLink", { file, sourcePath, anchorPath });
+  const [heldBeforeLink, sourceBeforeLink] = await Promise.all([
+    handle.stat({ bigint: true }),
+    lstat(sourcePath, { bigint: true }),
+  ]);
+  invariant(
+    heldBeforeLink.isFile()
+      && sourceBeforeLink.isFile()
+      && !sourceBeforeLink.isSymbolicLink()
+      && samePersistentFileMetadata(heldBefore, heldBeforeLink)
+      && sameStableMetadata(heldBeforeLink, sourceBeforeLink),
+    `${label} wurde unmittelbar vor seiner Ownership-Verankerung fremd ersetzt oder veraendert.`,
+  );
   await link(sourcePath, anchorPath);
-  const [sourceMetadata, anchorMetadata] = await Promise.all([
+  const [heldAfter, sourceMetadata, anchorMetadata] = await Promise.all([
+    handle.stat({ bigint: true }),
     lstat(sourcePath, { bigint: true }),
     lstat(anchorPath, { bigint: true }),
   ]);
   invariant(
-    sourceMetadata.isFile()
+    heldAfter.isFile()
+      && sourceMetadata.isFile()
       && anchorMetadata.isFile()
       && !sourceMetadata.isSymbolicLink()
       && !anchorMetadata.isSymbolicLink()
-      && sameIdentity(sourceMetadata, expectedIdentity)
+      && samePersistentFileMetadata(heldBeforeLink, heldAfter)
+      && sameStableMetadata(heldAfter, sourceMetadata)
       && sameStableMetadata(sourceMetadata, anchorMetadata),
     `${label} konnte nicht als identitaetserhaltender Ownership-Hardlink verankert werden.`,
   );
@@ -730,7 +758,7 @@ async function writeHandleBytes(handle, bytes, position) {
   }
 }
 
-async function copyRegularFileStreaming(sourceInput, destinationInput, { onChunk } = {}) {
+async function copyRegularFileStreaming(sourceInput, destinationInput, { onChunk, ownership } = {}) {
   const source = resolve(sourceInput);
   const destination = resolve(destinationInput);
   const pathBefore = await lstat(source, { bigint: true });
@@ -757,6 +785,16 @@ async function copyRegularFileStreaming(sourceInput, destinationInput, { onChunk
         if (onChunk !== undefined) await onChunk({ bytes, rss: process.memoryUsage().rss });
       }
       await output.sync();
+      invariant(isRecord(ownership), "Gestagetes Movement-Sidecar besitzt keinen handlegebundenen Ownership-Vertrag.");
+      ownership.stagedFiles[ownership.file] = await output.stat({ bigint: true });
+      await anchorHeldOwnedStagedFile(
+        ownership.staging,
+        ownership.file,
+        ownership.stagedFiles,
+        output,
+        ownership.label,
+        ownership.hooks,
+      );
     } finally {
       await output.close();
     }
@@ -1229,7 +1267,7 @@ async function acquireClaim(parent, staging, receiptFile, stagedFiles, hooks = {
   try {
     handle = await open(stagedClaim, "wx", 0o600);
     stagedFiles[CLAIM_FILE] = await handle.stat({ bigint: true });
-    await anchorOwnedStagedFile(staging, CLAIM_FILE, stagedFiles, "Operational-v2-Publikationsclaim");
+    await anchorHeldOwnedStagedFile(staging, CLAIM_FILE, stagedFiles, handle, "Operational-v2-Publikationsclaim", hooks);
     const claimMetadata = stagedFiles[CLAIM_FILE];
     const value = validateClaim({
       schema: GERMANY_OPERATIONAL_PUBLICATION_CLAIM_SCHEMA,
@@ -1723,23 +1761,55 @@ export async function publishGermanyOperationalInfrastructureV2FromNativeReceipt
   let completed = false;
   let failure;
   try {
-    const streamedMovementProof = await copyRegularFileStreaming(candidateMovementRouteTemplatesPath, stagedMovement, { onChunk: hooks?.onStreamingChunk });
-    stagedFileIdentities[SIDECAR_FILE] = await lstat(stagedMovement, { bigint: true });
-    await anchorOwnedStagedFile(staging, SIDECAR_FILE, stagedFileIdentities, "Gestagetes Movement-Sidecar");
+    const streamedMovementProof = await copyRegularFileStreaming(candidateMovementRouteTemplatesPath, stagedMovement, {
+      onChunk: hooks?.onStreamingChunk,
+      ownership: {
+        staging,
+        file: SIDECAR_FILE,
+        stagedFiles: stagedFileIdentities,
+        label: "Gestagetes Movement-Sidecar",
+        hooks,
+      },
+    });
     proofMatches(streamedMovementProof, capture.capture.sources.movementRouteTemplates, "Gestagetes Movement-Sidecar");
     const materialization = await materialize({
       candidatePath: resolve(candidatePath),
       expectedReleaseId: capture.capture.infraReleaseId,
       outputPath: stagedOutput,
       validatorExecutablePath,
+      anchorOutput: async ({ outputPath: boundOutputPath, handle, identity }) => {
+        invariant(
+          normalizedPathForComparison(boundOutputPath) === normalizedPathForComparison(stagedOutput),
+          "Operational-v2-Materialisierung bot den falschen Pfad zur Ownership-Verankerung an.",
+        );
+        stagedFileIdentities[OPERATIONAL_FILE] = await handle.stat({ bigint: true });
+        if (identity !== undefined) {
+          invariant(
+            matchesExpectedIdentity(stagedFileIdentities[OPERATIONAL_FILE], identity),
+            "Operational-v2-Materialisierung bot eine abweichende Identitaet zur Ownership-Verankerung an.",
+          );
+        }
+        await anchorHeldOwnedStagedFile(
+          staging,
+          OPERATIONAL_FILE,
+          stagedFileIdentities,
+          handle,
+          "Gestagetes Operational-v2-Artefakt",
+          hooks,
+        );
+      },
     });
     const stagedOutputMetadata = await lstat(stagedOutput, { bigint: true });
     invariant(
       stagedOutputMetadata.isFile() && !stagedOutputMetadata.isSymbolicLink(),
       "Gestagetes Operational-v2-Artefakt ist keine regulaere Datei.",
     );
-    stagedFileIdentities[OPERATIONAL_FILE] = stagedOutputMetadata;
-    await anchorOwnedStagedFile(staging, OPERATIONAL_FILE, stagedFileIdentities, "Gestagetes Operational-v2-Artefakt");
+    invariant(
+      stagedFileIdentities[OPERATIONAL_FILE] !== undefined
+        && stagedFileIdentities[ownershipAnchorFile(OPERATIONAL_FILE)] !== undefined
+        && sameIdentity(stagedOutputMetadata, stagedFileIdentities[OPERATIONAL_FILE]),
+      "Operational-v2-Materialisierung schloss ohne handlegebundenen Ownership-Anker ab.",
+    );
     invariant(
       typeof materialization.validatorExecutablePath === "string"
         && normalizedPathForComparison(materialization.validatorExecutablePath) === normalizedPathForComparison(validatorExecutablePath),
@@ -1778,7 +1848,7 @@ export async function publishGermanyOperationalInfrastructureV2FromNativeReceipt
       "Operational-v2-Materialisierungsreceipt driftet von den gestageten Bytes.");
     receiptHandle = await open(stagedReceipt, "wx", 0o600);
     stagedFileIdentities[PUBLICATION_RECEIPT_FILE] = await receiptHandle.stat({ bigint: true });
-    await anchorOwnedStagedFile(staging, PUBLICATION_RECEIPT_FILE, stagedFileIdentities, "Reserviertes Operational-v2-Publication-Receipt");
+    await anchorHeldOwnedStagedFile(staging, PUBLICATION_RECEIPT_FILE, stagedFileIdentities, receiptHandle, "Reserviertes Operational-v2-Publication-Receipt", hooks);
     await runHook(hooks, "afterReceiptReservation", { parent, paths, staging, stagedReceipt, receiptHandle });
     await assertPinnedParent(parent);
     await assertHeldOwnedRegularFile(

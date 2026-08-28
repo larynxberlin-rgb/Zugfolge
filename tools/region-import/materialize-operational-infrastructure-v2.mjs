@@ -52,12 +52,13 @@ function normalizedPath(path) {
   return process.platform === "win32" ? path.toLocaleLowerCase("en-US") : path;
 }
 
-async function inspectRegularFile(path, label) {
+async function inspectRegularFile(path, label, { retainHandle = false } = {}) {
   const pathBefore = await lstat(path, { bigint: true });
   invariant(pathBefore.isFile() && !pathBefore.isSymbolicLink() && pathBefore.size > 0n, `${label} ist keine nichtleere reguläre Datei.`);
   const handle = await open(path, "r");
   const digest = createHash("sha256");
   let bytes = 0;
+  let retained = false;
   try {
     const before = await handle.stat({ bigint: true });
     invariant(before.isFile() && sameStableMetadata(pathBefore, before), `${label} wurde vor der Hashbildung ausgetauscht.`);
@@ -77,12 +78,24 @@ async function inspectRegularFile(path, label) {
         && BigInt(bytes) === after.size,
       `${label} änderte sich während der Hashbildung.`,
     );
-    return {
+    const result = {
       identity: Object.freeze({ dev: after.dev, ino: after.ino }),
+      metadata: Object.freeze({
+        dev: after.dev,
+        ino: after.ino,
+        size: after.size,
+        mtimeNs: after.mtimeNs,
+        ctimeNs: after.ctimeNs,
+      }),
       proof: { bytes, sha256: digest.digest("hex") },
     };
+    if (retainHandle) {
+      result.handle = handle;
+      retained = true;
+    }
+    return result;
   } finally {
-    await handle.close();
+    if (!retained) await handle.close();
   }
 }
 
@@ -273,9 +286,11 @@ export async function materializeOperationalInfrastructureV2({
   outputPath,
   validatorExecutablePath,
   validateNative = validateOperationalInfrastructureV2Native,
+  anchorOutput,
   hooks = {},
 }) {
   invariant(typeof expectedReleaseId === "string" && expectedReleaseId !== "", "Erwartete InfraRelease-ID fehlt.");
+  invariant(anchorOutput === undefined || typeof anchorOutput === "function", "Operational-v2-Ownership-Anker muss eine Funktion sein.");
   const candidate = resolve(candidatePath);
   const output = resolve(outputPath);
   invariant(candidate !== output, "Candidate und materialisiertes Operational-v2-Artefakt müssen getrennte Dateien sein.");
@@ -285,6 +300,7 @@ export async function materializeOperationalInfrastructureV2({
   invariant(normalizedPath(dirname(output)) === normalizedPath(parent.real), "Operational-v2-Ausgabe muss direkt im gepinnten Elternverzeichnis liegen.");
   const temporaryOutput = resolve(parent.real, `.${basename(output)}.${process.pid}.${randomUUID()}.native-building`);
   let temporaryIdentity;
+  let temporaryHandle;
   let outputIdentity;
   let result;
   let operationError;
@@ -303,8 +319,9 @@ export async function materializeOperationalInfrastructureV2({
       nativeReceipt.sourceBytes === sourceAfter.bytes && nativeReceipt.sourceSha256 === sourceAfter.sha256,
       "Native Operational-v2-Validierung ist nicht an die geprüften Candidate-Bytes gebunden.",
     );
-    const inspectedOutput = await inspectRegularFile(temporaryOutput, "Native Operational-v2-Ausgabe");
+    const inspectedOutput = await inspectRegularFile(temporaryOutput, "Native Operational-v2-Ausgabe", { retainHandle: true });
     temporaryIdentity = inspectedOutput.identity;
+    temporaryHandle = inspectedOutput.handle;
     const outputProof = inspectedOutput.proof;
     invariant(
       nativeReceipt.bytes === outputProof.bytes && nativeReceipt.sha256 === outputProof.sha256,
@@ -332,15 +349,78 @@ export async function materializeOperationalInfrastructureV2({
     }
 
     await assertPinnedParent(parent);
+    await hooks.beforeOutputLink?.({ output, temporaryOutput });
+    const [heldBeforeLink, pathBeforeLink] = await Promise.all([
+      temporaryHandle.stat({ bigint: true }),
+      lstat(temporaryOutput, { bigint: true }),
+    ]);
+    invariant(
+      heldBeforeLink.isFile()
+        && pathBeforeLink.isFile()
+        && !pathBeforeLink.isSymbolicLink()
+        && sameIdentity(heldBeforeLink, temporaryIdentity)
+        && sameStableMetadata(inspectedOutput.metadata, heldBeforeLink)
+        && sameStableMetadata(heldBeforeLink, pathBeforeLink),
+      "Native Operational-v2-Ausgabe wurde vor dem handlegebundenen create-new-Link ausgetauscht oder verändert.",
+    );
     try {
       await link(temporaryOutput, output);
     } catch (error) {
       if (error?.code === "EEXIST") throw new Error("Operational-v2-Ausgabe existiert bereits; create-new verweigert jede Überschreibung.");
       throw error;
     }
-    const linkedOutput = await lstat(output, { bigint: true });
-    invariant(linkedOutput.isFile() && !linkedOutput.isSymbolicLink() && sameIdentity(linkedOutput, temporaryIdentity), "Operational-v2-Ausgabe wurde beim create-new-Link ausgetauscht.");
-    outputIdentity = Object.freeze({ dev: linkedOutput.dev, ino: linkedOutput.ino });
+    const [heldAfterLink, temporaryAfterLink, linkedOutput] = await Promise.all([
+      temporaryHandle.stat({ bigint: true }),
+      lstat(temporaryOutput, { bigint: true }),
+      lstat(output, { bigint: true }),
+    ]);
+    invariant(
+      heldAfterLink.isFile()
+        && temporaryAfterLink.isFile()
+        && !temporaryAfterLink.isSymbolicLink()
+        && linkedOutput.isFile()
+        && !linkedOutput.isSymbolicLink()
+        && sameIdentity(heldAfterLink, temporaryIdentity)
+        && sameStableMetadata(heldAfterLink, temporaryAfterLink)
+        && sameStableMetadata(heldAfterLink, linkedOutput),
+      "Operational-v2-Ausgabe wurde beim handlegebundenen create-new-Link ausgetauscht oder verändert.",
+    );
+    outputIdentity = Object.freeze({ dev: heldAfterLink.dev, ino: heldAfterLink.ino });
+    if (anchorOutput !== undefined) {
+      const [heldBeforeAnchor, temporaryBeforeAnchor, pathBeforeAnchor] = await Promise.all([
+        temporaryHandle.stat({ bigint: true }),
+        lstat(temporaryOutput, { bigint: true }),
+        lstat(output, { bigint: true }),
+      ]);
+      invariant(
+        heldBeforeAnchor.isFile()
+          && temporaryBeforeAnchor.isFile()
+          && !temporaryBeforeAnchor.isSymbolicLink()
+          && pathBeforeAnchor.isFile()
+          && !pathBeforeAnchor.isSymbolicLink()
+          && sameIdentity(heldBeforeAnchor, outputIdentity)
+          && sameStableMetadata(heldBeforeAnchor, temporaryBeforeAnchor)
+          && sameStableMetadata(heldBeforeAnchor, pathBeforeAnchor),
+        "Operational-v2-Ausgabe driftete vor der handlegebundenen Ownership-Verankerung.",
+      );
+      await anchorOutput({ outputPath: output, handle: temporaryHandle, identity: outputIdentity });
+      const [heldAfterAnchor, temporaryAfterAnchor, pathAfterAnchor] = await Promise.all([
+        temporaryHandle.stat({ bigint: true }),
+        lstat(temporaryOutput, { bigint: true }),
+        lstat(output, { bigint: true }),
+      ]);
+      invariant(
+        heldAfterAnchor.isFile()
+          && temporaryAfterAnchor.isFile()
+          && !temporaryAfterAnchor.isSymbolicLink()
+          && pathAfterAnchor.isFile()
+          && !pathAfterAnchor.isSymbolicLink()
+          && sameIdentity(heldAfterAnchor, outputIdentity)
+          && sameStableMetadata(heldAfterAnchor, temporaryAfterAnchor)
+          && sameStableMetadata(heldAfterAnchor, pathAfterAnchor),
+        "Operational-v2-Ausgabe driftete waehrend der handlegebundenen Ownership-Verankerung.",
+      );
+    }
     await hooks.beforeTemporaryCleanup?.({ output, temporaryOutput });
     result = validatorExecutablePath === undefined
       ? { ...nativeReceipt, output }
@@ -357,6 +437,16 @@ export async function materializeOperationalInfrastructureV2({
       cleanupErrors.push(error);
     }
   }
+  if (operationError === undefined && cleanupErrors.length === 0) {
+    try {
+      await assertPinnedParent(parent);
+      const finalOutput = await inspectRegularFile(output, "Finale Operational-v2-Ausgabe");
+      invariant(sameIdentity(finalOutput.identity, outputIdentity), "Finale Operational-v2-Ausgabe wurde nach der Bereinigung ausgetauscht.");
+      invariant(finalOutput.proof.bytes === result.bytes && finalOutput.proof.sha256 === result.sha256, "Finale Operational-v2-Ausgabe driftet vom nativen Receipt.");
+    } catch (error) {
+      operationError = error;
+    }
+  }
   if (operationError !== undefined || cleanupErrors.length > 0) {
     if (outputIdentity !== undefined) {
       try {
@@ -365,14 +455,20 @@ export async function materializeOperationalInfrastructureV2({
         cleanupErrors.push(error);
       }
     }
+  }
+  if (temporaryHandle !== undefined) {
+    try {
+      await temporaryHandle.close();
+    } catch (error) {
+      cleanupErrors.push(error);
+    }
+    temporaryHandle = undefined;
+  }
+  if (operationError !== undefined || cleanupErrors.length > 0) {
     const causes = operationError === undefined ? cleanupErrors : [operationError, ...cleanupErrors];
     if (causes.length === 1) throw causes[0];
     throw new AggregateError(causes, "Operational-v2-Materialisierung oder identitaetsgebundene Bereinigung ist fehlgeschlagen.");
   }
-  await assertPinnedParent(parent);
-  const finalOutput = await inspectRegularFile(output, "Finale Operational-v2-Ausgabe");
-  invariant(sameIdentity(finalOutput.identity, outputIdentity), "Finale Operational-v2-Ausgabe wurde nach der Bereinigung ausgetauscht.");
-  invariant(finalOutput.proof.bytes === result.bytes && finalOutput.proof.sha256 === result.sha256, "Finale Operational-v2-Ausgabe driftet vom nativen Receipt.");
   return result;
 }
 
