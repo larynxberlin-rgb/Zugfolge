@@ -31,7 +31,7 @@ import { verifyOperationalValidatorRebuildEvidence } from "./operational-validat
 export const GERMANY_OPERATIONAL_NATIVE_RECEIPT_CAPTURE_SCHEMA = "zugfolge-germany-operational-v2-native-receipt-capture/v1";
 export const GERMANY_OPERATIONAL_NATIVE_RECEIPT_CAPTURE_CLAIM_SCHEMA = "zugfolge-germany-operational-v2-native-receipt-capture-claim/v1";
 export const GERMANY_OPERATIONAL_PUBLICATION_RECEIPT_SCHEMA = "zugfolge-germany-operational-v2-publication-receipt/v1";
-export const GERMANY_OPERATIONAL_PUBLICATION_CLAIM_SCHEMA = "zugfolge-germany-operational-v2-publication-claim/v1";
+export const GERMANY_OPERATIONAL_PUBLICATION_CLAIM_SCHEMA = "zugfolge-germany-operational-v2-publication-claim/v2";
 export const GERMANY_OPERATIONAL_PUBLICATION_ENTRYPOINT = "tools/region-import/germany/publish-operational-infrastructure-v2.mjs";
 export const GERMANY_OPERATIONAL_NATIVE_RECEIPT_CAPTURE_ENTRYPOINT = "tools/region-import/germany/capture-operational-infrastructure-v2-native-receipt.mjs";
 export const GERMANY_OPERATIONAL_VALIDATOR_REBUILD_EVIDENCE_SCHEMA = "zugfolge-operational-validator-rebuild-evidence/v2";
@@ -60,6 +60,22 @@ const OPERATIONAL_FILE = "operational-infrastructure-v2.json";
 const SIDECAR_FILE = "operational-infrastructure-v2.movement-route-templates-v2.json";
 const PUBLICATION_RECEIPT_FILE = "operational-infrastructure-v2.publication-receipt.json";
 const NATIVE_RECEIPT_FILE = "operational-infrastructure-v2.native-receipt.json";
+const OWNERSHIP_ANCHOR_SUFFIX = ".ownership-anchor";
+const PUBLICATION_STAGED_SOURCE_FILES = Object.freeze([
+  SIDECAR_FILE,
+  OPERATIONAL_FILE,
+  PUBLICATION_RECEIPT_FILE,
+  CLAIM_FILE,
+]);
+
+function ownershipAnchorFile(file) {
+  return `.${file}${OWNERSHIP_ANCHOR_SUFFIX}`;
+}
+
+const PUBLICATION_STAGING_FILES = Object.freeze([
+  ...PUBLICATION_STAGED_SOURCE_FILES,
+  ...PUBLICATION_STAGED_SOURCE_FILES.map(ownershipAnchorFile),
+]);
 
 function invariant(condition, message) {
   if (!condition) throw new Error(message);
@@ -127,6 +143,12 @@ function sameIdentitySizeMtime(left, right) {
   return sameIdentity(left, right) && left.size === right.size && left.mtimeNs === right.mtimeNs;
 }
 
+function samePersistentFileMetadata(left, right) {
+  return sameIdentitySizeMtime(left, right)
+    && left.birthtimeNs === right.birthtimeNs
+    && left.mode === right.mode;
+}
+
 function identityValue(metadata) {
   return { dev: metadata.dev.toString(), ino: metadata.ino.toString() };
 }
@@ -178,6 +200,41 @@ async function assertHeldOwnedRegularFile(path, handle, expectedIdentity, label)
     `${label} wurde fremd ersetzt oder driftet von seinem reservierten Handle.`,
   );
   return metadata;
+}
+
+async function assertOwnedStableRegularFile(path, expectedMetadata, label) {
+  const metadata = await lstat(path, { bigint: true });
+  invariant(
+    metadata.isFile()
+      && !metadata.isSymbolicLink()
+      && sameStableMetadata(metadata, expectedMetadata),
+    `${label} wurde fremd ersetzt oder veraendert.`,
+  );
+  return metadata;
+}
+
+async function anchorOwnedStagedFile(staging, file, stagedFiles, label) {
+  const sourcePath = join(staging, file);
+  const anchorFile = ownershipAnchorFile(file);
+  const anchorPath = join(staging, anchorFile);
+  const expectedIdentity = stagedFiles[file];
+  invariant(expectedIdentity !== undefined, `${label} besitzt vor der Ownership-Verankerung keine erwartete Identitaet.`);
+  await link(sourcePath, anchorPath);
+  const [sourceMetadata, anchorMetadata] = await Promise.all([
+    lstat(sourcePath, { bigint: true }),
+    lstat(anchorPath, { bigint: true }),
+  ]);
+  invariant(
+    sourceMetadata.isFile()
+      && anchorMetadata.isFile()
+      && !sourceMetadata.isSymbolicLink()
+      && !anchorMetadata.isSymbolicLink()
+      && sameIdentity(sourceMetadata, expectedIdentity)
+      && sameStableMetadata(sourceMetadata, anchorMetadata),
+    `${label} konnte nicht als identitaetserhaltender Ownership-Hardlink verankert werden.`,
+  );
+  stagedFiles[file] = sourceMetadata;
+  stagedFiles[anchorFile] = anchorMetadata;
 }
 
 function errorDetail(error) {
@@ -1139,10 +1196,18 @@ function validateClaim(value) {
   exactKeys(value.staging, ["directory", "identity", "files"], "Operational-v2-Publikationsclaim.staging");
   invariant(typeof value.staging.directory === "string" && value.staging.directory.startsWith(STAGING_PREFIX) && basename(value.staging.directory) === value.staging.directory,
     "Operational-v2-Publikationsclaim besitzt kein sicheres Staging-Verzeichnis.");
-  exactKeys(value.staging.files, [SIDECAR_FILE, OPERATIONAL_FILE, PUBLICATION_RECEIPT_FILE, CLAIM_FILE], "Operational-v2-Publikationsclaim.staging.files");
+  exactKeys(value.staging.files, PUBLICATION_STAGING_FILES, "Operational-v2-Publikationsclaim.staging.files");
   for (const [file, identity] of Object.entries(value.staging.files)) {
     exactKeys(identity, ["dev", "ino"], `Operational-v2-Publikationsclaim.staging.files.${file}`);
     invariant(DECIMAL.test(identity.dev) && DECIMAL.test(identity.ino), `Operational-v2-Publikationsclaim.staging.files.${file} besitzt keine Dateisystemidentitaet.`);
+  }
+  for (const file of PUBLICATION_STAGED_SOURCE_FILES) {
+    const source = value.staging.files[file];
+    const anchor = value.staging.files[ownershipAnchorFile(file)];
+    invariant(
+      source.dev === anchor.dev && source.ino === anchor.ino,
+      `Operational-v2-Publikationsclaim bindet ${file} nicht an seinen Ownership-Hardlink.`,
+    );
   }
   exactKeys(value.targets, ["movementRouteTemplates", "operationalInfrastructure", "publicationReceipt"], "Operational-v2-Publikationsclaim.targets");
   invariant(value.targets.movementRouteTemplates === SIDECAR_FILE && value.targets.operationalInfrastructure === OPERATIONAL_FILE,
@@ -1163,8 +1228,9 @@ async function acquireClaim(parent, staging, receiptFile, stagedFiles, hooks = {
   let owned;
   try {
     handle = await open(stagedClaim, "wx", 0o600);
-    const claimMetadata = await handle.stat({ bigint: true });
-    stagedFiles[CLAIM_FILE] = claimMetadata;
+    stagedFiles[CLAIM_FILE] = await handle.stat({ bigint: true });
+    await anchorOwnedStagedFile(staging, CLAIM_FILE, stagedFiles, "Operational-v2-Publikationsclaim");
+    const claimMetadata = stagedFiles[CLAIM_FILE];
     const value = validateClaim({
       schema: GERMANY_OPERATIONAL_PUBLICATION_CLAIM_SCHEMA,
       runId: randomUUID(),
@@ -1288,36 +1354,94 @@ async function removeOwnedPathByQuarantine(
   } else {
     invariant(moved.isDirectory() && !moved.isSymbolicLink(), `${label} ist in der Quarantaene kein regulaeres Verzeichnis.`);
     invariant(isRecord(expectedFiles), `${label} besitzt keine erwarteten Stagingdatei-Identitaeten.`);
-    const entries = await readdir(quarantined, { withFileTypes: true });
+    const entries = (await readdir(quarantined, { withFileTypes: true }))
+      .sort((left, right) => {
+        const leftIsAnchor = left.name.endsWith(OWNERSHIP_ANCHOR_SUFFIX);
+        const rightIsAnchor = right.name.endsWith(OWNERSHIP_ANCHOR_SUFFIX);
+        if (leftIsAnchor !== rightIsAnchor) return leftIsAnchor ? 1 : -1;
+        return left.name.localeCompare(right.name);
+      });
     invariant(entries.length === Object.keys(expectedFiles).length, `${label} besitzt fehlende oder unerwartete Stagingdateien; Quarantaene bleibt fail-closed erhalten.`);
     const entryQuarantine = join(quarantineRoot, ".owned-entries");
     await mkdir(entryQuarantine, { recursive: false, mode: 0o700 });
-    for (const entry of entries) {
-      invariant(Object.hasOwn(expectedFiles, entry.name), `${label} enthaelt den unerwarteten Eintrag ${entry.name}; Quarantaene bleibt fail-closed erhalten.`);
-      const entryPath = join(quarantined, entry.name);
-      const metadata = await lstat(entryPath, { bigint: true });
-      invariant(
-        metadata.isFile()
-          && !metadata.isSymbolicLink()
-          && matchesExpectedIdentity(metadata, expectedFiles[entry.name]),
-        `${label}.${entry.name} wurde vor der owned-only Loeschung fremd ersetzt; Quarantaene bleibt fail-closed erhalten.`,
-      );
-      await runHook(hooks, "beforeOwnedDirectoryEntryQuarantineRename", {
-        label,
-        entryName: entry.name,
-        entryPath,
-        expectedIdentity: expectedFiles[entry.name],
-        observedIdentity: metadata,
-      });
-      const quarantinedEntry = join(entryQuarantine, entry.name);
-      await rename(entryPath, quarantinedEntry);
-      const movedEntry = await lstat(quarantinedEntry, { bigint: true });
-      if (!movedEntry.isFile() || movedEntry.isSymbolicLink() || !matchesExpectedIdentity(movedEntry, expectedFiles[entry.name])) {
-        await restoreMismatchedDirectoryEntry({ original: entryPath, quarantined: quarantinedEntry, entryQuarantine, label: `${label}.${entry.name}` });
-        throw new Error(`${label}.${entry.name} wurde waehrend der owned-only Loeschung fremd ersetzt.`);
+    const heldEntries = [];
+    let entryError;
+    try {
+      for (const entry of entries) {
+        invariant(Object.hasOwn(expectedFiles, entry.name), `${label} enthaelt den unerwarteten Eintrag ${entry.name}; Quarantaene bleibt fail-closed erhalten.`);
+        const entryPath = join(quarantined, entry.name);
+        const handle = await open(entryPath, "r");
+        heldEntries.push({ entry, entryPath, handle });
+        const [metadata, held] = await Promise.all([
+          lstat(entryPath, { bigint: true }),
+          handle.stat({ bigint: true }),
+        ]);
+        invariant(
+          metadata.isFile()
+            && held.isFile()
+            && !metadata.isSymbolicLink()
+            && matchesExpectedIdentity(held, expectedFiles[entry.name])
+            && sameStableMetadata(metadata, held),
+          `${label}.${entry.name} wurde vor der owned-only Loeschung fremd ersetzt; Quarantaene bleibt fail-closed erhalten.`,
+        );
+        heldEntries[heldEntries.length - 1].metadata = held;
       }
-      await unlink(quarantinedEntry);
+
+      for (const heldEntry of heldEntries) {
+        const { entry, entryPath, handle, metadata } = heldEntry;
+        await runHook(hooks, "beforeOwnedDirectoryEntryQuarantineRename", {
+          label,
+          entryName: entry.name,
+          entryPath,
+          expectedIdentity: expectedFiles[entry.name],
+          observedIdentity: metadata,
+        });
+        const [pathBefore, heldBefore] = await Promise.all([
+          lstat(entryPath, { bigint: true }),
+          handle.stat({ bigint: true }),
+        ]);
+        invariant(
+          pathBefore.isFile()
+            && heldBefore.isFile()
+            && !pathBefore.isSymbolicLink()
+            && sameStableMetadata(pathBefore, heldBefore)
+            && samePersistentFileMetadata(metadata, heldBefore),
+          `${label}.${entry.name} wurde vor seiner Quarantaene fremd ersetzt oder veraendert; Quarantaene bleibt fail-closed erhalten.`,
+        );
+        const quarantinedEntry = join(entryQuarantine, entry.name);
+        await rename(entryPath, quarantinedEntry);
+        const [movedEntry, heldAfter] = await Promise.all([
+          lstat(quarantinedEntry, { bigint: true }),
+          handle.stat({ bigint: true }),
+        ]);
+        if (
+          !movedEntry.isFile()
+          || !heldAfter.isFile()
+          || movedEntry.isSymbolicLink()
+          || !sameStableMetadata(movedEntry, heldAfter)
+          || !samePersistentFileMetadata(heldBefore, heldAfter)
+        ) {
+          await restoreMismatchedDirectoryEntry({ original: entryPath, quarantined: quarantinedEntry, entryQuarantine, label: `${label}.${entry.name}` });
+          throw new Error(`${label}.${entry.name} wurde waehrend der owned-only Loeschung fremd ersetzt.`);
+        }
+        await unlink(quarantinedEntry);
+      }
+    } catch (error) {
+      entryError = error;
     }
+    const closeErrors = [];
+    for (const { handle } of heldEntries.reverse()) {
+      try {
+        await handle.close();
+      } catch (error) {
+        closeErrors.push(error);
+      }
+    }
+    if (entryError !== undefined && closeErrors.length > 0) {
+      throw new AggregateError([entryError, ...closeErrors], `${label}-Cleanup und das Schliessen der Ownership-Handles sind fehlgeschlagen.`);
+    }
+    if (entryError !== undefined) throw entryError;
+    if (closeErrors.length > 0) throw new AggregateError(closeErrors, `${label}-Ownership-Handles konnten nicht vollstaendig geschlossen werden.`);
     await rmdir(entryQuarantine);
     invariant((await readdir(quarantined)).length === 0, `${label} erhielt waehrend des Cleanup fremde Eintraege; Quarantaene bleibt fail-closed erhalten.`);
     await rmdir(quarantined);
@@ -1327,15 +1451,31 @@ async function removeOwnedPathByQuarantine(
 }
 
 async function removeOwnedClaim(parent, claim, hooks = {}) {
-  if (claim.binding !== undefined) {
-    await claim.binding.handle.close();
-    claim.binding = undefined;
+  const heldHandle = claim.binding?.handle;
+  claim.binding = undefined;
+  let removalError;
+  try {
+    await removeOwnedPathByQuarantine(parent, claim.path, claim.identity, {
+      kind: "file",
+      label: "Operational-v2-Publikationsclaim",
+      hooks,
+    });
+  } catch (error) {
+    removalError = error;
   }
-  await removeOwnedPathByQuarantine(parent, claim.path, claim.identity, {
-    kind: "file",
-    label: "Operational-v2-Publikationsclaim",
-    hooks,
-  });
+  let closeError;
+  if (heldHandle !== undefined) {
+    try {
+      await heldHandle.close();
+    } catch (error) {
+      closeError = error;
+    }
+  }
+  if (removalError !== undefined && closeError !== undefined) {
+    throw new AggregateError([removalError, closeError], "Operational-v2-Publikationsclaim-Cleanup und Handle-Close sind fehlgeschlagen.");
+  }
+  if (removalError !== undefined) throw removalError;
+  if (closeError !== undefined) throw closeError;
 }
 
 async function removeOwnedStaging(parent, staging, expectedIdentity, expectedFiles, hooks = {}) {
@@ -1585,6 +1725,7 @@ export async function publishGermanyOperationalInfrastructureV2FromNativeReceipt
   try {
     const streamedMovementProof = await copyRegularFileStreaming(candidateMovementRouteTemplatesPath, stagedMovement, { onChunk: hooks?.onStreamingChunk });
     stagedFileIdentities[SIDECAR_FILE] = await lstat(stagedMovement, { bigint: true });
+    await anchorOwnedStagedFile(staging, SIDECAR_FILE, stagedFileIdentities, "Gestagetes Movement-Sidecar");
     proofMatches(streamedMovementProof, capture.capture.sources.movementRouteTemplates, "Gestagetes Movement-Sidecar");
     const materialization = await materialize({
       candidatePath: resolve(candidatePath),
@@ -1598,6 +1739,7 @@ export async function publishGermanyOperationalInfrastructureV2FromNativeReceipt
       "Gestagetes Operational-v2-Artefakt ist keine regulaere Datei.",
     );
     stagedFileIdentities[OPERATIONAL_FILE] = stagedOutputMetadata;
+    await anchorOwnedStagedFile(staging, OPERATIONAL_FILE, stagedFileIdentities, "Gestagetes Operational-v2-Artefakt");
     invariant(
       typeof materialization.validatorExecutablePath === "string"
         && normalizedPathForComparison(materialization.validatorExecutablePath) === normalizedPathForComparison(validatorExecutablePath),
@@ -1636,6 +1778,7 @@ export async function publishGermanyOperationalInfrastructureV2FromNativeReceipt
       "Operational-v2-Materialisierungsreceipt driftet von den gestageten Bytes.");
     receiptHandle = await open(stagedReceipt, "wx", 0o600);
     stagedFileIdentities[PUBLICATION_RECEIPT_FILE] = await receiptHandle.stat({ bigint: true });
+    await anchorOwnedStagedFile(staging, PUBLICATION_RECEIPT_FILE, stagedFileIdentities, "Reserviertes Operational-v2-Publication-Receipt");
     await runHook(hooks, "afterReceiptReservation", { parent, paths, staging, stagedReceipt, receiptHandle });
     await assertPinnedParent(parent);
     await assertHeldOwnedRegularFile(
@@ -1752,6 +1895,7 @@ export async function publishGermanyOperationalInfrastructureV2FromNativeReceipt
     const receiptBytes = serializeGermanyOperationalPublicationJson(receipt);
     const split = Math.max(1, Math.floor(receiptBytes.length / 2));
     await writeHandleBytes(receiptHandle, receiptBytes.subarray(0, split), 0);
+    stagedFileIdentities[PUBLICATION_RECEIPT_FILE] = await receiptHandle.stat({ bigint: true });
     await runHook(hooks, "duringReceiptWrite", { parent, paths, staging, claim, receipt, writtenBytes: split });
     await assertPinnedParent(parent);
     await assertHeldOwnedRegularFile(
@@ -1764,6 +1908,7 @@ export async function publishGermanyOperationalInfrastructureV2FromNativeReceipt
       await writeHandleBytes(receiptHandle, receiptBytes.subarray(split), split);
     }
     await receiptHandle.sync();
+    stagedFileIdentities[PUBLICATION_RECEIPT_FILE] = await receiptHandle.stat({ bigint: true });
     await runHook(hooks, "afterReceiptWrite", { parent, paths, staging, claim, receipt });
     await assertPinnedParent(parent);
     await assertHeldOwnedRegularFile(
@@ -1776,7 +1921,7 @@ export async function publishGermanyOperationalInfrastructureV2FromNativeReceipt
     receiptHandle = undefined;
     await runHook(hooks, "beforeReceiptLink", { parent, paths, staging, claim, receipt });
     await assertPinnedParent(parent);
-    await assertOwnedRegularFile(
+    await assertOwnedStableRegularFile(
       stagedReceipt,
       stagedFileIdentities[PUBLICATION_RECEIPT_FILE],
       "Operational-v2-Publication-Receipt vor dem create-new Link",
@@ -1792,6 +1937,7 @@ export async function publishGermanyOperationalInfrastructureV2FromNativeReceipt
       registerOwned: (entry) => publishedEntries.push(entry),
       afterLinkBeforeAudit: hooks?.afterReceiptSourceLinkBeforeAudit,
     });
+    stagedFileIdentities[PUBLICATION_RECEIPT_FILE] = receiptBinding.identity;
     publishedBindings.push(receiptBinding);
     await runHook(hooks, "afterReceiptLink", { parent, paths, staging, claim, receipt });
     await assertPinnedParent(parent);
@@ -1995,32 +2141,40 @@ export async function inspectGermanyOperationalInfrastructureV2Publication({
   if (claim.error !== undefined) return { status: "blocked-invalid-claim", paths, error: claim.error };
   const staging = join(parent.real, claim.value.staging.directory);
   const stagingMetadata = await maybeMetadata(staging);
+  const stagedFiles = Object.fromEntries(PUBLICATION_STAGING_FILES.map((file) => [file, join(staging, file)]));
   const staged = {
-    movementRouteTemplates: join(staging, SIDECAR_FILE),
-    operationalInfrastructure: join(staging, OPERATIONAL_FILE),
-    publicationReceipt: join(staging, basename(paths.receipt)),
-    publicationClaim: join(staging, CLAIM_FILE),
+    movementRouteTemplates: stagedFiles[SIDECAR_FILE],
+    operationalInfrastructure: stagedFiles[OPERATIONAL_FILE],
+    publicationReceipt: stagedFiles[PUBLICATION_RECEIPT_FILE],
+    publicationClaim: stagedFiles[CLAIM_FILE],
   };
   let stagedFileMetadata;
   if (stagingMetadata !== null
     && stagingMetadata.isDirectory()
     && !stagingMetadata.isSymbolicLink()
     && identityMatches(stagingMetadata, claim.value.staging.identity)) {
-    const [movementRouteTemplates, operationalInfrastructure, publicationReceipt, publicationClaim] = await Promise.all([
-      maybeMetadata(staged.movementRouteTemplates),
-      maybeMetadata(staged.operationalInfrastructure),
-      maybeMetadata(staged.publicationReceipt),
-      maybeMetadata(staged.publicationClaim),
-    ]);
-    stagedFileMetadata = { movementRouteTemplates, operationalInfrastructure, publicationReceipt, publicationClaim };
-    if (movementRouteTemplates === null
-      || operationalInfrastructure === null
-      || publicationReceipt === null
-      || publicationClaim === null
-      || !identityMatches(movementRouteTemplates, claim.value.staging.files[SIDECAR_FILE])
-      || !identityMatches(operationalInfrastructure, claim.value.staging.files[OPERATIONAL_FILE])
-      || !identityMatches(publicationReceipt, claim.value.staging.files[PUBLICATION_RECEIPT_FILE])
-      || !identityMatches(publicationClaim, claim.value.staging.files[CLAIM_FILE])) {
+    const metadataEntries = await Promise.all(PUBLICATION_STAGING_FILES.map(async (file) => [file, await maybeMetadata(stagedFiles[file])]));
+    const files = Object.fromEntries(metadataEntries);
+    stagedFileMetadata = {
+      movementRouteTemplates: files[SIDECAR_FILE],
+      operationalInfrastructure: files[OPERATIONAL_FILE],
+      publicationReceipt: files[PUBLICATION_RECEIPT_FILE],
+      publicationClaim: files[CLAIM_FILE],
+      files,
+    };
+    const filesAreOwned = PUBLICATION_STAGING_FILES.every((file) => {
+      const metadata = files[file];
+      return metadata !== null
+        && metadata.isFile()
+        && !metadata.isSymbolicLink()
+        && identityMatches(metadata, claim.value.staging.files[file]);
+    });
+    const anchorsBindSources = PUBLICATION_STAGED_SOURCE_FILES.every((file) => (
+      files[file] !== null
+      && files[ownershipAnchorFile(file)] !== null
+      && sameIdentity(files[file], files[ownershipAnchorFile(file)])
+    ));
+    if (!filesAreOwned || !anchorsBindSources) {
       return { status: "blocked-replaced-staging-file", paths, parent, claim, staging, staged, existing };
     }
   }
@@ -2077,43 +2231,58 @@ export async function recoverGermanyOperationalInfrastructureV2Publication({
   invariant(["recoverable-prepublication", "recoverable-partial", "complete-cleanup-required"].includes(inspection.status),
     `Operational-v2-Publikationszustand darf nicht automatisch bereinigt werden: ${inspection.status}.`);
   const { parent, claim, staging } = inspection;
-  if (inspection.status === "recoverable-partial") {
-    const entries = [];
-    if (inspection.existing.includes("movementRouteTemplates")) entries.push({
-      outputPath: inspection.paths.movementRouteTemplates,
-      identity: inspection.stagedFileMetadata.movementRouteTemplates,
-      label: "Kanonisches Movement-Route-Sidecar-Ziel",
-    });
-    if (inspection.existing.includes("operationalInfrastructure")) entries.push({
-      outputPath: inspection.paths.output,
-      identity: inspection.stagedFileMetadata.operationalInfrastructure,
-      label: "Kanonisches Operational-v2-Ziel",
-    });
-    await rollbackOwnedPublishedEntries(parent, entries, hooks);
-  }
-  await runHook(hooks, "beforeRecoveryStagingCleanup", { inspection, parent, claim, staging });
-  const stagingMetadata = await maybeMetadata(staging);
-  let stagingCleared = stagingMetadata === null;
-  if (stagingMetadata !== null) {
-    invariant(
-      stagingMetadata.isDirectory()
-        && !stagingMetadata.isSymbolicLink()
-        && identityMatches(stagingMetadata, claim.value.staging.identity),
-      "Operational-v2-Recovery-Staging wurde vor Cleanup fremd ersetzt; Claim bleibt erhalten.",
+  const recoveryClaim = { path: claim.path, identity: claim.value.claim, binding: { handle: await open(claim.path, "r") } };
+  try {
+    await assertHeldOwnedRegularFile(
+      claim.path,
+      recoveryClaim.binding.handle,
+      claim.value.claim,
+      "Operational-v2-Publikationsclaim vor Recovery",
     );
-    await removeOwnedStaging(parent, staging, stagingMetadata, {
-      [SIDECAR_FILE]: inspection.stagedFileMetadata.movementRouteTemplates,
-      [OPERATIONAL_FILE]: inspection.stagedFileMetadata.operationalInfrastructure,
-      [PUBLICATION_RECEIPT_FILE]: inspection.stagedFileMetadata.publicationReceipt,
-      [CLAIM_FILE]: inspection.stagedFileMetadata.publicationClaim,
-    }, hooks);
-    stagingCleared = true;
+    if (inspection.status === "recoverable-partial") {
+      const entries = [];
+      if (inspection.existing.includes("movementRouteTemplates")) entries.push({
+        outputPath: inspection.paths.movementRouteTemplates,
+        identity: claim.value.staging.files[SIDECAR_FILE],
+        label: "Kanonisches Movement-Route-Sidecar-Ziel",
+      });
+      if (inspection.existing.includes("operationalInfrastructure")) entries.push({
+        outputPath: inspection.paths.output,
+        identity: claim.value.staging.files[OPERATIONAL_FILE],
+        label: "Kanonisches Operational-v2-Ziel",
+      });
+      await rollbackOwnedPublishedEntries(parent, entries, hooks);
+    }
+    await runHook(hooks, "beforeRecoveryStagingCleanup", { inspection, parent, claim, staging });
+    const stagingMetadata = await maybeMetadata(staging);
+    let stagingCleared = stagingMetadata === null;
+    if (stagingMetadata !== null) {
+      invariant(
+        stagingMetadata.isDirectory()
+          && !stagingMetadata.isSymbolicLink()
+          && identityMatches(stagingMetadata, claim.value.staging.identity),
+        "Operational-v2-Recovery-Staging wurde vor Cleanup fremd ersetzt; Claim bleibt erhalten.",
+      );
+      await removeOwnedStaging(
+        parent,
+        staging,
+        claim.value.staging.identity,
+        claim.value.staging.files,
+        hooks,
+      );
+      stagingCleared = true;
+    }
+    invariant(stagingCleared, "Operational-v2-Recovery konnte das owned Staging nicht belegt bereinigen; Claim bleibt erhalten.");
+    await assertPinnedParent(parent);
+    await removeOwnedClaim(parent, recoveryClaim, hooks);
+    invariant(await maybeMetadata(claim.path) === null, "Operational-v2-Publikationsclaim blieb nach Recovery sichtbar.");
+    await assertPinnedParent(parent);
+  } finally {
+    if (recoveryClaim.binding !== undefined) {
+      await recoveryClaim.binding.handle.close();
+      recoveryClaim.binding = undefined;
+    }
   }
-  invariant(stagingCleared, "Operational-v2-Recovery konnte das owned Staging nicht belegt bereinigen; Claim bleibt erhalten.");
-  await assertPinnedParent(parent);
-  await removeOwnedClaim(parent, { path: claim.path, identity: claim.metadata }, hooks);
-  invariant(await maybeMetadata(claim.path) === null, "Operational-v2-Publikationsclaim blieb nach Recovery sichtbar.");
-  await assertPinnedParent(parent);
   const final = await inspectGermanyOperationalInfrastructureV2Publication({ outputPath, publicationReceiptPath, workspaceRoot, verifyValidatorRebuildEvidence });
   invariant(final.status === (inspection.status === "complete-cleanup-required" ? "complete" : "clean"), "Operational-v2-Recovery hinterliess einen unerwarteten Zustand.");
   await assertPinnedParent(parent);

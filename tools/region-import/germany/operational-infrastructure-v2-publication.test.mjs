@@ -885,6 +885,25 @@ test("fremde Ersetzung bleibt bei spaetem Fehler erhalten", async (t) => {
   );
 });
 
+test("Claim-Ersatz nach Staging-Cleanup bleibt trotz Linux-Inode-Reuse fremd", async (t) => {
+  const value = await fixture(t);
+  await capture(value);
+  let replaced = false;
+  await assert.rejects(publish(value, {
+    hooks: {
+      beforeOwnedPathQuarantineRename: async ({ label, original }) => {
+        if (replaced || label !== "Operational-v2-Publikationsclaim") return;
+        replaced = true;
+        await unlink(original);
+        await writeFile(original, "foreign-claim-after-staging-cleanup\n", { flag: "wx" });
+      },
+    },
+  }), /Claim.*fremd ersetzt|Cleanup/u);
+  assert.equal(replaced, true);
+  const claimPath = join(dirname(value.paths.outputPath), ".operational-infrastructure-v2.publication-claim.json");
+  assert.equal(await readFile(claimPath, "utf8"), "foreign-claim-after-staging-cleanup\n");
+});
+
 test("Claim- und Staging-Ersetzung nach Receipt-Link werden als Cleanupfehler propagiert", async (t) => {
   const replacedClaim = await fixture(t);
   await capture(replacedClaim);
@@ -1023,6 +1042,36 @@ test("Killpoints vor, mitten und nach Receipt-Write bleiben mit reservierter Rec
     assert.equal(recovered.status, "clean", hookName);
     await assertNoVisiblePair(value.paths);
   }
+});
+
+test("Crash-Recovery uebernimmt kein fremd ersetztes reserviertes Receipt", async (t) => {
+  const value = await fixture(t);
+  await capture(value);
+  const killed = await spawnPublisherKillpoint(value, "duringReceiptWrite", 76);
+  assert.equal(killed.status, 76, `${killed.stderr}\n${killed.stdout}`);
+  const beforeReplacement = await inspectGermanyOperationalInfrastructureV2Publication({
+    outputPath: value.paths.outputPath,
+    publicationReceiptPath: value.paths.publicationReceiptPath,
+  });
+  assert.equal(beforeReplacement.status, "recoverable-partial");
+  const stagedReceipt = join(beforeReplacement.staging, basename(value.paths.publicationReceiptPath));
+  const receiptAnchor = join(beforeReplacement.staging, `.${basename(value.paths.publicationReceiptPath)}.ownership-anchor`);
+  assert.equal(await exists(receiptAnchor), true);
+  await unlink(stagedReceipt);
+  await writeFile(stagedReceipt, "foreign-crash-recovery-receipt\n", { flag: "wx" });
+
+  const afterReplacement = await inspectGermanyOperationalInfrastructureV2Publication({
+    outputPath: value.paths.outputPath,
+    publicationReceiptPath: value.paths.publicationReceiptPath,
+  });
+  assert.equal(afterReplacement.status, "blocked-replaced-staging-file");
+  await assert.rejects(recoverGermanyOperationalInfrastructureV2Publication({
+    outputPath: value.paths.outputPath,
+    publicationReceiptPath: value.paths.publicationReceiptPath,
+  }), /darf nicht automatisch/u);
+  assert.equal(await readFile(stagedReceipt, "utf8"), "foreign-crash-recovery-receipt\n");
+  assert.equal(await exists(receiptAnchor), true);
+  assert.equal(await exists(join(dirname(value.paths.outputPath), ".operational-infrastructure-v2.publication-claim.json")), true);
 });
 
 test("Recovery behaelt Claim und fremdes Staging bei Race nach Target-Rollback", async (t) => {
