@@ -27,6 +27,7 @@ const WORKFLOW_PATH = join(ROOT, ".github", "workflows", "operational-validator-
 const EXECUTION_AUTHORITY_WORKFLOW_PATH = join(ROOT, ".github", "workflows", "operational-v2-execution-authority.yml");
 const POWERSHELL_51 = "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe";
 const WINDOWS_ONLY = { skip: process.platform !== "win32" };
+const ELEVATED_ACCOUNT_TESTS_REQUIRED = process.env.ZUGFOLGE_REQUIRE_ELEVATED_ACCOUNT_TESTS === "1";
 
 function canonicalValue(value) {
   if (Array.isArray(value)) return value.map(canonicalValue);
@@ -43,6 +44,7 @@ function sha256(bytes) {
 }
 
 let tarAuditForTest;
+let windowsBuildAnchorSafeDiagnosticForTest;
 
 async function loadTarAuditForTest() {
   tarAuditForTest ??= (async () => {
@@ -52,6 +54,16 @@ async function loadTarAuditForTest() {
     return module.__auditPinnedRegularTarForTest;
   })();
   return tarAuditForTest;
+}
+
+async function loadWindowsBuildAnchorSafeDiagnosticForTest() {
+  windowsBuildAnchorSafeDiagnosticForTest ??= (async () => {
+    const source = await readFile(IMPLEMENTATION_PATH, "utf8");
+    const instrumented = `${source}\nexport { windowsBuildAnchorSafeDiagnostic as __windowsBuildAnchorSafeDiagnosticForTest };\n`;
+    const module = await import(`data:text/javascript;base64,${Buffer.from(instrumented, "utf8").toString("base64")}`);
+    return module.__windowsBuildAnchorSafeDiagnosticForTest;
+  })();
+  return windowsBuildAnchorSafeDiagnosticForTest;
 }
 
 function tarOctalField(value, length) {
@@ -144,6 +156,81 @@ function execute(file, arguments_, { cwd = ROOT, env = process.env, expectFailur
       else reject(new Error(`${file} ist fehlgeschlagen: ${result.stderr.toString("utf8")}`, { cause: error }));
     });
   });
+}
+
+function skipNonWindowsAccountTest(t) {
+  if (process.platform !== "win32") {
+    if (ELEVATED_ACCOUNT_TESTS_REQUIRED) assert.fail("Erzwungener Einmalaccount-Test laeuft nicht auf Windows.");
+    t.skip("Einmalaccount-Integration benoetigt Windows.");
+    return false;
+  }
+  return true;
+}
+
+async function exerciseEphemeralBuildAccount(t, mode) {
+  if (!skipNonWindowsAccountTest(t)) return undefined;
+  const root = await temporaryDirectory(t, "zugfolge-ephemeral-account-");
+  const helper = join(root, "operational-windows-anchor-helper.dll");
+  const harness = join(root, "ephemeral-account-integration.ps1");
+  await buildOperationalValidatorWindowsAnchorHelper(helper);
+  await writeFile(harness, [
+    "param([string] $Dll, [ValidateSet('success','failure')] [string] $Mode, [ValidateSet('0','1')] [string] $ElevationRequired)",
+    "$ErrorActionPreference = 'Stop'",
+    "[void][Reflection.Assembly]::Load([IO.File]::ReadAllBytes($Dll))",
+    "$elevated = [ZugfolgeEphemeralAccount]::CurrentProcessHasElevatedAdministratorToken()",
+    "if (-not $elevated) {",
+    "  if ($ElevationRequired -ceq '1') { throw 'Workflow verlangte einen erhoehten Windows-Token.' }",
+    "  [Console]::Out.WriteLine('SKIP_NOT_ELEVATED')",
+    "  exit 0",
+    "}",
+    "function Get-ZugfolgeBuildAccounts { return @(Get-LocalUser | Where-Object { $_.Name -like 'zfrb*' } | ForEach-Object Name) }",
+    "$before = @(Get-ZugfolgeBuildAccounts)",
+    "if ($before.Count -ne 0) { throw 'Einmalaccount-Test startet nicht auf einem accountsauberen Host.' }",
+    "$account = $null",
+    "$accountName = $null",
+    "$created = $false",
+    "$used = $false",
+    "$failureObserved = $false",
+    "try {",
+    "  $account = [ZugfolgeEphemeralAccount]::Create()",
+    "  $accountName = $account.Username",
+    "  $created = $null -ne (Get-LocalUser -Name $accountName -ErrorAction SilentlyContinue)",
+    "  if (-not $created) { throw 'NetUserAdd-Erfolg wurde nicht im lokalen Accountbestand sichtbar.' }",
+    "  $environment = @{ SystemRoot='C:\\Windows'; WINDIR='C:\\Windows'; ComSpec='C:\\Windows\\System32\\cmd.exe'; PATH='C:\\Windows\\System32;C:\\Windows'; PATHEXT='.COM;.EXE;.BAT;.CMD'; TEMP='C:\\Windows\\Temp'; TMP='C:\\Windows\\Temp' }",
+    "  $never = [Func[bool]] { return $false }",
+    "  $command = if ($Mode -ceq 'success') { '[Console]::Out.Write([Security.Principal.WindowsIdentity]::GetCurrent().Name)' } else { '[Console]::Error.Write(''intentional-account-child-failure''); exit 23' }",
+    "  $result = [ZugfolgeMitigatedProcess]::RunAsStrict('C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe', [string[]]@('-NoLogo','-NoProfile','-NonInteractive','-Command',$command), 'C:\\Windows\\System32', $environment, [byte[]]@(), 65536, 15000, $never, $account)",
+    "  if ($Mode -ceq 'success') {",
+    "    if ($result.ExitCode -ne 0) { throw \"Einmalaccount-Kindprozess endete mit $($result.ExitCode).\" }",
+    "    $identity = [Text.Encoding]::UTF8.GetString($result.Stdout)",
+    "    $used = $identity.EndsWith('\\' + $accountName, [StringComparison]::OrdinalIgnoreCase)",
+    "    if (-not $used) { throw 'Kindprozess verwendete nicht den erzeugten Einmalaccount.' }",
+    "  } else {",
+    "    if ($result.ExitCode -ne 23) { throw \"Fehler-Kindprozess endete mit $($result.ExitCode) statt 23.\" }",
+    "    throw 'INTENTIONAL_ACCOUNT_FAILURE_AFTER_USE'",
+    "  }",
+    "} catch {",
+    "  if ($Mode -ceq 'failure' -and $_.Exception.Message -ceq 'INTENTIONAL_ACCOUNT_FAILURE_AFTER_USE') { $failureObserved = $true } else { throw }",
+    "} finally {",
+    "  if ($null -ne $account) { $account.Dispose() }",
+    "}",
+    "$afterOwn = if ($null -eq $accountName) { 0 } else { @(Get-LocalUser -Name $accountName -ErrorAction SilentlyContinue).Count }",
+    "$afterMatching = @(Get-ZugfolgeBuildAccounts)",
+    "if ($afterOwn -ne 0 -or $afterMatching.Count -ne 0) { throw 'Einmalaccount-Cleanup hinterliess einen passenden lokalen Account.' }",
+    "$receipt = [ordered]@{ accountsAfter=$afterMatching.Count; accountsBefore=$before.Count; created=$created; failureObserved=$failureObserved; mode=$Mode; used=$used }",
+    "[Console]::Out.WriteLine(($receipt | ConvertTo-Json -Compress))",
+    "",
+  ].join("\r\n"));
+  const executed = await execute(POWERSHELL_51, [
+    "-NoLogo", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File",
+    harness, helper, mode, ELEVATED_ACCOUNT_TESTS_REQUIRED ? "1" : "0",
+  ], { cwd: "C:\\Windows\\System32" });
+  const line = executed.stdout.toString("utf8").trim().split(/\r?\n/u).at(-1);
+  if (line === "SKIP_NOT_ELEVATED") {
+    t.skip("Einmalaccount-Integration benoetigt einen erhoehten Windows-Token.");
+    return undefined;
+  }
+  return JSON.parse(line);
 }
 
 async function loadProductionSpec() {
@@ -580,6 +667,38 @@ test("Windows-Anker verweigert Rename/Write exakt vor der Extraktion und extrahi
     for (const output of fixture.outputPaths) await assert.rejects(readFile(output), { code: "ENOENT" });
   });
 
+test("USER_INFO_1-Einmalaccount bindet den dokumentierten minimalen normalen Benutzervertrag", () => {
+  assert.match(WINDOWS_BUILD_ANCHOR_HELPER_SOURCE, /private const uint ERROR_INVALID_PARAMETER = 87u;/u);
+  assert.match(WINDOWS_BUILD_ANCHOR_HELPER_SOURCE, /private const uint NERR_USER_NOT_FOUND = 2221u;/u);
+  assert.match(WINDOWS_BUILD_ANCHOR_HELPER_SOURCE, /private const uint USER_PRIV_USER = 1u;/u);
+  assert.match(WINDOWS_BUILD_ANCHOR_HELPER_SOURCE, /private const uint UF_SCRIPT = 0x00000001u;/u);
+  assert.match(WINDOWS_BUILD_ANCHOR_HELPER_SOURCE, /private const uint UF_NORMAL_ACCOUNT = 0x00000200u;/u);
+  assert.match(
+    WINDOWS_BUILD_ANCHOR_HELPER_SOURCE,
+    /Privilege = USER_PRIV_USER,[\s\S]*Flags = UF_SCRIPT \| UF_NORMAL_ACCOUNT, ScriptPath = null/u,
+  );
+  assert.match(WINDOWS_BUILD_ANCHOR_HELPER_SOURCE, /GetTokenInformation\(identity\.Token, 20/u);
+  assert.match(WINDOWS_BUILD_ANCHOR_HELPER_SOURCE, /new WindowsPrincipal\(identity\)\.IsInRole\(WindowsBuiltInRole\.Administrator\)/u);
+  assert.match(WINDOWS_BUILD_ANCHOR_HELPER_SOURCE, /uint lookup = NetUserGetInfo\(null, Username, 0, out buffer\);/u);
+  assert.match(WINDOWS_BUILD_ANCHOR_HELPER_SOURCE, /lookup != NERR_USER_NOT_FOUND/u);
+  assert.doesNotMatch(WINDOWS_BUILD_ANCHOR_HELPER_SOURCE, /UF_PASSWD_CANT_CHANGE|UF_DONT_EXPIRE_PASSWD/u);
+  assert.match(WINDOWS_BUILD_ANCHOR_HELPER_SOURCE, /if \(result == ERROR_INVALID_PARAMETER\) diagnostic \+= " parameter="/u);
+});
+
+test("extract-Diagnose gibt nur die begrenzte nicht-geheime Anchor-Allowlist frei", async () => {
+  const diagnose = await loadWindowsBuildAnchorSafeDiagnosticForTest();
+  const safe = "ZUGFOLGE_SAFE_ANCHOR_DIAGNOSTIC code=NET_USER_ADD status=87 parameter=0";
+  assert.equal(diagnose([Buffer.from(`password=Zf!never-surface\n${safe}\n`, "utf8")]), safe);
+  assert.equal(diagnose([Buffer.from("ZUGFOLGE_SAFE_ANCHOR_DIAGNOSTIC code=NET_USER_ADD status=5\n", "utf8")]),
+    "ZUGFOLGE_SAFE_ANCHOR_DIAGNOSTIC code=NET_USER_ADD status=5");
+  assert.equal(diagnose([Buffer.from("ZUGFOLGE_SAFE_ANCHOR_DIAGNOSTIC code=NET_USER_ADD status=5 parameter=0\n", "utf8")]), "");
+  assert.equal(diagnose([Buffer.from("ZUGFOLGE_SAFE_ANCHOR_DIAGNOSTIC code=NET_USER_DELETE_VERIFY status=5\n", "utf8")]),
+    "ZUGFOLGE_SAFE_ANCHOR_DIAGNOSTIC code=NET_USER_DELETE_VERIFY status=5");
+  assert.equal(diagnose([Buffer.from(`${safe} password=Zf!never-surface\n`, "utf8")]), "");
+  assert.equal(diagnose([Buffer.from("ZUGFOLGE_SAFE_ANCHOR_DIAGNOSTIC code=FOREIGN status=5\n", "utf8")]), "");
+  assert.equal(diagnose([Buffer.from(`password=Zf!never-surface\n${"x".repeat(600)}`, "utf8")]), "");
+});
+
 test("echtes Windows PowerShell 5.1 parst den Anchor und alle Workflow-Bloecke", WINDOWS_ONLY, async (t) => {
   const root = await temporaryDirectory(t, "zfrbpsparse");
   const harness = join(root, "parse-production-powershell.ps1");
@@ -617,7 +736,7 @@ test("echtes Windows PowerShell 5.1 parst den Anchor und alle Workflow-Bloecke",
     "-NoLogo", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File",
     harness, IMPLEMENTATION_PATH, WORKFLOW_PATH,
   ], { cwd: "C:\\Windows\\System32" });
-  assert.equal(parsed.stdout.toString("utf8").trim(), "8");
+  assert.equal(parsed.stdout.toString("utf8").trim(), "9");
 });
 
 test("Helper-Builder reproduziert das tracked PE32+-Artefakt bytegenau", WINDOWS_ONLY, async (t) => {
@@ -634,10 +753,49 @@ test("Helper-Builder reproduziert das tracked PE32+-Artefakt bytegenau", WINDOWS
   assert.equal(actual.readUInt16LE(pe + 24), 0x20b);
 });
 
+test("Helper-Builder kompiliert den kanonischen Einmalaccountvertrag als PE32+", WINDOWS_ONLY, async (t) => {
+  const root = await temporaryDirectory(t, "zugfolge-helper-contract-");
+  const output = join(root, "operational-windows-anchor-helper.dll");
+  const result = await buildOperationalValidatorWindowsAnchorHelper(output);
+  const actual = await readFile(output);
+  assert.equal(result.bytes, actual.length);
+  assert.equal(result.sha256, sha256(actual));
+  assert.equal(result.sourceSha256, sha256(Buffer.from(WINDOWS_BUILD_ANCHOR_HELPER_SOURCE, "utf8")));
+  const pe = actual.readUInt32LE(0x3c);
+  assert.equal(actual.subarray(pe, pe + 4).toString("hex"), "50450000");
+  assert.equal(actual.readUInt16LE(pe + 24), 0x20b);
+});
+
 test("Helper-Builder verweigert nicht kanonischen Ausgabepfad vor Compilerwirkung", async (t) => {
   const root = await temporaryDirectory(t, "zugfolge-helper-name-");
   await assert.rejects(buildOperationalValidatorWindowsAnchorHelper(join(root, "helper.dll")), /muss operational-windows-anchor-helper\.dll heissen/);
   assert.deepEqual(await readdir(root), []);
+});
+
+test("ephemerer Windows-Build-Account wird erstellt, als Kindidentitaet verwendet und nach Erfolg geloescht", async (t) => {
+  const result = await exerciseEphemeralBuildAccount(t, "success");
+  if (result === undefined) return;
+  assert.deepEqual(result, {
+    accountsAfter: 0,
+    accountsBefore: 0,
+    created: true,
+    failureObserved: false,
+    mode: "success",
+    used: true,
+  });
+});
+
+test("ephemerer Windows-Build-Account wird nach einem Kindprozessfehler im finally geloescht", async (t) => {
+  const result = await exerciseEphemeralBuildAccount(t, "failure");
+  if (result === undefined) return;
+  assert.deepEqual(result, {
+    accountsAfter: 0,
+    accountsBefore: 0,
+    created: true,
+    failureObserved: true,
+    mode: "failure",
+    used: false,
+  });
 });
 
 test("PowerShell 5.1: Timeout, Cancellation und Root-Exit beenden den gesamten Jobbaum", WINDOWS_ONLY, async (t) => {
@@ -1001,6 +1159,9 @@ test("Workflow bindet Spec-Pfade, privaten GitHub-Assettransport und Sigstore-Ve
     "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a",
     "gh attestation verify", "--deny-self-hosted-runners", "--source-digest $env:GITHUB_SHA",
     "GITHUB_REF_PROTECTED -cne 'true'",
+    "Exercise elevated ephemeral build account lifecycle",
+    "ZUGFOLGE_REQUIRE_ELEVATED_ACCOUNT_TESTS: '1'",
+    "--test-name-pattern='ephemerer Windows-Build-Account'",
     "$spec.binaries.preserved.file",
     "$spec.authority.annualExecutorPlan.directContractFile",
     "$spec.authority.annualExecutorPlan.planFile",

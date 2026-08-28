@@ -4789,6 +4789,7 @@ var MAX_TOOLCHAIN_MANIFEST_BYTES = 4 * 1024 * 1024;
 var MAX_SOURCE_FILE_BYTES = 64 * 1024 * 1024;
 var MAX_SOURCE_TREE_ENTRIES = 1e5;
 var MAX_PROCESS_OUTPUT_BYTES = 16 * 1024 * 1024;
+var MAX_WINDOWS_ANCHOR_DIAGNOSTIC_BYTES = 512;
 var SHA2565 = /^[a-f0-9]{64}$/;
 var GIT_COMMIT2 = /^[a-f0-9]{40}$/;
 var PORTABLE_FILE = /^(?![A-Za-z]:)(?!\/)(?!.*\\)(?!.*(?:^|\/)\.\.?(?:\/|$))[A-Za-z0-9._@+-]+(?:\/[A-Za-z0-9._@+-]+)*$/;
@@ -4826,6 +4827,13 @@ public sealed class ZugfolgeNtCreateException : InvalidOperationException {
     : base("NtCreateFile ist fehlgeschlagen: 0x" + status.ToString("x8")) { Status = status; }
 }
 public sealed class ZugfolgeEphemeralAccount : IDisposable {
+  private const uint ERROR_INVALID_PARAMETER = 87u;
+  private const uint NERR_USER_NOT_FOUND = 2221u;
+  private const uint USER_PRIV_USER = 1u;
+  private const uint UF_SCRIPT = 0x00000001u;
+  private const uint UF_NORMAL_ACCOUNT = 0x00000200u;
+  [StructLayout(LayoutKind.Sequential)]
+  private struct TOKEN_ELEVATION { public uint TokenIsElevated; }
   [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
   private struct USER_INFO_1 {
     [MarshalAs(UnmanagedType.LPWStr)] public string Name;
@@ -4837,28 +4845,59 @@ public sealed class ZugfolgeEphemeralAccount : IDisposable {
     public uint Flags;
     [MarshalAs(UnmanagedType.LPWStr)] public string ScriptPath;
   }
-  [DllImport("netapi32.dll", CharSet = CharSet.Unicode)]
+  [DllImport("advapi32.dll", ExactSpelling = true, SetLastError = true)]
+  [return: MarshalAs(UnmanagedType.Bool)]
+  private static extern bool GetTokenInformation(IntPtr token, int informationClass,
+    out TOKEN_ELEVATION information, uint informationBytes, out uint returnedBytes);
+  [DllImport("netapi32.dll", CharSet = CharSet.Unicode, ExactSpelling = true, SetLastError = false)]
   private static extern uint NetUserAdd(string server, uint level, ref USER_INFO_1 user, out uint parameterError);
-  [DllImport("netapi32.dll", CharSet = CharSet.Unicode)]
+  [DllImport("netapi32.dll", CharSet = CharSet.Unicode, ExactSpelling = true, SetLastError = false)]
   private static extern uint NetUserDel(string server, string user);
+  [DllImport("netapi32.dll", CharSet = CharSet.Unicode, ExactSpelling = true, SetLastError = false)]
+  private static extern uint NetUserGetInfo(string server, string user, uint level, out IntPtr buffer);
+  [DllImport("netapi32.dll", ExactSpelling = true, SetLastError = false)]
+  private static extern uint NetApiBufferFree(IntPtr buffer);
   public string Username { get; private set; }
   public string Domain { get; private set; }
   public string Password { get; private set; }
   public string Sid { get; private set; }
   private bool active;
   private ZugfolgeEphemeralAccount() {}
+  public static bool CurrentProcessHasElevatedAdministratorToken() {
+    using (WindowsIdentity identity = WindowsIdentity.GetCurrent()) {
+      TOKEN_ELEVATION elevation;
+      uint returnedBytes;
+      if (!GetTokenInformation(identity.Token, 20, out elevation,
+          (uint)Marshal.SizeOf(typeof(TOKEN_ELEVATION)), out returnedBytes)
+          || returnedBytes != (uint)Marshal.SizeOf(typeof(TOKEN_ELEVATION))) {
+        throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error(), "GetTokenInformation(TokenElevation)");
+      }
+      return elevation.TokenIsElevated != 0
+        && new WindowsPrincipal(identity).IsInRole(WindowsBuiltInRole.Administrator);
+    }
+  }
   public static ZugfolgeEphemeralAccount Create() {
     ZugfolgeEphemeralAccount account = new ZugfolgeEphemeralAccount();
     account.Username = "zfrb" + Guid.NewGuid().ToString("N").Substring(0, 12);
     account.Domain = Environment.MachineName;
     byte[] random = new byte[32]; using (RandomNumberGenerator generator = RandomNumberGenerator.Create()) generator.GetBytes(random);
     account.Password = "Zf!1" + Convert.ToBase64String(random).Replace("/", "x").Replace("+", "y");
+    // NetUserAdd level 1 requires USER_PRIV_USER and UF_SCRIPT.  Bind exactly
+    // one documented account type; the one-shot lifetime makes persistent
+    // password-control flags unnecessary and avoids their additional access
+    // requirements.
     USER_INFO_1 user = new USER_INFO_1 {
-      Name = account.Username, Password = account.Password, PasswordAge = 0, Privilege = 1,
-      HomeDirectory = null, Comment = "Zugfolge one-shot Operational-v2 rebuild principal", Flags = 0x00010041u, ScriptPath = null,
+      Name = account.Username, Password = account.Password, PasswordAge = 0, Privilege = USER_PRIV_USER,
+      HomeDirectory = null, Comment = null, Flags = UF_SCRIPT | UF_NORMAL_ACCOUNT, ScriptPath = null,
     };
     uint parameterError; uint result = NetUserAdd(null, 1, ref user, out parameterError);
-    if (result != 0) throw new System.ComponentModel.Win32Exception(unchecked((int)result), "NetUserAdd(ephemeral build principal), parameter " + parameterError.ToString());
+    if (result != 0) {
+      string diagnostic = "ZUGFOLGE_SAFE_ANCHOR_DIAGNOSTIC code=NET_USER_ADD status="
+        + result.ToString(System.Globalization.CultureInfo.InvariantCulture);
+      if (result == ERROR_INVALID_PARAMETER) diagnostic += " parameter="
+        + parameterError.ToString(System.Globalization.CultureInfo.InvariantCulture);
+      throw new InvalidOperationException(diagnostic);
+    }
     account.active = true;
     try {
       account.Sid = ((SecurityIdentifier)new NTAccount(account.Domain, account.Username).Translate(typeof(SecurityIdentifier))).Value;
@@ -4868,7 +4907,18 @@ public sealed class ZugfolgeEphemeralAccount : IDisposable {
   public void Dispose() {
     if (!active) return;
     uint result = NetUserDel(null, Username);
-    if (result != 0 && result != 2221) throw new System.ComponentModel.Win32Exception(unchecked((int)result), "NetUserDel(ephemeral build principal)");
+    if (result != 0 && result != NERR_USER_NOT_FOUND) throw new InvalidOperationException(
+      "ZUGFOLGE_SAFE_ANCHOR_DIAGNOSTIC code=NET_USER_DELETE status="
+      + result.ToString(System.Globalization.CultureInfo.InvariantCulture));
+    IntPtr buffer = IntPtr.Zero;
+    uint lookup = NetUserGetInfo(null, Username, 0, out buffer);
+    try {
+      if (lookup != NERR_USER_NOT_FOUND) throw new InvalidOperationException(
+        "ZUGFOLGE_SAFE_ANCHOR_DIAGNOSTIC code=NET_USER_DELETE_VERIFY status="
+        + lookup.ToString(System.Globalization.CultureInfo.InvariantCulture));
+    } finally {
+      if (buffer != IntPtr.Zero) NetApiBufferFree(buffer);
+    }
     active = false; Password = null;
   }
 }
@@ -6992,6 +7042,20 @@ function windowsBuildAnchorRequestLine(value) {
   return `${Buffer.from(JSON.stringify(value), "utf8").toString("base64")}
 `;
 }
+function windowsBuildAnchorSafeDiagnostic(chunks) {
+  const bytes = Buffer.concat(chunks);
+  const tail = bytes.subarray(Math.max(0, bytes.length - MAX_WINDOWS_ANCHOR_DIAGNOSTIC_BYTES)).toString("utf8");
+  const lines = tail.split(/\r?\n/u);
+  for (let index = lines.length - 1; index >= 0; index -= 1) {
+    const line = lines[index];
+    const match = /^ZUGFOLGE_SAFE_ANCHOR_DIAGNOSTIC code=(NET_USER_ADD|NET_USER_DELETE|NET_USER_DELETE_VERIFY) status=([1-9][0-9]{0,9})(?: parameter=(0|[1-9][0-9]{0,9}))?$/u.exec(line);
+    if (match === null) continue;
+    const status = Number(match[2]);
+    const parameter = match[3] === void 0 ? void 0 : Number(match[3]);
+    if (status > 0 && status <= 4294967295 && (parameter === void 0 || parameter <= 4294967295) && (match[1] === "NET_USER_ADD" && status === 87 === (parameter !== void 0) || (match[1] === "NET_USER_DELETE" || match[1] === "NET_USER_DELETE_VERIFY") && parameter === void 0)) return line;
+  }
+  return "";
+}
 async function startWindowsBuildAnchor({ anchoredParents, buildParent, buildRootLeaf, hooks, spec, workspaceRoot: workspaceRoot2 }) {
   invariant6(process.platform === "win32", "Operational-Validator-Rebuild-Materialisierung ist fuer PE32+ ausschliesslich auf win32 zulaessig.");
   invariant6(Array.isArray(anchoredParents) && anchoredParents.length > 0, "Windows-Build-Anker benoetigt mindestens einen Output-Parent.");
@@ -7208,7 +7272,13 @@ async function startWindowsBuildAnchor({ anchoredParents, buildParent, buildRoot
         if (hooks.beforeWindowsAnchoredExtraction) await hooks.beforeWindowsAnchoredExtraction({ buildRoot: resolve6(buildRoot) });
         child.stdin.write(windowsBuildAnchorRequestLine({ source: plan(sourceAudit), vendor: plan(vendorAudit) }));
         const line = await nextLineBounded("Windows-Build-Anker-Extraktion");
-        invariant6(typeof line === "string" && line.startsWith("EXTRACTED "), "Windows-Build-Anker bestaetigte die interne Slice-Extraktion nicht.");
+        if (typeof line !== "string" || !line.startsWith("EXTRACTED ")) {
+          child.stdin.end();
+          const end = await closeAnchorBounded("Windows-Build-Anker-Extraktionsfehler");
+          finished = true;
+          const diagnostic = windowsBuildAnchorSafeDiagnostic(stderr);
+          throw new Error(`Windows-Build-Anker bestaetigte die interne Slice-Extraktion nicht (${end.code ?? end.signal ?? "unknown"})${diagnostic ? `: ${diagnostic}` : ""}.`);
+        }
         const envelope = parseJson(Buffer.from(line.slice("EXTRACTED ".length), "base64"), "Windows-Build-Anker-Extraktion");
         exactKeys4(envelope, ["buildRootIdentity"], "Windows-Build-Anker-Extraktion");
         validateFilesystemIdentity(envelope.buildRootIdentity, "Windows-Build-Anker-Extraktion.buildRootIdentity");
