@@ -174,7 +174,7 @@ async function exerciseEphemeralBuildAccount(t, mode) {
   const harness = join(root, "ephemeral-account-integration.ps1");
   await buildOperationalValidatorWindowsAnchorHelper(helper);
   await writeFile(harness, [
-    "param([string] $Dll, [ValidateSet('success','failure')] [string] $Mode, [ValidateSet('0','1')] [string] $ElevationRequired)",
+    "param([string] $Dll, [ValidateSet('success','failure','start-failure')] [string] $Mode, [ValidateSet('0','1')] [string] $ElevationRequired)",
     "$ErrorActionPreference = 'Stop'",
     "[void][Reflection.Assembly]::Load([IO.File]::ReadAllBytes($Dll))",
     "$elevated = [ZugfolgeEphemeralAccount]::CurrentProcessHasElevatedAdministratorToken()",
@@ -191,33 +191,108 @@ async function exerciseEphemeralBuildAccount(t, mode) {
     "$created = $false",
     "$used = $false",
     "$failureObserved = $false",
+    "$startFailureObserved = $false",
+    "$environmentExact = $false",
+    "$cwdExact = $false",
+    "$stdioExact = $false",
+    "$treeExact = $false",
     "try {",
     "  $account = [ZugfolgeEphemeralAccount]::Create()",
     "  $accountName = $account.Username",
     "  $created = $null -ne (Get-LocalUser -Name $accountName -ErrorAction SilentlyContinue)",
     "  if (-not $created) { throw 'NetUserAdd-Erfolg wurde nicht im lokalen Accountbestand sichtbar.' }",
-    "  $environment = @{ SystemRoot='C:\\Windows'; WINDIR='C:\\Windows'; ComSpec='C:\\Windows\\System32\\cmd.exe'; PATH='C:\\Windows\\System32;C:\\Windows'; PATHEXT='.COM;.EXE;.BAT;.CMD'; TEMP='C:\\Windows\\Temp'; TMP='C:\\Windows\\Temp' }",
+    "  $environment = @{ SystemRoot='C:\\Windows'; WINDIR='C:\\Windows'; ComSpec='C:\\Windows\\System32\\cmd.exe'; HOMEDRIVE='C:'; HOMEPATH='\\Windows\\System32'; PATH='C:\\Windows\\System32;C:\\Windows'; PATHEXT='.COM;.EXE;.BAT;.CMD'; PROMPT='$P$G'; TEMP='C:\\Windows\\Temp'; TMP='C:\\Windows\\Temp' }",
     "  $never = [Func[bool]] { return $false }",
-    "  $command = if ($Mode -ceq 'success') { '[Console]::Out.Write([Security.Principal.WindowsIdentity]::GetCurrent().Name)' } else { '[Console]::Error.Write(''intentional-account-child-failure''); exit 23' }",
-    "  $result = [ZugfolgeMitigatedProcess]::RunAsStrict('C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe', [string[]]@('-NoLogo','-NoProfile','-NonInteractive','-Command',$command), 'C:\\Windows\\System32', $environment, [byte[]]@(), 65536, 15000, $never, $account)",
     "  if ($Mode -ceq 'success') {",
+    "    $probeEnvironment = @{}",
+    "    foreach ($key in $environment.Keys) { $probeEnvironment[$key] = $environment[$key] }",
+    "    $probeEnvironment['PROMPT'] = '$P$G'",
+    "    $probeEnvironment['ZUGFOLGE_ENV_PROBE'] = 'explicit-v1'",
+    "    $probe = [ZugfolgeMitigatedProcess]::RunAsStrict('C:\\Windows\\System32\\cmd.exe', [string[]]@('/D','/Q','/C','set & echo ZUGFOLGE_CWD=%CD%'), 'C:\\Windows\\System32', $probeEnvironment, [byte[]]@(), 65536, 15000, $never, $account)",
+    "    if ($probe.ExitCode -ne 0 -or $probe.Stderr.Length -ne 0) { throw 'Environment-Probe scheiterte.' }",
+    "    $lines = @([Text.Encoding]::ASCII.GetString($probe.Stdout) -split '\\r\\n' | Where-Object { $_.Length -gt 0 })",
+    "    $cwdLines = @($lines | Where-Object { $_.StartsWith('ZUGFOLGE_CWD=', [StringComparison]::Ordinal) })",
+    "    $cwdExact = $cwdLines.Count -eq 1 -and $cwdLines[0] -ceq 'ZUGFOLGE_CWD=C:\\Windows\\System32'",
+    "    if (-not $cwdExact) { throw 'Kindprozess verwendete nicht das feste System32-Arbeitsverzeichnis.' }",
+    "    $actualEnvironment = @{}",
+    "    foreach ($line in @($lines | Where-Object { -not $_.StartsWith('ZUGFOLGE_CWD=', [StringComparison]::Ordinal) })) {",
+    "      $separator = $line.IndexOf('=')",
+    "      if ($separator -le 0) { throw 'Environment-Probe lieferte eine ungueltige Zeile.' }",
+    "      $name = $line.Substring(0, $separator).ToUpperInvariant()",
+    "      if ($actualEnvironment.ContainsKey($name)) { throw 'Environment-Probe lieferte einen doppelten Namen.' }",
+    "      $actualEnvironment[$name] = $line.Substring($separator + 1)",
+    "    }",
+    "    $expectedEnvironment = @{}",
+    "    foreach ($key in $probeEnvironment.Keys) { $expectedEnvironment[([string]$key).ToUpperInvariant()] = [string]$probeEnvironment[$key] }",
+    "    $expectedNames = @($expectedEnvironment.Keys | Sort-Object)",
+    "    $actualNames = @($actualEnvironment.Keys | Sort-Object)",
+    "    $environmentExact = $actualEnvironment.Count -eq $expectedEnvironment.Count -and $null -eq (Compare-Object $actualNames $expectedNames)",
+    "    foreach ($name in $expectedNames) { if (-not $actualEnvironment.ContainsKey($name) -or [string]$actualEnvironment[$name] -cne [string]$expectedEnvironment[$name]) { $environmentExact = $false } }",
+    "    if (-not $environmentExact) { throw 'Kindprozessumgebung driftete von der vollstaendig expliziten Allowlist.' }",
+    "    $ioSource = '$stdin=[Console]::In.ReadToEnd(); $payload=[ordered]@{ identity=[Security.Principal.WindowsIdentity]::GetCurrent().Name; stdin=$stdin }; [Console]::Out.Write(($payload | ConvertTo-Json -Compress)); [Console]::Error.Write(''ephemeral-stderr'')'",
+    "    $ioEncoded = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($ioSource))",
+    "    $stdinText = 'ephemeral-stdin'",
+    "    $result = [ZugfolgeMitigatedProcess]::RunAsStrict('C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe', [string[]]@('-NoLogo','-NoProfile','-NonInteractive','-EncodedCommand',$ioEncoded), 'C:\\Windows\\System32', $environment, [Text.Encoding]::ASCII.GetBytes($stdinText), 65536, 15000, $never, $account)",
     "    if ($result.ExitCode -ne 0) { throw \"Einmalaccount-Kindprozess endete mit $($result.ExitCode).\" }",
-    "    $identity = [Text.Encoding]::UTF8.GetString($result.Stdout)",
-    "    $used = $identity.EndsWith('\\' + $accountName, [StringComparison]::OrdinalIgnoreCase)",
+    "    $payload = [Text.Encoding]::ASCII.GetString($result.Stdout) | ConvertFrom-Json",
+    "    $used = ([string]$payload.identity).EndsWith('\\' + $accountName, [StringComparison]::OrdinalIgnoreCase)",
     "    if (-not $used) { throw 'Kindprozess verwendete nicht den erzeugten Einmalaccount.' }",
-    "  } else {",
+    "    $stdioExact = [string]$payload.stdin -ceq $stdinText -and [Text.Encoding]::ASCII.GetString($result.Stderr) -ceq 'ephemeral-stderr'",
+    "    if (-not $stdioExact) { throw 'Kindprozess band stdin/stdout/stderr nicht getrennt und bytegenau.' }",
+    "    $grandchildSource = '$ErrorActionPreference=''Stop''; Start-Sleep -Seconds 30'",
+    "    $grandchildEncoded = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($grandchildSource))",
+    "    $rootSource = '$child=Start-Process -FilePath ''C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe'' -ArgumentList @(''-NoLogo'',''-NoProfile'',''-NonInteractive'',''-EncodedCommand'',$env:ZUGFOLGE_GRANDCHILD_ENCODED) -WindowStyle Hidden -PassThru; $child.Refresh(); [Console]::Out.Write(([ordered]@{ pid=$child.Id; startFileTimeUtc=$child.StartTime.ToFileTimeUtc() } | ConvertTo-Json -Compress))'",
+    "    $rootEncoded = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($rootSource))",
+    "    $treeEnvironment = @{}",
+    "    foreach ($key in $environment.Keys) { $treeEnvironment[$key] = $environment[$key] }",
+    "    $treeEnvironment['ZUGFOLGE_GRANDCHILD_ENCODED'] = $grandchildEncoded",
+    "    $treeResult = [ZugfolgeMitigatedProcess]::RunAsStrict('C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe', [string[]]@('-NoLogo','-NoProfile','-NonInteractive','-EncodedCommand',$rootEncoded), 'C:\\Windows\\System32', $treeEnvironment, [byte[]]@(), 65536, 15000, $never, $account)",
+    "    if ($treeResult.ExitCode -ne 0 -or $treeResult.Stderr.Length -ne 0) { throw 'Job-Nachfahrprobe scheiterte vor ihrem Beleg.' }",
+    "    $treeReceipt = [Text.Encoding]::ASCII.GetString($treeResult.Stdout) | ConvertFrom-Json",
+    "    $treePid = [Int64]$treeReceipt.pid",
+    "    $treeStartFileTimeUtc = [Int64]$treeReceipt.startFileTimeUtc",
+    "    if ($treePid -le 0 -or $treePid -gt [Int32]::MaxValue -or $treeStartFileTimeUtc -le 0) { throw 'Job-Nachfahrprobe lieferte keinen gueltigen PID-/Startzeit-Beleg.' }",
+    "    $deadline = [DateTime]::UtcNow.AddSeconds(3)",
+    "    $survivor = $null",
+    "    do {",
+    "      if ($null -ne $survivor) { $survivor.Dispose(); $survivor = $null }",
+    "      $candidate = $null",
+    "      try {",
+    "        $candidate = [Diagnostics.Process]::GetProcessById([int]$treePid)",
+    "        $candidate.Refresh()",
+    "        if ($candidate.StartTime.ToFileTimeUtc() -eq $treeStartFileTimeUtc) { $survivor = $candidate } else { $candidate.Dispose(); $candidate = $null }",
+    "      } catch [ArgumentException] { if ($null -ne $candidate) { $candidate.Dispose() }; $survivor = $null }",
+    "      catch [InvalidOperationException] { if ($null -ne $candidate) { $candidate.Dispose() }; $survivor = $null }",
+    "      catch { if ($null -ne $candidate) { $candidate.Dispose() }; throw }",
+    "      if ($null -ne $survivor) { Start-Sleep -Milliseconds 100 }",
+    "    } while ($null -ne $survivor -and [DateTime]::UtcNow -lt $deadline)",
+    "    if ($null -ne $survivor) {",
+    "      try { $survivor.Kill(); $survivor.WaitForExit(5000) | Out-Null } finally { $survivor.Dispose() }",
+    "      throw 'Ein Job-Nachfahrprozess ueberlebte den Root-Exit.'",
+    "    }",
+    "    $treeExact = $true",
+    "  } elseif ($Mode -ceq 'failure') {",
+    "    $result = [ZugfolgeMitigatedProcess]::RunAsStrict('C:\\Windows\\System32\\cmd.exe', [string[]]@('/D','/Q','/C','1>&2 echo intentional-account-child-failure & exit /b 23'), 'C:\\Windows\\System32', $environment, [byte[]]@(), 65536, 15000, $never, $account)",
     "    if ($result.ExitCode -ne 23) { throw \"Fehler-Kindprozess endete mit $($result.ExitCode) statt 23.\" }",
     "    throw 'INTENTIONAL_ACCOUNT_FAILURE_AFTER_USE'",
+    "  } else {",
+    "    $missingExe = 'C:\\Windows\\System32\\zugfolge-missing-' + [Guid]::NewGuid().ToString('N') + '.exe'",
+    "    if ([IO.File]::Exists($missingExe)) { throw 'Missing-EXE existiert unerwartet.' }",
+    "    $null = [ZugfolgeMitigatedProcess]::RunAsStrict($missingExe, [string[]]@(), 'C:\\Windows\\System32', $environment, [byte[]]@(), 65536, 15000, $never, $account)",
+    "    throw 'START_FAILURE_UNEXPECTEDLY_SUCCEEDED'",
     "  }",
     "} catch {",
-    "  if ($Mode -ceq 'failure' -and $_.Exception.Message -ceq 'INTENTIONAL_ACCOUNT_FAILURE_AFTER_USE') { $failureObserved = $true } else { throw }",
+    "  $message = [string]$_.Exception.GetBaseException().Message",
+    "  if ($Mode -ceq 'failure' -and $message -ceq 'INTENTIONAL_ACCOUNT_FAILURE_AFTER_USE') { $failureObserved = $true }",
+    "  elseif ($Mode -ceq 'start-failure' -and $message -ceq 'ZUGFOLGE_SAFE_PROCESS_DIAGNOSTIC code=PROCESS_WITH_TOKEN status=2') { $startFailureObserved = $true }",
+    "  else { throw }",
     "} finally {",
     "  if ($null -ne $account) { $account.Dispose() }",
     "}",
     "$afterOwn = if ($null -eq $accountName) { 0 } else { @(Get-LocalUser -Name $accountName -ErrorAction SilentlyContinue).Count }",
     "$afterMatching = @(Get-ZugfolgeBuildAccounts)",
     "if ($afterOwn -ne 0 -or $afterMatching.Count -ne 0) { throw 'Einmalaccount-Cleanup hinterliess einen passenden lokalen Account.' }",
-    "$receipt = [ordered]@{ accountsAfter=$afterMatching.Count; accountsBefore=$before.Count; created=$created; failureObserved=$failureObserved; mode=$Mode; used=$used }",
+    "$receipt = [ordered]@{ accountsAfter=$afterMatching.Count; accountsBefore=$before.Count; created=$created; cwdExact=$cwdExact; environmentExact=$environmentExact; failureObserved=$failureObserved; mode=$Mode; startFailureObserved=$startFailureObserved; stdioExact=$stdioExact; treeExact=$treeExact; used=$used }",
     "[Console]::Out.WriteLine(($receipt | ConvertTo-Json -Compress))",
     "",
   ].join("\r\n"));
@@ -495,7 +570,7 @@ test("releasefaehige Materialisierung enthaelt weder externes git/tar/rustup noc
   assert.doesNotMatch(source, /git archive|get-tar-commit-id|\btar\.exe\b|\bAdd-Type\b/u);
   for (const required of [
     "NtCreateFile", "CreateProtectedDirectory", "S-1-3-4", "AssertFrozenDirectoryEntry",
-    "ReadDirectoryChangesW-Overflow", "RunAs(", "RunStrict(", "CreateProcessAsUserW", "PROC_THREAD_ATTRIBUTE_HANDLE_LIST",
+    "ReadDirectoryChangesW-Overflow", "RunAs(", "RunStrict(", "CreateProcessWithTokenW", "PROC_THREAD_ATTRIBUTE_HANDLE_LIST",
     "JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE", "pending-external-verification", "runnerAnchorHelperProof",
     "PUBLICATION_COMPLETE", "TerminateJobObject(post-root descendants)", "PublishHeldCreateNew",
     "MarkRegularFileDeletePending", "ZugfolgeAnnualArtifactPublisher", "PublishPair(",
@@ -667,7 +742,8 @@ test("Windows-Anker verweigert Rename/Write exakt vor der Extraktion und extrahi
     for (const output of fixture.outputPaths) await assert.rejects(readFile(output), { code: "ENOENT" });
   });
 
-test("USER_INFO_1-Einmalaccount bindet den dokumentierten minimalen normalen Benutzervertrag", () => {
+test("USER_INFO_1-Einmalaccount bindet den dokumentierten minimalen normalen Benutzervertrag", async () => {
+  const implementation = await readFile(IMPLEMENTATION_PATH, "utf8");
   assert.match(WINDOWS_BUILD_ANCHOR_HELPER_SOURCE, /private const uint ERROR_INVALID_PARAMETER = 87u;/u);
   assert.match(WINDOWS_BUILD_ANCHOR_HELPER_SOURCE, /private const uint NERR_USER_NOT_FOUND = 2221u;/u);
   assert.match(WINDOWS_BUILD_ANCHOR_HELPER_SOURCE, /private const uint USER_PRIV_USER = 1u;/u);
@@ -683,6 +759,29 @@ test("USER_INFO_1-Einmalaccount bindet den dokumentierten minimalen normalen Ben
   assert.match(WINDOWS_BUILD_ANCHOR_HELPER_SOURCE, /lookup != NERR_USER_NOT_FOUND/u);
   assert.doesNotMatch(WINDOWS_BUILD_ANCHOR_HELPER_SOURCE, /UF_PASSWD_CANT_CHANGE|UF_DONT_EXPIRE_PASSWD/u);
   assert.match(WINDOWS_BUILD_ANCHOR_HELPER_SOURCE, /if \(result == ERROR_INVALID_PARAMETER\) diagnostic \+= " parameter="/u);
+  assert.match(WINDOWS_BUILD_ANCHOR_HELPER_SOURCE, /private const uint LOGON_WITHOUT_PROFILE = 0u;/u);
+  assert.match(WINDOWS_BUILD_ANCHOR_HELPER_SOURCE, /private static extern bool CreateProcessWithTokenW\(/u);
+  assert.match(
+    WINDOWS_BUILD_ANCHOR_HELPER_SOURCE,
+    /CreateProcessWithTokenW\(token, LOGON_WITHOUT_PROFILE, executable, command,[\s\S]*flags, env, cwd, ref startup, out process\)/u,
+  );
+  assert.doesNotMatch(WINDOWS_BUILD_ANCHOR_HELPER_SOURCE, /CreateProcessAsUserW/u);
+  assert.match(WINDOWS_BUILD_ANCHOR_HELPER_SOURCE, /ZUGFOLGE_SAFE_PROCESS_DIAGNOSTIC code=PROCESS_WITH_TOKEN status=/u);
+  assert.match(WINDOWS_BUILD_ANCHOR_HELPER_SOURCE, /AssertSentinelNotInherited\(process\.hProcess, sentinelChild\)/u);
+  assert.match(WINDOWS_BUILD_ANCHOR_HELPER_SOURCE, /DuplicateHandle\(process, sentinel, GetCurrentProcess\(\)/u);
+  assert.match(WINDOWS_BUILD_ANCHOR_HELPER_SOURCE, /CompareObjectHandles\(sentinel, duplicate\)/u);
+  assert.match(WINDOWS_BUILD_ANCHOR_HELPER_SOURCE, /status != ERROR_INVALID_HANDLE/u);
+  assert.match(WINDOWS_BUILD_ANCHOR_HELPER_SOURCE, /AssertMitigationPolicy\(process\.hProcess, imageLoadPolicy\)/u);
+  assert.match(WINDOWS_BUILD_ANCHOR_HELPER_SOURCE, /GetProcessMitigationPolicy\(process, 10/u);
+  assert.match(WINDOWS_BUILD_ANCHOR_HELPER_SOURCE, /GetProcessMitigationPolicy\(process, 8/u);
+  assert.match(WINDOWS_BUILD_ANCHOR_HELPER_SOURCE,
+    /created = CreateProcessWithTokenW\([\s\S]*AssertSentinelNotInherited\(process\.hProcess, sentinelChild\);[\s\S]*AssertMitigationPolicy\(process\.hProcess, imageLoadPolicy\);[\s\S]*AssignProcessToJobObject\(job, process\.hProcess\)[\s\S]*ResumeThread\(process\.hThread\)/u);
+  assert.match(implementation, /'HOMEDRIVE' = 'C:'/u);
+  assert.match(implementation, /'HOMEPATH' = '\\Windows\\System32'/u);
+  assert.match(implementation, /'PROMPT' = '\$P\$G'/u);
+  assert.match(implementation, /if \(\$diagnostic -match '\^ZUGFOLGE_SAFE_PROCESS_DIAGNOSTIC code=PROCESS_WITH_TOKEN status=/u);
+  assert.match(implementation, /const diagnostic = windowsBuildAnchorSafeDiagnostic\(stderr\);/u);
+  assert.doesNotMatch(implementation, /const details = Buffer\.concat\(stderr\)[\s\S]{0,160}Windows-Build-Anker lieferte kein Ergebnis/u);
 });
 
 test("extract-Diagnose gibt nur die begrenzte nicht-geheime Anchor-Allowlist frei", async () => {
@@ -694,6 +793,12 @@ test("extract-Diagnose gibt nur die begrenzte nicht-geheime Anchor-Allowlist fre
   assert.equal(diagnose([Buffer.from("ZUGFOLGE_SAFE_ANCHOR_DIAGNOSTIC code=NET_USER_ADD status=5 parameter=0\n", "utf8")]), "");
   assert.equal(diagnose([Buffer.from("ZUGFOLGE_SAFE_ANCHOR_DIAGNOSTIC code=NET_USER_DELETE_VERIFY status=5\n", "utf8")]),
     "ZUGFOLGE_SAFE_ANCHOR_DIAGNOSTIC code=NET_USER_DELETE_VERIFY status=5");
+  assert.equal(diagnose([Buffer.from("password=Zf!never-surface\nZUGFOLGE_SAFE_PROCESS_DIAGNOSTIC code=PROCESS_WITH_TOKEN status=1314\n", "utf8")]),
+    "ZUGFOLGE_SAFE_PROCESS_DIAGNOSTIC code=PROCESS_WITH_TOKEN status=1314");
+  assert.equal(diagnose([Buffer.from("ZUGFOLGE_SAFE_PROCESS_DIAGNOSTIC code=PROCESS_WITH_TOKEN status=1314 parameter=0\n", "utf8")]), "");
+  assert.equal(diagnose([Buffer.from("ZUGFOLGE_SAFE_ANCHOR_DIAGNOSTIC code=PROCESS_WITH_TOKEN status=1314\n", "utf8")]), "");
+  assert.equal(diagnose([Buffer.from("ZUGFOLGE_SAFE_PROCESS_DIAGNOSTIC code=NET_USER_ADD status=87 parameter=0\n", "utf8")]), "");
+  assert.equal(diagnose([Buffer.from("ZUGFOLGE_SAFE_PROCESS_DIAGNOSTIC code=NET_USER_DELETE status=5\n", "utf8")]), "");
   assert.equal(diagnose([Buffer.from(`${safe} password=Zf!never-surface\n`, "utf8")]), "");
   assert.equal(diagnose([Buffer.from("ZUGFOLGE_SAFE_ANCHOR_DIAGNOSTIC code=FOREIGN status=5\n", "utf8")]), "");
   assert.equal(diagnose([Buffer.from(`password=Zf!never-surface\n${"x".repeat(600)}`, "utf8")]), "");
@@ -779,8 +884,13 @@ test("ephemerer Windows-Build-Account wird erstellt, als Kindidentitaet verwende
     accountsAfter: 0,
     accountsBefore: 0,
     created: true,
+    cwdExact: true,
+    environmentExact: true,
     failureObserved: false,
     mode: "success",
+    startFailureObserved: false,
+    stdioExact: true,
+    treeExact: true,
     used: true,
   });
 });
@@ -792,8 +902,31 @@ test("ephemerer Windows-Build-Account wird nach einem Kindprozessfehler im final
     accountsAfter: 0,
     accountsBefore: 0,
     created: true,
+    cwdExact: false,
+    environmentExact: false,
     failureObserved: true,
     mode: "failure",
+    startFailureObserved: false,
+    stdioExact: false,
+    treeExact: false,
+    used: false,
+  });
+});
+
+test("ephemerer Windows-Build-Account gibt einen sicheren numerischen Startfehler aus und wird geloescht", async (t) => {
+  const result = await exerciseEphemeralBuildAccount(t, "start-failure");
+  if (result === undefined) return;
+  assert.deepEqual(result, {
+    accountsAfter: 0,
+    accountsBefore: 0,
+    created: true,
+    cwdExact: false,
+    environmentExact: false,
+    failureObserved: false,
+    mode: "start-failure",
+    startFailureObserved: true,
+    stdioExact: false,
+    treeExact: false,
     used: false,
   });
 });

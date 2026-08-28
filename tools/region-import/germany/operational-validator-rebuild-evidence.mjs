@@ -942,13 +942,16 @@ public static class ZugfolgeMitigatedProcess {
   private const uint CREATE_UNICODE_ENVIRONMENT = 0x00000400;
   private const uint EXTENDED_STARTUPINFO_PRESENT = 0x00080000;
   private const uint CREATE_NO_WINDOW = 0x08000000;
+  private const int ERROR_INVALID_HANDLE = 6;
   private const uint HANDLE_FLAG_INHERIT = 0x00000001;
+  private const uint DUPLICATE_SAME_ACCESS = 0x00000002;
   private const uint JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE = 0x00002000;
   private const uint WAIT_OBJECT_0 = 0;
   private const uint WAIT_TIMEOUT = 258;
   private const uint WAIT_FAILED = 0xffffffff;
   private const int LOGON32_LOGON_INTERACTIVE = 2;
   private const int LOGON32_PROVIDER_DEFAULT = 0;
+  private const uint LOGON_WITHOUT_PROFILE = 0u;
   private static readonly IntPtr PROC_THREAD_ATTRIBUTE_MITIGATION_POLICY = new IntPtr(0x00020007);
   private static readonly IntPtr PROC_THREAD_ATTRIBUTE_HANDLE_LIST = new IntPtr(0x00020002);
   private const ulong BUILD_IMAGE_LOAD_POLICY =
@@ -995,6 +998,20 @@ public static class ZugfolgeMitigatedProcess {
   [DllImport("kernel32.dll", SetLastError = true)]
   [return: MarshalAs(UnmanagedType.Bool)]
   private static extern bool SetHandleInformation(IntPtr handle, uint mask, uint flags);
+  [DllImport("kernel32.dll")]
+  private static extern IntPtr GetCurrentProcess();
+  [DllImport("kernel32.dll", SetLastError = true)]
+  [return: MarshalAs(UnmanagedType.Bool)]
+  private static extern bool DuplicateHandle(IntPtr sourceProcess, IntPtr sourceHandle,
+    IntPtr targetProcess, out IntPtr targetHandle, uint desiredAccess,
+    [MarshalAs(UnmanagedType.Bool)] bool inheritHandle, uint options);
+  [DllImport("kernelbase.dll", ExactSpelling = true, SetLastError = true)]
+  [return: MarshalAs(UnmanagedType.Bool)]
+  private static extern bool CompareObjectHandles(IntPtr first, IntPtr second);
+  [DllImport("kernel32.dll", SetLastError = true)]
+  [return: MarshalAs(UnmanagedType.Bool)]
+  private static extern bool GetProcessMitigationPolicy(IntPtr process, int policy,
+    out uint flags, IntPtr bytes);
   [DllImport("kernel32.dll", SetLastError = true)]
   [return: MarshalAs(UnmanagedType.Bool)]
   private static extern bool InitializeProcThreadAttributeList(IntPtr list, int count, int flags, ref IntPtr size);
@@ -1010,11 +1027,11 @@ public static class ZugfolgeMitigatedProcess {
   [DllImport("advapi32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
   [return: MarshalAs(UnmanagedType.Bool)]
   private static extern bool LogonUser(string username, string domain, string password, int logonType, int logonProvider, out IntPtr token);
-  [DllImport("advapi32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+  [DllImport("advapi32.dll", CharSet = CharSet.Unicode, ExactSpelling = true, SetLastError = true)]
   [return: MarshalAs(UnmanagedType.Bool)]
-  private static extern bool CreateProcessAsUserW(IntPtr token, string application, StringBuilder commandLine,
-    IntPtr processAttributes, IntPtr threadAttributes, [MarshalAs(UnmanagedType.Bool)] bool inheritHandles,
-    uint flags, IntPtr environment, string cwd, ref STARTUPINFOEX startup, out PROCESS_INFORMATION process);
+  private static extern bool CreateProcessWithTokenW(IntPtr token, uint logonFlags, string application,
+    StringBuilder commandLine, uint flags, IntPtr environment, string cwd,
+    ref STARTUPINFOEX startup, out PROCESS_INFORMATION process);
   [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
   private static extern IntPtr CreateJobObject(IntPtr attributes, string name);
   [DllImport("kernel32.dll", SetLastError = true)]
@@ -1078,6 +1095,33 @@ public static class ZugfolgeMitigatedProcess {
       throw new System.ComponentModel.Win32Exception(code, "SetHandleInformation");
     }
   }
+  private static void AssertSentinelNotInherited(IntPtr process, IntPtr sentinel) {
+    IntPtr duplicate;
+    if (DuplicateHandle(process, sentinel, GetCurrentProcess(), out duplicate, 0, false, DUPLICATE_SAME_ACCESS)) {
+      bool inheritedSentinel = CompareObjectHandles(sentinel, duplicate);
+      CloseHandle(duplicate);
+      if (inheritedSentinel)
+        throw new InvalidOperationException("Windows-Kindprozess erbte einen nicht freigegebenen Sentinel-Handle.");
+      return;
+    }
+    int status = Marshal.GetLastWin32Error();
+    if (status != ERROR_INVALID_HANDLE)
+      throw new System.ComponentModel.Win32Exception(status, "DuplicateHandle(non-inherited sentinel)");
+  }
+  private static void AssertMitigationPolicy(IntPtr process, ulong requested) {
+    uint imageLoad;
+    if (!GetProcessMitigationPolicy(process, 10, out imageLoad, new IntPtr(4)))
+      throw Win32("GetProcessMitigationPolicy(ProcessImageLoadPolicy)");
+    if ((imageLoad & 0x00000007u) != 0x00000007u)
+      throw new InvalidOperationException("Windows-Kindprozess besitzt nicht die geforderte Image-Load-Mitigation.");
+    if ((requested & (1UL << 44)) != 0) {
+      uint signature;
+      if (!GetProcessMitigationPolicy(process, 8, out signature, new IntPtr(4)))
+        throw Win32("GetProcessMitigationPolicy(ProcessSignaturePolicy)");
+      if ((signature & 0x00000001u) == 0)
+        throw new InvalidOperationException("Windows-Kindprozess besitzt nicht die geforderte Microsoft-Signatur-Mitigation.");
+    }
+  }
   private static byte[] ReadBounded(Stream stream, int maximumBytes, IntPtr job, string label, OutputCounter total) {
     using (MemoryStream output = new MemoryStream()) {
       byte[] buffer = new byte[8192];
@@ -1118,11 +1162,13 @@ public static class ZugfolgeMitigatedProcess {
     if (arguments == null) arguments = new string[0]; if (stdin == null) stdin = new byte[0];
     if (cancelled != null && cancelled()) throw new InvalidOperationException("Windows-Kindstart wurde vor CreateProcess monoton abgebrochen.");
     IntPtr childIn = IntPtr.Zero, parentIn = IntPtr.Zero, childOut = IntPtr.Zero, parentOut = IntPtr.Zero, childErr = IntPtr.Zero, parentErr = IntPtr.Zero;
+    IntPtr sentinelChild = IntPtr.Zero, sentinelParent = IntPtr.Zero;
     IntPtr attributes = IntPtr.Zero, mitigation = IntPtr.Zero, handleList = IntPtr.Zero, env = IntPtr.Zero, job = IntPtr.Zero, token = IntPtr.Zero;
     bool attributesInitialized = false, processCreated = false, jobAssigned = false, processCompleted = false;
     PROCESS_INFORMATION process = new PROCESS_INFORMATION();
     try {
       Pipe(false, out childIn, out parentIn); Pipe(true, out childOut, out parentOut); Pipe(true, out childErr, out parentErr);
+      Pipe(false, out sentinelChild, out sentinelParent);
       IntPtr attributeBytes = IntPtr.Zero; InitializeProcThreadAttributeList(IntPtr.Zero, 2, 0, ref attributeBytes);
       if (attributeBytes == IntPtr.Zero) throw Win32("InitializeProcThreadAttributeList(size)");
       attributes = Marshal.AllocHGlobal(attributeBytes);
@@ -1146,15 +1192,25 @@ public static class ZugfolgeMitigatedProcess {
         if (!LogonUser(account.Username, account.Domain, account.Password,
             LOGON32_LOGON_INTERACTIVE, LOGON32_PROVIDER_DEFAULT, out token))
           throw Win32("LogonUser(ephemeral build principal)");
-        // No privilege-free fallback is permitted here: Microsoft documents
-        // STARTUPINFOEX for CreateProcessAsUserW, which preserves the exact
-        // mitigation policy and three-handle allow-list.  If the fresh CI host
-        // lacks the required token privileges, the release proof fails closed.
-        created = CreateProcessAsUserW(token, executable, command, IntPtr.Zero, IntPtr.Zero, true,
+        // Microsoft documents STARTUPINFOEX for CreateProcessWithTokenW.  It
+        // preserves the exact mitigation policy and three-handle allow-list,
+        // while requiring only SeImpersonatePrivilege instead of service-only
+        // quota and primary-token privileges.  No weaker logon or
+        // unmitigated fallback is permitted.
+        created = CreateProcessWithTokenW(token, LOGON_WITHOUT_PROFILE, executable, command,
           flags, env, cwd, ref startup, out process);
+        if (!created) {
+          uint status = unchecked((uint)Marshal.GetLastWin32Error());
+          throw new InvalidOperationException("ZUGFOLGE_SAFE_PROCESS_DIAGNOSTIC code=PROCESS_WITH_TOKEN status="
+            + status.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        }
       }
-      if (!created) throw Win32(account == null ? "CreateProcessW(mitigated)" : "CreateProcessAsUserW(ephemeral build principal)");
+      if (!created) throw Win32("CreateProcessW(mitigated)");
       processCreated = true;
+      AssertSentinelNotInherited(process.hProcess, sentinelChild);
+      AssertMitigationPolicy(process.hProcess, imageLoadPolicy);
+      CloseHandle(sentinelChild); sentinelChild = IntPtr.Zero;
+      CloseHandle(sentinelParent); sentinelParent = IntPtr.Zero;
       job = CreateJobObject(IntPtr.Zero, null); if (job == IntPtr.Zero) throw Win32("CreateJobObject");
       JOBOBJECT_EXTENDED_LIMIT_INFORMATION limit = new JOBOBJECT_EXTENDED_LIMIT_INFORMATION(); limit.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
       if (!SetInformationJobObject(job, 9, ref limit, (uint)Marshal.SizeOf(typeof(JOBOBJECT_EXTENDED_LIMIT_INFORMATION)))) throw Win32("SetInformationJobObject");
@@ -1206,6 +1262,7 @@ public static class ZugfolgeMitigatedProcess {
       if (childIn != IntPtr.Zero) CloseHandle(childIn); if (parentIn != IntPtr.Zero) CloseHandle(parentIn);
       if (childOut != IntPtr.Zero) CloseHandle(childOut); if (parentOut != IntPtr.Zero) CloseHandle(parentOut);
       if (childErr != IntPtr.Zero) CloseHandle(childErr); if (parentErr != IntPtr.Zero) CloseHandle(parentErr);
+      if (sentinelChild != IntPtr.Zero) CloseHandle(sentinelChild); if (sentinelParent != IntPtr.Zero) CloseHandle(sentinelParent);
       if (job != IntPtr.Zero) CloseHandle(job); if (env != IntPtr.Zero) Marshal.FreeHGlobal(env); if (handleList != IntPtr.Zero) Marshal.FreeHGlobal(handleList); if (mitigation != IntPtr.Zero) Marshal.FreeHGlobal(mitigation);
       if (attributesInitialized) DeleteProcThreadAttributeList(attributes); if (attributes != IntPtr.Zero) Marshal.FreeHGlobal(attributes);
       if (token != IntPtr.Zero) CloseHandle(token);
@@ -1539,7 +1596,14 @@ function Invoke-Bound([string]$file, [string[]]$arguments, [string]$cwd, [hashta
       stderr = [Convert]::ToBase64String($process.Stderr)
       stdout = [Convert]::ToBase64String($process.Stdout)
     }
-  } catch { Fail "Gebundener mitigierter Prozess schlug fail-closed fehl: $($_.Exception.Message)" }
+  } catch {
+    $diagnostic = [string]$_.Exception.GetBaseException().Message
+    if ($diagnostic -match '^ZUGFOLGE_SAFE_PROCESS_DIAGNOSTIC code=PROCESS_WITH_TOKEN status=[1-9][0-9]{0,9}$') {
+      [Console]::Error.WriteLine($diagnostic)
+      exit 125
+    }
+    Fail "Gebundener mitigierter Prozess schlug fail-closed fehl."
+  }
 }
 try {
   $request = Decode-Json ([Console]::In.ReadLine()) 'Anchor-Request'
@@ -1710,8 +1774,11 @@ try {
     'CARGO_TARGET_DIR' = [string]$run.targetDirectory
     'CARGO_TERM_COLOR' = 'never'
     'COMSPEC' = 'C:\Windows\System32\cmd.exe'
+    'HOMEDRIVE' = 'C:'
+    'HOMEPATH' = '\Windows\System32'
     'PATH' = "$($privateToolchainPath)\bin;$($privateToolchainPath)\lib\rustlib\x86_64-pc-windows-gnu\bin;$($privateToolchainPath)\lib\rustlib\x86_64-pc-windows-gnu\bin\self-contained;C:\Windows\System32;C:\Windows"
     'PATHEXT' = '.COM;.EXE;.BAT;.CMD'
+    'PROMPT' = '$P$G'
     'RUSTC' = $rustcPath
     'SYSTEMROOT' = 'C:\Windows'
     'TEMP' = [string]$run.tempDirectory
@@ -2333,14 +2400,16 @@ function windowsBuildAnchorSafeDiagnostic(chunks) {
   const lines = tail.split(/\r?\n/u);
   for (let index = lines.length - 1; index >= 0; index -= 1) {
     const line = lines[index];
-    const match = /^ZUGFOLGE_SAFE_ANCHOR_DIAGNOSTIC code=(NET_USER_ADD|NET_USER_DELETE|NET_USER_DELETE_VERIFY) status=([1-9][0-9]{0,9})(?: parameter=(0|[1-9][0-9]{0,9}))?$/u.exec(line);
+    const match = /^(?:ZUGFOLGE_SAFE_ANCHOR_DIAGNOSTIC code=(NET_USER_ADD|NET_USER_DELETE|NET_USER_DELETE_VERIFY) status=([1-9][0-9]{0,9})(?: parameter=(0|[1-9][0-9]{0,9}))?|ZUGFOLGE_SAFE_PROCESS_DIAGNOSTIC code=(PROCESS_WITH_TOKEN) status=([1-9][0-9]{0,9}))$/u.exec(line);
     if (match === null) continue;
-    const status = Number(match[2]);
+    const code = match[1] ?? match[4];
+    const status = Number(match[2] ?? match[5]);
     const parameter = match[3] === undefined ? undefined : Number(match[3]);
     if (status > 0 && status <= 0xffff_ffff
       && (parameter === undefined || parameter <= 0xffff_ffff)
-      && ((match[1] === "NET_USER_ADD" && (status === 87) === (parameter !== undefined))
-        || ((match[1] === "NET_USER_DELETE" || match[1] === "NET_USER_DELETE_VERIFY") && parameter === undefined))) return line;
+      && ((code === "NET_USER_ADD" && (status === 87) === (parameter !== undefined))
+        || ((code === "NET_USER_DELETE" || code === "NET_USER_DELETE_VERIFY" || code === "PROCESS_WITH_TOKEN")
+          && parameter === undefined))) return line;
   }
   return "";
 }
@@ -2582,8 +2651,8 @@ async function startWindowsBuildAnchor({ anchoredParents, buildParent, buildRoot
         child.stdin.end();
         const end = await closePromise;
         finished = true;
-        const details = Buffer.concat(stderr).toString("utf8").slice(-8192).trim();
-        throw new Error(`Windows-Build-Anker lieferte kein Ergebnis (${end.code ?? end.signal ?? "unknown"})${details ? `: ${details}` : ""}.`);
+        const diagnostic = windowsBuildAnchorSafeDiagnostic(stderr);
+        throw new Error(`Windows-Build-Anker lieferte kein Ergebnis (${end.code ?? end.signal ?? "unknown"})${diagnostic ? `: ${diagnostic}` : ""}.`);
       }
       const envelope = parseJson(Buffer.from(line.slice("RESULT ".length), "base64"), "Windows-Build-Anker-Ergebnis");
       exactKeys(envelope, ["build", "cargo", "isolation", "output", "rustc"], "Windows-Build-Anker-Ergebnis");
