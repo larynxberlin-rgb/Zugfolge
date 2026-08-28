@@ -151,7 +151,7 @@ jobs:
 
           rustup set auto-self-update disable
           if ($LASTEXITCODE -ne 0) { throw 'rustup auto-self-update konnte nicht deaktiviert werden.' }
-          rustup toolchain install $toolchainId --profile minimal
+          rustup toolchain install $toolchainId --profile minimal --component clippy --component rustfmt
           if ($LASTEXITCODE -ne 0) { throw 'Annual-gepinnte Rust-Toolchain konnte nicht vorbereitet werden.' }
           $cargoPath = rustup which --toolchain $toolchainId cargo
           if ($LASTEXITCODE -ne 0 -or [String]::IsNullOrWhiteSpace($cargoPath)) { throw 'Preparation-only Cargo-Pfad fehlt.' }
