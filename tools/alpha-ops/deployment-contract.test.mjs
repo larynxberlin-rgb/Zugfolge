@@ -78,6 +78,7 @@ test("Alpha-Compose erzwingt Map- und Welt-Cutover-Gates, Migration, signierten 
   const liveOdooPostgresService = compose.slice(compose.indexOf("  odoo-postgres:"), compose.indexOf("  recovery-verify-postgres:"));
   const recoveryPostgresService = compose.slice(compose.indexOf("  recovery-verify-postgres:"), compose.indexOf("  recovery-verify-odoo-postgres:"));
   const recoveryOdooPostgresService = compose.slice(compose.indexOf("  recovery-verify-odoo-postgres:"), compose.indexOf("  odoo-upgrade:"));
+  const productionRecoveryMaterialService = compose.slice(compose.indexOf("  production-recovery-material:"), compose.indexOf("  production-recovery-schema29-cold-qualify:"));
   const schema29SnapshotService = compose.slice(compose.indexOf("  production-schema29-runtime-snapshot:"), compose.indexOf("  production-schema29-odoo-filestore-access:"));
   const schema29FilestoreAccessService = compose.slice(compose.indexOf("  production-schema29-odoo-filestore-access:"), compose.indexOf("  schema29-game-runtime:"));
   const schema29GameService = compose.slice(compose.indexOf("  schema29-game-runtime:"), compose.indexOf("  schema29-keycloak-runtime:"));
@@ -113,7 +114,9 @@ test("Alpha-Compose erzwingt Map- und Welt-Cutover-Gates, Migration, signierten 
   assert.match(recoveryPostgresService, /networks: \{ schema29-recovery: \{\} \}/u);
   assert.match(recoveryOdooPostgresService, /recovery-verify-odoo-db:\/var\/lib\/postgresql\/data[\s\S]*networks: \{ schema29-recovery: \{\} \}/u);
   assert.match(compose, /schema29-recovery: \{ internal: true, name: zugfolge-schema29-recovery \}/u);
-  assert.match(compose, /production-recovery-material:[\s\S]*ZUGFOLGE_ODOO_IMAGE_REFERENCE[\s\S]*\/ops\/alpha:ro[\s\S]*odoo-filestore:\/odoo-live-filestore:ro/u);
+  assert.match(productionRecoveryMaterialService, /image: postgres:16\.14-trixie/u);
+  assert.doesNotMatch(productionRecoveryMaterialService, /ZUGFOLGE_ODOO_IMAGE_REFERENCE/u);
+  assert.match(productionRecoveryMaterialService, /\/ops\/alpha:ro[\s\S]*odoo-filestore:\/odoo-live-filestore:ro/u);
   assert.match(compose, /production-recovery-cold-qualify:[\s\S]*production-cold-backup\.mjs, qualify[\s\S]*\/var\/run\/docker\.sock[\s\S]*recovery-verify-postgres: \{ condition: service_healthy \}/u);
   assert.match(schema29SnapshotService, /production-schema29-runtime-snapshot\.mjs, create[\s\S]*schema29-runtime-before\.json[\s\S]*networks: \{ schema29-recovery: \{\} \}/u);
   assert.match(schema29FilestoreAccessService, /user: "0:0"[\s\S]*schema29-odoo-filestore-access\.mjs, open[\s\S]*schema29-odoo-filestore-open\.json[\s\S]*schema29-odoo-filestore-seal\.json[\s\S]*PRODUCTION_SCHEMA29_RUNTIME_ODOO_RESTORE_DATABASE[^\n]+:\/odoo-recovery-filestore\/\$\{PRODUCTION_SCHEMA29_RUNTIME_ODOO_RESTORE_DATABASE[^\n]+:rw[\s\S]*network_mode: none/u);
@@ -188,8 +191,8 @@ test("Alpha-Compose erzwingt Map- und Welt-Cutover-Gates, Migration, signierten 
   assert.match(compose, /odoo:[\s\S]*depends_on: \{ odoo-upgrade: \{ condition: service_completed_successfully \}, game-api:/u);
   assert.match(compose, /^name: zugfolge$/mu);
   assert.equal((compose.match(/image: "\$\{ZUGFOLGE_GAME_API_IMAGE_REFERENCE:\?[^}]+\}"/gu) ?? []).length, 23);
-  assert.equal((compose.match(/image: "\$\{ZUGFOLGE_ODOO_IMAGE_REFERENCE:\?[^}]+\}"/gu) ?? []).length, 3);
-  assert.equal((compose.match(/pull_policy: never/gu) ?? []).length, 31);
+  assert.equal((compose.match(/image: "\$\{ZUGFOLGE_ODOO_IMAGE_REFERENCE:\?[^}]+\}"/gu) ?? []).length, 2);
+  assert.equal((compose.match(/pull_policy: never/gu) ?? []).length, 30);
   assert.doesNotMatch(compose, /^\s+image: zugfolge-game-api(?::[^\s]+)?\s*$/mu);
   assert.equal((rollbackCompose.match(/image: "\$\{MAP_RELEASE_PREFLIGHT_RUNTIME_IMAGE_REFERENCE:\?[^}]+\}"/gu) ?? []).length, 5);
   assert.equal((rollbackCompose.match(/image: "\$\{PRODUCTION_RECOVERY_ODOO_IMAGE_REFERENCE:\?[^}]+\}"/gu) ?? []).length, 1);

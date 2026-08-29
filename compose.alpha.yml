@@ -452,8 +452,7 @@ services:
     depends_on: { odoo-postgres: { condition: service_healthy }, production-recovery-action: { condition: service_completed_successfully } }
   production-recovery-material:
     profiles: [production-recovery-preparation]
-    image: "${ZUGFOLGE_ODOO_IMAGE_REFERENCE:?ZUGFOLGE_ODOO_IMAGE_REFERENCE muss ein unveraenderlicher sha256-Imageverweis sein}"
-    pull_policy: never
+    image: postgres:16.14-trixie
     user: "0:0"
     entrypoint: [/bin/sh]
     command: [-eu, -c, "echo production-recovery-material ready"]
