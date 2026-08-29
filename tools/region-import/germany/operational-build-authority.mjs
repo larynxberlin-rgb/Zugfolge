@@ -60,9 +60,9 @@ const GH_ATTESTATION_LAUNCHER_MAX_OUTPUT_BYTES = Math.ceil(GH_ATTESTATION_MAX_OU
 const WINDOWS_TRUSTED_SYSTEM_ROOT = String.raw`C:\Windows`;
 const WINDOWS_TRUSTED_POWERSHELL = String.raw`C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe`;
 const WINDOWS_ATTESTATION_ANCHOR_HELPER = Object.freeze({
-  bytes: 46_080,
+  bytes: 59_904,
   path: join(dirname(fileURLToPath(import.meta.url)), "operational-windows-anchor-helper.dll"),
-  sha256: "1e18d3048d9a778d05a7bd1532d4f84233aa2cb5d13d46ca4583e90811e7165f",
+  sha256: "1657683980f17c805b311207329606f999e204749db263e56a0a0105a630a475",
 });
 const CURRENT_BUILD_EVIDENCE_SPEC_FILE =
   "tools/tiles/map-release-build-evidence.annual-2026.5.spec.json";

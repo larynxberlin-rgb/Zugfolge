@@ -3,6 +3,10 @@ name: Operational Validator Rebuild Evidence
 on:
   workflow_dispatch:
     inputs:
+      preserved_validator_release_id:
+        description: Numerische ID des privaten GitHub-Draft-Releases, das exakt das preserved Validator-Asset enthaelt.
+        required: true
+        type: string
       preserved_validator_asset_id:
         description: Numerische Asset-ID eines privaten GitHub-Draft-Releases; dessen Bytes werden vollstaendig per Annual-SHA-256 geprueft.
         required: true
@@ -18,7 +22,9 @@ on:
 
 permissions:
   attestations: write
-  contents: read
+  # GitHub exposes unpublished draft releases only to push-capable identities.
+  # The token itself is injected solely into the byte-pinned asset download step.
+  contents: write
   id-token: write
 
 concurrency:
@@ -56,39 +62,98 @@ jobs:
           if ($env:ZUGFOLGE_REBUILD_RUNNER_IMAGE -notin @('windows-2025', 'windows-2022')) { throw 'Nicht gepinntes Windows-Runner-Abbild.' }
           if ((node --version) -cne 'v24.19.0') { throw 'Node-Runtime driftet von 24.19.0.' }
 
-      - name: Materialize Annual-pinned source, vendor, toolchain and helper inputs
+      - name: Exercise complete Windows anchor regression suite
+        shell: powershell
+        env:
+          ZUGFOLGE_REQUIRE_ELEVATED_ACCOUNT_TESTS: '1'
+        run: |
+          $ErrorActionPreference = 'Stop'
+          node --test tools/region-import/germany/operational-validator-rebuild-evidence.test.mjs
+          if ($LASTEXITCODE -ne 0) { throw 'Vollstaendige Windows-Anker-Regressionssuite scheiterte oder ein erhoehter Einmalaccount-Test wurde unzulaessig uebersprungen.' }
+
+      - name: Download exact preserved validator from private draft release
         shell: powershell
         env:
           GITHUB_TOKEN: ${{ github.token }}
+          PRESERVED_VALIDATOR_RELEASE_ID: ${{ inputs.preserved_validator_release_id }}
           PRESERVED_VALIDATOR_ASSET_ID: ${{ inputs.preserved_validator_asset_id }}
         run: |
           $ErrorActionPreference = 'Stop'
           $specPath = Join-Path $env:GITHUB_WORKSPACE 'tools\region-import\germany\operational-validator-rebuild.annual-2026.5.json'
           $spec = Get-Content -LiteralPath $specPath -Raw | ConvertFrom-Json
+          if ($env:PRESERVED_VALIDATOR_RELEASE_ID -cnotmatch '^[1-9][0-9]*$') { throw 'Preserved-Validator-Release-ID muss numerisch sein.' }
           if ($env:PRESERVED_VALIDATOR_ASSET_ID -cnotmatch '^[1-9][0-9]*$') { throw 'Preserved-Validator-Asset-ID muss numerisch sein.' }
-          $toolchainOutput = $spec.toolchain.root
-          $toolchainParent = Split-Path -Parent $toolchainOutput
-          $toolchainId = '1.94.1-x86_64-pc-windows-gnu'
-          $preparation = Join-Path $env:RUNNER_TEMP 'zugfolge-operational-validator-rebuild-preparation'
-          $sourceRoot = Join-Path $preparation 'source'
-          $vendorRoot = Join-Path $preparation 'vendor-root'
-          if ((Test-Path -LiteralPath $preparation) -or (Test-Path -LiteralPath $toolchainOutput)) { throw 'Create-new Vorbereitungswurzel kollidiert.' }
-          New-Item -ItemType Directory -Path $preparation | Out-Null
-          New-Item -ItemType Directory -Path $vendorRoot | Out-Null
-          New-Item -ItemType Directory -Path (Join-Path $vendorRoot '.cargo') | Out-Null
-          New-Item -ItemType Directory -Path (Join-Path $env:GITHUB_WORKSPACE 'var\derived\germany-2026.5\toolchain') -Force | Out-Null
 
+          $releaseMetadataPath = Join-Path $env:RUNNER_TEMP 'zugfolge-preserved-validator-draft-release.json'
+          if (Test-Path -LiteralPath $releaseMetadataPath) { throw 'Draft-Release-Metadatenausgabe kollidiert.' }
+          $releaseUrl = "https://api.github.com/repos/larynxberlin-rgb/Zugfolge/releases/$($env:PRESERVED_VALIDATOR_RELEASE_ID)"
+          & (Join-Path $env:SystemRoot 'System32\curl.exe') `
+            --fail --silent --show-error --location --max-redirs 3 `
+            --proto '=https' --proto-redir '=https' `
+            --header 'Accept: application/vnd.github+json' `
+            --header "Authorization: Bearer $($env:GITHUB_TOKEN)" `
+            --header 'X-GitHub-Api-Version: 2022-11-28' `
+            --output $releaseMetadataPath $releaseUrl
+          if ($LASTEXITCODE -ne 0) { throw 'Private Draft-Release-Metadaten konnten nicht geladen werden.' }
+
+          $release = Get-Content -LiteralPath $releaseMetadataPath -Raw | ConvertFrom-Json
+          $expectedTag = "infra-deutschland-2026.5-validator-input-$($env:GITHUB_SHA.Substring(0, 12))"
+          if ([Int64]$release.id -ne [Int64]$env:PRESERVED_VALIDATOR_RELEASE_ID -or
+              $release.draft -ne $true -or $release.prerelease -ne $false -or $null -ne $release.published_at -or
+              $release.target_commitish -cne $env:GITHUB_SHA -or $release.tag_name -cne $expectedTag) {
+            throw 'Preserved Validator stammt nicht aus dem commitgebundenen privaten Draft-Release.'
+          }
+          $assets = @($release.assets | Where-Object { [Int64]$_.id -eq [Int64]$env:PRESERVED_VALIDATOR_ASSET_ID })
+          $expectedName = Split-Path -Leaf $spec.binaries.preserved.file
+          $expectedDigest = "sha256:$($spec.binaries.preserved.sha256)"
+          $expectedAssetUrl = "https://api.github.com/repos/larynxberlin-rgb/Zugfolge/releases/assets/$($env:PRESERVED_VALIDATOR_ASSET_ID)"
+          if (@($release.assets).Count -ne 1 -or $assets.Count -ne 1 -or
+              $assets[0].name -cne $expectedName -or $assets[0].state -cne 'uploaded' -or
+              [Int64]$assets[0].size -ne [Int64]$spec.binaries.preserved.bytes -or
+              $assets[0].digest -cne $expectedDigest -or $assets[0].url -cne $expectedAssetUrl) {
+            throw 'Draft-Release bindet nicht exakt das Annual-gepinnte Preserved-Validator-Asset.'
+          }
+
+          New-Item -ItemType Directory -Path (Join-Path $env:GITHUB_WORKSPACE 'var\derived\germany-2026.5\toolchain') -Force | Out-Null
           $preservedPath = Join-Path $env:GITHUB_WORKSPACE ($spec.binaries.preserved.file -replace '/', '\')
           if (Test-Path -LiteralPath $preservedPath) { throw 'Preserved-Validator-Ausgabe kollidiert.' }
-          $preservedAssetUrl = "https://api.github.com/repos/larynxberlin-rgb/Zugfolge/releases/assets/$($env:PRESERVED_VALIDATOR_ASSET_ID)"
           & (Join-Path $env:SystemRoot 'System32\curl.exe') `
             --fail --silent --show-error --location --max-redirs 3 `
             --proto '=https' --proto-redir '=https' `
             --header 'Accept: application/octet-stream' `
             --header "Authorization: Bearer $($env:GITHUB_TOKEN)" `
             --header 'X-GitHub-Api-Version: 2022-11-28' `
-            --output $preservedPath $preservedAssetUrl
+            --output $preservedPath $expectedAssetUrl
           if ($LASTEXITCODE -ne 0) { throw 'Privates Preserved-Validator-Asset konnte nicht geladen werden.' }
+          $preservedItem = Get-Item -LiteralPath $preservedPath
+          $preservedHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $preservedPath).Hash.ToLowerInvariant()
+          if ($preservedItem.Length -ne [Int64]$spec.binaries.preserved.bytes -or
+              $preservedHash -cne [string]$spec.binaries.preserved.sha256) {
+            throw 'Heruntergeladenes Preserved-Validator-Asset driftet vom Annual-Pin.'
+          }
+
+      - name: Materialize Annual-pinned source, vendor, toolchain and helper inputs
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $specPath = Join-Path $env:GITHUB_WORKSPACE 'tools\region-import\germany\operational-validator-rebuild.annual-2026.5.json'
+          $spec = Get-Content -LiteralPath $specPath -Raw | ConvertFrom-Json
+          $preservedPath = Join-Path $env:GITHUB_WORKSPACE ($spec.binaries.preserved.file -replace '/', '\')
+          if (-not (Test-Path -LiteralPath $preservedPath -PathType Leaf)) { throw 'Preserved-Validator-Eingang fehlt.' }
+          $toolchainOutput = $spec.toolchain.root
+          $toolchainParent = Split-Path -Parent $toolchainOutput
+          $toolchainId = '1.94.1-x86_64-pc-windows-gnu'
+          $preparation = Join-Path $env:RUNNER_TEMP 'zugfolge-operational-validator-rebuild-preparation'
+          $sourceRoot = Join-Path $preparation 'source'
+          $vendorRoot = Join-Path $preparation 'vendor-root'
+          $rustupHome = Join-Path $preparation 'rustup-home'
+          $cargoHome = Join-Path $preparation 'cargo-home'
+          $rustupPath = [IO.Path]::GetFullPath((Get-Command rustup -CommandType Application -ErrorAction Stop).Source)
+          if (-not (Test-Path -LiteralPath $rustupPath -PathType Leaf)) { throw 'Absoluter rustup-Programmpfad fehlt.' }
+          if ((Test-Path -LiteralPath $preparation) -or (Test-Path -LiteralPath $toolchainOutput)) { throw 'Create-new Vorbereitungswurzel kollidiert.' }
+          New-Item -ItemType Directory -Path $preparation | Out-Null
+          New-Item -ItemType Directory -Path $vendorRoot | Out-Null
+          New-Item -ItemType Directory -Path (Join-Path $vendorRoot '.cargo') | Out-Null
 
           $sourceArchive = Join-Path $env:GITHUB_WORKSPACE ($spec.source.archive.file -replace '/', '\')
           if (Test-Path -LiteralPath $sourceArchive) { throw 'Source-TAR-Ausgabe kollidiert.' }
@@ -97,13 +162,17 @@ jobs:
           git worktree add --detach $sourceRoot $spec.source.commit
           if ($LASTEXITCODE -ne 0) { throw 'Preparation-only Source-Worktree scheiterte.' }
 
-          rustup set auto-self-update disable
+          $env:RUSTUP_HOME = $rustupHome
+          $env:CARGO_HOME = $cargoHome
+          & $rustupPath set auto-self-update disable
           if ($LASTEXITCODE -ne 0) { throw 'rustup auto-self-update konnte nicht deaktiviert werden.' }
-          rustup toolchain install $toolchainId --profile minimal
+          & $rustupPath toolchain install $toolchainId --profile minimal --component clippy --component rustfmt
           if ($LASTEXITCODE -ne 0) { throw 'Annual-gepinnte Rust-Toolchain konnte nicht vorbereitet werden.' }
-          $cargoPath = rustup which --toolchain $toolchainId cargo
-          if ($LASTEXITCODE -ne 0 -or [String]::IsNullOrWhiteSpace($cargoPath)) { throw 'Preparation-only Cargo-Pfad fehlt.' }
-          $cargoPath = $cargoPath.Trim()
+          $toolchainsRoot = [IO.Path]::GetFullPath((Join-Path $rustupHome 'toolchains')).TrimEnd([IO.Path]::DirectorySeparatorChar)
+          $installedToolchain = [IO.Path]::GetFullPath((Join-Path $toolchainsRoot $toolchainId))
+          if ([IO.Path]::GetDirectoryName($installedToolchain).TrimEnd([IO.Path]::DirectorySeparatorChar) -cne $toolchainsRoot) { throw 'Isolierter Toolchain-Pfad verlaesst seine create-new Wurzel.' }
+          $cargoPath = Join-Path $installedToolchain 'bin\cargo.exe'
+          if (-not (Test-Path -LiteralPath $cargoPath -PathType Leaf)) { throw 'Preparation-only Cargo-Pfad fehlt.' }
           & $cargoPath vendor --locked --versioned-dirs (Join-Path $vendorRoot 'vendor') --manifest-path (Join-Path $sourceRoot 'Cargo.toml') | Out-Null
           if ($LASTEXITCODE -ne 0) { throw 'cargo vendor fuer den Annual-gepinnten Dependency-Input scheiterte.' }
 
@@ -116,9 +185,10 @@ jobs:
           node tools/region-import/germany/prepare-operational-validator-rebuild-inputs.mjs vendor-tar $vendorRoot $vendorArchive
           if ($LASTEXITCODE -ne 0) { throw 'Deterministisches Cargo-Vendor-TAR scheiterte.' }
 
-          $installedToolchain = Split-Path -Parent (Split-Path -Parent $cargoPath)
           New-Item -ItemType Directory -Path $toolchainParent -Force | Out-Null
           Copy-Item -LiteralPath $installedToolchain -Destination $toolchainOutput -Recurse
+          & (Join-Path $env:GITHUB_WORKSPACE 'tools\region-import\germany\normalize-operational-validator-rustup-components.windows.ps1') `
+            -ToolchainRoot $toolchainOutput -TargetTriple 'x86_64-pc-windows-gnu'
           $toolchainManifest = Join-Path $env:GITHUB_WORKSPACE ($spec.toolchain.manifest.file -replace '/', '\')
           node tools/region-import/germany/prepare-operational-validator-rebuild-inputs.mjs toolchain-manifest $toolchainOutput 'rust-1.94.1-x86_64-pc-windows-gnu-complete-tree-v1' $toolchainManifest
           if ($LASTEXITCODE -ne 0) { throw 'Vollstaendiges Toolchain-Manifest scheiterte.' }

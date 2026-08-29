@@ -2201,6 +2201,21 @@ var GERMANY_OPERATIONAL_RUNNER_PHASES = Object.freeze({
   "materialize-annual-plan-evidence-v1": 6,
   "materialize-validator-rebuild-v3": 3
 });
+var GERMANY_OPERATIONAL_REBUILD_AUTHORITY_ENVIRONMENT_KEYS = Object.freeze([
+  "GITHUB_ACTIONS",
+  "GITHUB_EVENT_NAME",
+  "GITHUB_REF",
+  "GITHUB_REF_PROTECTED",
+  "GITHUB_REPOSITORY",
+  "GITHUB_RUN_ATTEMPT",
+  "GITHUB_RUN_ID",
+  "GITHUB_SHA",
+  "GITHUB_WORKFLOW_REF",
+  "RUNNER_ARCH",
+  "RUNNER_ENVIRONMENT",
+  "RUNNER_OS",
+  "ZUGFOLGE_REBUILD_RUNNER_IMAGE"
+]);
 var GERMANY_OPERATIONAL_ANNUAL_PLAN_TIMEOUT_MILLISECONDS = 12e4;
 var GERMANY_OPERATIONAL_ANNUAL_RUN_TIMEOUT_MILLISECONDS = 216e5;
 var GERMANY_OPERATIONAL_EXECUTION_RUNNER_ROOT_FILES = Object.freeze([
@@ -2878,6 +2893,25 @@ try {
     ZUGFOLGE_OPERATIONAL_RUNNER_CLI_COUNT = [String]$cliCount
     ZUGFOLGE_OPERATIONAL_RUNNER_ANNUAL_LAUNCH_PROOF_BASE64 = $annualLaunchProofBase64
     ZUGFOLGE_OPERATIONAL_RUNNER_PHASE = $runnerPhase
+  }
+  if ($runnerPhase -ceq "materialize-validator-rebuild-v3") {
+    foreach ($name in @(
+      "GITHUB_ACTIONS",
+      "GITHUB_EVENT_NAME",
+      "GITHUB_REF",
+      "GITHUB_REF_PROTECTED",
+      "GITHUB_REPOSITORY",
+      "GITHUB_RUN_ATTEMPT",
+      "GITHUB_RUN_ID",
+      "GITHUB_SHA",
+      "GITHUB_WORKFLOW_REF",
+      "RUNNER_ARCH",
+      "RUNNER_ENVIRONMENT",
+      "RUNNER_OS",
+      "ZUGFOLGE_REBUILD_RUNNER_IMAGE"
+    )) {
+      $childEnvironment[$name] = Required ("AUTHORITY_" + $name)
+    }
   }
   for ($index = 0; $index -lt $cliCount; $index += 1) {
     $childEnvironment["ZUGFOLGE_OPERATIONAL_RUNNER_CLI_$index"] = Required "CLI_$index"
@@ -4755,6 +4789,8 @@ var MAX_TOOLCHAIN_MANIFEST_BYTES = 4 * 1024 * 1024;
 var MAX_SOURCE_FILE_BYTES = 64 * 1024 * 1024;
 var MAX_SOURCE_TREE_ENTRIES = 1e5;
 var MAX_PROCESS_OUTPUT_BYTES = 16 * 1024 * 1024;
+var MAX_WINDOWS_ANCHOR_DIAGNOSTIC_BYTES = 512;
+var WINDOWS_ANCHOR_COMMIT_ACK_TIMEOUT_MS = 15e3;
 var SHA2565 = /^[a-f0-9]{64}$/;
 var GIT_COMMIT2 = /^[a-f0-9]{40}$/;
 var PORTABLE_FILE = /^(?![A-Za-z]:)(?!\/)(?!.*\\)(?!.*(?:^|\/)\.\.?(?:\/|$))[A-Za-z0-9._@+-]+(?:\/[A-Za-z0-9._@+-]+)*$/;
@@ -4791,7 +4827,116 @@ public sealed class ZugfolgeNtCreateException : InvalidOperationException {
   internal ZugfolgeNtCreateException(int status)
     : base("NtCreateFile ist fehlgeschlagen: 0x" + status.ToString("x8")) { Status = status; }
 }
+public sealed class ZugfolgeImpersonationScope : IDisposable {
+  private IntPtr token;
+  private readonly int threadId;
+  private readonly string returnSid;
+  private Action released;
+  private bool active;
+  private bool impersonating;
+  private Exception pendingIdentityFailure;
+  [DllImport("advapi32.dll", EntryPoint = "LogonUserW", CharSet = CharSet.Unicode, ExactSpelling = true, SetLastError = true)]
+  [return: MarshalAs(UnmanagedType.Bool)]
+  private static extern bool LogonUserW(string username, string domain, string password,
+    int logonType, int logonProvider, out IntPtr token);
+  [DllImport("advapi32.dll", SetLastError = true)]
+  [return: MarshalAs(UnmanagedType.Bool)]
+  private static extern bool ImpersonateLoggedOnUser(IntPtr token);
+  [DllImport("advapi32.dll", SetLastError = true)]
+  [return: MarshalAs(UnmanagedType.Bool)]
+  private static extern bool RevertToSelf();
+  [DllImport("kernel32.dll", SetLastError = true)]
+  [return: MarshalAs(UnmanagedType.Bool)]
+  private static extern bool CloseHandle(IntPtr handle);
+  private ZugfolgeImpersonationScope(IntPtr value, string expectedReturnSid, Action release,
+      bool isImpersonating, Exception initialFailure) {
+    token = value; threadId = System.Threading.Thread.CurrentThread.ManagedThreadId;
+    returnSid = expectedReturnSid; released = release; active = true;
+    impersonating = isImpersonating; pendingIdentityFailure = initialFailure;
+  }
+  internal static ZugfolgeImpersonationScope Create(string username, string domain, string password,
+      string expectedReturnSid, Action release) {
+    IntPtr token = IntPtr.Zero;
+    if (!LogonUserW(username, domain, password, 2, 0, out token)) {
+      int status = Marshal.GetLastWin32Error();
+      release();
+      throw new InvalidOperationException("ZUGFOLGE_SAFE_ANCHOR_DIAGNOSTIC code=LOGON_USER status="
+        + status.ToString(System.Globalization.CultureInfo.InvariantCulture));
+    }
+    if (!ImpersonateLoggedOnUser(token)) {
+      int status = Marshal.GetLastWin32Error();
+      Exception failure = new InvalidOperationException(
+        "ZUGFOLGE_SAFE_ANCHOR_DIAGNOSTIC code=IMPERSONATE_USER status="
+        + status.ToString(System.Globalization.CultureInfo.InvariantCulture));
+      if (!CloseHandle(token)) {
+        Exception closeFailure = new InvalidOperationException(
+          "ZUGFOLGE_SAFE_ANCHOR_DIAGNOSTIC code=CLOSE_LOGON_TOKEN status="
+          + Marshal.GetLastWin32Error().ToString(System.Globalization.CultureInfo.InvariantCulture));
+        return new ZugfolgeImpersonationScope(token, expectedReturnSid, release, false,
+          new AggregateException(failure, closeFailure));
+      }
+      release();
+      throw failure;
+    }
+    return new ZugfolgeImpersonationScope(token, expectedReturnSid, release, true, null);
+  }
+  internal void AssertCurrentPrincipal(string expectedPrincipalSid) {
+    if (!active || System.Threading.Thread.CurrentThread.ManagedThreadId != threadId) {
+      throw new InvalidOperationException("Ephemere Impersonation besitzt keinen gueltigen aktuellen Thread.");
+    }
+    if (pendingIdentityFailure != null) throw pendingIdentityFailure;
+    if (!impersonating) throw new InvalidOperationException("Ephemere Impersonation wurde nicht hergestellt.");
+    using (WindowsIdentity identity = WindowsIdentity.GetCurrent()) {
+      if (identity.User == null || identity.User.Value != expectedPrincipalSid) {
+        throw new InvalidOperationException("Impersonation band nicht die erwartete ephemere SID.");
+      }
+    }
+  }
+  public void Dispose() {
+    if (!active) return;
+    if (System.Threading.Thread.CurrentThread.ManagedThreadId != threadId) {
+      throw new InvalidOperationException("Ephemere Impersonation wurde auf einem fremden Thread beendet.");
+    }
+    Exception identityFailure = pendingIdentityFailure;
+    if (impersonating) {
+      if (!RevertToSelf()) {
+        throw new InvalidOperationException("ZUGFOLGE_SAFE_ANCHOR_DIAGNOSTIC code=REVERT_USER status="
+          + Marshal.GetLastWin32Error().ToString(System.Globalization.CultureInfo.InvariantCulture));
+      }
+      impersonating = false;
+      try {
+        using (WindowsIdentity identity = WindowsIdentity.GetCurrent()) {
+          if (identity.User == null || identity.User.Value != returnSid) {
+            identityFailure = new InvalidOperationException("Impersonation kehrte nicht zur erwarteten Anchor-SID zurueck.");
+          }
+        }
+      } catch (Exception error) { identityFailure = error; }
+      pendingIdentityFailure = identityFailure;
+    }
+    if (token != IntPtr.Zero && !CloseHandle(token)) {
+      Exception closeFailure = new InvalidOperationException(
+        "ZUGFOLGE_SAFE_ANCHOR_DIAGNOSTIC code=CLOSE_LOGON_TOKEN status="
+        + Marshal.GetLastWin32Error().ToString(System.Globalization.CultureInfo.InvariantCulture));
+      if (identityFailure != null) {
+        throw new AggregateException(identityFailure, closeFailure);
+      }
+      throw closeFailure;
+    }
+    token = IntPtr.Zero; active = false;
+    pendingIdentityFailure = null;
+    Action callback = released; released = null;
+    if (callback != null) callback();
+    if (identityFailure != null) throw identityFailure;
+  }
+}
 public sealed class ZugfolgeEphemeralAccount : IDisposable {
+  private const uint ERROR_INVALID_PARAMETER = 87u;
+  private const uint NERR_USER_NOT_FOUND = 2221u;
+  private const uint USER_PRIV_USER = 1u;
+  private const uint UF_SCRIPT = 0x00000001u;
+  private const uint UF_NORMAL_ACCOUNT = 0x00000200u;
+  [StructLayout(LayoutKind.Sequential)]
+  private struct TOKEN_ELEVATION { public uint TokenIsElevated; }
   [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
   private struct USER_INFO_1 {
     [MarshalAs(UnmanagedType.LPWStr)] public string Name;
@@ -4803,39 +4948,127 @@ public sealed class ZugfolgeEphemeralAccount : IDisposable {
     public uint Flags;
     [MarshalAs(UnmanagedType.LPWStr)] public string ScriptPath;
   }
-  [DllImport("netapi32.dll", CharSet = CharSet.Unicode)]
+  [DllImport("advapi32.dll", ExactSpelling = true, SetLastError = true)]
+  [return: MarshalAs(UnmanagedType.Bool)]
+  private static extern bool GetTokenInformation(IntPtr token, int informationClass,
+    out TOKEN_ELEVATION information, uint informationBytes, out uint returnedBytes);
+  [DllImport("netapi32.dll", CharSet = CharSet.Unicode, ExactSpelling = true, SetLastError = false)]
   private static extern uint NetUserAdd(string server, uint level, ref USER_INFO_1 user, out uint parameterError);
-  [DllImport("netapi32.dll", CharSet = CharSet.Unicode)]
+  [DllImport("netapi32.dll", CharSet = CharSet.Unicode, ExactSpelling = true, SetLastError = false)]
   private static extern uint NetUserDel(string server, string user);
+  [DllImport("netapi32.dll", CharSet = CharSet.Unicode, ExactSpelling = true, SetLastError = false)]
+  private static extern uint NetUserGetInfo(string server, string user, uint level, out IntPtr buffer);
+  [DllImport("netapi32.dll", ExactSpelling = true, SetLastError = false)]
+  private static extern uint NetApiBufferFree(IntPtr buffer);
   public string Username { get; private set; }
   public string Domain { get; private set; }
   public string Password { get; private set; }
   public string Sid { get; private set; }
+  private readonly object gate = new object();
+  private int activeImpersonations;
+  private ZugfolgeImpersonationScope pendingImpersonation;
   private bool active;
   private ZugfolgeEphemeralAccount() {}
+  public static bool CurrentProcessHasElevatedAdministratorToken() {
+    using (WindowsIdentity identity = WindowsIdentity.GetCurrent()) {
+      TOKEN_ELEVATION elevation;
+      uint returnedBytes;
+      if (!GetTokenInformation(identity.Token, 20, out elevation,
+          (uint)Marshal.SizeOf(typeof(TOKEN_ELEVATION)), out returnedBytes)
+          || returnedBytes != (uint)Marshal.SizeOf(typeof(TOKEN_ELEVATION))) {
+        throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error(), "GetTokenInformation(TokenElevation)");
+      }
+      return elevation.TokenIsElevated != 0
+        && new WindowsPrincipal(identity).IsInRole(WindowsBuiltInRole.Administrator);
+    }
+  }
   public static ZugfolgeEphemeralAccount Create() {
     ZugfolgeEphemeralAccount account = new ZugfolgeEphemeralAccount();
     account.Username = "zfrb" + Guid.NewGuid().ToString("N").Substring(0, 12);
     account.Domain = Environment.MachineName;
     byte[] random = new byte[32]; using (RandomNumberGenerator generator = RandomNumberGenerator.Create()) generator.GetBytes(random);
     account.Password = "Zf!1" + Convert.ToBase64String(random).Replace("/", "x").Replace("+", "y");
+    // NetUserAdd level 1 requires USER_PRIV_USER and UF_SCRIPT.  Bind exactly
+    // one documented account type; the one-shot lifetime makes persistent
+    // password-control flags unnecessary and avoids their additional access
+    // requirements.
     USER_INFO_1 user = new USER_INFO_1 {
-      Name = account.Username, Password = account.Password, PasswordAge = 0, Privilege = 1,
-      HomeDirectory = null, Comment = "Zugfolge one-shot Operational-v2 rebuild principal", Flags = 0x00010041u, ScriptPath = null,
+      Name = account.Username, Password = account.Password, PasswordAge = 0, Privilege = USER_PRIV_USER,
+      HomeDirectory = null, Comment = null, Flags = UF_SCRIPT | UF_NORMAL_ACCOUNT, ScriptPath = null,
     };
     uint parameterError; uint result = NetUserAdd(null, 1, ref user, out parameterError);
-    if (result != 0) throw new System.ComponentModel.Win32Exception(unchecked((int)result), "NetUserAdd(ephemeral build principal), parameter " + parameterError.ToString());
+    if (result != 0) {
+      string diagnostic = "ZUGFOLGE_SAFE_ANCHOR_DIAGNOSTIC code=NET_USER_ADD status="
+        + result.ToString(System.Globalization.CultureInfo.InvariantCulture);
+      if (result == ERROR_INVALID_PARAMETER) diagnostic += " parameter="
+        + parameterError.ToString(System.Globalization.CultureInfo.InvariantCulture);
+      throw new InvalidOperationException(diagnostic);
+    }
     account.active = true;
     try {
       account.Sid = ((SecurityIdentifier)new NTAccount(account.Domain, account.Username).Translate(typeof(SecurityIdentifier))).Value;
       return account;
     } catch { account.Dispose(); throw; }
   }
+  public ZugfolgeImpersonationScope Impersonate() {
+    lock (gate) {
+      if (!active || String.IsNullOrEmpty(Password) || activeImpersonations != 0) {
+        throw new InvalidOperationException("Ephemerer Account kann nicht eindeutig impersoniert werden.");
+      }
+      string returnSid;
+      using (WindowsIdentity identity = WindowsIdentity.GetCurrent()) {
+        if (identity.User == null) throw new InvalidOperationException("Anchor besitzt keine aktuelle SID.");
+        returnSid = identity.User.Value;
+      }
+      activeImpersonations = 1;
+      ZugfolgeImpersonationScope scope = ZugfolgeImpersonationScope.Create(Username, Domain, Password, returnSid, delegate {
+        lock (gate) { pendingImpersonation = null; activeImpersonations = 0; }
+      });
+      pendingImpersonation = scope;
+      scope.AssertCurrentPrincipal(Sid);
+      return scope;
+    }
+  }
   public void Dispose() {
-    if (!active) return;
-    uint result = NetUserDel(null, Username);
-    if (result != 0 && result != 2221) throw new System.ComponentModel.Win32Exception(unchecked((int)result), "NetUserDel(ephemeral build principal)");
-    active = false; Password = null;
+    lock (gate) {
+      if (!active) return;
+      List<Exception> cleanupFailures = new List<Exception>();
+      Exception impersonationFailure = null;
+      if (activeImpersonations != 0) {
+        if (pendingImpersonation == null) {
+          throw new InvalidOperationException("Ephemerer Account besitzt noch eine aktive Impersonation ohne Cleanup-Owner.");
+        }
+        try { pendingImpersonation.Dispose(); }
+        catch (Exception firstFailure) {
+          impersonationFailure = firstFailure;
+          if (activeImpersonations != 0) {
+            try { pendingImpersonation.Dispose(); }
+            catch (Exception retryFailure) {
+              impersonationFailure = new AggregateException(firstFailure, retryFailure);
+            }
+          }
+        }
+        if (activeImpersonations != 0) throw new AggregateException(
+          "Ephemerer Account besitzt noch eine aktive Impersonation.", impersonationFailure);
+      }
+      if (impersonationFailure != null) cleanupFailures.Add(impersonationFailure);
+      uint result = NetUserDel(null, Username);
+      if (result != 0 && result != NERR_USER_NOT_FOUND) cleanupFailures.Add(new InvalidOperationException(
+        "ZUGFOLGE_SAFE_ANCHOR_DIAGNOSTIC code=NET_USER_DELETE status="
+        + result.ToString(System.Globalization.CultureInfo.InvariantCulture)));
+      IntPtr buffer = IntPtr.Zero;
+      uint lookup = NetUserGetInfo(null, Username, 0, out buffer);
+      try {
+        if (lookup != NERR_USER_NOT_FOUND) cleanupFailures.Add(new InvalidOperationException(
+          "ZUGFOLGE_SAFE_ANCHOR_DIAGNOSTIC code=NET_USER_DELETE_VERIFY status="
+          + lookup.ToString(System.Globalization.CultureInfo.InvariantCulture)));
+      } finally {
+        if (buffer != IntPtr.Zero) NetApiBufferFree(buffer);
+      }
+      if (lookup == NERR_USER_NOT_FOUND) { active = false; Password = null; }
+      if (cleanupFailures.Count == 1) throw cleanupFailures[0];
+      if (cleanupFailures.Count > 1) throw new AggregateException(cleanupFailures);
+    }
   }
 }
 public sealed class ZugfolgeProtectedSecurityDescriptor : IDisposable {
@@ -4861,6 +5094,27 @@ public sealed class ZugfolgeProtectedSecurityDescriptor : IDisposable {
       + "(D;;0x" + denied.ToString("x8") + ";;;S-1-3-4)"
       + "(A;;0x001200a9;;;" + currentSid + ")"
       + "(A;;0x001200a9;;;" + buildSid + ")"
+      + "(A;;FA;;;SY)(A;;FA;;;BA)";
+    return new ZugfolgeProtectedSecurityDescriptor(sddl);
+  }
+  public static ZugfolgeProtectedSecurityDescriptor ConstructionReadExecute(
+      string currentSid, string buildSid, string constructorSid) {
+    if (String.IsNullOrEmpty(currentSid) || String.IsNullOrEmpty(buildSid) || String.IsNullOrEmpty(constructorSid)
+        || currentSid == buildSid || currentSid == constructorSid || buildSid == constructorSid) {
+      throw new ArgumentException("Current-/Build-/Constructor-SID fehlt oder ist nicht getrennt.");
+    }
+    const uint denied = 0x000d0156u;
+    // The unique constructor may add children and update DACLs while its
+    // account exists.  It still cannot delete/rename entries, change owners,
+    // or mutate attributes.  Account deletion is the monotonic revocation;
+    // current/build principals never receive either ADD or WRITE_DAC.
+    const uint constructorDenied = 0x00090150u;
+    string sddl = "D:P(D;;0x" + denied.ToString("x8") + ";;;" + currentSid + ")"
+      + "(D;;0x" + constructorDenied.ToString("x8") + ";;;" + constructorSid + ")"
+      + "(D;;0x" + constructorDenied.ToString("x8") + ";;;S-1-3-4)"
+      + "(A;;0x001200a9;;;" + currentSid + ")"
+      + "(A;;0x001200a9;;;" + buildSid + ")"
+      + "(A;;0x001600af;;;" + constructorSid + ")"
       + "(A;;FA;;;SY)(A;;FA;;;BA)";
     return new ZugfolgeProtectedSecurityDescriptor(sddl);
   }
@@ -4989,21 +5243,6 @@ public static class ZugfolgeRelativeFs {
   [DllImport("ntdll.dll")]
   private static extern int NtSetInformationFile(
     SafeFileHandle handle, out IO_STATUS_BLOCK status, IntPtr information, uint length, int informationClass);
-  [DllImport("advapi32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
-  [return: MarshalAs(UnmanagedType.Bool)]
-  private static extern bool ConvertStringSecurityDescriptorToSecurityDescriptor(
-    string securityDescriptor, uint revision, out IntPtr descriptor, out uint descriptorBytes);
-  [DllImport("advapi32.dll", SetLastError = true)]
-  [return: MarshalAs(UnmanagedType.Bool)]
-  private static extern bool GetSecurityDescriptorDacl(
-    IntPtr descriptor, out bool present, out IntPtr dacl, out bool defaulted);
-  [DllImport("advapi32.dll", SetLastError = true)]
-  private static extern uint SetSecurityInfo(
-    IntPtr handle, int objectType, uint securityInformation,
-    IntPtr owner, IntPtr group, IntPtr dacl, IntPtr sacl);
-  [DllImport("kernel32.dll")]
-  private static extern IntPtr LocalFree(IntPtr memory);
-
   public static SafeFileHandle OpenPlainDirectory(string path) {
     SafeFileHandle handle = CreateFile(path, 0x001200a1, 0x1, IntPtr.Zero, 3, 0x02200000, IntPtr.Zero);
     if (handle.IsInvalid) throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error());
@@ -5144,36 +5383,29 @@ public static class ZugfolgeRelativeFs {
       hash.Dispose();
     }
   }
-  public static void FreezeReadExecute(SafeFileHandle handle, string currentSid) {
-    if (handle == null || handle.IsInvalid || String.IsNullOrEmpty(currentSid)) throw new ArgumentException("Freeze-Handle/SID ist ungueltig.");
-    const uint denied = 0x000d0156u;
-    string sddl = "D:P(D;;0x" + denied.ToString("x8") + ";;;" + currentSid + ")"
-      + "(D;;0x" + denied.ToString("x8") + ";;;S-1-3-4)"
-      + "(A;;0x001200a9;;;" + currentSid + ")"
-      + "(A;;FA;;;SY)(A;;FA;;;BA)";
-    IntPtr descriptor = IntPtr.Zero;
-    try {
-      uint descriptorBytes;
-      if (!ConvertStringSecurityDescriptorToSecurityDescriptor(sddl, 1, out descriptor, out descriptorBytes)) {
-        throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error(), "ConvertStringSecurityDescriptorToSecurityDescriptor");
-      }
-      bool present; bool defaulted; IntPtr dacl;
-      if (!GetSecurityDescriptorDacl(descriptor, out present, out dacl, out defaulted) || !present || dacl == IntPtr.Zero) {
-        throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error(), "GetSecurityDescriptorDacl");
-      }
-      uint result = SetSecurityInfo(handle.DangerousGetHandle(), 1, 0x80000004u, IntPtr.Zero, IntPtr.Zero, dacl, IntPtr.Zero);
-      if (result != 0) throw new System.ComponentModel.Win32Exception(unchecked((int)result), "SetSecurityInfo(protected DACL)");
-    } finally { if (descriptor != IntPtr.Zero) LocalFree(descriptor); }
-  }
-  private static void RequireDenied(int status, string operation) {
+  private static void RequireAccessDenied(int status, string operation) {
     if (status == unchecked((int)0xc0000022)) return;
     if (status >= 0) throw new InvalidOperationException(operation + " war trotz geschuetzter DACL moeglich.");
     throw new InvalidOperationException(operation + " scheiterte nicht mit STATUS_ACCESS_DENIED, sondern 0x" + status.ToString("x8") + ".");
   }
+  private static void RequireBlocked(int status, string operation) {
+    // Held read handles intentionally share only reads. A forbidden fresh open
+    // is therefore validly blocked either by the protected DACL or, for data or
+    // delete access, by the already-held no-write/no-delete share contract.
+    if (status == unchecked((int)0xc0000022) || status == unchecked((int)0xc0000043)) return;
+    if (status >= 0) throw new InvalidOperationException(operation + " war trotz geschuetzter DACL/Share-Bindung moeglich.");
+    throw new InvalidOperationException(operation + " scheiterte nicht mit STATUS_ACCESS_DENIED/STATUS_SHARING_VIOLATION, sondern 0x" + status.ToString("x8") + ".");
+  }
   private static int ProbeRelative(SafeFileHandle parent, string leaf, bool directory, bool create, uint access) {
     SafeFileHandle result = null;
     try {
-      result = Relative(parent, leaf, directory, create, access, null);
+      // Relative uses FILE_SYNCHRONOUS_IO_NONALERT, whose NT contract requires
+      // SYNCHRONIZE in DesiredAccess. Without it a probe only proves
+      // STATUS_INVALID_PARAMETER instead of the intended DACL denial.
+      // FILE_READ_ATTRIBUTES lets an unexpectedly successful mutation open
+      // reach RequirePlainType and be reported as success, not as a misleading
+      // metadata-read failure.
+      result = Relative(parent, leaf, directory, create, access | 0x00100080u, null);
       return 0;
     } catch (InvalidOperationException error) {
       const string marker = "0x";
@@ -5185,15 +5417,20 @@ public static class ZugfolgeRelativeFs {
   }
   public static void AssertFrozenDirectoryEntry(SafeFileHandle parent, string leaf) {
     using (SafeFileHandle directory = Relative(parent, leaf, true, false, 0x00120081u, null)) {
-      RequireDenied(ProbeRelative(directory, ".zugfolge-freeze-file-probe", false, true, 0x00160183u), "CreateFile in Inputverzeichnis");
-      RequireDenied(ProbeRelative(directory, ".zugfolge-freeze-directory-probe", true, true, 0x00160081u), "CreateDirectory in Inputverzeichnis");
+      RequireAccessDenied(ProbeRelative(directory, ".zugfolge-freeze-file-probe", false, true, 0x00160183u), "CreateFile in Inputverzeichnis");
+      RequireAccessDenied(ProbeRelative(directory, ".zugfolge-freeze-directory-probe", true, true, 0x00160081u), "CreateDirectory in Inputverzeichnis");
     }
   }
+  public static void AssertProtectedDacl(SafeFileHandle parent, string leaf, bool directory) {
+    RequireAccessDenied(ProbeRelative(parent, leaf, directory, false, 0x00040000u), "WRITE_DAC-Reopen fuer frisch geschuetzten Inputeintrag " + leaf);
+  }
   public static void AssertFrozenEntry(SafeFileHandle parent, string leaf, bool directory) {
-    RequireDenied(ProbeRelative(parent, leaf, directory, false, 0x00040000u), "WRITE_DAC-Reopen fuer Inputeintrag " + leaf);
-    RequireDenied(ProbeRelative(parent, leaf, directory, false, 0x00010000u), "DELETE-/Rename-Reopen fuer Inputeintrag " + leaf);
-    RequireDenied(ProbeRelative(parent, leaf, directory, false, 0x00000002u), "WRITE_DATA-/ADD_FILE-Reopen fuer Inputeintrag " + leaf);
-    RequireDenied(ProbeRelative(parent, leaf, directory, false, 0x00000004u), "APPEND_DATA-/ADD_SUBDIRECTORY-Reopen fuer Inputeintrag " + leaf);
+    // WRITE_DAC does not conflict with the held read-only share mode, so this
+    // first probe must prove the protected DACL itself with ACCESS_DENIED.
+    AssertProtectedDacl(parent, leaf, directory);
+    RequireBlocked(ProbeRelative(parent, leaf, directory, false, 0x00010000u), "DELETE-/Rename-Reopen fuer Inputeintrag " + leaf);
+    RequireBlocked(ProbeRelative(parent, leaf, directory, false, 0x00000002u), "WRITE_DATA-/ADD_FILE-Reopen fuer Inputeintrag " + leaf);
+    RequireBlocked(ProbeRelative(parent, leaf, directory, false, 0x00000004u), "APPEND_DATA-/ADD_SUBDIRECTORY-Reopen fuer Inputeintrag " + leaf);
   }
   public static string[] EnumerateNames(SafeFileHandle directory) {
     List<string> names = new List<string>();
@@ -5605,15 +5842,18 @@ public static class ZugfolgeMitigatedProcess {
   private const uint CREATE_UNICODE_ENVIRONMENT = 0x00000400;
   private const uint EXTENDED_STARTUPINFO_PRESENT = 0x00080000;
   private const uint CREATE_NO_WINDOW = 0x08000000;
+  private const int ERROR_INVALID_HANDLE = 6;
   private const uint HANDLE_FLAG_INHERIT = 0x00000001;
+  private const uint DUPLICATE_SAME_ACCESS = 0x00000002;
+  private const uint TOKEN_QUERY = 0x00000008;
+  private const uint LOGON_WITHOUT_PROFILE = 0u;
   private const uint JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE = 0x00002000;
   private const uint WAIT_OBJECT_0 = 0;
   private const uint WAIT_TIMEOUT = 258;
   private const uint WAIT_FAILED = 0xffffffff;
-  private const int LOGON32_LOGON_INTERACTIVE = 2;
-  private const int LOGON32_PROVIDER_DEFAULT = 0;
   private static readonly IntPtr PROC_THREAD_ATTRIBUTE_MITIGATION_POLICY = new IntPtr(0x00020007);
   private static readonly IntPtr PROC_THREAD_ATTRIBUTE_HANDLE_LIST = new IntPtr(0x00020002);
+  private static readonly IntPtr PROC_THREAD_ATTRIBUTE_PARENT_PROCESS = new IntPtr(0x00020000);
   private const ulong BUILD_IMAGE_LOAD_POLICY =
     (1UL << 52) | (1UL << 56) | (1UL << 60);
   private const ulong STRICT_IMAGE_LOAD_POLICY =
@@ -5650,14 +5890,33 @@ public static class ZugfolgeMitigatedProcess {
     public JOBOBJECT_BASIC_LIMIT_INFORMATION BasicLimitInformation; public IO_COUNTERS IoInfo;
     public UIntPtr ProcessMemoryLimit; public UIntPtr JobMemoryLimit; public UIntPtr PeakProcessMemoryUsed; public UIntPtr PeakJobMemoryUsed;
   }
+  [StructLayout(LayoutKind.Sequential)]
+  private struct JOBOBJECT_BASIC_ACCOUNTING_INFORMATION {
+    public long TotalUserTime; public long TotalKernelTime; public long ThisPeriodTotalUserTime; public long ThisPeriodTotalKernelTime;
+    public uint TotalPageFaultCount; public uint TotalProcesses; public uint ActiveProcesses; public uint TotalTerminatedProcesses;
+  }
   private sealed class OutputCounter { public long Value; }
 
   [DllImport("kernel32.dll", SetLastError = true)]
   [return: MarshalAs(UnmanagedType.Bool)]
   private static extern bool CreatePipe(out IntPtr read, out IntPtr write, ref SECURITY_ATTRIBUTES attributes, uint size);
+  [DllImport("kernel32.dll")]
+  private static extern IntPtr GetCurrentProcess();
   [DllImport("kernel32.dll", SetLastError = true)]
   [return: MarshalAs(UnmanagedType.Bool)]
-  private static extern bool SetHandleInformation(IntPtr handle, uint mask, uint flags);
+  private static extern bool GetHandleInformation(IntPtr handle, out uint flags);
+  [DllImport("kernel32.dll", SetLastError = true)]
+  [return: MarshalAs(UnmanagedType.Bool)]
+  private static extern bool DuplicateHandle(IntPtr sourceProcess, IntPtr sourceHandle,
+    IntPtr targetProcess, out IntPtr targetHandle, uint desiredAccess,
+    [MarshalAs(UnmanagedType.Bool)] bool inheritHandle, uint options);
+  [DllImport("kernelbase.dll", ExactSpelling = true, SetLastError = true)]
+  [return: MarshalAs(UnmanagedType.Bool)]
+  private static extern bool CompareObjectHandles(IntPtr first, IntPtr second);
+  [DllImport("kernel32.dll", SetLastError = true)]
+  [return: MarshalAs(UnmanagedType.Bool)]
+  private static extern bool GetProcessMitigationPolicy(IntPtr process, int policy,
+    out uint flags, IntPtr bytes);
   [DllImport("kernel32.dll", SetLastError = true)]
   [return: MarshalAs(UnmanagedType.Bool)]
   private static extern bool InitializeProcThreadAttributeList(IntPtr list, int count, int flags, ref IntPtr size);
@@ -5670,19 +5929,30 @@ public static class ZugfolgeMitigatedProcess {
   [return: MarshalAs(UnmanagedType.Bool)]
   private static extern bool CreateProcessW(string application, StringBuilder commandLine, IntPtr processAttributes, IntPtr threadAttributes,
     [MarshalAs(UnmanagedType.Bool)] bool inheritHandles, uint flags, IntPtr environment, string cwd, ref STARTUPINFOEX startup, out PROCESS_INFORMATION process);
-  [DllImport("advapi32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+  [DllImport("kernel32.dll", EntryPoint = "CreateProcessW", CharSet = CharSet.Unicode, ExactSpelling = true, SetLastError = true)]
   [return: MarshalAs(UnmanagedType.Bool)]
-  private static extern bool LogonUser(string username, string domain, string password, int logonType, int logonProvider, out IntPtr token);
-  [DllImport("advapi32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+  private static extern bool CreateProcessWBasic(string application, StringBuilder commandLine, IntPtr processAttributes, IntPtr threadAttributes,
+    [MarshalAs(UnmanagedType.Bool)] bool inheritHandles, uint flags, IntPtr environment, string cwd, ref STARTUPINFO startup, out PROCESS_INFORMATION process);
+  [DllImport("advapi32.dll", CharSet = CharSet.Unicode, ExactSpelling = true, SetLastError = true)]
   [return: MarshalAs(UnmanagedType.Bool)]
-  private static extern bool CreateProcessAsUserW(IntPtr token, string application, StringBuilder commandLine,
-    IntPtr processAttributes, IntPtr threadAttributes, [MarshalAs(UnmanagedType.Bool)] bool inheritHandles,
-    uint flags, IntPtr environment, string cwd, ref STARTUPINFOEX startup, out PROCESS_INFORMATION process);
+  private static extern bool CreateProcessWithLogonW(string username, string domain, string password, uint logonFlags,
+    string application, StringBuilder commandLine, uint flags, IntPtr environment, string cwd,
+    ref STARTUPINFO startup, out PROCESS_INFORMATION process);
+  [DllImport("advapi32.dll", ExactSpelling = true, SetLastError = true)]
+  [return: MarshalAs(UnmanagedType.Bool)]
+  private static extern bool OpenProcessToken(IntPtr process, uint desiredAccess, out IntPtr token);
+  [DllImport("kernel32.dll", ExactSpelling = true, SetLastError = true)]
+  [return: MarshalAs(UnmanagedType.Bool)]
+  private static extern bool IsProcessInJob(IntPtr process, IntPtr job, [MarshalAs(UnmanagedType.Bool)] out bool result);
   [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
   private static extern IntPtr CreateJobObject(IntPtr attributes, string name);
   [DllImport("kernel32.dll", SetLastError = true)]
   [return: MarshalAs(UnmanagedType.Bool)]
   private static extern bool SetInformationJobObject(IntPtr job, int informationClass, ref JOBOBJECT_EXTENDED_LIMIT_INFORMATION information, uint bytes);
+  [DllImport("kernel32.dll", SetLastError = true)]
+  [return: MarshalAs(UnmanagedType.Bool)]
+  private static extern bool QueryInformationJobObject(IntPtr job, int informationClass,
+    out JOBOBJECT_BASIC_ACCOUNTING_INFORMATION information, uint bytes, out uint returnedBytes);
   [DllImport("kernel32.dll", SetLastError = true)]
   [return: MarshalAs(UnmanagedType.Bool)]
   private static extern bool AssignProcessToJobObject(IntPtr job, IntPtr process);
@@ -5719,7 +5989,8 @@ public static class ZugfolgeMitigatedProcess {
     }
     result.Append('\\', slashes * 2); result.Append('\"'); return result.ToString();
   }
-  private static IntPtr EnvironmentBlock(System.Collections.IDictionary environment) {
+  private static SortedDictionary<string, string> NormalizedEnvironment(System.Collections.IDictionary environment) {
+    if (environment == null) throw new ArgumentNullException("environment");
     SortedDictionary<string, string> sorted = new SortedDictionary<string, string>(StringComparer.OrdinalIgnoreCase);
     foreach (System.Collections.DictionaryEntry entry in environment) {
       string key = entry.Key as string; string value = entry.Value as string;
@@ -5727,18 +5998,135 @@ public static class ZugfolgeMitigatedProcess {
         throw new InvalidOperationException("Windows-Kindumgebung enthaelt einen ungueltigen Eintrag.");
       sorted.Add(key, value);
     }
+    return sorted;
+  }
+  private static IntPtr EnvironmentBlock(System.Collections.IDictionary environment) {
+    SortedDictionary<string, string> sorted = NormalizedEnvironment(environment);
     StringBuilder block = new StringBuilder();
     foreach (KeyValuePair<string, string> entry in sorted) block.Append(entry.Key).Append('=').Append(entry.Value).Append('\0');
+    if (sorted.Count == 0) block.Append('\0');
     block.Append('\0'); return Marshal.StringToHGlobalUni(block.ToString());
   }
   private static void Pipe(bool parentReads, out IntPtr child, out IntPtr parent) {
-    SECURITY_ATTRIBUTES attributes = new SECURITY_ATTRIBUTES { nLength = Marshal.SizeOf(typeof(SECURITY_ATTRIBUTES)), bInheritHandle = 1 };
+    SECURITY_ATTRIBUTES attributes = new SECURITY_ATTRIBUTES { nLength = Marshal.SizeOf(typeof(SECURITY_ATTRIBUTES)), bInheritHandle = 0 };
     IntPtr read; IntPtr write;
     if (!CreatePipe(out read, out write, ref attributes, 0)) throw Win32("CreatePipe");
     child = parentReads ? write : read; parent = parentReads ? read : write;
-    if (!SetHandleInformation(parent, HANDLE_FLAG_INHERIT, 0)) {
-      int code = Marshal.GetLastWin32Error(); CloseHandle(read); CloseHandle(write); child = IntPtr.Zero; parent = IntPtr.Zero;
-      throw new System.ComponentModel.Win32Exception(code, "SetHandleInformation");
+  }
+  private static IntPtr DuplicateInheritableToProcess(IntPtr process, IntPtr source, string label) {
+    IntPtr remote;
+    if (!DuplicateHandle(GetCurrentProcess(), source, process, out remote, 0, true, DUPLICATE_SAME_ACCESS))
+      throw Win32("DuplicateHandle(anchor " + label + ")");
+    return remote;
+  }
+  private static void AssertNotInheritable(IntPtr handle, string label) {
+    uint flags;
+    if (!GetHandleInformation(handle, out flags)) throw Win32("GetHandleInformation(" + label + ")");
+    if ((flags & HANDLE_FLAG_INHERIT) != 0)
+      throw new InvalidOperationException("Lokaler Windows-Handle ist unerwartet vererbbar: " + label);
+  }
+  private static void AssertAllowedHandleInherited(IntPtr process, IntPtr candidate, IntPtr expected, string label) {
+    IntPtr duplicate;
+    if (!DuplicateHandle(process, candidate, GetCurrentProcess(), out duplicate, 0, false, DUPLICATE_SAME_ACCESS))
+      throw Win32("DuplicateHandle(inherited " + label + ")");
+    try {
+      if (!CompareObjectHandles(expected, duplicate))
+        throw new InvalidOperationException("Windows-Kindprozess erbte nicht den freigegebenen " + label + "-Handle.");
+    } finally { CloseRequired(ref duplicate, "inherited-" + label + "-verification"); }
+  }
+  private static void AssertSentinelNotInherited(IntPtr process, IntPtr candidate, IntPtr sentinel) {
+    IntPtr duplicate;
+    if (DuplicateHandle(process, candidate, GetCurrentProcess(), out duplicate, 0, false, DUPLICATE_SAME_ACCESS)) {
+      bool inheritedSentinel = CompareObjectHandles(sentinel, duplicate);
+      CloseRequired(ref duplicate, "sentinel-verification");
+      if (inheritedSentinel) throw new InvalidOperationException("Windows-Kindprozess erbte einen nicht freigegebenen Sentinel-Handle.");
+      return;
+    }
+    int status = Marshal.GetLastWin32Error();
+    if (status != ERROR_INVALID_HANDLE)
+      throw new System.ComponentModel.Win32Exception(status, "DuplicateHandle(non-inherited sentinel)");
+  }
+  private static string ProcessSid(IntPtr process) {
+    IntPtr token = IntPtr.Zero;
+    if (!OpenProcessToken(process, TOKEN_QUERY, out token)) throw Win32("OpenProcessToken(process identity)");
+    try {
+      using (WindowsIdentity identity = new WindowsIdentity(token)) {
+        if (identity.User == null) throw new InvalidOperationException("Windows-Prozess besitzt keine pruefbare SID.");
+        return identity.User.Value;
+      }
+    } finally { CloseRequired(ref token, "process-token"); }
+  }
+  private static void AssertProcessSid(IntPtr process, string expectedSid) {
+    if (!String.Equals(ProcessSid(process), expectedSid, StringComparison.Ordinal))
+      throw new InvalidOperationException("Windows-Prozess verwendet nicht die erwartete Identitaet.");
+  }
+  private static void AssertProcessInJob(IntPtr process, IntPtr job) {
+    bool inJob;
+    if (!IsProcessInJob(process, job, out inJob)) throw Win32("IsProcessInJob(anchor job)");
+    if (!inJob) throw new InvalidOperationException("Windows-Kindprozess erbte den gehaltenen Anker-Job nicht.");
+  }
+  private static void RecordCleanupStatus(List<string> errors, string action, int status) {
+    errors.Add(action + " status=" + unchecked((uint)status).ToString(System.Globalization.CultureInfo.InvariantCulture));
+  }
+  private static void CloseRequired(ref IntPtr handle, string label) {
+    if (handle == IntPtr.Zero) return;
+    IntPtr closing = handle;
+    if (!CloseHandle(closing)) throw Win32("CloseHandle(" + label + ")");
+    handle = IntPtr.Zero;
+  }
+  private static void CloseTracked(ref IntPtr handle, string label, List<string> errors) {
+    if (handle == IntPtr.Zero) return;
+    IntPtr closing = handle; handle = IntPtr.Zero;
+    if (!CloseHandle(closing)) RecordCleanupStatus(errors, "CloseHandle(" + label + ")", Marshal.GetLastWin32Error());
+  }
+  private static void EnsureProcessTerminated(IntPtr process, string label, List<string> errors) {
+    if (process == IntPtr.Zero) return;
+    uint before = WaitForSingleObject(process, 0);
+    if (before == WAIT_OBJECT_0) return;
+    if (before == WAIT_FAILED) RecordCleanupStatus(errors, "WaitForSingleObject(" + label + ",pre)", Marshal.GetLastWin32Error());
+    bool terminated = TerminateProcess(process, 95);
+    int terminateStatus = terminated ? 0 : Marshal.GetLastWin32Error();
+    uint wait = WaitForSingleObject(process, 5000);
+    if (wait == WAIT_OBJECT_0) return;
+    if (!terminated) RecordCleanupStatus(errors, "TerminateProcess(" + label + ")", terminateStatus);
+    if (wait == WAIT_FAILED) RecordCleanupStatus(errors, "WaitForSingleObject(" + label + ",cleanup)", Marshal.GetLastWin32Error());
+    else errors.Add("WaitForSingleObject(" + label + ",cleanup) result=" + wait.ToString(System.Globalization.CultureInfo.InvariantCulture));
+  }
+  private static string WaitForJobEmptyStatus(IntPtr job, int timeoutMilliseconds, string label) {
+    System.Diagnostics.Stopwatch wait = System.Diagnostics.Stopwatch.StartNew();
+    while (true) {
+      JOBOBJECT_BASIC_ACCOUNTING_INFORMATION accounting;
+      uint returnedBytes;
+      if (!QueryInformationJobObject(job, 1, out accounting,
+          (uint)Marshal.SizeOf(typeof(JOBOBJECT_BASIC_ACCOUNTING_INFORMATION)), out returnedBytes))
+        return "QueryInformationJobObject(" + label + ") status="
+          + unchecked((uint)Marshal.GetLastWin32Error()).ToString(System.Globalization.CultureInfo.InvariantCulture);
+      if (returnedBytes != (uint)Marshal.SizeOf(typeof(JOBOBJECT_BASIC_ACCOUNTING_INFORMATION)))
+        return "QueryInformationJobObject(" + label + ") bytes="
+          + returnedBytes.ToString(System.Globalization.CultureInfo.InvariantCulture);
+      if (accounting.ActiveProcesses == 0) return null;
+      long remaining = timeoutMilliseconds - wait.ElapsedMilliseconds;
+      if (remaining <= 0) return "QueryInformationJobObject(" + label + ") active="
+        + accounting.ActiveProcesses.ToString(System.Globalization.CultureInfo.InvariantCulture);
+      System.Threading.Thread.Sleep((int)Math.Min(10L, remaining));
+    }
+  }
+  private static void AssertJobEmpty(IntPtr job, int timeoutMilliseconds, string label) {
+    string failure = WaitForJobEmptyStatus(job, timeoutMilliseconds, label);
+    if (failure != null) throw new InvalidOperationException("Windows-Job wurde nicht vollstaendig leer: " + failure);
+  }
+  private static void AssertMitigationPolicy(IntPtr process, ulong requested) {
+    uint imageLoad;
+    if (!GetProcessMitigationPolicy(process, 10, out imageLoad, new IntPtr(4)))
+      throw Win32("GetProcessMitigationPolicy(ProcessImageLoadPolicy)");
+    if ((imageLoad & 0x00000007u) != 0x00000007u)
+      throw new InvalidOperationException("Windows-Kindprozess besitzt nicht die geforderte Image-Load-Mitigation.");
+    if ((requested & (1UL << 44)) != 0) {
+      uint signature;
+      if (!GetProcessMitigationPolicy(process, 8, out signature, new IntPtr(4)))
+        throw Win32("GetProcessMitigationPolicy(ProcessSignaturePolicy)");
+      if ((signature & 0x00000001u) == 0)
+        throw new InvalidOperationException("Windows-Kindprozess besitzt nicht die geforderte Microsoft-Signatur-Mitigation.");
     }
   }
   private static byte[] ReadBounded(Stream stream, int maximumBytes, IntPtr job, string label, OutputCounter total) {
@@ -5779,54 +6167,111 @@ public static class ZugfolgeMitigatedProcess {
       ulong imageLoadPolicy) {
     if (!Path.IsPathRooted(executable) || maximumBytes <= 0 || timeoutMilliseconds <= 0) throw new InvalidOperationException("Windows-Kindvertrag ist ungueltig.");
     if (arguments == null) arguments = new string[0]; if (stdin == null) stdin = new byte[0];
+    System.Diagnostics.Stopwatch clock = System.Diagnostics.Stopwatch.StartNew();
     if (cancelled != null && cancelled()) throw new InvalidOperationException("Windows-Kindstart wurde vor CreateProcess monoton abgebrochen.");
     IntPtr childIn = IntPtr.Zero, parentIn = IntPtr.Zero, childOut = IntPtr.Zero, parentOut = IntPtr.Zero, childErr = IntPtr.Zero, parentErr = IntPtr.Zero;
-    IntPtr attributes = IntPtr.Zero, mitigation = IntPtr.Zero, handleList = IntPtr.Zero, env = IntPtr.Zero, job = IntPtr.Zero, token = IntPtr.Zero;
-    bool attributesInitialized = false, processCreated = false, jobAssigned = false, processCompleted = false;
+    IntPtr sentinelChild = IntPtr.Zero, sentinelParent = IntPtr.Zero;
+    IntPtr remoteChildIn = IntPtr.Zero, remoteChildOut = IntPtr.Zero, remoteChildErr = IntPtr.Zero, remoteSentinel = IntPtr.Zero;
+    IntPtr attributes = IntPtr.Zero, mitigation = IntPtr.Zero, handleList = IntPtr.Zero, parentProcess = IntPtr.Zero, env = IntPtr.Zero, job = IntPtr.Zero;
+    bool attributesInitialized = false, processCreated = false, processCompleted = false;
+    bool anchorCreated = false, anchorTerminated = false;
     PROCESS_INFORMATION process = new PROCESS_INFORMATION();
+    PROCESS_INFORMATION anchor = new PROCESS_INFORMATION();
+    Exception primaryError = null;
     try {
       Pipe(false, out childIn, out parentIn); Pipe(true, out childOut, out parentOut); Pipe(true, out childErr, out parentErr);
-      IntPtr attributeBytes = IntPtr.Zero; InitializeProcThreadAttributeList(IntPtr.Zero, 2, 0, ref attributeBytes);
-      if (attributeBytes == IntPtr.Zero) throw Win32("InitializeProcThreadAttributeList(size)");
-      attributes = Marshal.AllocHGlobal(attributeBytes);
-      if (!InitializeProcThreadAttributeList(attributes, 2, 0, ref attributeBytes)) throw Win32("InitializeProcThreadAttributeList");
-      attributesInitialized = true; mitigation = Marshal.AllocHGlobal(8); Marshal.WriteInt64(mitigation, unchecked((long)imageLoadPolicy));
-      if (!UpdateProcThreadAttribute(attributes, 0, PROC_THREAD_ATTRIBUTE_MITIGATION_POLICY, mitigation, new IntPtr(8), IntPtr.Zero, IntPtr.Zero))
-        throw Win32("UpdateProcThreadAttribute(MITIGATION_POLICY)");
-      handleList = Marshal.AllocHGlobal(IntPtr.Size * 3);
-      Marshal.WriteIntPtr(handleList, 0, childIn); Marshal.WriteIntPtr(handleList, IntPtr.Size, childOut); Marshal.WriteIntPtr(handleList, IntPtr.Size * 2, childErr);
-      if (!UpdateProcThreadAttribute(attributes, 0, PROC_THREAD_ATTRIBUTE_HANDLE_LIST, handleList, new IntPtr(IntPtr.Size * 3), IntPtr.Zero, IntPtr.Zero))
-        throw Win32("UpdateProcThreadAttribute(HANDLE_LIST)");
-      STARTUPINFOEX startup = new STARTUPINFOEX(); startup.StartupInfo.cb = Marshal.SizeOf(typeof(STARTUPINFOEX));
-      startup.StartupInfo.dwFlags = STARTF_USESTDHANDLES; startup.StartupInfo.hStdInput = childIn; startup.StartupInfo.hStdOutput = childOut; startup.StartupInfo.hStdError = childErr; startup.lpAttributeList = attributes;
+      Pipe(false, out sentinelChild, out sentinelParent);
+      AssertNotInheritable(childIn, "child-stdin"); AssertNotInheritable(parentIn, "parent-stdin");
+      AssertNotInheritable(childOut, "child-stdout"); AssertNotInheritable(parentOut, "parent-stdout");
+      AssertNotInheritable(childErr, "child-stderr"); AssertNotInheritable(parentErr, "parent-stderr");
+      AssertNotInheritable(sentinelChild, "sentinel-child"); AssertNotInheritable(sentinelParent, "sentinel-parent");
       StringBuilder command = new StringBuilder(Quote(executable));
       foreach (string argument in arguments) { if (argument == null || argument.IndexOf('\0') >= 0) throw new InvalidOperationException("Windows-Kindargument ist ungueltig."); command.Append(' ').Append(Quote(argument)); }
       env = EnvironmentBlock(environment);
       uint flags = CREATE_SUSPENDED | CREATE_UNICODE_ENVIRONMENT | EXTENDED_STARTUPINFO_PRESENT | CREATE_NO_WINDOW;
-      bool created;
-      if (account == null) created = CreateProcessW(executable, command, IntPtr.Zero, IntPtr.Zero, true, flags, env, cwd, ref startup, out process);
-      else {
-        if (!LogonUser(account.Username, account.Domain, account.Password,
-            LOGON32_LOGON_INTERACTIVE, LOGON32_PROVIDER_DEFAULT, out token))
-          throw Win32("LogonUser(ephemeral build principal)");
-        // No privilege-free fallback is permitted here: Microsoft documents
-        // STARTUPINFOEX for CreateProcessAsUserW, which preserves the exact
-        // mitigation policy and three-handle allow-list.  If the fresh CI host
-        // lacks the required token privileges, the release proof fails closed.
-        created = CreateProcessAsUserW(token, executable, command, IntPtr.Zero, IntPtr.Zero, true,
-          flags, env, cwd, ref startup, out process);
+      job = CreateJobObject(IntPtr.Zero, null); if (job == IntPtr.Zero) throw Win32("CreateJobObject(anchor)");
+      JOBOBJECT_EXTENDED_LIMIT_INFORMATION anchorLimit = new JOBOBJECT_EXTENDED_LIMIT_INFORMATION();
+      anchorLimit.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+      if (!SetInformationJobObject(job, 9, ref anchorLimit, (uint)Marshal.SizeOf(typeof(JOBOBJECT_EXTENDED_LIMIT_INFORMATION))))
+        throw Win32("SetInformationJobObject(anchor)");
+      string anchorExecutable = "C:\\Windows\\System32\\cmd.exe";
+      StringBuilder anchorCommand = new StringBuilder(Quote(anchorExecutable) + " /D /Q /C exit 0");
+      STARTUPINFO anchorStartup = new STARTUPINFO(); anchorStartup.cb = Marshal.SizeOf(typeof(STARTUPINFO));
+      string expectedSid = account == null ? ProcessSid(GetCurrentProcess()) : account.Sid;
+      bool anchored;
+      if (account == null) {
+        anchored = CreateProcessWBasic(anchorExecutable, anchorCommand, IntPtr.Zero, IntPtr.Zero, false,
+          CREATE_SUSPENDED | CREATE_UNICODE_ENVIRONMENT | CREATE_NO_WINDOW, env, cwd, ref anchorStartup, out anchor);
+        if (!anchored) throw Win32("CreateProcessW(current identity anchor)");
+      } else {
+        // The identity anchor is never resumed. Let Windows construct its account
+        // environment; the payload still receives the explicit env block below.
+        anchored = CreateProcessWithLogonW(account.Username, account.Domain, account.Password, LOGON_WITHOUT_PROFILE,
+          anchorExecutable, anchorCommand, CREATE_SUSPENDED | CREATE_UNICODE_ENVIRONMENT | CREATE_NO_WINDOW,
+          IntPtr.Zero, cwd, ref anchorStartup, out anchor);
+        if (!anchored) {
+          uint status = unchecked((uint)Marshal.GetLastWin32Error());
+          throw new InvalidOperationException("ZUGFOLGE_SAFE_PROCESS_DIAGNOSTIC code=PROCESS_WITH_LOGON status="
+            + status.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        }
       }
-      if (!created) throw Win32(account == null ? "CreateProcessW(mitigated)" : "CreateProcessAsUserW(ephemeral build principal)");
-      processCreated = true;
-      job = CreateJobObject(IntPtr.Zero, null); if (job == IntPtr.Zero) throw Win32("CreateJobObject");
-      JOBOBJECT_EXTENDED_LIMIT_INFORMATION limit = new JOBOBJECT_EXTENDED_LIMIT_INFORMATION(); limit.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
-      if (!SetInformationJobObject(job, 9, ref limit, (uint)Marshal.SizeOf(typeof(JOBOBJECT_EXTENDED_LIMIT_INFORMATION)))) throw Win32("SetInformationJobObject");
-      if (!AssignProcessToJobObject(job, process.hProcess)) throw Win32("AssignProcessToJobObject");
-      jobAssigned = true;
+      anchorCreated = true;
+      AssertProcessSid(anchor.hProcess, expectedSid);
+      if (!AssignProcessToJobObject(job, anchor.hProcess)) throw Win32("AssignProcessToJobObject(anchor)");
       lock (ActiveLock) { ActiveJob = job; }
+      if (cancelled != null && cancelled()) throw new InvalidOperationException("Windows-Kindstart wurde vor Anker-Duplizierung monoton abgebrochen.");
+      remoteChildIn = DuplicateInheritableToProcess(anchor.hProcess, childIn, "stdin");
+      remoteChildOut = DuplicateInheritableToProcess(anchor.hProcess, childOut, "stdout");
+      remoteChildErr = DuplicateInheritableToProcess(anchor.hProcess, childErr, "stderr");
+      remoteSentinel = DuplicateInheritableToProcess(anchor.hProcess, sentinelChild, "sentinel");
+      if (remoteChildIn == remoteChildOut || remoteChildIn == remoteChildErr || remoteChildIn == remoteSentinel
+          || remoteChildOut == remoteChildErr || remoteChildOut == remoteSentinel || remoteChildErr == remoteSentinel)
+        throw new InvalidOperationException("Windows-Anker erzeugte keine eindeutigen Remote-Handles.");
+      int attributeCount = 3;
+      IntPtr attributeBytes = IntPtr.Zero; InitializeProcThreadAttributeList(IntPtr.Zero, attributeCount, 0, ref attributeBytes);
+      if (attributeBytes == IntPtr.Zero) throw Win32("InitializeProcThreadAttributeList(size)");
+      attributes = Marshal.AllocHGlobal(attributeBytes);
+      if (!InitializeProcThreadAttributeList(attributes, attributeCount, 0, ref attributeBytes)) throw Win32("InitializeProcThreadAttributeList");
+      attributesInitialized = true; mitigation = Marshal.AllocHGlobal(8); Marshal.WriteInt64(mitigation, unchecked((long)imageLoadPolicy));
+      if (!UpdateProcThreadAttribute(attributes, 0, PROC_THREAD_ATTRIBUTE_MITIGATION_POLICY, mitigation, new IntPtr(8), IntPtr.Zero, IntPtr.Zero))
+        throw Win32("UpdateProcThreadAttribute(MITIGATION_POLICY)");
+      handleList = Marshal.AllocHGlobal(IntPtr.Size * 3);
+      Marshal.WriteIntPtr(handleList, 0, remoteChildIn); Marshal.WriteIntPtr(handleList, IntPtr.Size, remoteChildOut); Marshal.WriteIntPtr(handleList, IntPtr.Size * 2, remoteChildErr);
+      if (!UpdateProcThreadAttribute(attributes, 0, PROC_THREAD_ATTRIBUTE_HANDLE_LIST, handleList, new IntPtr(IntPtr.Size * 3), IntPtr.Zero, IntPtr.Zero))
+        throw Win32("UpdateProcThreadAttribute(HANDLE_LIST)");
+      parentProcess = Marshal.AllocHGlobal(IntPtr.Size); Marshal.WriteIntPtr(parentProcess, anchor.hProcess);
+      if (!UpdateProcThreadAttribute(attributes, 0, PROC_THREAD_ATTRIBUTE_PARENT_PROCESS, parentProcess, new IntPtr(IntPtr.Size), IntPtr.Zero, IntPtr.Zero))
+        throw Win32("UpdateProcThreadAttribute(PARENT_PROCESS)");
+      STARTUPINFOEX startup = new STARTUPINFOEX(); startup.StartupInfo.cb = Marshal.SizeOf(typeof(STARTUPINFOEX));
+      startup.StartupInfo.dwFlags = STARTF_USESTDHANDLES; startup.StartupInfo.hStdInput = remoteChildIn; startup.StartupInfo.hStdOutput = remoteChildOut; startup.StartupInfo.hStdError = remoteChildErr; startup.lpAttributeList = attributes;
+      bool created = CreateProcessW(executable, command, IntPtr.Zero, IntPtr.Zero, true, flags, env, cwd, ref startup, out process);
+      if (!created) {
+        if (account == null) throw Win32("CreateProcessW(mitigated)");
+        uint status = unchecked((uint)Marshal.GetLastWin32Error());
+        throw new InvalidOperationException("ZUGFOLGE_SAFE_PROCESS_DIAGNOSTIC code=PROCESS_FROM_ANCHOR status="
+          + status.ToString(System.Globalization.CultureInfo.InvariantCulture));
+      }
+      processCreated = true;
+      AssertAllowedHandleInherited(process.hProcess, remoteChildIn, childIn, "stdin");
+      AssertAllowedHandleInherited(process.hProcess, remoteChildOut, childOut, "stdout");
+      AssertAllowedHandleInherited(process.hProcess, remoteChildErr, childErr, "stderr");
+      AssertSentinelNotInherited(process.hProcess, remoteSentinel, sentinelChild);
+      AssertProcessSid(process.hProcess, expectedSid);
+      AssertMitigationPolicy(process.hProcess, imageLoadPolicy);
+      AssertProcessInJob(process.hProcess, job);
+      CloseRequired(ref sentinelChild, "sentinel-child");
+      CloseRequired(ref sentinelParent, "sentinel-parent");
+      if (!TerminateProcess(anchor.hProcess, 98)) throw Win32("TerminateProcess(suspended identity anchor)");
+      uint anchorWait = WaitForSingleObject(anchor.hProcess, 5000);
+      if (anchorWait == WAIT_FAILED) throw Win32("WaitForSingleObject(suspended identity anchor)");
+      if (anchorWait != WAIT_OBJECT_0)
+        throw new TimeoutException("Suspendierter Windows-Identitaetsanker endete nicht rechtzeitig.");
+      anchorTerminated = true;
+      CloseRequired(ref anchor.hThread, "anchor-thread"); CloseRequired(ref anchor.hProcess, "anchor-process");
       if (cancelled != null && cancelled()) throw new InvalidOperationException("Windows-Kindstart wurde vor ResumeThread monoton abgebrochen.");
+      if (clock.ElapsedMilliseconds > timeoutMilliseconds) throw new TimeoutException("Windows-Kindstart ueberschritt vor ResumeThread das gepinnte Zeitlimit.");
       if (ResumeThread(process.hThread) == 0xffffffff) throw Win32("ResumeThread");
-      CloseHandle(childIn); childIn = IntPtr.Zero; CloseHandle(childOut); childOut = IntPtr.Zero; CloseHandle(childErr); childErr = IntPtr.Zero;
+      CloseRequired(ref childIn, "child-stdin"); CloseRequired(ref childOut, "child-stdout"); CloseRequired(ref childErr, "child-stderr");
       using (FileStream input = new FileStream(new SafeFileHandle(parentIn, true), FileAccess.Write, 4096, false))
       using (FileStream output = new FileStream(new SafeFileHandle(parentOut, true), FileAccess.Read, 4096, false))
       using (FileStream error = new FileStream(new SafeFileHandle(parentErr, true), FileAccess.Read, 4096, false)) {
@@ -5837,14 +6282,17 @@ public static class ZugfolgeMitigatedProcess {
           System.Threading.CancellationToken.None, System.Threading.Tasks.TaskCreationOptions.LongRunning, System.Threading.Tasks.TaskScheduler.Default);
         System.Threading.Tasks.Task<byte[]> stderrTask = System.Threading.Tasks.Task.Factory.StartNew(delegate { return ReadBounded(error, maximumBytes, job, "stderr", total); },
           System.Threading.CancellationToken.None, System.Threading.Tasks.TaskCreationOptions.LongRunning, System.Threading.Tasks.TaskScheduler.Default);
-        System.Diagnostics.Stopwatch clock = System.Diagnostics.Stopwatch.StartNew();
         while (true) {
-          uint wait = WaitForSingleObject(process.hProcess, 25);
-          if (wait == WAIT_OBJECT_0) break;
+          long remaining = timeoutMilliseconds - clock.ElapsedMilliseconds;
+          if (remaining <= 0) { TerminateJobObject(job, 92); throw new TimeoutException("Windows-Kindprozessbaum ueberschritt das gepinnte Zeitlimit."); }
+          uint wait = WaitForSingleObject(process.hProcess, (uint)Math.Min(25L, remaining));
+          if (wait == WAIT_OBJECT_0) {
+            if (clock.ElapsedMilliseconds > timeoutMilliseconds) { TerminateJobObject(job, 92); throw new TimeoutException("Windows-Kindprozessbaum ueberschritt das gepinnte Zeitlimit."); }
+            break;
+          }
           if (wait == WAIT_FAILED) throw Win32("WaitForSingleObject");
           if (wait != WAIT_TIMEOUT) throw new InvalidOperationException("Windows-Kindwait lieferte einen unbekannten Zustand.");
           if (cancelled != null && cancelled()) { TerminateJobObject(job, 94); throw new InvalidOperationException("Windows-Kindprozessbaum wurde nach monotoner Inputdrift beendet."); }
-          if (clock.ElapsedMilliseconds > timeoutMilliseconds) { TerminateJobObject(job, 92); throw new TimeoutException("Windows-Kindprozessbaum ueberschritt das gepinnte Zeitlimit."); }
         }
         uint exitCode; if (!GetExitCodeProcess(process.hProcess, out exitCode)) throw Win32("GetExitCodeProcess");
         // The root process may exit while a descendant still holds inherited
@@ -5856,22 +6304,39 @@ public static class ZugfolgeMitigatedProcess {
           TerminateJobObject(job, 97);
           throw new TimeoutException("Windows-Kindprozess-Pipes schlossen nach dem kausalen Job-Tree-Abbruch nicht rechtzeitig.");
         }
+        CloseRequired(ref process.hThread, "payload-thread"); CloseRequired(ref process.hProcess, "payload-process");
+        AssertJobEmpty(job, 5000, "post-root");
         processCompleted = true;
         return new ZugfolgeMitigatedProcessResult(unchecked((int)exitCode), stdoutTask.Result, stderrTask.Result);
       }
+    } catch (Exception error) {
+      primaryError = error;
+      throw;
     } finally {
-      lock (ActiveLock) { if (ActiveJob == job) ActiveJob = IntPtr.Zero; }
-      if (processCreated && !processCompleted && process.hProcess != IntPtr.Zero) {
-        if (jobAssigned && job != IntPtr.Zero) TerminateJobObject(job, 95); else TerminateProcess(process.hProcess, 95);
-        WaitForSingleObject(process.hProcess, 5000);
+      List<string> cleanupErrors = new List<string>();
+      if (!processCompleted && job != IntPtr.Zero && !TerminateJobObject(job, 95))
+        RecordCleanupStatus(cleanupErrors, "TerminateJobObject(cleanup)", Marshal.GetLastWin32Error());
+      if (processCreated && !processCompleted) EnsureProcessTerminated(process.hProcess, "payload", cleanupErrors);
+      if (anchorCreated && !anchorTerminated) EnsureProcessTerminated(anchor.hProcess, "anchor", cleanupErrors);
+      CloseTracked(ref process.hThread, "payload-thread", cleanupErrors); CloseTracked(ref process.hProcess, "payload-process", cleanupErrors);
+      CloseTracked(ref anchor.hThread, "anchor-thread", cleanupErrors); CloseTracked(ref anchor.hProcess, "anchor-process", cleanupErrors);
+      if (!processCompleted && job != IntPtr.Zero) {
+        string jobFailure = WaitForJobEmptyStatus(job, 5000, "cleanup");
+        if (jobFailure != null) cleanupErrors.Add(jobFailure);
       }
-      if (process.hThread != IntPtr.Zero) CloseHandle(process.hThread); if (process.hProcess != IntPtr.Zero) CloseHandle(process.hProcess);
-      if (childIn != IntPtr.Zero) CloseHandle(childIn); if (parentIn != IntPtr.Zero) CloseHandle(parentIn);
-      if (childOut != IntPtr.Zero) CloseHandle(childOut); if (parentOut != IntPtr.Zero) CloseHandle(parentOut);
-      if (childErr != IntPtr.Zero) CloseHandle(childErr); if (parentErr != IntPtr.Zero) CloseHandle(parentErr);
-      if (job != IntPtr.Zero) CloseHandle(job); if (env != IntPtr.Zero) Marshal.FreeHGlobal(env); if (handleList != IntPtr.Zero) Marshal.FreeHGlobal(handleList); if (mitigation != IntPtr.Zero) Marshal.FreeHGlobal(mitigation);
+      lock (ActiveLock) { if (ActiveJob == job) ActiveJob = IntPtr.Zero; }
+      CloseTracked(ref childIn, "child-stdin", cleanupErrors); CloseTracked(ref parentIn, "parent-stdin", cleanupErrors);
+      CloseTracked(ref childOut, "child-stdout", cleanupErrors); CloseTracked(ref parentOut, "parent-stdout", cleanupErrors);
+      CloseTracked(ref childErr, "child-stderr", cleanupErrors); CloseTracked(ref parentErr, "parent-stderr", cleanupErrors);
+      CloseTracked(ref sentinelChild, "sentinel-child", cleanupErrors); CloseTracked(ref sentinelParent, "sentinel-parent", cleanupErrors);
       if (attributesInitialized) DeleteProcThreadAttributeList(attributes); if (attributes != IntPtr.Zero) Marshal.FreeHGlobal(attributes);
-      if (token != IntPtr.Zero) CloseHandle(token);
+      if (parentProcess != IntPtr.Zero) Marshal.FreeHGlobal(parentProcess); if (handleList != IntPtr.Zero) Marshal.FreeHGlobal(handleList); if (mitigation != IntPtr.Zero) Marshal.FreeHGlobal(mitigation);
+      CloseTracked(ref job, "job", cleanupErrors); if (env != IntPtr.Zero) Marshal.FreeHGlobal(env);
+      if (cleanupErrors.Count > 0) {
+        Exception cleanupError = new InvalidOperationException("Windows-Kindcleanup war nicht vollstaendig: " + String.Join(" | ", cleanupErrors.ToArray()));
+        if (primaryError == null) throw cleanupError;
+        throw new AggregateException("Windows-Kindprozess- und Cleanupfehler traten gemeinsam auf.", primaryError, cleanupError);
+      }
     }
   }
 }
@@ -5927,8 +6392,17 @@ $ProgressPreference = 'SilentlyContinue'
 $held = [System.Collections.Generic.List[System.IDisposable]]::new()
 $publishedStreams = [System.Collections.Generic.List[object]]::new()
 $publicationCommitted = $false
+$constructionAccountDeleted = $false
+$ephemeralAccountDeleted = $false
+$anchorStage = 'INITIALIZE'
+function Write-SafeAnchorStageDiagnostic {
+  [Console]::Error.WriteLine('ZUGFOLGE_SAFE_ANCHOR_STAGE_DIAGNOSTIC stage=' + $script:anchorStage)
+}
 function Fail([string]$message) {
   [Console]::Error.WriteLine($message)
+  # Keep the fixed allowlisted line last: the parent intentionally retains only
+  # a bounded stderr tail and must never surface arbitrary paths or secrets.
+  Write-SafeAnchorStageDiagnostic
   exit 125
 }
 function Decode-Json([string]$line, [string]$label) {
@@ -6092,17 +6566,22 @@ function Extract-AuditedPlan([IO.FileStream]$archive, [object]$plan, [hashtable]
       $actual = [BitConverter]::ToString($hash.Hash).Replace('-', '').ToLowerInvariant()
       if ($output.Length -ne [Int64]$entry.bytes -or $actual -cne [string]$entry.sha256) { Fail "$label-Datei $($entry.file) driftet vom auditierten Slice." }
       $output.Flush($true)
+      # NtCreateFile installed the protected construction DACL atomically.
+      # Closing the content-write handle removes that direct capability.  The
+      # remaining Constructor WRITE_DAC capability is revoked monotonically by
+      # deleting its unique account before Verify-FrozenHeldTree runs every
+      # final WRITE_DAC/write/delete negative probe.
       $output.Dispose()
       $output = $null
-      $files[[string]$entry.file] = Open-HeldRelativeFile $directories[$parentName] $leaf $entry.bytes $entry.sha256 "$label-Datei $($entry.file) nach create-new"
+      $files[[string]$entry.file] = Open-HeldRelativeFile $directories[$parentName] $leaf $entry.bytes $entry.sha256 "$label-Datei $($entry.file) nach atomarem DACL-Create"
     } finally {
       $hash.Dispose()
       if ($null -ne $output) { $output.Dispose() }
     }
   }
 }
-function Copy-HeldFile([IO.FileStream]$input, [Microsoft.Win32.SafeHandles.SafeFileHandle]$parent, [string]$leaf, [Int64]$expectedBytes, [string]$expectedSha, [object]$securityDescriptor, [string]$label) {
-  $input.Position = 0
+function Copy-HeldFile([IO.FileStream]$sourceStream, [Microsoft.Win32.SafeHandles.SafeFileHandle]$parent, [string]$leaf, [Int64]$expectedBytes, [string]$expectedSha, [object]$securityDescriptor, [string]$label) {
+  $sourceStream.Position = 0
   $hash = [Security.Cryptography.SHA256]::Create()
   try { $fileHandle = [ZugfolgeRelativeFs]::CreateProtectedRegularFile($parent, $leaf, $securityDescriptor) } catch { Fail "$label konnte nicht NT-relativ create-new erzeugt werden: $($_.Exception.Message)" }
   $output = [IO.FileStream]::new($fileHandle, [IO.FileAccess]::ReadWrite, 1048576, $false)
@@ -6111,27 +6590,31 @@ function Copy-HeldFile([IO.FileStream]$input, [Microsoft.Win32.SafeHandles.SafeF
     [Int64]$remaining = $expectedBytes
     while ($remaining -gt 0) {
       $count = [Math]::Min([Int64]$buffer.Length, $remaining)
-      $read = $input.Read($buffer, 0, [int]$count)
+      $read = $sourceStream.Read($buffer, 0, [int]$count)
       if ($read -le 0) { Fail "$label endet vor der gehaltenen Bytezahl." }
       $output.Write($buffer, 0, $read)
       [void]$hash.TransformBlock($buffer, 0, $read, $null, 0)
       $remaining -= $read
     }
-    if ($input.ReadByte() -ne -1) { Fail "$label besitzt hinter der gehaltenen Bytezahl Restdaten." }
+    if ($sourceStream.ReadByte() -ne -1) { Fail "$label besitzt hinter der gehaltenen Bytezahl Restdaten." }
     [void]$hash.TransformFinalBlock([byte[]]::new(0), 0, 0)
     $actual = [BitConverter]::ToString($hash.Hash).Replace('-', '').ToLowerInvariant()
     if ($output.Length -ne $expectedBytes -or $actual -cne $expectedSha) { Fail "$label driftet waehrend der privaten Toolchain-Kopie." }
     $output.Flush($true)
+    # See Extract-AuditedPlan: the protected construction descriptor is part of
+    # create-new.  Final negative probes run only after the unique Constructor
+    # account has been deleted and verified absent.
     $output.Dispose()
     $output = $null
-    return Open-HeldRelativeFile $parent $leaf $expectedBytes $expectedSha "$label nach create-new"
+    return Open-HeldRelativeFile $parent $leaf $expectedBytes $expectedSha "$label nach atomarem DACL-Create"
   } finally {
-    $input.Position = 0
+    $sourceStream.Position = 0
     $hash.Dispose()
     if ($null -ne $output) { $output.Dispose() }
   }
 }
-function Publish-HeldFile([IO.Stream]$input, [object]$request, [string]$label) {
+function Publish-HeldFile([IO.Stream]$sourceStream, [object]$request, [string]$label) {
+  if (-not $script:ephemeralAccountDeleted) { Fail "$label darf nicht vor der verifizierten Loeschung des ephemeren Build-Accounts publiziert werden." }
   $propertyNames = @($request.PSObject.Properties.Name | Sort-Object)
   if (($propertyNames -join ',') -cne 'bytes,file,sha256') { Fail "$label besitzt unerwartete Publikationsfelder." }
   $full = [IO.Path]::GetFullPath([string]$request.file)
@@ -6145,9 +6628,8 @@ function Publish-HeldFile([IO.Stream]$input, [object]$request, [string]$label) {
   $expectedBytes = [Int64]$request.bytes
   $expectedSha = [string]$request.sha256
   if ($expectedBytes -le 0 -or $expectedSha -cnotmatch '^[a-f0-9]{64}$') { Fail "$label besitzt keine gueltige Byte-/SHA-Bindung." }
-  try { $published = [ZugfolgeRelativeFs]::PublishHeldCreateNew($input, $anchoredParentHandles[$parentKey], $leaf, $expectedBytes, $expectedSha, $parentWritableDescriptor) }
+  try { $published = [ZugfolgeRelativeFs]::PublishHeldCreateNew($sourceStream, $anchoredParentHandles[$parentKey], $leaf, $expectedBytes, $expectedSha, $parentWritableDescriptor) }
   catch { Fail "$label konnte nicht handle-relativ create-new publiziert werden: $($_.Exception.Message)" }
-  $held.Add($published)
   $publishedStreams.Add($published)
   $identity = ([string]$published.Identity).Split(':')
   if ($identity.Length -ne 2) { Fail "$label besitzt keine gueltige gehaltene Identitaet." }
@@ -6165,14 +6647,74 @@ function Rollback-Published {
   $publishedStreams.Clear()
   if ($errors.Count -gt 0) { throw [InvalidOperationException]::new('Handle-relativer Publikationsrollback scheiterte: ' + [string]::Join(' | ', $errors)) }
 }
-function Commit-Published {
-  foreach ($publication in $publishedStreams) { $publication.Commit() }
-  $publishedStreams.Clear()
+function Delete-EphemeralAccountBeforeResult([object]$account) {
+  if ($null -eq $account -or $script:ephemeralAccountDeleted) {
+    throw [InvalidOperationException]::new('Ephemerer Build-Account besitzt vor dem Publikationsfenster einen ungueltigen Zustand.')
+  }
+  # NetUserDel plus NetUserGetInfo(NERR_USER_NOT_FOUND) is the only cleanup in
+  # this anchor that removes persistent operating-system state.  Complete it
+  # before RESULT, and therefore before the parent can request any final file.
+  $account.Dispose()
+  if (-not $held.Remove($account)) {
+    throw [InvalidOperationException]::new('Verifiziert geloeschter Build-Account fehlte in der gehaltenen Ressourcenmenge.')
+  }
+  $script:ephemeralAccountDeleted = $true
 }
-function Freeze-HeldTree([hashtable]$directories, [hashtable]$files, [hashtable]$expectedChildren, [Microsoft.Win32.SafeHandles.SafeFileHandle]$rootParent, [string]$rootLeaf, [string]$currentSid, [string]$label) {
-  foreach ($file in @($files.Keys | Sort-Object)) { [ZugfolgeRelativeFs]::FreezeReadExecute($files[$file].SafeFileHandle, $currentSid) }
-  foreach ($directory in @($directories.Keys | Sort-Object { $_.Split('/').Length } -Descending)) { [ZugfolgeRelativeFs]::FreezeReadExecute($directories[$directory], $currentSid) }
-  Assert-ExactHeldTree $directories $expectedChildren "$label nach DACL-Freeze"
+function Delete-ConstructionAccountBeforeFreeze([object]$account) {
+  if ($null -eq $account -or $script:constructionAccountDeleted) {
+    throw [InvalidOperationException]::new('Ephemerer Constructor-Account besitzt vor dem Freeze einen ungueltigen Zustand.')
+  }
+  # The constructor SID is the only principal with ADD_FILE/ADD_SUBDIRECTORY on
+  # input-tree DACLs.  NetUserDel plus the NERR_USER_NOT_FOUND verification
+  # revokes that capability before create-time handles are closed and before
+  # any untrusted build-account process can start.
+  $account.Dispose()
+  if (-not $held.Remove($account)) {
+    throw [InvalidOperationException]::new('Verifiziert geloeschter Constructor-Account fehlte in der gehaltenen Ressourcenmenge.')
+  }
+  $script:constructionAccountDeleted = $true
+}
+function Commit-Published {
+  # The persistent account cleanup completed before RESULT.  Every authority
+  # handle deliberately remains open across this in-memory transition so path
+  # identity cannot drift between parent verification and the commit decision.
+  # After the acknowledgement, process teardown only releases non-inheritable
+  # handles and cannot retroactively invalidate the materialization.
+  foreach ($publication in $publishedStreams) { $publication.Commit() }
+  # Keep every committed publication strongly rooted until process exit.  The
+  # final FileStreams are the share-mode authority that prevents write/delete
+  # or a name swap after parent verification and before the ACK boundary.
+}
+function Reopen-FrozenDirectoryRelative([Microsoft.Win32.SafeHandles.SafeFileHandle]$parent, [Microsoft.Win32.SafeHandles.SafeFileHandle]$createHandle, [string]$leaf, [string]$label) {
+  $expectedIdentity = [ZugfolgeRelativeFs]::Identity($createHandle)
+  # The protected DACL was installed atomically. Release the create-time full
+  # access grant before keeping a read-only, non-inheritable identity handle.
+  $createHandle.Dispose()
+  $reopened = Open-HeldDirectoryRelative $parent $leaf "$label nach atomarem DACL-Create"
+  if ([ZugfolgeRelativeFs]::Identity($reopened) -cne $expectedIdentity) { Fail "$label driftete beim nur-lesbaren Reopen von seiner gehaltenen Identitaet." }
+  return $reopened
+}
+function Reopen-FrozenHeldTreeDirectories([hashtable]$directories, [Microsoft.Win32.SafeHandles.SafeFileHandle]$rootParent, [string]$rootLeaf, [string]$label) {
+  $ordered = @($directories.Keys | Sort-Object @{ Expression = { if ([string]::IsNullOrEmpty([string]$_)) { 0 } else { ([string]$_).Split('/').Length } } }, @{ Expression = { [string]$_ } })
+  foreach ($directory in $ordered) {
+    if ($directory -eq '') {
+      $directories[$directory] = Reopen-FrozenDirectoryRelative $rootParent $directories[$directory] $rootLeaf "$label-Wurzel"
+    } else {
+      $segments = ([string]$directory).Split('/')
+      $parentName = if ($segments.Length -eq 1) { '' } else { [string]::Join('/', $segments[0..($segments.Length - 2)]) }
+      $leaf = $segments[$segments.Length - 1]
+      $directories[$directory] = Reopen-FrozenDirectoryRelative $directories[$parentName] $directories[$directory] $leaf "$label-Verzeichnis $directory"
+    }
+  }
+}
+function Verify-FrozenHeldTree([hashtable]$directories, [hashtable]$files, [hashtable]$expectedChildren, [Microsoft.Win32.SafeHandles.SafeFileHandle]$rootParent, [string]$rootLeaf, [string]$label) {
+  # Every entry received its protected DACL atomically at NT create, and the
+  # sole constructor SID has already been deleted and verified absent.  First
+  # prove the complete tree, then discard every create-time full-access handle
+  # parent-first and bind read-only handles to the same IDs.
+  Assert-ExactHeldTree $directories $expectedChildren "$label vor nur-lesbarem Reopen"
+  Reopen-FrozenHeldTreeDirectories $directories $rootParent $rootLeaf $label
+  Assert-ExactHeldTree $directories $expectedChildren "$label nach nur-lesbarem Reopen"
   foreach ($directory in @($directories.Keys | Sort-Object)) {
     if ($directory -eq '') {
       [ZugfolgeRelativeFs]::AssertFrozenDirectoryEntry($rootParent, $rootLeaf)
@@ -6202,7 +6744,14 @@ function Invoke-Bound([string]$file, [string[]]$arguments, [string]$cwd, [hashta
       stderr = [Convert]::ToBase64String($process.Stderr)
       stdout = [Convert]::ToBase64String($process.Stdout)
     }
-  } catch { Fail "Gebundener mitigierter Prozess schlug fail-closed fehl: $($_.Exception.Message)" }
+  } catch {
+    $diagnostic = [string]$_.Exception.GetBaseException().Message
+    if ($diagnostic -match '^ZUGFOLGE_SAFE_PROCESS_DIAGNOSTIC code=(PROCESS_WITH_LOGON|PROCESS_FROM_ANCHOR) status=[1-9][0-9]{0,9}$') {
+      [Console]::Error.WriteLine($diagnostic)
+      exit 125
+    }
+    Fail "Gebundener mitigierter Prozess schlug fail-closed fehl."
+  }
 }
 try {
   $request = Decode-Json ([Console]::In.ReadLine()) 'Anchor-Request'
@@ -6269,79 +6818,121 @@ try {
   $readyJson = ([ordered]@{ anchoredParents = @($anchoredParentProofs); buildRoot = $buildRoot } | ConvertTo-Json -Depth 8 -Compress)
   [Console]::Out.WriteLine('ANCHOR_READY ' + [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($readyJson)))
   [Console]::Out.Flush()
+  $script:anchorStage = 'RECEIVE_EXTRACTION_PLAN'
   $extract = Decode-Json ([Console]::In.ReadLine()) 'Extraktionsplan'
-  # The privileged local principal is unnecessary while the parent/input/toolchain
-  # handles are being established and audited.  Create it only once an extraction
-  # request has been received; aborting before extraction therefore needs no admin
-  # side effect while all original input bytes remain exclusively held.
+  # Privileged local principals are unnecessary while the parent/input/toolchain
+  # handles are being established and audited.  Create the one-shot constructor
+  # and the distinct build account only after a valid extraction request exists.
+  # The constructor is deleted before freeze/build; the builder never receives
+  # its ADD_FILE/ADD_SUBDIRECTORY capability.
+  $script:anchorStage = 'CREATE_EPHEMERAL_ACCOUNT'
   $currentSid = [Security.Principal.WindowsIdentity]::GetCurrent().User.Value
+  $constructorAccount = [ZugfolgeEphemeralAccount]::Create()
+  $held.Add($constructorAccount)
   $account = [ZugfolgeEphemeralAccount]::Create()
   $held.Add($account)
-  $readExecuteDescriptor = [ZugfolgeProtectedSecurityDescriptor]::ReadExecute($currentSid, $account.Sid)
+  $constructionReadExecuteDescriptor = [ZugfolgeProtectedSecurityDescriptor]::ConstructionReadExecute($currentSid, $account.Sid, $constructorAccount.Sid)
   $isolatedWritableDescriptor = [ZugfolgeProtectedSecurityDescriptor]::IsolatedWritable($currentSid, $account.Sid)
   $parentWritableDescriptor = [ZugfolgeProtectedSecurityDescriptor]::ParentWritable($currentSid)
-  $held.Add($readExecuteDescriptor)
+  $held.Add($constructionReadExecuteDescriptor)
   $held.Add($isolatedWritableDescriptor)
   $held.Add($parentWritableDescriptor)
-  $buildRootHandle = New-HeldDirectoryRelative $anchoredParentHandles[$buildParentKey] $buildRootLeaf 'Privater Buildroot' $readExecuteDescriptor
+  $script:anchorStage = 'CREATE_PRIVATE_ROOT'
+  $buildRootHandle = New-HeldDirectoryRelative $anchoredParentHandles[$buildParentKey] $buildRootLeaf 'Privater Buildroot' $constructionReadExecuteDescriptor
   if ([ZugfolgeRelativeFs]::EnumerateNames($buildRootHandle).Length -ne 0) { Fail 'Create-new Buildroot ist nicht leer.' }
   $buildRootIdentityParts = [ZugfolgeRelativeFs]::Identity($buildRootHandle).Split(':')
   if ($buildRootIdentityParts.Length -ne 2) { Fail 'Create-new Buildroot besitzt keine gueltige gehaltene Identitaet.' }
   $buildDirectories = @{ '' = $buildRootHandle }
-  $sourceHandle = New-HeldDirectoryRelative $buildDirectories[''] 'source' 'Private Source-Wurzel' $readExecuteDescriptor
-  $sourceDirectories = @{ '' = $sourceHandle }
-  $sourceFiles = @{}
-  $sourceExpectedChildren = @{ '' = [Collections.Generic.List[string]]::new() }
-  Extract-AuditedPlan $source $extract.source $sourceDirectories $sourceFiles $sourceExpectedChildren $readExecuteDescriptor 'Source'
-  Extract-AuditedPlan $vendor $extract.vendor $sourceDirectories $sourceFiles $sourceExpectedChildren $readExecuteDescriptor 'Vendor'
-  $privateToolchainHandle = New-HeldDirectoryRelative $buildDirectories[''] 'toolchain' 'Private Toolchain-Wurzel' $readExecuteDescriptor
-  $privateToolchainDirectories = @{ '' = $privateToolchainHandle }
-  $privateToolchainFiles = @{}
-  $privateToolchainExpectedChildren = @{ '' = [Collections.Generic.List[string]]::new() }
-  foreach ($directory in $manifest.directories) {
-    $segments = ([string]$directory).Split('/')
-    $parentName = if ($segments.Length -eq 1) { '' } else { [string]::Join('/', $segments[0..($segments.Length - 2)]) }
-    $leaf = $segments[$segments.Length - 1]
-    $privateToolchainDirectories[[string]$directory] = New-HeldDirectoryRelative $privateToolchainDirectories[$parentName] $leaf "Private Toolchain-Verzeichnis $directory" $readExecuteDescriptor
-    Add-ExpectedChild $privateToolchainExpectedChildren $parentName $leaf
-    $privateToolchainExpectedChildren[[string]$directory] = [Collections.Generic.List[string]]::new()
+  $constructorScope = $constructorAccount.Impersonate()
+  $held.Add($constructorScope)
+  try {
+    $sourceHandle = New-HeldDirectoryRelative $buildDirectories[''] 'source' 'Private Source-Wurzel' $constructionReadExecuteDescriptor
+    $sourceDirectories = @{ '' = $sourceHandle }
+    $sourceFiles = @{}
+    $sourceExpectedChildren = @{ '' = [Collections.Generic.List[string]]::new() }
+    $script:anchorStage = 'EXTRACT_SOURCE'
+    Extract-AuditedPlan $source $extract.source $sourceDirectories $sourceFiles $sourceExpectedChildren $constructionReadExecuteDescriptor 'Source'
+    $script:anchorStage = 'EXTRACT_VENDOR'
+    Extract-AuditedPlan $vendor $extract.vendor $sourceDirectories $sourceFiles $sourceExpectedChildren $constructionReadExecuteDescriptor 'Vendor'
+    $script:anchorStage = 'COPY_TOOLCHAIN_DIRECTORIES'
+    $privateToolchainHandle = New-HeldDirectoryRelative $buildDirectories[''] 'toolchain' 'Private Toolchain-Wurzel' $constructionReadExecuteDescriptor
+    $privateToolchainDirectories = @{ '' = $privateToolchainHandle }
+    $privateToolchainFiles = @{}
+    $privateToolchainExpectedChildren = @{ '' = [Collections.Generic.List[string]]::new() }
+    foreach ($directory in $manifest.directories) {
+      $segments = ([string]$directory).Split('/')
+      $parentName = if ($segments.Length -eq 1) { '' } else { [string]::Join('/', $segments[0..($segments.Length - 2)]) }
+      $leaf = $segments[$segments.Length - 1]
+      $privateToolchainDirectories[[string]$directory] = New-HeldDirectoryRelative $privateToolchainDirectories[$parentName] $leaf "Private Toolchain-Verzeichnis $directory" $constructionReadExecuteDescriptor
+      Add-ExpectedChild $privateToolchainExpectedChildren $parentName $leaf
+      $privateToolchainExpectedChildren[[string]$directory] = [Collections.Generic.List[string]]::new()
+    }
+    $script:anchorStage = 'COPY_TOOLCHAIN_FILES'
+    foreach ($entry in $manifest.files) {
+      $segments = ([string]$entry.file).Split('/')
+      $parentName = if ($segments.Length -eq 1) { '' } else { [string]::Join('/', $segments[0..($segments.Length - 2)]) }
+      $leaf = $segments[$segments.Length - 1]
+      Add-ExpectedChild $privateToolchainExpectedChildren $parentName $leaf
+      $privateToolchainFiles[[string]$entry.file] = Copy-HeldFile $toolchainFiles[[string]$entry.file] $privateToolchainDirectories[$parentName] $leaf $entry.bytes $entry.sha256 $constructionReadExecuteDescriptor "Private Toolchain-Datei $($entry.file)"
+    }
+    $script:anchorStage = 'CREATE_WRITABLE_ROOTS'
+    $targetHandle = New-HeldDirectoryRelative $buildDirectories[''] 'target' 'Privates Cargo-Target' $isolatedWritableDescriptor
+    $cargoHomeHandle = New-HeldDirectoryRelative $buildDirectories[''] 'cargo-home' 'Privates Cargo-Home' $isolatedWritableDescriptor
+    $tempHandle = New-HeldDirectoryRelative $buildDirectories[''] 'temp' 'Privates Temp' $isolatedWritableDescriptor
+    $publicationHandle = New-HeldDirectoryRelative $buildDirectories[''] 'publication' 'Privates Publikations-Staging' $parentWritableDescriptor
+  } finally {
+    $constructorScope.Dispose()
+    if (-not $held.Remove($constructorScope)) { throw [InvalidOperationException]::new('Beendete Constructor-Impersonation fehlte in der gehaltenen Ressourcenmenge.') }
   }
-  foreach ($entry in $manifest.files) {
-    $segments = ([string]$entry.file).Split('/')
-    $parentName = if ($segments.Length -eq 1) { '' } else { [string]::Join('/', $segments[0..($segments.Length - 2)]) }
-    $leaf = $segments[$segments.Length - 1]
-    Add-ExpectedChild $privateToolchainExpectedChildren $parentName $leaf
-    $privateToolchainFiles[[string]$entry.file] = Copy-HeldFile $toolchainFiles[[string]$entry.file] $privateToolchainDirectories[$parentName] $leaf $entry.bytes $entry.sha256 $readExecuteDescriptor "Private Toolchain-Datei $($entry.file)"
+  $constructorPrincipalSidSha256 = Hash-Text $constructorAccount.Sid
+  $script:anchorStage = 'DELETE_CONSTRUCTION_ACCOUNT'
+  Delete-ConstructionAccountBeforeFreeze $constructorAccount
+  $constructorAccount = $null
+  $constructionPrincipal = [ordered]@{
+    mode = 'ephemeral-local-constructor-account-deleted-before-freeze-v1'
+    principalSidSha256 = $constructorPrincipalSidSha256
   }
-  $targetHandle = New-HeldDirectoryRelative $buildDirectories[''] 'target' 'Privates Cargo-Target' $isolatedWritableDescriptor
-  $cargoHomeHandle = New-HeldDirectoryRelative $buildDirectories[''] 'cargo-home' 'Privates Cargo-Home' $isolatedWritableDescriptor
-  $tempHandle = New-HeldDirectoryRelative $buildDirectories[''] 'temp' 'Privates Temp' $isolatedWritableDescriptor
-  $publicationHandle = New-HeldDirectoryRelative $buildDirectories[''] 'publication' 'Privates Publikations-Staging' $parentWritableDescriptor
   $sourcePath = [IO.Path]::Combine($buildRoot, 'source')
   $vendorPath = [IO.Path]::Combine($sourcePath, 'vendor')
   $privateToolchainPath = [IO.Path]::Combine($buildRoot, 'toolchain')
   $cargoPath = [IO.Path]::GetFullPath([IO.Path]::Combine($privateToolchainPath, ([string]$request.cargoPath).Replace('/', [IO.Path]::DirectorySeparatorChar)))
   $rustcPath = [IO.Path]::GetFullPath([IO.Path]::Combine($privateToolchainPath, ([string]$request.rustcPath).Replace('/', [IO.Path]::DirectorySeparatorChar)))
-  Freeze-HeldTree $sourceDirectories $sourceFiles $sourceExpectedChildren $buildRootHandle 'source' $currentSid 'Source-und-Vendor'
-  Freeze-HeldTree $privateToolchainDirectories $privateToolchainFiles $privateToolchainExpectedChildren $buildRootHandle 'toolchain' $currentSid 'Private Toolchain'
+  $script:anchorStage = 'FREEZE_SOURCE'
+  Verify-FrozenHeldTree $sourceDirectories $sourceFiles $sourceExpectedChildren $buildRootHandle 'source' 'Source-und-Vendor'
+  $script:anchorStage = 'FREEZE_TOOLCHAIN'
+  Verify-FrozenHeldTree $privateToolchainDirectories $privateToolchainFiles $privateToolchainExpectedChildren $buildRootHandle 'toolchain' 'Private Toolchain'
+  $script:anchorStage = 'VERIFY_WRITABLE_ROOTS'
+  $targetHandle = Reopen-FrozenDirectoryRelative $buildRootHandle $targetHandle 'target' 'Privates Cargo-Target'
+  $cargoHomeHandle = Reopen-FrozenDirectoryRelative $buildRootHandle $cargoHomeHandle 'cargo-home' 'Privates Cargo-Home'
+  $tempHandle = Reopen-FrozenDirectoryRelative $buildRootHandle $tempHandle 'temp' 'Privates Temp'
   foreach ($entry in @('target', 'cargo-home', 'temp')) {
     [ZugfolgeRelativeFs]::AssertFrozenDirectoryEntry($buildRootHandle, $entry)
     [ZugfolgeRelativeFs]::AssertFrozenEntry($buildRootHandle, $entry, $true)
   }
+  $script:anchorStage = 'FREEZE_BUILD_ROOT'
+  $buildRootHandle = Reopen-FrozenDirectoryRelative $anchoredParentHandles[$buildParentKey] $buildRootHandle $buildRootLeaf 'Privater Buildroot'
+  $buildDirectories[''] = $buildRootHandle
+  [ZugfolgeRelativeFs]::AssertFrozenDirectoryEntry($anchoredParentHandles[$buildParentKey], $buildRootLeaf)
+  [ZugfolgeRelativeFs]::AssertFrozenEntry($anchoredParentHandles[$buildParentKey], $buildRootLeaf, $true)
+  $script:anchorStage = 'START_INTEGRITY_MONITORS'
   $monitors = @(
     (New-IntegrityWatcher $sourcePath 'Sourcebaum'),
     (New-IntegrityWatcher $vendorPath 'Vendorbaum'),
     (New-IntegrityWatcher $privateToolchainPath 'Privater Toolchainbaum')
   )
+  $script:anchorStage = 'VERIFY_HELD_TREES'
   Assert-ExactHeldTree $sourceDirectories $sourceExpectedChildren 'Source-und-Vendor'
   Assert-ExactHeldTree $toolchainDirectories $expectedChildren 'Gepinnter Toolchain-Input'
   Assert-ExactHeldTree $privateToolchainDirectories $privateToolchainExpectedChildren 'Private Toolchain'
   Assert-MonitorsClean $monitors 'Vor Build'
+  $script:anchorStage = 'REPORT_EXTRACTED'
   $extractedJson = ([ordered]@{
     buildRootIdentity = [ordered]@{ dev = [string]$buildRootIdentityParts[0]; ino = [string]$buildRootIdentityParts[1] }
+    constructionPrincipal = $constructionPrincipal
   } | ConvertTo-Json -Depth 4 -Compress)
   [Console]::Out.WriteLine('EXTRACTED ' + [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($extractedJson)))
   [Console]::Out.Flush()
+  $script:anchorStage = 'RECEIVE_BUILD_PLAN'
   $run = Decode-Json ([Console]::In.ReadLine()) 'Build-Request'
   if ($run.command[0] -cne 'cargo') { Fail 'Build-Request besitzt keinen Cargo-Befehl.' }
   $expectedSource = [IO.Path]::GetFullPath($sourcePath)
@@ -6373,8 +6964,11 @@ try {
     'CARGO_TARGET_DIR' = [string]$run.targetDirectory
     'CARGO_TERM_COLOR' = 'never'
     'COMSPEC' = 'C:\Windows\System32\cmd.exe'
+    'HOMEDRIVE' = 'C:'
+    'HOMEPATH' = '\Windows\System32'
     'PATH' = "$($privateToolchainPath)\bin;$($privateToolchainPath)\lib\rustlib\x86_64-pc-windows-gnu\bin;$($privateToolchainPath)\lib\rustlib\x86_64-pc-windows-gnu\bin\self-contained;C:\Windows\System32;C:\Windows"
     'PATHEXT' = '.COM;.EXE;.BAT;.CMD'
+    'PROMPT' = '$P$G'
     'RUSTC' = $rustcPath
     'SYSTEMROOT' = 'C:\Windows'
     'TEMP' = [string]$run.tempDirectory
@@ -6382,6 +6976,7 @@ try {
     'WINDIR' = 'C:\Windows'
   }
   $trustedCwd = 'C:\Windows\System32'
+  $script:anchorStage = 'RUN_BUILD'
   Assert-MonitorsClean $monitors 'Vor Cargo-Probe'
   $cargoProbe = Invoke-Bound $cargoPath @('-vV') $trustedCwd $environment $monitors ([int]$request.processLimits.maxOutputBytes) ([int]$request.processLimits.timeoutMilliseconds) $account
   Assert-MonitorsClean $monitors 'Nach Cargo-Probe'
@@ -6397,10 +6992,15 @@ try {
     $builtOutput = Open-BuiltOutput $builtPath ([Int64]$run.expectedOutputBytes) 'Tatsaechlich gebauter Operational-Validator'
     $outputProof = $builtOutput.proof
   }
+  $isolationPrincipalSidSha256 = Hash-Text $account.Sid
+  $script:anchorStage = 'DELETE_EPHEMERAL_ACCOUNT'
+  Delete-EphemeralAccountBeforeResult $account
+  $account = $null
   $result = [ordered]@{
     build = $build
     cargo = $cargoProbe
-    isolation = [ordered]@{ mode = 'ephemeral-local-build-account-v1'; principalSidSha256 = Hash-Text $account.Sid }
+    construction = $constructionPrincipal
+    isolation = [ordered]@{ mode = 'ephemeral-local-build-account-v1'; principalSidSha256 = $isolationPrincipalSidSha256 }
     output = $outputProof
     rustc = $rustcProbe
   }
@@ -6408,6 +7008,7 @@ try {
   [Console]::Out.WriteLine('RESULT ' + [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($json)))
   [Console]::Out.Flush()
   if ($cargoProbe.code -ne 0 -or $rustcProbe.code -ne 0 -or $build.code -ne 0) { exit $(if ($build.code -ne 0) { $build.code } else { 124 }) }
+  $script:anchorStage = 'RECEIVE_PUBLICATION_PLAN'
   $publicationLine = [Console]::In.ReadLine()
   if ($publicationLine -ceq 'ABORT') { exit 124 }
   if ([string]::IsNullOrEmpty($publicationLine) -or -not $publicationLine.StartsWith('PUBLISH ')) { Fail 'Windows-Build-Anker erhielt keinen handle-relativen Publikationsauftrag.' }
@@ -6427,6 +7028,7 @@ try {
   } catch { Fail "Publikationsauftrag enthaelt ungueltige Base64-Bytes: $($_.Exception.Message)" }
   $provenanceInput = [IO.MemoryStream]::new($provenanceBytes, $false)
   $receiptInput = [IO.MemoryStream]::new($receiptBytes, $false)
+  $script:anchorStage = 'PUBLISH_OUTPUTS'
   try {
     $published = [ordered]@{
       provenance = Publish-HeldFile $provenanceInput ([pscustomobject]@{ bytes = [Int64]$publication.provenance.bytes; file = [string]$publication.provenance.file; sha256 = [string]$publication.provenance.sha256 }) 'Build-Provenienz'
@@ -6440,24 +7042,34 @@ try {
   $publishedJson = $published | ConvertTo-Json -Depth 12 -Compress
   [Console]::Out.WriteLine('PUBLISHED ' + [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($publishedJson)))
   [Console]::Out.Flush()
+  $script:anchorStage = 'RECEIVE_PUBLICATION_COMPLETE'
   $completion = [Console]::In.ReadLine()
   if ($completion -ceq 'ABORT') { Rollback-Published; exit 124 }
   if ($completion -cne 'PUBLICATION_COMPLETE') { Fail 'Windows-Build-Anker erhielt keinen erfolgreichen Publikationsabschluss.' }
+  $script:anchorStage = 'COMMIT_PUBLICATION'
   Commit-Published
   $publicationCommitted = $true
+  $committedJson = $published | ConvertTo-Json -Depth 12 -Compress
+  [Console]::Out.WriteLine('PUBLICATION_COMMITTED ' + [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($committedJson)))
+  [Console]::Out.Flush()
 } catch {
   Fail $_.Exception.Message
 } finally {
-  $disposeErrors = [Collections.Generic.List[string]]::new()
-  if (-not $publicationCommitted -and $publishedStreams.Count -gt 0) {
-    try { Rollback-Published } catch { $disposeErrors.Add($_.Exception.Message) }
-  }
-  for ($index = $held.Count - 1; $index -ge 0; $index--) {
-    try { $held[$index].Dispose() } catch { $disposeErrors.Add($_.Exception.Message) }
-  }
-  if ($disposeErrors.Count -gt 0) {
-    [Console]::Error.WriteLine('Windows-Build-Anker konnte gehaltene Ressourcen oder den ephemeren Build-Account nicht vollstaendig freigeben: ' + [string]::Join(' | ', $disposeErrors))
-    exit 125
+  if (-not $publicationCommitted) {
+    $disposeErrors = [Collections.Generic.List[string]]::new()
+    if ($publishedStreams.Count -gt 0) {
+      try { Rollback-Published } catch { $disposeErrors.Add($_.Exception.Message) }
+    }
+    for ($index = $held.Count - 1; $index -ge 0; $index--) {
+      try { $held[$index].Dispose() } catch { $disposeErrors.Add($_.Exception.Message) }
+    }
+    if ($disposeErrors.Count -gt 0) {
+      [Console]::Error.WriteLine('Windows-Build-Anker konnte gehaltene Ressourcen oder den ephemeren Build-Account nicht vollstaendig freigeben: ' + [string]::Join(' | ', $disposeErrors))
+      # A failing finally block runs after Fail/exit. Repeat the fixed marker after
+      # every arbitrary cleanup message so it remains inside the bounded tail.
+      Write-SafeAnchorStageDiagnostic
+      exit 125
+    }
   }
 }
 `;
@@ -6814,9 +7426,57 @@ async function regularDirectorySnapshot(pathInput, label) {
   invariant6(pathKey(await realpath5(path)) === pathKey(path), `${label} enthaelt einen Symlink-/Junction-Pfad.`);
   return { path, metadata };
 }
-async function assertDirectoryIdentity(path, expected, label) {
-  const actual = await lstat6(path, { bigint: true });
-  invariant6(actual.isDirectory() && !actual.isSymbolicLink() && sameIdentity5(actual, expected), `${label} wurde fremd ersetzt.`);
+async function canonicalWorkspaceSnapshot(pathInput, label) {
+  const requestedPath = resolve6(pathInput);
+  const requestedMetadata = await lstat6(requestedPath, { bigint: true });
+  invariant6(
+    requestedMetadata.isDirectory() && !requestedMetadata.isSymbolicLink(),
+    `${label} muss ein regulaeres Verzeichnis und darf selbst kein Symlink/Junction sein.`
+  );
+  const path = resolve6(await realpath5(requestedPath));
+  const metadata = await lstat6(path, { bigint: true });
+  invariant6(
+    metadata.isDirectory() && !metadata.isSymbolicLink() && sameIdentity5(requestedMetadata, metadata) && pathKey(await realpath5(path)) === pathKey(path),
+    `${label} konnte nicht identity-sicher an seinen kanonischen Pfad gebunden werden.`
+  );
+  const requestedAfter = await lstat6(requestedPath, { bigint: true });
+  invariant6(
+    requestedAfter.isDirectory() && !requestedAfter.isSymbolicLink() && sameIdentity5(requestedAfter, requestedMetadata) && pathKey(await realpath5(requestedPath)) === pathKey(path),
+    `${label} wurde waehrend der kanonischen Bindung fremd ersetzt oder umgebunden.`
+  );
+  return { metadata, path, requestedMetadata, requestedPath };
+}
+function canonicalWorkspacePath(workspace, pathInput, label, { allowRoot = false } = {}) {
+  const supplied = resolve6(pathInput);
+  const candidates = [];
+  if (isContained(workspace.path, supplied, { allowRoot })) candidates.push(supplied);
+  if (isContained(workspace.requestedPath, supplied, { allowRoot })) {
+    const mapped = resolve6(workspace.path, relative4(workspace.requestedPath, supplied));
+    invariant6(isContained(workspace.path, mapped, { allowRoot }), `${label} verlaesst den kanonisch gebundenen workspaceRoot.`);
+    candidates.push(mapped);
+  }
+  invariant6(candidates.length > 0, `${label} verlaesst workspaceRoot.`);
+  invariant6(new Set(candidates.map(pathKey)).size === 1, `${label} ist zwischen Alias- und kanonischem workspaceRoot mehrdeutig.`);
+  return candidates[0];
+}
+async function assertCanonicalWorkspaceSnapshot(snapshot, label) {
+  const [requested, canonical, requestedReal, canonicalReal] = await Promise.all([
+    lstat6(snapshot.requestedPath, { bigint: true }),
+    lstat6(snapshot.path, { bigint: true }),
+    realpath5(snapshot.requestedPath),
+    realpath5(snapshot.path)
+  ]);
+  invariant6(
+    requested.isDirectory() && !requested.isSymbolicLink() && canonical.isDirectory() && !canonical.isSymbolicLink() && sameIdentity5(requested, snapshot.requestedMetadata) && sameIdentity5(canonical, snapshot.metadata) && sameIdentity5(requested, canonical) && pathKey(requestedReal) === pathKey(snapshot.path) && pathKey(canonicalReal) === pathKey(snapshot.path),
+    `${label} wurde fremd ersetzt oder nach der kanonischen Bindung umgebunden.`
+  );
+}
+async function assertRegularDirectorySnapshot(snapshot, label) {
+  const actual = await lstat6(snapshot.path, { bigint: true });
+  invariant6(
+    actual.isDirectory() && !actual.isSymbolicLink() && sameIdentity5(actual, snapshot.metadata) && pathKey(await realpath5(snapshot.path)) === pathKey(snapshot.path),
+    `${label} wurde fremd ersetzt oder ueber einen Symlink/Junction umgebunden.`
+  );
 }
 async function assertNoSymlinkPath(rootInput, targetInput, label, { leafMayBeMissing = false } = {}) {
   const root2 = resolve6(rootInput);
@@ -6958,6 +7618,45 @@ function windowsBuildAnchorRequestLine(value) {
   return `${Buffer.from(JSON.stringify(value), "utf8").toString("base64")}
 `;
 }
+function windowsBuildAnchorSafeDiagnostic(chunks) {
+  const bytes = Buffer.concat(chunks);
+  const tail = bytes.subarray(Math.max(0, bytes.length - MAX_WINDOWS_ANCHOR_DIAGNOSTIC_BYTES)).toString("utf8");
+  const lines = tail.split(/\r?\n/u);
+  let stageDiagnostic = "";
+  for (let index = lines.length - 1; index >= 0; index -= 1) {
+    const line = lines[index];
+    if (/^ZUGFOLGE_SAFE_ANCHOR_STAGE_DIAGNOSTIC stage=(?:INITIALIZE|RECEIVE_EXTRACTION_PLAN|CREATE_EPHEMERAL_ACCOUNT|CREATE_PRIVATE_ROOT|EXTRACT_SOURCE|EXTRACT_VENDOR|COPY_TOOLCHAIN_DIRECTORIES|COPY_TOOLCHAIN_FILES|CREATE_WRITABLE_ROOTS|DELETE_CONSTRUCTION_ACCOUNT|FREEZE_SOURCE|FREEZE_TOOLCHAIN|VERIFY_WRITABLE_ROOTS|FREEZE_BUILD_ROOT|START_INTEGRITY_MONITORS|VERIFY_HELD_TREES|REPORT_EXTRACTED|RECEIVE_BUILD_PLAN|RUN_BUILD|DELETE_EPHEMERAL_ACCOUNT|RECEIVE_PUBLICATION_PLAN|PUBLISH_OUTPUTS|RECEIVE_PUBLICATION_COMPLETE|COMMIT_PUBLICATION)$/u.test(line)) {
+      stageDiagnostic ||= line;
+      continue;
+    }
+    const match = /^(?:ZUGFOLGE_SAFE_ANCHOR_DIAGNOSTIC code=(NET_USER_ADD|NET_USER_DELETE|NET_USER_DELETE_VERIFY|LOGON_USER|IMPERSONATE_USER|REVERT_USER|CLOSE_LOGON_TOKEN) status=([1-9][0-9]{0,9})(?: parameter=(0|[1-9][0-9]{0,9}))?|ZUGFOLGE_SAFE_PROCESS_DIAGNOSTIC code=(PROCESS_WITH_LOGON|PROCESS_FROM_ANCHOR) status=([1-9][0-9]{0,9}))$/u.exec(line);
+    if (match === null) continue;
+    const code = match[1] ?? match[4];
+    const status = Number(match[2] ?? match[5]);
+    const parameter = match[3] === void 0 ? void 0 : Number(match[3]);
+    if (status > 0 && status <= 4294967295 && (parameter === void 0 || parameter <= 4294967295) && (code === "NET_USER_ADD" && status === 87 === (parameter !== void 0) || (code === "NET_USER_DELETE" || code === "NET_USER_DELETE_VERIFY" || code === "LOGON_USER" || code === "IMPERSONATE_USER" || code === "REVERT_USER" || code === "CLOSE_LOGON_TOKEN" || code === "PROCESS_WITH_LOGON" || code === "PROCESS_FROM_ANCHOR") && parameter === void 0)) return line;
+  }
+  return stageDiagnostic;
+}
+function resolveWindowsAnchorCommitAcknowledgement(line, publicationEnvelope) {
+  try {
+    invariant6(
+      typeof line === "string" && line.startsWith("PUBLICATION_COMMITTED "),
+      "Windows-Build-Anker lieferte keine gueltige Commit-Bestaetigung."
+    );
+    const acknowledgement = parseJson(
+      Buffer.from(line.slice("PUBLICATION_COMMITTED ".length), "base64"),
+      "Windows-Build-Anker-Commit-Bestaetigung"
+    );
+    invariant6(
+      sameCanonicalValue(acknowledgement, publicationEnvelope),
+      "Windows-Build-Anker-Commit-Bestaetigung driftet von den gehaltenen Publikationsbeweisen."
+    );
+    return { acknowledgement, status: "exact-acknowledgement" };
+  } catch {
+    return { acknowledgement: void 0, status: "requires-exact-recovery" };
+  }
+}
 async function startWindowsBuildAnchor({ anchoredParents, buildParent, buildRootLeaf, hooks, spec, workspaceRoot: workspaceRoot2 }) {
   invariant6(process.platform === "win32", "Operational-Validator-Rebuild-Materialisierung ist fuer PE32+ ausschliesslich auf win32 zulaessig.");
   invariant6(Array.isArray(anchoredParents) && anchoredParents.length > 0, "Windows-Build-Anker benoetigt mindestens einen Output-Parent.");
@@ -7046,7 +7745,7 @@ async function startWindowsBuildAnchor({ anchoredParents, buildParent, buildRoot
     if (closed) return Promise.resolve(void 0);
     return new Promise((resolveLine, rejectLine) => waiters.push({ reject: rejectLine, resolve: resolveLine }));
   };
-  const nextLineBounded = async (label) => {
+  const nextLineWithin = async (label, timeoutMilliseconds) => {
     let timeout;
     const timeoutPromise = new Promise((_, reject) => {
       timeout = setTimeout(() => {
@@ -7054,7 +7753,7 @@ async function startWindowsBuildAnchor({ anchoredParents, buildParent, buildRoot
         protocolError ??= error;
         child.kill();
         reject(error);
-      }, spec.build.processLimits.timeoutMilliseconds);
+      }, timeoutMilliseconds);
     });
     try {
       return await Promise.race([nextLine(), timeoutPromise]);
@@ -7062,6 +7761,7 @@ async function startWindowsBuildAnchor({ anchoredParents, buildParent, buildRoot
       clearTimeout(timeout);
     }
   };
+  const nextLineBounded = (label) => nextLineWithin(label, spec.build.processLimits.timeoutMilliseconds);
   child.stdin.on("error", () => {
   });
   try {
@@ -7087,8 +7787,8 @@ async function startWindowsBuildAnchor({ anchoredParents, buildParent, buildRoot
     if (typeof ready !== "string" || !ready.startsWith("ANCHOR_READY ")) {
       child.stdin.end();
       const end = await closePromise;
-      const details = Buffer.concat(stderr).toString("utf8").trim();
-      throw new Error(`Windows-Build-Anker band Inputs/Toolchain nicht fail-closed (${end.code ?? end.signal ?? "unknown"})${details ? `: ${details}` : ""}`);
+      const diagnostic = windowsBuildAnchorSafeDiagnostic(stderr);
+      throw new Error(`Windows-Build-Anker band Inputs/Toolchain nicht fail-closed (${end.code ?? end.signal ?? "unknown"})${diagnostic ? `: ${diagnostic}` : ""}`);
     }
     const readyEnvelope = parseJson(Buffer.from(ready.slice("ANCHOR_READY ".length), "base64"), "Windows-Build-Anker-Ready");
     exactKeys4(readyEnvelope, ["anchoredParents", "buildRoot"], "Windows-Build-Anker-Ready");
@@ -7117,7 +7817,9 @@ async function startWindowsBuildAnchor({ anchoredParents, buildParent, buildRoot
     let finished = false;
     let extracted = false;
     let publication = false;
+    let publicationEnvelope;
     let buildRootIdentity;
+    let constructionPrincipal;
     const closeAnchorBounded = async (label) => {
       let timeout;
       let timedOut = false;
@@ -7174,13 +7876,29 @@ async function startWindowsBuildAnchor({ anchoredParents, buildParent, buildRoot
         if (hooks.beforeWindowsAnchoredExtraction) await hooks.beforeWindowsAnchoredExtraction({ buildRoot: resolve6(buildRoot) });
         child.stdin.write(windowsBuildAnchorRequestLine({ source: plan(sourceAudit), vendor: plan(vendorAudit) }));
         const line = await nextLineBounded("Windows-Build-Anker-Extraktion");
-        invariant6(typeof line === "string" && line.startsWith("EXTRACTED "), "Windows-Build-Anker bestaetigte die interne Slice-Extraktion nicht.");
+        if (typeof line !== "string" || !line.startsWith("EXTRACTED ")) {
+          child.stdin.end();
+          const end = await closeAnchorBounded("Windows-Build-Anker-Extraktionsfehler");
+          finished = true;
+          const diagnostic = windowsBuildAnchorSafeDiagnostic(stderr);
+          throw new Error(`Windows-Build-Anker bestaetigte die interne Slice-Extraktion nicht (${end.code ?? end.signal ?? "unknown"})${diagnostic ? `: ${diagnostic}` : ""}.`);
+        }
         const envelope = parseJson(Buffer.from(line.slice("EXTRACTED ".length), "base64"), "Windows-Build-Anker-Extraktion");
-        exactKeys4(envelope, ["buildRootIdentity"], "Windows-Build-Anker-Extraktion");
+        exactKeys4(envelope, ["buildRootIdentity", "constructionPrincipal"], "Windows-Build-Anker-Extraktion");
         validateFilesystemIdentity(envelope.buildRootIdentity, "Windows-Build-Anker-Extraktion.buildRootIdentity");
+        exactKeys4(envelope.constructionPrincipal, ["mode", "principalSidSha256"], "Windows-Build-Anker-Extraktion.constructionPrincipal");
+        invariant6(
+          envelope.constructionPrincipal.mode === "ephemeral-local-constructor-account-deleted-before-freeze-v1",
+          "Windows-Build-Anker loeschte den getrennten Constructor-Account nicht vor dem Freeze."
+        );
+        validateSha256(
+          envelope.constructionPrincipal.principalSidSha256,
+          "Windows-Build-Anker-Extraktion.constructionPrincipal.principalSidSha256"
+        );
         buildRootIdentity = envelope.buildRootIdentity;
+        constructionPrincipal = envelope.constructionPrincipal;
         extracted = true;
-        return { buildRoot, buildRootIdentity };
+        return { buildRoot, buildRootIdentity, constructionPrincipal };
       },
       async run({ cargoHome, sourceDirectory, targetDirectory, tempDirectory }) {
         invariant6(!finished && extracted, "Windows-Build-Anker wurde bereits abgeschlossen oder hat nicht extrahiert.");
@@ -7201,17 +7919,27 @@ async function startWindowsBuildAnchor({ anchoredParents, buildParent, buildRoot
           child.stdin.end();
           const end = await closePromise;
           finished = true;
-          const details = Buffer.concat(stderr).toString("utf8").slice(-8192).trim();
-          throw new Error(`Windows-Build-Anker lieferte kein Ergebnis (${end.code ?? end.signal ?? "unknown"})${details ? `: ${details}` : ""}.`);
+          const diagnostic = windowsBuildAnchorSafeDiagnostic(stderr);
+          throw new Error(`Windows-Build-Anker lieferte kein Ergebnis (${end.code ?? end.signal ?? "unknown"})${diagnostic ? `: ${diagnostic}` : ""}.`);
         }
         const envelope = parseJson(Buffer.from(line.slice("RESULT ".length), "base64"), "Windows-Build-Anker-Ergebnis");
-        exactKeys4(envelope, ["build", "cargo", "isolation", "output", "rustc"], "Windows-Build-Anker-Ergebnis");
+        exactKeys4(envelope, ["build", "cargo", "construction", "isolation", "output", "rustc"], "Windows-Build-Anker-Ergebnis");
+        exactKeys4(envelope.construction, ["mode", "principalSidSha256"], "Windows-Build-Anker.construction");
+        invariant6(
+          sameCanonicalValue(envelope.construction, constructionPrincipal),
+          "Windows-Build-Anker driftete vom belegten geloeschten Constructor-Account."
+        );
         exactKeys4(envelope.isolation, ["mode", "principalSidSha256"], "Windows-Build-Anker.isolation");
         invariant6(envelope.isolation.mode === "ephemeral-local-build-account-v1", "Windows-Build-Anker verwendete keine getrennte Build-Identitaet.");
         validateSha256(envelope.isolation.principalSidSha256, "Windows-Build-Anker.isolation.principalSidSha256");
+        invariant6(
+          envelope.isolation.principalSidSha256 !== envelope.construction.principalSidSha256,
+          "Windows-Build-Anker trennte Constructor- und Build-SID nicht."
+        );
         const result = {
           build: decodeAnchorProcessResult(envelope.build, "Windows-Build-Anker.build"),
           cargo: decodeAnchorProcessResult(envelope.cargo, "Windows-Build-Anker.cargo"),
+          construction: envelope.construction,
           isolation: envelope.isolation,
           output: null,
           rustc: decodeAnchorProcessResult(envelope.rustc, "Windows-Build-Anker.rustc")
@@ -7220,7 +7948,7 @@ async function startWindowsBuildAnchor({ anchoredParents, buildParent, buildRoot
           child.stdin.end();
           const end = await closePromise;
           finished = true;
-          const tail = result.build.stderr.toString("utf8").slice(-4096).trim() || Buffer.concat(stderr).toString("utf8").slice(-4096).trim();
+          const tail = result.build.stderr.toString("utf8").slice(-4096).trim() || windowsBuildAnchorSafeDiagnostic(stderr);
           const error = new Error(`Exklusiv verankerter Windows-Rebuild endete mit ${result.build.code}${tail ? `: ${tail}` : ""}`);
           error.result = result;
           throw error;
@@ -7255,7 +7983,13 @@ async function startWindowsBuildAnchor({ anchoredParents, buildParent, buildRoot
         child.stdin.write(`PUBLISH ${Buffer.from(JSON.stringify(request), "utf8").toString("base64")}
 `);
         const line = await nextLineBounded("Windows-Build-Anker-Publikation");
-        invariant6(typeof line === "string" && line.startsWith("PUBLISHED "), "Windows-Build-Anker bestaetigte die handle-relative Publikation nicht.");
+        if (typeof line !== "string" || !line.startsWith("PUBLISHED ")) {
+          child.stdin.end();
+          const end = await closeAnchorBounded("Windows-Build-Anker-Publikationsfehler");
+          finished = true;
+          const diagnostic = windowsBuildAnchorSafeDiagnostic(stderr);
+          throw new Error(`Windows-Build-Anker bestaetigte die handle-relative Publikation nicht (${end.code ?? end.signal ?? "unknown"})${diagnostic ? `: ${diagnostic}` : ""}.`);
+        }
         const envelope = parseJson(Buffer.from(line.slice("PUBLISHED ".length), "base64"), "Windows-Build-Anker-Publikation");
         exactKeys4(envelope, ["binary", "provenance", "receipt"], "Windows-Build-Anker-Publikation");
         for (const [id, expected] of Object.entries({ binary, provenance, receipt })) {
@@ -7263,6 +7997,7 @@ async function startWindowsBuildAnchor({ anchoredParents, buildParent, buildRoot
           validateFilesystemIdentity(envelope[id].identity, `Windows-Build-Anker-Publikation.${id}.identity`);
           proofMatches(envelope[id], expected, `Windows-Build-Anker-Publikation.${id}`);
         }
+        publicationEnvelope = envelope;
         publication = true;
         if (hooks.afterWindowsAnchoredPublication) await hooks.afterWindowsAnchoredPublication({ publication: envelope });
         return envelope;
@@ -7271,10 +8006,33 @@ async function startWindowsBuildAnchor({ anchoredParents, buildParent, buildRoot
         invariant6(!finished && extracted && publication, "Windows-Build-Anker kann die Publikation nicht mehr abschliessen.");
         child.stdin.write("PUBLICATION_COMPLETE\n");
         child.stdin.end();
-        const end = await closeAnchorBounded("Windows-Build-Anker-Publikationsabschluss");
+        let acknowledgementLine;
+        try {
+          acknowledgementLine = await nextLineWithin("Windows-Build-Anker-Commit-Bestaetigung", WINDOWS_ANCHOR_COMMIT_ACK_TIMEOUT_MS);
+        } catch {
+        }
+        const acknowledgement = resolveWindowsAnchorCommitAcknowledgement(acknowledgementLine, publicationEnvelope);
+        let end;
+        let closeError;
+        try {
+          end = await closeAnchorBounded("Windows-Build-Anker-Publikationsabschluss");
+        } catch (error) {
+          closeError = error;
+        }
         finished = true;
-        const details = Buffer.concat(stderr).toString("utf8").slice(-8192).trim();
-        invariant6(!end.signal && end.code === 0, `Windows-Build-Anker konnte gehaltene Inputs/Outputs nicht sauber abschliessen (${end.code ?? end.signal ?? "unknown"})${details ? `: ${details}` : ""}.`);
+        const diagnostic = windowsBuildAnchorSafeDiagnostic(stderr);
+        if (acknowledgement.status !== "exact-acknowledgement") {
+          return {
+            anchor: { code: end?.code ?? null, signal: end?.signal ?? null },
+            diagnostic,
+            status: "commit-decision-requires-exact-recovery"
+          };
+        }
+        return {
+          anchor: { code: end?.code ?? null, signal: end?.signal ?? null },
+          diagnostic,
+          status: closeError || end?.signal || end?.code !== 0 ? "committed-anchor-reaped" : "committed-clean-exit"
+        };
       }
     };
   } catch (error) {
@@ -7302,11 +8060,12 @@ function toolchainReceiptFromAnchor(result, spec, manifest, runnerAnchorHelper) 
   return {
     anchor: {
       buildPrincipal: result.isolation,
+      constructionPrincipal: result.construction,
       helperAssembly: spec.toolchain.anchor.helperAssembly,
-      inputIsolation: "private-create-new-owner-rights-protected-dacl-read-execute-v1",
+      inputIsolation: "private-create-new-revoked-constructor-owner-rights-protected-dacl-v2",
       mode: spec.toolchain.anchor.mode,
       mutationMonitoring: "read-directory-changes-monotonic-subtree-v1",
-      processTreeMitigation: "startupinfoex-handle-list-no-remote-no-low-label-prefer-system32-job-v2",
+      processTreeMitigation: "identity-anchor-parent-handle-list-no-local-inherit-no-low-label-prefer-system32-job-empty-v4",
       runnerAnchorHelper
     },
     cargo: { command: ["cargo", "-vV"], identity: cargoIdentity, output: encodedOutput(result.cargo.stdout), relativePath: spec.toolchain.cargoPath },
@@ -7586,7 +8345,9 @@ async function validateSpecInputs({ spec, specBytes, specFile, workspaceRoot: wo
   invariant6(supplied.length > 0 && supplied.length <= MAX_SPEC_BYTES && supplied.equals(canonicalBytes3(spec)), "specBytes ist nicht die kanonische Rebuild-Spec.");
   const path = resolve6(specFile);
   invariant6(isContained(workspaceRoot2, path), "specFile verlaesst workspaceRoot.");
-  return { bytes: supplied.length, file: relative4(workspaceRoot2, path).split(sep4).join("/"), path, sha256: sha2563(supplied) };
+  const source = await regularFileSnapshot(workspaceRoot2, path, "Rebuild-Spec", MAX_SPEC_BYTES);
+  invariant6(source.bytes.equals(supplied), "specBytes driftet von der identity-sicher gelesenen Rebuild-Spec.");
+  return { bytes: source.proof.bytes, file: relative4(workspaceRoot2, path).split(sep4).join("/"), path, sha256: source.proof.sha256 };
 }
 function sourceArchiveEvidence({ sourceAudit, sourceProof, spec, vendorAudit, vendorProof }) {
   return {
@@ -7620,13 +8381,13 @@ async function pathExists(path) {
   }
 }
 async function cleanupOwnedBuildRoot(parent, stagingRoot, stagingIdentity, hooks = {}) {
-  await assertDirectoryIdentity(parent.path, parent.metadata, "Build-Elternverzeichnis vor konservativer Retention");
+  await assertRegularDirectorySnapshot(parent, "Build-Elternverzeichnis vor konservativer Retention");
   const current = await lstat6(stagingRoot, { bigint: true });
   invariant6(current.isDirectory() && !current.isSymbolicLink() && sameIdentity5(current, stagingIdentity), "Privater Buildbaum driftete; Retention laesst alle Pfade unangetastet.");
   if (hooks.beforeBuildRootRetention) await hooks.beforeBuildRootRetention({ stagingRoot });
   const final = await lstat6(stagingRoot, { bigint: true });
   invariant6(unchangedIdentity(current, final), "Privater Buildbaum driftete waehrend der konservativen Retention; alle Pfade bleiben unangetastet.");
-  await assertDirectoryIdentity(parent.path, parent.metadata, "Build-Elternverzeichnis nach konservativer Retention");
+  await assertRegularDirectorySnapshot(parent, "Build-Elternverzeichnis nach konservativer Retention");
   return { mode: "private-build-root-retained-v1", path: stagingRoot };
 }
 function parseJson(bytes, label) {
@@ -7638,17 +8399,30 @@ function parseJson(bytes, label) {
 }
 function validateToolchainReceipt(toolchain, spec) {
   exactKeys4(toolchain, ["anchor", "cargo", "manifest", "platform", "rootPathSha256", "rustc"], "Receipt.toolchain");
-  exactKeys4(toolchain.anchor, ["buildPrincipal", "helperAssembly", "inputIsolation", "mode", "mutationMonitoring", "processTreeMitigation", "runnerAnchorHelper"], "Receipt.toolchain.anchor");
+  exactKeys4(toolchain.anchor, ["buildPrincipal", "constructionPrincipal", "helperAssembly", "inputIsolation", "mode", "mutationMonitoring", "processTreeMitigation", "runnerAnchorHelper"], "Receipt.toolchain.anchor");
   exactKeys4(toolchain.anchor.buildPrincipal, ["mode", "principalSidSha256"], "Receipt.toolchain.anchor.buildPrincipal");
   invariant6(toolchain.anchor.buildPrincipal.mode === "ephemeral-local-build-account-v1", "Receipt.toolchain.anchor.buildPrincipal.mode driftet.");
   validateSha256(toolchain.anchor.buildPrincipal.principalSidSha256, "Receipt.toolchain.anchor.buildPrincipal.principalSidSha256");
+  exactKeys4(toolchain.anchor.constructionPrincipal, ["mode", "principalSidSha256"], "Receipt.toolchain.anchor.constructionPrincipal");
+  invariant6(
+    toolchain.anchor.constructionPrincipal.mode === "ephemeral-local-constructor-account-deleted-before-freeze-v1",
+    "Receipt.toolchain.anchor.constructionPrincipal.mode driftet."
+  );
+  validateSha256(
+    toolchain.anchor.constructionPrincipal.principalSidSha256,
+    "Receipt.toolchain.anchor.constructionPrincipal.principalSidSha256"
+  );
+  invariant6(
+    toolchain.anchor.constructionPrincipal.principalSidSha256 !== toolchain.anchor.buildPrincipal.principalSidSha256,
+    "Receipt.toolchain.anchor trennt Constructor- und Build-SID nicht."
+  );
   invariant6(sameCanonicalValue(toolchain.anchor.helperAssembly, spec.toolchain.anchor.helperAssembly), "Receipt.toolchain.anchor.helperAssembly driftet.");
   validateProof2(toolchain.anchor.runnerAnchorHelper, "Receipt.toolchain.anchor.runnerAnchorHelper", MAX_PRODUCER_BYTES, { file: true });
   invariant6(sameCanonicalValue(toolchain.anchor.runnerAnchorHelper, spec.toolchain.anchor.helperAssembly), "Receipt.toolchain.anchor.runnerAnchorHelper driftet von derselben Annual-gepinnten Helper-Assembly.");
-  invariant6(toolchain.anchor.inputIsolation === "private-create-new-owner-rights-protected-dacl-read-execute-v1", "Receipt.toolchain.anchor.inputIsolation driftet.");
+  invariant6(toolchain.anchor.inputIsolation === "private-create-new-revoked-constructor-owner-rights-protected-dacl-v2", "Receipt.toolchain.anchor.inputIsolation driftet.");
   invariant6(toolchain.anchor.mode === spec.toolchain.anchor.mode, "Receipt.toolchain.anchor.mode driftet.");
   invariant6(toolchain.anchor.mutationMonitoring === "read-directory-changes-monotonic-subtree-v1", "Receipt.toolchain.anchor.mutationMonitoring driftet.");
-  invariant6(toolchain.anchor.processTreeMitigation === "startupinfoex-handle-list-no-remote-no-low-label-prefer-system32-job-v2", "Receipt.toolchain.anchor.processTreeMitigation driftet.");
+  invariant6(toolchain.anchor.processTreeMitigation === "identity-anchor-parent-handle-list-no-local-inherit-no-low-label-prefer-system32-job-empty-v4", "Receipt.toolchain.anchor.processTreeMitigation driftet.");
   invariant6(toolchain.platform === spec.toolchain.platform, "Receipt.toolchain.platform driftet.");
   validateSha256(toolchain.rootPathSha256, "Receipt.toolchain.rootPathSha256");
   invariant6(toolchain.rootPathSha256 === sha2563(Buffer.from(pathKey(spec.toolchain.root), "utf8")), "Receipt.toolchain.rootPathSha256 driftet.");
@@ -7808,9 +8582,8 @@ function validateReceiptEnvelope(receipt, spec) {
 }
 async function materializeOperationalValidatorRebuildEvidence({ spec, specBytes, specFile, workspaceRoot: workspaceRoot2, sourceRoot: _sourceRoot, outputPath, producerProofs, runnerAnchorHelperProof, recoveryOnly = false, hooks = {} }) {
   validateOperationalValidatorRebuildSpec(spec);
-  const workspace = await regularDirectorySnapshot(workspaceRoot2, "workspaceRoot");
-  const receiptOutput = resolve6(outputPath);
-  invariant6(isContained(workspace.path, receiptOutput), "outputPath verlaesst workspaceRoot.");
+  const workspace = await canonicalWorkspaceSnapshot(workspaceRoot2, "workspaceRoot");
+  const receiptOutput = canonicalWorkspacePath(workspace, outputPath, "outputPath");
   invariant6(
     pathKey(receiptOutput) === pathKey(resolveWorkspaceFile(workspace.path, spec.receipt.file, "receipt.file")),
     "outputPath driftet vom Annual-gepinnten Receiptpfad."
@@ -7824,7 +8597,12 @@ async function materializeOperationalValidatorRebuildEvidence({ spec, specBytes,
   for (const [id, path] of Object.entries(outputs)) {
     await assertNoSymlinkPath(workspace.path, path, id, { leafMayBeMissing: true });
   }
-  const specification = await validateSpecInputs({ spec, specBytes, specFile, workspaceRoot: workspace.path });
+  const specification = await validateSpecInputs({
+    spec,
+    specBytes,
+    specFile: canonicalWorkspacePath(workspace, specFile, "specFile"),
+    workspaceRoot: workspace.path
+  });
   const producer = await validateProducerProofs({ producerProofs, spec, workspaceRoot: workspace.path });
   validateProof2(runnerAnchorHelperProof, "runnerAnchorHelperProof", MAX_PRODUCER_BYTES, { file: true });
   invariant6(
@@ -7833,6 +8611,7 @@ async function materializeOperationalValidatorRebuildEvidence({ spec, specBytes,
   );
   const authority = workflowAuthorityReceipt(spec);
   invariant6(!recoveryOnly, "Rebuild-Evidence-v3 besitzt bewusst keine pfadbasierte Recovery; private Buildbaeume werden konservativ behalten.");
+  await assertCanonicalWorkspaceSnapshot(workspace, "workspaceRoot vor der ersten Materialisierungswirkung");
   for (const id of ["binary", "provenance", "receipt"]) await assertCreateNewTarget2(outputs[id], `Operational-Validator-Rebuild-${id}`);
   const preservedPath = resolveWorkspaceFile(workspace.path, spec.binaries.preserved.file, "binaries.preserved.file");
   const preserved = await regularFileSnapshot(workspace.path, preservedPath, "Preserved Validator", spec.pe.maxBinaryBytes);
@@ -7866,7 +8645,10 @@ async function materializeOperationalValidatorRebuildEvidence({ spec, specBytes,
     const extraction = await buildAnchor.extract({ sourceAudit, vendorAudit });
     staging = await regularDirectorySnapshot(stagingRoot, "Create-new Windows-Buildroot");
     invariant6(matchesFilesystemIdentity(staging.metadata, extraction.buildRootIdentity), "Create-new Windows-Buildroot driftet von der im Anchor gehaltenen Identitaet.");
-    if (hooks.afterStagingCreated) await hooks.afterStagingCreated({ stagingRoot });
+    if (hooks.afterStagingCreated) await hooks.afterStagingCreated({
+      constructionPrincipal: extraction.constructionPrincipal,
+      stagingRoot
+    });
     const sourceDirectory = resolve6(stagingRoot, "source");
     const targetDirectory = resolve6(stagingRoot, "target");
     const cargoHome = resolve6(stagingRoot, "cargo-home");
@@ -7936,7 +8718,7 @@ async function materializeOperationalValidatorRebuildEvidence({ spec, specBytes,
     const publishedSnapshots = {};
     for (const [id, maximum] of Object.entries({ binary: MAX_BINARY_BYTES, provenance: MAX_PROVENANCE_BYTES, receipt: MAX_JSON_BYTES })) {
       const parent = parentSnapshots.get(pathKey(dirname6(outputs[id])));
-      await assertDirectoryIdentity(parent.path, parent.metadata, `Output-Elternverzeichnis nach handle-relativer ${id}-Publikation`);
+      await assertRegularDirectorySnapshot(parent, `Output-Elternverzeichnis nach handle-relativer ${id}-Publikation`);
       publishedSnapshots[id] = await regularFileSnapshot(workspace.path, outputs[id], `Handle-relativ publiziertes ${id}`, maximum);
       proofMatches(publishedSnapshots[id].proof, publicationProofs[id], `Handle-relativ publiziertes ${id}`);
       invariant6(matchesFilesystemIdentity(publishedSnapshots[id].identity, publicationProofs[id].identity), `Handle-relativ publiziertes ${id} driftet von der gehaltenen File-ID.`);
@@ -7968,7 +8750,7 @@ async function materializeOperationalValidatorRebuildEvidence({ spec, specBytes,
   if (!primaryError && !cleanupError) {
     try {
       if (hooks.afterBuildRootCleanupBeforeFinalAudit) await hooks.afterBuildRootCleanupBeforeFinalAudit({ outputs: { ...outputs } });
-      for (const parent of parentSnapshots.values()) await assertDirectoryIdentity(parent.path, parent.metadata, "Output-Elternverzeichnis unmittelbar nach Cleanup");
+      for (const parent of parentSnapshots.values()) await assertRegularDirectorySnapshot(parent, "Output-Elternverzeichnis unmittelbar nach Cleanup");
       for (const [id, maximum] of Object.entries({ binary: MAX_BINARY_BYTES, provenance: MAX_PROVENANCE_BYTES, receipt: MAX_JSON_BYTES })) {
         const snapshot = await regularFileSnapshot(workspace.path, outputs[id], `Post-Retention ${id}`, maximum);
         proofMatches(snapshot.proof, publicationProofs[id], `Post-Retention ${id}`);
@@ -8006,7 +8788,21 @@ async function materializeOperationalValidatorRebuildEvidence({ spec, specBytes,
     const finalVerification = await verifyOperationalValidatorRebuildEvidence({ spec, receiptPath: receiptOutput, workspaceRoot: workspace.path });
     result.proof = finalVerification.proof;
     result.receipt = finalVerification.receipt;
-    await buildAnchor.completePublication();
+    await assertCanonicalWorkspaceSnapshot(workspace, "workspaceRoot unmittelbar vor dem Publikationsabschluss");
+    const completion = await buildAnchor.completePublication();
+    invariant6(
+      ["committed-clean-exit", "committed-anchor-reaped", "commit-decision-requires-exact-recovery"].includes(completion.status),
+      "Windows-Build-Anker lieferte keinen gueltigen Publikationsabschlussstatus."
+    );
+    for (const parent of parentSnapshots.values()) await assertRegularDirectorySnapshot(parent, "Output-Elternverzeichnis nach Anchor-Abschluss");
+    for (const [id, maximum] of Object.entries({ binary: MAX_BINARY_BYTES, provenance: MAX_PROVENANCE_BYTES, receipt: MAX_JSON_BYTES })) {
+      const snapshot = await regularFileSnapshot(workspace.path, outputs[id], `Post-Anchor ${id}`, maximum);
+      proofMatches(snapshot.proof, publicationProofs[id], `Post-Anchor ${id}`);
+      invariant6(matchesFilesystemIdentity(snapshot.identity, publicationProofs[id].identity), `Post-Anchor ${id} driftet von der committed File-ID.`);
+    }
+    const postAnchorVerification = await verifyOperationalValidatorRebuildEvidence({ spec, receiptPath: receiptOutput, workspaceRoot: workspace.path });
+    result.proof = postAnchorVerification.proof;
+    result.receipt = postAnchorVerification.receipt;
   } catch (error) {
     let abortError;
     try {
@@ -8014,20 +8810,29 @@ async function materializeOperationalValidatorRebuildEvidence({ spec, specBytes,
     } catch (failure) {
       abortError = failure;
     }
-    if (abortError) throw new AggregateError([error, abortError], "Rebuild-Abschluss und Anchor-Abort sind fehlgeschlagen.");
-    throw error;
+    let rollbackAuditError;
+    try {
+      for (const id of ["binary", "provenance", "receipt"]) {
+        invariant6(!await pathExists(outputs[id]), `Fehlgeschlagener Rebuild-Abschluss hinterliess ${id} am finalen Pfad.`);
+      }
+    } catch (failure) {
+      rollbackAuditError = failure;
+    }
+    const failures = [error, abortError, rollbackAuditError].filter(Boolean);
+    if (failures.length > 1) throw new AggregateError(failures, "Rebuild-Abschluss, Anchor-Abort oder abschliessender Rollback-Audit ist fehlgeschlagen.");
+    throw failures[0];
   }
   return result;
 }
 async function verifyOperationalValidatorRebuildEvidence({ spec, receiptPath, workspaceRoot: workspaceRoot2 }) {
   validateOperationalValidatorRebuildSpec(spec);
-  const workspace = await regularDirectorySnapshot(workspaceRoot2, "workspaceRoot");
-  const receiptFile = resolve6(receiptPath);
-  invariant6(isContained(workspace.path, receiptFile), "receiptPath verlaesst workspaceRoot.");
+  const workspace = await canonicalWorkspaceSnapshot(workspaceRoot2, "workspaceRoot");
+  const receiptFile = canonicalWorkspacePath(workspace, receiptPath, "receiptPath");
   invariant6(
     pathKey(receiptFile) === pathKey(resolveWorkspaceFile(workspace.path, spec.receipt.file, "receipt.file")),
     "receiptPath driftet vom Annual-gepinnten Receiptpfad."
   );
+  await assertCanonicalWorkspaceSnapshot(workspace, "workspaceRoot vor der Receipt-Verifikation");
   const source = await regularFileSnapshot(workspace.path, receiptFile, "Operational-Validator-Rebuild-Receipt", MAX_JSON_BYTES);
   const receipt = validateReceiptEnvelope(parseJson(source.bytes, "Operational-Validator-Rebuild-Receipt"), spec);
   invariant6(source.bytes.equals(canonicalBytes3(receipt)), "Operational-Validator-Rebuild-Receipt ist nicht kanonisch serialisiert.");
@@ -8080,6 +8885,7 @@ async function verifyOperationalValidatorRebuildEvidence({ spec, receiptPath, wo
     const producer = await regularFileSnapshot(workspace.path, path, `Producer ${id}`, MAX_PRODUCER_BYTES);
     proofMatches(producer.proof, receipt.producer[id], `Receipt-Producer ${id}`);
   }
+  await assertCanonicalWorkspaceSnapshot(workspace, "workspaceRoot nach der Receipt-Verifikation");
   return { proof: source.proof, receipt };
 }
 
@@ -8089,7 +8895,7 @@ var GERMANY_OPERATIONAL_NATIVE_RECEIPT_CAPTURE_CLAIM_SCHEMA = "zugfolge-germany-
 var GERMANY_OPERATIONAL_PUBLICATION_ENTRYPOINT = "tools/region-import/germany/publish-operational-infrastructure-v2.mjs";
 var GERMANY_OPERATIONAL_NATIVE_RECEIPT_CAPTURE_ENTRYPOINT = "tools/region-import/germany/capture-operational-infrastructure-v2-native-receipt.mjs";
 var GERMANY_OPERATIONAL_INTEGRATED_RUNNER_ENTRYPOINT = "tools/region-import/germany/run-capture-operational-infrastructure-v2.mjs";
-var GERMANY_OPERATIONAL_VALIDATOR_REBUILD_EVIDENCE_SCHEMA = "zugfolge-operational-validator-rebuild-evidence/v2";
+var GERMANY_OPERATIONAL_VALIDATOR_REBUILD_EVIDENCE_SCHEMA = "zugfolge-operational-validator-rebuild-evidence/v3";
 var GERMANY_OPERATIONAL_PUBLICATION_EXECUTION_FILES = Object.freeze({
   wrapper: GERMANY_OPERATIONAL_PUBLICATION_ENTRYPOINT,
   implementation: "tools/region-import/germany/operational-infrastructure-v2-publication.mjs",
@@ -8475,7 +9281,7 @@ async function loadAndVerifyValidatorRebuild({
     "Operational-Validator-Rebuild-Receipt besitzt kein vollstaendiges Binary-Paar."
   );
   invariant7(
-    isRecord4(receipt.source?.git) && typeof receipt.source.git.commit === "string",
+    isRecord4(receipt.source?.materialization) && typeof receipt.source.materialization.commit === "string",
     "Operational-Validator-Rebuild-Receipt besitzt keinen geprueften Quellcommit."
   );
   invariant7(
@@ -8500,7 +9306,7 @@ async function loadAndVerifyValidatorRebuild({
     },
     preserved: { ...receipt.binaries.preserved },
     rebuilt: { ...receipt.binaries.rebuilt },
-    sourceCommit: receipt.source.git.commit,
+    sourceCommit: receipt.source.materialization.commit,
     normalizedPeSha256: receipt.pe.normalized.expectedSha256
   }, "Operational-Validator-Rebuild-Bindung");
   invariant7(
@@ -9723,7 +10529,11 @@ if (phase === "materialize-annual-plan-evidence-v1") {
   const producerProofs = {
     bundle: runnerProof.bundle,
     entrypoint: runnerProof.entrypoint,
-    executionPins: executionPinsSource.proof,
+    executionPins: {
+      bytes: executionPinsSource.proof.bytes,
+      file: executionPinsSource.proof.file,
+      sha256: executionPinsSource.proof.sha256
+    },
     implementation
   };
   const result = await materializeOperationalValidatorRebuildEvidence({

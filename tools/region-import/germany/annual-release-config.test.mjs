@@ -821,7 +821,7 @@ test("Jahresprompt verlangt alle fünfundvierzig konkreten Platzhalter und den i
   assert.doesNotMatch(prompt, /Signatur zunächst[\s\S]*Ergänze danach \$DELIVERY_KEY_ID/u);
   assert.match(prompt, /\.github\/workflows\/operational-v2-execution-authority\.yml[\s\S]*`operational-release-approval`[\s\S]*operator-approved-hash-binding-not-source-reexecution-v1/u);
   assert.match(prompt, /<OPERATIONAL_ATTESTATION_VERIFIER>[\s\S]*<OPERATIONAL_ATTESTATION_TRUSTED_ROOT>/u);
-  assert.match(prompt, /publish-operational-infrastructure-v2\.mjs publish[\s\S]*<OPERATIONAL_NATIVE_RECEIPT>[\s\S]*<OPERATIONAL_PUBLICATION_RECEIPT>/u);
+  assert.match(prompt, /publish-operational-infrastructure-v2\.mjs publish[\s\S]*<OPERATIONAL_NATIVE_RECEIPT> <OPERATIONAL_OUTER_EXECUTION_RECEIPT> <OPERATIONAL_VALIDATOR_REBUILD_SPEC>[\s\S]*<OPERATIONAL_PUBLICATION_RECEIPT>/u);
   assert.match(prompt, /forensic-stdin-v1[\s\S]*releaseEvidenceEligible=false[\s\S]*productionActivationEligible=false[\s\S]*executionProof=null/u);
   assert.match(prompt, /build-gdal-semantic-pmtiles\.mjs <SEMANTIC_TILE_INPUTS> <SEMANTIC_TILE_INPUT_ROOT> <SEMANTIC_PMTILES_OUTPUT> <GDAL_RUNTIME_MANIFEST> \./u);
   assert.match(prompt, /deterministic-conservative-v1/u);
@@ -959,7 +959,7 @@ test("Jahresprompt löst den aktuellen V2-Vertrag vollständig auf und lässt Vo
     `nodejs-24-operational-runner-v1\\.exe" tools/region-import/germany/run-operational-infrastructure-v2-annual-execution\\.mjs execute ${bindings.OPERATIONAL_EXECUTION_PINS.replaceAll(".", "\\.")} ${bindings.OPERATIONAL_DIRECT_SYSTEM_LAUNCH_CONTRACT.replaceAll(".", "\\.")} ${bindings.ANNUAL_RELEASE_CONFIG.replaceAll(".", "\\.")} ${bindings.SOURCE_CATALOG.replaceAll(".", "\\.")} ${bindings.RIGHTS_LEDGER.replaceAll(".", "\\.")} ${bindings.OPERATIONAL_LAUNCH_CONTEXT.replaceAll(".", "\\.")} ${bindings.OPERATIONAL_ANNUAL_PLAN.replaceAll(".", "\\.")} ${bindings.OPERATIONAL_ANNUAL_START_EVIDENCE.replaceAll(".", "\\.")} ${bindings.OPERATIONAL_OUTER_EXECUTION_RECEIPT.replaceAll(".", "\\.")}`,
     "u",
   ));
-  assert.match(resolved, new RegExp(`publish-operational-infrastructure-v2\\.mjs publish[\\s\\S]*${bindings.OPERATIONAL_NATIVE_RECEIPT.replaceAll(".", "\\.")}[\\s\\S]*${bindings.OPERATIONAL_PUBLICATION_RECEIPT.replaceAll(".", "\\.")}`, "u"));
+  assert.match(resolved, new RegExp(`publish-operational-infrastructure-v2\\.mjs publish[\\s\\S]*${bindings.OPERATIONAL_NATIVE_RECEIPT.replaceAll(".", "\\.")} ${bindings.OPERATIONAL_OUTER_EXECUTION_RECEIPT.replaceAll(".", "\\.")}[\\s\\S]*${bindings.OPERATIONAL_PUBLICATION_RECEIPT.replaceAll(".", "\\.")}`, "u"));
   assert.match(resolved, new RegExp(`build-gdal-semantic-pmtiles\\.mjs ${semanticInputs.replaceAll(".", "\\.")} ${semanticInputRoot.replaceAll(".", "\\.")} ${semanticOutput.replaceAll(".", "\\.")} ${gdalRuntime.replaceAll(".", "\\.")} \\.`, "u"));
   assert.match(resolved, /run-timetable-route-compiler\.mjs tools\/region-import\/germany\/timetable-route-compiler\.annual-2026\.5\.json \./u);
   assert.match(resolved, /run-synthetic-operational-closure\.mjs tools\/region-import\/germany\/synthetic-operational-closure\.annual-2026\.5\.json var\/derived\/germany-2026\.5\/synthetic-operational-closure-receipt\.json/u);
@@ -1080,13 +1080,13 @@ test("2026.5 trennt den primaeren Operational-v2-Runner vom receiptgebundenen Re
       contract: {
         file: "tools/region-import/germany/operational-infrastructure-v2-direct-system-launch.annual-2026.5.json",
         bytes: 22_507,
-        sha256: "ac934f3308fb3a3c57b2d164f64ba0bfe0dd29c07848da39004d0dadbb6ab737",
+        sha256: "79ec54c9c1df5e21abed3b8d59c6ad60ee472b10a1ad46f154a211fb0ad6adb5",
         schema: "zugfolge-operational-v2-direct-system-launch-contract/v1",
         releaseId: "infra-deutschland-2026.5",
         executionPins: {
           file: "tools/region-import/germany/operational-infrastructure-v2-execution-pins.annual-2026.5.json",
           bytes: 4_841,
-          sha256: "9596748953442d62223c0e24f526e6a0830dff54021968dbfb69529bc56070b0",
+          sha256: "b3bb21163ba96db2ac25443e3f9b741291fa92cd54ca3d0b6bea8acfa1f1dc11",
           schema: "zugfolge-germany-operational-v2-execution-pins/v1",
         },
         trustedExecutor: {

@@ -252,6 +252,25 @@ try {
     ZUGFOLGE_OPERATIONAL_RUNNER_ANNUAL_LAUNCH_PROOF_BASE64 = $annualLaunchProofBase64
     ZUGFOLGE_OPERATIONAL_RUNNER_PHASE = $runnerPhase
   }
+  if ($runnerPhase -ceq "materialize-validator-rebuild-v3") {
+    foreach ($name in @(
+      "GITHUB_ACTIONS",
+      "GITHUB_EVENT_NAME",
+      "GITHUB_REF",
+      "GITHUB_REF_PROTECTED",
+      "GITHUB_REPOSITORY",
+      "GITHUB_RUN_ATTEMPT",
+      "GITHUB_RUN_ID",
+      "GITHUB_SHA",
+      "GITHUB_WORKFLOW_REF",
+      "RUNNER_ARCH",
+      "RUNNER_ENVIRONMENT",
+      "RUNNER_OS",
+      "ZUGFOLGE_REBUILD_RUNNER_IMAGE"
+    )) {
+      $childEnvironment[$name] = Required ("AUTHORITY_" + $name)
+    }
+  }
   for ($index = 0; $index -lt $cliCount; $index += 1) {
     $childEnvironment["ZUGFOLGE_OPERATIONAL_RUNNER_CLI_$index"] = Required "CLI_$index"
   }

@@ -2338,7 +2338,7 @@ export async function materializeMapReleaseBuildEvidence({
     );
     invariant(
       verifiedOperationalValidatorRebuild.receipt.releaseId === spec.releaseId
-        && verifiedOperationalValidatorRebuild.receipt.source.git.commit === commitBinding.operationalValidatorBuild,
+        && verifiedOperationalValidatorRebuild.receipt.source.materialization.commit === commitBinding.operationalValidatorBuild,
       "Operational-Validator-Rebuild-Receipt bindet Release oder tatsaechlichen Validator-Build-Commit falsch.",
     );
     for (const [producerId, inputId] of Object.entries(CURRENT_ANNUAL_V3_OPERATIONAL_REBUILD_PRODUCER_INPUTS)) {
@@ -2360,7 +2360,7 @@ export async function materializeMapReleaseBuildEvidence({
         && publicationRebuild.evidence.file === validatorRebuildEvidenceInput.file
         && publicationRebuild.evidence.bytes === validatorRebuildEvidenceInput.bytes
         && publicationRebuild.evidence.sha256 === validatorRebuildEvidenceInput.sha256
-        && publicationRebuild.sourceCommit === verifiedOperationalValidatorRebuild.receipt.source.git.commit
+        && publicationRebuild.sourceCommit === verifiedOperationalValidatorRebuild.receipt.source.materialization.commit
         && publicationRebuild.normalizedPeSha256 === verifiedOperationalValidatorRebuild.receipt.pe.normalized.expectedSha256
         && JSON.stringify(publicationRebuild.preserved) === JSON.stringify(verifiedOperationalValidatorRebuild.receipt.binaries.preserved)
         && JSON.stringify(publicationRebuild.rebuilt) === JSON.stringify(verifiedOperationalValidatorRebuild.receipt.binaries.rebuilt),
@@ -2882,7 +2882,7 @@ export async function verifyMapReleaseBuildEvidence(
     );
     invariant(
       verifiedRebuild.receipt.releaseId === evidence.releaseId
-        && verifiedRebuild.receipt.source.git.commit === evidence.commits.operationalValidatorBuild,
+        && verifiedRebuild.receipt.source.materialization.commit === evidence.commits.operationalValidatorBuild,
       "Operational-Validator-Rebuild-Receipt wurde als falscher Release- oder Build-Commit umetikettiert.",
     );
     for (const [producerId, inputId] of Object.entries(CURRENT_ANNUAL_V3_OPERATIONAL_REBUILD_PRODUCER_INPUTS)) {
@@ -2923,7 +2923,7 @@ export async function verifyMapReleaseBuildEvidence(
       && publicationRebuild.specification.file === rebuildSpecInput.file
       && publicationRebuild.specification.bytes === rebuildSpecInput.bytes
       && publicationRebuild.specification.sha256 === rebuildSpecInput.sha256
-      && publicationRebuild.sourceCommit === verifiedRebuild.receipt.source.git.commit
+      && publicationRebuild.sourceCommit === verifiedRebuild.receipt.source.materialization.commit
       && publicationRebuild.normalizedPeSha256 === verifiedRebuild.receipt.pe.normalized.expectedSha256
       && JSON.stringify(publicationRebuild.preserved) === JSON.stringify(verifiedRebuild.receipt.binaries.preserved)
       && JSON.stringify(publicationRebuild.rebuilt) === JSON.stringify(verifiedRebuild.receipt.binaries.rebuilt),
