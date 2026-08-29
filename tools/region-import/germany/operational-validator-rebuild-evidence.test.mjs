@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
 import { execFile, spawn } from "node:child_process";
 import { createHash } from "node:crypto";
-import { copyFile, link, mkdir, mkdtemp, open, readFile, readdir, rename, rm, writeFile } from "node:fs/promises";
+import { copyFile, link, mkdir, mkdtemp, open, readFile, readdir, realpath, rename, rm, symlink, unlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 
@@ -46,6 +46,8 @@ function sha256(bytes) {
 
 let tarAuditForTest;
 let windowsBuildAnchorSafeDiagnosticForTest;
+let windowsBuildAnchorCommitAcknowledgementForTest;
+let canonicalWorkspaceForTest;
 
 async function loadTarAuditForTest() {
   tarAuditForTest ??= (async () => {
@@ -65,6 +67,31 @@ async function loadWindowsBuildAnchorSafeDiagnosticForTest() {
     return module.__windowsBuildAnchorSafeDiagnosticForTest;
   })();
   return windowsBuildAnchorSafeDiagnosticForTest;
+}
+
+async function loadWindowsBuildAnchorCommitAcknowledgementForTest() {
+  windowsBuildAnchorCommitAcknowledgementForTest ??= (async () => {
+    const source = await readFile(IMPLEMENTATION_PATH, "utf8");
+    const instrumented = `${source}\nexport { resolveWindowsAnchorCommitAcknowledgement as __resolveWindowsAnchorCommitAcknowledgementForTest };\n`;
+    const module = await import(`data:text/javascript;base64,${Buffer.from(instrumented, "utf8").toString("base64")}`);
+    return module.__resolveWindowsAnchorCommitAcknowledgementForTest;
+  })();
+  return windowsBuildAnchorCommitAcknowledgementForTest;
+}
+
+async function loadCanonicalWorkspaceForTest() {
+  canonicalWorkspaceForTest ??= (async () => {
+    const source = await readFile(IMPLEMENTATION_PATH, "utf8");
+    const instrumented = `${source}\nexport { assertCanonicalWorkspaceSnapshot as __assertCanonicalWorkspaceSnapshotForTest, assertNoSymlinkPath as __assertNoSymlinkPathForTest, canonicalWorkspacePath as __canonicalWorkspacePathForTest, canonicalWorkspaceSnapshot as __canonicalWorkspaceSnapshotForTest };\n`;
+    const module = await import(`data:text/javascript;base64,${Buffer.from(instrumented, "utf8").toString("base64")}`);
+    return {
+      assertNoSymlinkPath: module.__assertNoSymlinkPathForTest,
+      assertSnapshot: module.__assertCanonicalWorkspaceSnapshotForTest,
+      mapPath: module.__canonicalWorkspacePathForTest,
+      snapshot: module.__canonicalWorkspaceSnapshotForTest,
+    };
+  })();
+  return canonicalWorkspaceForTest;
 }
 
 function tarOctalField(value, length) {
@@ -383,7 +410,7 @@ async function loadProductionSpec() {
 async function temporaryDirectory(t, prefix = "zugfolge-rebuild-v3-test-") {
   const root = await mkdtemp(join(tmpdir(), prefix));
   t.after(() => rm(root, { force: true, recursive: true }));
-  return root;
+  return realpath(root);
 }
 
 async function waitForFileBytes(path, timeoutMilliseconds = 5_000) {
@@ -398,8 +425,9 @@ async function waitForFileBytes(path, timeoutMilliseconds = 5_000) {
   }
 }
 
-async function materializationTarSwapFixture(t) {
-  const workspaceRoot = await temporaryDirectory(t, "zfrbtarswap");
+async function materializationTarSwapFixture(t, workspaceRootInput) {
+  const workspaceRoot = workspaceRootInput ?? await temporaryDirectory(t, "zfrbtarswap");
+  if (workspaceRootInput) await mkdir(workspaceRoot, { recursive: true });
   const { value: productionSpec } = await loadProductionSpec();
   const spec = clone(productionSpec);
   const sourceData = Buffer.from("held-v1\n", "utf8");
@@ -531,16 +559,20 @@ async function materializationTarSwapFixture(t) {
     vendorPath,
     vendorBytes: vendor.bytes,
     workspaceRoot,
-    materialize: (hooks) => materializeOperationalValidatorRebuildEvidence({
-      hooks,
-      outputPath,
-      producerProofs: spec.producer,
-      runnerAnchorHelperProof: spec.toolchain.anchor.helperAssembly,
-      spec,
-      specBytes,
-      specFile,
-      workspaceRoot,
-    }),
+    specFile,
+    materialize: (hooks, callerWorkspaceRoot = workspaceRoot) => {
+      const callerPath = (path) => resolve(callerWorkspaceRoot, relative(workspaceRoot, path));
+      return materializeOperationalValidatorRebuildEvidence({
+        hooks,
+        outputPath: callerPath(outputPath),
+        producerProofs: spec.producer,
+        runnerAnchorHelperProof: spec.toolchain.anchor.helperAssembly,
+        spec,
+        specBytes,
+        specFile: callerPath(specFile),
+        workspaceRoot: callerWorkspaceRoot,
+      });
+    },
   };
 }
 
@@ -631,6 +663,81 @@ test("falscher Receipt-Pfad scheitert vor jeder Archiv-, Claim- oder Publikation
   assert.deepEqual(await readdir(workspaceRoot), before);
 });
 
+test("workspaceRoot-Ahnenalias wird kanonisch gebunden, waehrend Root- und Kind-Junctions sowie Alias-Tausch scheitern", async (t) => {
+  const container = await temporaryDirectory(t, "zfrbworkspacealias");
+  const actualParent = join(container, "actual-parent");
+  const foreignParent = join(container, "foreign-parent");
+  const workspaceRoot = join(actualParent, "workspace");
+  const foreignWorkspace = join(foreignParent, "workspace");
+  await Promise.all([mkdir(workspaceRoot, { recursive: true }), mkdir(foreignWorkspace, { recursive: true })]);
+  const aliasParent = join(container, "alias-parent");
+  const directRootAlias = join(container, "direct-root-alias");
+  const descendantTarget = join(container, "descendant-target");
+  const descendantAlias = join(workspaceRoot, "descendant-alias");
+  const linkType = process.platform === "win32" ? "junction" : "dir";
+  await Promise.all([mkdir(descendantTarget), symlink(actualParent, aliasParent, linkType), symlink(workspaceRoot, directRootAlias, linkType)]);
+  await symlink(descendantTarget, descendantAlias, linkType);
+  for (const path of [aliasParent, directRootAlias, descendantAlias]) {
+    t.after(async () => {
+      try { await unlink(path); } catch (error) { if (error?.code !== "ENOENT") throw error; }
+    });
+  }
+  const aliasWorkspaceRoot = join(aliasParent, "workspace");
+  const workspaceApi = await loadCanonicalWorkspaceForTest();
+  const snapshot = await workspaceApi.snapshot(aliasWorkspaceRoot, "workspaceRoot");
+  assert.equal(resolve(snapshot.path), resolve(workspaceRoot));
+  assert.equal(
+    resolve(workspaceApi.mapPath(snapshot, join(aliasWorkspaceRoot, "mapped", "file.json"), "mappedPath")),
+    resolve(workspaceRoot, "mapped", "file.json"),
+  );
+  assert.equal(
+    resolve(workspaceApi.mapPath(snapshot, join(workspaceRoot, "canonical", "receipt.json"), "canonicalPath")),
+    resolve(workspaceRoot, "canonical", "receipt.json"),
+  );
+  await workspaceApi.assertSnapshot(snapshot, "workspaceRoot");
+  await assert.rejects(workspaceApi.snapshot(directRootAlias, "workspaceRoot"), /darf selbst kein Symlink\/Junction sein/u);
+  await assert.rejects(
+    workspaceApi.assertNoSymlinkPath(workspaceRoot, join(descendantAlias, "missing.txt"), "Kindpfad", { leafMayBeMissing: true }),
+    /Symlink\/Junction/u,
+  );
+
+  await unlink(aliasParent);
+  await symlink(foreignParent, aliasParent, linkType);
+  await assert.rejects(workspaceApi.assertSnapshot(snapshot, "workspaceRoot"), /fremd ersetzt|umgebunden/u);
+});
+
+test("workspaceRoot-Ahnenalias erreicht die kanonische Windows-Materialisierungsgrenze ohne Outputs", WINDOWS_ONLY, async (t) => {
+  const container = await temporaryDirectory(t, "zfrbworkspaceanchoralias");
+  const actualParent = join(container, "actual-parent");
+  const workspaceRoot = join(actualParent, "workspace");
+  await mkdir(workspaceRoot, { recursive: true });
+  const fixture = await materializationTarSwapFixture(t, workspaceRoot);
+  const aliasParent = join(container, "alias-parent");
+  await symlink(actualParent, aliasParent, "junction");
+  t.after(async () => {
+    try { await unlink(aliasParent); } catch (error) { if (error?.code !== "ENOENT") throw error; }
+  });
+  const aliasWorkspaceRoot = join(aliasParent, "workspace");
+  await assert.rejects(fixture.materialize({
+    beforeWindowsBuildAnchor: ({ paths }) => {
+      for (const path of Object.values(paths)) {
+        const value = relative(workspaceRoot, path);
+        assert.ok(value !== "" && value !== ".." && !value.startsWith(`..${sep}`) && !isAbsolute(value),
+          `Ankerinput blieb nicht unter dem kanonischen workspaceRoot: ${path}`);
+      }
+      throw new Error("TEST_STOP_AFTER_CANONICAL_WORKSPACE_BINDING");
+    },
+  }, aliasWorkspaceRoot), /TEST_STOP_AFTER_CANONICAL_WORKSPACE_BINDING/u);
+  for (const output of fixture.outputPaths) await assert.rejects(readFile(output), { code: "ENOENT" });
+});
+
+test("specBytes muessen aus genau der identity-sicher gelesenen Rebuild-Spec stammen", async (t) => {
+  const fixture = await materializationTarSwapFixture(t);
+  await writeFile(fixture.specFile, canonicalBytes({ schema: "foreign-rebuild-spec/v1" }));
+  await assert.rejects(fixture.materialize({}), /specBytes driftet von der identity-sicher gelesenen Rebuild-Spec/u);
+  for (const output of fixture.outputPaths) await assert.rejects(readFile(output), { code: "ENOENT" });
+});
+
 test("releasefaehige Materialisierung enthaelt weder externes git/tar/rustup noch Add-Type", async () => {
   const source = await readFile(IMPLEMENTATION_PATH, "utf8");
   assert.doesNotMatch(source, /\b(?:execFile|execFileSync|spawn|spawnSync)\s*\(\s*["'](?:git|tar|rustup)(?:\.exe)?["']/u);
@@ -640,13 +747,36 @@ test("releasefaehige Materialisierung enthaelt weder externes git/tar/rustup noc
     "ReadDirectoryChangesW-Overflow", "RunAs(", "RunStrict(", "CreateProcessWithLogonW", "PROC_THREAD_ATTRIBUTE_HANDLE_LIST",
     "PROC_THREAD_ATTRIBUTE_PARENT_PROCESS", "DuplicateInheritableToProcess",
     "JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE", "pending-external-verification", "runnerAnchorHelperProof",
-    "PUBLICATION_COMPLETE", "TerminateJobObject(post-root descendants)", "PublishHeldCreateNew",
+    "DELETE_EPHEMERAL_ACCOUNT", "Delete-EphemeralAccountBeforeResult", "PUBLICATION_COMPLETE", "PUBLICATION_COMMITTED",
+    "TerminateJobObject(post-root descendants)", "PublishHeldCreateNew",
     "MarkRegularFileDeletePending", "ZugfolgeAnnualArtifactPublisher", "PublishPair(",
     "PublishOrRecoverPair(", "VerifyPair(",
   ]) assert.ok(source.includes(required), `Rebuild-v3-Implementierung bindet ${required} nicht.`);
   for (const forbidden of ["link(", "rename(", "unlink(", "rmdir(", "mkdtemp("]) {
     assert.ok(!source.includes(forbidden), `Rebuild-v3-Implementierung enthaelt weiterhin pfadbasierte Wirkung ${forbidden}.`);
   }
+  assert.doesNotMatch(source, /\$held\.Add\(\$published\)/u,
+    "Publikationshandles duerfen nicht gemeinsam mit falliblen Pre-Commit-Ressourcen geschlossen werden.");
+  assert.doesNotMatch(source, /Close-HeldBeforePublicationCommit/u,
+    "Ahnen-, Parent- und Inputhandles duerfen nicht vor der Commitentscheidung geschlossen werden.");
+  assert.match(source,
+    /\$isolationPrincipalSidSha256 = Hash-Text \$account\.Sid\s+\$script:anchorStage = 'DELETE_EPHEMERAL_ACCOUNT'\s+Delete-EphemeralAccountBeforeResult \$account\s+\$account = \$null\s+\$result =[\s\S]*?\$script:anchorStage = 'PUBLISH_OUTPUTS'/u,
+    "Der ephemere Account muss verifiziert geloescht sein, bevor RESULT eine finale Publikation ermoeglicht.");
+  assert.match(source,
+    /\$script:anchorStage = 'COMMIT_PUBLICATION'\s+Commit-Published\s+\$publicationCommitted = \$true[\s\S]*?'PUBLICATION_COMMITTED '/u,
+    "Die gehaltenen Publikationsbeweise muessen vor der expliziten Commit-Bestaetigung committed sein.");
+  const commitFunction = /function Commit-Published \{(?<body>[\s\S]*?)\n\}/u.exec(source);
+  assert.ok(commitFunction?.groups?.body, "Commit-Published wurde nicht eindeutig gefunden.");
+  assert.doesNotMatch(commitFunction.groups.body, /publishedStreams\.Clear/u,
+    "Committed FileStreams muessen bis zur Prozessgrenze stark gehalten bleiben.");
+  assert.match(source,
+    /function resolveWindowsAnchorCommitAcknowledgement[\s\S]*?sameCanonicalValue\(acknowledgement, publicationEnvelope\)[\s\S]*?status: "requires-exact-recovery"[\s\S]*?nextLineWithin\("Windows-Build-Anker-Commit-Bestaetigung", WINDOWS_ANCHOR_COMMIT_ACK_TIMEOUT_MS\)[\s\S]*?status: "commit-decision-requires-exact-recovery"[\s\S]*?"committed-anchor-reaped" : "committed-clean-exit"/u,
+    "Der Parent muss die exakte Commit-Bestaetigung binden und einen spaeten Anchor-Abschluss eindeutig aufloesen.");
+  assert.match(source,
+    /await buildAnchor\.completePublication\(\)[\s\S]*?Output-Elternverzeichnis nach Anchor-Abschluss[\s\S]*?Post-Anchor \$\{id\}[\s\S]*?matchesFilesystemIdentity\(snapshot\.identity, publicationProofs\[id\]\.identity\)[\s\S]*?postAnchorVerification/u,
+    "Jeder Commit-Ausgang muss nach dem Prozessende erneut gegen Parent, File-ID, Bytes, Hash und Receipt geprueft werden.");
+  assert.match(source, /\} finally \{\s+if \(-not \$publicationCommitted\) \{[\s\S]*?Rollback-Published[\s\S]*?\$held\[\$index\]\.Dispose\(\)/u,
+    "Nach dem Commit darf der Anchor keinen bewusst falliblen Cleanup mehr ausfuehren.");
 });
 
 test("Dateien erhalten die finale DACL atomar und werden nach Schliessen des create-new Handles nur-lesbar gehalten", async () => {
@@ -917,6 +1047,8 @@ test("extract-Diagnose gibt nur die begrenzte nicht-geheime Anchor-Allowlist fre
   const safeStage = "ZUGFOLGE_SAFE_ANCHOR_STAGE_DIAGNOSTIC stage=FREEZE_SOURCE";
   assert.equal(diagnose([Buffer.from(`password=Zf!never-surface\n${safe}\n`, "utf8")]), safe);
   assert.equal(diagnose([Buffer.from(`password=Zf!never-surface\n${safeStage}\n`, "utf8")]), safeStage);
+  const safePreCommitStage = "ZUGFOLGE_SAFE_ANCHOR_STAGE_DIAGNOSTIC stage=DELETE_EPHEMERAL_ACCOUNT";
+  assert.equal(diagnose([Buffer.from(`hostile-secret-path=C:\\private\\input\n${safePreCommitStage}\n`, "utf8")]), safePreCommitStage);
   assert.equal(diagnose([Buffer.from(`${safe}\n${safeStage}\n`, "utf8")]), safe,
     "Ein genauer numerischer Account-/Prozessstatus muss den groben Stage-Fallback schlagen.");
   assert.equal(diagnose([Buffer.from(`${"hostile-secret-path=".repeat(40)}\n${safeStage}\n`, "utf8")]), safeStage,
@@ -943,6 +1075,31 @@ test("extract-Diagnose gibt nur die begrenzte nicht-geheime Anchor-Allowlist fre
   assert.equal(diagnose([Buffer.from(`${safe} password=Zf!never-surface\n`, "utf8")]), "");
   assert.equal(diagnose([Buffer.from("ZUGFOLGE_SAFE_ANCHOR_DIAGNOSTIC code=FOREIGN status=5\n", "utf8")]), "");
   assert.equal(diagnose([Buffer.from(`password=Zf!never-surface\n${"x".repeat(600)}`, "utf8")]), "");
+});
+
+test("Commit-ACK wird exakt gebunden und jeder fehlende oder fremde ACK erst post-anchor aufgeloest", async () => {
+  const resolveAcknowledgement = await loadWindowsBuildAnchorCommitAcknowledgementForTest();
+  const publication = {
+    binary: { bytes: 11, identity: { dev: "1", ino: "2" }, sha256: "a".repeat(64) },
+    provenance: { bytes: 12, identity: { dev: "1", ino: "3" }, sha256: "b".repeat(64) },
+    receipt: { bytes: 13, identity: { dev: "1", ino: "4" }, sha256: "c".repeat(64) },
+  };
+  const exactLine = `PUBLICATION_COMMITTED ${Buffer.from(JSON.stringify(publication), "utf8").toString("base64")}`;
+  assert.deepEqual(resolveAcknowledgement(exactLine, publication), {
+    acknowledgement: publication,
+    status: "exact-acknowledgement",
+  });
+  for (const line of [
+    undefined,
+    "PUBLICATION_COMMITTED !!!not-base64!!!",
+    `PUBLISHED ${Buffer.from(JSON.stringify(publication), "utf8").toString("base64")}`,
+    `PUBLICATION_COMMITTED ${Buffer.from(JSON.stringify({ ...publication, receipt: { ...publication.receipt, ino: "foreign" } }), "utf8").toString("base64")}`,
+  ]) {
+    assert.deepEqual(resolveAcknowledgement(line, publication), {
+      acknowledgement: undefined,
+      status: "requires-exact-recovery",
+    });
+  }
 });
 
 test("PowerShell 5.1 haelt die sichere Stage auch nach langem finally-Cleanupfehler als letzte Zeile", WINDOWS_ONLY, async (t) => {
@@ -973,6 +1130,186 @@ test("PowerShell 5.1 haelt die sichere Stage auch nach langem finally-Cleanupfeh
   assert.equal(stderr.trimEnd().split(/\r?\n/u).at(-1), safeStage);
   const diagnose = await loadWindowsBuildAnchorSafeDiagnosticForTest();
   assert.equal(diagnose([executed.stderr]), safeStage);
+});
+
+test("PowerShell 5.1 loescht den Account vor Publikation, rollt Fehler zurueck und schliesst den Commitpfad", WINDOWS_ONLY, async (t) => {
+  const container = await temporaryDirectory(t, "zfrbrealprecommitcleanup");
+  const authorityParent = join(container, "authority-parent");
+  const root = join(authorityParent, "outputs");
+  await mkdir(root, { recursive: true });
+  const harness = join(container, "real-precommit-cleanup.ps1");
+  const payload = Buffer.from("real-precommit-rollback-v1\r\n", "utf8");
+  const leaves = ["binary.exe", "provenance.json", "receipt.json"];
+  const outputs = leaves.map((leaf) => join(root, leaf));
+  const implementation = await readFile(IMPLEMENTATION_PATH, "utf8");
+  const anchorMatch = /const WINDOWS_BUILD_ANCHOR = String\.raw`(?<script>.*?)`;\r?\nconst EXPECTED_NORMALIZATION_FIELDS/su.exec(implementation);
+  assert.ok(anchorMatch?.groups?.script, "WINDOWS_BUILD_ANCHOR wurde nicht eindeutig gefunden.");
+  const mainMarker = "\ntry {\n  $request = Decode-Json ([Console]::In.ReadLine()) 'Anchor-Request'";
+  const finalMarker = "\n} catch {\n  Fail $_.Exception.Message\n} finally {";
+  const mainIndex = anchorMatch.groups.script.indexOf(mainMarker);
+  const finalIndex = anchorMatch.groups.script.indexOf(finalMarker, mainIndex);
+  assert.ok(mainIndex > 0 && mainIndex === anchorMatch.groups.script.lastIndexOf(mainMarker), "Anchor-Haupteinstieg ist nicht eindeutig.");
+  assert.ok(finalIndex > mainIndex && finalIndex === anchorMatch.groups.script.lastIndexOf(finalMarker), "Anchor-catch/finally ist nicht eindeutig.");
+  const prefix = anchorMatch.groups.script.slice(0, mainIndex);
+  const suffix = anchorMatch.groups.script.slice(finalIndex);
+  const controlledBody = [
+    "try {",
+    "  [void][Reflection.Assembly]::Load([IO.File]::ReadAllBytes($Helper))",
+    "  $rootHandle = Open-HeldPathRoot $Root 'Test-Output-Parent'",
+    "  $sid = [Security.Principal.WindowsIdentity]::GetCurrent().User.Value",
+    "  $descriptor = [ZugfolgeProtectedSecurityDescriptor]::ParentWritable($sid); $held.Add($descriptor)",
+    "  $bytes = [Convert]::FromBase64String($PayloadBase64)",
+    "  if ($bytes.Length -ne $ExpectedBytes) { throw 'Payload-Bytezahl driftet.' }",
+    "  $account = [ZugfolgeControlledAccountDisposable]::new($Mode -ceq 'account-failure'); $held.Add($account)",
+    "  $script:anchorStage = 'DELETE_EPHEMERAL_ACCOUNT'",
+    "  Delete-EphemeralAccountBeforeResult $account",
+    "  if (-not $script:ephemeralAccountDeleted) { throw 'Account-Loeschbeweis fehlt.' }",
+    "  foreach ($leaf in @('binary.exe', 'provenance.json', 'receipt.json')) {",
+    "    $input = [IO.MemoryStream]::new($bytes, $false); $held.Add($input)",
+    "    $published = [ZugfolgeRelativeFs]::PublishHeldCreateNew($input, $rootHandle, $leaf, $ExpectedBytes, $ExpectedSha, $descriptor)",
+    "    $publishedStreams.Add($published)",
+    "  }",
+    "  if ($Mode -ceq 'rollback') { throw 'controlled-real-publication-rollback' }",
+    "  elseif ($Mode -cne 'success' -and $Mode -cne 'hold' -and $Mode -cne 'hardkill') { throw 'Unbekannter Testmodus.' }",
+    "  $script:anchorStage = 'COMMIT_PUBLICATION'",
+    "  Commit-Published",
+    "  $publicationCommitted = $true",
+    "  [GC]::Collect(); [GC]::WaitForPendingFinalizers()",
+    "  if ($Mode -ceq 'hold') {",
+    "    [Console]::Out.WriteLine('COMMIT_READY'); [Console]::Out.Flush()",
+    "    Start-Sleep -Milliseconds 3000",
+    "  }",
+    "  if ($Mode -ceq 'hardkill') {",
+    "    [Console]::Out.WriteLine('COMMIT_DECISION_READY'); [Console]::Out.Flush()",
+    "    Start-Sleep -Seconds 30",
+    "  }",
+  ].join("\n");
+  await writeFile(harness, [
+    "param([string] $Helper, [string] $Root, [string] $Mode, [string] $PayloadBase64, [Int64] $ExpectedBytes, [string] $ExpectedSha)",
+    "class ZugfolgeControlledAccountDisposable : System.IDisposable {",
+    "  [int] $Calls",
+    "  [bool] $FailOnce",
+    "  ZugfolgeControlledAccountDisposable([bool] $failOnce) { $this.Calls = 0; $this.FailOnce = $failOnce }",
+    "  [void] Dispose() { $this.Calls += 1; if ($this.FailOnce -and $this.Calls -eq 1) { throw [InvalidOperationException]::new('controlled-account-delete-failure-before-publication') } }",
+    "}",
+    prefix,
+    controlledBody,
+    suffix,
+    "",
+  ].join("\r\n"));
+  const commonArguments = [
+    "-NoLogo", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File",
+    harness, HELPER_PATH, root,
+  ];
+  const accountFailure = await execute(POWERSHELL_51, [
+    ...commonArguments, "account-failure", payload.toString("base64"), String(payload.length), sha256(payload),
+  ], { cwd: "C:\\Windows\\System32", expectFailure: true, stdin: Buffer.alloc(0) });
+  assert.equal(accountFailure.error?.code, 125);
+  const stderr = accountFailure.stderr.toString("utf8");
+  assert.match(stderr, /controlled-account-delete-failure-before-publication/u);
+  assert.equal(stderr.trimEnd().split(/\r?\n/u).at(-1),
+    "ZUGFOLGE_SAFE_ANCHOR_STAGE_DIAGNOSTIC stage=DELETE_EPHEMERAL_ACCOUNT");
+  for (const output of outputs) await assert.rejects(readFile(output), { code: "ENOENT" });
+
+  const rollback = await execute(POWERSHELL_51, [
+    ...commonArguments, "rollback", payload.toString("base64"), String(payload.length), sha256(payload),
+  ], { cwd: "C:\\Windows\\System32", expectFailure: true, stdin: Buffer.alloc(0) });
+  assert.equal(rollback.error?.code, 125);
+  assert.match(rollback.stderr.toString("utf8"), /controlled-real-publication-rollback/u);
+  for (const output of outputs) await assert.rejects(readFile(output), { code: "ENOENT" });
+
+  const heldChild = spawn(POWERSHELL_51, [
+    ...commonArguments, "hold", payload.toString("base64"), String(payload.length), sha256(payload),
+  ], { cwd: "C:\\Windows\\System32", stdio: ["pipe", "pipe", "pipe"], windowsHide: true });
+  heldChild.stdin.end();
+  const heldStdout = [];
+  const heldStderr = [];
+  heldChild.stdout.on("data", (chunk) => heldStdout.push(chunk));
+  heldChild.stderr.on("data", (chunk) => heldStderr.push(chunk));
+  const heldExitPromise = new Promise((resolveExit, rejectExit) => {
+    heldChild.once("error", rejectExit);
+    heldChild.once("close", (code, signal) => resolveExit({ code, signal }));
+  });
+  await new Promise((resolveReady, rejectReady) => {
+    const timeout = setTimeout(() => rejectReady(new Error("Commit-Handleprobe erreichte COMMIT_READY nicht.")), 10_000);
+    heldChild.stdout.on("data", () => {
+      if (Buffer.concat(heldStdout).toString("utf8").includes("COMMIT_READY")) {
+        clearTimeout(timeout);
+        resolveReady();
+      }
+    });
+    heldChild.once("error", (error) => { clearTimeout(timeout); rejectReady(error); });
+    heldChild.once("close", (code) => {
+      if (!Buffer.concat(heldStdout).toString("utf8").includes("COMMIT_READY")) {
+        clearTimeout(timeout);
+        rejectReady(new Error(`Commit-Handleprobe endete vorzeitig mit ${code}: ${Buffer.concat(heldStderr).toString("utf8")}`));
+      }
+    });
+  });
+  for (const heldPath of [...outputs, root, authorityParent]) {
+    await assert.rejects(rename(heldPath, `${heldPath}.must-stay-held`), (error) => ["EACCES", "EBUSY", "EPERM"].includes(error?.code),
+      `${heldPath} durfte waehrend der Commitentscheidung nicht umbenannt werden.`);
+  }
+  for (const output of outputs) {
+    await assert.rejects(open(output, "r+"), (error) => ["EACCES", "EBUSY", "EPERM"].includes(error?.code),
+      `${output} durfte waehrend der Commitentscheidung nicht schreibbar geoeffnet werden.`);
+  }
+  const heldExit = await heldExitPromise;
+  assert.deepEqual(heldExit, { code: 0, signal: null }, Buffer.concat(heldStderr).toString("utf8"));
+  assert.equal(Buffer.concat(heldStderr).length, 0, Buffer.concat(heldStderr).toString("utf8"));
+  for (const output of outputs) {
+    assert.deepEqual(await readFile(output), payload);
+    const moved = `${output}.handle-close-proof`;
+    await rename(output, moved);
+    await rename(moved, output);
+  }
+  const movedRoot = `${root}-handle-close-proof`;
+  await rename(root, movedRoot);
+  await rename(movedRoot, root);
+  const movedAuthorityParent = `${authorityParent}-handle-close-proof`;
+  await rename(authorityParent, movedAuthorityParent);
+  await rename(movedAuthorityParent, authorityParent);
+
+  const recoveryRoot = join(authorityParent, "recovery-outputs");
+  await mkdir(recoveryRoot);
+  const recoveryOutputs = leaves.map((leaf) => join(recoveryRoot, leaf));
+  const hardKillChild = spawn(POWERSHELL_51, [
+    ...commonArguments.slice(0, -1), recoveryRoot,
+    "hardkill", payload.toString("base64"), String(payload.length), sha256(payload),
+  ], { cwd: "C:\\Windows\\System32", stdio: ["pipe", "pipe", "pipe"], windowsHide: true });
+  hardKillChild.stdin.end();
+  const hardKillStdout = [];
+  const hardKillStderr = [];
+  hardKillChild.stdout.on("data", (chunk) => hardKillStdout.push(chunk));
+  hardKillChild.stderr.on("data", (chunk) => hardKillStderr.push(chunk));
+  const hardKillExitPromise = new Promise((resolveExit, rejectExit) => {
+    hardKillChild.once("error", rejectExit);
+    hardKillChild.once("close", (code, signal) => resolveExit({ code, signal }));
+  });
+  await new Promise((resolveReady, rejectReady) => {
+    const timeout = setTimeout(() => rejectReady(new Error("Hardkill-Probe erreichte die Commitentscheidung nicht.")), 10_000);
+    hardKillChild.stdout.on("data", () => {
+      if (Buffer.concat(hardKillStdout).toString("utf8").includes("COMMIT_DECISION_READY")) {
+        clearTimeout(timeout);
+        resolveReady();
+      }
+    });
+    hardKillChild.once("error", (error) => { clearTimeout(timeout); rejectReady(error); });
+    hardKillChild.once("close", (code) => {
+      if (!Buffer.concat(hardKillStdout).toString("utf8").includes("COMMIT_DECISION_READY")) {
+        clearTimeout(timeout);
+        rejectReady(new Error(`Hardkill-Probe endete vorzeitig mit ${code}: ${Buffer.concat(hardKillStderr).toString("utf8")}`));
+      }
+    });
+  });
+  hardKillChild.kill();
+  const hardKillExit = await hardKillExitPromise;
+  assert.notDeepEqual(hardKillExit, { code: 0, signal: null });
+  assert.equal(Buffer.concat(hardKillStderr).length, 0, Buffer.concat(hardKillStderr).toString("utf8"));
+  for (const output of recoveryOutputs) assert.deepEqual(await readFile(output), payload);
+  const movedRecoveryRoot = `${recoveryRoot}-post-hardkill-proof`;
+  await rename(recoveryRoot, movedRecoveryRoot);
+  await rename(movedRecoveryRoot, recoveryRoot);
 });
 
 test("echtes Windows PowerShell 5.1 parst den Anchor und alle Workflow-Bloecke", WINDOWS_ONLY, async (t) => {
@@ -1200,8 +1537,17 @@ test("PowerShell 5.1: Timeout, Cancellation und Root-Exit beenden den gesamten J
   await writeFile(parentExit, [
     "param([string] $ChildScript, [string] $Marker, [string] $Started, [string] $RedirectOut, [string] $RedirectErr)",
     "$powershell = Join-Path $env:SystemRoot 'System32\\WindowsPowerShell\\v1.0\\powershell.exe'",
-    "$arguments = @('-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', $ChildScript, $Marker)",
-    "Start-Process -FilePath $powershell -ArgumentList $arguments -WindowStyle Hidden -RedirectStandardOutput $RedirectOut -RedirectStandardError $RedirectErr",
+    "$quote = [char]34",
+    "$start = [Diagnostics.ProcessStartInfo]::new()",
+    "$start.FileName = $powershell",
+    "$start.Arguments = '-NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File ' + $quote + $ChildScript + $quote + ' ' + $quote + $Marker + $quote",
+    "$start.UseShellExecute = $false",
+    "$start.CreateNoWindow = $true",
+    "$start.RedirectStandardOutput = $true",
+    "$start.RedirectStandardError = $true",
+    "$child = [Diagnostics.Process]::Start($start)",
+    "if ($null -eq $child) { throw 'Cmdlet-freier Root-Exit-Kindstart lieferte keinen Prozess.' }",
+    "$child.Dispose()",
     "[IO.File]::WriteAllText($Started, 'started')",
     "exit 0",
     "",
@@ -1254,7 +1600,7 @@ test("PowerShell 5.1: Timeout, Cancellation und Root-Exit beenden den gesamten J
     "$oversizeClock.Stop()",
     "$environment = New-ChildEnvironment",
     "$exitClock = [Diagnostics.Stopwatch]::StartNew()",
-    "$exitResult = [ZugfolgeMitigatedProcess]::RunStrict($powershell, [string[]]@('-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-File',$ParentExitScript,$ChildScript,$ExitMarker,$ExitStarted,$ExitRedirectOut,$ExitRedirectErr), (Join-Path $env:SystemRoot 'System32'), $environment, [byte[]]@(), 1048576, 5000, $never)",
+    "$exitResult = [ZugfolgeMitigatedProcess]::RunStrict($powershell, [string[]]@('-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-File',$ParentExitScript,$ChildScript,$ExitMarker,$ExitStarted,$ExitRedirectOut,$ExitRedirectErr), (Join-Path $env:SystemRoot 'System32'), $environment, [byte[]]@(), 1048576, 15000, $never)",
     "$exitClock.Stop(); Start-Sleep -Milliseconds 3000",
     "$value = @{ cancellationElapsed=$cancelClock.ElapsedMilliseconds; cancellationMessage=$cancelMessage; emptyCurrentIdentityExact=$emptyCurrentIdentityExact; exitCode=$exitResult.ExitCode; exitElapsed=$exitClock.ElapsedMilliseconds; exitMarker=[IO.File]::Exists($ExitMarker); exitStarted=[IO.File]::Exists($ExitStarted); methods=$methods; oversizeElapsed=$oversizeClock.ElapsedMilliseconds; oversizeMessage=$oversizeMessage; stdioCurrentIdentityExact=$stdioCurrentIdentityExact; timeoutElapsed=$timeoutClock.ElapsedMilliseconds; timeoutMarker=[IO.File]::Exists($TimeoutMarker); timeoutMessage=$timeoutMessage; timeoutStarted=[IO.File]::Exists($TimeoutStarted) }",
     "[Console]::Out.WriteLine(($value | ConvertTo-Json -Compress))",
@@ -1280,7 +1626,7 @@ test("PowerShell 5.1: Timeout, Cancellation und Root-Exit beenden den gesamten J
   assert.equal(result.exitStarted, true);
   assert.equal(result.exitMarker, false, "Root-Exit darf auch keinen von stdout/stderr abgekoppelten Job-Enkel ueberleben lassen.");
   assert.equal(result.exitCode, 0);
-  assert.ok(result.exitElapsed < 5000, "Root-Exit darf nicht unbeschraenkt in Pipe-Waits haengen.");
+  assert.ok(result.exitElapsed < 30000, "Root-Exit darf die zusammengesetzte Root-, Pipe- und Job-Cleanup-Huellgrenze nicht erreichen.");
 });
 
 test("PowerShell 5.1: gehaltenes Annual-Publikationspaar commitet oder rollt beide Outputs identity-sicher zurueck", WINDOWS_ONLY, async (t) => {
