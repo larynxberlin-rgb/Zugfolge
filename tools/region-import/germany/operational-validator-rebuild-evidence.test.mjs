@@ -1511,29 +1511,21 @@ test("ephemerer Windows-Build-Account gibt einen sicheren numerischen Startfehle
 test("PowerShell 5.1: Timeout, Cancellation und Root-Exit beenden den gesamten Jobbaum", WINDOWS_ONLY, async (t) => {
   const root = await temporaryDirectory(t, "zfrbhelper");
   const grandchild = join(root, "grandchild.ps1");
-  const parent = join(root, "parent.ps1");
   const parentExit = join(root, "parent-exit.ps1");
   const harness = join(root, "harness.ps1");
   const timeoutStarted = join(root, "timeout-started.txt");
+  const timeoutRelease = join(root, "timeout-release.txt");
   const timeoutMarker = join(root, "timeout-marker.txt");
   const exitStarted = join(root, "exit-started.txt");
   const exitMarker = join(root, "exit-marker.txt");
   const exitRedirectOut = join(root, "exit-child.stdout.txt");
   const exitRedirectErr = join(root, "exit-child.stderr.txt");
   await writeFile(grandchild, [
-    "param([string] $Marker, [int] $DelayMilliseconds = 2500)",
-    "Start-Sleep -Milliseconds $DelayMilliseconds",
+    "param([string] $Marker)",
+    "Start-Sleep -Milliseconds 2500",
     "[IO.File]::WriteAllText($Marker, 'leaked')",
     "",
   ].join("\r\n"));
-  const spawnLines = [
-    "param([string] $ChildScript, [string] $Marker, [string] $Started)",
-    "$powershell = Join-Path $env:SystemRoot 'System32\\WindowsPowerShell\\v1.0\\powershell.exe'",
-    "$arguments = @('-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', $ChildScript, $Marker, '6000')",
-    "Start-Process -FilePath $powershell -ArgumentList $arguments -WindowStyle Hidden",
-    "[IO.File]::WriteAllText($Started, 'started')",
-  ];
-  await writeFile(parent, [...spawnLines, "Start-Sleep -Seconds 30", ""].join("\r\n"));
   await writeFile(parentExit, [
     "param([string] $ChildScript, [string] $Marker, [string] $Started, [string] $RedirectOut, [string] $RedirectErr)",
     "$powershell = Join-Path $env:SystemRoot 'System32\\WindowsPowerShell\\v1.0\\powershell.exe'",
@@ -1553,7 +1545,7 @@ test("PowerShell 5.1: Timeout, Cancellation und Root-Exit beenden den gesamten J
     "",
   ].join("\r\n"));
   await writeFile(harness, [
-    "param([string] $Dll, [string] $ParentScript, [string] $ParentExitScript, [string] $ChildScript, [string] $TimeoutMarker, [string] $TimeoutStarted, [string] $ExitMarker, [string] $ExitStarted, [string] $ExitRedirectOut, [string] $ExitRedirectErr)",
+    "param([string] $Dll, [string] $ParentExitScript, [string] $ChildScript, [string] $TimeoutMarker, [string] $TimeoutStarted, [string] $TimeoutRelease, [string] $ExitMarker, [string] $ExitStarted, [string] $ExitRedirectOut, [string] $ExitRedirectErr)",
     "$ErrorActionPreference = 'Stop'",
     "$assembly = [Reflection.Assembly]::Load([IO.File]::ReadAllBytes($Dll))",
     "$methods = @([ZugfolgeMitigatedProcess].GetMethods() | Where-Object { $_.IsPublic -and $_.IsStatic } | ForEach-Object Name | Sort-Object -Unique)",
@@ -1564,6 +1556,11 @@ test("PowerShell 5.1: Timeout, Cancellation und Root-Exit beenden den gesamten J
     "$powershell = Join-Path $env:SystemRoot 'System32\\WindowsPowerShell\\v1.0\\powershell.exe'",
     "$cmd = Join-Path $env:SystemRoot 'System32\\cmd.exe'",
     "$never = [Func[bool]] { return $false }",
+    "# Keep the timeout tree probe cmdlet-free: hosted first-use Start-Process latency is not part of the helper contract.",
+    "$timeoutGrandchildSource = '$process=[Diagnostics.Process]::GetCurrentProcess(); try { $process.Refresh(); $receipt=$process.Id.ToString([Globalization.CultureInfo]::InvariantCulture) + ''.'' + $process.StartTime.ToFileTimeUtc().ToString([Globalization.CultureInfo]::InvariantCulture); [IO.File]::WriteAllText($env:ZUGFOLGE_TIMEOUT_STARTED,$receipt); while (-not [IO.File]::Exists($env:ZUGFOLGE_TIMEOUT_RELEASE)) { [Threading.Thread]::Sleep(25) }; [IO.File]::WriteAllText($env:ZUGFOLGE_TIMEOUT_MARKER,''leaked'') } finally { $process.Dispose() }'",
+    "$timeoutGrandchildEncoded = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($timeoutGrandchildSource))",
+    "$timeoutRootSource = '$start=[Diagnostics.ProcessStartInfo]::new(); $start.FileName=''C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe''; $start.Arguments=''-NoLogo -NoProfile -NonInteractive -EncodedCommand '' + $env:ZUGFOLGE_TIMEOUT_GRANDCHILD_ENCODED; $start.UseShellExecute=$false; $start.CreateNoWindow=$true; $child=[Diagnostics.Process]::Start($start); if ($null -eq $child) { throw ''Cmdlet-freier Timeout-Kindstart lieferte keinen Prozess.'' }; $child.WaitForExit(); $child.Dispose(); throw ''TIMEOUT_DESCENDANT_ENDED_UNEXPECTEDLY'''",
+    "$timeoutRootEncoded = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($timeoutRootSource))",
     "$emptyCurrentIdentity = @{}",
     "$emptyResult = [ZugfolgeMitigatedProcess]::RunStrict($cmd, [string[]]@('/D','/Q','/C','exit /b 0'), (Join-Path $env:SystemRoot 'System32'), $emptyCurrentIdentity, [byte[]]@(), 65536, 5000, $never)",
     "$emptyCurrentIdentityExact = $emptyResult.ExitCode -eq 0 -and $emptyResult.Stdout.Length -eq 0 -and $emptyResult.Stderr.Length -eq 0",
@@ -1587,9 +1584,47 @@ test("PowerShell 5.1: Timeout, Cancellation und Root-Exit beenden den gesamten J
     "    $stdioCurrentIdentityExact = $ioResult.ExitCode -eq 0 -and $ioCanonical -and $ioIdentity -ceq [Security.Principal.WindowsIdentity]::GetCurrent().Name -and [Convert]::ToBase64String($ioActualStdin) -ceq [Convert]::ToBase64String($ioStdin) -and [Text.Encoding]::ASCII.GetString($ioResult.Stderr) -ceq 'ephemeral-stderr'",
     "  } catch { $stdioCurrentIdentityExact = $false }",
     "}",
+    "$timeoutEnvironment = New-ChildEnvironment",
+    "$timeoutEnvironment['ZUGFOLGE_TIMEOUT_GRANDCHILD_ENCODED'] = $timeoutGrandchildEncoded",
+    "$timeoutEnvironment['ZUGFOLGE_TIMEOUT_MARKER'] = $TimeoutMarker",
+    "$timeoutEnvironment['ZUGFOLGE_TIMEOUT_RELEASE'] = $TimeoutRelease",
+    "$timeoutEnvironment['ZUGFOLGE_TIMEOUT_STARTED'] = $TimeoutStarted",
     "$timeoutMessage = ''; $timeoutClock = [Diagnostics.Stopwatch]::StartNew()",
-    "try { $null = [ZugfolgeMitigatedProcess]::RunStrict($powershell, [string[]]@('-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-File',$ParentScript,$ChildScript,$TimeoutMarker,$TimeoutStarted), (Join-Path $env:SystemRoot 'System32'), $environment, [byte[]]@(), 1048576, 5000, $never); $timeoutMessage = 'unexpected-success' } catch { $timeoutMessage = $_.Exception.GetBaseException().Message }",
-    "$timeoutClock.Stop(); Start-Sleep -Milliseconds 8000",
+    "try { $null = [ZugfolgeMitigatedProcess]::RunStrict($powershell, [string[]]@('-NoLogo','-NoProfile','-NonInteractive','-EncodedCommand',$timeoutRootEncoded), (Join-Path $env:SystemRoot 'System32'), $timeoutEnvironment, [byte[]]@(), 1048576, 10000, $never); $timeoutMessage = 'unexpected-success' } catch { $timeoutMessage = $_.Exception.GetBaseException().Message }",
+    "$timeoutClock.Stop()",
+    "$timeoutStartedExact = $false; $timeoutDescendantGone = $false; [Int64]$timeoutPid = 0; [Int64]$timeoutStartFileTimeUtc = 0",
+    "if ([IO.File]::Exists($TimeoutStarted)) {",
+    "  $timeoutReceipt = [IO.File]::ReadAllText($TimeoutStarted)",
+    "  $timeoutSeparator = $timeoutReceipt.IndexOf([char]46)",
+    "  $timeoutShapeExact = $timeoutSeparator -gt 0 -and $timeoutSeparator -eq $timeoutReceipt.LastIndexOf([char]46) -and $timeoutSeparator -lt ($timeoutReceipt.Length - 1)",
+    "  if ($timeoutShapeExact) {",
+    "    $timeoutPidText = $timeoutReceipt.Substring(0, $timeoutSeparator)",
+    "    $timeoutStartText = $timeoutReceipt.Substring($timeoutSeparator + 1)",
+    "    $timeoutStartedExact = [Int64]::TryParse($timeoutPidText, [Globalization.NumberStyles]::None, [Globalization.CultureInfo]::InvariantCulture, [ref]$timeoutPid) -and [Int64]::TryParse($timeoutStartText, [Globalization.NumberStyles]::None, [Globalization.CultureInfo]::InvariantCulture, [ref]$timeoutStartFileTimeUtc)",
+    "    $timeoutStartedExact = $timeoutStartedExact -and $timeoutPid -gt 0 -and $timeoutPid -le [Int32]::MaxValue -and $timeoutStartFileTimeUtc -gt 0 -and $timeoutPid.ToString([Globalization.CultureInfo]::InvariantCulture) -ceq $timeoutPidText -and $timeoutStartFileTimeUtc.ToString([Globalization.CultureInfo]::InvariantCulture) -ceq $timeoutStartText",
+    "  }",
+    "}",
+    "[IO.File]::WriteAllText($TimeoutRelease, 'release')",
+    "if ($timeoutStartedExact) {",
+    "  $timeoutDeadline = [DateTime]::UtcNow.AddSeconds(3); $timeoutSurvivor = $null",
+    "  do {",
+    "    if ($null -ne $timeoutSurvivor) { $timeoutSurvivor.Dispose(); $timeoutSurvivor = $null }",
+    "    $timeoutCandidate = $null",
+    "    try {",
+    "      $timeoutCandidate = [Diagnostics.Process]::GetProcessById([int]$timeoutPid)",
+    "      $timeoutCandidate.Refresh()",
+    "      if ($timeoutCandidate.StartTime.ToFileTimeUtc() -eq $timeoutStartFileTimeUtc) { $timeoutSurvivor = $timeoutCandidate } else { $timeoutCandidate.Dispose(); $timeoutCandidate = $null }",
+    "    } catch [ArgumentException] { if ($null -ne $timeoutCandidate) { $timeoutCandidate.Dispose() }; $timeoutSurvivor = $null }",
+    "    catch [InvalidOperationException] { if ($null -ne $timeoutCandidate) { $timeoutCandidate.Dispose() }; $timeoutSurvivor = $null }",
+    "    catch { if ($null -ne $timeoutCandidate) { $timeoutCandidate.Dispose() }; throw }",
+    "    if ($null -ne $timeoutSurvivor) { [Threading.Thread]::Sleep(100) }",
+    "  } while ($null -ne $timeoutSurvivor -and [DateTime]::UtcNow -lt $timeoutDeadline)",
+    "  if ($null -ne $timeoutSurvivor) {",
+    "    try { $timeoutSurvivor.Kill(); $timeoutSurvivor.WaitForExit(5000) | Out-Null } finally { $timeoutSurvivor.Dispose() }",
+    "    throw 'Ein Timeout-Job-Nachfahrprozess ueberlebte den Jobabbruch.'",
+    "  }",
+    "  $timeoutDescendantGone = $true",
+    "}",
     "$environment = New-ChildEnvironment",
     "$cancelClock = [Diagnostics.Stopwatch]::StartNew(); $cancel = [Func[bool]] { return $cancelClock.ElapsedMilliseconds -ge 250 }; $cancelMessage = ''",
     "try { $null = [ZugfolgeMitigatedProcess]::RunStrict($powershell, [string[]]@('-NoProfile','-NonInteractive','-Command','Start-Sleep -Seconds 30'), (Join-Path $env:SystemRoot 'System32'), $environment, [byte[]]@(), 1048576, 5000, $cancel); $cancelMessage = 'unexpected-success' } catch { $cancelMessage = $_.Exception.GetBaseException().Message }",
@@ -1602,13 +1637,13 @@ test("PowerShell 5.1: Timeout, Cancellation und Root-Exit beenden den gesamten J
     "$exitClock = [Diagnostics.Stopwatch]::StartNew()",
     "$exitResult = [ZugfolgeMitigatedProcess]::RunStrict($powershell, [string[]]@('-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-File',$ParentExitScript,$ChildScript,$ExitMarker,$ExitStarted,$ExitRedirectOut,$ExitRedirectErr), (Join-Path $env:SystemRoot 'System32'), $environment, [byte[]]@(), 1048576, 15000, $never)",
     "$exitClock.Stop(); Start-Sleep -Milliseconds 3000",
-    "$value = @{ cancellationElapsed=$cancelClock.ElapsedMilliseconds; cancellationMessage=$cancelMessage; emptyCurrentIdentityExact=$emptyCurrentIdentityExact; exitCode=$exitResult.ExitCode; exitElapsed=$exitClock.ElapsedMilliseconds; exitMarker=[IO.File]::Exists($ExitMarker); exitStarted=[IO.File]::Exists($ExitStarted); methods=$methods; oversizeElapsed=$oversizeClock.ElapsedMilliseconds; oversizeMessage=$oversizeMessage; stdioCurrentIdentityExact=$stdioCurrentIdentityExact; timeoutElapsed=$timeoutClock.ElapsedMilliseconds; timeoutMarker=[IO.File]::Exists($TimeoutMarker); timeoutMessage=$timeoutMessage; timeoutStarted=[IO.File]::Exists($TimeoutStarted) }",
+    "$value = @{ cancellationElapsed=$cancelClock.ElapsedMilliseconds; cancellationMessage=$cancelMessage; emptyCurrentIdentityExact=$emptyCurrentIdentityExact; exitCode=$exitResult.ExitCode; exitElapsed=$exitClock.ElapsedMilliseconds; exitMarker=[IO.File]::Exists($ExitMarker); exitStarted=[IO.File]::Exists($ExitStarted); methods=$methods; oversizeElapsed=$oversizeClock.ElapsedMilliseconds; oversizeMessage=$oversizeMessage; stdioCurrentIdentityExact=$stdioCurrentIdentityExact; timeoutDescendantGone=$timeoutDescendantGone; timeoutElapsed=$timeoutClock.ElapsedMilliseconds; timeoutMarker=[IO.File]::Exists($TimeoutMarker); timeoutMessage=$timeoutMessage; timeoutStarted=$timeoutStartedExact }",
     "[Console]::Out.WriteLine(($value | ConvertTo-Json -Compress))",
     "",
   ].join("\r\n"));
   const executed = await execute(POWERSHELL_51, [
     "-NoLogo", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File",
-    harness, HELPER_PATH, parent, parentExit, grandchild, timeoutMarker, timeoutStarted, exitMarker, exitStarted, exitRedirectOut, exitRedirectErr,
+    harness, HELPER_PATH, parentExit, grandchild, timeoutMarker, timeoutStarted, timeoutRelease, exitMarker, exitStarted, exitRedirectOut, exitRedirectErr,
   ], { cwd: "C:\\Windows\\System32" });
   const result = JSON.parse(executed.stdout.toString("utf8").trim().split(/\r?\n/u).at(-1));
   assert.deepEqual(result.methods.filter((name) => ["AbortActive", "Run", "RunAs", "RunAsStrict", "RunStrict"].includes(name)),
@@ -1616,9 +1651,10 @@ test("PowerShell 5.1: Timeout, Cancellation und Root-Exit beenden den gesamten J
   assert.equal(result.emptyCurrentIdentityExact, true, JSON.stringify(result));
   assert.equal(result.stdioCurrentIdentityExact, true, JSON.stringify(result));
   assert.equal(result.timeoutStarted, true, JSON.stringify(result));
+  assert.equal(result.timeoutDescendantGone, true, JSON.stringify(result));
   assert.equal(result.timeoutMarker, false);
   assert.match(result.timeoutMessage, /ueberschritt das gepinnte Zeitlimit/);
-  assert.ok(result.timeoutElapsed < 10000);
+  assert.ok(result.timeoutElapsed < 15000);
   assert.match(result.cancellationMessage, /monotoner Inputdrift beendet/);
   assert.ok(result.cancellationElapsed < 5000);
   assert.match(result.oversizeMessage, /ueberschritt das kombinierte gepinnte Limit/);
