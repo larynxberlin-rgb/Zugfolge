@@ -30,7 +30,8 @@ const ANNUAL_PLAN_ARGUMENTS = Object.freeze([
   "tools/guards/quellenregister.json",
 ]);
 const PRODUCER_IDS = Object.freeze(["bundle", "entrypoint", "executionPins", "implementation"]);
-const MAX_BINARY_BYTES = 8 * 1024 * 1024;
+export const OPERATIONAL_VALIDATOR_MAX_BINARY_BYTES = 9 * 1024 * 1024;
+const MAX_BINARY_BYTES = OPERATIONAL_VALIDATOR_MAX_BINARY_BYTES;
 const MAX_JSON_BYTES = 4 * 1024 * 1024;
 const MAX_PROVENANCE_BYTES = 4 * 1024 * 1024;
 const MAX_SPEC_BYTES = 1024 * 1024;

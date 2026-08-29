@@ -349,16 +349,16 @@ async function executorFixture(t) {
   return { paths, validatorProof, rebuild, prepare, execute, directBundle, assertNoExecutionLeak };
 }
 
-test("Annual Execution-Pins laden die aba354e-Bytes und beweisen die vollstaendige aktuelle Importclosure", async () => {
+test("Annual Execution-Pins laden die b76edca-Bytes und beweisen die vollstaendige aktuelle Importclosure", async () => {
   const executionPinsPath = join(HERE, "operational-infrastructure-v2-execution-pins.annual-2026.5.json");
   const source = await loadGermanyOperationalExecutionPins({
     workspaceRoot: REPOSITORY_ROOT,
     executionPinsPath,
     expectedReleaseId: "infra-deutschland-2026.5",
   });
-  assert.equal(source.value.validator.buildCommit, "aba354ec1937452a491087626ec0adea36ef6695");
-  assert.equal(source.value.validator.bytes, 8_382_277);
-  assert.equal(source.value.validator.sha256, "c35e72e352ae573e0416035fc4f0d233af5668864c0bd8df7333337e87bb7fd4");
+  assert.equal(source.value.validator.buildCommit, "b76edcae260541de66e3b2e84869d66dd224ca80");
+  assert.equal(source.value.validator.bytes, 8_559_757);
+  assert.equal(source.value.validator.sha256, "6c652c15b2eda1c2bd29cc29377e1bbd2bdff9a6f48c7200bd7fd300d19151b1");
   assert.equal(source.value.runner.bundle.file, "tools/region-import/germany/run-capture-operational-infrastructure-v2.anchored-bundle.mjs");
   assert.equal(source.value.runner.entrypoint.file, "tools/region-import/germany/run-capture-operational-infrastructure-v2.mjs");
   assert.deepEqual(source.value.runner.invocation, {

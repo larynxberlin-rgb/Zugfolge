@@ -18,7 +18,10 @@ import {
   serializeGermanyOperationalExecutionPins,
   validateGermanyOperationalExecutionPins,
 } from "./operational-infrastructure-v2-execution-pins.mjs";
-import { validateOperationalValidatorRebuildSpec } from "./operational-validator-rebuild-evidence.mjs";
+import {
+  OPERATIONAL_VALIDATOR_MAX_BINARY_BYTES,
+  validateOperationalValidatorRebuildSpec,
+} from "./operational-validator-rebuild-evidence.mjs";
 import {
   GERMANY_OPERATIONAL_DIRECT_SYSTEM_LAUNCH_BINDINGS,
   GERMANY_OPERATIONAL_DIRECT_SYSTEM_LAUNCH_CONTRACT_SCHEMA,
@@ -218,11 +221,11 @@ const TURNAROUND_POLICY_V2 = Object.freeze({
 });
 const TIMETABLE_UPSTREAM_V2_2026_5 = Object.freeze({
   patch: "2026.5",
-  operationalValidatorBuildCommit: "aba354ec1937452a491087626ec0adea36ef6695",
-  operationalValidatorBytes: 8_382_277,
-  operationalValidatorSha256: "c35e72e352ae573e0416035fc4f0d233af5668864c0bd8df7333337e87bb7fd4",
-  operationalValidatorRebuildExpectedBytes: 8_382_277,
-  operationalValidatorNormalizedPeSha256: "ae39f5a8378641be0d02be56e93bf585a49a6e65bc1f5a02b77cd2bd556d38cb",
+  operationalValidatorBuildCommit: "b76edcae260541de66e3b2e84869d66dd224ca80",
+  operationalValidatorBytes: 8_559_757,
+  operationalValidatorSha256: "6c652c15b2eda1c2bd29cc29377e1bbd2bdff9a6f48c7200bd7fd300d19151b1",
+  operationalValidatorRebuildExpectedBytes: 8_559_757,
+  operationalValidatorNormalizedPeSha256: "7dc19bc4c7a34492a0c45d3c67872a2226644f2e414e069999eb2e4a0b20eefe",
   operationalValidatorAuthority: Object.freeze({
     annualExecutorPlan: Object.freeze({
       arguments: Object.freeze([
@@ -244,10 +247,10 @@ const TIMETABLE_UPSTREAM_V2_2026_5 = Object.freeze({
       bundleFile: "var/derived/germany-2026.5/toolchain/zugfolge-infra-release-rebuild-attestation.sigstore.json",
       predicateType: "https://slsa.dev/provenance/v1",
       subjects: Object.freeze([
-        "var/derived/germany-2026.5/toolchain/zugfolge-infra-release-rebuild-aba354ec1937452a491087626ec0adea36ef6695-official.exe",
-        "var/derived/germany-2026.5/toolchain/zugfolge-infra-release-rebuild-provenance-aba354ec1937452a491087626ec0adea36ef6695.json",
+        "var/derived/germany-2026.5/toolchain/zugfolge-infra-release-rebuild-b76edcae260541de66e3b2e84869d66dd224ca80-official.exe",
+        "var/derived/germany-2026.5/toolchain/zugfolge-infra-release-rebuild-provenance-b76edcae260541de66e3b2e84869d66dd224ca80.json",
         "var/derived/germany-2026.5/toolchain/zugfolge-infra-release-rebuild-evidence.json",
-        "var/derived/germany-2026.5/toolchain/zugfolge-infra-release-aba354ec1937452a491087626ec0adea36ef6695-c35e72e352ae573e0416035fc4f0d233af5668864c0bd8df7333337e87bb7fd4.exe",
+        "var/derived/germany-2026.5/toolchain/zugfolge-infra-release-b76edcae260541de66e3b2e84869d66dd224ca80-6c652c15b2eda1c2bd29cc29377e1bbd2bdff9a6f48c7200bd7fd300d19151b1.exe",
         "tools/region-import/germany/operational-infrastructure-v2-direct-system-launch.annual-2026.5.json",
         "var/derived/germany-2026.5/toolchain/zugfolge-infra-release-annual-plan.json",
         "var/derived/germany-2026.5/toolchain/zugfolge-infra-release-annual-plan.json.zugfolge-complete.json",
@@ -274,13 +277,13 @@ const TIMETABLE_UPSTREAM_V2_2026_5 = Object.freeze({
     sha256: "3602f2bb1a10f2cbab4c36886218a33c1ab3db87290e73b033c46c77147d0237",
   }),
   operationalValidatorSourceArchive: Object.freeze({
-    bytes: 25_661_440,
-    sha256: "3f267637dcd52dded45ca921d27863149b3fd2919b7bb2e9d881b381c04565af",
+    bytes: 27_801_600,
+    sha256: "62fadb62a528175594a176576ec23d0c7ebc3f09845fec2aee7e3c51bfad292c",
   }),
   operationalValidatorSourceTree: Object.freeze({
-    fileCount: 1_325,
-    manifestSha256: "3276cda6c04f5e48d89c4e7686900a263e8b2ba0a13ce9393d1d096f1dacf1c5",
-    totalBytes: 24_541_942,
+    fileCount: 1_354,
+    manifestSha256: "134e7431b717387b29a07b733829461dfc4d4ac67c3612f4792cdc622361fb04",
+    totalBytes: 26_661_667,
   }),
   operationalValidatorVendor: Object.freeze({
     archive: Object.freeze({
@@ -468,7 +471,7 @@ function createOperationalValidatorRebuildSpecification(targetPatch, operational
       ],
       format: "PE32+",
       machine: 34_404,
-      maxBinaryBytes: 8_388_608,
+      maxBinaryBytes: OPERATIONAL_VALIDATOR_MAX_BINARY_BYTES,
       normalizedSha256: target.operationalValidatorNormalizedPeSha256,
       sections: [
         { name: ".text", rawData: "non-empty" },

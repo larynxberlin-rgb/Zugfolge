@@ -1080,20 +1080,20 @@ test("2026.5 trennt den primaeren Operational-v2-Runner vom receiptgebundenen Re
       contract: {
         file: "tools/region-import/germany/operational-infrastructure-v2-direct-system-launch.annual-2026.5.json",
         bytes: 22_507,
-        sha256: "79ec54c9c1df5e21abed3b8d59c6ad60ee472b10a1ad46f154a211fb0ad6adb5",
+        sha256: "a5c593e966086ce61ce3187778a3c532a8bf2ae9b12604cd080de5b39f452f04",
         schema: "zugfolge-operational-v2-direct-system-launch-contract/v1",
         releaseId: "infra-deutschland-2026.5",
         executionPins: {
           file: "tools/region-import/germany/operational-infrastructure-v2-execution-pins.annual-2026.5.json",
           bytes: 4_841,
-          sha256: "b3bb21163ba96db2ac25443e3f9b741291fa92cd54ca3d0b6bea8acfa1f1dc11",
+          sha256: "9c3ea9f15bfa043fef7a6a2d85fe427423b3557fd3e5d4d4a24c700718c6b370",
           schema: "zugfolge-germany-operational-v2-execution-pins/v1",
         },
         trustedExecutor: {
-          file: "var/derived/germany-2026.5/toolchain/zugfolge-infra-release-aba354ec1937452a491087626ec0adea36ef6695-c35e72e352ae573e0416035fc4f0d233af5668864c0bd8df7333337e87bb7fd4.exe",
-          buildCommit: "aba354ec1937452a491087626ec0adea36ef6695",
-          bytes: 8_382_277,
-          sha256: "c35e72e352ae573e0416035fc4f0d233af5668864c0bd8df7333337e87bb7fd4",
+          file: "var/derived/germany-2026.5/toolchain/zugfolge-infra-release-b76edcae260541de66e3b2e84869d66dd224ca80-6c652c15b2eda1c2bd29cc29377e1bbd2bdff9a6f48c7200bd7fd300d19151b1.exe",
+          buildCommit: "b76edcae260541de66e3b2e84869d66dd224ca80",
+          bytes: 8_559_757,
+          sha256: "6c652c15b2eda1c2bd29cc29377e1bbd2bdff9a6f48c7200bd7fd300d19151b1",
         },
       },
     },
@@ -1107,15 +1107,15 @@ test("2026.5 trennt den primaeren Operational-v2-Runner vom receiptgebundenen Re
     recoveryPublisher: {
       captureEntrypoint: "tools/region-import/germany/capture-operational-infrastructure-v2-native-receipt.mjs",
       entrypoint: "tools/region-import/germany/publish-operational-infrastructure-v2.mjs",
-      validatorExecutable: "var/derived/germany-2026.5/toolchain/zugfolge-infra-release-aba354ec1937452a491087626ec0adea36ef6695-c35e72e352ae573e0416035fc4f0d233af5668864c0bd8df7333337e87bb7fd4.exe",
-      validatorBuildCommit: "aba354ec1937452a491087626ec0adea36ef6695",
-      validatorBytes: 8_382_277,
-      validatorSha256: "c35e72e352ae573e0416035fc4f0d233af5668864c0bd8df7333337e87bb7fd4",
+      validatorExecutable: "var/derived/germany-2026.5/toolchain/zugfolge-infra-release-b76edcae260541de66e3b2e84869d66dd224ca80-6c652c15b2eda1c2bd29cc29377e1bbd2bdff9a6f48c7200bd7fd300d19151b1.exe",
+      validatorBuildCommit: "b76edcae260541de66e3b2e84869d66dd224ca80",
+      validatorBytes: 8_559_757,
+      validatorSha256: "6c652c15b2eda1c2bd29cc29377e1bbd2bdff9a6f48c7200bd7fd300d19151b1",
       validatorRebuildSpecification: "tools/region-import/germany/operational-validator-rebuild.annual-2026.5.json",
       validatorRebuildEvidence: "var/derived/germany-2026.5/toolchain/zugfolge-infra-release-rebuild-evidence.json",
-      validatorRebuildExecutable: "var/derived/germany-2026.5/toolchain/zugfolge-infra-release-rebuild-aba354ec1937452a491087626ec0adea36ef6695-official.exe",
-      validatorRebuildExpectedBytes: 8_382_277,
-      validatorNormalizedPeSha256: "ae39f5a8378641be0d02be56e93bf585a49a6e65bc1f5a02b77cd2bd556d38cb",
+      validatorRebuildExecutable: "var/derived/germany-2026.5/toolchain/zugfolge-infra-release-rebuild-b76edcae260541de66e3b2e84869d66dd224ca80-official.exe",
+      validatorRebuildExpectedBytes: 8_559_757,
+      validatorNormalizedPeSha256: "7dc19bc4c7a34492a0c45d3c67872a2226644f2e414e069999eb2e4a0b20eefe",
       executionInventory: {
         wrapper: "tools/region-import/germany/publish-operational-infrastructure-v2.mjs",
         implementation: "tools/region-import/germany/operational-infrastructure-v2-publication.mjs",
@@ -1138,18 +1138,18 @@ test("2026.5 trennt den primaeren Operational-v2-Runner vom receiptgebundenen Re
     "operational-infrastructure-v2.native-receipt.json",
     "operational-infrastructure-v2.publication-receipt.json",
     "zugfolge-infra-release-rebuild-evidence.json",
-    "zugfolge-infra-release-source-aba354ec1937452a491087626ec0adea36ef6695-3f267637dcd52dded45ca921d27863149b3fd2919b7bb2e9d881b381c04565af.tar",
-    "zugfolge-infra-release-rebuild-provenance-aba354ec1937452a491087626ec0adea36ef6695.json",
+    "zugfolge-infra-release-source-b76edcae260541de66e3b2e84869d66dd224ca80-62fadb62a528175594a176576ec23d0c7ebc3f09845fec2aee7e3c51bfad292c.tar",
+    "zugfolge-infra-release-rebuild-provenance-b76edcae260541de66e3b2e84869d66dd224ca80.json",
   ]) {
     assert.ok(cachePlan.files.some(({ sourceFile, cacheFile }) => sourceFile.endsWith(`/${file}`) && cacheFile.endsWith(`/${file}`)), `${file} fehlt im Buildcache-Inventar`);
   }
   assert.ok(cachePlan.files.some(({ sourceFile, cacheFile }) => (
-    sourceFile === "var/derived/germany-2026.5/toolchain/zugfolge-infra-release-aba354ec1937452a491087626ec0adea36ef6695-c35e72e352ae573e0416035fc4f0d233af5668864c0bd8df7333337e87bb7fd4.exe"
-      && cacheFile === "tools/zugfolge-infra-release/infra-deutschland-2026.5/aba354ec1937452a491087626ec0adea36ef6695/c35e72e352ae573e0416035fc4f0d233af5668864c0bd8df7333337e87bb7fd4/zugfolge-infra-release.exe"
+    sourceFile === "var/derived/germany-2026.5/toolchain/zugfolge-infra-release-b76edcae260541de66e3b2e84869d66dd224ca80-6c652c15b2eda1c2bd29cc29377e1bbd2bdff9a6f48c7200bd7fd300d19151b1.exe"
+      && cacheFile === "tools/zugfolge-infra-release/infra-deutschland-2026.5/b76edcae260541de66e3b2e84869d66dd224ca80/6c652c15b2eda1c2bd29cc29377e1bbd2bdff9a6f48c7200bd7fd300d19151b1/zugfolge-infra-release.exe"
   )), "effektives Validator-Binary fehlt im Buildcache-Inventar");
   assert.ok(cachePlan.files.some(({ sourceFile, cacheFile }) => (
-    sourceFile === "var/derived/germany-2026.5/toolchain/zugfolge-infra-release-rebuild-aba354ec1937452a491087626ec0adea36ef6695-official.exe"
-      && cacheFile === "tools/zugfolge-infra-release/infra-deutschland-2026.5/aba354ec1937452a491087626ec0adea36ef6695/official/zugfolge-infra-release.exe"
+    sourceFile === "var/derived/germany-2026.5/toolchain/zugfolge-infra-release-rebuild-b76edcae260541de66e3b2e84869d66dd224ca80-official.exe"
+      && cacheFile === "tools/zugfolge-infra-release/infra-deutschland-2026.5/b76edcae260541de66e3b2e84869d66dd224ca80/official/zugfolge-infra-release.exe"
   )), "immutable Validator-Rebuild-Binary fehlt im Buildcache-Inventar");
 });
 

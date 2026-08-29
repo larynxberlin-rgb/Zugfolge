@@ -589,24 +589,24 @@ test("migriert die hermetische 58b2f5c-.4-Form target-only und laesst alle Quell
     );
   }
   assert.ok(cachePlan.files.some(({ sourceFile, cacheFile }) => (
-    sourceFile === "var/derived/germany-2026.5/toolchain/zugfolge-infra-release-aba354ec1937452a491087626ec0adea36ef6695-c35e72e352ae573e0416035fc4f0d233af5668864c0bd8df7333337e87bb7fd4.exe"
-      && cacheFile === "tools/zugfolge-infra-release/infra-deutschland-2026.5/aba354ec1937452a491087626ec0adea36ef6695/c35e72e352ae573e0416035fc4f0d233af5668864c0bd8df7333337e87bb7fd4/zugfolge-infra-release.exe"
+    sourceFile === "var/derived/germany-2026.5/toolchain/zugfolge-infra-release-b76edcae260541de66e3b2e84869d66dd224ca80-6c652c15b2eda1c2bd29cc29377e1bbd2bdff9a6f48c7200bd7fd300d19151b1.exe"
+      && cacheFile === "tools/zugfolge-infra-release/infra-deutschland-2026.5/b76edcae260541de66e3b2e84869d66dd224ca80/6c652c15b2eda1c2bd29cc29377e1bbd2bdff9a6f48c7200bd7fd300d19151b1/zugfolge-infra-release.exe"
   )));
   assert.ok(cachePlan.files.some(({ sourceFile, cacheFile }) => (
     sourceFile === "var/derived/germany-2026.5/toolchain/zugfolge-infra-release-rebuild-evidence.json"
       && cacheFile === "derived/infra-deutschland-2026.5/toolchain/zugfolge-infra-release-rebuild-evidence.json"
   )));
   assert.ok(cachePlan.files.some(({ sourceFile, cacheFile }) => (
-    sourceFile === "var/derived/germany-2026.5/toolchain/zugfolge-infra-release-source-aba354ec1937452a491087626ec0adea36ef6695-3f267637dcd52dded45ca921d27863149b3fd2919b7bb2e9d881b381c04565af.tar"
-      && cacheFile === "derived/infra-deutschland-2026.5/toolchain/zugfolge-infra-release-source-aba354ec1937452a491087626ec0adea36ef6695-3f267637dcd52dded45ca921d27863149b3fd2919b7bb2e9d881b381c04565af.tar"
+    sourceFile === "var/derived/germany-2026.5/toolchain/zugfolge-infra-release-source-b76edcae260541de66e3b2e84869d66dd224ca80-62fadb62a528175594a176576ec23d0c7ebc3f09845fec2aee7e3c51bfad292c.tar"
+      && cacheFile === "derived/infra-deutschland-2026.5/toolchain/zugfolge-infra-release-source-b76edcae260541de66e3b2e84869d66dd224ca80-62fadb62a528175594a176576ec23d0c7ebc3f09845fec2aee7e3c51bfad292c.tar"
   )));
   assert.ok(cachePlan.files.some(({ sourceFile, cacheFile }) => (
-    sourceFile === "var/derived/germany-2026.5/toolchain/zugfolge-infra-release-rebuild-provenance-aba354ec1937452a491087626ec0adea36ef6695.json"
-      && cacheFile === "derived/infra-deutschland-2026.5/toolchain/zugfolge-infra-release-rebuild-provenance-aba354ec1937452a491087626ec0adea36ef6695.json"
+    sourceFile === "var/derived/germany-2026.5/toolchain/zugfolge-infra-release-rebuild-provenance-b76edcae260541de66e3b2e84869d66dd224ca80.json"
+      && cacheFile === "derived/infra-deutschland-2026.5/toolchain/zugfolge-infra-release-rebuild-provenance-b76edcae260541de66e3b2e84869d66dd224ca80.json"
   )));
   assert.ok(cachePlan.files.some(({ sourceFile, cacheFile }) => (
-    sourceFile === "var/derived/germany-2026.5/toolchain/zugfolge-infra-release-rebuild-aba354ec1937452a491087626ec0adea36ef6695-official.exe"
-      && cacheFile === "tools/zugfolge-infra-release/infra-deutschland-2026.5/aba354ec1937452a491087626ec0adea36ef6695/official/zugfolge-infra-release.exe"
+    sourceFile === "var/derived/germany-2026.5/toolchain/zugfolge-infra-release-rebuild-b76edcae260541de66e3b2e84869d66dd224ca80-official.exe"
+      && cacheFile === "tools/zugfolge-infra-release/infra-deutschland-2026.5/b76edcae260541de66e3b2e84869d66dd224ca80/official/zugfolge-infra-release.exe"
   )));
 
   const mapPackage = JSON.parse(await readFile(join(root, result.files[6]), "utf8"));
@@ -702,17 +702,17 @@ test("migriert die hermetische 58b2f5c-.4-Form target-only und laesst alle Quell
     id: "operational-v2-validator",
     kind: "binary",
     version: "operational-validator-build-commit",
-    file: "var/derived/germany-2026.5/toolchain/zugfolge-infra-release-aba354ec1937452a491087626ec0adea36ef6695-c35e72e352ae573e0416035fc4f0d233af5668864c0bd8df7333337e87bb7fd4.exe",
-    cacheFile: "tools/zugfolge-infra-release/infra-deutschland-2026.5/aba354ec1937452a491087626ec0adea36ef6695/c35e72e352ae573e0416035fc4f0d233af5668864c0bd8df7333337e87bb7fd4/zugfolge-infra-release.exe",
-    expectedBytes: 8_382_277,
-    expectedSha256: "c35e72e352ae573e0416035fc4f0d233af5668864c0bd8df7333337e87bb7fd4",
+    file: "var/derived/germany-2026.5/toolchain/zugfolge-infra-release-b76edcae260541de66e3b2e84869d66dd224ca80-6c652c15b2eda1c2bd29cc29377e1bbd2bdff9a6f48c7200bd7fd300d19151b1.exe",
+    cacheFile: "tools/zugfolge-infra-release/infra-deutschland-2026.5/b76edcae260541de66e3b2e84869d66dd224ca80/6c652c15b2eda1c2bd29cc29377e1bbd2bdff9a6f48c7200bd7fd300d19151b1/zugfolge-infra-release.exe",
+    expectedBytes: 8_559_757,
+    expectedSha256: "6c652c15b2eda1c2bd29cc29377e1bbd2bdff9a6f48c7200bd7fd300d19151b1",
   });
   assert.deepEqual(evidence.tools[1], {
     id: "operational-v2-validator-rebuild",
     kind: "binary",
     version: "operational-validator-rebuild-proof",
-    file: "var/derived/germany-2026.5/toolchain/zugfolge-infra-release-rebuild-aba354ec1937452a491087626ec0adea36ef6695-official.exe",
-    cacheFile: "tools/zugfolge-infra-release/infra-deutschland-2026.5/aba354ec1937452a491087626ec0adea36ef6695/official/zugfolge-infra-release.exe",
+    file: "var/derived/germany-2026.5/toolchain/zugfolge-infra-release-rebuild-b76edcae260541de66e3b2e84869d66dd224ca80-official.exe",
+    cacheFile: "tools/zugfolge-infra-release/infra-deutschland-2026.5/b76edcae260541de66e3b2e84869d66dd224ca80/official/zugfolge-infra-release.exe",
   });
 
   const releaseConfig = JSON.parse(await readFile(
@@ -735,15 +735,15 @@ test("migriert die hermetische 58b2f5c-.4-Form target-only und laesst alle Quell
     recoveryPublisher: {
       captureEntrypoint: "tools/region-import/germany/capture-operational-infrastructure-v2-native-receipt.mjs",
       entrypoint: "tools/region-import/germany/publish-operational-infrastructure-v2.mjs",
-      validatorExecutable: "var/derived/germany-2026.5/toolchain/zugfolge-infra-release-aba354ec1937452a491087626ec0adea36ef6695-c35e72e352ae573e0416035fc4f0d233af5668864c0bd8df7333337e87bb7fd4.exe",
-      validatorBuildCommit: "aba354ec1937452a491087626ec0adea36ef6695",
-      validatorBytes: 8_382_277,
-      validatorSha256: "c35e72e352ae573e0416035fc4f0d233af5668864c0bd8df7333337e87bb7fd4",
+      validatorExecutable: "var/derived/germany-2026.5/toolchain/zugfolge-infra-release-b76edcae260541de66e3b2e84869d66dd224ca80-6c652c15b2eda1c2bd29cc29377e1bbd2bdff9a6f48c7200bd7fd300d19151b1.exe",
+      validatorBuildCommit: "b76edcae260541de66e3b2e84869d66dd224ca80",
+      validatorBytes: 8_559_757,
+      validatorSha256: "6c652c15b2eda1c2bd29cc29377e1bbd2bdff9a6f48c7200bd7fd300d19151b1",
       validatorRebuildSpecification: "tools/region-import/germany/operational-validator-rebuild.annual-2026.5.json",
       validatorRebuildEvidence: "var/derived/germany-2026.5/toolchain/zugfolge-infra-release-rebuild-evidence.json",
-      validatorRebuildExecutable: "var/derived/germany-2026.5/toolchain/zugfolge-infra-release-rebuild-aba354ec1937452a491087626ec0adea36ef6695-official.exe",
-      validatorRebuildExpectedBytes: 8_382_277,
-      validatorNormalizedPeSha256: "ae39f5a8378641be0d02be56e93bf585a49a6e65bc1f5a02b77cd2bd556d38cb",
+      validatorRebuildExecutable: "var/derived/germany-2026.5/toolchain/zugfolge-infra-release-rebuild-b76edcae260541de66e3b2e84869d66dd224ca80-official.exe",
+      validatorRebuildExpectedBytes: 8_559_757,
+      validatorNormalizedPeSha256: "7dc19bc4c7a34492a0c45d3c67872a2226644f2e414e069999eb2e4a0b20eefe",
       executionInventory: {
         wrapper: "tools/region-import/germany/publish-operational-infrastructure-v2.mjs",
         implementation: "tools/region-import/germany/operational-infrastructure-v2-publication.mjs",
@@ -808,10 +808,10 @@ test("migriert die hermetische 58b2f5c-.4-Form target-only und laesst alle Quell
       bundleFile: "var/derived/germany-2026.5/toolchain/zugfolge-infra-release-rebuild-attestation.sigstore.json",
       predicateType: "https://slsa.dev/provenance/v1",
       subjects: [
-        "var/derived/germany-2026.5/toolchain/zugfolge-infra-release-rebuild-aba354ec1937452a491087626ec0adea36ef6695-official.exe",
-        "var/derived/germany-2026.5/toolchain/zugfolge-infra-release-rebuild-provenance-aba354ec1937452a491087626ec0adea36ef6695.json",
+        "var/derived/germany-2026.5/toolchain/zugfolge-infra-release-rebuild-b76edcae260541de66e3b2e84869d66dd224ca80-official.exe",
+        "var/derived/germany-2026.5/toolchain/zugfolge-infra-release-rebuild-provenance-b76edcae260541de66e3b2e84869d66dd224ca80.json",
         "var/derived/germany-2026.5/toolchain/zugfolge-infra-release-rebuild-evidence.json",
-        "var/derived/germany-2026.5/toolchain/zugfolge-infra-release-aba354ec1937452a491087626ec0adea36ef6695-c35e72e352ae573e0416035fc4f0d233af5668864c0bd8df7333337e87bb7fd4.exe",
+        "var/derived/germany-2026.5/toolchain/zugfolge-infra-release-b76edcae260541de66e3b2e84869d66dd224ca80-6c652c15b2eda1c2bd29cc29377e1bbd2bdff9a6f48c7200bd7fd300d19151b1.exe",
         "tools/region-import/germany/operational-infrastructure-v2-direct-system-launch.annual-2026.5.json",
         "var/derived/germany-2026.5/toolchain/zugfolge-infra-release-annual-plan.json",
         "var/derived/germany-2026.5/toolchain/zugfolge-infra-release-annual-plan.json.zugfolge-complete.json",
@@ -831,11 +831,11 @@ test("migriert die hermetische 58b2f5c-.4-Form target-only und laesst alle Quell
     runnerImages: ["windows-2025", "windows-2022"],
     workflowFile: ".github/workflows/operational-validator-rebuild-evidence.yml",
   });
-  assert.equal(validatorRebuild.source.commit, "aba354ec1937452a491087626ec0adea36ef6695");
+  assert.equal(validatorRebuild.source.commit, "b76edcae260541de66e3b2e84869d66dd224ca80");
   assert.deepEqual(validatorRebuild.source.tree, {
-    fileCount: 1_325,
-    manifestSha256: "3276cda6c04f5e48d89c4e7686900a263e8b2ba0a13ce9393d1d096f1dacf1c5",
-    totalBytes: 24_541_942,
+    fileCount: 1_354,
+    manifestSha256: "134e7431b717387b29a07b733829461dfc4d4ac67c3612f4792cdc622361fb04",
+    totalBytes: 26_661_667,
   });
   assert.equal(validatorRebuild.source.vendor.archive.sha256, "17611dd9dca437185a59e6696efe21cc64d9e86b03d48fcebe6d5546688cc5f9");
   assert.equal(validatorRebuild.source.vendor.cargoConfig.sha256, "77e9219c27274120197571fd165cbe4121963b5ad3bc0b20b383c86ef0ce6c2b");
@@ -850,8 +850,8 @@ test("migriert die hermetische 58b2f5c-.4-Form target-only und laesst alle Quell
   assert.deepEqual(validatorRebuild.build.environmentPolicy.allowedInherited, []);
   assert.equal(validatorRebuild.build.environmentPolicy.fixed.CARGO_BUILD_JOBS, "1");
   assert.equal(validatorRebuild.build.processLimits.maxOutputBytes, 16_777_216);
-  assert.equal(validatorRebuild.binaries.preserved.sha256, "c35e72e352ae573e0416035fc4f0d233af5668864c0bd8df7333337e87bb7fd4");
-  assert.equal(validatorRebuild.pe.normalizedSha256, "ae39f5a8378641be0d02be56e93bf585a49a6e65bc1f5a02b77cd2bd556d38cb");
+  assert.equal(validatorRebuild.binaries.preserved.sha256, "6c652c15b2eda1c2bd29cc29377e1bbd2bdff9a6f48c7200bd7fd300d19151b1");
+  assert.equal(validatorRebuild.pe.normalizedSha256, "7dc19bc4c7a34492a0c45d3c67872a2226644f2e414e069999eb2e4a0b20eefe");
   assert.deepEqual(Object.keys(validatorRebuild.producer), ["bundle", "entrypoint", "executionPins", "implementation"]);
   assert.deepEqual(validatorRebuild.producer.bundle, executionPins.runner.bundle);
   assert.deepEqual(validatorRebuild.producer.entrypoint, executionPins.runner.entrypoint);
@@ -1298,24 +1298,24 @@ test("erstellt den vollstaendigen direkten Jahrespatch create-new und laesst Que
     assert.equal(cachePlan.files.filter(({ cacheFile }) => cacheFile.split("/").at(-1) === fileName).length, 1);
   }
   assert.ok(cachePlan.files.some(({ sourceFile, cacheFile }) => (
-    sourceFile === "var/derived/germany-2026.5/toolchain/zugfolge-infra-release-aba354ec1937452a491087626ec0adea36ef6695-c35e72e352ae573e0416035fc4f0d233af5668864c0bd8df7333337e87bb7fd4.exe"
-      && cacheFile === "tools/zugfolge-infra-release/infra-deutschland-2026.5/aba354ec1937452a491087626ec0adea36ef6695/c35e72e352ae573e0416035fc4f0d233af5668864c0bd8df7333337e87bb7fd4/zugfolge-infra-release.exe"
+    sourceFile === "var/derived/germany-2026.5/toolchain/zugfolge-infra-release-b76edcae260541de66e3b2e84869d66dd224ca80-6c652c15b2eda1c2bd29cc29377e1bbd2bdff9a6f48c7200bd7fd300d19151b1.exe"
+      && cacheFile === "tools/zugfolge-infra-release/infra-deutschland-2026.5/b76edcae260541de66e3b2e84869d66dd224ca80/6c652c15b2eda1c2bd29cc29377e1bbd2bdff9a6f48c7200bd7fd300d19151b1/zugfolge-infra-release.exe"
   )));
   assert.ok(cachePlan.files.some(({ sourceFile, cacheFile }) => (
     sourceFile === "var/derived/germany-2026.5/toolchain/zugfolge-infra-release-rebuild-evidence.json"
       && cacheFile === "derived/infra-deutschland-2026.5/toolchain/zugfolge-infra-release-rebuild-evidence.json"
   )));
   assert.ok(cachePlan.files.some(({ sourceFile, cacheFile }) => (
-    sourceFile === "var/derived/germany-2026.5/toolchain/zugfolge-infra-release-source-aba354ec1937452a491087626ec0adea36ef6695-3f267637dcd52dded45ca921d27863149b3fd2919b7bb2e9d881b381c04565af.tar"
-      && cacheFile === "derived/infra-deutschland-2026.5/toolchain/zugfolge-infra-release-source-aba354ec1937452a491087626ec0adea36ef6695-3f267637dcd52dded45ca921d27863149b3fd2919b7bb2e9d881b381c04565af.tar"
+    sourceFile === "var/derived/germany-2026.5/toolchain/zugfolge-infra-release-source-b76edcae260541de66e3b2e84869d66dd224ca80-62fadb62a528175594a176576ec23d0c7ebc3f09845fec2aee7e3c51bfad292c.tar"
+      && cacheFile === "derived/infra-deutschland-2026.5/toolchain/zugfolge-infra-release-source-b76edcae260541de66e3b2e84869d66dd224ca80-62fadb62a528175594a176576ec23d0c7ebc3f09845fec2aee7e3c51bfad292c.tar"
   )));
   assert.ok(cachePlan.files.some(({ sourceFile, cacheFile }) => (
-    sourceFile === "var/derived/germany-2026.5/toolchain/zugfolge-infra-release-rebuild-provenance-aba354ec1937452a491087626ec0adea36ef6695.json"
-      && cacheFile === "derived/infra-deutschland-2026.5/toolchain/zugfolge-infra-release-rebuild-provenance-aba354ec1937452a491087626ec0adea36ef6695.json"
+    sourceFile === "var/derived/germany-2026.5/toolchain/zugfolge-infra-release-rebuild-provenance-b76edcae260541de66e3b2e84869d66dd224ca80.json"
+      && cacheFile === "derived/infra-deutschland-2026.5/toolchain/zugfolge-infra-release-rebuild-provenance-b76edcae260541de66e3b2e84869d66dd224ca80.json"
   )));
   assert.ok(cachePlan.files.some(({ sourceFile, cacheFile }) => (
-    sourceFile === "var/derived/germany-2026.5/toolchain/zugfolge-infra-release-rebuild-aba354ec1937452a491087626ec0adea36ef6695-official.exe"
-      && cacheFile === "tools/zugfolge-infra-release/infra-deutschland-2026.5/aba354ec1937452a491087626ec0adea36ef6695/official/zugfolge-infra-release.exe"
+    sourceFile === "var/derived/germany-2026.5/toolchain/zugfolge-infra-release-rebuild-b76edcae260541de66e3b2e84869d66dd224ca80-official.exe"
+      && cacheFile === "tools/zugfolge-infra-release/infra-deutschland-2026.5/b76edcae260541de66e3b2e84869d66dd224ca80/official/zugfolge-infra-release.exe"
   )));
   const buildEvidence = JSON.parse(await readFile(join(root, result.files[3]), "utf8"));
   assert.equal(buildEvidence.schema, "zugfolge-map-release-build-evidence-spec/v3");
@@ -1342,17 +1342,17 @@ test("erstellt den vollstaendigen direkten Jahrespatch create-new und laesst Que
     id: "operational-v2-validator",
     kind: "binary",
     version: "operational-validator-build-commit",
-    file: "var/derived/germany-2026.5/toolchain/zugfolge-infra-release-aba354ec1937452a491087626ec0adea36ef6695-c35e72e352ae573e0416035fc4f0d233af5668864c0bd8df7333337e87bb7fd4.exe",
-    cacheFile: "tools/zugfolge-infra-release/infra-deutschland-2026.5/aba354ec1937452a491087626ec0adea36ef6695/c35e72e352ae573e0416035fc4f0d233af5668864c0bd8df7333337e87bb7fd4/zugfolge-infra-release.exe",
-    expectedBytes: 8_382_277,
-    expectedSha256: "c35e72e352ae573e0416035fc4f0d233af5668864c0bd8df7333337e87bb7fd4",
+    file: "var/derived/germany-2026.5/toolchain/zugfolge-infra-release-b76edcae260541de66e3b2e84869d66dd224ca80-6c652c15b2eda1c2bd29cc29377e1bbd2bdff9a6f48c7200bd7fd300d19151b1.exe",
+    cacheFile: "tools/zugfolge-infra-release/infra-deutschland-2026.5/b76edcae260541de66e3b2e84869d66dd224ca80/6c652c15b2eda1c2bd29cc29377e1bbd2bdff9a6f48c7200bd7fd300d19151b1/zugfolge-infra-release.exe",
+    expectedBytes: 8_559_757,
+    expectedSha256: "6c652c15b2eda1c2bd29cc29377e1bbd2bdff9a6f48c7200bd7fd300d19151b1",
   });
   assert.deepEqual(buildEvidence.tools[1], {
     id: "operational-v2-validator-rebuild",
     kind: "binary",
     version: "operational-validator-rebuild-proof",
-    file: "var/derived/germany-2026.5/toolchain/zugfolge-infra-release-rebuild-aba354ec1937452a491087626ec0adea36ef6695-official.exe",
-    cacheFile: "tools/zugfolge-infra-release/infra-deutschland-2026.5/aba354ec1937452a491087626ec0adea36ef6695/official/zugfolge-infra-release.exe",
+    file: "var/derived/germany-2026.5/toolchain/zugfolge-infra-release-rebuild-b76edcae260541de66e3b2e84869d66dd224ca80-official.exe",
+    cacheFile: "tools/zugfolge-infra-release/infra-deutschland-2026.5/b76edcae260541de66e3b2e84869d66dd224ca80/official/zugfolge-infra-release.exe",
   });
   assert.deepEqual(buildEvidence.outputs.slice(-2), [
     {
