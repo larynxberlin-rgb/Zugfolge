@@ -179,9 +179,9 @@
   },
   "producer": {
     "bundle": {
-      "bytes": 629092,
+      "bytes": 637776,
       "file": "tools/region-import/germany/run-capture-operational-infrastructure-v2.anchored-bundle.mjs",
-      "sha256": "b623d0799b55422babadf4de9dd51427b8e6864c5dcfbfb163151d59df65b924"
+      "sha256": "55cbf145a9e515e4e73c95a6ff96f9af015f7e683a6d7770ce5da2d9037343ca"
     },
     "entrypoint": {
       "bytes": 26551,
@@ -191,12 +191,12 @@
     "executionPins": {
       "bytes": 4841,
       "file": "tools/region-import/germany/operational-infrastructure-v2-execution-pins.annual-2026.5.json",
-      "sha256": "2e3fbbb43dbe599da42d717c9e721e57567818c039293b95638cc7f227813890"
+      "sha256": "fb0288e5eb5ee1101705c7db315729600037ca7bde6ab4f8f6cc0b1d6b4db1b5"
     },
     "implementation": {
-      "bytes": 248798,
+      "bytes": 257259,
       "file": "tools/region-import/germany/operational-validator-rebuild-evidence.mjs",
-      "sha256": "63742e50080bd2b6475c6e293f3ffc2e7d00f6ab88d6c19ca537f51652213063"
+      "sha256": "546c710c62fa50c679a1d47f878f3a234257fdb480df2036bbe0ca04a02013d4"
     }
   },
   "provenance": {

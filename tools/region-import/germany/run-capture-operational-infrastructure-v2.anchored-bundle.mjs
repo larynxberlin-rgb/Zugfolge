@@ -4790,6 +4790,7 @@ var MAX_SOURCE_FILE_BYTES = 64 * 1024 * 1024;
 var MAX_SOURCE_TREE_ENTRIES = 1e5;
 var MAX_PROCESS_OUTPUT_BYTES = 16 * 1024 * 1024;
 var MAX_WINDOWS_ANCHOR_DIAGNOSTIC_BYTES = 512;
+var WINDOWS_ANCHOR_COMMIT_ACK_TIMEOUT_MS = 15e3;
 var SHA2565 = /^[a-f0-9]{64}$/;
 var GIT_COMMIT2 = /^[a-f0-9]{40}$/;
 var PORTABLE_FILE = /^(?![A-Za-z]:)(?!\/)(?!.*\\)(?!.*(?:^|\/)\.\.?(?:\/|$))[A-Za-z0-9._@+-]+(?:\/[A-Za-z0-9._@+-]+)*$/;
@@ -6222,6 +6223,7 @@ $ProgressPreference = 'SilentlyContinue'
 $held = [System.Collections.Generic.List[System.IDisposable]]::new()
 $publishedStreams = [System.Collections.Generic.List[object]]::new()
 $publicationCommitted = $false
+$ephemeralAccountDeleted = $false
 $anchorStage = 'INITIALIZE'
 function Write-SafeAnchorStageDiagnostic {
   [Console]::Error.WriteLine('ZUGFOLGE_SAFE_ANCHOR_STAGE_DIAGNOSTIC stage=' + $script:anchorStage)
@@ -6440,6 +6442,7 @@ function Copy-HeldFile([IO.FileStream]$input, [Microsoft.Win32.SafeHandles.SafeF
   }
 }
 function Publish-HeldFile([IO.Stream]$input, [object]$request, [string]$label) {
+  if (-not $script:ephemeralAccountDeleted) { Fail "$label darf nicht vor der verifizierten Loeschung des ephemeren Build-Accounts publiziert werden." }
   $propertyNames = @($request.PSObject.Properties.Name | Sort-Object)
   if (($propertyNames -join ',') -cne 'bytes,file,sha256') { Fail "$label besitzt unerwartete Publikationsfelder." }
   $full = [IO.Path]::GetFullPath([string]$request.file)
@@ -6455,7 +6458,6 @@ function Publish-HeldFile([IO.Stream]$input, [object]$request, [string]$label) {
   if ($expectedBytes -le 0 -or $expectedSha -cnotmatch '^[a-f0-9]{64}$') { Fail "$label besitzt keine gueltige Byte-/SHA-Bindung." }
   try { $published = [ZugfolgeRelativeFs]::PublishHeldCreateNew($input, $anchoredParentHandles[$parentKey], $leaf, $expectedBytes, $expectedSha, $parentWritableDescriptor) }
   catch { Fail "$label konnte nicht handle-relativ create-new publiziert werden: $($_.Exception.Message)" }
-  $held.Add($published)
   $publishedStreams.Add($published)
   $identity = ([string]$published.Identity).Split(':')
   if ($identity.Length -ne 2) { Fail "$label besitzt keine gueltige gehaltene Identitaet." }
@@ -6473,9 +6475,29 @@ function Rollback-Published {
   $publishedStreams.Clear()
   if ($errors.Count -gt 0) { throw [InvalidOperationException]::new('Handle-relativer Publikationsrollback scheiterte: ' + [string]::Join(' | ', $errors)) }
 }
+function Delete-EphemeralAccountBeforeResult([object]$account) {
+  if ($null -eq $account -or $script:ephemeralAccountDeleted) {
+    throw [InvalidOperationException]::new('Ephemerer Build-Account besitzt vor dem Publikationsfenster einen ungueltigen Zustand.')
+  }
+  # NetUserDel plus NetUserGetInfo(NERR_USER_NOT_FOUND) is the only cleanup in
+  # this anchor that removes persistent operating-system state.  Complete it
+  # before RESULT, and therefore before the parent can request any final file.
+  $account.Dispose()
+  if (-not $held.Remove($account)) {
+    throw [InvalidOperationException]::new('Verifiziert geloeschter Build-Account fehlte in der gehaltenen Ressourcenmenge.')
+  }
+  $script:ephemeralAccountDeleted = $true
+}
 function Commit-Published {
+  # The persistent account cleanup completed before RESULT.  Every authority
+  # handle deliberately remains open across this in-memory transition so path
+  # identity cannot drift between parent verification and the commit decision.
+  # After the acknowledgement, process teardown only releases non-inheritable
+  # handles and cannot retroactively invalidate the materialization.
   foreach ($publication in $publishedStreams) { $publication.Commit() }
-  $publishedStreams.Clear()
+  # Keep every committed publication strongly rooted until process exit.  The
+  # final FileStreams are the share-mode authority that prevents write/delete
+  # or a name swap after parent verification and before the ACK boundary.
 }
 function Reopen-FrozenDirectoryRelative([Microsoft.Win32.SafeHandles.SafeFileHandle]$parent, [Microsoft.Win32.SafeHandles.SafeFileHandle]$createHandle, [string]$leaf, [string]$label) {
   $expectedIdentity = [ZugfolgeRelativeFs]::Identity($createHandle)
@@ -6764,10 +6786,14 @@ try {
     $builtOutput = Open-BuiltOutput $builtPath ([Int64]$run.expectedOutputBytes) 'Tatsaechlich gebauter Operational-Validator'
     $outputProof = $builtOutput.proof
   }
+  $isolationPrincipalSidSha256 = Hash-Text $account.Sid
+  $script:anchorStage = 'DELETE_EPHEMERAL_ACCOUNT'
+  Delete-EphemeralAccountBeforeResult $account
+  $account = $null
   $result = [ordered]@{
     build = $build
     cargo = $cargoProbe
-    isolation = [ordered]@{ mode = 'ephemeral-local-build-account-v1'; principalSidSha256 = Hash-Text $account.Sid }
+    isolation = [ordered]@{ mode = 'ephemeral-local-build-account-v1'; principalSidSha256 = $isolationPrincipalSidSha256 }
     output = $outputProof
     rustc = $rustcProbe
   }
@@ -6816,22 +6842,27 @@ try {
   $script:anchorStage = 'COMMIT_PUBLICATION'
   Commit-Published
   $publicationCommitted = $true
+  $committedJson = $published | ConvertTo-Json -Depth 12 -Compress
+  [Console]::Out.WriteLine('PUBLICATION_COMMITTED ' + [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($committedJson)))
+  [Console]::Out.Flush()
 } catch {
   Fail $_.Exception.Message
 } finally {
-  $disposeErrors = [Collections.Generic.List[string]]::new()
-  if (-not $publicationCommitted -and $publishedStreams.Count -gt 0) {
-    try { Rollback-Published } catch { $disposeErrors.Add($_.Exception.Message) }
-  }
-  for ($index = $held.Count - 1; $index -ge 0; $index--) {
-    try { $held[$index].Dispose() } catch { $disposeErrors.Add($_.Exception.Message) }
-  }
-  if ($disposeErrors.Count -gt 0) {
-    [Console]::Error.WriteLine('Windows-Build-Anker konnte gehaltene Ressourcen oder den ephemeren Build-Account nicht vollstaendig freigeben: ' + [string]::Join(' | ', $disposeErrors))
-    # A failing finally block runs after Fail/exit. Repeat the fixed marker after
-    # every arbitrary cleanup message so it remains inside the bounded tail.
-    Write-SafeAnchorStageDiagnostic
-    exit 125
+  if (-not $publicationCommitted) {
+    $disposeErrors = [Collections.Generic.List[string]]::new()
+    if ($publishedStreams.Count -gt 0) {
+      try { Rollback-Published } catch { $disposeErrors.Add($_.Exception.Message) }
+    }
+    for ($index = $held.Count - 1; $index -ge 0; $index--) {
+      try { $held[$index].Dispose() } catch { $disposeErrors.Add($_.Exception.Message) }
+    }
+    if ($disposeErrors.Count -gt 0) {
+      [Console]::Error.WriteLine('Windows-Build-Anker konnte gehaltene Ressourcen oder den ephemeren Build-Account nicht vollstaendig freigeben: ' + [string]::Join(' | ', $disposeErrors))
+      # A failing finally block runs after Fail/exit. Repeat the fixed marker after
+      # every arbitrary cleanup message so it remains inside the bounded tail.
+      Write-SafeAnchorStageDiagnostic
+      exit 125
+    }
   }
 }
 `;
@@ -7188,9 +7219,57 @@ async function regularDirectorySnapshot(pathInput, label) {
   invariant6(pathKey(await realpath5(path)) === pathKey(path), `${label} enthaelt einen Symlink-/Junction-Pfad.`);
   return { path, metadata };
 }
-async function assertDirectoryIdentity(path, expected, label) {
-  const actual = await lstat6(path, { bigint: true });
-  invariant6(actual.isDirectory() && !actual.isSymbolicLink() && sameIdentity5(actual, expected), `${label} wurde fremd ersetzt.`);
+async function canonicalWorkspaceSnapshot(pathInput, label) {
+  const requestedPath = resolve6(pathInput);
+  const requestedMetadata = await lstat6(requestedPath, { bigint: true });
+  invariant6(
+    requestedMetadata.isDirectory() && !requestedMetadata.isSymbolicLink(),
+    `${label} muss ein regulaeres Verzeichnis und darf selbst kein Symlink/Junction sein.`
+  );
+  const path = resolve6(await realpath5(requestedPath));
+  const metadata = await lstat6(path, { bigint: true });
+  invariant6(
+    metadata.isDirectory() && !metadata.isSymbolicLink() && sameIdentity5(requestedMetadata, metadata) && pathKey(await realpath5(path)) === pathKey(path),
+    `${label} konnte nicht identity-sicher an seinen kanonischen Pfad gebunden werden.`
+  );
+  const requestedAfter = await lstat6(requestedPath, { bigint: true });
+  invariant6(
+    requestedAfter.isDirectory() && !requestedAfter.isSymbolicLink() && sameIdentity5(requestedAfter, requestedMetadata) && pathKey(await realpath5(requestedPath)) === pathKey(path),
+    `${label} wurde waehrend der kanonischen Bindung fremd ersetzt oder umgebunden.`
+  );
+  return { metadata, path, requestedMetadata, requestedPath };
+}
+function canonicalWorkspacePath(workspace, pathInput, label, { allowRoot = false } = {}) {
+  const supplied = resolve6(pathInput);
+  const candidates = [];
+  if (isContained(workspace.path, supplied, { allowRoot })) candidates.push(supplied);
+  if (isContained(workspace.requestedPath, supplied, { allowRoot })) {
+    const mapped = resolve6(workspace.path, relative4(workspace.requestedPath, supplied));
+    invariant6(isContained(workspace.path, mapped, { allowRoot }), `${label} verlaesst den kanonisch gebundenen workspaceRoot.`);
+    candidates.push(mapped);
+  }
+  invariant6(candidates.length > 0, `${label} verlaesst workspaceRoot.`);
+  invariant6(new Set(candidates.map(pathKey)).size === 1, `${label} ist zwischen Alias- und kanonischem workspaceRoot mehrdeutig.`);
+  return candidates[0];
+}
+async function assertCanonicalWorkspaceSnapshot(snapshot, label) {
+  const [requested, canonical, requestedReal, canonicalReal] = await Promise.all([
+    lstat6(snapshot.requestedPath, { bigint: true }),
+    lstat6(snapshot.path, { bigint: true }),
+    realpath5(snapshot.requestedPath),
+    realpath5(snapshot.path)
+  ]);
+  invariant6(
+    requested.isDirectory() && !requested.isSymbolicLink() && canonical.isDirectory() && !canonical.isSymbolicLink() && sameIdentity5(requested, snapshot.requestedMetadata) && sameIdentity5(canonical, snapshot.metadata) && sameIdentity5(requested, canonical) && pathKey(requestedReal) === pathKey(snapshot.path) && pathKey(canonicalReal) === pathKey(snapshot.path),
+    `${label} wurde fremd ersetzt oder nach der kanonischen Bindung umgebunden.`
+  );
+}
+async function assertRegularDirectorySnapshot(snapshot, label) {
+  const actual = await lstat6(snapshot.path, { bigint: true });
+  invariant6(
+    actual.isDirectory() && !actual.isSymbolicLink() && sameIdentity5(actual, snapshot.metadata) && pathKey(await realpath5(snapshot.path)) === pathKey(snapshot.path),
+    `${label} wurde fremd ersetzt oder ueber einen Symlink/Junction umgebunden.`
+  );
 }
 async function assertNoSymlinkPath(rootInput, targetInput, label, { leafMayBeMissing = false } = {}) {
   const root2 = resolve6(rootInput);
@@ -7339,7 +7418,7 @@ function windowsBuildAnchorSafeDiagnostic(chunks) {
   let stageDiagnostic = "";
   for (let index = lines.length - 1; index >= 0; index -= 1) {
     const line = lines[index];
-    if (/^ZUGFOLGE_SAFE_ANCHOR_STAGE_DIAGNOSTIC stage=(?:INITIALIZE|RECEIVE_EXTRACTION_PLAN|CREATE_EPHEMERAL_ACCOUNT|CREATE_PRIVATE_ROOT|EXTRACT_SOURCE|EXTRACT_VENDOR|COPY_TOOLCHAIN_DIRECTORIES|COPY_TOOLCHAIN_FILES|CREATE_WRITABLE_ROOTS|FREEZE_SOURCE|FREEZE_TOOLCHAIN|VERIFY_WRITABLE_ROOTS|FREEZE_BUILD_ROOT|START_INTEGRITY_MONITORS|VERIFY_HELD_TREES|REPORT_EXTRACTED|RECEIVE_BUILD_PLAN|RUN_BUILD|RECEIVE_PUBLICATION_PLAN|PUBLISH_OUTPUTS|RECEIVE_PUBLICATION_COMPLETE|COMMIT_PUBLICATION)$/u.test(line)) {
+    if (/^ZUGFOLGE_SAFE_ANCHOR_STAGE_DIAGNOSTIC stage=(?:INITIALIZE|RECEIVE_EXTRACTION_PLAN|CREATE_EPHEMERAL_ACCOUNT|CREATE_PRIVATE_ROOT|EXTRACT_SOURCE|EXTRACT_VENDOR|COPY_TOOLCHAIN_DIRECTORIES|COPY_TOOLCHAIN_FILES|CREATE_WRITABLE_ROOTS|FREEZE_SOURCE|FREEZE_TOOLCHAIN|VERIFY_WRITABLE_ROOTS|FREEZE_BUILD_ROOT|START_INTEGRITY_MONITORS|VERIFY_HELD_TREES|REPORT_EXTRACTED|RECEIVE_BUILD_PLAN|RUN_BUILD|DELETE_EPHEMERAL_ACCOUNT|RECEIVE_PUBLICATION_PLAN|PUBLISH_OUTPUTS|RECEIVE_PUBLICATION_COMPLETE|COMMIT_PUBLICATION)$/u.test(line)) {
       stageDiagnostic ||= line;
       continue;
     }
@@ -7351,6 +7430,25 @@ function windowsBuildAnchorSafeDiagnostic(chunks) {
     if (status > 0 && status <= 4294967295 && (parameter === void 0 || parameter <= 4294967295) && (code === "NET_USER_ADD" && status === 87 === (parameter !== void 0) || (code === "NET_USER_DELETE" || code === "NET_USER_DELETE_VERIFY" || code === "PROCESS_WITH_LOGON" || code === "PROCESS_FROM_ANCHOR") && parameter === void 0)) return line;
   }
   return stageDiagnostic;
+}
+function resolveWindowsAnchorCommitAcknowledgement(line, publicationEnvelope) {
+  try {
+    invariant6(
+      typeof line === "string" && line.startsWith("PUBLICATION_COMMITTED "),
+      "Windows-Build-Anker lieferte keine gueltige Commit-Bestaetigung."
+    );
+    const acknowledgement = parseJson(
+      Buffer.from(line.slice("PUBLICATION_COMMITTED ".length), "base64"),
+      "Windows-Build-Anker-Commit-Bestaetigung"
+    );
+    invariant6(
+      sameCanonicalValue(acknowledgement, publicationEnvelope),
+      "Windows-Build-Anker-Commit-Bestaetigung driftet von den gehaltenen Publikationsbeweisen."
+    );
+    return { acknowledgement, status: "exact-acknowledgement" };
+  } catch {
+    return { acknowledgement: void 0, status: "requires-exact-recovery" };
+  }
 }
 async function startWindowsBuildAnchor({ anchoredParents, buildParent, buildRootLeaf, hooks, spec, workspaceRoot: workspaceRoot2 }) {
   invariant6(process.platform === "win32", "Operational-Validator-Rebuild-Materialisierung ist fuer PE32+ ausschliesslich auf win32 zulaessig.");
@@ -7440,7 +7538,7 @@ async function startWindowsBuildAnchor({ anchoredParents, buildParent, buildRoot
     if (closed) return Promise.resolve(void 0);
     return new Promise((resolveLine, rejectLine) => waiters.push({ reject: rejectLine, resolve: resolveLine }));
   };
-  const nextLineBounded = async (label) => {
+  const nextLineWithin = async (label, timeoutMilliseconds) => {
     let timeout;
     const timeoutPromise = new Promise((_, reject) => {
       timeout = setTimeout(() => {
@@ -7448,7 +7546,7 @@ async function startWindowsBuildAnchor({ anchoredParents, buildParent, buildRoot
         protocolError ??= error;
         child.kill();
         reject(error);
-      }, spec.build.processLimits.timeoutMilliseconds);
+      }, timeoutMilliseconds);
     });
     try {
       return await Promise.race([nextLine(), timeoutPromise]);
@@ -7456,6 +7554,7 @@ async function startWindowsBuildAnchor({ anchoredParents, buildParent, buildRoot
       clearTimeout(timeout);
     }
   };
+  const nextLineBounded = (label) => nextLineWithin(label, spec.build.processLimits.timeoutMilliseconds);
   child.stdin.on("error", () => {
   });
   try {
@@ -7511,6 +7610,7 @@ async function startWindowsBuildAnchor({ anchoredParents, buildParent, buildRoot
     let finished = false;
     let extracted = false;
     let publication = false;
+    let publicationEnvelope;
     let buildRootIdentity;
     const closeAnchorBounded = async (label) => {
       let timeout;
@@ -7669,6 +7769,7 @@ async function startWindowsBuildAnchor({ anchoredParents, buildParent, buildRoot
           validateFilesystemIdentity(envelope[id].identity, `Windows-Build-Anker-Publikation.${id}.identity`);
           proofMatches(envelope[id], expected, `Windows-Build-Anker-Publikation.${id}`);
         }
+        publicationEnvelope = envelope;
         publication = true;
         if (hooks.afterWindowsAnchoredPublication) await hooks.afterWindowsAnchoredPublication({ publication: envelope });
         return envelope;
@@ -7677,10 +7778,33 @@ async function startWindowsBuildAnchor({ anchoredParents, buildParent, buildRoot
         invariant6(!finished && extracted && publication, "Windows-Build-Anker kann die Publikation nicht mehr abschliessen.");
         child.stdin.write("PUBLICATION_COMPLETE\n");
         child.stdin.end();
-        const end = await closeAnchorBounded("Windows-Build-Anker-Publikationsabschluss");
+        let acknowledgementLine;
+        try {
+          acknowledgementLine = await nextLineWithin("Windows-Build-Anker-Commit-Bestaetigung", WINDOWS_ANCHOR_COMMIT_ACK_TIMEOUT_MS);
+        } catch {
+        }
+        const acknowledgement = resolveWindowsAnchorCommitAcknowledgement(acknowledgementLine, publicationEnvelope);
+        let end;
+        let closeError;
+        try {
+          end = await closeAnchorBounded("Windows-Build-Anker-Publikationsabschluss");
+        } catch (error) {
+          closeError = error;
+        }
         finished = true;
         const diagnostic = windowsBuildAnchorSafeDiagnostic(stderr);
-        invariant6(!end.signal && end.code === 0, `Windows-Build-Anker konnte gehaltene Inputs/Outputs nicht sauber abschliessen (${end.code ?? end.signal ?? "unknown"})${diagnostic ? `: ${diagnostic}` : ""}.`);
+        if (acknowledgement.status !== "exact-acknowledgement") {
+          return {
+            anchor: { code: end?.code ?? null, signal: end?.signal ?? null },
+            diagnostic,
+            status: "commit-decision-requires-exact-recovery"
+          };
+        }
+        return {
+          anchor: { code: end?.code ?? null, signal: end?.signal ?? null },
+          diagnostic,
+          status: closeError || end?.signal || end?.code !== 0 ? "committed-anchor-reaped" : "committed-clean-exit"
+        };
       }
     };
   } catch (error) {
@@ -7992,7 +8116,9 @@ async function validateSpecInputs({ spec, specBytes, specFile, workspaceRoot: wo
   invariant6(supplied.length > 0 && supplied.length <= MAX_SPEC_BYTES && supplied.equals(canonicalBytes3(spec)), "specBytes ist nicht die kanonische Rebuild-Spec.");
   const path = resolve6(specFile);
   invariant6(isContained(workspaceRoot2, path), "specFile verlaesst workspaceRoot.");
-  return { bytes: supplied.length, file: relative4(workspaceRoot2, path).split(sep4).join("/"), path, sha256: sha2563(supplied) };
+  const source = await regularFileSnapshot(workspaceRoot2, path, "Rebuild-Spec", MAX_SPEC_BYTES);
+  invariant6(source.bytes.equals(supplied), "specBytes driftet von der identity-sicher gelesenen Rebuild-Spec.");
+  return { bytes: source.proof.bytes, file: relative4(workspaceRoot2, path).split(sep4).join("/"), path, sha256: source.proof.sha256 };
 }
 function sourceArchiveEvidence({ sourceAudit, sourceProof, spec, vendorAudit, vendorProof }) {
   return {
@@ -8026,13 +8152,13 @@ async function pathExists(path) {
   }
 }
 async function cleanupOwnedBuildRoot(parent, stagingRoot, stagingIdentity, hooks = {}) {
-  await assertDirectoryIdentity(parent.path, parent.metadata, "Build-Elternverzeichnis vor konservativer Retention");
+  await assertRegularDirectorySnapshot(parent, "Build-Elternverzeichnis vor konservativer Retention");
   const current = await lstat6(stagingRoot, { bigint: true });
   invariant6(current.isDirectory() && !current.isSymbolicLink() && sameIdentity5(current, stagingIdentity), "Privater Buildbaum driftete; Retention laesst alle Pfade unangetastet.");
   if (hooks.beforeBuildRootRetention) await hooks.beforeBuildRootRetention({ stagingRoot });
   const final = await lstat6(stagingRoot, { bigint: true });
   invariant6(unchangedIdentity(current, final), "Privater Buildbaum driftete waehrend der konservativen Retention; alle Pfade bleiben unangetastet.");
-  await assertDirectoryIdentity(parent.path, parent.metadata, "Build-Elternverzeichnis nach konservativer Retention");
+  await assertRegularDirectorySnapshot(parent, "Build-Elternverzeichnis nach konservativer Retention");
   return { mode: "private-build-root-retained-v1", path: stagingRoot };
 }
 function parseJson(bytes, label) {
@@ -8214,9 +8340,8 @@ function validateReceiptEnvelope(receipt, spec) {
 }
 async function materializeOperationalValidatorRebuildEvidence({ spec, specBytes, specFile, workspaceRoot: workspaceRoot2, sourceRoot: _sourceRoot, outputPath, producerProofs, runnerAnchorHelperProof, recoveryOnly = false, hooks = {} }) {
   validateOperationalValidatorRebuildSpec(spec);
-  const workspace = await regularDirectorySnapshot(workspaceRoot2, "workspaceRoot");
-  const receiptOutput = resolve6(outputPath);
-  invariant6(isContained(workspace.path, receiptOutput), "outputPath verlaesst workspaceRoot.");
+  const workspace = await canonicalWorkspaceSnapshot(workspaceRoot2, "workspaceRoot");
+  const receiptOutput = canonicalWorkspacePath(workspace, outputPath, "outputPath");
   invariant6(
     pathKey(receiptOutput) === pathKey(resolveWorkspaceFile(workspace.path, spec.receipt.file, "receipt.file")),
     "outputPath driftet vom Annual-gepinnten Receiptpfad."
@@ -8230,7 +8355,12 @@ async function materializeOperationalValidatorRebuildEvidence({ spec, specBytes,
   for (const [id, path] of Object.entries(outputs)) {
     await assertNoSymlinkPath(workspace.path, path, id, { leafMayBeMissing: true });
   }
-  const specification = await validateSpecInputs({ spec, specBytes, specFile, workspaceRoot: workspace.path });
+  const specification = await validateSpecInputs({
+    spec,
+    specBytes,
+    specFile: canonicalWorkspacePath(workspace, specFile, "specFile"),
+    workspaceRoot: workspace.path
+  });
   const producer = await validateProducerProofs({ producerProofs, spec, workspaceRoot: workspace.path });
   validateProof2(runnerAnchorHelperProof, "runnerAnchorHelperProof", MAX_PRODUCER_BYTES, { file: true });
   invariant6(
@@ -8239,6 +8369,7 @@ async function materializeOperationalValidatorRebuildEvidence({ spec, specBytes,
   );
   const authority = workflowAuthorityReceipt(spec);
   invariant6(!recoveryOnly, "Rebuild-Evidence-v3 besitzt bewusst keine pfadbasierte Recovery; private Buildbaeume werden konservativ behalten.");
+  await assertCanonicalWorkspaceSnapshot(workspace, "workspaceRoot vor der ersten Materialisierungswirkung");
   for (const id of ["binary", "provenance", "receipt"]) await assertCreateNewTarget2(outputs[id], `Operational-Validator-Rebuild-${id}`);
   const preservedPath = resolveWorkspaceFile(workspace.path, spec.binaries.preserved.file, "binaries.preserved.file");
   const preserved = await regularFileSnapshot(workspace.path, preservedPath, "Preserved Validator", spec.pe.maxBinaryBytes);
@@ -8342,7 +8473,7 @@ async function materializeOperationalValidatorRebuildEvidence({ spec, specBytes,
     const publishedSnapshots = {};
     for (const [id, maximum] of Object.entries({ binary: MAX_BINARY_BYTES, provenance: MAX_PROVENANCE_BYTES, receipt: MAX_JSON_BYTES })) {
       const parent = parentSnapshots.get(pathKey(dirname6(outputs[id])));
-      await assertDirectoryIdentity(parent.path, parent.metadata, `Output-Elternverzeichnis nach handle-relativer ${id}-Publikation`);
+      await assertRegularDirectorySnapshot(parent, `Output-Elternverzeichnis nach handle-relativer ${id}-Publikation`);
       publishedSnapshots[id] = await regularFileSnapshot(workspace.path, outputs[id], `Handle-relativ publiziertes ${id}`, maximum);
       proofMatches(publishedSnapshots[id].proof, publicationProofs[id], `Handle-relativ publiziertes ${id}`);
       invariant6(matchesFilesystemIdentity(publishedSnapshots[id].identity, publicationProofs[id].identity), `Handle-relativ publiziertes ${id} driftet von der gehaltenen File-ID.`);
@@ -8374,7 +8505,7 @@ async function materializeOperationalValidatorRebuildEvidence({ spec, specBytes,
   if (!primaryError && !cleanupError) {
     try {
       if (hooks.afterBuildRootCleanupBeforeFinalAudit) await hooks.afterBuildRootCleanupBeforeFinalAudit({ outputs: { ...outputs } });
-      for (const parent of parentSnapshots.values()) await assertDirectoryIdentity(parent.path, parent.metadata, "Output-Elternverzeichnis unmittelbar nach Cleanup");
+      for (const parent of parentSnapshots.values()) await assertRegularDirectorySnapshot(parent, "Output-Elternverzeichnis unmittelbar nach Cleanup");
       for (const [id, maximum] of Object.entries({ binary: MAX_BINARY_BYTES, provenance: MAX_PROVENANCE_BYTES, receipt: MAX_JSON_BYTES })) {
         const snapshot = await regularFileSnapshot(workspace.path, outputs[id], `Post-Retention ${id}`, maximum);
         proofMatches(snapshot.proof, publicationProofs[id], `Post-Retention ${id}`);
@@ -8412,7 +8543,21 @@ async function materializeOperationalValidatorRebuildEvidence({ spec, specBytes,
     const finalVerification = await verifyOperationalValidatorRebuildEvidence({ spec, receiptPath: receiptOutput, workspaceRoot: workspace.path });
     result.proof = finalVerification.proof;
     result.receipt = finalVerification.receipt;
-    await buildAnchor.completePublication();
+    await assertCanonicalWorkspaceSnapshot(workspace, "workspaceRoot unmittelbar vor dem Publikationsabschluss");
+    const completion = await buildAnchor.completePublication();
+    invariant6(
+      ["committed-clean-exit", "committed-anchor-reaped", "commit-decision-requires-exact-recovery"].includes(completion.status),
+      "Windows-Build-Anker lieferte keinen gueltigen Publikationsabschlussstatus."
+    );
+    for (const parent of parentSnapshots.values()) await assertRegularDirectorySnapshot(parent, "Output-Elternverzeichnis nach Anchor-Abschluss");
+    for (const [id, maximum] of Object.entries({ binary: MAX_BINARY_BYTES, provenance: MAX_PROVENANCE_BYTES, receipt: MAX_JSON_BYTES })) {
+      const snapshot = await regularFileSnapshot(workspace.path, outputs[id], `Post-Anchor ${id}`, maximum);
+      proofMatches(snapshot.proof, publicationProofs[id], `Post-Anchor ${id}`);
+      invariant6(matchesFilesystemIdentity(snapshot.identity, publicationProofs[id].identity), `Post-Anchor ${id} driftet von der committed File-ID.`);
+    }
+    const postAnchorVerification = await verifyOperationalValidatorRebuildEvidence({ spec, receiptPath: receiptOutput, workspaceRoot: workspace.path });
+    result.proof = postAnchorVerification.proof;
+    result.receipt = postAnchorVerification.receipt;
   } catch (error) {
     let abortError;
     try {
@@ -8420,20 +8565,29 @@ async function materializeOperationalValidatorRebuildEvidence({ spec, specBytes,
     } catch (failure) {
       abortError = failure;
     }
-    if (abortError) throw new AggregateError([error, abortError], "Rebuild-Abschluss und Anchor-Abort sind fehlgeschlagen.");
-    throw error;
+    let rollbackAuditError;
+    try {
+      for (const id of ["binary", "provenance", "receipt"]) {
+        invariant6(!await pathExists(outputs[id]), `Fehlgeschlagener Rebuild-Abschluss hinterliess ${id} am finalen Pfad.`);
+      }
+    } catch (failure) {
+      rollbackAuditError = failure;
+    }
+    const failures = [error, abortError, rollbackAuditError].filter(Boolean);
+    if (failures.length > 1) throw new AggregateError(failures, "Rebuild-Abschluss, Anchor-Abort oder abschliessender Rollback-Audit ist fehlgeschlagen.");
+    throw failures[0];
   }
   return result;
 }
 async function verifyOperationalValidatorRebuildEvidence({ spec, receiptPath, workspaceRoot: workspaceRoot2 }) {
   validateOperationalValidatorRebuildSpec(spec);
-  const workspace = await regularDirectorySnapshot(workspaceRoot2, "workspaceRoot");
-  const receiptFile = resolve6(receiptPath);
-  invariant6(isContained(workspace.path, receiptFile), "receiptPath verlaesst workspaceRoot.");
+  const workspace = await canonicalWorkspaceSnapshot(workspaceRoot2, "workspaceRoot");
+  const receiptFile = canonicalWorkspacePath(workspace, receiptPath, "receiptPath");
   invariant6(
     pathKey(receiptFile) === pathKey(resolveWorkspaceFile(workspace.path, spec.receipt.file, "receipt.file")),
     "receiptPath driftet vom Annual-gepinnten Receiptpfad."
   );
+  await assertCanonicalWorkspaceSnapshot(workspace, "workspaceRoot vor der Receipt-Verifikation");
   const source = await regularFileSnapshot(workspace.path, receiptFile, "Operational-Validator-Rebuild-Receipt", MAX_JSON_BYTES);
   const receipt = validateReceiptEnvelope(parseJson(source.bytes, "Operational-Validator-Rebuild-Receipt"), spec);
   invariant6(source.bytes.equals(canonicalBytes3(receipt)), "Operational-Validator-Rebuild-Receipt ist nicht kanonisch serialisiert.");
@@ -8486,6 +8640,7 @@ async function verifyOperationalValidatorRebuildEvidence({ spec, receiptPath, wo
     const producer = await regularFileSnapshot(workspace.path, path, `Producer ${id}`, MAX_PRODUCER_BYTES);
     proofMatches(producer.proof, receipt.producer[id], `Receipt-Producer ${id}`);
   }
+  await assertCanonicalWorkspaceSnapshot(workspace, "workspaceRoot nach der Receipt-Verifikation");
   return { proof: source.proof, receipt };
 }
 
