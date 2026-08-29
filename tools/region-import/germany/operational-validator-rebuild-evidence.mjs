@@ -326,21 +326,6 @@ public static class ZugfolgeRelativeFs {
   [DllImport("ntdll.dll")]
   private static extern int NtSetInformationFile(
     SafeFileHandle handle, out IO_STATUS_BLOCK status, IntPtr information, uint length, int informationClass);
-  [DllImport("advapi32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
-  [return: MarshalAs(UnmanagedType.Bool)]
-  private static extern bool ConvertStringSecurityDescriptorToSecurityDescriptor(
-    string securityDescriptor, uint revision, out IntPtr descriptor, out uint descriptorBytes);
-  [DllImport("advapi32.dll", SetLastError = true)]
-  [return: MarshalAs(UnmanagedType.Bool)]
-  private static extern bool GetSecurityDescriptorDacl(
-    IntPtr descriptor, out bool present, out IntPtr dacl, out bool defaulted);
-  [DllImport("advapi32.dll", SetLastError = true)]
-  private static extern uint SetSecurityInfo(
-    IntPtr handle, int objectType, uint securityInformation,
-    IntPtr owner, IntPtr group, IntPtr dacl, IntPtr sacl);
-  [DllImport("kernel32.dll")]
-  private static extern IntPtr LocalFree(IntPtr memory);
-
   public static SafeFileHandle OpenPlainDirectory(string path) {
     SafeFileHandle handle = CreateFile(path, 0x001200a1, 0x1, IntPtr.Zero, 3, 0x02200000, IntPtr.Zero);
     if (handle.IsInvalid) throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error());
@@ -481,36 +466,29 @@ public static class ZugfolgeRelativeFs {
       hash.Dispose();
     }
   }
-  public static void FreezeReadExecute(SafeFileHandle handle, string currentSid) {
-    if (handle == null || handle.IsInvalid || String.IsNullOrEmpty(currentSid)) throw new ArgumentException("Freeze-Handle/SID ist ungueltig.");
-    const uint denied = 0x000d0156u;
-    string sddl = "D:P(D;;0x" + denied.ToString("x8") + ";;;" + currentSid + ")"
-      + "(D;;0x" + denied.ToString("x8") + ";;;S-1-3-4)"
-      + "(A;;0x001200a9;;;" + currentSid + ")"
-      + "(A;;FA;;;SY)(A;;FA;;;BA)";
-    IntPtr descriptor = IntPtr.Zero;
-    try {
-      uint descriptorBytes;
-      if (!ConvertStringSecurityDescriptorToSecurityDescriptor(sddl, 1, out descriptor, out descriptorBytes)) {
-        throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error(), "ConvertStringSecurityDescriptorToSecurityDescriptor");
-      }
-      bool present; bool defaulted; IntPtr dacl;
-      if (!GetSecurityDescriptorDacl(descriptor, out present, out dacl, out defaulted) || !present || dacl == IntPtr.Zero) {
-        throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error(), "GetSecurityDescriptorDacl");
-      }
-      uint result = SetSecurityInfo(handle.DangerousGetHandle(), 1, 0x80000004u, IntPtr.Zero, IntPtr.Zero, dacl, IntPtr.Zero);
-      if (result != 0) throw new System.ComponentModel.Win32Exception(unchecked((int)result), "SetSecurityInfo(protected DACL)");
-    } finally { if (descriptor != IntPtr.Zero) LocalFree(descriptor); }
-  }
-  private static void RequireDenied(int status, string operation) {
+  private static void RequireAccessDenied(int status, string operation) {
     if (status == unchecked((int)0xc0000022)) return;
     if (status >= 0) throw new InvalidOperationException(operation + " war trotz geschuetzter DACL moeglich.");
     throw new InvalidOperationException(operation + " scheiterte nicht mit STATUS_ACCESS_DENIED, sondern 0x" + status.ToString("x8") + ".");
   }
+  private static void RequireBlocked(int status, string operation) {
+    // Held read handles intentionally share only reads. A forbidden fresh open
+    // is therefore validly blocked either by the protected DACL or, for data or
+    // delete access, by the already-held no-write/no-delete share contract.
+    if (status == unchecked((int)0xc0000022) || status == unchecked((int)0xc0000043)) return;
+    if (status >= 0) throw new InvalidOperationException(operation + " war trotz geschuetzter DACL/Share-Bindung moeglich.");
+    throw new InvalidOperationException(operation + " scheiterte nicht mit STATUS_ACCESS_DENIED/STATUS_SHARING_VIOLATION, sondern 0x" + status.ToString("x8") + ".");
+  }
   private static int ProbeRelative(SafeFileHandle parent, string leaf, bool directory, bool create, uint access) {
     SafeFileHandle result = null;
     try {
-      result = Relative(parent, leaf, directory, create, access, null);
+      // Relative uses FILE_SYNCHRONOUS_IO_NONALERT, whose NT contract requires
+      // SYNCHRONIZE in DesiredAccess. Without it a probe only proves
+      // STATUS_INVALID_PARAMETER instead of the intended DACL denial.
+      // FILE_READ_ATTRIBUTES lets an unexpectedly successful mutation open
+      // reach RequirePlainType and be reported as success, not as a misleading
+      // metadata-read failure.
+      result = Relative(parent, leaf, directory, create, access | 0x00100080u, null);
       return 0;
     } catch (InvalidOperationException error) {
       const string marker = "0x";
@@ -522,15 +500,20 @@ public static class ZugfolgeRelativeFs {
   }
   public static void AssertFrozenDirectoryEntry(SafeFileHandle parent, string leaf) {
     using (SafeFileHandle directory = Relative(parent, leaf, true, false, 0x00120081u, null)) {
-      RequireDenied(ProbeRelative(directory, ".zugfolge-freeze-file-probe", false, true, 0x00160183u), "CreateFile in Inputverzeichnis");
-      RequireDenied(ProbeRelative(directory, ".zugfolge-freeze-directory-probe", true, true, 0x00160081u), "CreateDirectory in Inputverzeichnis");
+      RequireAccessDenied(ProbeRelative(directory, ".zugfolge-freeze-file-probe", false, true, 0x00160183u), "CreateFile in Inputverzeichnis");
+      RequireAccessDenied(ProbeRelative(directory, ".zugfolge-freeze-directory-probe", true, true, 0x00160081u), "CreateDirectory in Inputverzeichnis");
     }
   }
+  public static void AssertProtectedDacl(SafeFileHandle parent, string leaf, bool directory) {
+    RequireAccessDenied(ProbeRelative(parent, leaf, directory, false, 0x00040000u), "WRITE_DAC-Reopen fuer frisch geschuetzten Inputeintrag " + leaf);
+  }
   public static void AssertFrozenEntry(SafeFileHandle parent, string leaf, bool directory) {
-    RequireDenied(ProbeRelative(parent, leaf, directory, false, 0x00040000u), "WRITE_DAC-Reopen fuer Inputeintrag " + leaf);
-    RequireDenied(ProbeRelative(parent, leaf, directory, false, 0x00010000u), "DELETE-/Rename-Reopen fuer Inputeintrag " + leaf);
-    RequireDenied(ProbeRelative(parent, leaf, directory, false, 0x00000002u), "WRITE_DATA-/ADD_FILE-Reopen fuer Inputeintrag " + leaf);
-    RequireDenied(ProbeRelative(parent, leaf, directory, false, 0x00000004u), "APPEND_DATA-/ADD_SUBDIRECTORY-Reopen fuer Inputeintrag " + leaf);
+    // WRITE_DAC does not conflict with the held read-only share mode, so this
+    // first probe must prove the protected DACL itself with ACCESS_DENIED.
+    AssertProtectedDacl(parent, leaf, directory);
+    RequireBlocked(ProbeRelative(parent, leaf, directory, false, 0x00010000u), "DELETE-/Rename-Reopen fuer Inputeintrag " + leaf);
+    RequireBlocked(ProbeRelative(parent, leaf, directory, false, 0x00000002u), "WRITE_DATA-/ADD_FILE-Reopen fuer Inputeintrag " + leaf);
+    RequireBlocked(ProbeRelative(parent, leaf, directory, false, 0x00000004u), "APPEND_DATA-/ADD_SUBDIRECTORY-Reopen fuer Inputeintrag " + leaf);
   }
   public static string[] EnumerateNames(SafeFileHandle directory) {
     List<string> names = new List<string>();
@@ -1492,8 +1475,15 @@ $ProgressPreference = 'SilentlyContinue'
 $held = [System.Collections.Generic.List[System.IDisposable]]::new()
 $publishedStreams = [System.Collections.Generic.List[object]]::new()
 $publicationCommitted = $false
+$anchorStage = 'INITIALIZE'
+function Write-SafeAnchorStageDiagnostic {
+  [Console]::Error.WriteLine('ZUGFOLGE_SAFE_ANCHOR_STAGE_DIAGNOSTIC stage=' + $script:anchorStage)
+}
 function Fail([string]$message) {
   [Console]::Error.WriteLine($message)
+  # Keep the fixed allowlisted line last: the parent intentionally retains only
+  # a bounded stderr tail and must never surface arbitrary paths or secrets.
+  Write-SafeAnchorStageDiagnostic
   exit 125
 }
 function Decode-Json([string]$line, [string]$label) {
@@ -1657,9 +1647,12 @@ function Extract-AuditedPlan([IO.FileStream]$archive, [object]$plan, [hashtable]
       $actual = [BitConverter]::ToString($hash.Hash).Replace('-', '').ToLowerInvariant()
       if ($output.Length -ne [Int64]$entry.bytes -or $actual -cne [string]$entry.sha256) { Fail "$label-Datei $($entry.file) driftet vom auditierten Slice." }
       $output.Flush($true)
+      # NtCreateFile installed the final protected DACL atomically. Closing the
+      # only write-capable create handle is the irreversible freeze boundary.
       $output.Dispose()
       $output = $null
-      $files[[string]$entry.file] = Open-HeldRelativeFile $directories[$parentName] $leaf $entry.bytes $entry.sha256 "$label-Datei $($entry.file) nach create-new"
+      [ZugfolgeRelativeFs]::AssertProtectedDacl($directories[$parentName], $leaf, $false)
+      $files[[string]$entry.file] = Open-HeldRelativeFile $directories[$parentName] $leaf $entry.bytes $entry.sha256 "$label-Datei $($entry.file) nach atomarem DACL-Create"
     } finally {
       $hash.Dispose()
       if ($null -ne $output) { $output.Dispose() }
@@ -1687,9 +1680,12 @@ function Copy-HeldFile([IO.FileStream]$input, [Microsoft.Win32.SafeHandles.SafeF
     $actual = [BitConverter]::ToString($hash.Hash).Replace('-', '').ToLowerInvariant()
     if ($output.Length -ne $expectedBytes -or $actual -cne $expectedSha) { Fail "$label driftet waehrend der privaten Toolchain-Kopie." }
     $output.Flush($true)
+    # See Extract-AuditedPlan: the final descriptor is part of create-new, not a
+    # later path- or handle-based ACL mutation.
     $output.Dispose()
     $output = $null
-    return Open-HeldRelativeFile $parent $leaf $expectedBytes $expectedSha "$label nach create-new"
+    [ZugfolgeRelativeFs]::AssertProtectedDacl($parent, $leaf, $false)
+    return Open-HeldRelativeFile $parent $leaf $expectedBytes $expectedSha "$label nach atomarem DACL-Create"
   } finally {
     $input.Position = 0
     $hash.Dispose()
@@ -1734,10 +1730,35 @@ function Commit-Published {
   foreach ($publication in $publishedStreams) { $publication.Commit() }
   $publishedStreams.Clear()
 }
-function Freeze-HeldTree([hashtable]$directories, [hashtable]$files, [hashtable]$expectedChildren, [Microsoft.Win32.SafeHandles.SafeFileHandle]$rootParent, [string]$rootLeaf, [string]$currentSid, [string]$label) {
-  foreach ($file in @($files.Keys | Sort-Object)) { [ZugfolgeRelativeFs]::FreezeReadExecute($files[$file].SafeFileHandle, $currentSid) }
-  foreach ($directory in @($directories.Keys | Sort-Object { $_.Split('/').Length } -Descending)) { [ZugfolgeRelativeFs]::FreezeReadExecute($directories[$directory], $currentSid) }
-  Assert-ExactHeldTree $directories $expectedChildren "$label nach DACL-Freeze"
+function Reopen-FrozenDirectoryRelative([Microsoft.Win32.SafeHandles.SafeFileHandle]$parent, [Microsoft.Win32.SafeHandles.SafeFileHandle]$createHandle, [string]$leaf, [string]$label) {
+  $expectedIdentity = [ZugfolgeRelativeFs]::Identity($createHandle)
+  # The protected DACL was installed atomically. Release the create-time full
+  # access grant before keeping a read-only, non-inheritable identity handle.
+  $createHandle.Dispose()
+  $reopened = Open-HeldDirectoryRelative $parent $leaf "$label nach atomarem DACL-Create"
+  if ([ZugfolgeRelativeFs]::Identity($reopened) -cne $expectedIdentity) { Fail "$label driftete beim nur-lesbaren Reopen von seiner gehaltenen Identitaet." }
+  return $reopened
+}
+function Reopen-FrozenHeldTreeDirectories([hashtable]$directories, [Microsoft.Win32.SafeHandles.SafeFileHandle]$rootParent, [string]$rootLeaf, [string]$label) {
+  $ordered = @($directories.Keys | Sort-Object @{ Expression = { if ([string]::IsNullOrEmpty([string]$_)) { 0 } else { ([string]$_).Split('/').Length } } }, @{ Expression = { [string]$_ } })
+  foreach ($directory in $ordered) {
+    if ($directory -eq '') {
+      $directories[$directory] = Reopen-FrozenDirectoryRelative $rootParent $directories[$directory] $rootLeaf "$label-Wurzel"
+    } else {
+      $segments = ([string]$directory).Split('/')
+      $parentName = if ($segments.Length -eq 1) { '' } else { [string]::Join('/', $segments[0..($segments.Length - 2)]) }
+      $leaf = $segments[$segments.Length - 1]
+      $directories[$directory] = Reopen-FrozenDirectoryRelative $directories[$parentName] $directories[$directory] $leaf "$label-Verzeichnis $directory"
+    }
+  }
+}
+function Verify-FrozenHeldTree([hashtable]$directories, [hashtable]$files, [hashtable]$expectedChildren, [Microsoft.Win32.SafeHandles.SafeFileHandle]$rootParent, [string]$rootLeaf, [string]$label) {
+  # Every entry received its final protected descriptor atomically at NT create.
+  # First prove the complete tree, then discard every create-time full-access
+  # directory handle parent-first and bind read-only handles to the same IDs.
+  Assert-ExactHeldTree $directories $expectedChildren "$label vor nur-lesbarem Reopen"
+  Reopen-FrozenHeldTreeDirectories $directories $rootParent $rootLeaf $label
+  Assert-ExactHeldTree $directories $expectedChildren "$label nach nur-lesbarem Reopen"
   foreach ($directory in @($directories.Keys | Sort-Object)) {
     if ($directory -eq '') {
       [ZugfolgeRelativeFs]::AssertFrozenDirectoryEntry($rootParent, $rootLeaf)
@@ -1841,11 +1862,13 @@ try {
   $readyJson = ([ordered]@{ anchoredParents = @($anchoredParentProofs); buildRoot = $buildRoot } | ConvertTo-Json -Depth 8 -Compress)
   [Console]::Out.WriteLine('ANCHOR_READY ' + [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($readyJson)))
   [Console]::Out.Flush()
+  $script:anchorStage = 'RECEIVE_EXTRACTION_PLAN'
   $extract = Decode-Json ([Console]::In.ReadLine()) 'Extraktionsplan'
   # The privileged local principal is unnecessary while the parent/input/toolchain
   # handles are being established and audited.  Create it only once an extraction
   # request has been received; aborting before extraction therefore needs no admin
   # side effect while all original input bytes remain exclusively held.
+  $script:anchorStage = 'CREATE_EPHEMERAL_ACCOUNT'
   $currentSid = [Security.Principal.WindowsIdentity]::GetCurrent().User.Value
   $account = [ZugfolgeEphemeralAccount]::Create()
   $held.Add($account)
@@ -1855,6 +1878,7 @@ try {
   $held.Add($readExecuteDescriptor)
   $held.Add($isolatedWritableDescriptor)
   $held.Add($parentWritableDescriptor)
+  $script:anchorStage = 'CREATE_PRIVATE_ROOT'
   $buildRootHandle = New-HeldDirectoryRelative $anchoredParentHandles[$buildParentKey] $buildRootLeaf 'Privater Buildroot' $readExecuteDescriptor
   if ([ZugfolgeRelativeFs]::EnumerateNames($buildRootHandle).Length -ne 0) { Fail 'Create-new Buildroot ist nicht leer.' }
   $buildRootIdentityParts = [ZugfolgeRelativeFs]::Identity($buildRootHandle).Split(':')
@@ -1864,8 +1888,11 @@ try {
   $sourceDirectories = @{ '' = $sourceHandle }
   $sourceFiles = @{}
   $sourceExpectedChildren = @{ '' = [Collections.Generic.List[string]]::new() }
+  $script:anchorStage = 'EXTRACT_SOURCE'
   Extract-AuditedPlan $source $extract.source $sourceDirectories $sourceFiles $sourceExpectedChildren $readExecuteDescriptor 'Source'
+  $script:anchorStage = 'EXTRACT_VENDOR'
   Extract-AuditedPlan $vendor $extract.vendor $sourceDirectories $sourceFiles $sourceExpectedChildren $readExecuteDescriptor 'Vendor'
+  $script:anchorStage = 'COPY_TOOLCHAIN_DIRECTORIES'
   $privateToolchainHandle = New-HeldDirectoryRelative $buildDirectories[''] 'toolchain' 'Private Toolchain-Wurzel' $readExecuteDescriptor
   $privateToolchainDirectories = @{ '' = $privateToolchainHandle }
   $privateToolchainFiles = @{}
@@ -1878,6 +1905,7 @@ try {
     Add-ExpectedChild $privateToolchainExpectedChildren $parentName $leaf
     $privateToolchainExpectedChildren[[string]$directory] = [Collections.Generic.List[string]]::new()
   }
+  $script:anchorStage = 'COPY_TOOLCHAIN_FILES'
   foreach ($entry in $manifest.files) {
     $segments = ([string]$entry.file).Split('/')
     $parentName = if ($segments.Length -eq 1) { '' } else { [string]::Join('/', $segments[0..($segments.Length - 2)]) }
@@ -1885,6 +1913,7 @@ try {
     Add-ExpectedChild $privateToolchainExpectedChildren $parentName $leaf
     $privateToolchainFiles[[string]$entry.file] = Copy-HeldFile $toolchainFiles[[string]$entry.file] $privateToolchainDirectories[$parentName] $leaf $entry.bytes $entry.sha256 $readExecuteDescriptor "Private Toolchain-Datei $($entry.file)"
   }
+  $script:anchorStage = 'CREATE_WRITABLE_ROOTS'
   $targetHandle = New-HeldDirectoryRelative $buildDirectories[''] 'target' 'Privates Cargo-Target' $isolatedWritableDescriptor
   $cargoHomeHandle = New-HeldDirectoryRelative $buildDirectories[''] 'cargo-home' 'Privates Cargo-Home' $isolatedWritableDescriptor
   $tempHandle = New-HeldDirectoryRelative $buildDirectories[''] 'temp' 'Privates Temp' $isolatedWritableDescriptor
@@ -1894,26 +1923,41 @@ try {
   $privateToolchainPath = [IO.Path]::Combine($buildRoot, 'toolchain')
   $cargoPath = [IO.Path]::GetFullPath([IO.Path]::Combine($privateToolchainPath, ([string]$request.cargoPath).Replace('/', [IO.Path]::DirectorySeparatorChar)))
   $rustcPath = [IO.Path]::GetFullPath([IO.Path]::Combine($privateToolchainPath, ([string]$request.rustcPath).Replace('/', [IO.Path]::DirectorySeparatorChar)))
-  Freeze-HeldTree $sourceDirectories $sourceFiles $sourceExpectedChildren $buildRootHandle 'source' $currentSid 'Source-und-Vendor'
-  Freeze-HeldTree $privateToolchainDirectories $privateToolchainFiles $privateToolchainExpectedChildren $buildRootHandle 'toolchain' $currentSid 'Private Toolchain'
+  $script:anchorStage = 'FREEZE_SOURCE'
+  Verify-FrozenHeldTree $sourceDirectories $sourceFiles $sourceExpectedChildren $buildRootHandle 'source' 'Source-und-Vendor'
+  $script:anchorStage = 'FREEZE_TOOLCHAIN'
+  Verify-FrozenHeldTree $privateToolchainDirectories $privateToolchainFiles $privateToolchainExpectedChildren $buildRootHandle 'toolchain' 'Private Toolchain'
+  $script:anchorStage = 'VERIFY_WRITABLE_ROOTS'
+  $targetHandle = Reopen-FrozenDirectoryRelative $buildRootHandle $targetHandle 'target' 'Privates Cargo-Target'
+  $cargoHomeHandle = Reopen-FrozenDirectoryRelative $buildRootHandle $cargoHomeHandle 'cargo-home' 'Privates Cargo-Home'
+  $tempHandle = Reopen-FrozenDirectoryRelative $buildRootHandle $tempHandle 'temp' 'Privates Temp'
   foreach ($entry in @('target', 'cargo-home', 'temp')) {
     [ZugfolgeRelativeFs]::AssertFrozenDirectoryEntry($buildRootHandle, $entry)
     [ZugfolgeRelativeFs]::AssertFrozenEntry($buildRootHandle, $entry, $true)
   }
+  $script:anchorStage = 'FREEZE_BUILD_ROOT'
+  $buildRootHandle = Reopen-FrozenDirectoryRelative $anchoredParentHandles[$buildParentKey] $buildRootHandle $buildRootLeaf 'Privater Buildroot'
+  $buildDirectories[''] = $buildRootHandle
+  [ZugfolgeRelativeFs]::AssertFrozenDirectoryEntry($anchoredParentHandles[$buildParentKey], $buildRootLeaf)
+  [ZugfolgeRelativeFs]::AssertFrozenEntry($anchoredParentHandles[$buildParentKey], $buildRootLeaf, $true)
+  $script:anchorStage = 'START_INTEGRITY_MONITORS'
   $monitors = @(
     (New-IntegrityWatcher $sourcePath 'Sourcebaum'),
     (New-IntegrityWatcher $vendorPath 'Vendorbaum'),
     (New-IntegrityWatcher $privateToolchainPath 'Privater Toolchainbaum')
   )
+  $script:anchorStage = 'VERIFY_HELD_TREES'
   Assert-ExactHeldTree $sourceDirectories $sourceExpectedChildren 'Source-und-Vendor'
   Assert-ExactHeldTree $toolchainDirectories $expectedChildren 'Gepinnter Toolchain-Input'
   Assert-ExactHeldTree $privateToolchainDirectories $privateToolchainExpectedChildren 'Private Toolchain'
   Assert-MonitorsClean $monitors 'Vor Build'
+  $script:anchorStage = 'REPORT_EXTRACTED'
   $extractedJson = ([ordered]@{
     buildRootIdentity = [ordered]@{ dev = [string]$buildRootIdentityParts[0]; ino = [string]$buildRootIdentityParts[1] }
   } | ConvertTo-Json -Depth 4 -Compress)
   [Console]::Out.WriteLine('EXTRACTED ' + [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($extractedJson)))
   [Console]::Out.Flush()
+  $script:anchorStage = 'RECEIVE_BUILD_PLAN'
   $run = Decode-Json ([Console]::In.ReadLine()) 'Build-Request'
   if ($run.command[0] -cne 'cargo') { Fail 'Build-Request besitzt keinen Cargo-Befehl.' }
   $expectedSource = [IO.Path]::GetFullPath($sourcePath)
@@ -1957,6 +2001,7 @@ try {
     'WINDIR' = 'C:\Windows'
   }
   $trustedCwd = 'C:\Windows\System32'
+  $script:anchorStage = 'RUN_BUILD'
   Assert-MonitorsClean $monitors 'Vor Cargo-Probe'
   $cargoProbe = Invoke-Bound $cargoPath @('-vV') $trustedCwd $environment $monitors ([int]$request.processLimits.maxOutputBytes) ([int]$request.processLimits.timeoutMilliseconds) $account
   Assert-MonitorsClean $monitors 'Nach Cargo-Probe'
@@ -1983,6 +2028,7 @@ try {
   [Console]::Out.WriteLine('RESULT ' + [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($json)))
   [Console]::Out.Flush()
   if ($cargoProbe.code -ne 0 -or $rustcProbe.code -ne 0 -or $build.code -ne 0) { exit $(if ($build.code -ne 0) { $build.code } else { 124 }) }
+  $script:anchorStage = 'RECEIVE_PUBLICATION_PLAN'
   $publicationLine = [Console]::In.ReadLine()
   if ($publicationLine -ceq 'ABORT') { exit 124 }
   if ([string]::IsNullOrEmpty($publicationLine) -or -not $publicationLine.StartsWith('PUBLISH ')) { Fail 'Windows-Build-Anker erhielt keinen handle-relativen Publikationsauftrag.' }
@@ -2002,6 +2048,7 @@ try {
   } catch { Fail "Publikationsauftrag enthaelt ungueltige Base64-Bytes: $($_.Exception.Message)" }
   $provenanceInput = [IO.MemoryStream]::new($provenanceBytes, $false)
   $receiptInput = [IO.MemoryStream]::new($receiptBytes, $false)
+  $script:anchorStage = 'PUBLISH_OUTPUTS'
   try {
     $published = [ordered]@{
       provenance = Publish-HeldFile $provenanceInput ([pscustomobject]@{ bytes = [Int64]$publication.provenance.bytes; file = [string]$publication.provenance.file; sha256 = [string]$publication.provenance.sha256 }) 'Build-Provenienz'
@@ -2015,9 +2062,11 @@ try {
   $publishedJson = $published | ConvertTo-Json -Depth 12 -Compress
   [Console]::Out.WriteLine('PUBLISHED ' + [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($publishedJson)))
   [Console]::Out.Flush()
+  $script:anchorStage = 'RECEIVE_PUBLICATION_COMPLETE'
   $completion = [Console]::In.ReadLine()
   if ($completion -ceq 'ABORT') { Rollback-Published; exit 124 }
   if ($completion -cne 'PUBLICATION_COMPLETE') { Fail 'Windows-Build-Anker erhielt keinen erfolgreichen Publikationsabschluss.' }
+  $script:anchorStage = 'COMMIT_PUBLICATION'
   Commit-Published
   $publicationCommitted = $true
 } catch {
@@ -2032,6 +2081,9 @@ try {
   }
   if ($disposeErrors.Count -gt 0) {
     [Console]::Error.WriteLine('Windows-Build-Anker konnte gehaltene Ressourcen oder den ephemeren Build-Account nicht vollstaendig freigeben: ' + [string]::Join(' | ', $disposeErrors))
+    # A failing finally block runs after Fail/exit. Repeat the fixed marker after
+    # every arbitrary cleanup message so it remains inside the bounded tail.
+    Write-SafeAnchorStageDiagnostic
     exit 125
   }
 }
@@ -2569,8 +2621,13 @@ function windowsBuildAnchorSafeDiagnostic(chunks) {
   const bytes = Buffer.concat(chunks);
   const tail = bytes.subarray(Math.max(0, bytes.length - MAX_WINDOWS_ANCHOR_DIAGNOSTIC_BYTES)).toString("utf8");
   const lines = tail.split(/\r?\n/u);
+  let stageDiagnostic = "";
   for (let index = lines.length - 1; index >= 0; index -= 1) {
     const line = lines[index];
+    if (/^ZUGFOLGE_SAFE_ANCHOR_STAGE_DIAGNOSTIC stage=(?:INITIALIZE|RECEIVE_EXTRACTION_PLAN|CREATE_EPHEMERAL_ACCOUNT|CREATE_PRIVATE_ROOT|EXTRACT_SOURCE|EXTRACT_VENDOR|COPY_TOOLCHAIN_DIRECTORIES|COPY_TOOLCHAIN_FILES|CREATE_WRITABLE_ROOTS|FREEZE_SOURCE|FREEZE_TOOLCHAIN|VERIFY_WRITABLE_ROOTS|FREEZE_BUILD_ROOT|START_INTEGRITY_MONITORS|VERIFY_HELD_TREES|REPORT_EXTRACTED|RECEIVE_BUILD_PLAN|RUN_BUILD|RECEIVE_PUBLICATION_PLAN|PUBLISH_OUTPUTS|RECEIVE_PUBLICATION_COMPLETE|COMMIT_PUBLICATION)$/u.test(line)) {
+      stageDiagnostic ||= line;
+      continue;
+    }
     const match = /^(?:ZUGFOLGE_SAFE_ANCHOR_DIAGNOSTIC code=(NET_USER_ADD|NET_USER_DELETE|NET_USER_DELETE_VERIFY) status=([1-9][0-9]{0,9})(?: parameter=(0|[1-9][0-9]{0,9}))?|ZUGFOLGE_SAFE_PROCESS_DIAGNOSTIC code=(PROCESS_WITH_LOGON|PROCESS_FROM_ANCHOR) status=([1-9][0-9]{0,9}))$/u.exec(line);
     if (match === null) continue;
     const code = match[1] ?? match[4];
@@ -2582,7 +2639,7 @@ function windowsBuildAnchorSafeDiagnostic(chunks) {
         || ((code === "NET_USER_DELETE" || code === "NET_USER_DELETE_VERIFY" || code === "PROCESS_WITH_LOGON" || code === "PROCESS_FROM_ANCHOR")
           && parameter === undefined))) return line;
   }
-  return "";
+  return stageDiagnostic;
 }
 
 async function startWindowsBuildAnchor({ anchoredParents, buildParent, buildRootLeaf, hooks, spec, workspaceRoot }) {
@@ -2712,8 +2769,8 @@ async function startWindowsBuildAnchor({ anchoredParents, buildParent, buildRoot
   if (typeof ready !== "string" || !ready.startsWith("ANCHOR_READY ")) {
     child.stdin.end();
     const end = await closePromise;
-    const details = Buffer.concat(stderr).toString("utf8").trim();
-    throw new Error(`Windows-Build-Anker band Inputs/Toolchain nicht fail-closed (${end.code ?? end.signal ?? "unknown"})${details ? `: ${details}` : ""}`);
+    const diagnostic = windowsBuildAnchorSafeDiagnostic(stderr);
+    throw new Error(`Windows-Build-Anker band Inputs/Toolchain nicht fail-closed (${end.code ?? end.signal ?? "unknown"})${diagnostic ? `: ${diagnostic}` : ""}`);
   }
   const readyEnvelope = parseJson(Buffer.from(ready.slice("ANCHOR_READY ".length), "base64"), "Windows-Build-Anker-Ready");
   exactKeys(readyEnvelope, ["anchoredParents", "buildRoot"], "Windows-Build-Anker-Ready");
@@ -2841,7 +2898,7 @@ async function startWindowsBuildAnchor({ anchoredParents, buildParent, buildRoot
         child.stdin.end();
         const end = await closePromise;
         finished = true;
-        const tail = result.build.stderr.toString("utf8").slice(-4096).trim() || Buffer.concat(stderr).toString("utf8").slice(-4096).trim();
+        const tail = result.build.stderr.toString("utf8").slice(-4096).trim() || windowsBuildAnchorSafeDiagnostic(stderr);
         const error = new Error(`Exklusiv verankerter Windows-Rebuild endete mit ${result.build.code}${tail ? `: ${tail}` : ""}`);
         error.result = result;
         throw error;
@@ -2873,7 +2930,13 @@ async function startWindowsBuildAnchor({ anchoredParents, buildParent, buildRoot
       if (hooks.beforeWindowsAnchoredPublication) await hooks.beforeWindowsAnchoredPublication({ request });
       child.stdin.write(`PUBLISH ${Buffer.from(JSON.stringify(request), "utf8").toString("base64")}\n`);
       const line = await nextLineBounded("Windows-Build-Anker-Publikation");
-      invariant(typeof line === "string" && line.startsWith("PUBLISHED "), "Windows-Build-Anker bestaetigte die handle-relative Publikation nicht.");
+      if (typeof line !== "string" || !line.startsWith("PUBLISHED ")) {
+        child.stdin.end();
+        const end = await closeAnchorBounded("Windows-Build-Anker-Publikationsfehler");
+        finished = true;
+        const diagnostic = windowsBuildAnchorSafeDiagnostic(stderr);
+        throw new Error(`Windows-Build-Anker bestaetigte die handle-relative Publikation nicht (${end.code ?? end.signal ?? "unknown"})${diagnostic ? `: ${diagnostic}` : ""}.`);
+      }
       const envelope = parseJson(Buffer.from(line.slice("PUBLISHED ".length), "base64"), "Windows-Build-Anker-Publikation");
       exactKeys(envelope, ["binary", "provenance", "receipt"], "Windows-Build-Anker-Publikation");
       for (const [id, expected] of Object.entries({ binary, provenance, receipt })) {
@@ -2891,8 +2954,8 @@ async function startWindowsBuildAnchor({ anchoredParents, buildParent, buildRoot
       child.stdin.end();
       const end = await closeAnchorBounded("Windows-Build-Anker-Publikationsabschluss");
       finished = true;
-      const details = Buffer.concat(stderr).toString("utf8").slice(-8192).trim();
-      invariant(!end.signal && end.code === 0, `Windows-Build-Anker konnte gehaltene Inputs/Outputs nicht sauber abschliessen (${end.code ?? end.signal ?? "unknown"})${details ? `: ${details}` : ""}.`);
+      const diagnostic = windowsBuildAnchorSafeDiagnostic(stderr);
+      invariant(!end.signal && end.code === 0, `Windows-Build-Anker konnte gehaltene Inputs/Outputs nicht sauber abschliessen (${end.code ?? end.signal ?? "unknown"})${diagnostic ? `: ${diagnostic}` : ""}.`);
     },
   };
   } catch (error) {

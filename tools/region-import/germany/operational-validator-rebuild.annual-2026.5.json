@@ -179,9 +179,9 @@
   },
   "producer": {
     "bundle": {
-      "bytes": 624565,
+      "bytes": 629092,
       "file": "tools/region-import/germany/run-capture-operational-infrastructure-v2.anchored-bundle.mjs",
-      "sha256": "10e6ae728c92ad7146bdd8c951a7e529760b9e18a8075c2026eab8cf55480d1f"
+      "sha256": "b623d0799b55422babadf4de9dd51427b8e6864c5dcfbfb163151d59df65b924"
     },
     "entrypoint": {
       "bytes": 26551,
@@ -191,12 +191,12 @@
     "executionPins": {
       "bytes": 4841,
       "file": "tools/region-import/germany/operational-infrastructure-v2-execution-pins.annual-2026.5.json",
-      "sha256": "3dbaa34ef53f9acb2b0e8fa6c90d248215ce7f766d1e1c34cea54853c1e19990"
+      "sha256": "2e3fbbb43dbe599da42d717c9e721e57567818c039293b95638cc7f227813890"
     },
     "implementation": {
-      "bytes": 244282,
+      "bytes": 248798,
       "file": "tools/region-import/germany/operational-validator-rebuild-evidence.mjs",
-      "sha256": "7d5aadfef61e2f475c4dd87c1350332831373857f9e14ca76917a8df01ad3abd"
+      "sha256": "63742e50080bd2b6475c6e293f3ffc2e7d00f6ab88d6c19ca537f51652213063"
     }
   },
   "provenance": {
@@ -248,9 +248,9 @@
   "toolchain": {
     "anchor": {
       "helperAssembly": {
-        "bytes": 55808,
+        "bytes": 55296,
         "file": "tools/region-import/germany/operational-windows-anchor-helper.dll",
-        "sha256": "0f35d5b7b22c93055011ee603dc1b30e8c94b5cac41c1e6f9edb50fc596027fd"
+        "sha256": "4aa8adabe71e15b90a3fba744b839cf53198020be9a7a44505829769b80c11db"
       },
       "mode": "windows-powershell-held-helper-private-dacl-mitigated-v3"
     },
