@@ -51,7 +51,7 @@ export const GERMANY_OPERATIONAL_PUBLICATION_CLAIM_SCHEMA = "zugfolge-germany-op
 export const GERMANY_OPERATIONAL_PUBLICATION_ENTRYPOINT = "tools/region-import/germany/publish-operational-infrastructure-v2.mjs";
 export const GERMANY_OPERATIONAL_NATIVE_RECEIPT_CAPTURE_ENTRYPOINT = "tools/region-import/germany/capture-operational-infrastructure-v2-native-receipt.mjs";
 export const GERMANY_OPERATIONAL_INTEGRATED_RUNNER_ENTRYPOINT = "tools/region-import/germany/run-capture-operational-infrastructure-v2.mjs";
-export const GERMANY_OPERATIONAL_VALIDATOR_REBUILD_EVIDENCE_SCHEMA = "zugfolge-operational-validator-rebuild-evidence/v2";
+export const GERMANY_OPERATIONAL_VALIDATOR_REBUILD_EVIDENCE_SCHEMA = "zugfolge-operational-validator-rebuild-evidence/v3";
 export const GERMANY_OPERATIONAL_PUBLICATION_EXECUTION_FILES = Object.freeze({
   wrapper: GERMANY_OPERATIONAL_PUBLICATION_ENTRYPOINT,
   implementation: "tools/region-import/germany/operational-infrastructure-v2-publication.mjs",
@@ -603,7 +603,7 @@ async function loadAndVerifyValidatorRebuild({
     "Operational-Validator-Rebuild-Receipt bindet nicht die erwartete InfraRelease-ID.");
   invariant(isRecord(receipt.binaries?.preserved) && isRecord(receipt.binaries?.rebuilt),
     "Operational-Validator-Rebuild-Receipt besitzt kein vollstaendiges Binary-Paar.");
-  invariant(isRecord(receipt.source?.git) && typeof receipt.source.git.commit === "string",
+  invariant(isRecord(receipt.source?.materialization) && typeof receipt.source.materialization.commit === "string",
     "Operational-Validator-Rebuild-Receipt besitzt keinen geprueften Quellcommit.");
   invariant(isRecord(receipt.pe?.normalized) && typeof receipt.pe.normalized.expectedSha256 === "string",
     "Operational-Validator-Rebuild-Receipt besitzt keinen normalisierten PE-Beleg.");
@@ -625,7 +625,7 @@ async function loadAndVerifyValidatorRebuild({
     },
     preserved: { ...receipt.binaries.preserved },
     rebuilt: { ...receipt.binaries.rebuilt },
-    sourceCommit: receipt.source.git.commit,
+    sourceCommit: receipt.source.materialization.commit,
     normalizedPeSha256: receipt.pe.normalized.expectedSha256,
   }, "Operational-Validator-Rebuild-Bindung");
   invariant(binding.specification.file === receipt.specification.file,

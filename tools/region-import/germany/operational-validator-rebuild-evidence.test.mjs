@@ -436,8 +436,14 @@ async function materializationTarSwapFixture(t, workspaceRootInput) {
   const foreignVendorData = Buffer.from("[evil__]\n", "utf8");
   const source = tarFixture([{ data: sourceData, file: "Cargo.lock" }], spec.source.commit);
   const foreignSource = tarFixture([{ data: foreignSourceData, file: "Cargo.lock" }], spec.source.commit);
-  const vendor = tarFixture([{ data: vendorData, file: ".cargo/config.toml" }], "cargo-vendor-tree-v1");
-  const foreignVendor = tarFixture([{ data: foreignVendorData, file: ".cargo/config.toml" }], "cargo-vendor-tree-v1");
+  const vendor = tarFixture([
+    { data: vendorData, file: ".cargo/config.toml" },
+    { data: Buffer.from("[package]\nname='fixture-vendor'\n", "utf8"), file: "vendor/fixture/Cargo.toml" },
+  ], "cargo-vendor-tree-v1");
+  const foreignVendor = tarFixture([
+    { data: foreignVendorData, file: ".cargo/config.toml" },
+    { data: Buffer.from("[package]\nname='foreign-vendor'\n", "utf8"), file: "vendor/fixture/Cargo.toml" },
+  ], "cargo-vendor-tree-v1");
   const workspacePath = (portable) => join(workspaceRoot, ...portable.split("/"));
   const toolchainRoot = join(workspaceRoot, "fixture-toolchain");
   const cargoPath = join(toolchainRoot, "bin", "cargo.exe");
@@ -779,7 +785,7 @@ test("releasefaehige Materialisierung enthaelt weder externes git/tar/rustup noc
     "Nach dem Commit darf der Anchor keinen bewusst falliblen Cleanup mehr ausfuehren.");
 });
 
-test("Dateien erhalten die finale DACL atomar und werden nach Schliessen des create-new Handles nur-lesbar gehalten", async () => {
+test("Dateien erhalten die geschuetzte Konstruktions-DACL atomar und werden erst nach Constructor-Entzug final geprueft", async () => {
   const source = await readFile(IMPLEMENTATION_PATH, "utf8");
   assert.match(WINDOWS_BUILD_ANCHOR_HELPER_SOURCE,
     /ReadExecute\(string currentSid, string buildSid\)[\s\S]*\(D;;0x" \+ denied\.ToString\("x8"\) \+ ";;;" \+ currentSid \+ "\)"[\s\S]*\(A;;0x001200a9;;;" \+ currentSid \+ "\)"[\s\S]*\(A;;0x001200a9;;;" \+ buildSid \+ "\)"/u);
@@ -788,16 +794,26 @@ test("Dateien erhalten die finale DACL atomar und werden nach Schliessen des cre
   assert.match(WINDOWS_BUILD_ANCHOR_HELPER_SOURCE,
     /access \| 0x00100080u/u,
     "Negativproben muessen SYNCHRONIZE und FILE_READ_ATTRIBUTES fuer einen eindeutigen unerwarteten Erfolg anfordern.");
-  assert.match(source,
-    /function Extract-AuditedPlan[\s\S]*CreateProtectedRegularFile\([^\n]*\$securityDescriptor\)[\s\S]*\$output\.Flush\(\$true\)[\s\S]*\$output\.Dispose\(\)[\s\S]*AssertProtectedDacl\([^\n]*\)[\s\S]*Open-HeldRelativeFile[^\n]*nach atomarem DACL-Create/u);
-  assert.match(source,
-    /function Copy-HeldFile[\s\S]*CreateProtectedRegularFile\([^\n]*\$securityDescriptor\)[\s\S]*\$output\.Flush\(\$true\)[\s\S]*\$output\.Dispose\(\)[\s\S]*AssertProtectedDacl\([^\n]*\)[\s\S]*Open-HeldRelativeFile[^\n]*nach atomarem DACL-Create/u);
+  const extractFunction = /function Extract-AuditedPlan[^\n]*\{(?<body>[\s\S]*?)\n\}/u.exec(source);
+  const copyFunction = /function Copy-HeldFile[^\n]*\{(?<body>[\s\S]*?)\n\}/u.exec(source);
+  assert.ok(extractFunction?.groups?.body && copyFunction?.groups?.body);
+  assert.match(extractFunction.groups.body,
+    /CreateProtectedRegularFile\([^\n]*\$securityDescriptor\)[\s\S]*\$output\.Flush\(\$true\)[\s\S]*\$output\.Dispose\(\)[\s\S]*Open-HeldRelativeFile[^\n]*nach atomarem DACL-Create/u);
+  assert.match(copyFunction.groups.body,
+    /CreateProtectedRegularFile\([^\n]*\$securityDescriptor\)[\s\S]*\$output\.Flush\(\$true\)[\s\S]*\$output\.Dispose\(\)[\s\S]*Open-HeldRelativeFile[^\n]*nach atomarem DACL-Create/u);
+  assert.doesNotMatch(extractFunction.groups.body, /AssertProtectedDacl/u,
+    "Die Constructor-SID besitzt waehrend der Extraktion absichtlich WRITE_DAC; die finale Negativprobe darf erst nach ihrer Loeschung laufen.");
+  assert.doesNotMatch(copyFunction.groups.body, /AssertProtectedDacl/u,
+    "Die Constructor-SID besitzt waehrend der Toolchain-Kopie absichtlich WRITE_DAC; die finale Negativprobe darf erst nach ihrer Loeschung laufen.");
   assert.match(source,
     /function Reopen-FrozenDirectoryRelative[\s\S]*\$createHandle\.Dispose\(\)[\s\S]*Open-HeldDirectoryRelative[\s\S]*Identity\(\$reopened\) -cne \$expectedIdentity/u);
   assert.match(source,
     /function Reopen-FrozenHeldTreeDirectories[\s\S]*IsNullOrEmpty[\s\S]*Reopen-FrozenDirectoryRelative/u);
   assert.match(source,
     /function Verify-FrozenHeldTree[\s\S]*Assert-ExactHeldTree[\s\S]*Reopen-FrozenHeldTreeDirectories[\s\S]*AssertFrozenDirectoryEntry[\s\S]*AssertFrozenEntry/u);
+  assert.match(source,
+    /Delete-ConstructionAccountBeforeFreeze \$constructorAccount[\s\S]*Verify-FrozenHeldTree \$sourceDirectories[\s\S]*Verify-FrozenHeldTree \$privateToolchainDirectories/u,
+    "Die vollstaendigen DACL-/Write-Negativproben muessen hinter der verifizierten Constructor-Loeschung liegen.");
 });
 
 test("TAR-Audit liefert nur gepinnte regulaere Dateislices als Extraktionsplan", async () => {
@@ -961,6 +977,42 @@ test("Windows-Anker verweigert Rename/Write exakt vor der Extraktion und extrahi
     for (const output of fixture.outputPaths) await assert.rejects(readFile(output), { code: "ENOENT" });
   });
 
+test("erhoehter echter Windows-Anker meldet EXTRACTED erst nach Constructor-Entzug und vollstaendig gefrorenen Root-Rollen",
+  WINDOWS_ONLY, async (t) => {
+    if (!ELEVATED_ACCOUNT_TESTS_REQUIRED) {
+      t.skip("Der echte EXTRACTED-Vertrag wird verpflichtend auf dem wegwerfbaren Hosted-Windows-Runner ausgefuehrt.");
+      return;
+    }
+    // Ein nach EXTRACTED absichtlich abgebrochener privater Baum ist per
+    // Produktionsvertrag forensisch zu behalten. Der verpflichtende Test laeuft
+    // deshalb nur auf dem wegwerfbaren Hosted-Runner und registriert bewusst
+    // keinen lokalen pfadbasierten Cleanup.
+    const workspaceRoot = await realpath(await mkdtemp(join(tmpdir(), "zfrb-extracted-retained-")));
+    const fixture = await materializationTarSwapFixture(t, workspaceRoot);
+    let observed;
+    await assert.rejects(fixture.materialize({
+      afterStagingCreated: async ({ constructionPrincipal, stagingRoot }) => {
+        observed = { constructionPrincipal, stagingRoot };
+        assert.equal(constructionPrincipal.mode, "ephemeral-local-constructor-account-deleted-before-freeze-v1");
+        assert.match(constructionPrincipal.principalSidSha256, /^[a-f0-9]{64}$/u);
+        assert.deepEqual((await readdir(stagingRoot)).sort(), [
+          "cargo-home", "publication", "source", "target", "temp", "toolchain",
+        ]);
+        assert.deepEqual(await readFile(join(stagingRoot, "source", "Cargo.lock")), fixture.sourceData);
+        assert.deepEqual(await readFile(join(stagingRoot, "source", ".cargo", "config.toml")),
+          Buffer.from("[held__]\n", "utf8"));
+        for (const denied of [
+          () => mkdir(join(stagingRoot, "source", "runner-must-not-create")),
+          () => writeFile(join(stagingRoot, "source", "Cargo.lock"), "runner-must-not-write"),
+          () => writeFile(join(stagingRoot, "toolchain", "bin", "cargo.exe"), "runner-must-not-write"),
+          () => mkdir(join(stagingRoot, "target", "runner-must-not-create")),
+        ]) await assert.rejects(denied, isWindowsHeldMutationError);
+        throw new Error("TEST_STOP_AFTER_VERIFIED_EXTRACTED");
+      },
+    }), /TEST_STOP_AFTER_VERIFIED_EXTRACTED/u);
+    assert.ok(observed, "Der echte Windows-Anker erreichte EXTRACTED nicht.");
+  });
+
 test("USER_INFO_1-Einmalaccount bindet den dokumentierten minimalen normalen Benutzervertrag", async () => {
   const implementation = await readFile(IMPLEMENTATION_PATH, "utf8");
   assert.match(WINDOWS_BUILD_ANCHOR_HELPER_SOURCE, /private const uint ERROR_INVALID_PARAMETER = 87u;/u);
@@ -974,6 +1026,28 @@ test("USER_INFO_1-Einmalaccount bindet den dokumentierten minimalen normalen Ben
   );
   assert.match(WINDOWS_BUILD_ANCHOR_HELPER_SOURCE, /GetTokenInformation\(identity\.Token, 20/u);
   assert.match(WINDOWS_BUILD_ANCHOR_HELPER_SOURCE, /new WindowsPrincipal\(identity\)\.IsInRole\(WindowsBuiltInRole\.Administrator\)/u);
+  assert.match(WINDOWS_BUILD_ANCHOR_HELPER_SOURCE, /EntryPoint = "LogonUserW"[\s\S]*ExactSpelling = true/u);
+  assert.match(WINDOWS_BUILD_ANCHOR_HELPER_SOURCE, /ImpersonateLoggedOnUser\(token\)[\s\S]*identity\.User\.Value != expectedPrincipalSid/u);
+  assert.match(WINDOWS_BUILD_ANCHOR_HELPER_SOURCE, /private bool impersonating;[\s\S]*if \(impersonating\) \{[\s\S]*if \(!RevertToSelf\(\)\) \{[\s\S]*throw new InvalidOperationException\("ZUGFOLGE_SAFE_ANCHOR_DIAGNOSTIC code=REVERT_USER[\s\S]*impersonating = false;[\s\S]*identity\.User\.Value != returnSid/u);
+  assert.match(WINDOWS_BUILD_ANCHOR_HELPER_SOURCE, /private Exception pendingIdentityFailure;[\s\S]*Exception identityFailure = pendingIdentityFailure;[\s\S]*pendingIdentityFailure = identityFailure;[\s\S]*if \(token != IntPtr\.Zero && !CloseHandle\(token\)\)[\s\S]*pendingIdentityFailure = null;[\s\S]*if \(identityFailure != null\) throw identityFailure/u,
+    "Ein SID-Rueckkehrfehler muss auch bei einem zunaechst fehlgeschlagenen Token-Close bis zum erfolgreichen Cleanup erhalten bleiben.");
+  assert.match(WINDOWS_BUILD_ANCHOR_HELPER_SOURCE, /private ZugfolgeImpersonationScope pendingImpersonation;[\s\S]*pendingImpersonation = scope;[\s\S]*scope\.AssertCurrentPrincipal\(Sid\);[\s\S]*return scope/u,
+    "Der Account muss einen noch nicht erfolgreich zurueckgegebenen Impersonation-Scope fuer Cleanup besitzen.");
+  assert.match(WINDOWS_BUILD_ANCHOR_HELPER_SOURCE, /if \(!CloseHandle\(token\)\) \{[\s\S]*return new ZugfolgeImpersonationScope\(token, expectedReturnSid, release, false,\s*new AggregateException\(failure, closeFailure\)\)/u,
+    "Auch ein nach fehlgeschlagenem Impersonate nicht schliessbarer Raw-Token braucht einen retryfaehigen Scope-Owner.");
+  assert.match(WINDOWS_BUILD_ANCHOR_HELPER_SOURCE, /if \(activeImpersonations != 0\) \{[\s\S]*pendingImpersonation\.Dispose\(\)[\s\S]*activeImpersonations != 0/u,
+    "Account-Cleanup muss einen vor Scope-Rueckgabe gescheiterten Identitaetswechsel erneut bereinigen.");
+  assert.match(WINDOWS_BUILD_ANCHOR_HELPER_SOURCE, /List<Exception> cleanupFailures = new List<Exception>\(\);[\s\S]*cleanupFailures\.Add\(impersonationFailure\)[\s\S]*code=NET_USER_DELETE[\s\S]*cleanupFailures\.Add[\s\S]*code=NET_USER_DELETE_VERIFY[\s\S]*cleanupFailures\.Count == 1[\s\S]*new AggregateException\(cleanupFailures\)/u,
+    "Scope-, Account-Loesch- und Account-Verifikationsfehler muessen gemeinsam forensisch erhalten bleiben.");
+  assert.doesNotMatch(WINDOWS_BUILD_ANCHOR_HELPER_SOURCE, /catch \(Exception failure\) \{\s*try \{ scope\.Dispose\(\); \}/u,
+    "Ein vor der Rueckgabe selbst bereinigter Scope waere bei Cleanupfehlern anschliessend besitzerlos.");
+  assert.match(WINDOWS_BUILD_ANCHOR_HELPER_SOURCE, /if \(token != IntPtr\.Zero && !CloseHandle\(token\)\) \{[\s\S]*code=CLOSE_LOGON_TOKEN[\s\S]*token = IntPtr\.Zero; active = false;[\s\S]*if \(callback != null\) callback\(\)/u,
+    "Account-Loeschung darf erst nach verifiziertem Revert und geschlossenem Logon-Token freigegeben werden.");
+  assert.doesNotMatch(WINDOWS_BUILD_ANCHOR_HELPER_SOURCE, /if \(impersonated\) RevertToSelf\(\);\s*CloseHandle\(token\)/u,
+    "Fehler beim Identitaetswechsel duerfen Revert-/Token-Cleanup nicht ungeprueft verwerfen.");
+  assert.match(WINDOWS_BUILD_ANCHOR_HELPER_SOURCE, /activeImpersonations != 0[\s\S]*Ephemerer Account besitzt noch eine aktive Impersonation/u);
+  assert.match(WINDOWS_BUILD_ANCHOR_HELPER_SOURCE, /const uint constructorDenied = 0x00090150u;/u);
+  assert.match(WINDOWS_BUILD_ANCHOR_HELPER_SOURCE, /\(A;;0x001600af;;;" \+ constructorSid/u);
   assert.match(WINDOWS_BUILD_ANCHOR_HELPER_SOURCE, /uint lookup = NetUserGetInfo\(null, Username, 0, out buffer\);/u);
   assert.match(WINDOWS_BUILD_ANCHOR_HELPER_SOURCE, /lookup != NERR_USER_NOT_FOUND/u);
   assert.doesNotMatch(WINDOWS_BUILD_ANCHOR_HELPER_SOURCE, /UF_PASSWD_CANT_CHANGE|UF_DONT_EXPIRE_PASSWD/u);
@@ -1033,6 +1107,11 @@ test("USER_INFO_1-Einmalaccount bindet den dokumentierten minimalen normalen Ben
   assert.match(implementation, /'HOMEPATH' = '\\Windows\\System32'/u);
   assert.match(implementation, /'PROMPT' = '\$P\$G'/u);
   assert.match(implementation, /if \(\$diagnostic -match '\^ZUGFOLGE_SAFE_PROCESS_DIAGNOSTIC code=\(PROCESS_WITH_LOGON\|PROCESS_FROM_ANCHOR\) status=/u);
+  assert.match(implementation, /\$constructorAccount = \[ZugfolgeEphemeralAccount\]::Create\(\)[\s\S]*\$account = \[ZugfolgeEphemeralAccount\]::Create\(\)/u);
+  assert.match(implementation, /ConstructionReadExecute\(\$currentSid, \$account\.Sid, \$constructorAccount\.Sid\)/u);
+  assert.match(implementation, /\$constructorScope = \$constructorAccount\.Impersonate\(\)[\s\S]*\$constructorScope\.Dispose\(\)[\s\S]*Delete-ConstructionAccountBeforeFreeze \$constructorAccount[\s\S]*Verify-FrozenHeldTree \$sourceDirectories/u);
+  assert.match(implementation, /ephemeral-local-constructor-account-deleted-before-freeze-v1/u);
+  assert.match(implementation, /private-create-new-revoked-constructor-owner-rights-protected-dacl-v2/u);
   assert.equal((implementation.match(/windowsBuildAnchorSafeDiagnostic\(stderr\)/gu) ?? []).length, 6,
     "Handshake, Extraktion, Build-Fallback, Ergebnis-, Publikations- und Abschlussfehler muessen dieselbe sichere Diagnose verwenden.");
   assert.doesNotMatch(implementation, /Buffer\.concat\(stderr\)\.toString/u);
@@ -1049,6 +1128,13 @@ test("extract-Diagnose gibt nur die begrenzte nicht-geheime Anchor-Allowlist fre
   assert.equal(diagnose([Buffer.from(`password=Zf!never-surface\n${safeStage}\n`, "utf8")]), safeStage);
   const safePreCommitStage = "ZUGFOLGE_SAFE_ANCHOR_STAGE_DIAGNOSTIC stage=DELETE_EPHEMERAL_ACCOUNT";
   assert.equal(diagnose([Buffer.from(`hostile-secret-path=C:\\private\\input\n${safePreCommitStage}\n`, "utf8")]), safePreCommitStage);
+  const safeConstructorStage = "ZUGFOLGE_SAFE_ANCHOR_STAGE_DIAGNOSTIC stage=DELETE_CONSTRUCTION_ACCOUNT";
+  assert.equal(diagnose([Buffer.from(`password=Zf!never-surface\n${safeConstructorStage}\n`, "utf8")]), safeConstructorStage);
+  for (const code of ["LOGON_USER", "IMPERSONATE_USER", "REVERT_USER", "CLOSE_LOGON_TOKEN"]) {
+    const diagnostic = `ZUGFOLGE_SAFE_ANCHOR_DIAGNOSTIC code=${code} status=5`;
+    assert.equal(diagnose([Buffer.from(`${diagnostic}\n`, "utf8")]), diagnostic);
+    assert.equal(diagnose([Buffer.from(`${diagnostic} parameter=0\n`, "utf8")]), "");
+  }
   assert.equal(diagnose([Buffer.from(`${safe}\n${safeStage}\n`, "utf8")]), safe,
     "Ein genauer numerischer Account-/Prozessstatus muss den groben Stage-Fallback schlagen.");
   assert.equal(diagnose([Buffer.from(`${"hostile-secret-path=".repeat(40)}\n${safeStage}\n`, "utf8")]), safeStage,
@@ -1434,6 +1520,150 @@ test("echtes Windows friert atomar geschuetzte create-new Dateien und Verzeichni
   ], { cwd: "C:\\Windows\\System32" });
   assert.equal(executed.stderr.length, 0, executed.stderr.toString("utf8"));
   assert.equal(executed.stdout.toString("utf8").trim(), "ATOMIC_TREE_FREEZE_OK");
+});
+
+test("echtes Windows belegt den bisherigen CREATE_PRIVATE_ROOT-Fehler als STATUS_ACCESS_DENIED", WINDOWS_ONLY, async (t) => {
+  const root = await temporaryDirectory(t, "zugfolge-nested-denial-");
+  const helper = join(root, "operational-windows-anchor-helper.dll");
+  const harness = join(root, "nested-denial.ps1");
+  await buildOperationalValidatorWindowsAnchorHelper(helper);
+  await writeFile(harness, [
+    "param([string] $Helper, [string] $Root)",
+    "$ErrorActionPreference = 'Stop'",
+    "[void][Reflection.Assembly]::Load([IO.File]::ReadAllBytes($Helper))",
+    "$sid = [Security.Principal.WindowsIdentity]::GetCurrent().User.Value",
+    "$rootHandle = [ZugfolgeRelativeFs]::OpenPlainDirectory($Root)",
+    "$descriptor = [ZugfolgeProtectedSecurityDescriptor]::ReadExecute($sid, 'S-1-5-11')",
+    "$protectedRoot = $null",
+    "try {",
+    "  $protectedRoot = [ZugfolgeRelativeFs]::CreateProtectedDirectory($rootHandle, 'buildroot', $descriptor)",
+    "  if ([ZugfolgeRelativeFs]::EnumerateNames($protectedRoot).Length -ne 0) { throw 'Buildroot war nicht leer.' }",
+    "  if ([string]::IsNullOrEmpty([ZugfolgeRelativeFs]::Identity($protectedRoot))) { throw 'Buildroot-Identitaet fehlte.' }",
+    "  $unexpected = $null",
+    "  try { $unexpected = [ZugfolgeRelativeFs]::CreateProtectedDirectory($protectedRoot, 'source', $descriptor) }",
+    "  catch [ZugfolgeNtCreateException] { if ($_.Exception.Status -ne -1073741790) { throw } }",
+    "  if ($null -ne $unexpected) { $unexpected.Dispose(); throw 'Final geschuetzter Buildroot erlaubte unerwartet source.' }",
+    "  [Console]::Out.WriteLine('NESTED_FINAL_DACL_DENIED_0XC0000022')",
+    "} finally {",
+    "  if ($null -ne $protectedRoot) { $protectedRoot.Dispose() }",
+    "  $descriptor.Dispose()",
+    "  $rootHandle.Dispose()",
+    "}",
+    "",
+  ].join("\r\n"));
+  const executed = await execute(POWERSHELL_51, [
+    "-NoLogo", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File",
+    harness, helper, root,
+  ], { cwd: "C:\\Windows\\System32" });
+  assert.equal(executed.stderr.length, 0, executed.stderr.toString("utf8"));
+  assert.equal(executed.stdout.toString("utf8").trim(), "NESTED_FINAL_DACL_DENIED_0XC0000022");
+});
+
+test("getrennter Windows-Constructor baut den verschachtelten Baum, waehrend Runner und Builder nur lesen", WINDOWS_ONLY, async (t) => {
+  const root = await temporaryDirectory(t, "zugfolge-constructor-freeze-");
+  const helper = join(root, "operational-windows-anchor-helper.dll");
+  const harness = join(root, "constructor-freeze.ps1");
+  await buildOperationalValidatorWindowsAnchorHelper(helper);
+  await writeFile(harness, [
+    "param([string] $Helper, [string] $Root, [string] $RequireElevated)",
+    "$ErrorActionPreference = 'Stop'",
+    "[void][Reflection.Assembly]::Load([IO.File]::ReadAllBytes($Helper))",
+    "if (-not [ZugfolgeEphemeralAccount]::CurrentProcessHasElevatedAdministratorToken()) {",
+    "  if ($RequireElevated -ceq '1') { throw 'Erhoehter Zwei-Konten-Constructor-Test war vorgeschrieben.' }",
+    "  [Console]::Out.WriteLine('SKIP_NOT_ELEVATED'); exit 0",
+    "}",
+    "$sid = [Security.Principal.WindowsIdentity]::GetCurrent().User.Value",
+    "$rootHandle = [ZugfolgeRelativeFs]::OpenPlainDirectory($Root)",
+    "$constructor = $null; $builder = $null; $descriptor = $null",
+    "$buildroot = $null; $source = $null; $nested = $null; $payload = $null",
+    "$reopenedBuildroot = $null; $reopenedSource = $null; $reopenedNested = $null",
+    "function Assert-NestedCreateDenied([Microsoft.Win32.SafeHandles.SafeFileHandle]$parent, [object]$securityDescriptor, [string]$leaf) {",
+    "  $unexpected = $null",
+    "  try { $unexpected = [ZugfolgeRelativeFs]::CreateProtectedDirectory($parent, $leaf, $securityDescriptor) }",
+    "  catch [ZugfolgeNtCreateException] { if ($_.Exception.Status -ne -1073741790) { throw }; return }",
+    "  if ($null -ne $unexpected) { $unexpected.Dispose() }",
+    "  throw \"$leaf wurde nicht mit STATUS_ACCESS_DENIED verweigert.\"",
+    "}",
+    "function Set-CleanupAcl([string]$path, [string]$currentSid) {",
+    "  $acl = [Security.AccessControl.DirectorySecurity]::new()",
+    "  $acl.SetAccessRuleProtection($true, $false)",
+    "  $rule = [Security.AccessControl.FileSystemAccessRule]::new($currentSid, [Security.AccessControl.FileSystemRights]::FullControl, [Security.AccessControl.InheritanceFlags]'ContainerInherit, ObjectInherit', [Security.AccessControl.PropagationFlags]::None, [Security.AccessControl.AccessControlType]::Allow)",
+    "  [void]$acl.AddAccessRule($rule)",
+    "  [IO.DirectoryInfo]::new($path).SetAccessControl($acl)",
+    "}",
+    "function Set-CleanupFileAcl([string]$path, [string]$currentSid) {",
+    "  $acl = [Security.AccessControl.FileSecurity]::new()",
+    "  $acl.SetAccessRuleProtection($true, $false)",
+    "  $rule = [Security.AccessControl.FileSystemAccessRule]::new($currentSid, [Security.AccessControl.FileSystemRights]::FullControl, [Security.AccessControl.InheritanceFlags]::None, [Security.AccessControl.PropagationFlags]::None, [Security.AccessControl.AccessControlType]::Allow)",
+    "  [void]$acl.AddAccessRule($rule)",
+    "  [IO.FileInfo]::new($path).SetAccessControl($acl)",
+    "}",
+    "try {",
+    "  $constructor = [ZugfolgeEphemeralAccount]::Create()",
+    "  $builder = [ZugfolgeEphemeralAccount]::Create()",
+    "  if ($constructor.Sid -ceq $builder.Sid -or $constructor.Sid -ceq $sid -or $builder.Sid -ceq $sid) { throw 'Constructor-/Builder-/Runner-SID ist nicht getrennt.' }",
+    "  $descriptor = [ZugfolgeProtectedSecurityDescriptor]::ConstructionReadExecute($sid, $builder.Sid, $constructor.Sid)",
+    "  $buildroot = [ZugfolgeRelativeFs]::CreateProtectedDirectory($rootHandle, 'buildroot', $descriptor)",
+    "  Assert-NestedCreateDenied $buildroot $descriptor 'runner-must-not-create'",
+    "  $constructorScope = $constructor.Impersonate()",
+    "  try {",
+    "    $source = [ZugfolgeRelativeFs]::CreateProtectedDirectory($buildroot, 'source', $descriptor)",
+    "    $nested = [ZugfolgeRelativeFs]::CreateProtectedDirectory($source, 'nested', $descriptor)",
+    "    $payloadHandle = [ZugfolgeRelativeFs]::CreateProtectedRegularFile($nested, 'payload.bin', $descriptor)",
+    "    $payload = [IO.FileStream]::new($payloadHandle, [IO.FileAccess]::ReadWrite, 4096, $false)",
+    "    $bytes = [Text.Encoding]::UTF8.GetBytes('constructor-only-v1')",
+    "    $payload.Write($bytes, 0, $bytes.Length); $payload.Flush($true); $payload.Dispose(); $payload = $null",
+    "  } finally { $constructorScope.Dispose() }",
+    "  $buildrootIdentity = [ZugfolgeRelativeFs]::Identity($buildroot)",
+    "  $sourceIdentity = [ZugfolgeRelativeFs]::Identity($source)",
+    "  $nestedIdentity = [ZugfolgeRelativeFs]::Identity($nested)",
+    "  Assert-NestedCreateDenied $source $descriptor 'runner-after-construction-must-not-create'",
+    "  $builderScope = $builder.Impersonate()",
+    "  try { Assert-NestedCreateDenied $source $descriptor 'builder-must-not-create' } finally { $builderScope.Dispose() }",
+    "  $nested.Dispose(); $nested = $null; $source.Dispose(); $source = $null; $buildroot.Dispose(); $buildroot = $null",
+    "  $reopenedBuildroot = [ZugfolgeRelativeFs]::OpenDirectory($rootHandle, 'buildroot')",
+    "  $reopenedSource = [ZugfolgeRelativeFs]::OpenDirectory($reopenedBuildroot, 'source')",
+    "  $reopenedNested = [ZugfolgeRelativeFs]::OpenDirectory($reopenedSource, 'nested')",
+    "  if ([ZugfolgeRelativeFs]::Identity($reopenedBuildroot) -cne $buildrootIdentity -or [ZugfolgeRelativeFs]::Identity($reopenedSource) -cne $sourceIdentity -or [ZugfolgeRelativeFs]::Identity($reopenedNested) -cne $nestedIdentity) { throw 'Nur-lesbarer Reopen driftete von den Constructor-Identitaeten.' }",
+    "  [ZugfolgeRelativeFs]::AssertFrozenDirectoryEntry($rootHandle, 'buildroot')",
+    "  [ZugfolgeRelativeFs]::AssertFrozenDirectoryEntry($reopenedBuildroot, 'source')",
+    "  [ZugfolgeRelativeFs]::AssertFrozenDirectoryEntry($reopenedSource, 'nested')",
+    "  $cleanupScope = $constructor.Impersonate()",
+    "  try {",
+    "    Set-CleanupFileAcl (Join-Path $Root 'buildroot\\source\\nested\\payload.bin') $sid",
+    "    Set-CleanupAcl (Join-Path $Root 'buildroot\\source\\nested') $sid",
+    "    Set-CleanupAcl (Join-Path $Root 'buildroot\\source') $sid",
+    "    Set-CleanupAcl (Join-Path $Root 'buildroot') $sid",
+    "  } finally { $cleanupScope.Dispose() }",
+    "  $constructor.Dispose(); $constructor = $null",
+    "  $builder.Dispose(); $builder = $null",
+    "  [Console]::Out.WriteLine('DISTINCT_CONSTRUCTOR_TREE_OK')",
+    "} finally {",
+    "  if ($null -ne $reopenedNested) { $reopenedNested.Dispose() }",
+    "  if ($null -ne $reopenedSource) { $reopenedSource.Dispose() }",
+    "  if ($null -ne $reopenedBuildroot) { $reopenedBuildroot.Dispose() }",
+    "  if ($null -ne $payload) { $payload.Dispose() }",
+    "  if ($null -ne $nested) { $nested.Dispose() }",
+    "  if ($null -ne $source) { $source.Dispose() }",
+    "  if ($null -ne $buildroot) { $buildroot.Dispose() }",
+    "  if ($null -ne $descriptor) { $descriptor.Dispose() }",
+    "  if ($null -ne $builder) { $builder.Dispose() }",
+    "  if ($null -ne $constructor) { $constructor.Dispose() }",
+    "  $rootHandle.Dispose()",
+    "}",
+    "",
+  ].join("\r\n"));
+  const executed = await execute(POWERSHELL_51, [
+    "-NoLogo", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File",
+    harness, helper, root, ELEVATED_ACCOUNT_TESTS_REQUIRED ? "1" : "0",
+  ], { cwd: "C:\\Windows\\System32" });
+  const output = executed.stdout.toString("utf8").trim();
+  if (output === "SKIP_NOT_ELEVATED") {
+    t.skip("Zwei-Konten-Constructor-Integration benoetigt einen erhoehten Windows-Token.");
+    return;
+  }
+  assert.equal(executed.stderr.length, 0, executed.stderr.toString("utf8"));
+  assert.equal(output, "DISTINCT_CONSTRUCTOR_TREE_OK");
 });
 
 test("Helper-Builder verweigert nicht kanonischen Ausgabepfad vor Compilerwirkung", async (t) => {
