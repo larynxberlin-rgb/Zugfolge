@@ -80,6 +80,108 @@ public sealed class ZugfolgeNtCreateException : InvalidOperationException {
   internal ZugfolgeNtCreateException(int status)
     : base("NtCreateFile ist fehlgeschlagen: 0x" + status.ToString("x8")) { Status = status; }
 }
+public sealed class ZugfolgeImpersonationScope : IDisposable {
+  private IntPtr token;
+  private readonly int threadId;
+  private readonly string returnSid;
+  private Action released;
+  private bool active;
+  private bool impersonating;
+  private Exception pendingIdentityFailure;
+  [DllImport("advapi32.dll", EntryPoint = "LogonUserW", CharSet = CharSet.Unicode, ExactSpelling = true, SetLastError = true)]
+  [return: MarshalAs(UnmanagedType.Bool)]
+  private static extern bool LogonUserW(string username, string domain, string password,
+    int logonType, int logonProvider, out IntPtr token);
+  [DllImport("advapi32.dll", SetLastError = true)]
+  [return: MarshalAs(UnmanagedType.Bool)]
+  private static extern bool ImpersonateLoggedOnUser(IntPtr token);
+  [DllImport("advapi32.dll", SetLastError = true)]
+  [return: MarshalAs(UnmanagedType.Bool)]
+  private static extern bool RevertToSelf();
+  [DllImport("kernel32.dll", SetLastError = true)]
+  [return: MarshalAs(UnmanagedType.Bool)]
+  private static extern bool CloseHandle(IntPtr handle);
+  private ZugfolgeImpersonationScope(IntPtr value, string expectedReturnSid, Action release,
+      bool isImpersonating, Exception initialFailure) {
+    token = value; threadId = System.Threading.Thread.CurrentThread.ManagedThreadId;
+    returnSid = expectedReturnSid; released = release; active = true;
+    impersonating = isImpersonating; pendingIdentityFailure = initialFailure;
+  }
+  internal static ZugfolgeImpersonationScope Create(string username, string domain, string password,
+      string expectedReturnSid, Action release) {
+    IntPtr token = IntPtr.Zero;
+    if (!LogonUserW(username, domain, password, 2, 0, out token)) {
+      int status = Marshal.GetLastWin32Error();
+      release();
+      throw new InvalidOperationException("ZUGFOLGE_SAFE_ANCHOR_DIAGNOSTIC code=LOGON_USER status="
+        + status.ToString(System.Globalization.CultureInfo.InvariantCulture));
+    }
+    if (!ImpersonateLoggedOnUser(token)) {
+      int status = Marshal.GetLastWin32Error();
+      Exception failure = new InvalidOperationException(
+        "ZUGFOLGE_SAFE_ANCHOR_DIAGNOSTIC code=IMPERSONATE_USER status="
+        + status.ToString(System.Globalization.CultureInfo.InvariantCulture));
+      if (!CloseHandle(token)) {
+        Exception closeFailure = new InvalidOperationException(
+          "ZUGFOLGE_SAFE_ANCHOR_DIAGNOSTIC code=CLOSE_LOGON_TOKEN status="
+          + Marshal.GetLastWin32Error().ToString(System.Globalization.CultureInfo.InvariantCulture));
+        return new ZugfolgeImpersonationScope(token, expectedReturnSid, release, false,
+          new AggregateException(failure, closeFailure));
+      }
+      release();
+      throw failure;
+    }
+    return new ZugfolgeImpersonationScope(token, expectedReturnSid, release, true, null);
+  }
+  internal void AssertCurrentPrincipal(string expectedPrincipalSid) {
+    if (!active || System.Threading.Thread.CurrentThread.ManagedThreadId != threadId) {
+      throw new InvalidOperationException("Ephemere Impersonation besitzt keinen gueltigen aktuellen Thread.");
+    }
+    if (pendingIdentityFailure != null) throw pendingIdentityFailure;
+    if (!impersonating) throw new InvalidOperationException("Ephemere Impersonation wurde nicht hergestellt.");
+    using (WindowsIdentity identity = WindowsIdentity.GetCurrent()) {
+      if (identity.User == null || identity.User.Value != expectedPrincipalSid) {
+        throw new InvalidOperationException("Impersonation band nicht die erwartete ephemere SID.");
+      }
+    }
+  }
+  public void Dispose() {
+    if (!active) return;
+    if (System.Threading.Thread.CurrentThread.ManagedThreadId != threadId) {
+      throw new InvalidOperationException("Ephemere Impersonation wurde auf einem fremden Thread beendet.");
+    }
+    Exception identityFailure = pendingIdentityFailure;
+    if (impersonating) {
+      if (!RevertToSelf()) {
+        throw new InvalidOperationException("ZUGFOLGE_SAFE_ANCHOR_DIAGNOSTIC code=REVERT_USER status="
+          + Marshal.GetLastWin32Error().ToString(System.Globalization.CultureInfo.InvariantCulture));
+      }
+      impersonating = false;
+      try {
+        using (WindowsIdentity identity = WindowsIdentity.GetCurrent()) {
+          if (identity.User == null || identity.User.Value != returnSid) {
+            identityFailure = new InvalidOperationException("Impersonation kehrte nicht zur erwarteten Anchor-SID zurueck.");
+          }
+        }
+      } catch (Exception error) { identityFailure = error; }
+      pendingIdentityFailure = identityFailure;
+    }
+    if (token != IntPtr.Zero && !CloseHandle(token)) {
+      Exception closeFailure = new InvalidOperationException(
+        "ZUGFOLGE_SAFE_ANCHOR_DIAGNOSTIC code=CLOSE_LOGON_TOKEN status="
+        + Marshal.GetLastWin32Error().ToString(System.Globalization.CultureInfo.InvariantCulture));
+      if (identityFailure != null) {
+        throw new AggregateException(identityFailure, closeFailure);
+      }
+      throw closeFailure;
+    }
+    token = IntPtr.Zero; active = false;
+    pendingIdentityFailure = null;
+    Action callback = released; released = null;
+    if (callback != null) callback();
+    if (identityFailure != null) throw identityFailure;
+  }
+}
 public sealed class ZugfolgeEphemeralAccount : IDisposable {
   private const uint ERROR_INVALID_PARAMETER = 87u;
   private const uint NERR_USER_NOT_FOUND = 2221u;
@@ -115,6 +217,9 @@ public sealed class ZugfolgeEphemeralAccount : IDisposable {
   public string Domain { get; private set; }
   public string Password { get; private set; }
   public string Sid { get; private set; }
+  private readonly object gate = new object();
+  private int activeImpersonations;
+  private ZugfolgeImpersonationScope pendingImpersonation;
   private bool active;
   private ZugfolgeEphemeralAccount() {}
   public static bool CurrentProcessHasElevatedAdministratorToken() {
@@ -158,22 +263,65 @@ public sealed class ZugfolgeEphemeralAccount : IDisposable {
       return account;
     } catch { account.Dispose(); throw; }
   }
-  public void Dispose() {
-    if (!active) return;
-    uint result = NetUserDel(null, Username);
-    if (result != 0 && result != NERR_USER_NOT_FOUND) throw new InvalidOperationException(
-      "ZUGFOLGE_SAFE_ANCHOR_DIAGNOSTIC code=NET_USER_DELETE status="
-      + result.ToString(System.Globalization.CultureInfo.InvariantCulture));
-    IntPtr buffer = IntPtr.Zero;
-    uint lookup = NetUserGetInfo(null, Username, 0, out buffer);
-    try {
-      if (lookup != NERR_USER_NOT_FOUND) throw new InvalidOperationException(
-        "ZUGFOLGE_SAFE_ANCHOR_DIAGNOSTIC code=NET_USER_DELETE_VERIFY status="
-        + lookup.ToString(System.Globalization.CultureInfo.InvariantCulture));
-    } finally {
-      if (buffer != IntPtr.Zero) NetApiBufferFree(buffer);
+  public ZugfolgeImpersonationScope Impersonate() {
+    lock (gate) {
+      if (!active || String.IsNullOrEmpty(Password) || activeImpersonations != 0) {
+        throw new InvalidOperationException("Ephemerer Account kann nicht eindeutig impersoniert werden.");
+      }
+      string returnSid;
+      using (WindowsIdentity identity = WindowsIdentity.GetCurrent()) {
+        if (identity.User == null) throw new InvalidOperationException("Anchor besitzt keine aktuelle SID.");
+        returnSid = identity.User.Value;
+      }
+      activeImpersonations = 1;
+      ZugfolgeImpersonationScope scope = ZugfolgeImpersonationScope.Create(Username, Domain, Password, returnSid, delegate {
+        lock (gate) { pendingImpersonation = null; activeImpersonations = 0; }
+      });
+      pendingImpersonation = scope;
+      scope.AssertCurrentPrincipal(Sid);
+      return scope;
     }
-    active = false; Password = null;
+  }
+  public void Dispose() {
+    lock (gate) {
+      if (!active) return;
+      List<Exception> cleanupFailures = new List<Exception>();
+      Exception impersonationFailure = null;
+      if (activeImpersonations != 0) {
+        if (pendingImpersonation == null) {
+          throw new InvalidOperationException("Ephemerer Account besitzt noch eine aktive Impersonation ohne Cleanup-Owner.");
+        }
+        try { pendingImpersonation.Dispose(); }
+        catch (Exception firstFailure) {
+          impersonationFailure = firstFailure;
+          if (activeImpersonations != 0) {
+            try { pendingImpersonation.Dispose(); }
+            catch (Exception retryFailure) {
+              impersonationFailure = new AggregateException(firstFailure, retryFailure);
+            }
+          }
+        }
+        if (activeImpersonations != 0) throw new AggregateException(
+          "Ephemerer Account besitzt noch eine aktive Impersonation.", impersonationFailure);
+      }
+      if (impersonationFailure != null) cleanupFailures.Add(impersonationFailure);
+      uint result = NetUserDel(null, Username);
+      if (result != 0 && result != NERR_USER_NOT_FOUND) cleanupFailures.Add(new InvalidOperationException(
+        "ZUGFOLGE_SAFE_ANCHOR_DIAGNOSTIC code=NET_USER_DELETE status="
+        + result.ToString(System.Globalization.CultureInfo.InvariantCulture)));
+      IntPtr buffer = IntPtr.Zero;
+      uint lookup = NetUserGetInfo(null, Username, 0, out buffer);
+      try {
+        if (lookup != NERR_USER_NOT_FOUND) cleanupFailures.Add(new InvalidOperationException(
+          "ZUGFOLGE_SAFE_ANCHOR_DIAGNOSTIC code=NET_USER_DELETE_VERIFY status="
+          + lookup.ToString(System.Globalization.CultureInfo.InvariantCulture)));
+      } finally {
+        if (buffer != IntPtr.Zero) NetApiBufferFree(buffer);
+      }
+      if (lookup == NERR_USER_NOT_FOUND) { active = false; Password = null; }
+      if (cleanupFailures.Count == 1) throw cleanupFailures[0];
+      if (cleanupFailures.Count > 1) throw new AggregateException(cleanupFailures);
+    }
   }
 }
 public sealed class ZugfolgeProtectedSecurityDescriptor : IDisposable {
@@ -199,6 +347,27 @@ public sealed class ZugfolgeProtectedSecurityDescriptor : IDisposable {
       + "(D;;0x" + denied.ToString("x8") + ";;;S-1-3-4)"
       + "(A;;0x001200a9;;;" + currentSid + ")"
       + "(A;;0x001200a9;;;" + buildSid + ")"
+      + "(A;;FA;;;SY)(A;;FA;;;BA)";
+    return new ZugfolgeProtectedSecurityDescriptor(sddl);
+  }
+  public static ZugfolgeProtectedSecurityDescriptor ConstructionReadExecute(
+      string currentSid, string buildSid, string constructorSid) {
+    if (String.IsNullOrEmpty(currentSid) || String.IsNullOrEmpty(buildSid) || String.IsNullOrEmpty(constructorSid)
+        || currentSid == buildSid || currentSid == constructorSid || buildSid == constructorSid) {
+      throw new ArgumentException("Current-/Build-/Constructor-SID fehlt oder ist nicht getrennt.");
+    }
+    const uint denied = 0x000d0156u;
+    // The unique constructor may add children and update DACLs while its
+    // account exists.  It still cannot delete/rename entries, change owners,
+    // or mutate attributes.  Account deletion is the monotonic revocation;
+    // current/build principals never receive either ADD or WRITE_DAC.
+    const uint constructorDenied = 0x00090150u;
+    string sddl = "D:P(D;;0x" + denied.ToString("x8") + ";;;" + currentSid + ")"
+      + "(D;;0x" + constructorDenied.ToString("x8") + ";;;" + constructorSid + ")"
+      + "(D;;0x" + constructorDenied.ToString("x8") + ";;;S-1-3-4)"
+      + "(A;;0x001200a9;;;" + currentSid + ")"
+      + "(A;;0x001200a9;;;" + buildSid + ")"
+      + "(A;;0x001600af;;;" + constructorSid + ")"
       + "(A;;FA;;;SY)(A;;FA;;;BA)";
     return new ZugfolgeProtectedSecurityDescriptor(sddl);
   }
@@ -1476,6 +1645,7 @@ $ProgressPreference = 'SilentlyContinue'
 $held = [System.Collections.Generic.List[System.IDisposable]]::new()
 $publishedStreams = [System.Collections.Generic.List[object]]::new()
 $publicationCommitted = $false
+$constructionAccountDeleted = $false
 $ephemeralAccountDeleted = $false
 $anchorStage = 'INITIALIZE'
 function Write-SafeAnchorStageDiagnostic {
@@ -1649,11 +1819,13 @@ function Extract-AuditedPlan([IO.FileStream]$archive, [object]$plan, [hashtable]
       $actual = [BitConverter]::ToString($hash.Hash).Replace('-', '').ToLowerInvariant()
       if ($output.Length -ne [Int64]$entry.bytes -or $actual -cne [string]$entry.sha256) { Fail "$label-Datei $($entry.file) driftet vom auditierten Slice." }
       $output.Flush($true)
-      # NtCreateFile installed the final protected DACL atomically. Closing the
-      # only write-capable create handle is the irreversible freeze boundary.
+      # NtCreateFile installed the protected construction DACL atomically.
+      # Closing the content-write handle removes that direct capability.  The
+      # remaining Constructor WRITE_DAC capability is revoked monotonically by
+      # deleting its unique account before Verify-FrozenHeldTree runs every
+      # final WRITE_DAC/write/delete negative probe.
       $output.Dispose()
       $output = $null
-      [ZugfolgeRelativeFs]::AssertProtectedDacl($directories[$parentName], $leaf, $false)
       $files[[string]$entry.file] = Open-HeldRelativeFile $directories[$parentName] $leaf $entry.bytes $entry.sha256 "$label-Datei $($entry.file) nach atomarem DACL-Create"
     } finally {
       $hash.Dispose()
@@ -1682,11 +1854,11 @@ function Copy-HeldFile([IO.FileStream]$input, [Microsoft.Win32.SafeHandles.SafeF
     $actual = [BitConverter]::ToString($hash.Hash).Replace('-', '').ToLowerInvariant()
     if ($output.Length -ne $expectedBytes -or $actual -cne $expectedSha) { Fail "$label driftet waehrend der privaten Toolchain-Kopie." }
     $output.Flush($true)
-    # See Extract-AuditedPlan: the final descriptor is part of create-new, not a
-    # later path- or handle-based ACL mutation.
+    # See Extract-AuditedPlan: the protected construction descriptor is part of
+    # create-new.  Final negative probes run only after the unique Constructor
+    # account has been deleted and verified absent.
     $output.Dispose()
     $output = $null
-    [ZugfolgeRelativeFs]::AssertProtectedDacl($parent, $leaf, $false)
     return Open-HeldRelativeFile $parent $leaf $expectedBytes $expectedSha "$label nach atomarem DACL-Create"
   } finally {
     $input.Position = 0
@@ -1741,6 +1913,20 @@ function Delete-EphemeralAccountBeforeResult([object]$account) {
   }
   $script:ephemeralAccountDeleted = $true
 }
+function Delete-ConstructionAccountBeforeFreeze([object]$account) {
+  if ($null -eq $account -or $script:constructionAccountDeleted) {
+    throw [InvalidOperationException]::new('Ephemerer Constructor-Account besitzt vor dem Freeze einen ungueltigen Zustand.')
+  }
+  # The constructor SID is the only principal with ADD_FILE/ADD_SUBDIRECTORY on
+  # input-tree DACLs.  NetUserDel plus the NERR_USER_NOT_FOUND verification
+  # revokes that capability before create-time handles are closed and before
+  # any untrusted build-account process can start.
+  $account.Dispose()
+  if (-not $held.Remove($account)) {
+    throw [InvalidOperationException]::new('Verifiziert geloeschter Constructor-Account fehlte in der gehaltenen Ressourcenmenge.')
+  }
+  $script:constructionAccountDeleted = $true
+}
 function Commit-Published {
   # The persistent account cleanup completed before RESULT.  Every authority
   # handle deliberately remains open across this in-memory transition so path
@@ -1775,9 +1961,10 @@ function Reopen-FrozenHeldTreeDirectories([hashtable]$directories, [Microsoft.Wi
   }
 }
 function Verify-FrozenHeldTree([hashtable]$directories, [hashtable]$files, [hashtable]$expectedChildren, [Microsoft.Win32.SafeHandles.SafeFileHandle]$rootParent, [string]$rootLeaf, [string]$label) {
-  # Every entry received its final protected descriptor atomically at NT create.
-  # First prove the complete tree, then discard every create-time full-access
-  # directory handle parent-first and bind read-only handles to the same IDs.
+  # Every entry received its protected DACL atomically at NT create, and the
+  # sole constructor SID has already been deleted and verified absent.  First
+  # prove the complete tree, then discard every create-time full-access handle
+  # parent-first and bind read-only handles to the same IDs.
   Assert-ExactHeldTree $directories $expectedChildren "$label vor nur-lesbarem Reopen"
   Reopen-FrozenHeldTreeDirectories $directories $rootParent $rootLeaf $label
   Assert-ExactHeldTree $directories $expectedChildren "$label nach nur-lesbarem Reopen"
@@ -1886,60 +2073,78 @@ try {
   [Console]::Out.Flush()
   $script:anchorStage = 'RECEIVE_EXTRACTION_PLAN'
   $extract = Decode-Json ([Console]::In.ReadLine()) 'Extraktionsplan'
-  # The privileged local principal is unnecessary while the parent/input/toolchain
-  # handles are being established and audited.  Create it only once an extraction
-  # request has been received; aborting before extraction therefore needs no admin
-  # side effect while all original input bytes remain exclusively held.
+  # Privileged local principals are unnecessary while the parent/input/toolchain
+  # handles are being established and audited.  Create the one-shot constructor
+  # and the distinct build account only after a valid extraction request exists.
+  # The constructor is deleted before freeze/build; the builder never receives
+  # its ADD_FILE/ADD_SUBDIRECTORY capability.
   $script:anchorStage = 'CREATE_EPHEMERAL_ACCOUNT'
   $currentSid = [Security.Principal.WindowsIdentity]::GetCurrent().User.Value
+  $constructorAccount = [ZugfolgeEphemeralAccount]::Create()
+  $held.Add($constructorAccount)
   $account = [ZugfolgeEphemeralAccount]::Create()
   $held.Add($account)
-  $readExecuteDescriptor = [ZugfolgeProtectedSecurityDescriptor]::ReadExecute($currentSid, $account.Sid)
+  $constructionReadExecuteDescriptor = [ZugfolgeProtectedSecurityDescriptor]::ConstructionReadExecute($currentSid, $account.Sid, $constructorAccount.Sid)
   $isolatedWritableDescriptor = [ZugfolgeProtectedSecurityDescriptor]::IsolatedWritable($currentSid, $account.Sid)
   $parentWritableDescriptor = [ZugfolgeProtectedSecurityDescriptor]::ParentWritable($currentSid)
-  $held.Add($readExecuteDescriptor)
+  $held.Add($constructionReadExecuteDescriptor)
   $held.Add($isolatedWritableDescriptor)
   $held.Add($parentWritableDescriptor)
   $script:anchorStage = 'CREATE_PRIVATE_ROOT'
-  $buildRootHandle = New-HeldDirectoryRelative $anchoredParentHandles[$buildParentKey] $buildRootLeaf 'Privater Buildroot' $readExecuteDescriptor
+  $buildRootHandle = New-HeldDirectoryRelative $anchoredParentHandles[$buildParentKey] $buildRootLeaf 'Privater Buildroot' $constructionReadExecuteDescriptor
   if ([ZugfolgeRelativeFs]::EnumerateNames($buildRootHandle).Length -ne 0) { Fail 'Create-new Buildroot ist nicht leer.' }
   $buildRootIdentityParts = [ZugfolgeRelativeFs]::Identity($buildRootHandle).Split(':')
   if ($buildRootIdentityParts.Length -ne 2) { Fail 'Create-new Buildroot besitzt keine gueltige gehaltene Identitaet.' }
   $buildDirectories = @{ '' = $buildRootHandle }
-  $sourceHandle = New-HeldDirectoryRelative $buildDirectories[''] 'source' 'Private Source-Wurzel' $readExecuteDescriptor
-  $sourceDirectories = @{ '' = $sourceHandle }
-  $sourceFiles = @{}
-  $sourceExpectedChildren = @{ '' = [Collections.Generic.List[string]]::new() }
-  $script:anchorStage = 'EXTRACT_SOURCE'
-  Extract-AuditedPlan $source $extract.source $sourceDirectories $sourceFiles $sourceExpectedChildren $readExecuteDescriptor 'Source'
-  $script:anchorStage = 'EXTRACT_VENDOR'
-  Extract-AuditedPlan $vendor $extract.vendor $sourceDirectories $sourceFiles $sourceExpectedChildren $readExecuteDescriptor 'Vendor'
-  $script:anchorStage = 'COPY_TOOLCHAIN_DIRECTORIES'
-  $privateToolchainHandle = New-HeldDirectoryRelative $buildDirectories[''] 'toolchain' 'Private Toolchain-Wurzel' $readExecuteDescriptor
-  $privateToolchainDirectories = @{ '' = $privateToolchainHandle }
-  $privateToolchainFiles = @{}
-  $privateToolchainExpectedChildren = @{ '' = [Collections.Generic.List[string]]::new() }
-  foreach ($directory in $manifest.directories) {
-    $segments = ([string]$directory).Split('/')
-    $parentName = if ($segments.Length -eq 1) { '' } else { [string]::Join('/', $segments[0..($segments.Length - 2)]) }
-    $leaf = $segments[$segments.Length - 1]
-    $privateToolchainDirectories[[string]$directory] = New-HeldDirectoryRelative $privateToolchainDirectories[$parentName] $leaf "Private Toolchain-Verzeichnis $directory" $readExecuteDescriptor
-    Add-ExpectedChild $privateToolchainExpectedChildren $parentName $leaf
-    $privateToolchainExpectedChildren[[string]$directory] = [Collections.Generic.List[string]]::new()
+  $constructorScope = $constructorAccount.Impersonate()
+  $held.Add($constructorScope)
+  try {
+    $sourceHandle = New-HeldDirectoryRelative $buildDirectories[''] 'source' 'Private Source-Wurzel' $constructionReadExecuteDescriptor
+    $sourceDirectories = @{ '' = $sourceHandle }
+    $sourceFiles = @{}
+    $sourceExpectedChildren = @{ '' = [Collections.Generic.List[string]]::new() }
+    $script:anchorStage = 'EXTRACT_SOURCE'
+    Extract-AuditedPlan $source $extract.source $sourceDirectories $sourceFiles $sourceExpectedChildren $constructionReadExecuteDescriptor 'Source'
+    $script:anchorStage = 'EXTRACT_VENDOR'
+    Extract-AuditedPlan $vendor $extract.vendor $sourceDirectories $sourceFiles $sourceExpectedChildren $constructionReadExecuteDescriptor 'Vendor'
+    $script:anchorStage = 'COPY_TOOLCHAIN_DIRECTORIES'
+    $privateToolchainHandle = New-HeldDirectoryRelative $buildDirectories[''] 'toolchain' 'Private Toolchain-Wurzel' $constructionReadExecuteDescriptor
+    $privateToolchainDirectories = @{ '' = $privateToolchainHandle }
+    $privateToolchainFiles = @{}
+    $privateToolchainExpectedChildren = @{ '' = [Collections.Generic.List[string]]::new() }
+    foreach ($directory in $manifest.directories) {
+      $segments = ([string]$directory).Split('/')
+      $parentName = if ($segments.Length -eq 1) { '' } else { [string]::Join('/', $segments[0..($segments.Length - 2)]) }
+      $leaf = $segments[$segments.Length - 1]
+      $privateToolchainDirectories[[string]$directory] = New-HeldDirectoryRelative $privateToolchainDirectories[$parentName] $leaf "Private Toolchain-Verzeichnis $directory" $constructionReadExecuteDescriptor
+      Add-ExpectedChild $privateToolchainExpectedChildren $parentName $leaf
+      $privateToolchainExpectedChildren[[string]$directory] = [Collections.Generic.List[string]]::new()
+    }
+    $script:anchorStage = 'COPY_TOOLCHAIN_FILES'
+    foreach ($entry in $manifest.files) {
+      $segments = ([string]$entry.file).Split('/')
+      $parentName = if ($segments.Length -eq 1) { '' } else { [string]::Join('/', $segments[0..($segments.Length - 2)]) }
+      $leaf = $segments[$segments.Length - 1]
+      Add-ExpectedChild $privateToolchainExpectedChildren $parentName $leaf
+      $privateToolchainFiles[[string]$entry.file] = Copy-HeldFile $toolchainFiles[[string]$entry.file] $privateToolchainDirectories[$parentName] $leaf $entry.bytes $entry.sha256 $constructionReadExecuteDescriptor "Private Toolchain-Datei $($entry.file)"
+    }
+    $script:anchorStage = 'CREATE_WRITABLE_ROOTS'
+    $targetHandle = New-HeldDirectoryRelative $buildDirectories[''] 'target' 'Privates Cargo-Target' $isolatedWritableDescriptor
+    $cargoHomeHandle = New-HeldDirectoryRelative $buildDirectories[''] 'cargo-home' 'Privates Cargo-Home' $isolatedWritableDescriptor
+    $tempHandle = New-HeldDirectoryRelative $buildDirectories[''] 'temp' 'Privates Temp' $isolatedWritableDescriptor
+    $publicationHandle = New-HeldDirectoryRelative $buildDirectories[''] 'publication' 'Privates Publikations-Staging' $parentWritableDescriptor
+  } finally {
+    $constructorScope.Dispose()
+    if (-not $held.Remove($constructorScope)) { throw [InvalidOperationException]::new('Beendete Constructor-Impersonation fehlte in der gehaltenen Ressourcenmenge.') }
   }
-  $script:anchorStage = 'COPY_TOOLCHAIN_FILES'
-  foreach ($entry in $manifest.files) {
-    $segments = ([string]$entry.file).Split('/')
-    $parentName = if ($segments.Length -eq 1) { '' } else { [string]::Join('/', $segments[0..($segments.Length - 2)]) }
-    $leaf = $segments[$segments.Length - 1]
-    Add-ExpectedChild $privateToolchainExpectedChildren $parentName $leaf
-    $privateToolchainFiles[[string]$entry.file] = Copy-HeldFile $toolchainFiles[[string]$entry.file] $privateToolchainDirectories[$parentName] $leaf $entry.bytes $entry.sha256 $readExecuteDescriptor "Private Toolchain-Datei $($entry.file)"
+  $constructorPrincipalSidSha256 = Hash-Text $constructorAccount.Sid
+  $script:anchorStage = 'DELETE_CONSTRUCTION_ACCOUNT'
+  Delete-ConstructionAccountBeforeFreeze $constructorAccount
+  $constructorAccount = $null
+  $constructionPrincipal = [ordered]@{
+    mode = 'ephemeral-local-constructor-account-deleted-before-freeze-v1'
+    principalSidSha256 = $constructorPrincipalSidSha256
   }
-  $script:anchorStage = 'CREATE_WRITABLE_ROOTS'
-  $targetHandle = New-HeldDirectoryRelative $buildDirectories[''] 'target' 'Privates Cargo-Target' $isolatedWritableDescriptor
-  $cargoHomeHandle = New-HeldDirectoryRelative $buildDirectories[''] 'cargo-home' 'Privates Cargo-Home' $isolatedWritableDescriptor
-  $tempHandle = New-HeldDirectoryRelative $buildDirectories[''] 'temp' 'Privates Temp' $isolatedWritableDescriptor
-  $publicationHandle = New-HeldDirectoryRelative $buildDirectories[''] 'publication' 'Privates Publikations-Staging' $parentWritableDescriptor
   $sourcePath = [IO.Path]::Combine($buildRoot, 'source')
   $vendorPath = [IO.Path]::Combine($sourcePath, 'vendor')
   $privateToolchainPath = [IO.Path]::Combine($buildRoot, 'toolchain')
@@ -1976,6 +2181,7 @@ try {
   $script:anchorStage = 'REPORT_EXTRACTED'
   $extractedJson = ([ordered]@{
     buildRootIdentity = [ordered]@{ dev = [string]$buildRootIdentityParts[0]; ino = [string]$buildRootIdentityParts[1] }
+    constructionPrincipal = $constructionPrincipal
   } | ConvertTo-Json -Depth 4 -Compress)
   [Console]::Out.WriteLine('EXTRACTED ' + [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($extractedJson)))
   [Console]::Out.Flush()
@@ -2046,6 +2252,7 @@ try {
   $result = [ordered]@{
     build = $build
     cargo = $cargoProbe
+    construction = $constructionPrincipal
     isolation = [ordered]@{ mode = 'ephemeral-local-build-account-v1'; principalSidSha256 = $isolationPrincipalSidSha256 }
     output = $outputProof
     rustc = $rustcProbe
@@ -2710,11 +2917,11 @@ function windowsBuildAnchorSafeDiagnostic(chunks) {
   let stageDiagnostic = "";
   for (let index = lines.length - 1; index >= 0; index -= 1) {
     const line = lines[index];
-    if (/^ZUGFOLGE_SAFE_ANCHOR_STAGE_DIAGNOSTIC stage=(?:INITIALIZE|RECEIVE_EXTRACTION_PLAN|CREATE_EPHEMERAL_ACCOUNT|CREATE_PRIVATE_ROOT|EXTRACT_SOURCE|EXTRACT_VENDOR|COPY_TOOLCHAIN_DIRECTORIES|COPY_TOOLCHAIN_FILES|CREATE_WRITABLE_ROOTS|FREEZE_SOURCE|FREEZE_TOOLCHAIN|VERIFY_WRITABLE_ROOTS|FREEZE_BUILD_ROOT|START_INTEGRITY_MONITORS|VERIFY_HELD_TREES|REPORT_EXTRACTED|RECEIVE_BUILD_PLAN|RUN_BUILD|DELETE_EPHEMERAL_ACCOUNT|RECEIVE_PUBLICATION_PLAN|PUBLISH_OUTPUTS|RECEIVE_PUBLICATION_COMPLETE|COMMIT_PUBLICATION)$/u.test(line)) {
+    if (/^ZUGFOLGE_SAFE_ANCHOR_STAGE_DIAGNOSTIC stage=(?:INITIALIZE|RECEIVE_EXTRACTION_PLAN|CREATE_EPHEMERAL_ACCOUNT|CREATE_PRIVATE_ROOT|EXTRACT_SOURCE|EXTRACT_VENDOR|COPY_TOOLCHAIN_DIRECTORIES|COPY_TOOLCHAIN_FILES|CREATE_WRITABLE_ROOTS|DELETE_CONSTRUCTION_ACCOUNT|FREEZE_SOURCE|FREEZE_TOOLCHAIN|VERIFY_WRITABLE_ROOTS|FREEZE_BUILD_ROOT|START_INTEGRITY_MONITORS|VERIFY_HELD_TREES|REPORT_EXTRACTED|RECEIVE_BUILD_PLAN|RUN_BUILD|DELETE_EPHEMERAL_ACCOUNT|RECEIVE_PUBLICATION_PLAN|PUBLISH_OUTPUTS|RECEIVE_PUBLICATION_COMPLETE|COMMIT_PUBLICATION)$/u.test(line)) {
       stageDiagnostic ||= line;
       continue;
     }
-    const match = /^(?:ZUGFOLGE_SAFE_ANCHOR_DIAGNOSTIC code=(NET_USER_ADD|NET_USER_DELETE|NET_USER_DELETE_VERIFY) status=([1-9][0-9]{0,9})(?: parameter=(0|[1-9][0-9]{0,9}))?|ZUGFOLGE_SAFE_PROCESS_DIAGNOSTIC code=(PROCESS_WITH_LOGON|PROCESS_FROM_ANCHOR) status=([1-9][0-9]{0,9}))$/u.exec(line);
+    const match = /^(?:ZUGFOLGE_SAFE_ANCHOR_DIAGNOSTIC code=(NET_USER_ADD|NET_USER_DELETE|NET_USER_DELETE_VERIFY|LOGON_USER|IMPERSONATE_USER|REVERT_USER|CLOSE_LOGON_TOKEN) status=([1-9][0-9]{0,9})(?: parameter=(0|[1-9][0-9]{0,9}))?|ZUGFOLGE_SAFE_PROCESS_DIAGNOSTIC code=(PROCESS_WITH_LOGON|PROCESS_FROM_ANCHOR) status=([1-9][0-9]{0,9}))$/u.exec(line);
     if (match === null) continue;
     const code = match[1] ?? match[4];
     const status = Number(match[2] ?? match[5]);
@@ -2722,7 +2929,9 @@ function windowsBuildAnchorSafeDiagnostic(chunks) {
     if (status > 0 && status <= 0xffff_ffff
       && (parameter === undefined || parameter <= 0xffff_ffff)
       && ((code === "NET_USER_ADD" && (status === 87) === (parameter !== undefined))
-        || ((code === "NET_USER_DELETE" || code === "NET_USER_DELETE_VERIFY" || code === "PROCESS_WITH_LOGON" || code === "PROCESS_FROM_ANCHOR")
+        || ((code === "NET_USER_DELETE" || code === "NET_USER_DELETE_VERIFY" || code === "LOGON_USER"
+          || code === "IMPERSONATE_USER" || code === "REVERT_USER" || code === "CLOSE_LOGON_TOKEN"
+          || code === "PROCESS_WITH_LOGON" || code === "PROCESS_FROM_ANCHOR")
           && parameter === undefined))) return line;
   }
   return stageDiagnostic;
@@ -2907,6 +3116,7 @@ async function startWindowsBuildAnchor({ anchoredParents, buildParent, buildRoot
   let publication = false;
   let publicationEnvelope;
   let buildRootIdentity;
+  let constructionPrincipal;
   const closeAnchorBounded = async (label) => {
     let timeout;
     let timedOut = false;
@@ -2961,11 +3171,17 @@ async function startWindowsBuildAnchor({ anchoredParents, buildParent, buildRoot
         throw new Error(`Windows-Build-Anker bestaetigte die interne Slice-Extraktion nicht (${end.code ?? end.signal ?? "unknown"})${diagnostic ? `: ${diagnostic}` : ""}.`);
       }
       const envelope = parseJson(Buffer.from(line.slice("EXTRACTED ".length), "base64"), "Windows-Build-Anker-Extraktion");
-      exactKeys(envelope, ["buildRootIdentity"], "Windows-Build-Anker-Extraktion");
+      exactKeys(envelope, ["buildRootIdentity", "constructionPrincipal"], "Windows-Build-Anker-Extraktion");
       validateFilesystemIdentity(envelope.buildRootIdentity, "Windows-Build-Anker-Extraktion.buildRootIdentity");
+      exactKeys(envelope.constructionPrincipal, ["mode", "principalSidSha256"], "Windows-Build-Anker-Extraktion.constructionPrincipal");
+      invariant(envelope.constructionPrincipal.mode === "ephemeral-local-constructor-account-deleted-before-freeze-v1",
+        "Windows-Build-Anker loeschte den getrennten Constructor-Account nicht vor dem Freeze.");
+      validateSha256(envelope.constructionPrincipal.principalSidSha256,
+        "Windows-Build-Anker-Extraktion.constructionPrincipal.principalSidSha256");
       buildRootIdentity = envelope.buildRootIdentity;
+      constructionPrincipal = envelope.constructionPrincipal;
       extracted = true;
-      return { buildRoot, buildRootIdentity };
+      return { buildRoot, buildRootIdentity, constructionPrincipal };
     },
     async run({ cargoHome, sourceDirectory, targetDirectory, tempDirectory }) {
       invariant(!finished && extracted, "Windows-Build-Anker wurde bereits abgeschlossen oder hat nicht extrahiert.");
@@ -2990,13 +3206,19 @@ async function startWindowsBuildAnchor({ anchoredParents, buildParent, buildRoot
         throw new Error(`Windows-Build-Anker lieferte kein Ergebnis (${end.code ?? end.signal ?? "unknown"})${diagnostic ? `: ${diagnostic}` : ""}.`);
       }
       const envelope = parseJson(Buffer.from(line.slice("RESULT ".length), "base64"), "Windows-Build-Anker-Ergebnis");
-      exactKeys(envelope, ["build", "cargo", "isolation", "output", "rustc"], "Windows-Build-Anker-Ergebnis");
+      exactKeys(envelope, ["build", "cargo", "construction", "isolation", "output", "rustc"], "Windows-Build-Anker-Ergebnis");
+      exactKeys(envelope.construction, ["mode", "principalSidSha256"], "Windows-Build-Anker.construction");
+      invariant(sameCanonicalValue(envelope.construction, constructionPrincipal),
+        "Windows-Build-Anker driftete vom belegten geloeschten Constructor-Account.");
       exactKeys(envelope.isolation, ["mode", "principalSidSha256"], "Windows-Build-Anker.isolation");
       invariant(envelope.isolation.mode === "ephemeral-local-build-account-v1", "Windows-Build-Anker verwendete keine getrennte Build-Identitaet.");
       validateSha256(envelope.isolation.principalSidSha256, "Windows-Build-Anker.isolation.principalSidSha256");
+      invariant(envelope.isolation.principalSidSha256 !== envelope.construction.principalSidSha256,
+        "Windows-Build-Anker trennte Constructor- und Build-SID nicht.");
       const result = {
         build: decodeAnchorProcessResult(envelope.build, "Windows-Build-Anker.build"),
         cargo: decodeAnchorProcessResult(envelope.cargo, "Windows-Build-Anker.cargo"),
+        construction: envelope.construction,
         isolation: envelope.isolation,
         output: null,
         rustc: decodeAnchorProcessResult(envelope.rustc, "Windows-Build-Anker.rustc"),
@@ -3107,8 +3329,9 @@ function toolchainReceiptFromAnchor(result, spec, manifest, runnerAnchorHelper) 
   return {
     anchor: {
       buildPrincipal: result.isolation,
+      constructionPrincipal: result.construction,
       helperAssembly: spec.toolchain.anchor.helperAssembly,
-      inputIsolation: "private-create-new-owner-rights-protected-dacl-read-execute-v1",
+      inputIsolation: "private-create-new-revoked-constructor-owner-rights-protected-dacl-v2",
       mode: spec.toolchain.anchor.mode,
       mutationMonitoring: "read-directory-changes-monotonic-subtree-v1",
       processTreeMitigation: "identity-anchor-parent-handle-list-no-local-inherit-no-low-label-prefer-system32-job-empty-v4",
@@ -3475,14 +3698,21 @@ function parseJson(bytes, label) {
 
 function validateToolchainReceipt(toolchain, spec) {
   exactKeys(toolchain, ["anchor", "cargo", "manifest", "platform", "rootPathSha256", "rustc"], "Receipt.toolchain");
-  exactKeys(toolchain.anchor, ["buildPrincipal", "helperAssembly", "inputIsolation", "mode", "mutationMonitoring", "processTreeMitigation", "runnerAnchorHelper"], "Receipt.toolchain.anchor");
+  exactKeys(toolchain.anchor, ["buildPrincipal", "constructionPrincipal", "helperAssembly", "inputIsolation", "mode", "mutationMonitoring", "processTreeMitigation", "runnerAnchorHelper"], "Receipt.toolchain.anchor");
   exactKeys(toolchain.anchor.buildPrincipal, ["mode", "principalSidSha256"], "Receipt.toolchain.anchor.buildPrincipal");
   invariant(toolchain.anchor.buildPrincipal.mode === "ephemeral-local-build-account-v1", "Receipt.toolchain.anchor.buildPrincipal.mode driftet.");
   validateSha256(toolchain.anchor.buildPrincipal.principalSidSha256, "Receipt.toolchain.anchor.buildPrincipal.principalSidSha256");
+  exactKeys(toolchain.anchor.constructionPrincipal, ["mode", "principalSidSha256"], "Receipt.toolchain.anchor.constructionPrincipal");
+  invariant(toolchain.anchor.constructionPrincipal.mode === "ephemeral-local-constructor-account-deleted-before-freeze-v1",
+    "Receipt.toolchain.anchor.constructionPrincipal.mode driftet.");
+  validateSha256(toolchain.anchor.constructionPrincipal.principalSidSha256,
+    "Receipt.toolchain.anchor.constructionPrincipal.principalSidSha256");
+  invariant(toolchain.anchor.constructionPrincipal.principalSidSha256 !== toolchain.anchor.buildPrincipal.principalSidSha256,
+    "Receipt.toolchain.anchor trennt Constructor- und Build-SID nicht.");
   invariant(sameCanonicalValue(toolchain.anchor.helperAssembly, spec.toolchain.anchor.helperAssembly), "Receipt.toolchain.anchor.helperAssembly driftet.");
   validateProof(toolchain.anchor.runnerAnchorHelper, "Receipt.toolchain.anchor.runnerAnchorHelper", MAX_PRODUCER_BYTES, { file: true });
   invariant(sameCanonicalValue(toolchain.anchor.runnerAnchorHelper, spec.toolchain.anchor.helperAssembly), "Receipt.toolchain.anchor.runnerAnchorHelper driftet von derselben Annual-gepinnten Helper-Assembly.");
-  invariant(toolchain.anchor.inputIsolation === "private-create-new-owner-rights-protected-dacl-read-execute-v1", "Receipt.toolchain.anchor.inputIsolation driftet.");
+  invariant(toolchain.anchor.inputIsolation === "private-create-new-revoked-constructor-owner-rights-protected-dacl-v2", "Receipt.toolchain.anchor.inputIsolation driftet.");
   invariant(toolchain.anchor.mode === spec.toolchain.anchor.mode, "Receipt.toolchain.anchor.mode driftet.");
   invariant(toolchain.anchor.mutationMonitoring === "read-directory-changes-monotonic-subtree-v1", "Receipt.toolchain.anchor.mutationMonitoring driftet.");
   invariant(toolchain.anchor.processTreeMitigation === "identity-anchor-parent-handle-list-no-local-inherit-no-low-label-prefer-system32-job-empty-v4", "Receipt.toolchain.anchor.processTreeMitigation driftet.");
@@ -3711,7 +3941,10 @@ export async function materializeOperationalValidatorRebuildEvidence({ spec, spe
     const extraction = await buildAnchor.extract({ sourceAudit, vendorAudit });
     staging = await regularDirectorySnapshot(stagingRoot, "Create-new Windows-Buildroot");
     invariant(matchesFilesystemIdentity(staging.metadata, extraction.buildRootIdentity), "Create-new Windows-Buildroot driftet von der im Anchor gehaltenen Identitaet.");
-    if (hooks.afterStagingCreated) await hooks.afterStagingCreated({ stagingRoot });
+    if (hooks.afterStagingCreated) await hooks.afterStagingCreated({
+      constructionPrincipal: extraction.constructionPrincipal,
+      stagingRoot,
+    });
     const sourceDirectory = resolve(stagingRoot, "source");
     const targetDirectory = resolve(stagingRoot, "target");
     const cargoHome = resolve(stagingRoot, "cargo-home");

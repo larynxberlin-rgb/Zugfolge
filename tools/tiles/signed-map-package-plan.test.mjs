@@ -128,7 +128,7 @@ function integratedOperationalProvenance() {
           file: "var/derived/germany-2026.5/toolchain/rebuild-evidence.json",
           bytes: 202,
           sha256: "8".repeat(64),
-          schema: "zugfolge-operational-validator-rebuild-evidence/v2",
+          schema: "zugfolge-operational-validator-rebuild-evidence/v3",
         },
         sourceCommit: "6".repeat(40),
       },

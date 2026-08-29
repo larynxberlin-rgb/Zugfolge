@@ -406,7 +406,7 @@ async function fixture(t, { integratedRunnerHarness = false, sidecarBytes } = {}
         sha256: sha256(validatorRebuildExecutableBytes),
       },
     },
-    source: { git: { commit: "e".repeat(40) } },
+    source: { materialization: { commit: "e".repeat(40) } },
     pe: { normalized: { expectedSha256: "9".repeat(64) } },
     producer: {
       implementation: {

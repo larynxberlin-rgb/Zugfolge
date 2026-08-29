@@ -2172,6 +2172,12 @@ test("der echte .5-Jahresvertrag pinnt den effektiven Validator und Rebuild getr
   assert.throws(() => validateMapReleaseBuildEvidenceSpec(drifted), /Validator-Binary/u);
 });
 
+test("Build-Evidence bindet den v3-Rebuild-Quellcommit ausschliesslich aus der geprueften Materialisierung", async () => {
+  const source = await readFile(fileURLToPath(new URL("./map-release-build-evidence.mjs", import.meta.url)), "utf8");
+  assert.doesNotMatch(source, /receipt\.source\.git\.commit/u);
+  assert.equal((source.match(/receipt\.source\.materialization\.commit/gu) ?? []).length, 4);
+});
+
 test("aktuelle Operational-Authority verifiziert zwei Sigstore-Bundles, alle Rebuild-Subjects und das kausale Outer-Predicate", async () => {
   const value = await currentAnnualOperationalAuthorityFixture();
   try {

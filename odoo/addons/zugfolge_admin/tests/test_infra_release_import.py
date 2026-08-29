@@ -368,7 +368,7 @@ def _integrated_operational_provenance():
             },
             "rebuild": {
                 "specification": {"file": "tools/region-import/germany/operational-validator-rebuild.annual-2026.5.json", "bytes": 201, "sha256": "7" * 64},
-                "evidence": {"file": "var/derived/germany-2026.5/toolchain/rebuild-evidence.json", "bytes": 202, "sha256": "8" * 64, "schema": "zugfolge-operational-validator-rebuild-evidence/v2"},
+                "evidence": {"file": "var/derived/germany-2026.5/toolchain/rebuild-evidence.json", "bytes": 202, "sha256": "8" * 64, "schema": "zugfolge-operational-validator-rebuild-evidence/v3"},
                 "sourceCommit": repin["validator"]["buildCommit"],
             },
             "invocation": {
