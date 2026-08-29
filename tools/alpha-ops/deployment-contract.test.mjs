@@ -510,6 +510,10 @@ test("Game trennt einen kanonischen Release-Keyring strikt nach Alpha- und Map-/
     dockerfile,
     /COPY tools\/region-import\/germany\/operational-infrastructure-v2-direct-contract-launcher\.windows\.ps1 tools\/region-import\/germany\/operational-infrastructure-v2-direct-contract-launcher\.windows\.ps1/u,
   );
+  assert.match(
+    dockerfile,
+    /RUN cargo build[^\n]+-p zugfolge-runtime-napi --features node-addon -p zugfolge-planning-runtime-napi --features node-addon\nRUN cargo build[^\n]+-p zugfolge-infra --bin zugfolge-infra-release/u,
+  );
   assert.match(dockerfile, /cargo build[^\n]+-p zugfolge-infra --bin zugfolge-infra-release/u);
   assert.match(dockerfile, /COPY --from=native \/src\/target\/release\/zugfolge-infra-release \/app\/native\/zugfolge-infra-release/u);
   assert.match(dockerfile, /INFRA_OPERATIONAL_V2_VALIDATOR_PATH=\/app\/native\/zugfolge-infra-release/u);
