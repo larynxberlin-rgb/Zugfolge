@@ -449,7 +449,7 @@ async function materializationTarSwapFixture(t, workspaceRootInput) {
     writeFile(cargoPath, cargoBytes, { flag: "wx" }),
     writeFile(rustcPath, rustcBytes, { flag: "wx" }),
   ]);
-  spec.toolchain.root = toolchainRoot;
+  if (process.platform === "win32") spec.toolchain.root = toolchainRoot;
   spec.toolchain.cargoPath = "bin/cargo.exe";
   spec.toolchain.rustcPath = "bin/rustc.exe";
   const manifest = {
