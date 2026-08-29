@@ -6,6 +6,7 @@ COPY spikes spikes
 COPY tools/load tools/load
 COPY tools/m7-acceptance tools/m7-acceptance
 COPY tools/reference-model tools/reference-model
+COPY tools/region-import/germany/operational-infrastructure-v2-direct-contract-launcher.windows.ps1 tools/region-import/germany/operational-infrastructure-v2-direct-contract-launcher.windows.ps1
 RUN cargo build --release --locked -p zugfolge-runtime-napi --features node-addon -p zugfolge-planning-runtime-napi --features node-addon -p zugfolge-infra --bin zugfolge-infra-release
 
 FROM node:24.13.0-bookworm-slim AS nodebuild
