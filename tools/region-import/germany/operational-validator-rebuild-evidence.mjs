@@ -1833,8 +1833,8 @@ function Extract-AuditedPlan([IO.FileStream]$archive, [object]$plan, [hashtable]
     }
   }
 }
-function Copy-HeldFile([IO.FileStream]$input, [Microsoft.Win32.SafeHandles.SafeFileHandle]$parent, [string]$leaf, [Int64]$expectedBytes, [string]$expectedSha, [object]$securityDescriptor, [string]$label) {
-  $input.Position = 0
+function Copy-HeldFile([IO.FileStream]$sourceStream, [Microsoft.Win32.SafeHandles.SafeFileHandle]$parent, [string]$leaf, [Int64]$expectedBytes, [string]$expectedSha, [object]$securityDescriptor, [string]$label) {
+  $sourceStream.Position = 0
   $hash = [Security.Cryptography.SHA256]::Create()
   try { $fileHandle = [ZugfolgeRelativeFs]::CreateProtectedRegularFile($parent, $leaf, $securityDescriptor) } catch { Fail "$label konnte nicht NT-relativ create-new erzeugt werden: $($_.Exception.Message)" }
   $output = [IO.FileStream]::new($fileHandle, [IO.FileAccess]::ReadWrite, 1048576, $false)
@@ -1843,13 +1843,13 @@ function Copy-HeldFile([IO.FileStream]$input, [Microsoft.Win32.SafeHandles.SafeF
     [Int64]$remaining = $expectedBytes
     while ($remaining -gt 0) {
       $count = [Math]::Min([Int64]$buffer.Length, $remaining)
-      $read = $input.Read($buffer, 0, [int]$count)
+      $read = $sourceStream.Read($buffer, 0, [int]$count)
       if ($read -le 0) { Fail "$label endet vor der gehaltenen Bytezahl." }
       $output.Write($buffer, 0, $read)
       [void]$hash.TransformBlock($buffer, 0, $read, $null, 0)
       $remaining -= $read
     }
-    if ($input.ReadByte() -ne -1) { Fail "$label besitzt hinter der gehaltenen Bytezahl Restdaten." }
+    if ($sourceStream.ReadByte() -ne -1) { Fail "$label besitzt hinter der gehaltenen Bytezahl Restdaten." }
     [void]$hash.TransformFinalBlock([byte[]]::new(0), 0, 0)
     $actual = [BitConverter]::ToString($hash.Hash).Replace('-', '').ToLowerInvariant()
     if ($output.Length -ne $expectedBytes -or $actual -cne $expectedSha) { Fail "$label driftet waehrend der privaten Toolchain-Kopie." }
@@ -1861,12 +1861,12 @@ function Copy-HeldFile([IO.FileStream]$input, [Microsoft.Win32.SafeHandles.SafeF
     $output = $null
     return Open-HeldRelativeFile $parent $leaf $expectedBytes $expectedSha "$label nach atomarem DACL-Create"
   } finally {
-    $input.Position = 0
+    $sourceStream.Position = 0
     $hash.Dispose()
     if ($null -ne $output) { $output.Dispose() }
   }
 }
-function Publish-HeldFile([IO.Stream]$input, [object]$request, [string]$label) {
+function Publish-HeldFile([IO.Stream]$sourceStream, [object]$request, [string]$label) {
   if (-not $script:ephemeralAccountDeleted) { Fail "$label darf nicht vor der verifizierten Loeschung des ephemeren Build-Accounts publiziert werden." }
   $propertyNames = @($request.PSObject.Properties.Name | Sort-Object)
   if (($propertyNames -join ',') -cne 'bytes,file,sha256') { Fail "$label besitzt unerwartete Publikationsfelder." }
@@ -1881,7 +1881,7 @@ function Publish-HeldFile([IO.Stream]$input, [object]$request, [string]$label) {
   $expectedBytes = [Int64]$request.bytes
   $expectedSha = [string]$request.sha256
   if ($expectedBytes -le 0 -or $expectedSha -cnotmatch '^[a-f0-9]{64}$') { Fail "$label besitzt keine gueltige Byte-/SHA-Bindung." }
-  try { $published = [ZugfolgeRelativeFs]::PublishHeldCreateNew($input, $anchoredParentHandles[$parentKey], $leaf, $expectedBytes, $expectedSha, $parentWritableDescriptor) }
+  try { $published = [ZugfolgeRelativeFs]::PublishHeldCreateNew($sourceStream, $anchoredParentHandles[$parentKey], $leaf, $expectedBytes, $expectedSha, $parentWritableDescriptor) }
   catch { Fail "$label konnte nicht handle-relativ create-new publiziert werden: $($_.Exception.Message)" }
   $publishedStreams.Add($published)
   $identity = ([string]$published.Identity).Split(':')

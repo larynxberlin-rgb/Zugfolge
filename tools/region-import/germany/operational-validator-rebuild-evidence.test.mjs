@@ -748,6 +748,8 @@ test("releasefaehige Materialisierung enthaelt weder externes git/tar/rustup noc
   const source = await readFile(IMPLEMENTATION_PATH, "utf8");
   assert.doesNotMatch(source, /\b(?:execFile|execFileSync|spawn|spawnSync)\s*\(\s*["'](?:git|tar|rustup)(?:\.exe)?["']/u);
   assert.doesNotMatch(source, /git archive|get-tar-commit-id|\btar\.exe\b|\bAdd-Type\b/u);
+  assert.doesNotMatch(source, /function\s+[A-Za-z][A-Za-z0-9-]*\([^)]*\$input\b/iu,
+    "PowerShell-Funktionen duerfen die reservierte automatische Pipelinevariable $input nicht als Parameter verwenden.");
   for (const required of [
     "NtCreateFile", "CreateProtectedDirectory", "S-1-3-4", "AssertFrozenDirectoryEntry",
     "ReadDirectoryChangesW-Overflow", "RunAs(", "RunStrict(", "CreateProcessWithLogonW", "PROC_THREAD_ATTRIBUTE_HANDLE_LIST",
@@ -1587,14 +1589,16 @@ test("getrennter Windows-Constructor baut den verschachtelten Baum, waehrend Run
     "function Set-CleanupAcl([string]$path, [string]$currentSid) {",
     "  $acl = [Security.AccessControl.DirectorySecurity]::new()",
     "  $acl.SetAccessRuleProtection($true, $false)",
-    "  $rule = [Security.AccessControl.FileSystemAccessRule]::new($currentSid, [Security.AccessControl.FileSystemRights]::FullControl, [Security.AccessControl.InheritanceFlags]'ContainerInherit, ObjectInherit', [Security.AccessControl.PropagationFlags]::None, [Security.AccessControl.AccessControlType]::Allow)",
+    "  $currentIdentity = [Security.Principal.SecurityIdentifier]::new($currentSid)",
+    "  $rule = [Security.AccessControl.FileSystemAccessRule]::new($currentIdentity, [Security.AccessControl.FileSystemRights]::FullControl, [Security.AccessControl.InheritanceFlags]'ContainerInherit, ObjectInherit', [Security.AccessControl.PropagationFlags]::None, [Security.AccessControl.AccessControlType]::Allow)",
     "  [void]$acl.AddAccessRule($rule)",
     "  [IO.DirectoryInfo]::new($path).SetAccessControl($acl)",
     "}",
     "function Set-CleanupFileAcl([string]$path, [string]$currentSid) {",
     "  $acl = [Security.AccessControl.FileSecurity]::new()",
     "  $acl.SetAccessRuleProtection($true, $false)",
-    "  $rule = [Security.AccessControl.FileSystemAccessRule]::new($currentSid, [Security.AccessControl.FileSystemRights]::FullControl, [Security.AccessControl.InheritanceFlags]::None, [Security.AccessControl.PropagationFlags]::None, [Security.AccessControl.AccessControlType]::Allow)",
+    "  $currentIdentity = [Security.Principal.SecurityIdentifier]::new($currentSid)",
+    "  $rule = [Security.AccessControl.FileSystemAccessRule]::new($currentIdentity, [Security.AccessControl.FileSystemRights]::FullControl, [Security.AccessControl.InheritanceFlags]::None, [Security.AccessControl.PropagationFlags]::None, [Security.AccessControl.AccessControlType]::Allow)",
     "  [void]$acl.AddAccessRule($rule)",
     "  [IO.FileInfo]::new($path).SetAccessControl($acl)",
     "}",
