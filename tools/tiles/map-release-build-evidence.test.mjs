@@ -2162,7 +2162,7 @@ test("der echte .5-Jahresvertrag pinnt den effektiven Validator und Rebuild getr
   const validator = annual.tools.find(({ id }) => id === "operational-v2-validator");
   const rebuild = annual.tools.find(({ id }) => id === "operational-v2-validator-rebuild");
   assert.equal(validator.version, "operational-validator-build-commit");
-  assert.equal(validator.expectedBytes, 8_382_277);
+  assert.equal(validator.expectedBytes, 8_559_757);
   assert.match(validator.expectedSha256, /^[a-f0-9]{64}$/u);
   assert.equal(rebuild.version, "operational-validator-rebuild-proof");
   assert.notEqual(rebuild.file, validator.file);

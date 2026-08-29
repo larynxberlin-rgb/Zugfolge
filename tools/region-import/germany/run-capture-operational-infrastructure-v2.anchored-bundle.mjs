@@ -4777,7 +4777,8 @@ var ANNUAL_PLAN_ARGUMENTS = Object.freeze([
   "tools/guards/quellenregister.json"
 ]);
 var PRODUCER_IDS = Object.freeze(["bundle", "entrypoint", "executionPins", "implementation"]);
-var MAX_BINARY_BYTES = 8 * 1024 * 1024;
+var OPERATIONAL_VALIDATOR_MAX_BINARY_BYTES = 9 * 1024 * 1024;
+var MAX_BINARY_BYTES = OPERATIONAL_VALIDATOR_MAX_BINARY_BYTES;
 var MAX_JSON_BYTES = 4 * 1024 * 1024;
 var MAX_PROVENANCE_BYTES = 4 * 1024 * 1024;
 var MAX_SPEC_BYTES = 1024 * 1024;

@@ -20,10 +20,10 @@
       "bundleFile": "var/derived/germany-2026.5/toolchain/zugfolge-infra-release-rebuild-attestation.sigstore.json",
       "predicateType": "https://slsa.dev/provenance/v1",
       "subjects": [
-        "var/derived/germany-2026.5/toolchain/zugfolge-infra-release-rebuild-aba354ec1937452a491087626ec0adea36ef6695-official.exe",
-        "var/derived/germany-2026.5/toolchain/zugfolge-infra-release-rebuild-provenance-aba354ec1937452a491087626ec0adea36ef6695.json",
+        "var/derived/germany-2026.5/toolchain/zugfolge-infra-release-rebuild-b76edcae260541de66e3b2e84869d66dd224ca80-official.exe",
+        "var/derived/germany-2026.5/toolchain/zugfolge-infra-release-rebuild-provenance-b76edcae260541de66e3b2e84869d66dd224ca80.json",
         "var/derived/germany-2026.5/toolchain/zugfolge-infra-release-rebuild-evidence.json",
-        "var/derived/germany-2026.5/toolchain/zugfolge-infra-release-aba354ec1937452a491087626ec0adea36ef6695-c35e72e352ae573e0416035fc4f0d233af5668864c0bd8df7333337e87bb7fd4.exe",
+        "var/derived/germany-2026.5/toolchain/zugfolge-infra-release-b76edcae260541de66e3b2e84869d66dd224ca80-6c652c15b2eda1c2bd29cc29377e1bbd2bdff9a6f48c7200bd7fd300d19151b1.exe",
         "tools/region-import/germany/operational-infrastructure-v2-direct-system-launch.annual-2026.5.json",
         "var/derived/germany-2026.5/toolchain/zugfolge-infra-release-annual-plan.json",
         "var/derived/germany-2026.5/toolchain/zugfolge-infra-release-annual-plan.json.zugfolge-complete.json",
@@ -48,13 +48,13 @@
   },
   "binaries": {
     "preserved": {
-      "bytes": 8382277,
-      "file": "var/derived/germany-2026.5/toolchain/zugfolge-infra-release-aba354ec1937452a491087626ec0adea36ef6695-c35e72e352ae573e0416035fc4f0d233af5668864c0bd8df7333337e87bb7fd4.exe",
-      "sha256": "c35e72e352ae573e0416035fc4f0d233af5668864c0bd8df7333337e87bb7fd4"
+      "bytes": 8559757,
+      "file": "var/derived/germany-2026.5/toolchain/zugfolge-infra-release-b76edcae260541de66e3b2e84869d66dd224ca80-6c652c15b2eda1c2bd29cc29377e1bbd2bdff9a6f48c7200bd7fd300d19151b1.exe",
+      "sha256": "6c652c15b2eda1c2bd29cc29377e1bbd2bdff9a6f48c7200bd7fd300d19151b1"
     },
     "rebuilt": {
-      "expectedBytes": 8382277,
-      "file": "var/derived/germany-2026.5/toolchain/zugfolge-infra-release-rebuild-aba354ec1937452a491087626ec0adea36ef6695-official.exe"
+      "expectedBytes": 8559757,
+      "file": "var/derived/germany-2026.5/toolchain/zugfolge-infra-release-rebuild-b76edcae260541de66e3b2e84869d66dd224ca80-official.exe"
     }
   },
   "build": {
@@ -132,8 +132,8 @@
     ],
     "format": "PE32+",
     "machine": 34404,
-    "maxBinaryBytes": 8388608,
-    "normalizedSha256": "ae39f5a8378641be0d02be56e93bf585a49a6e65bc1f5a02b77cd2bd556d38cb",
+    "maxBinaryBytes": 9437184,
+    "normalizedSha256": "7dc19bc4c7a34492a0c45d3c67872a2226644f2e414e069999eb2e4a0b20eefe",
     "sections": [
       {
         "name": ".text",
@@ -179,9 +179,9 @@
   },
   "producer": {
     "bundle": {
-      "bytes": 651161,
+      "bytes": 651246,
       "file": "tools/region-import/germany/run-capture-operational-infrastructure-v2.anchored-bundle.mjs",
-      "sha256": "b1eb38d9e60200e24d66fc1f9af66e6856f8816564ac5365fa91e94e19495bd4"
+      "sha256": "41ea3dad51b9e05650617cd27d570491f11e8c99811adb8b548d8d7e99cb4ede"
     },
     "entrypoint": {
       "bytes": 26551,
@@ -191,16 +191,16 @@
     "executionPins": {
       "bytes": 4841,
       "file": "tools/region-import/germany/operational-infrastructure-v2-execution-pins.annual-2026.5.json",
-      "sha256": "b3bb21163ba96db2ac25443e3f9b741291fa92cd54ca3d0b6bea8acfa1f1dc11"
+      "sha256": "9c3ea9f15bfa043fef7a6a2d85fe427423b3557fd3e5d4d4a24c700718c6b370"
     },
     "implementation": {
-      "bytes": 270491,
+      "bytes": 270585,
       "file": "tools/region-import/germany/operational-validator-rebuild-evidence.mjs",
-      "sha256": "8ffebf3d1867429ff34cb7d150d663a755f04d5cb8753c599b51e004754832a3"
+      "sha256": "06d942f6c2485895e277e38bd27c7b2bcc3df5612510ece94d69d4e56f12643b"
     }
   },
   "provenance": {
-    "file": "var/derived/germany-2026.5/toolchain/zugfolge-infra-release-rebuild-provenance-aba354ec1937452a491087626ec0adea36ef6695.json"
+    "file": "var/derived/germany-2026.5/toolchain/zugfolge-infra-release-rebuild-provenance-b76edcae260541de66e3b2e84869d66dd224ca80.json"
   },
   "receipt": {
     "file": "var/derived/germany-2026.5/toolchain/zugfolge-infra-release-rebuild-evidence.json"
@@ -209,26 +209,26 @@
   "schema": "zugfolge-operational-validator-rebuild-spec/v3",
   "source": {
     "archive": {
-      "bytes": 25661440,
-      "file": "var/derived/germany-2026.5/toolchain/zugfolge-infra-release-source-aba354ec1937452a491087626ec0adea36ef6695-3f267637dcd52dded45ca921d27863149b3fd2919b7bb2e9d881b381c04565af.tar",
+      "bytes": 27801600,
+      "file": "var/derived/germany-2026.5/toolchain/zugfolge-infra-release-source-b76edcae260541de66e3b2e84869d66dd224ca80-62fadb62a528175594a176576ec23d0c7ebc3f09845fec2aee7e3c51bfad292c.tar",
       "format": "tar",
-      "sha256": "3f267637dcd52dded45ca921d27863149b3fd2919b7bb2e9d881b381c04565af"
+      "sha256": "62fadb62a528175594a176576ec23d0c7ebc3f09845fec2aee7e3c51bfad292c"
     },
     "cargoLock": {
       "bytes": 13125,
       "file": "Cargo.lock",
       "sha256": "929fe3fb52098a0e5d234d5b96f5058b7ba7bf4308d1836e8e0b80307af09403"
     },
-    "commit": "aba354ec1937452a491087626ec0adea36ef6695",
+    "commit": "b76edcae260541de66e3b2e84869d66dd224ca80",
     "tree": {
-      "fileCount": 1325,
-      "manifestSha256": "3276cda6c04f5e48d89c4e7686900a263e8b2ba0a13ce9393d1d096f1dacf1c5",
-      "totalBytes": 24541942
+      "fileCount": 1354,
+      "manifestSha256": "134e7431b717387b29a07b733829461dfc4d4ac67c3612f4792cdc622361fb04",
+      "totalBytes": 26661667
     },
     "vendor": {
       "archive": {
         "bytes": 21238784,
-        "file": "var/derived/germany-2026.5/toolchain/zugfolge-infra-cargo-vendor-aba354ec1937452a491087626ec0adea36ef6695-v1.tar",
+        "file": "var/derived/germany-2026.5/toolchain/zugfolge-infra-cargo-vendor-b76edcae260541de66e3b2e84869d66dd224ca80-v1.tar",
         "format": "tar",
         "sha256": "17611dd9dca437185a59e6696efe21cc64d9e86b03d48fcebe6d5546688cc5f9"
       },

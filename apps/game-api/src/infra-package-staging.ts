@@ -67,7 +67,7 @@ export const GERMANY_2026_5_OPERATIONAL_REPIN = Object.freeze({
   executionPins: Object.freeze({
     file: "tools/region-import/germany/operational-infrastructure-v2-execution-pins.annual-2026.5.json",
     bytes: 4_841,
-    sha256: "b3bb21163ba96db2ac25443e3f9b741291fa92cd54ca3d0b6bea8acfa1f1dc11",
+    sha256: "9c3ea9f15bfa043fef7a6a2d85fe427423b3557fd3e5d4d4a24c700718c6b370",
     schema: OPERATIONAL_EXECUTION_PINS_SCHEMA,
   }),
   runtime: Object.freeze({
@@ -83,8 +83,8 @@ export const GERMANY_2026_5_OPERATIONAL_REPIN = Object.freeze({
   }),
   bundle: Object.freeze({
     file: OPERATIONAL_RUNNER_BUNDLE_FILE,
-    bytes: 651_161,
-    sha256: "b1eb38d9e60200e24d66fc1f9af66e6856f8816564ac5365fa91e94e19495bd4",
+    bytes: 651_246,
+    sha256: "41ea3dad51b9e05650617cd27d570491f11e8c99811adb8b548d8d7e99cb4ede",
   }),
   entrypoint: Object.freeze({
     file: OPERATIONAL_RUNNER_ENTRYPOINT_FILE,
@@ -92,11 +92,11 @@ export const GERMANY_2026_5_OPERATIONAL_REPIN = Object.freeze({
     sha256: "266a142f311b85f38c3c68bbff355e7b38216110a9fb3419b9e3841b58901a32",
   }),
   validator: Object.freeze({
-    buildCommit: "aba354ec1937452a491087626ec0adea36ef6695",
+    buildCommit: "b76edcae260541de66e3b2e84869d66dd224ca80",
     preserved: Object.freeze({
-      file: "var/derived/germany-2026.5/toolchain/zugfolge-infra-release-aba354ec1937452a491087626ec0adea36ef6695-c35e72e352ae573e0416035fc4f0d233af5668864c0bd8df7333337e87bb7fd4.exe",
-      bytes: 8_382_277,
-      sha256: "c35e72e352ae573e0416035fc4f0d233af5668864c0bd8df7333337e87bb7fd4",
+      file: "var/derived/germany-2026.5/toolchain/zugfolge-infra-release-b76edcae260541de66e3b2e84869d66dd224ca80-6c652c15b2eda1c2bd29cc29377e1bbd2bdff9a6f48c7200bd7fd300d19151b1.exe",
+      bytes: 8_559_757,
+      sha256: "6c652c15b2eda1c2bd29cc29377e1bbd2bdff9a6f48c7200bd7fd300d19151b1",
     }),
     executedMode: "windows-exclusive-handle-launch-v1",
   }),
@@ -114,7 +114,7 @@ export const GERMANY_2026_5_OPERATIONAL_REPIN = Object.freeze({
     Object.freeze({ file: "tools/region-import/germany/operational-infrastructure-v2-publication.mjs", bytes: 140_245, sha256: "386673067201faf07e05c0ea5fd800288c682228385ccde8fa5da22ece6e1d88" }),
     Object.freeze({ file: "tools/region-import/germany/operational-infrastructure-v2-system-launcher.windows.ps1", bytes: 17_635, sha256: "be26ee6d393a1e769b3d7c27c1a9dacfdac29c4d9ebb477bb26dca25b8a25f2b" }),
     Object.freeze({ file: "tools/region-import/germany/operational-infrastructure-v2.mjs", bytes: 93_203, sha256: "a308b29bdece8fbe7e18b0bb513393834cd6e99ccca5121fe7f12b344a24ab43" }),
-    Object.freeze({ file: "tools/region-import/germany/operational-validator-rebuild-evidence.mjs", bytes: 270_491, sha256: "8ffebf3d1867429ff34cb7d150d663a755f04d5cb8753c599b51e004754832a3" }),
+    Object.freeze({ file: "tools/region-import/germany/operational-validator-rebuild-evidence.mjs", bytes: 270_585, sha256: "06d942f6c2485895e277e38bd27c7b2bcc3df5612510ece94d69d4e56f12643b" }),
     Object.freeze({ file: OPERATIONAL_WINDOWS_ANCHOR_HELPER_FILE, bytes: 59_904, sha256: "1657683980f17c805b311207329606f999e204749db263e56a0a0105a630a475" }),
     Object.freeze({ file: "tools/region-import/germany/publish-operational-infrastructure-v2.mjs", bytes: 3_180, sha256: "56ca8cb74f2fb3c6147c128116e26a5147866fa507e1d8113273ef81d3ff7aa4" }),
     Object.freeze({ file: "tools/region-import/germany/run-capture-operational-infrastructure-v2.mjs", bytes: 26_551, sha256: "266a142f311b85f38c3c68bbff355e7b38216110a9fb3419b9e3841b58901a32" }),
