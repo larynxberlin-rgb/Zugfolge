@@ -1080,13 +1080,13 @@ test("2026.5 trennt den primaeren Operational-v2-Runner vom receiptgebundenen Re
       contract: {
         file: "tools/region-import/germany/operational-infrastructure-v2-direct-system-launch.annual-2026.5.json",
         bytes: 22_507,
-        sha256: "49221adcfe62591037de63c2f3e63a3aaf3ef61a8bb723d67871b4bbf04848c0",
+        sha256: "79ec54c9c1df5e21abed3b8d59c6ad60ee472b10a1ad46f154a211fb0ad6adb5",
         schema: "zugfolge-operational-v2-direct-system-launch-contract/v1",
         releaseId: "infra-deutschland-2026.5",
         executionPins: {
           file: "tools/region-import/germany/operational-infrastructure-v2-execution-pins.annual-2026.5.json",
           bytes: 4_841,
-          sha256: "59101e85fd7b203918874c25a33313fb719f47a672de7628519e3c02bcd81741",
+          sha256: "b3bb21163ba96db2ac25443e3f9b741291fa92cd54ca3d0b6bea8acfa1f1dc11",
           schema: "zugfolge-germany-operational-v2-execution-pins/v1",
         },
         trustedExecutor: {

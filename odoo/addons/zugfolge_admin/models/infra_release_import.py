@@ -49,7 +49,7 @@ GERMANY_2026_5_OPERATIONAL_REPIN = {
     "executionPins": {
         "file": "tools/region-import/germany/operational-infrastructure-v2-execution-pins.annual-2026.5.json",
         "bytes": 4_841,
-        "sha256": "59101e85fd7b203918874c25a33313fb719f47a672de7628519e3c02bcd81741",
+        "sha256": "b3bb21163ba96db2ac25443e3f9b741291fa92cd54ca3d0b6bea8acfa1f1dc11",
         "schema": OPERATIONAL_EXECUTION_PINS_SCHEMA,
     },
     "runtime": {
@@ -65,8 +65,8 @@ GERMANY_2026_5_OPERATIONAL_REPIN = {
     },
     "bundle": {
         "file": OPERATIONAL_RUNNER_BUNDLE_FILE,
-        "bytes": 651_112,
-        "sha256": "dbc0ffc5193a6b7d8f935a3048265fda560da5548ceb0d0a6c883d310ec77b12",
+        "bytes": 651_161,
+        "sha256": "b1eb38d9e60200e24d66fc1f9af66e6856f8816564ac5365fa91e94e19495bd4",
     },
     "entrypoint": {
         "file": OPERATIONAL_RUNNER_ENTRYPOINT_FILE,
@@ -96,7 +96,7 @@ GERMANY_2026_5_OPERATIONAL_REPIN = {
         {"file": "tools/region-import/germany/operational-infrastructure-v2-publication.mjs", "bytes": 140_245, "sha256": "386673067201faf07e05c0ea5fd800288c682228385ccde8fa5da22ece6e1d88"},
         {"file": "tools/region-import/germany/operational-infrastructure-v2-system-launcher.windows.ps1", "bytes": 17_635, "sha256": "be26ee6d393a1e769b3d7c27c1a9dacfdac29c4d9ebb477bb26dca25b8a25f2b"},
         {"file": "tools/region-import/germany/operational-infrastructure-v2.mjs", "bytes": 93_203, "sha256": "a308b29bdece8fbe7e18b0bb513393834cd6e99ccca5121fe7f12b344a24ab43"},
-        {"file": "tools/region-import/germany/operational-validator-rebuild-evidence.mjs", "bytes": 270_442, "sha256": "ecd109fd9e9be55c9648f969fca4c52ca93260f193cfeb613e00a34693d311d4"},
+        {"file": "tools/region-import/germany/operational-validator-rebuild-evidence.mjs", "bytes": 270_491, "sha256": "8ffebf3d1867429ff34cb7d150d663a755f04d5cb8753c599b51e004754832a3"},
         {"file": OPERATIONAL_WINDOWS_ANCHOR_HELPER_FILE, "bytes": 59_904, "sha256": "1657683980f17c805b311207329606f999e204749db263e56a0a0105a630a475"},
         {"file": "tools/region-import/germany/publish-operational-infrastructure-v2.mjs", "bytes": 3_180, "sha256": "56ca8cb74f2fb3c6147c128116e26a5147866fa507e1d8113273ef81d3ff7aa4"},
         {"file": "tools/region-import/germany/run-capture-operational-infrastructure-v2.mjs", "bytes": 26_551, "sha256": "266a142f311b85f38c3c68bbff355e7b38216110a9fb3419b9e3841b58901a32"},
