@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { execFile, spawn } from "node:child_process";
 import { createHash } from "node:crypto";
-import { copyFile, mkdir, mkdtemp, open, readFile, readdir, rename, rm, writeFile } from "node:fs/promises";
+import { copyFile, link, mkdir, mkdtemp, open, readFile, readdir, rename, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import test from "node:test";
@@ -19,6 +19,7 @@ const ROOT = resolve(HERE, "../../..");
 const IMPLEMENTATION_PATH = join(HERE, "operational-validator-rebuild-evidence.mjs");
 const HELPER_BUILDER_PATH = join(HERE, "build-operational-validator-windows-anchor-helper.mjs");
 const HELPER_PATH = join(HERE, "operational-windows-anchor-helper.dll");
+const RUSTUP_COMPONENT_NORMALIZER_PATH = join(HERE, "normalize-operational-validator-rustup-components.windows.ps1");
 const PREPARATION_PATH = join(HERE, "prepare-operational-validator-rebuild-inputs.mjs");
 const PRODUCTION_SPEC_PATH = join(HERE, "operational-validator-rebuild.annual-2026.5.json");
 const OPERATIONAL_CAPTURE_RUNNER_PATH = join(HERE, "run-capture-operational-infrastructure-v2.mjs");
@@ -1421,6 +1422,112 @@ test("Preparation-only Generator erzeugt Vendor-TAR und Toolchain-Manifest deter
   assert.ok(manifest.files.every(({ bytes, sha256: hash }) => bytes > 0 && /^[a-f0-9]{64}$/u.test(hash)));
 });
 
+test("Rustup-Komponentenreihenfolge wird exklusiv auf den bestehenden Complete-Tree-Pin kanonisiert", WINDOWS_ONLY, async (t) => {
+  const target = "x86_64-pc-windows-gnu";
+  const canonical = [
+    `clippy-preview-${target}`,
+    `cargo-${target}`,
+    `rust-mingw-${target}`,
+    `rust-std-${target}`,
+    `rustfmt-preview-${target}`,
+    `rustc-${target}`,
+  ];
+  const observedRace = [canonical[1], canonical[0], ...canonical.slice(2)];
+  const permutations = [canonical, observedRace, canonical.toReversed()];
+  const manifests = [];
+  for (const [index, entries] of permutations.entries()) {
+    const root = await temporaryDirectory(t, `zugfolge-rustup-components-${index}-`);
+    await mkdir(join(root, "bin"), { recursive: true });
+    await mkdir(join(root, "lib", "rustlib"), { recursive: true });
+    const cargo = Buffer.from("held-cargo-bytes\n");
+    await writeFile(join(root, "bin", "cargo.exe"), cargo);
+    await writeFile(join(root, "lib", "rustlib", "components"), `${entries.join("\n")}\n`);
+    const normalized = await execute(POWERSHELL_51, [
+      "-NoLogo", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File",
+      RUSTUP_COMPONENT_NORMALIZER_PATH, "-ToolchainRoot", root, "-TargetTriple", target,
+    ], { cwd: "C:\\Windows\\System32" });
+    assert.match(normalized.stdout.toString("utf8"), /RUSTUP_COMPONENTS_CANONICAL bytes=195 sha256=28e3faf57d2d41bda8c213f5a4333a8a0bc56f544eb21de7341cb750077b46b1/u);
+    assert.deepEqual(await readFile(join(root, "lib", "rustlib", "components")), Buffer.from(`${canonical.join("\n")}\n`));
+    assert.deepEqual(await readFile(join(root, "bin", "cargo.exe")), cargo);
+    const manifestPath = join(root, "manifest.json");
+    await execute(process.execPath, [PREPARATION_PATH, "toolchain-manifest", root, "test-toolchain-v1", manifestPath]);
+    manifests.push(await readFile(manifestPath));
+  }
+  assert.ok(manifests.every((manifest) => manifest.equals(manifests[0])));
+});
+
+test("Rustup-Komponentennormalisierung weist Mengen- und Formatdrift vor dem Schreiben ab", WINDOWS_ONLY, async (t) => {
+  const target = "x86_64-pc-windows-gnu";
+  const canonical = [
+    `clippy-preview-${target}`,
+    `cargo-${target}`,
+    `rust-mingw-${target}`,
+    `rust-std-${target}`,
+    `rustfmt-preview-${target}`,
+    `rustc-${target}`,
+  ];
+  const invalid = [
+    canonical.slice(1),
+    [...canonical, `rust-src-${target}`],
+    [...canonical.slice(0, 5), canonical[0]],
+    [...canonical.slice(0, 5), "rustc-x86_64-pc-windows-msvc"],
+    [...canonical.slice(0, 5), `RUSTC-${target}`],
+  ].map((entries) => Buffer.from(`${entries.join("\n")}\n`));
+  invalid.push(
+    Buffer.from(`${canonical.join("\r\n")}\r\n`),
+    Buffer.concat([Buffer.from([0xef, 0xbb, 0xbf]), Buffer.from(`${canonical.join("\n")}\n`)]),
+    Buffer.from(`${canonical.join("\n")}\n\n`),
+    Buffer.from(canonical.join("\n")),
+  );
+  for (const [index, bytes] of invalid.entries()) {
+    const root = await temporaryDirectory(t, `zugfolge-rustup-components-invalid-${index}-`);
+    await mkdir(join(root, "lib", "rustlib"), { recursive: true });
+    const path = join(root, "lib", "rustlib", "components");
+    await writeFile(path, bytes);
+    const result = await execute(POWERSHELL_51, [
+      "-NoLogo", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File",
+      RUSTUP_COMPONENT_NORMALIZER_PATH, "-ToolchainRoot", root, "-TargetTriple", target,
+    ], { cwd: "C:\\Windows\\System32", expectFailure: true });
+    assert.ok(result.error, `Ungueltige Rustup-Komponentenvariante ${index} wurde akzeptiert.`);
+    assert.deepEqual(await readFile(path), bytes, `Ungueltige Rustup-Komponentenvariante ${index} wurde veraendert.`);
+  }
+});
+
+test("Rustup-Komponentennormalisierung weist Verzeichnis und Hardlink vor jeder Fremdmutation ab", WINDOWS_ONLY, async (t) => {
+  const target = "x86_64-pc-windows-gnu";
+  const raceBytes = Buffer.from([
+    `cargo-${target}`,
+    `clippy-preview-${target}`,
+    `rust-mingw-${target}`,
+    `rust-std-${target}`,
+    `rustfmt-preview-${target}`,
+    `rustc-${target}`,
+    "",
+  ].join("\n"));
+  const directoryRoot = await temporaryDirectory(t, "zugfolge-rustup-components-directory-");
+  await mkdir(join(directoryRoot, "lib", "rustlib", "components"), { recursive: true });
+  const directoryResult = await execute(POWERSHELL_51, [
+    "-NoLogo", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File",
+    RUSTUP_COMPONENT_NORMALIZER_PATH, "-ToolchainRoot", directoryRoot, "-TargetTriple", target,
+  ], { cwd: "C:\\Windows\\System32", expectFailure: true });
+  assert.ok(directoryResult.error);
+
+  const hardlinkRoot = await temporaryDirectory(t, "zugfolge-rustup-components-hardlink-");
+  const externalRoot = await temporaryDirectory(t, "zugfolge-rustup-components-external-");
+  await mkdir(join(hardlinkRoot, "lib", "rustlib"), { recursive: true });
+  const external = join(externalRoot, "external-components");
+  const hardlink = join(hardlinkRoot, "lib", "rustlib", "components");
+  await writeFile(external, raceBytes);
+  await link(external, hardlink);
+  const hardlinkResult = await execute(POWERSHELL_51, [
+    "-NoLogo", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File",
+    RUSTUP_COMPONENT_NORMALIZER_PATH, "-ToolchainRoot", hardlinkRoot, "-TargetTriple", target,
+  ], { cwd: "C:\\Windows\\System32", expectFailure: true });
+  assert.ok(hardlinkResult.error);
+  assert.deepEqual(await readFile(external), raceBytes);
+  assert.deepEqual(await readFile(hardlink), raceBytes);
+});
+
 test("Workflow bindet Spec-Pfade, privaten GitHub-Assettransport und Sigstore-Verifikation", async () => {
   const [workflow, executionAuthorityWorkflow, runner, captureRunner] = await Promise.all([
     readFile(WORKFLOW_PATH, "utf8"),
@@ -1455,12 +1562,21 @@ test("Workflow bindet Spec-Pfade, privaten GitHub-Assettransport und Sigstore-Ve
     '"$($spec.authority.annualExecutorPlan.startEvidenceFile).zugfolge-complete.json"',
     "zugfolge-germany-annual-create-new-artifact-completion/v1",
     "Annual-Completion ist nicht bytekanonisch",
-    "rustup toolchain install $toolchainId --profile minimal --component clippy --component rustfmt",
+    "$rustupHome = Join-Path $preparation 'rustup-home'",
+    "$cargoHome = Join-Path $preparation 'cargo-home'",
+    "$rustupPath = [IO.Path]::GetFullPath((Get-Command rustup -CommandType Application -ErrorAction Stop).Source)",
+    "$env:RUSTUP_HOME = $rustupHome",
+    "$env:CARGO_HOME = $cargoHome",
+    "& $rustupPath toolchain install $toolchainId --profile minimal --component clippy --component rustfmt",
+    "$toolchainsRoot = [IO.Path]::GetFullPath((Join-Path $rustupHome 'toolchains')).TrimEnd([IO.Path]::DirectorySeparatorChar)",
+    "$installedToolchain = [IO.Path]::GetFullPath((Join-Path $toolchainsRoot $toolchainId))",
+    "[IO.Path]::GetDirectoryName($installedToolchain).TrimEnd([IO.Path]::DirectorySeparatorChar) -cne $toolchainsRoot",
+    "normalize-operational-validator-rustup-components.windows.ps1",
     "$subjects",
   ]) assert.ok(workflow.includes(required), `Workflow bindet ${required} nicht.`);
   assert.doesNotMatch(
     workflow,
-    /^\s*rustup toolchain install \$toolchainId --profile minimal\s*$/gmu,
+    /^\s*(?:rustup|& \$rustupPath) toolchain install \$toolchainId --profile minimal\s*$/gmu,
     "Workflow darf die gepinnte Toolchain nicht ohne Clippy und rustfmt materialisieren.",
   );
   assert.equal(workflow.match(/^\s+GITHUB_TOKEN:/gmu)?.length, 1);
@@ -1468,11 +1584,24 @@ test("Workflow bindet Spec-Pfade, privaten GitHub-Assettransport und Sigstore-Ve
   const materializeStart = workflow.indexOf("- name: Materialize Annual-pinned source, vendor, toolchain and helper inputs");
   const materializeEnd = workflow.indexOf("- name: Run materializer through held System32 PowerShell bundle launcher");
   assert.ok(downloadStart >= 0 && downloadStart < materializeStart && materializeStart < materializeEnd);
-  assert.match(workflow.slice(downloadStart, materializeStart), /GITHUB_TOKEN:/u);
-  assert.doesNotMatch(
-    workflow.slice(materializeStart, materializeEnd),
-    /GITHUB_TOKEN:|PRESERVED_VALIDATOR_(?:RELEASE|ASSET)_ID/u,
+  const materialize = workflow.slice(materializeStart, materializeEnd);
+  assert.ok(
+    materialize.indexOf("$rustupPath = [IO.Path]::GetFullPath((Get-Command rustup") < materialize.indexOf("$env:RUSTUP_HOME = $rustupHome"),
+    "Workflow muss den rustup-Programmpfad halten, bevor er die isolierten Homes aktiviert.",
   );
+  assert.equal(
+    materialize.match(/^\s*& \$rustupPath toolchain install \$toolchainId --profile minimal --component clippy --component rustfmt\s*$/gmu)?.length,
+    1,
+    "Workflow muss die vollstaendige Toolchain genau einmal in der isolierten Wurzel installieren.",
+  );
+  assert.doesNotMatch(materialize, /rustup which|Split-Path -Parent \(Split-Path -Parent \$cargoPath\)/u);
+  const install = materialize.indexOf("& $rustupPath toolchain install $toolchainId");
+  const normalize = materialize.indexOf("normalize-operational-validator-rustup-components.windows.ps1");
+  const manifest = materialize.indexOf("prepare-operational-validator-rebuild-inputs.mjs toolchain-manifest");
+  assert.ok(install >= 0 && install < normalize && normalize < manifest, "Workflow-Reihenfolge muss install -> components canonicalize -> manifest sein.");
+  assert.doesNotMatch(materialize.slice(normalize), /& \$rustupPath|\brustup (?:set|toolchain|which)\b/u);
+  assert.match(workflow.slice(downloadStart, materializeStart), /GITHUB_TOKEN:/u);
+  assert.doesNotMatch(materialize, /GITHUB_TOKEN:|PRESERVED_VALIDATOR_(?:RELEASE|ASSET)_ID/u);
   assert.doesNotMatch(workflow, /preserved_validator_url/u);
   assert.doesNotMatch(workflow, /zugfolge-infra-release-rebuild-[a-f0-9]{40}-official\.exe/u);
   assert.match(

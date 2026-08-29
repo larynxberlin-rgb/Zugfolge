@@ -148,6 +148,10 @@ jobs:
           $preparation = Join-Path $env:RUNNER_TEMP 'zugfolge-operational-validator-rebuild-preparation'
           $sourceRoot = Join-Path $preparation 'source'
           $vendorRoot = Join-Path $preparation 'vendor-root'
+          $rustupHome = Join-Path $preparation 'rustup-home'
+          $cargoHome = Join-Path $preparation 'cargo-home'
+          $rustupPath = [IO.Path]::GetFullPath((Get-Command rustup -CommandType Application -ErrorAction Stop).Source)
+          if (-not (Test-Path -LiteralPath $rustupPath -PathType Leaf)) { throw 'Absoluter rustup-Programmpfad fehlt.' }
           if ((Test-Path -LiteralPath $preparation) -or (Test-Path -LiteralPath $toolchainOutput)) { throw 'Create-new Vorbereitungswurzel kollidiert.' }
           New-Item -ItemType Directory -Path $preparation | Out-Null
           New-Item -ItemType Directory -Path $vendorRoot | Out-Null
@@ -160,13 +164,17 @@ jobs:
           git worktree add --detach $sourceRoot $spec.source.commit
           if ($LASTEXITCODE -ne 0) { throw 'Preparation-only Source-Worktree scheiterte.' }
 
-          rustup set auto-self-update disable
+          $env:RUSTUP_HOME = $rustupHome
+          $env:CARGO_HOME = $cargoHome
+          & $rustupPath set auto-self-update disable
           if ($LASTEXITCODE -ne 0) { throw 'rustup auto-self-update konnte nicht deaktiviert werden.' }
-          rustup toolchain install $toolchainId --profile minimal --component clippy --component rustfmt
+          & $rustupPath toolchain install $toolchainId --profile minimal --component clippy --component rustfmt
           if ($LASTEXITCODE -ne 0) { throw 'Annual-gepinnte Rust-Toolchain konnte nicht vorbereitet werden.' }
-          $cargoPath = rustup which --toolchain $toolchainId cargo
-          if ($LASTEXITCODE -ne 0 -or [String]::IsNullOrWhiteSpace($cargoPath)) { throw 'Preparation-only Cargo-Pfad fehlt.' }
-          $cargoPath = $cargoPath.Trim()
+          $toolchainsRoot = [IO.Path]::GetFullPath((Join-Path $rustupHome 'toolchains')).TrimEnd([IO.Path]::DirectorySeparatorChar)
+          $installedToolchain = [IO.Path]::GetFullPath((Join-Path $toolchainsRoot $toolchainId))
+          if ([IO.Path]::GetDirectoryName($installedToolchain).TrimEnd([IO.Path]::DirectorySeparatorChar) -cne $toolchainsRoot) { throw 'Isolierter Toolchain-Pfad verlaesst seine create-new Wurzel.' }
+          $cargoPath = Join-Path $installedToolchain 'bin\cargo.exe'
+          if (-not (Test-Path -LiteralPath $cargoPath -PathType Leaf)) { throw 'Preparation-only Cargo-Pfad fehlt.' }
           & $cargoPath vendor --locked --versioned-dirs (Join-Path $vendorRoot 'vendor') --manifest-path (Join-Path $sourceRoot 'Cargo.toml') | Out-Null
           if ($LASTEXITCODE -ne 0) { throw 'cargo vendor fuer den Annual-gepinnten Dependency-Input scheiterte.' }
 
@@ -179,9 +187,10 @@ jobs:
           node tools/region-import/germany/prepare-operational-validator-rebuild-inputs.mjs vendor-tar $vendorRoot $vendorArchive
           if ($LASTEXITCODE -ne 0) { throw 'Deterministisches Cargo-Vendor-TAR scheiterte.' }
 
-          $installedToolchain = Split-Path -Parent (Split-Path -Parent $cargoPath)
           New-Item -ItemType Directory -Path $toolchainParent -Force | Out-Null
           Copy-Item -LiteralPath $installedToolchain -Destination $toolchainOutput -Recurse
+          & (Join-Path $env:GITHUB_WORKSPACE 'tools\region-import\germany\normalize-operational-validator-rustup-components.windows.ps1') `
+            -ToolchainRoot $toolchainOutput -TargetTriple 'x86_64-pc-windows-gnu'
           $toolchainManifest = Join-Path $env:GITHUB_WORKSPACE ($spec.toolchain.manifest.file -replace '/', '\')
           node tools/region-import/germany/prepare-operational-validator-rebuild-inputs.mjs toolchain-manifest $toolchainOutput 'rust-1.94.1-x86_64-pc-windows-gnu-complete-tree-v1' $toolchainManifest
           if ($LASTEXITCODE -ne 0) { throw 'Vollstaendiges Toolchain-Manifest scheiterte.' }
