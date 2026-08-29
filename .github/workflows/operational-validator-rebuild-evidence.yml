@@ -62,16 +62,14 @@ jobs:
           if ($env:ZUGFOLGE_REBUILD_RUNNER_IMAGE -notin @('windows-2025', 'windows-2022')) { throw 'Nicht gepinntes Windows-Runner-Abbild.' }
           if ((node --version) -cne 'v24.19.0') { throw 'Node-Runtime driftet von 24.19.0.' }
 
-      - name: Exercise elevated ephemeral build account lifecycle
+      - name: Exercise complete Windows anchor regression suite
         shell: powershell
         env:
           ZUGFOLGE_REQUIRE_ELEVATED_ACCOUNT_TESTS: '1'
         run: |
           $ErrorActionPreference = 'Stop'
-          node --test `
-            --test-name-pattern='ephemerer Windows-Build-Account' `
-            tools/region-import/germany/operational-validator-rebuild-evidence.test.mjs
-          if ($LASTEXITCODE -ne 0) { throw 'Erhoehter Einmalaccount-Integrationstest scheiterte oder wurde unzulaessig uebersprungen.' }
+          node --test tools/region-import/germany/operational-validator-rebuild-evidence.test.mjs
+          if ($LASTEXITCODE -ne 0) { throw 'Vollstaendige Windows-Anker-Regressionssuite scheiterte oder ein erhoehter Einmalaccount-Test wurde unzulaessig uebersprungen.' }
 
       - name: Download exact preserved validator from private draft release
         shell: powershell

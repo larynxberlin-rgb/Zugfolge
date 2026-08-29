@@ -149,13 +149,14 @@ function clone(value) {
   return structuredClone(value);
 }
 
-function execute(file, arguments_, { cwd = ROOT, env = process.env, expectFailure = false, maxBuffer = 16 * 1024 * 1024 } = {}) {
+function execute(file, arguments_, { cwd = ROOT, env = process.env, expectFailure = false, maxBuffer = 16 * 1024 * 1024, stdin } = {}) {
   return new Promise((resolveResult, reject) => {
-    execFile(file, arguments_, { cwd, encoding: "buffer", env, maxBuffer, windowsHide: true }, (error, stdout, stderr) => {
+    const child = execFile(file, arguments_, { cwd, encoding: "buffer", env, maxBuffer, windowsHide: true }, (error, stdout, stderr) => {
       const result = { error, stderr: Buffer.from(stderr ?? []), stdout: Buffer.from(stdout ?? []) };
       if (expectFailure || !error) resolveResult(result);
       else reject(new Error(`${file} ist fehlgeschlagen: ${result.stderr.toString("utf8")}`, { cause: error }));
     });
+    if (stdin !== undefined) child.stdin.end(stdin);
   });
 }
 
@@ -648,6 +649,27 @@ test("releasefaehige Materialisierung enthaelt weder externes git/tar/rustup noc
   }
 });
 
+test("Dateien erhalten die finale DACL atomar und werden nach Schliessen des create-new Handles nur-lesbar gehalten", async () => {
+  const source = await readFile(IMPLEMENTATION_PATH, "utf8");
+  assert.match(WINDOWS_BUILD_ANCHOR_HELPER_SOURCE,
+    /ReadExecute\(string currentSid, string buildSid\)[\s\S]*\(D;;0x" \+ denied\.ToString\("x8"\) \+ ";;;" \+ currentSid \+ "\)"[\s\S]*\(A;;0x001200a9;;;" \+ currentSid \+ "\)"[\s\S]*\(A;;0x001200a9;;;" \+ buildSid \+ "\)"/u);
+  assert.doesNotMatch(WINDOWS_BUILD_ANCHOR_HELPER_SOURCE,
+    /FreezeReadExecute|SetSecurityInfo|GetSecurityDescriptorDacl/u);
+  assert.match(WINDOWS_BUILD_ANCHOR_HELPER_SOURCE,
+    /access \| 0x00100080u/u,
+    "Negativproben muessen SYNCHRONIZE und FILE_READ_ATTRIBUTES fuer einen eindeutigen unerwarteten Erfolg anfordern.");
+  assert.match(source,
+    /function Extract-AuditedPlan[\s\S]*CreateProtectedRegularFile\([^\n]*\$securityDescriptor\)[\s\S]*\$output\.Flush\(\$true\)[\s\S]*\$output\.Dispose\(\)[\s\S]*AssertProtectedDacl\([^\n]*\)[\s\S]*Open-HeldRelativeFile[^\n]*nach atomarem DACL-Create/u);
+  assert.match(source,
+    /function Copy-HeldFile[\s\S]*CreateProtectedRegularFile\([^\n]*\$securityDescriptor\)[\s\S]*\$output\.Flush\(\$true\)[\s\S]*\$output\.Dispose\(\)[\s\S]*AssertProtectedDacl\([^\n]*\)[\s\S]*Open-HeldRelativeFile[^\n]*nach atomarem DACL-Create/u);
+  assert.match(source,
+    /function Reopen-FrozenDirectoryRelative[\s\S]*\$createHandle\.Dispose\(\)[\s\S]*Open-HeldDirectoryRelative[\s\S]*Identity\(\$reopened\) -cne \$expectedIdentity/u);
+  assert.match(source,
+    /function Reopen-FrozenHeldTreeDirectories[\s\S]*IsNullOrEmpty[\s\S]*Reopen-FrozenDirectoryRelative/u);
+  assert.match(source,
+    /function Verify-FrozenHeldTree[\s\S]*Assert-ExactHeldTree[\s\S]*Reopen-FrozenHeldTreeDirectories[\s\S]*AssertFrozenDirectoryEntry[\s\S]*AssertFrozenEntry/u);
+});
+
 test("TAR-Audit liefert nur gepinnte regulaere Dateislices als Extraktionsplan", async () => {
   const audit = await loadTarAuditForTest();
   const fixture = tarFixture([
@@ -881,15 +903,26 @@ test("USER_INFO_1-Einmalaccount bindet den dokumentierten minimalen normalen Ben
   assert.match(implementation, /'HOMEPATH' = '\\Windows\\System32'/u);
   assert.match(implementation, /'PROMPT' = '\$P\$G'/u);
   assert.match(implementation, /if \(\$diagnostic -match '\^ZUGFOLGE_SAFE_PROCESS_DIAGNOSTIC code=\(PROCESS_WITH_LOGON\|PROCESS_FROM_ANCHOR\) status=/u);
-  assert.match(implementation, /const diagnostic = windowsBuildAnchorSafeDiagnostic\(stderr\);/u);
+  assert.equal((implementation.match(/windowsBuildAnchorSafeDiagnostic\(stderr\)/gu) ?? []).length, 6,
+    "Handshake, Extraktion, Build-Fallback, Ergebnis-, Publikations- und Abschlussfehler muessen dieselbe sichere Diagnose verwenden.");
+  assert.doesNotMatch(implementation, /Buffer\.concat\(stderr\)\.toString/u);
   assert.doesNotMatch(implementation, /const details = Buffer\.concat\(stderr\)[\s\S]{0,160}Windows-Build-Anker lieferte kein Ergebnis/u);
+  assert.match(implementation, /if \(\$disposeErrors\.Count -gt 0\) \{[\s\S]{0,500}Write-SafeAnchorStageDiagnostic[\s\S]{0,80}exit 125/u);
   assert.equal((implementation.match(/identity-anchor-parent-handle-list-no-local-inherit-no-low-label-prefer-system32-job-empty-v4/gu) ?? []).length, 2);
 });
 
 test("extract-Diagnose gibt nur die begrenzte nicht-geheime Anchor-Allowlist frei", async () => {
   const diagnose = await loadWindowsBuildAnchorSafeDiagnosticForTest();
   const safe = "ZUGFOLGE_SAFE_ANCHOR_DIAGNOSTIC code=NET_USER_ADD status=87 parameter=0";
+  const safeStage = "ZUGFOLGE_SAFE_ANCHOR_STAGE_DIAGNOSTIC stage=FREEZE_SOURCE";
   assert.equal(diagnose([Buffer.from(`password=Zf!never-surface\n${safe}\n`, "utf8")]), safe);
+  assert.equal(diagnose([Buffer.from(`password=Zf!never-surface\n${safeStage}\n`, "utf8")]), safeStage);
+  assert.equal(diagnose([Buffer.from(`${safe}\n${safeStage}\n`, "utf8")]), safe,
+    "Ein genauer numerischer Account-/Prozessstatus muss den groben Stage-Fallback schlagen.");
+  assert.equal(diagnose([Buffer.from(`${"hostile-secret-path=".repeat(40)}\n${safeStage}\n`, "utf8")]), safeStage,
+    "Die letzte feste Stage-Zeile muss trotz eines mehr als 512 Bytes langen fremden Fehlers erhalten bleiben.");
+  assert.equal(diagnose([Buffer.from(`${safeStage}\n${"hostile-secret-path=".repeat(40)}\n`, "utf8")]), "",
+    "Eine aus dem begrenzten Tail verdraengte Stage darf nicht rekonstruiert werden.");
   assert.equal(diagnose([Buffer.from("ZUGFOLGE_SAFE_ANCHOR_DIAGNOSTIC code=NET_USER_ADD status=5\n", "utf8")]),
     "ZUGFOLGE_SAFE_ANCHOR_DIAGNOSTIC code=NET_USER_ADD status=5");
   assert.equal(diagnose([Buffer.from("ZUGFOLGE_SAFE_ANCHOR_DIAGNOSTIC code=NET_USER_ADD status=5 parameter=0\n", "utf8")]), "");
@@ -904,9 +937,42 @@ test("extract-Diagnose gibt nur die begrenzte nicht-geheime Anchor-Allowlist fre
   assert.equal(diagnose([Buffer.from("ZUGFOLGE_SAFE_PROCESS_DIAGNOSTIC code=PROCESS_WITH_TOKEN status=1314\n", "utf8")]), "");
   assert.equal(diagnose([Buffer.from("ZUGFOLGE_SAFE_PROCESS_DIAGNOSTIC code=NET_USER_ADD status=87 parameter=0\n", "utf8")]), "");
   assert.equal(diagnose([Buffer.from("ZUGFOLGE_SAFE_PROCESS_DIAGNOSTIC code=NET_USER_DELETE status=5\n", "utf8")]), "");
+  assert.equal(diagnose([Buffer.from("ZUGFOLGE_SAFE_ANCHOR_STAGE_DIAGNOSTIC stage=FOREIGN\n", "utf8")]), "");
+  assert.equal(diagnose([Buffer.from(`${safeStage} path=C:\\secret\\input\n`, "utf8")]), "");
+  assert.equal(diagnose([Buffer.from("ZUGFOLGE_SAFE_ANCHOR_STAGE_DIAGNOSTIC stage=freeze_source\n", "utf8")]), "");
   assert.equal(diagnose([Buffer.from(`${safe} password=Zf!never-surface\n`, "utf8")]), "");
   assert.equal(diagnose([Buffer.from("ZUGFOLGE_SAFE_ANCHOR_DIAGNOSTIC code=FOREIGN status=5\n", "utf8")]), "");
   assert.equal(diagnose([Buffer.from(`password=Zf!never-surface\n${"x".repeat(600)}`, "utf8")]), "");
+});
+
+test("PowerShell 5.1 haelt die sichere Stage auch nach langem finally-Cleanupfehler als letzte Zeile", WINDOWS_ONLY, async (t) => {
+  const root = await temporaryDirectory(t, "zfrbcleanupstage");
+  const harness = join(root, "cleanup-stage-anchor.ps1");
+  const implementation = await readFile(IMPLEMENTATION_PATH, "utf8");
+  const match = /const WINDOWS_BUILD_ANCHOR = String\.raw`(?<script>.*?)`;\r?\nconst EXPECTED_NORMALIZATION_FIELDS/su.exec(implementation);
+  assert.ok(match?.groups?.script, "WINDOWS_BUILD_ANCHOR wurde nicht eindeutig gefunden.");
+  const instrumented = [
+    "class ZugfolgeThrowingDisposable : System.IDisposable {",
+    "  [void] Dispose() { throw [InvalidOperationException]::new(('hostile-secret-path=' * 80)) }",
+    "}",
+    match.groups.script.replace(
+      "$anchorStage = 'INITIALIZE'",
+      "$anchorStage = 'INITIALIZE'\n$held.Add([ZugfolgeThrowingDisposable]::new())",
+    ),
+    "",
+  ].join("\r\n");
+  await writeFile(harness, instrumented);
+  const executed = await execute(POWERSHELL_51, [
+    "-NoLogo", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", harness,
+  ], { cwd: "C:\\Windows\\System32", expectFailure: true, stdin: Buffer.alloc(0) });
+  assert.equal(executed.error?.code, 125);
+  const stderr = executed.stderr.toString("utf8");
+  assert.ok(stderr.length > 512, "Der kontrollierte Cleanupfehler muss den Diagnose-Tail ueberfuellen.");
+  assert.match(stderr, /hostile-secret-path=/u);
+  const safeStage = "ZUGFOLGE_SAFE_ANCHOR_STAGE_DIAGNOSTIC stage=INITIALIZE";
+  assert.equal(stderr.trimEnd().split(/\r?\n/u).at(-1), safeStage);
+  const diagnose = await loadWindowsBuildAnchorSafeDiagnosticForTest();
+  assert.equal(diagnose([executed.stderr]), safeStage);
 });
 
 test("echtes Windows PowerShell 5.1 parst den Anchor und alle Workflow-Bloecke", WINDOWS_ONLY, async (t) => {
@@ -974,6 +1040,63 @@ test("Helper-Builder kompiliert den kanonischen Einmalaccountvertrag als PE32+",
   const pe = actual.readUInt32LE(0x3c);
   assert.equal(actual.subarray(pe, pe + 4).toString("hex"), "50450000");
   assert.equal(actual.readUInt16LE(pe + 24), 0x20b);
+});
+
+test("echtes Windows friert atomar geschuetzte create-new Dateien und Verzeichnisse durch Handle-Schluss ein", WINDOWS_ONLY, async (t) => {
+  const root = await temporaryDirectory(t, "zugfolge-file-freeze-");
+  const helper = join(root, "operational-windows-anchor-helper.dll");
+  const harness = join(root, "file-freeze.ps1");
+  await buildOperationalValidatorWindowsAnchorHelper(helper);
+  await writeFile(harness, [
+    "param([string] $Helper, [string] $Root)",
+    "$ErrorActionPreference = 'Stop'",
+    "[void][Reflection.Assembly]::Load([IO.File]::ReadAllBytes($Helper))",
+    "$sid = [Security.Principal.WindowsIdentity]::GetCurrent().User.Value",
+    "$buildSid = 'S-1-5-11'",
+    "$rootHandle = [ZugfolgeRelativeFs]::OpenPlainDirectory($Root)",
+    "$descriptor = [ZugfolgeProtectedSecurityDescriptor]::ReadExecute($sid, $buildSid)",
+    "$stream = $null",
+    "$readStream = $null",
+    "$directoryHandle = $null",
+    "$reopenedDirectory = $null",
+    "try {",
+    "  $fileHandle = [ZugfolgeRelativeFs]::CreateProtectedRegularFile($rootHandle, 'payload.bin', $descriptor)",
+    "  $stream = [IO.FileStream]::new($fileHandle, [IO.FileAccess]::ReadWrite, 4096, $false)",
+    "  $expected = [Text.Encoding]::UTF8.GetBytes('held-freeze-v1')",
+    "  $stream.Write($expected, 0, $expected.Length)",
+    "  $stream.Flush($true)",
+    "  $stream.Dispose(); $stream = $null",
+    "  [ZugfolgeRelativeFs]::AssertProtectedDacl($rootHandle, 'payload.bin', $false)",
+    "  $readHandle = [ZugfolgeRelativeFs]::OpenRegularFile($rootHandle, 'payload.bin')",
+    "  $readStream = [IO.FileStream]::new($readHandle, [IO.FileAccess]::Read, 4096, $false)",
+    "  $actual = [byte[]]::new($expected.Length)",
+    "  if ($readStream.Read($actual, 0, $actual.Length) -ne $actual.Length -or $readStream.ReadByte() -ne -1) { throw 'Nur-lesbarer Reopen lieferte falsche Bytezahl.' }",
+    "  if ([Convert]::ToBase64String($expected) -cne [Convert]::ToBase64String($actual)) { throw 'Nur-lesbarer Reopen lieferte falsche Bytes.' }",
+    "  [ZugfolgeRelativeFs]::AssertFrozenEntry($rootHandle, 'payload.bin', $false)",
+    "  $directoryHandle = [ZugfolgeRelativeFs]::CreateProtectedDirectory($rootHandle, 'held-directory', $descriptor)",
+    "  $directoryIdentity = [ZugfolgeRelativeFs]::Identity($directoryHandle)",
+    "  $directoryHandle.Dispose(); $directoryHandle = $null",
+    "  $reopenedDirectory = [ZugfolgeRelativeFs]::OpenDirectory($rootHandle, 'held-directory')",
+    "  if ([ZugfolgeRelativeFs]::Identity($reopenedDirectory) -cne $directoryIdentity) { throw 'Nur-lesbarer Verzeichnis-Reopen driftete von seiner Identitaet.' }",
+    "  [ZugfolgeRelativeFs]::AssertFrozenDirectoryEntry($rootHandle, 'held-directory')",
+    "  [ZugfolgeRelativeFs]::AssertFrozenEntry($rootHandle, 'held-directory', $true)",
+    "  [Console]::Out.WriteLine('ATOMIC_TREE_FREEZE_OK')",
+    "} finally {",
+    "  if ($null -ne $reopenedDirectory) { $reopenedDirectory.Dispose() }",
+    "  if ($null -ne $directoryHandle) { $directoryHandle.Dispose() }",
+    "  if ($null -ne $readStream) { $readStream.Dispose() }",
+    "  if ($null -ne $stream) { $stream.Dispose() }",
+    "  $descriptor.Dispose()",
+    "  $rootHandle.Dispose()",
+    "}",
+    "",
+  ].join("\r\n"));
+  const executed = await execute(POWERSHELL_51, [
+    "-NoLogo", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File",
+    harness, helper, root,
+  ], { cwd: "C:\\Windows\\System32" });
+  assert.equal(executed.stderr.length, 0, executed.stderr.toString("utf8"));
+  assert.equal(executed.stdout.toString("utf8").trim(), "ATOMIC_TREE_FREEZE_OK");
 });
 
 test("Helper-Builder verweigert nicht kanonischen Ausgabepfad vor Compilerwirkung", async (t) => {
@@ -1551,9 +1674,9 @@ test("Workflow bindet Spec-Pfade, privaten GitHub-Assettransport und Sigstore-Ve
     "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a",
     "gh attestation verify", "--deny-self-hosted-runners", "--source-digest $env:GITHUB_SHA",
     "GITHUB_REF_PROTECTED -cne 'true'",
-    "Exercise elevated ephemeral build account lifecycle",
+    "Exercise complete Windows anchor regression suite",
     "ZUGFOLGE_REQUIRE_ELEVATED_ACCOUNT_TESTS: '1'",
-    "--test-name-pattern='ephemerer Windows-Build-Account'",
+    "node --test tools/region-import/germany/operational-validator-rebuild-evidence.test.mjs",
     "$spec.binaries.preserved.file",
     "$spec.authority.annualExecutorPlan.directContractFile",
     "$spec.authority.annualExecutorPlan.planFile",
@@ -1574,6 +1697,8 @@ test("Workflow bindet Spec-Pfade, privaten GitHub-Assettransport und Sigstore-Ve
     "normalize-operational-validator-rustup-components.windows.ps1",
     "$subjects",
   ]) assert.ok(workflow.includes(required), `Workflow bindet ${required} nicht.`);
+  assert.doesNotMatch(workflow, /--test-name-pattern/u,
+    "Der geschuetzte Windows-Gate darf bei Testtitel-Drift keine Regression unbemerkt ueberspringen.");
   assert.doesNotMatch(
     workflow,
     /^\s*(?:rustup|& \$rustupPath) toolchain install \$toolchainId --profile minimal\s*$/gmu,
