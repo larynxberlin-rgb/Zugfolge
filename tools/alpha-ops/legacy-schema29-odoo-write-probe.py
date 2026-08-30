@@ -167,15 +167,34 @@ def read_blob_without_following(path):
         os.close(descriptor)
 
 
-def cleanup_created_entries(root, before, written, unlink_fn=os.unlink, rmdir_fn=os.rmdir, fsync_fn=fsync_directory):
+def cleanup_created_entries(
+    root,
+    before,
+    written,
+    expected_blob_relative,
+    unlink_fn=os.unlink,
+    rmdir_fn=os.rmdir,
+    fsync_fn=fsync_directory,
+):
+    invariant(HASH_PATH.fullmatch(expected_blob_relative) is not None, "Schema-29-Odoo-Probe besitzt keinen sicheren erwarteten Blobpfad.")
+    expected_bucket = expected_blob_relative.split("/", 1)[0]
+    allowed_files = {expected_blob_relative, f"checklist/{expected_blob_relative}"}
+    allowed_directories = {expected_bucket, "checklist", f"checklist/{expected_bucket}"}
     created_files = sorted(set(written["files"]) - set(before["files"]), key=os.fsencode, reverse=True)
     created_directories = sorted(
         (path for path in set(written["directories"]) - set(before["directories"]) if path),
         key=lambda path: (path.count("/"), os.fsencode(path)),
         reverse=True,
     )
+    invariant(expected_blob_relative in created_files, "Schema-29-Odoo-Probe fand den erwarteten neuen Blob nicht im Cleanup-Delta.")
+    invariant(set(created_files).issubset(allowed_files), "Schema-29-Odoo-Probe verweigert Cleanup eines nicht zur Probe gehoerenden Filestore-Pfads.")
+    invariant(set(created_directories).issubset(allowed_directories), "Schema-29-Odoo-Probe verweigert Cleanup eines nicht zur Probe gehoerenden Verzeichnisses.")
     for relative_path in created_files:
-        invariant(HASH_PATH.fullmatch(relative_path) is not None, "Schema-29-Odoo-Probe verweigert Cleanup ausserhalb eines Odoo-Hashpfads.")
+        invariant(
+            HASH_PATH.fullmatch(relative_path) is not None
+            or NAMESPACED_HASH_PATH.fullmatch(relative_path) is not None,
+            "Schema-29-Odoo-Probe verweigert Cleanup ausserhalb eines Odoo-Hashpfads.",
+        )
         absolute = os.path.abspath(os.path.join(root, *relative_path.split("/")))
         invariant(os.path.commonpath((root, absolute)) == root, "Schema-29-Odoo-Probe-Cleanup verlaesst den Filestore.")
         status_value = os.lstat(absolute)
@@ -183,7 +202,7 @@ def cleanup_created_entries(root, before, written, unlink_fn=os.unlink, rmdir_fn
         unlink_fn(absolute)
         fsync_fn(os.path.dirname(absolute))
     for relative_path in created_directories:
-        invariant(HASH_DIRECTORY.fullmatch(relative_path) is not None, "Schema-29-Odoo-Probe verweigert Cleanup eines fremden Verzeichnisses.")
+        invariant(relative_path in allowed_directories, "Schema-29-Odoo-Probe verweigert Cleanup eines fremden Verzeichnisses.")
         absolute = os.path.abspath(os.path.join(root, relative_path))
         invariant(os.path.commonpath((root, absolute)) == root, "Schema-29-Odoo-Probe-Cleanup-Verzeichnis verlaesst den Filestore.")
         status_value = os.lstat(absolute)
@@ -278,7 +297,7 @@ def run_probe(odoo_env):
     odoo_env.invalidate_all()
     invariant(not odoo_env["ir.config_parameter"].sudo().search_count([("key", "=", probe_key)]), "Legacy-Odoo-Schema-29-Fachdatensatz wurde nicht vollstaendig zurueckgerollt.")
     invariant(not odoo_env["ir.attachment"].sudo().search_count([("id", "=", temporary_attachment_id)]), "Legacy-Odoo-Schema-29-Attachment wurde nicht vollstaendig zurueckgerollt.")
-    created_file_count = cleanup_created_entries(filestore, before, written)
+    created_file_count = cleanup_created_entries(filestore, before, written, store_fname)
     final = snapshot_filestore(filestore, owner_uid, owner_gid)
     assert_final_tree_matches(before, final)
     blob_sha256 = hashlib.sha256(blob).hexdigest()
