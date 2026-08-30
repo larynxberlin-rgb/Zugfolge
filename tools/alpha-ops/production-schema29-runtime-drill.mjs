@@ -180,7 +180,26 @@ function validateOdooRestoreReceipt(value, expected) {
   exactKeys(value, ["authoritativeStateSha256", "database", "databaseSha256", "filestoreArchiveSha256", "filestoreTreeSha256", "identical", "recoveryId", "schema"], "Schema-29-Odoo-Runtime-Restore-Receipt");
   invariant(value.schema === "zugfolge-production-odoo-restore/v1" && value.recoveryId === expected.recoveryId && value.database === expected.odooDatabase, "Schema-29-Odoo-Runtime-Restore-Receipt bindet nicht das create-new-Runtimeziel.");
   invariant(value.identical === true && value.databaseSha256 === expected.baseline.odoo.databaseDumpSha256 && value.filestoreArchiveSha256 === expected.baseline.odoo.filestoreArchiveSha256, "Schema-29-Odoo-Runtime-Restore-Receipt bindet nicht die kalten Backupbytes.");
-  invariant(value.authoritativeStateSha256 === expected.baseline.odoo.stateSha256 && value.filestoreTreeSha256 === expected.baseline.odoo.filestoreTreeSha256, "Schema-29-Odoo-Runtime-Restore-Receipt bindet nicht Zustand und Filestore der Baseline.");
+  invariant(value.authoritativeStateSha256 === expected.pristine.authoritativeStateSha256 && value.filestoreTreeSha256 === expected.baseline.odoo.filestoreTreeSha256, "Schema-29-Odoo-Runtime-Restore-Receipt bindet nicht Producerzustand und Filestore des qualifizierten pristine Restore-Receipts.");
+  return value;
+}
+
+function validatePristineOdooRestoreReceipt(value, expected) {
+  exactKeys(value, ["authoritativeStateSha256", "database", "databaseSha256", "filestoreArchiveSha256", "filestoreTreeSha256", "identical", "recoveryId", "schema"], "Schema-29-Odoo-Pristine-Restore-Receipt");
+  invariant(
+    value.schema === "zugfolge-production-odoo-restore/v1"
+      && value.recoveryId === expected.recoveryId
+      && value.database === databaseNameFromUrl(expected.pristineOdooUrl, "Pristiner Schema-29-Odoo-Restore"),
+    "Schema-29-Odoo-Pristine-Restore-Receipt bindet nicht das qualifizierte pristine Restoreziel.",
+  );
+  invariant(
+    value.identical === true
+      && SHA256.test(value.authoritativeStateSha256)
+      && value.databaseSha256 === expected.baseline.odoo.databaseDumpSha256
+      && value.filestoreArchiveSha256 === expected.baseline.odoo.filestoreArchiveSha256
+      && value.filestoreTreeSha256 === expected.baseline.odoo.filestoreTreeSha256,
+    "Schema-29-Odoo-Pristine-Restore-Receipt bindet nicht Backupbytes, Producerzustand und Filestore der Baseline.",
+  );
   return value;
 }
 
@@ -618,10 +637,11 @@ export async function qualifyProductionSchema29RuntimeDrill({
     previousReleaseId: expected.previousReleaseId,
     migrationCount: 29,
   });
-  const [gameProbeArtifact, odooProbeArtifact, gameRestoreArtifact, odooRestoreArtifact, worldDeploymentArtifact] = await Promise.all([
+  const [gameProbeArtifact, odooProbeArtifact, gameRestoreArtifact, pristineOdooRestoreArtifact, odooRestoreArtifact, worldDeploymentArtifact] = await Promise.all([
     stableJson(requiredEnvironment(environment, "PRODUCTION_SCHEMA29_GAME_LEGACY_PROBE_PATH"), "Legacy-Game-Schema-29-Probe"),
     stableJson(requiredEnvironment(environment, "PRODUCTION_SCHEMA29_ODOO_LEGACY_PROBE_PATH"), "Legacy-Odoo-Schema-29-Probe"),
     stableJson(requiredEnvironment(environment, "PRODUCTION_SCHEMA29_RUNTIME_GAME_RESTORE_RECEIPT_PATH"), "Schema-29-Game-Runtime-Restore-Receipt"),
+    stableJson(requiredEnvironment(environment, "PRODUCTION_SCHEMA29_PRISTINE_ODOO_RESTORE_RECEIPT_PATH"), "Schema-29-Odoo-Pristine-Restore-Receipt"),
     stableJson(requiredEnvironment(environment, "PRODUCTION_SCHEMA29_RUNTIME_ODOO_RESTORE_RECEIPT_PATH"), "Schema-29-Odoo-Runtime-Restore-Receipt"),
     stableJson(expected.worldDeploymentPath, "Attestiertes Vorgaenger-World-Deployment", WORLD_DEPLOYMENT_JSON_MAX_BYTES),
   ]);
@@ -632,7 +652,9 @@ export async function qualifyProductionSchema29RuntimeDrill({
     recoveryId: expected.recoveryId,
   });
   validateGameRestoreReceipt(gameRestoreArtifact.value, { ...expected, baseline });
-  validateOdooRestoreReceipt(odooRestoreArtifact.value, { ...expected, baseline });
+  const pristineOdooRestoreReceipt = validatePristineOdooRestoreReceipt(pristineOdooRestoreArtifact.value, { ...expected, baseline });
+  invariant(pristineOdooRestoreArtifact.sha256 === baseline.odoo.restoreReceiptSha256, "Schema-29-Odoo-Pristine-Restore-Receipt ist nicht das vom Kalt-Restore qualifizierte Artefakt.");
+  validateOdooRestoreReceipt(odooRestoreArtifact.value, { ...expected, baseline, pristine: pristineOdooRestoreReceipt });
   invariant(
     worldDeploymentArtifact.value?.deployment?.worldId === expected.previousWorldId
       && SHA256.test(worldDeploymentArtifact.value?.deploymentHash)
@@ -825,6 +847,7 @@ export async function qualifyProductionSchema29RuntimeDrill({
     assertJsonUnchanged(filestoreOpenArtifact, "Schema-29-Odoo-Filestore-Open-Beleg"),
     assertJsonUnchanged(filestoreSealArtifact, "Schema-29-Odoo-Filestore-Seal-Beleg"),
     assertJsonUnchanged(gameRestoreArtifact, "Schema-29-Game-Runtime-Restore-Receipt"),
+    assertJsonUnchanged(pristineOdooRestoreArtifact, "Schema-29-Odoo-Pristine-Restore-Receipt"),
     assertJsonUnchanged(odooRestoreArtifact, "Schema-29-Odoo-Runtime-Restore-Receipt"),
     assertJsonUnchanged(worldDeploymentArtifact, "Attestiertes Vorgaenger-World-Deployment"),
     assertProductionSchema29RuntimeBeforeReceiptUnchanged(runtimeBeforeArtifact),
