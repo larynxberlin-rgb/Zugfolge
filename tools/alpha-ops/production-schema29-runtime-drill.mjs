@@ -32,6 +32,8 @@ const SAFE_ID = /^[a-z0-9][a-z0-9._-]{0,79}$/u;
 const SAFE_DATABASE = /^[a-z0-9_]+$/u;
 const DEFAULT_JSON_MAX_BYTES = 4_194_304n;
 const WORLD_DEPLOYMENT_JSON_MAX_BYTES = 16_777_216n;
+const SCHEMA29_GAME_RUNTIME_READY_TIMEOUT_MS = 2 * 60 * 60 * 1_000;
+const SCHEMA29_GAME_RUNTIME_READY_RETRY_MS = 5_000;
 const LEGACY_KEYCLOAK_IMAGE_REFERENCE = "quay.io/keycloak/keycloak:26.7.0@sha256:0f198be292568439d700cdbfb893e69a6009bb43a94a06a945b1d3d506c76b13";
 const REQUIRED_KEYCLOAK_CLIENTS = Object.freeze(["game-api", "game-web", "livemap", "operations-center", "provisioner"]);
 const REQUIRED_SERVICES = Object.freeze([
@@ -323,6 +325,68 @@ async function inspectHealthEndpoint(url, label, { json = false, expectedStatus 
     if (expectedStatus !== undefined) invariant(value?.status === expectedStatus, `${label} meldet nicht '${expectedStatus}'.`);
   }
   return Object.freeze({ bodySha256: createHash("sha256").update(bytes).digest("hex"), statusCode: response.status });
+}
+
+function transientHealthEndpointError(error) {
+  return error instanceof TypeError && error.message === "fetch failed"
+    || error?.name === "AbortError"
+    || error?.name === "TimeoutError";
+}
+
+/**
+ * Der attestierte Schema-29-Server kann waehrend eines grossen exakten
+ * Catch-up-Batches seinen Node-Eventloop laenger binden als ein einzelner
+ * Health-Request. Der Qualifizierer wartet deshalb begrenzt auf die
+ * Ueberschneidung aus echtem HTTP-Health und Docker-Health, ohne statische
+ * Image-, Netzwerk- oder Mountfehler als transient zu behandeln.
+ */
+export async function waitForProductionSchema29RuntimeReady({
+  environment,
+  expected,
+  inspectContainers,
+  inspectHealth,
+  validateContainers = validateRuntimeContainers,
+  nowMs = Date.now,
+  sleep = (durationMs) => new Promise((resolveSleep) => setTimeout(resolveSleep, durationMs)),
+  timeoutMs = SCHEMA29_GAME_RUNTIME_READY_TIMEOUT_MS,
+  retryIntervalMs = SCHEMA29_GAME_RUNTIME_READY_RETRY_MS,
+}) {
+  invariant(Number.isSafeInteger(timeoutMs) && timeoutMs > 0, "Schema-29-Game-Readiness-Timeout ist ungueltig.");
+  invariant(Number.isSafeInteger(retryIntervalMs) && retryIntervalMs > 0, "Schema-29-Game-Readiness-Intervall ist ungueltig.");
+  const startedAtMs = nowMs();
+  let lastTransientError;
+  for (;;) {
+    const containers = await inspectContainers(expected.project, environment);
+    const game = containers.find(({ service }) => service === "schema29-game-runtime");
+    if (game?.health === "healthy") {
+      try {
+        const gameHealth = await inspectHealth(
+          requiredEnvironment(environment, "PRODUCTION_SCHEMA29_GAME_HEALTH_URL"),
+          "Legacy-Game-/ready",
+          { json: true },
+        );
+        return Object.freeze({
+          gameHealth,
+          runtimes: validateContainers(containers, expected),
+        });
+      } catch (error) {
+        if (!transientHealthEndpointError(error)) throw error;
+        lastTransientError = error;
+      }
+    } else {
+      lastTransientError = new Error(
+        `Schema-29-Game-Runtime meldet Docker-Health '${game?.health ?? "missing"}'.`,
+      );
+    }
+    const elapsedMs = nowMs() - startedAtMs;
+    if (!Number.isSafeInteger(elapsedMs) || elapsedMs < 0 || elapsedMs >= timeoutMs) {
+      throw new Error(
+        `Schema-29-Game-Runtime wurde innerhalb von ${timeoutMs} ms nicht gleichzeitig ueber Docker und HTTP gesund.`,
+        { cause: lastTransientError },
+      );
+    }
+    await sleep(Math.min(retryIntervalMs, timeoutMs - elapsedMs));
+  }
 }
 
 async function boundedFetch(url, label, options = {}) {
@@ -627,6 +691,7 @@ export async function qualifyProductionSchema29RuntimeDrill({
   inspectHealth = inspectHealthEndpoint,
   inspectHeads = inspectSchema29GameRuntimeHeads,
   inspectKeycloak = inspectLegacyKeycloakContinuity,
+  waitForRuntimeReady = waitForProductionSchema29RuntimeReady,
   now = () => new Date(),
 } = {}) {
   const expected = runtimeEnvironment(environment);
@@ -696,11 +761,16 @@ export async function qualifyProductionSchema29RuntimeDrill({
     },
   );
   invariant(filestoreSeal.openReceiptSha256 === filestoreOpenArtifact.sha256 && filestoreSeal.odooProbeReceiptSha256 === odooProbeArtifact.sha256, "Schema-29-Odoo-Filestore-Seal-Beleg bindet nicht die exakten Open-/Probe-Bytes.");
+  const { gameHealth, runtimes } = await waitForRuntimeReady({
+    environment,
+    expected,
+    inspectContainers,
+    inspectHealth,
+  });
   const [
-    containers, gameRestore, odooRestore, filestore, pristineGameRestore, pristineOdooRestore,
-    pristineFilestore, gameHealth, odooHealth, keycloakContinuity, afterHeads,
+    gameRestore, odooRestore, filestore, pristineGameRestore, pristineOdooRestore,
+    pristineFilestore, odooHealth, keycloakContinuity, afterHeads,
   ] = await Promise.all([
-    inspectContainers(expected.project, environment),
     inspectDatabase(expected.gameUrl, { game: true }),
     inspectDatabase(expected.odooUrl, { game: false }),
     inspectFilestoreAccess(requiredEnvironment(environment, "PRODUCTION_SCHEMA29_ODOO_RESTORED_FILESTORE_PATH"), {
@@ -712,12 +782,10 @@ export async function qualifyProductionSchema29RuntimeDrill({
     inspectDatabase(expected.pristineGameUrl, { game: true }),
     inspectDatabase(expected.pristineOdooUrl, { game: false }),
     inspectFilestore(requiredEnvironment(environment, "PRODUCTION_SCHEMA29_PRISTINE_ODOO_RESTORED_FILESTORE_PATH")),
-    inspectHealth(requiredEnvironment(environment, "PRODUCTION_SCHEMA29_GAME_HEALTH_URL"), "Legacy-Game-/ready", { json: true }),
     inspectHealth(requiredEnvironment(environment, "PRODUCTION_SCHEMA29_ODOO_HEALTH_URL"), "Legacy-Odoo-/web/health"),
     inspectKeycloak(environment, expected.gameUrl),
     inspectHeads(expected.gameUrl, expected.previousWorldId),
   ]);
-  const runtimes = validateRuntimeContainers(containers, expected);
   const schedulerAdvance = gameSchedulerAdvance(runtimeBefore.heads, afterHeads);
   invariant(gameRestore.state.migrationLedger.length === 29 && gameRestore.state.databaseIdentity === null, "Schema-29-Game-Runtime laeuft nicht auf dem exakten Baseline-Schema.");
   invariant(

@@ -8,7 +8,69 @@ import test from "node:test";
 import {
   qualifyProductionSchema29RuntimeDrill,
   validateProductionSchema29RuntimeDrillReceipt,
+  waitForProductionSchema29RuntimeReady,
 } from "./production-schema29-runtime-drill.mjs";
+
+test("Schema-29 runtime readiness retries only the transient Docker/HTTP catch-up window", async () => {
+  let containerCalls = 0;
+  let healthCalls = 0;
+  let clockMs = 0;
+  const sleeps = [];
+  const result = await waitForProductionSchema29RuntimeReady({
+    environment: { PRODUCTION_SCHEMA29_GAME_HEALTH_URL: "http://schema29-game-runtime:3000/health/ready" },
+    expected: { project: "zugfolge" },
+    inspectContainers: async () => [{
+      service: "schema29-game-runtime",
+      health: ++containerCalls === 1 ? "starting" : "healthy",
+    }],
+    inspectHealth: async () => {
+      healthCalls += 1;
+      if (healthCalls === 1) throw new TypeError("fetch failed", { cause: { code: "ECONNREFUSED" } });
+      return { bodySha256: "7".repeat(64), statusCode: 200 };
+    },
+    validateContainers: () => ({ game: { containerId: "8".repeat(64) } }),
+    nowMs: () => clockMs,
+    sleep: async (durationMs) => { sleeps.push(durationMs); clockMs += durationMs; },
+    timeoutMs: 30,
+    retryIntervalMs: 10,
+  });
+  assert.equal(containerCalls, 3);
+  assert.equal(healthCalls, 2);
+  assert.deepEqual(sleeps, [10, 10]);
+  assert.equal(result.gameHealth.statusCode, 200);
+
+  let nonTransientSleeps = 0;
+  await assert.rejects(
+    waitForProductionSchema29RuntimeReady({
+      environment: { PRODUCTION_SCHEMA29_GAME_HEALTH_URL: "http://schema29-game-runtime:3000/health/ready" },
+      expected: { project: "zugfolge" },
+      inspectContainers: async () => [{ service: "schema29-game-runtime", health: "healthy" }],
+      inspectHealth: async () => ({ bodySha256: "7".repeat(64), statusCode: 200 }),
+      validateContainers: () => { throw new Error("Legacy-Image-Bindung ist falsch."); },
+      sleep: async () => { nonTransientSleeps += 1; },
+      timeoutMs: 30,
+      retryIntervalMs: 10,
+    }),
+    /Legacy-Image-Bindung ist falsch/u,
+  );
+  assert.equal(nonTransientSleeps, 0);
+
+  let timeoutClockMs = 0;
+  await assert.rejects(
+    waitForProductionSchema29RuntimeReady({
+      environment: { PRODUCTION_SCHEMA29_GAME_HEALTH_URL: "http://schema29-game-runtime:3000/health/ready" },
+      expected: { project: "zugfolge" },
+      inspectContainers: async () => [{ service: "schema29-game-runtime", health: "starting" }],
+      inspectHealth: async () => { throw new Error("darf vor Docker-Health nicht laufen"); },
+      validateContainers: () => { throw new Error("darf vor Docker-Health nicht laufen"); },
+      nowMs: () => timeoutClockMs,
+      sleep: async (durationMs) => { timeoutClockMs += durationMs; },
+      timeoutMs: 20,
+      retryIntervalMs: 10,
+    }),
+    /innerhalb von 20 ms nicht gleichzeitig ueber Docker und HTTP gesund/u,
+  );
+});
 
 function sortedValue(value) {
   if (Array.isArray(value)) return value.map(sortedValue);
