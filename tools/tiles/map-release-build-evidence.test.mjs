@@ -35,6 +35,7 @@ import {
   writeMapReleaseBuildEvidence,
 } from "./map-release-build-evidence.mjs";
 import { alphaHash } from "../../packages/alpha/dist/index.js";
+import { encodeEconomyValue } from "../../packages/economy/dist/index.js";
 import {
   LIVEMAP_READ_MODEL_APPLICATION_ID,
   LIVEMAP_READ_MODEL_USER_VERSION,
@@ -3942,11 +3943,12 @@ test("verifiziert leeren Cache-Restore und verweigert Preflight bei fehlendem Ro
       worldId: "00000000-0000-4000-8000-000000000014",
       worldDefinition: { epoch: "2026-08-10T00:00:00.000Z" },
       repeatEveryS: 86400,
+      signedBigIntCodecProbe: 83_2026n,
     };
     const deploymentHash = alphaHash(deployment.schema, deployment);
     const worldSignature = signEd25519(null, Buffer.from(deploymentHash, "hex"), value.worldPrivateKey);
     const signedWorldDeployment = {
-      deployment,
+      deployment: encodeEconomyValue(deployment),
       deploymentHash,
       signature: { algorithm: "Ed25519", keyId: value.worldKeyId, valueBase64: worldSignature.toString("base64") },
     };
@@ -4057,7 +4059,7 @@ test("verifiziert leeren Cache-Restore und verweigert Preflight bei fehlendem Ro
     const v2DeploymentHash = alphaHash(v2Deployment.schema, v2Deployment);
     const v2WorldSignature = signEd25519(null, Buffer.from(v2DeploymentHash, "hex"), value.worldPrivateKey);
     const v2WorldPath = await write(value.root, "runtime/alpha-world-deployment-v2.json", `${JSON.stringify({
-      deployment: v2Deployment,
+      deployment: encodeEconomyValue(v2Deployment),
       deploymentHash: v2DeploymentHash,
       signature: { algorithm: "Ed25519", keyId: value.worldKeyId, valueBase64: v2WorldSignature.toString("base64") },
     })}\n`);

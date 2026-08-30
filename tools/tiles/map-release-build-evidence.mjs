@@ -411,6 +411,14 @@ function decodeAlphaValue(value) {
   if (Array.isArray(value)) return value.map(decodeAlphaValue);
   if (value !== null && typeof value === "object") {
     const entries = Object.entries(value);
+    if (
+      entries.length === 2
+      && value.$zugfolgeType === "bigint"
+      && typeof value.value === "string"
+      && /^(?:0|-?[1-9][0-9]*)$/.test(value.value)
+    ) {
+      return BigInt(value.value);
+    }
     if (entries.length === 1 && entries[0][0] === "$bigint" && typeof entries[0][1] === "string" && /^(?:0|-?[1-9][0-9]*)$/.test(entries[0][1])) {
       return BigInt(entries[0][1]);
     }
