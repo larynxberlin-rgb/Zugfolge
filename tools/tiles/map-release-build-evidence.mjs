@@ -3420,7 +3420,7 @@ async function inspectSignedWorldDeployment(path, trustedKeys) {
     throw new Error("Signiertes Weltdeployment ist kein gueltiges JSON-Artefakt.");
   }
   const deployment = decodeAlphaValue(envelope?.deployment);
-  invariant(deployment?.schema === "zugfolge-alpha-world-deployment/v2", "Weltdeployment besitzt kein freigegebenes Betriebsengine-v2-Schema.");
+  invariant(deployment?.schema === "zugfolge-alpha-world-deployment/v1", "Weltdeployment besitzt kein freigegebenes V1-Rollback-Schema.");
   invariant(typeof deployment.worldId === "string" && deployment.worldId.length > 0, "Weltdeployment besitzt keine Weltbindung.");
   invariant(typeof deployment.worldDefinition?.epoch === "string", "Weltdeployment besitzt keine Epoch-Bindung.");
   const epoch = new Date(deployment.worldDefinition.epoch);
@@ -3542,7 +3542,7 @@ function validateRuntimeRollbackTuple(tuple, previousReleaseId) {
   invariant(tuple.odooImageDigest !== tuple.imageDigest, "Rollback-Runtime-Tuple muss Game- und Odoo-Image getrennt binden.");
   const world = tuple.worldDeployment;
   invariant(Number.isSafeInteger(world?.bytes) && world.bytes > 0 && SHA256.test(world?.sha256), "Rollback-Runtime-Tuple bindet das Weltdeployment nicht bytegenau.");
-  invariant(world.schema === "zugfolge-alpha-world-deployment/v2" && typeof world.worldId === "string" && SHA256.test(world.deploymentHash), "Rollback-Runtime-Tuple besitzt keine gueltige Welt-/Deploymentbindung.");
+  invariant(world.schema === "zugfolge-alpha-world-deployment/v1" && typeof world.worldId === "string" && SHA256.test(world.deploymentHash), "Rollback-Runtime-Tuple besitzt keine gueltige V1-Welt-/Deploymentbindung.");
   invariant(typeof world.worldEpoch === "string" && Number.isSafeInteger(world.repeatEveryS) && world.repeatEveryS > 0 && typeof world.keyId === "string", "Rollback-Runtime-Tuple besitzt keinen vollstaendigen Weltzeit-/Signaturvertrag.");
   const readModel = tuple.readModel;
   invariant(readModel?.schema === "zugfolge-livemap-read-model-sqlite/v2" && readModel.infrastructureReleaseId === previousReleaseId, "Rollback-Runtime-Tuple besitzt kein kompatibles ReadModel-Schema/Release.");
@@ -3659,7 +3659,7 @@ export async function createMapRollbackAttestation({ deploymentRoot, previousIns
     worldDeployment: {
       bytes: world.bytes.length,
       sha256: world.sha256,
-      schema: "zugfolge-alpha-world-deployment/v2",
+      schema: "zugfolge-alpha-world-deployment/v1",
       worldId: world.worldId,
       deploymentHash: world.deploymentHash,
       worldEpoch: world.worldEpoch,
@@ -3752,7 +3752,7 @@ async function assessRuntimeRollbackTuple({
     worldDeployment: {
       bytes: world.bytes.length,
       sha256: world.sha256,
-      schema: "zugfolge-alpha-world-deployment/v2",
+      schema: "zugfolge-alpha-world-deployment/v1",
       worldId: world.worldId,
       deploymentHash: world.deploymentHash,
       worldEpoch: world.worldEpoch,

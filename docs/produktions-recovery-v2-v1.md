@@ -228,6 +228,11 @@ Odoo-Filestore sowie `zugfolge-database-backup-manifest/v1`,
 offline signierte Runtime-Rollback-Attestation. Der kalte Schema-31-Dump wird
 niemals als Hot-Recovery-Beweis umgedeutet.
 
+Die Runtime-Rollback-Attestation bindet dabei ausschließlich das tatsächlich
+signierte `zugfolge-alpha-world-deployment/v1` des V1-Vorgängers. Das separate
+`zugfolge-alpha-world-deployment/v2` des Kandidaten darf diesen Rückweg weder
+ersetzen noch als kompatibler Ersatz akzeptiert werden.
+
 Nach Installation der signierten Attestation und des Trust-Keyrings wird der
 Prüf-Postgres gestoppt. Danach erzeugt der aktuelle digestgebundene Prüfer die
 Quiescence und zuletzt das gekoppelte Recovery-/Promotion-Paar:

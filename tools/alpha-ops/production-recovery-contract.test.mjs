@@ -336,7 +336,7 @@ async function recoveryFixture() {
   const worldDeployment = {
     deploymentHash: "d".repeat(64),
     infrastructureReleaseId: PREVIOUS,
-    schema: "zugfolge-alpha-world-deployment/v2",
+    schema: "zugfolge-alpha-world-deployment/v1",
     worldEpoch: LEGACY_WORLD_EPOCH,
     worldId: LEGACY_WORLD_ID,
   };
