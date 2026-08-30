@@ -37,6 +37,20 @@ const PUBLIC_EXTENSION_RELATIONS = Object.freeze([
   Object.freeze({ kind: "v", name: "geometry_columns" }),
   Object.freeze({ kind: "r", name: "spatial_ref_sys" }),
 ]);
+const PUBLIC_FUZZYSTRMATCH_EXTENSION_NAME = "fuzzystrmatch";
+const PUBLIC_FUZZYSTRMATCH_ROUTINES = Object.freeze([
+  Object.freeze({ name: "daitch_mokotoff", arguments: "text" }),
+  Object.freeze({ name: "difference", arguments: "text, text" }),
+  Object.freeze({ name: "dmetaphone", arguments: "text" }),
+  Object.freeze({ name: "dmetaphone_alt", arguments: "text" }),
+  Object.freeze({ name: "levenshtein", arguments: "text, text" }),
+  Object.freeze({ name: "levenshtein", arguments: "text, text, integer, integer, integer" }),
+  Object.freeze({ name: "levenshtein_less_equal", arguments: "text, text, integer" }),
+  Object.freeze({ name: "levenshtein_less_equal", arguments: "text, text, integer, integer, integer, integer" }),
+  Object.freeze({ name: "metaphone", arguments: "text, integer" }),
+  Object.freeze({ name: "soundex", arguments: "text" }),
+  Object.freeze({ name: "text_soundex", arguments: "text" }),
+]);
 const GAME_ROUTINES_28_TO_30 = Object.freeze([
   "zugfolge_enforce_global_admin_audit",
   "zugfolge_enforce_odoo_command_world",
@@ -558,12 +572,30 @@ export function validatePublicExtensionContract(relations, routines) {
   );
   const extensionRoutines = routines.filter(({ extensionName }) => extensionName !== null);
   invariant(
-    extensionRoutines.every(({ extensionName }) => extensionName === PUBLIC_EXTENSION_NAME),
+    extensionRoutines.every(({ extensionName }) => (
+      extensionName === PUBLIC_EXTENSION_NAME || extensionName === PUBLIC_FUZZYSTRMATCH_EXTENSION_NAME
+    )),
     "Public-Schema besitzt Routinen einer unbekannten Extension.",
   );
+  const postgisRoutines = extensionRoutines.filter(({ extensionName }) => extensionName === PUBLIC_EXTENSION_NAME);
+  const fuzzystrmatchRoutines = extensionRoutines
+    .filter(({ extensionName }) => extensionName === PUBLIC_FUZZYSTRMATCH_EXTENSION_NAME)
+    .map((routine) => ({ name: routine.name, arguments: routine.arguments }))
+    .sort((left, right) => `${left.name}(${left.arguments})`.localeCompare(`${right.name}(${right.arguments})`, "en"));
+  const expectedFuzzystrmatchRoutines = [...PUBLIC_FUZZYSTRMATCH_ROUTINES]
+    .sort((left, right) => `${left.name}(${left.arguments})`.localeCompare(`${right.name}(${right.arguments})`, "en"));
   invariant(
-    (extensionRelations.length === 0) === (extensionRoutines.length === 0),
+    fuzzystrmatchRoutines.length === 0
+      || JSON.stringify(fuzzystrmatchRoutines) === JSON.stringify(expectedFuzzystrmatchRoutines),
+    "Public-Schema besitzt nicht exakt den freigegebenen fuzzystrmatch-Routinensatz.",
+  );
+  invariant(
+    (extensionRelations.length === 0) === (postgisRoutines.length === 0),
     "Public-Schema besitzt einen partiellen PostGIS-Extensionvertrag.",
+  );
+  invariant(
+    fuzzystrmatchRoutines.length === 0 || extensionRelations.length !== 0,
+    "Public-Schema besitzt fuzzystrmatch ohne den freigegebenen PostGIS-Produktionsvertrag.",
   );
   return Object.freeze({
     variant: extensionRelations.length === 0 ? "plain-pg16" : "postgis-3.4-production-footprint",

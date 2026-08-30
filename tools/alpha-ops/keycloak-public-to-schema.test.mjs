@@ -633,15 +633,32 @@ test("state detection blocks non-relation target collisions and unknown public t
   );
 });
 
-test("public extension gate accepts only plain PG16 or the exact PostGIS relation footprint", () => {
+test("public extension gate accepts plain PG16, PostGIS and the exact production fuzzystrmatch footprint", () => {
   const postgisRelations = [
     { kind: "v", name: "geography_columns", extensionName: "postgis" },
     { kind: "v", name: "geometry_columns", extensionName: "postgis" },
     { kind: "r", name: "spatial_ref_sys", extensionName: "postgis" },
   ];
   const postgisRoutines = [{ name: "postgis_version", arguments: "", extensionName: "postgis" }];
+  const fuzzystrmatchRoutines = [
+    { name: "daitch_mokotoff", arguments: "text", extensionName: "fuzzystrmatch" },
+    { name: "difference", arguments: "text, text", extensionName: "fuzzystrmatch" },
+    { name: "dmetaphone", arguments: "text", extensionName: "fuzzystrmatch" },
+    { name: "dmetaphone_alt", arguments: "text", extensionName: "fuzzystrmatch" },
+    { name: "levenshtein", arguments: "text, text", extensionName: "fuzzystrmatch" },
+    { name: "levenshtein", arguments: "text, text, integer, integer, integer", extensionName: "fuzzystrmatch" },
+    { name: "levenshtein_less_equal", arguments: "text, text, integer", extensionName: "fuzzystrmatch" },
+    { name: "levenshtein_less_equal", arguments: "text, text, integer, integer, integer, integer", extensionName: "fuzzystrmatch" },
+    { name: "metaphone", arguments: "text, integer", extensionName: "fuzzystrmatch" },
+    { name: "soundex", arguments: "text", extensionName: "fuzzystrmatch" },
+    { name: "text_soundex", arguments: "text", extensionName: "fuzzystrmatch" },
+  ];
   assert.equal(validatePublicExtensionContract([], []).variant, "plain-pg16");
   assert.equal(validatePublicExtensionContract(postgisRelations, postgisRoutines).variant, "postgis-3.4-production-footprint");
+  assert.equal(
+    validatePublicExtensionContract(postgisRelations, [...postgisRoutines, ...fuzzystrmatchRoutines]).variant,
+    "postgis-3.4-production-footprint",
+  );
   assert.throws(
     () => validatePublicExtensionContract(postgisRelations.slice(1), postgisRoutines),
     /nicht exakt/u,
@@ -649,6 +666,14 @@ test("public extension gate accepts only plain PG16 or the exact PostGIS relatio
   assert.throws(
     () => validatePublicExtensionContract(postgisRelations, [{ ...postgisRoutines[0], extensionName: "foreign_extension" }]),
     /unbekannten Extension/u,
+  );
+  assert.throws(
+    () => validatePublicExtensionContract(postgisRelations, [...postgisRoutines, ...fuzzystrmatchRoutines.slice(1)]),
+    /nicht exakt/u,
+  );
+  assert.throws(
+    () => validatePublicExtensionContract([], fuzzystrmatchRoutines),
+    /ohne den freigegebenen PostGIS/u,
   );
 });
 
