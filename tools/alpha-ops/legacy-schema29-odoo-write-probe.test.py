@@ -79,14 +79,82 @@ class LegacySchema29OdooWriteProbeTests(unittest.TestCase):
             raise PermissionError("simulated cleanup failure")
 
         with self.assertRaisesRegex(PermissionError, "simulated cleanup failure"):
-            PROBE.cleanup_created_entries(self.filestore, before, written, unlink_fn=fail_unlink, fsync_fn=lambda _path: None)
+            PROBE.cleanup_created_entries(
+                self.filestore,
+                before,
+                written,
+                f"ab/{'b' * 40}",
+                unlink_fn=fail_unlink,
+                fsync_fn=lambda _path: None,
+            )
         self.assertTrue(os.path.exists(new_blob))
 
     def test_cleanup_refuses_traversal(self):
         before = {"directories": {""}, "files": {}, "treeSha256": "a" * 64}
-        written = {"directories": {""}, "files": {"../escape": "b" * 64}, "treeSha256": "c" * 64}
-        with self.assertRaisesRegex(RuntimeError, "Hashpfads"):
-            PROBE.cleanup_created_entries(self.filestore, before, written, fsync_fn=lambda _path: None)
+        expected_blob = f"ab/{'b' * 40}"
+        written = {
+            "directories": {""},
+            "files": {expected_blob: "b" * 64, "../escape": "c" * 64},
+            "treeSha256": "d" * 64,
+        }
+        with self.assertRaisesRegex(RuntimeError, "nicht zur Probe gehoerenden"):
+            PROBE.cleanup_created_entries(
+                self.filestore,
+                before,
+                written,
+                expected_blob,
+                fsync_fn=lambda _path: None,
+            )
+
+    def test_cleanup_removes_exact_blob_and_checklist_marker(self):
+        before = PROBE.snapshot_filestore(self.filestore, self.uid, self.gid, require_owner_writable=False)
+        relative_blob = f"cd/{'c' * 40}"
+        blob = os.path.join(self.filestore, *relative_blob.split("/"))
+        marker = os.path.join(self.filestore, "checklist", *relative_blob.split("/"))
+        os.makedirs(os.path.dirname(blob))
+        os.makedirs(os.path.dirname(marker))
+        with open(blob, "wb") as handle:
+            handle.write(b"temporary")
+        with open(marker, "wb") as handle:
+            handle.write(b"")
+        written = PROBE.snapshot_filestore(self.filestore, self.uid, self.gid, require_owner_writable=False)
+
+        self.assertEqual(
+            PROBE.cleanup_created_entries(
+                self.filestore,
+                before,
+                written,
+                relative_blob,
+                fsync_fn=lambda _path: None,
+            ),
+            2,
+        )
+        final = PROBE.snapshot_filestore(self.filestore, self.uid, self.gid, require_owner_writable=False)
+        PROBE.assert_final_tree_matches(before, final)
+
+    def test_cleanup_refuses_unrelated_safe_namespaced_file(self):
+        before = PROBE.snapshot_filestore(self.filestore, self.uid, self.gid, require_owner_writable=False)
+        relative_blob = f"cd/{'c' * 40}"
+        blob = os.path.join(self.filestore, *relative_blob.split("/"))
+        unrelated = os.path.join(self.filestore, "other", "ef", "d" * 40)
+        os.makedirs(os.path.dirname(blob))
+        os.makedirs(os.path.dirname(unrelated))
+        with open(blob, "wb") as handle:
+            handle.write(b"temporary")
+        with open(unrelated, "wb") as handle:
+            handle.write(b"unrelated")
+        written = PROBE.snapshot_filestore(self.filestore, self.uid, self.gid, require_owner_writable=False)
+
+        with self.assertRaisesRegex(RuntimeError, "nicht zur Probe gehoerenden"):
+            PROBE.cleanup_created_entries(
+                self.filestore,
+                before,
+                written,
+                relative_blob,
+                fsync_fn=lambda _path: None,
+            )
+        self.assertTrue(os.path.exists(blob))
+        self.assertTrue(os.path.exists(unrelated))
 
     def test_final_tree_drift_is_fatal(self):
         before = PROBE.snapshot_filestore(self.filestore, self.uid, self.gid, require_owner_writable=False)
