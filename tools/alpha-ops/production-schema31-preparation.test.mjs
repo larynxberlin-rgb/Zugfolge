@@ -5,6 +5,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
+import { GAME_MIGRATION_LEDGER_SQL } from "./production-cold-backup.mjs";
+
 import {
   prepareGameSchema31,
   qualifyGameSchema31,
@@ -12,6 +14,13 @@ import {
 } from "./production-schema31-preparation.mjs";
 
 const root = new URL("../../", import.meta.url);
+
+test("migration ledger keeps numeric database order beyond single digit ids", () => {
+  const sql = GAME_MIGRATION_LEDGER_SQL.replace(/\s+/gu, " ").trim();
+  assert.match(sql, /from drizzle\.__drizzle_migrations as migration order by migration\.id$/u);
+  assert.doesNotMatch(sql, /select id::text as id/u);
+  assert.doesNotMatch(sql, /order by id$/u);
+});
 
 function sortedValue(value) {
   if (Array.isArray(value)) return value.map(sortedValue);

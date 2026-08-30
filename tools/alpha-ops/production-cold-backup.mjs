@@ -13,6 +13,12 @@ const RECEIPT_SCHEMA = "zugfolge-production-cold-backup/v1";
 const INITIAL_PRODUCTION_MIGRATION_COUNT = 29;
 const EXPECTED_PRE_MIGRATION_COUNT = 31;
 const SHA256 = /^[a-f0-9]{64}$/u;
+
+export const GAME_MIGRATION_LEDGER_SQL = `
+  select migration.id::text as id, migration.hash, migration.created_at::text as created_at
+  from drizzle.__drizzle_migrations as migration
+  order by migration.id
+`;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u;
 const SAFE_ID = /^[a-z0-9][a-z0-9._-]{0,79}$/u;
 const SAFE_DATABASE = /^[a-z0-9_]+$/u;
@@ -252,7 +258,7 @@ export async function inspectColdDatabase(databaseUrl, { game, postgresFactory }
       if (game) {
         const [identityTableRows, migrationRows] = await Promise.all([
           sql.unsafe("select to_regclass('public.zugfolge_database_identity') is not null as present"),
-          sql.unsafe("select id::text as id, hash, created_at::text as created_at from drizzle.__drizzle_migrations order by id"),
+          sql.unsafe(GAME_MIGRATION_LEDGER_SQL),
         ]);
         invariant(identityTableRows.length === 1 && typeof identityTableRows[0].present === "boolean", "Game-Datenbankidentitaet konnte nicht inventarisiert werden.");
         if (identityTableRows[0].present) {
