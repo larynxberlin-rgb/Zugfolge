@@ -1144,7 +1144,7 @@ if ((quiesced_cutover == 1 || attested_rollback == 1 || attested_rollback_stop =
       fi
       run_schema29_odoo_filestore_access open
       "${current_compose[@]}" --profile production-recovery-preparation \
-        up --no-deps --no-build --force-recreate --wait --wait-timeout "$orchestration_timeout" \
+        up --no-deps --no-build --force-recreate --wait --wait-timeout 7200 \
         schema29-keycloak-runtime schema29-game-runtime schema29-odoo-runtime
       schema29_game_probe_host_path="$resolved_recovery_evidence_root/${production_recovery_id}.schema29-game-runtime-write.json"
       if [[ -e "$schema29_game_probe_host_path" || -L "$schema29_game_probe_host_path" ]]; then
