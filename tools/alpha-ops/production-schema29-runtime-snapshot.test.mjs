@@ -27,6 +27,14 @@ test("Schema-29 runtime before snapshot is create-new and binds untouched Game/O
   await mkdir(evidence);
   const recoveryId = "rollback-2026.4-001";
   const previousWorldId = "00000000-0000-4000-8000-000000000014";
+  const authoritativeOdooStateSha256 = "4".repeat(64);
+  const pristineOdooRestorePath = join(evidence, `${recoveryId}.schema29.odoo-restore.json`);
+  const pristineOdooRestoreBytes = `${JSON.stringify({
+    authoritativeStateSha256: authoritativeOdooStateSha256, database: "zugfolge_odoo_recovery_v1_schema29_pristine_test",
+    databaseSha256: "b".repeat(64), filestoreArchiveSha256: "d".repeat(64),
+    filestoreTreeSha256: "e".repeat(64), identical: true, recoveryId, schema: "zugfolge-production-odoo-restore/v1",
+  })}\n`;
+  await writeFile(pristineOdooRestorePath, pristineOdooRestoreBytes);
   const baselinePayload = {
     candidateReleaseId: "infra-deutschland-2026.4",
     game: {
@@ -43,7 +51,8 @@ test("Schema-29 runtime before snapshot is create-new and binds untouched Game/O
     odoo: {
       backendSha256: "a".repeat(64), databaseDumpSha256: "b".repeat(64), endpointSha256: "c".repeat(64),
       filestoreArchiveSha256: "d".repeat(64), filestoreTreeSha256: "e".repeat(64), manifestSha256: "f".repeat(64),
-      operationSha256: "0".repeat(64), restoreEndpointSha256: "1".repeat(64), restoreReceiptSha256: "2".repeat(64), stateSha256: "3".repeat(64),
+      operationSha256: "0".repeat(64), restoreEndpointSha256: "1".repeat(64),
+      restoreReceiptSha256: createHash("sha256").update(pristineOdooRestoreBytes).digest("hex"), stateSha256: "3".repeat(64),
     },
     previousReleaseId: "infra-deutschland-2026.2",
     qualifiedAt: "2026-08-26T10:00:00.000Z",
@@ -62,7 +71,7 @@ test("Schema-29 runtime before snapshot is create-new and binds untouched Game/O
   })}\n`);
   const odooRestorePath = join(evidence, `${recoveryId}.schema29-runtime.odoo-restore.json`);
   await writeFile(odooRestorePath, `${JSON.stringify({
-    authoritativeStateSha256: baseline.odoo.stateSha256, database: "zugfolge_odoo_recovery_v1_schema29_runtime_test",
+    authoritativeStateSha256: authoritativeOdooStateSha256, database: "zugfolge_odoo_recovery_v1_schema29_runtime_test",
     databaseSha256: baseline.odoo.databaseDumpSha256, filestoreArchiveSha256: baseline.odoo.filestoreArchiveSha256,
     filestoreTreeSha256: baseline.odoo.filestoreTreeSha256, identical: true, recoveryId, schema: "zugfolge-production-odoo-restore/v1",
   })}\n`);
@@ -78,6 +87,7 @@ test("Schema-29 runtime before snapshot is create-new and binds untouched Game/O
     PRODUCTION_RECOVERY_PREVIOUS_WORLD_ID: previousWorldId,
     PRODUCTION_RECOVERY_EVIDENCE_ROOT: evidence,
     PRODUCTION_SCHEMA29_COLD_RECEIPT_PATH: baselinePath,
+    PRODUCTION_SCHEMA29_PRISTINE_ODOO_RESTORE_RECEIPT_PATH: pristineOdooRestorePath,
     PRODUCTION_SCHEMA29_RUNTIME_GAME_RESTORE_RECEIPT_PATH: gameRestorePath,
     PRODUCTION_SCHEMA29_RUNTIME_ODOO_RESTORE_RECEIPT_PATH: odooRestorePath,
     PRODUCTION_SCHEMA29_RUNTIME_BEFORE_OUTPUT_PATH: outputPath,
