@@ -35,7 +35,7 @@ const WORLD_DEPLOYMENT_JSON_MAX_BYTES = 16_777_216n;
 const SCHEMA29_GAME_RUNTIME_READY_TIMEOUT_MS = 2 * 60 * 60 * 1_000;
 const SCHEMA29_GAME_RUNTIME_READY_RETRY_MS = 5_000;
 const LEGACY_KEYCLOAK_IMAGE_REFERENCE = "quay.io/keycloak/keycloak:26.7.0@sha256:0f198be292568439d700cdbfb893e69a6009bb43a94a06a945b1d3d506c76b13";
-const REQUIRED_KEYCLOAK_CLIENTS = Object.freeze(["game-api", "game-web", "livemap", "operations-center", "provisioner"]);
+const REQUIRED_KEYCLOAK_CLIENTS = Object.freeze(["game-api", "game-web", "livemap", "operations-center"]);
 const REQUIRED_SERVICES = Object.freeze([
   "odoo-postgres",
   "postgres",

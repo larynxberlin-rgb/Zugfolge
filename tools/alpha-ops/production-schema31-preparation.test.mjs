@@ -121,7 +121,7 @@ test("Schema-31 preparation resumes 29/31 asymmetry, compares isolated state and
       authorizationSha256: "1".repeat(64), authorizationStatusCode: 200, containerId: "7".repeat(64),
       database: {
         clientsSha256: "2".repeat(64), offlineClientSessionCount: "0", offlineUserSessionCount: "0",
-        realmName: "zugfolge", requiredClients: ["game-api", "game-web", "livemap", "operations-center", "provisioner"],
+        realmName: "zugfolge", requiredClients: ["game-api", "game-web", "livemap", "operations-center"],
       },
       healthBodySha256: "3".repeat(64), healthStatusCode: 200,
       imageDigest: "sha256:0f198be292568439d700cdbfb893e69a6009bb43a94a06a945b1d3d506c76b13",
