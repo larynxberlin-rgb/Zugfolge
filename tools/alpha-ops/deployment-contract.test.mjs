@@ -120,7 +120,7 @@ test("Alpha-Compose erzwingt Map- und Welt-Cutover-Gates, Migration, signierten 
   assert.doesNotMatch(productionRecoveryMaterialService, /ZUGFOLGE_ODOO_IMAGE_REFERENCE/u);
   assert.match(productionRecoveryMaterialService, /\/ops\/alpha:ro[\s\S]*odoo-filestore:\/odoo-live-filestore:ro/u);
   assert.match(compose, /production-recovery-cold-qualify:[\s\S]*production-cold-backup\.mjs, qualify[\s\S]*\/var\/run\/docker\.sock[\s\S]*recovery-verify-postgres: \{ condition: service_healthy \}/u);
-  assert.match(schema29SnapshotService, /user: "0:0"[\s\S]*production-schema29-runtime-snapshot\.mjs, create[\s\S]*schema29-runtime-before\.json[\s\S]*networks: \{ schema29-recovery: \{\} \}/u);
+  assert.match(schema29SnapshotService, /user: "0:0"[\s\S]*production-schema29-runtime-snapshot\.mjs, create[\s\S]*schema29\.odoo-restore\.json[\s\S]*schema29-runtime-before\.json[\s\S]*networks: \{ schema29-recovery: \{\} \}/u);
   assert.match(schema29FilestoreAccessService, /user: "0:0"[\s\S]*schema29-odoo-filestore-access\.mjs, open[\s\S]*schema29-odoo-filestore-open\.json[\s\S]*schema29-odoo-filestore-seal\.json[\s\S]*PRODUCTION_SCHEMA29_RUNTIME_ODOO_RESTORE_DATABASE[^\n]+:\/odoo-recovery-filestore\/\$\{PRODUCTION_SCHEMA29_RUNTIME_ODOO_RESTORE_DATABASE[^\n]+:rw[\s\S]*network_mode: none/u);
   assert.match(schema29GameService, /image: "\$\{MAP_RELEASE_PREFLIGHT_RUNTIME_IMAGE_REFERENCE:[^\n]+[\s\S]*command: \[node, apps\/game-api\/dist\/server\.js\]/u);
   assert.match(schema29GameService, /ALPHA_WORLD_RELEASE_PATHS_JSON: '\["\$\{MAP_RELEASE_PREFLIGHT_RUNTIME_WORLD_DEPLOYMENT_PATH:[^\n]+[\s\S]*\.\/var\/alpha-evidence:\/evidence:ro[\s\S]*networks: \{ schema29-recovery: \{\} \}/u);

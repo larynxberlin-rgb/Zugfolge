@@ -200,8 +200,9 @@ export async function createProductionSchema29RuntimeBeforeReceipt({
   const { artifact: baselineArtifact, receipt: baseline } = await readProductionColdBackupReceipt(requiredEnvironment(environment, "PRODUCTION_SCHEMA29_COLD_RECEIPT_PATH"), {
     recoveryId, candidateReleaseId, previousReleaseId, migrationCount: 29,
   });
-  const [gameRestoreArtifact, odooRestoreArtifact, gameRestore, odooRestore, filestore, heads] = await Promise.all([
+  const [gameRestoreArtifact, pristineOdooRestoreArtifact, odooRestoreArtifact, gameRestore, odooRestore, filestore, heads] = await Promise.all([
     stableJson(requiredEnvironment(environment, "PRODUCTION_SCHEMA29_RUNTIME_GAME_RESTORE_RECEIPT_PATH"), "Schema-29-Game-Runtime-Restore-Receipt"),
+    stableJson(requiredEnvironment(environment, "PRODUCTION_SCHEMA29_PRISTINE_ODOO_RESTORE_RECEIPT_PATH"), "Schema-29-Odoo-Pristine-Restore-Receipt"),
     stableJson(requiredEnvironment(environment, "PRODUCTION_SCHEMA29_RUNTIME_ODOO_RESTORE_RECEIPT_PATH"), "Schema-29-Odoo-Runtime-Restore-Receipt"),
     inspectDatabase(gameUrl, { game: true }),
     inspectDatabase(odooUrl, { game: false }),
@@ -226,6 +227,14 @@ export async function createProductionSchema29RuntimeBeforeReceipt({
       && gameRestoreArtifact.value.manifestSha256 === baseline.game.manifestSha256,
     "Schema-29-Game-Runtime-Restore-Receipt passt nicht zum Vorher-Snapshot.",
   );
+  exactKeys(pristineOdooRestoreArtifact.value, ["authoritativeStateSha256", "database", "databaseSha256", "filestoreArchiveSha256", "filestoreTreeSha256", "identical", "recoveryId", "schema"], "Schema-29-Odoo-Pristine-Restore-Receipt");
+  invariant(
+    pristineOdooRestoreArtifact.sha256 === baseline.odoo.restoreReceiptSha256
+      && pristineOdooRestoreArtifact.value.schema === "zugfolge-production-odoo-restore/v1"
+      && pristineOdooRestoreArtifact.value.recoveryId === recoveryId
+      && pristineOdooRestoreArtifact.value.identical === true,
+    "Schema-29-Odoo-Pristine-Restore-Receipt passt nicht zum qualifizierten Kalt-Restore.",
+  );
   exactKeys(odooRestoreArtifact.value, ["authoritativeStateSha256", "database", "databaseSha256", "filestoreArchiveSha256", "filestoreTreeSha256", "identical", "recoveryId", "schema"], "Schema-29-Odoo-Runtime-Restore-Receipt");
   invariant(
     odooRestoreArtifact.value.schema === "zugfolge-production-odoo-restore/v1"
@@ -234,7 +243,7 @@ export async function createProductionSchema29RuntimeBeforeReceipt({
       && odooRestoreArtifact.value.identical === true
       && odooRestoreArtifact.value.databaseSha256 === baseline.odoo.databaseDumpSha256
       && odooRestoreArtifact.value.filestoreArchiveSha256 === baseline.odoo.filestoreArchiveSha256
-      && odooRestoreArtifact.value.authoritativeStateSha256 === baseline.odoo.stateSha256
+      && odooRestoreArtifact.value.authoritativeStateSha256 === pristineOdooRestoreArtifact.value.authoritativeStateSha256
       && odooRestoreArtifact.value.filestoreTreeSha256 === baseline.odoo.filestoreTreeSha256,
     "Schema-29-Odoo-Runtime-Restore-Receipt passt nicht zum Vorher-Snapshot.",
   );
@@ -268,6 +277,7 @@ export async function createProductionSchema29RuntimeBeforeReceipt({
   await Promise.all([
     assertProductionColdBackupReceiptUnchanged(baselineArtifact),
     assertJsonUnchanged(gameRestoreArtifact, "Schema-29-Game-Runtime-Restore-Receipt"),
+    assertJsonUnchanged(pristineOdooRestoreArtifact, "Schema-29-Odoo-Pristine-Restore-Receipt"),
     assertJsonUnchanged(odooRestoreArtifact, "Schema-29-Odoo-Runtime-Restore-Receipt"),
   ]);
   await publishCreateNew(outputPath, receipt);
