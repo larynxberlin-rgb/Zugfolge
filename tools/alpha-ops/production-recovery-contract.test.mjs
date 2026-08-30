@@ -233,7 +233,7 @@ test("Quiescence verweigert jeden noch laufenden Writer vor einer Datenbanksperr
   }
 });
 
-async function recoveryFixture() {
+async function recoveryFixture({ worldDeploymentPaddingBytes = 0 } = {}) {
   const root = await mkdtemp(join(tmpdir(), "zugfolge-production-recovery-"));
   const quiescence = await createQuiescence(root);
   const source = snapshot();
@@ -336,6 +336,7 @@ async function recoveryFixture() {
   const worldDeployment = {
     deploymentHash: "d".repeat(64),
     infrastructureReleaseId: PREVIOUS,
+    ...(worldDeploymentPaddingBytes > 0 ? { qualificationPadding: "x".repeat(worldDeploymentPaddingBytes) } : {}),
     schema: "zugfolge-alpha-world-deployment/v1",
     worldEpoch: LEGACY_WORLD_EPOCH,
     worldId: LEGACY_WORLD_ID,
@@ -529,6 +530,38 @@ test("Recovery bindet Game-Proof und Odoo-DB/Filestore gekoppelt und publiziert 
       createProductionRecoveryArtifacts({ environment: fixture.environment, ...fixture.dependencies }),
       /create-new/u,
     );
+  } finally {
+    await chmod(join(fixture.environment.PRODUCTION_RECOVERY_ODOO_RESTORED_FILESTORE_PATH, "aa"), 0o750).catch(() => {});
+    await chmod(fixture.environment.PRODUCTION_RECOVERY_ODOO_RESTORED_FILESTORE_PATH, 0o750).catch(() => {});
+    await rm(fixture.root, { recursive: true, force: true });
+  }
+});
+
+test("Recovery akzeptiert das bereits im Runtime-Drill erlaubte 16-MiB-Limit fuer attestierte World-Deployments", async () => {
+  const fixture = await recoveryFixture({ worldDeploymentPaddingBytes: 4 * 1_024 * 1_024 });
+  try {
+    const result = await createProductionRecoveryArtifacts({
+      environment: fixture.environment,
+      ...fixture.dependencies,
+      now: () => new Date("2026-08-26T12:15:00.000Z"),
+    });
+    assert.match(result.receiptHash, /^[a-f0-9]{64}$/u);
+  } finally {
+    await chmod(join(fixture.environment.PRODUCTION_RECOVERY_ODOO_RESTORED_FILESTORE_PATH, "aa"), 0o750).catch(() => {});
+    await chmod(fixture.environment.PRODUCTION_RECOVERY_ODOO_RESTORED_FILESTORE_PATH, 0o750).catch(() => {});
+    await rm(fixture.root, { recursive: true, force: true });
+  }
+});
+
+test("Recovery verweigert attestierte World-Deployments oberhalb von 16 MiB", async () => {
+  const fixture = await recoveryFixture({ worldDeploymentPaddingBytes: 16 * 1_024 * 1_024 });
+  try {
+    await assert.rejects(
+      createProductionRecoveryArtifacts({ environment: fixture.environment, ...fixture.dependencies }),
+      /Attestiertes World-Deployment ueberschreitet das Dateilimit/u,
+    );
+    await assert.rejects(readFile(fixture.environment.PRODUCTION_RECOVERY_RECEIPT_OUTPUT_PATH), /ENOENT/u);
+    await assert.rejects(readFile(fixture.environment.PRODUCTION_RECOVERY_PROMOTION_OUTPUT_PATH), /ENOENT/u);
   } finally {
     await chmod(join(fixture.environment.PRODUCTION_RECOVERY_ODOO_RESTORED_FILESTORE_PATH, "aa"), 0o750).catch(() => {});
     await chmod(fixture.environment.PRODUCTION_RECOVERY_ODOO_RESTORED_FILESTORE_PATH, 0o750).catch(() => {});

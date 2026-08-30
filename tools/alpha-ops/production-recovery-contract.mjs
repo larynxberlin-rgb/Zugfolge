@@ -37,6 +37,7 @@ const DATABASE_NAME = /^[a-z][a-z0-9_]{0,62}$/u;
 const PG_LSN = /^[A-F0-9]+\/[A-F0-9]{1,8}$/u;
 const CONTAINER_ID = /^[a-f0-9]{12,64}$/u;
 const MAX_JSON_BYTES = 4 * 1_024 * 1_024;
+const WORLD_DEPLOYMENT_JSON_MAX_BYTES = 16 * 1_024 * 1_024;
 const QUIESCENCE_SCHEMA = "zugfolge-production-recovery-quiescence/v1";
 const RECOVERY_SCHEMA = "zugfolge-production-recovery/v1";
 const PROMOTION_SCHEMA = "zugfolge-production-recovery-promotion/v1";
@@ -192,8 +193,8 @@ async function stableRegularFile(path, label, { retainBytes = true, maxBytes } =
   return Object.freeze({ path: absolute, bytes, sha256, metadata });
 }
 
-async function stableJsonFile(path, label, { canonical = true } = {}) {
-  const artifact = await stableRegularFile(path, label, { maxBytes: MAX_JSON_BYTES });
+async function stableJsonFile(path, label, { canonical = true, maxBytes = MAX_JSON_BYTES } = {}) {
+  const artifact = await stableRegularFile(path, label, { maxBytes });
   let value;
   try {
     value = JSON.parse(artifact.bytes.toString("utf8"));
@@ -203,7 +204,7 @@ async function stableJsonFile(path, label, { canonical = true } = {}) {
   if (canonical) {
     invariant(artifact.bytes.equals(serializeMapReleaseBuildEvidence(value)), `${label} ist nicht kanonisch serialisiert.`);
   }
-  return Object.freeze({ ...artifact, value });
+  return Object.freeze({ ...artifact, maxBytes, value });
 }
 
 function validateRuntimeRollbackBinding(value, label = "Runtime-Rollback-Bindung") {
@@ -275,7 +276,10 @@ async function loadRuntimeRollbackEvidence({ environment, candidateReleaseId, pr
   const [attestationArtifact, trustedKeysArtifact, worldDeploymentArtifact, databaseRollbackArtifact] = await Promise.all([
     stableJsonFile(requiredEnvironment(environment, "PRODUCTION_RECOVERY_RUNTIME_ROLLBACK_ATTESTATION_PATH"), "Signierte Runtime-Rollback-Attestation"),
     stableJsonFile(requiredEnvironment(environment, "PRODUCTION_RECOVERY_RUNTIME_ROLLBACK_TRUSTED_KEYS_PATH"), "Runtime-Rollback-Keyring", { canonical: false }),
-    stableJsonFile(requiredEnvironment(environment, "PRODUCTION_RECOVERY_ATTESTED_WORLD_DEPLOYMENT_PATH"), "Attestiertes World-Deployment", { canonical: false }),
+    stableJsonFile(requiredEnvironment(environment, "PRODUCTION_RECOVERY_ATTESTED_WORLD_DEPLOYMENT_PATH"), "Attestiertes World-Deployment", {
+      canonical: false,
+      maxBytes: WORLD_DEPLOYMENT_JSON_MAX_BYTES,
+    }),
     stableJsonFile(requiredEnvironment(environment, "PRODUCTION_RECOVERY_DATABASE_ROLLBACK_PROOF_PATH"), "Attestierter Datenbank-Rollback-Proof"),
   ]);
   const attestation = attestationArtifact.value;
@@ -361,7 +365,7 @@ async function loadRuntimeRollbackEvidence({ environment, candidateReleaseId, pr
 async function assertArtifactUnchanged(artifact, label, { retainBytes = artifact.bytes !== undefined } = {}) {
   const current = await stableRegularFile(artifact.path, label, {
     retainBytes,
-    maxBytes: retainBytes ? MAX_JSON_BYTES : undefined,
+    maxBytes: retainBytes ? (artifact.maxBytes ?? MAX_JSON_BYTES) : undefined,
   });
   invariant(
     sameIdentity(artifact.metadata, current.metadata)
