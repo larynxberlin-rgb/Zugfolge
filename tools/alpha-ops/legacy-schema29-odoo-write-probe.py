@@ -12,6 +12,7 @@ SAFE_ID = re.compile(r"^[a-z0-9][a-z0-9._-]{0,79}$")
 SAFE_DATABASE = re.compile(r"^zugfolge_odoo_recovery_v1_[a-z0-9_]+$")
 HASH_DIRECTORY = re.compile(r"^[a-f0-9]{2}$")
 HASH_PATH = re.compile(r"^[a-f0-9]{2}/[a-f0-9]{40}$")
+NAMESPACED_HASH_PATH = re.compile(r"^[a-z0-9][a-z0-9._-]{0,79}/[a-f0-9]{2}/[a-f0-9]{40}$")
 
 
 def invariant(condition, message):
@@ -78,6 +79,23 @@ def stable_file_sha256(path, expected_status):
         os.close(descriptor)
 
 
+def is_safe_filestore_entry(relative_path, is_directory, depth):
+    if not is_directory:
+        return (depth == 2 and HASH_PATH.fullmatch(relative_path) is not None) or (
+            depth == 3 and NAMESPACED_HASH_PATH.fullmatch(relative_path) is not None
+        )
+    if depth == 1:
+        return HASH_DIRECTORY.fullmatch(relative_path) is not None or SAFE_ID.fullmatch(relative_path) is not None
+    if depth != 2:
+        return False
+    parts = relative_path.split("/")
+    return (
+        len(parts) == 2
+        and SAFE_ID.fullmatch(parts[0]) is not None
+        and HASH_DIRECTORY.fullmatch(parts[1]) is not None
+    )
+
+
 def snapshot_filestore(root, owner_uid, owner_gid, require_owner_writable=True):
     files = {}
     directories = set()
@@ -95,8 +113,7 @@ def snapshot_filestore(root, owner_uid, owner_gid, require_owner_writable=True):
             invariant(mode & stat.S_IRUSR and (not is_directory or mode & stat.S_IXUSR), "Schema-29-Odoo-Probe-Filestore besitzt keine Owner-Lese-/Ausfuehrungsrechte.")
         if relative_path:
             invariant(
-                (is_directory and depth == 1 and HASH_DIRECTORY.fullmatch(relative_path) is not None)
-                or (not is_directory and HASH_PATH.fullmatch(relative_path) is not None),
+                is_safe_filestore_entry(relative_path, is_directory, depth),
                 f"Schema-29-Odoo-Probe-Filestore enthaelt den unsicheren Pfad '{relative_path}'.",
             )
         if is_directory:

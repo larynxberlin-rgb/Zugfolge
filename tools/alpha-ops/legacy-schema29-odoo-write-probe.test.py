@@ -51,6 +51,23 @@ class LegacySchema29OdooWriteProbeTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "Runtime-Owner"):
             PROBE.snapshot_filestore(self.filestore, self.uid + 1, self.gid, require_owner_writable=False)
 
+    def test_one_safe_legacy_namespace_is_accepted(self):
+        namespaced_bucket = os.path.join(self.filestore, "checklist", "89")
+        os.makedirs(namespaced_bucket)
+        namespaced_blob = os.path.join(namespaced_bucket, "d" * 40)
+        with open(namespaced_blob, "wb") as handle:
+            handle.write(b"legacy namespace")
+        snapshot = PROBE.snapshot_filestore(self.filestore, self.uid, self.gid, require_owner_writable=False)
+        self.assertIn(f"checklist/89/{'d' * 40}", snapshot["files"])
+
+    def test_nested_legacy_namespace_is_rejected(self):
+        nested = os.path.join(self.filestore, "checklist", "nested", "89")
+        os.makedirs(nested)
+        with open(os.path.join(nested, "d" * 40), "wb") as handle:
+            handle.write(b"unsafe nested namespace")
+        with self.assertRaisesRegex(RuntimeError, "unsicheren Pfad"):
+            PROBE.snapshot_filestore(self.filestore, self.uid, self.gid, require_owner_writable=False)
+
     def test_cleanup_failure_is_fatal(self):
         before = PROBE.snapshot_filestore(self.filestore, self.uid, self.gid, require_owner_writable=False)
         new_blob = os.path.join(self.bucket, "b" * 40)
