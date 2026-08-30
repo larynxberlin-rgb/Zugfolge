@@ -537,6 +537,7 @@ services:
     profiles: [production-recovery-preparation]
     image: "${ZUGFOLGE_GAME_API_IMAGE_REFERENCE:?ZUGFOLGE_GAME_API_IMAGE_REFERENCE muss ein unveraenderlicher sha256-Imageverweis sein}"
     pull_policy: never
+    user: "0:0"
     command: [node, tools/alpha-ops/production-schema29-runtime-snapshot.mjs, create]
     environment:
       DATABASE_URL: "postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@recovery-verify-postgres:5432/${PRODUCTION_SCHEMA29_RUNTIME_GAME_RESTORE_DATABASE:?PRODUCTION_SCHEMA29_RUNTIME_GAME_RESTORE_DATABASE fehlt}"
@@ -659,6 +660,8 @@ services:
     profiles: [production-recovery-preparation]
     image: "${MAP_RELEASE_PREFLIGHT_RUNTIME_IMAGE_REFERENCE:?MAP_RELEASE_PREFLIGHT_RUNTIME_IMAGE_REFERENCE muss den attestierten Legacy-Digest referenzieren}"
     pull_policy: never
+    group_add:
+      - "${PRODUCTION_RECOVERY_ODOO_RUNTIME_GID:?PRODUCTION_RECOVERY_ODOO_RUNTIME_GID fehlt}"
     command: [node, /schema29-game-probe.mjs]
     environment:
       DATABASE_URL: "postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@recovery-verify-postgres:5432/${PRODUCTION_SCHEMA29_RUNTIME_GAME_RESTORE_DATABASE:?PRODUCTION_SCHEMA29_RUNTIME_GAME_RESTORE_DATABASE fehlt}"
@@ -831,6 +834,8 @@ services:
     profiles: [production-recovery-preparation]
     image: "${MAP_RELEASE_PREFLIGHT_RUNTIME_IMAGE_REFERENCE:?MAP_RELEASE_PREFLIGHT_RUNTIME_IMAGE_REFERENCE muss den attestierten Legacy-Digest referenzieren}"
     pull_policy: never
+    group_add:
+      - "${PRODUCTION_RECOVERY_ODOO_RUNTIME_GID:?PRODUCTION_RECOVERY_ODOO_RUNTIME_GID fehlt}"
     command: [node, /schema31-probe.mjs]
     environment:
       DATABASE_URL: "postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}"
