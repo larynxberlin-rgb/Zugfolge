@@ -223,6 +223,12 @@ wendet derselbe One-shot
 ausschließlich 0030 und 0031 auf Live-Game und pristinen Game-Restore an und
 publiziert den Schema-31-Vorbereitungsbeleg.
 
+Der echte alte Game-Server führt seinen ersten regionalen 1:1-Nachlauf noch
+vor dem HTTP-Listener aus. Dieser isolierte Legacy-Lauf besitzt deshalb ein
+festes hartes Zwei-Stunden-Limit; der allgemeine 600-Sekunden-Timeout der
+übrigen Recovery-One-shots darf ihn nicht vor dem belegten ersten
+Scheduler-/Publisherfortschritt abbrechen.
+
 `--prepare-v2-cold` liest diesen Beleg bytegenau erneut, erzeugt und qualifiziert
 das gekoppelte Schema-31-Backup-/Restore-Paar. Erst der dritte One-shot darf
 danach im selben digestgebundenen Prozess die Migrationen 0032 und 0033 bis

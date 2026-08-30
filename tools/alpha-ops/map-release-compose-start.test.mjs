@@ -405,7 +405,7 @@ test("Schema 29 is cold-restored before fixed 30/31, legacy-write, Schema-31-col
   assert.match(schema31Calls[8], /run --rm --no-deps production-recovery-material -eu -c/u);
   assert.match(schema31Calls[9], /run --rm --no-deps production-schema29-runtime-snapshot$/u);
   assert.match(schema31Calls[10], /run --rm --no-deps production-schema29-odoo-filestore-access node tools\/alpha-ops\/schema29-odoo-filestore-access\.mjs open$/u);
-  assert.match(schema31Calls[11], /up --no-deps --no-build --force-recreate --wait --wait-timeout 600 schema29-keycloak-runtime schema29-game-runtime schema29-odoo-runtime$/u);
+  assert.match(schema31Calls[11], /up --no-deps --no-build --force-recreate --wait --wait-timeout 7200 schema29-keycloak-runtime schema29-game-runtime schema29-odoo-runtime$/u);
   assert.match(schema31Calls[12], /run --rm --no-deps legacy-game-schema29-write-probe$/u);
   assert.match(schema31Calls[13], /run --rm --no-deps legacy-odoo-schema29-write-probe$/u);
   assert.match(schema31Calls[14], /stop --timeout 60 schema29-odoo-runtime$/u);
