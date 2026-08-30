@@ -30,6 +30,8 @@ const DIGEST = /^sha256:[a-f0-9]{64}$/u;
 const CONTAINER_ID = /^[a-f0-9]{12,64}$/u;
 const SAFE_ID = /^[a-z0-9][a-z0-9._-]{0,79}$/u;
 const SAFE_DATABASE = /^[a-z0-9_]+$/u;
+const DEFAULT_JSON_MAX_BYTES = 4_194_304n;
+const WORLD_DEPLOYMENT_JSON_MAX_BYTES = 16_777_216n;
 const LEGACY_KEYCLOAK_IMAGE_REFERENCE = "quay.io/keycloak/keycloak:26.7.0@sha256:0f198be292568439d700cdbfb893e69a6009bb43a94a06a945b1d3d506c76b13";
 const REQUIRED_KEYCLOAK_CLIENTS = Object.freeze(["game-api", "game-web", "livemap", "operations-center", "provisioner"]);
 const REQUIRED_SERVICES = Object.freeze([
@@ -106,24 +108,24 @@ function exactHostFilestorePath(value, databaseName, label) {
   return value;
 }
 
-async function stableJson(path, label) {
+async function stableJson(path, label, maxBytes = DEFAULT_JSON_MAX_BYTES) {
   const absolute = resolve(path);
   let before;
   try { before = await lstat(absolute, { bigint: true }); } catch (error) {
     if (error?.code === "ENOENT") throw new Error(`${label} fehlt.`);
     throw error;
   }
-  invariant(before.isFile() && !before.isSymbolicLink() && before.size > 0n && before.size <= 4_194_304n, `${label} ist keine sichere JSON-Datei.`);
+  invariant(before.isFile() && !before.isSymbolicLink() && before.size > 0n && before.size <= maxBytes, `${label} ist keine sichere JSON-Datei.`);
   const bytes = await readFile(absolute);
   const after = await lstat(absolute, { bigint: true });
   invariant(before.dev === after.dev && before.ino === after.ino && before.size === after.size && before.mtimeNs === after.mtimeNs, `${label} aenderte sich beim Lesen.`);
   let value;
   try { value = JSON.parse(bytes.toString("utf8")); } catch { throw new Error(`${label} ist kein gueltiges JSON.`); }
-  return Object.freeze({ absolute, bytes, sha256: createHash("sha256").update(bytes).digest("hex"), value, identity: before });
+  return Object.freeze({ absolute, bytes, sha256: createHash("sha256").update(bytes).digest("hex"), value, identity: before, maxBytes });
 }
 
 async function assertJsonUnchanged(artifact, label) {
-  const after = await stableJson(artifact.absolute, label);
+  const after = await stableJson(artifact.absolute, label, artifact.maxBytes);
   invariant(after.identity.dev === artifact.identity.dev && after.identity.ino === artifact.identity.ino && after.sha256 === artifact.sha256, `${label} wurde nach der Validierung ausgetauscht.`);
 }
 
@@ -621,7 +623,7 @@ export async function qualifyProductionSchema29RuntimeDrill({
     stableJson(requiredEnvironment(environment, "PRODUCTION_SCHEMA29_ODOO_LEGACY_PROBE_PATH"), "Legacy-Odoo-Schema-29-Probe"),
     stableJson(requiredEnvironment(environment, "PRODUCTION_SCHEMA29_RUNTIME_GAME_RESTORE_RECEIPT_PATH"), "Schema-29-Game-Runtime-Restore-Receipt"),
     stableJson(requiredEnvironment(environment, "PRODUCTION_SCHEMA29_RUNTIME_ODOO_RESTORE_RECEIPT_PATH"), "Schema-29-Odoo-Runtime-Restore-Receipt"),
-    stableJson(expected.worldDeploymentPath, "Attestiertes Vorgaenger-World-Deployment"),
+    stableJson(expected.worldDeploymentPath, "Attestiertes Vorgaenger-World-Deployment", WORLD_DEPLOYMENT_JSON_MAX_BYTES),
   ]);
   const gameProbe = validateGameProbe(gameProbeArtifact.value, expected);
   const odooProbe = validateLegacyOdooSchema29WriteProbe(odooProbeArtifact.value, {

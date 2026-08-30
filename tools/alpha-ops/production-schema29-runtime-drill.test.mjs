@@ -102,6 +102,7 @@ test("Schema-29 runtime drill binds the before snapshot, real legacy scheduler w
   const worldDeploymentPath = join(evidence, "alpha-world-deployment.json");
   await writeFile(worldDeploymentPath, `${JSON.stringify({
     deployment: { worldId: previousWorldId }, deploymentHash: "f".repeat(64),
+    evidencePadding: "x".repeat(4_194_304),
     signature: { algorithm: "Ed25519", keyId: "test", valueBase64: "AA==" },
   })}\n`);
   const beforeHeads = [{
