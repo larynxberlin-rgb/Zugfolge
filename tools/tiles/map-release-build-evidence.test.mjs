@@ -91,13 +91,14 @@ const LAYERS = [
 function databaseRollbackSnapshot() {
   return {
     databaseIdentity: DATABASE_ID,
-    migrationLedger: [
-      { id: 29, hash: "9".repeat(64), createdAt: 1_787_551_200_000 },
-      { id: 30, hash: "a".repeat(64), createdAt: 1_787_637_600_000 },
-      { id: 31, hash: "1".repeat(64), createdAt: 1_787_641_200_000 },
-      { id: 32, hash: "2".repeat(64), createdAt: 1_787_644_800_000 },
-      { id: 33, hash: "3".repeat(64), createdAt: 1_787_648_400_000 },
-    ],
+    migrationLedger: Array.from({ length: 33 }, (_, index) => {
+      const id = index < 28 ? index + 1 : index + 2;
+      return {
+        id,
+        hash: id.toString(16).padStart(64, "0"),
+        createdAt: 1_787_500_000_000 + index,
+      };
+    }),
     constraints: databaseCutoverConstraintProofs(),
     guards: databaseCutoverGuardProofs(),
     heads: {
@@ -3303,6 +3304,13 @@ test("Datenbank-Rollbackbeleg bindet DB-Identitaet, Schema, autoritativen Kopf, 
   assert.equal(proof.source.databaseIdentity, DATABASE_ID);
   assert.equal(proof.source.authoritativeHead.schema, "zugfolge-database-authoritative-head/v1");
   assert.equal(proof.source.keycloakIdentityHead.schema, "keycloak-identity-head/v1");
+
+  const incompleteSource = databaseRollbackSnapshot();
+  incompleteSource.migrationLedger.pop();
+  assert.throws(
+    () => databaseRollbackProof({ source: incompleteSource, restored: structuredClone(incompleteSource) }),
+    /nicht exakt das Cutover-Migrationsledger mit 33 Eintraegen/u,
+  );
 
   assert.throws(
     () => databaseRollbackProof({ writersQuiesced: false }),

@@ -541,7 +541,10 @@ function parseReleasePair(releaseId, previousReleaseId) {
 }
 
 function validateDatabaseMigrationLedger(value, label) {
-  invariant(Array.isArray(value) && value.length > 0, `${label} besitzt kein Migrationsledger.`);
+  invariant(
+    Array.isArray(value) && value.length === DATABASE_ROLLBACK_SCHEMA_MIGRATIONS,
+    `${label} besitzt nicht exakt das Cutover-Migrationsledger mit ${DATABASE_ROLLBACK_SCHEMA_MIGRATIONS} Eintraegen.`,
+  );
   let previousId = 0;
   const hashes = new Set();
   for (const [index, entry] of value.entries()) {
@@ -552,7 +555,6 @@ function validateDatabaseMigrationLedger(value, label) {
     previousId = entry.id;
     hashes.add(entry.hash);
   }
-  invariant(previousId === DATABASE_ROLLBACK_SCHEMA_MIGRATIONS, `${label} endet nicht am exakten Cutover-Schema ${DATABASE_ROLLBACK_SCHEMA_MIGRATIONS}.`);
   return value;
 }
 
