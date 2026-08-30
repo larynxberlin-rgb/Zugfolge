@@ -16,6 +16,8 @@ const SHA256 = /^[a-f0-9]{64}$/u;
 const SAFE_ID = /^[a-z0-9][a-z0-9._-]{0,79}$/u;
 const SAFE_DATABASE = /^zugfolge_odoo_recovery_v1_[a-z0-9_]+$/u;
 const HASH_PATH = /^[a-f0-9]{2}\/[a-f0-9]{40}$/u;
+const NAMESPACED_HASH_PATH = /^[a-z0-9][a-z0-9._-]{0,79}\/[a-f0-9]{2}\/[a-f0-9]{40}$/u;
+const HASH_BUCKET = /^[a-f0-9]{2}$/u;
 
 function invariant(condition, message) {
   if (!condition) throw new Error(message);
@@ -51,6 +53,14 @@ function canonicalSha256(value) {
 
 function sameIdentity(left, right) {
   return left.dev === right.dev && left.ino === right.ino;
+}
+
+function isSafeFilestoreEntry(relativePath, isDirectory, depth) {
+  if (!isDirectory) return (depth === 2 && HASH_PATH.test(relativePath)) || (depth === 3 && NAMESPACED_HASH_PATH.test(relativePath));
+  if (depth === 1) return HASH_BUCKET.test(relativePath) || SAFE_ID.test(relativePath);
+  if (depth !== 2) return false;
+  const [namespace, bucket, ...rest] = relativePath.split("/");
+  return rest.length === 0 && SAFE_ID.test(namespace) && HASH_BUCKET.test(bucket);
 }
 
 function canonicalInstant(value, label) {
@@ -202,7 +212,7 @@ async function collectFilestoreEntries(root, owner, { expectedAccess = "any", st
     invariant(isDirectory || status.isFile(), "Schema-29-Odoo-Filestore enthaelt einen unzulaessigen Dateityp.");
     assertAccess(status, isDirectory, expectedAccess, owner, relativePath === "." ? "Schema-29-Odoo-Filestore" : `Schema-29-Odoo-Filestoreeintrag '${relativePath}'`);
     if (strictPaths && relativePath !== ".") {
-      invariant((isDirectory && depth === 1 && /^[a-f0-9]{2}$/u.test(relativePath)) || (!isDirectory && HASH_PATH.test(relativePath)), `Schema-29-Odoo-Filestore enthaelt den unsicheren Pfad '${relativePath}'.`);
+      invariant(isSafeFilestoreEntry(relativePath, isDirectory, depth), `Schema-29-Odoo-Filestore enthaelt den unsicheren Pfad '${relativePath}'.`);
     }
     const entry = { absolute: path, depth, identity: status, isDirectory, mode: Number(status.mode) & 0o777, relativePath, sha256: null };
     entries.push(entry);
@@ -450,3 +460,4 @@ if (invokedPath === import.meta.url) {
 
 export const SCHEMA29_ODOO_FILESTORE_OPEN_SCHEMA = OPEN_SCHEMA;
 export const SCHEMA29_ODOO_FILESTORE_SEAL_SCHEMA = SEAL_SCHEMA;
+export { isSafeFilestoreEntry };
