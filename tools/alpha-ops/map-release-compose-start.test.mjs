@@ -873,8 +873,8 @@ test("Compose restarts Game API and Livemap only through the explicit per-proces
   assert.match(odoo, /image: "\$\{ZUGFOLGE_ODOO_IMAGE_REFERENCE:\?[^}]+\}"/u);
   const currentImageBindings = compose.match(/image: "\$\{ZUGFOLGE_GAME_API_IMAGE_REFERENCE:\?[^}]+\}"/gu) ?? [];
   assert.equal(currentImageBindings.length, 23);
-  assert.equal((compose.match(/image: "\$\{ZUGFOLGE_ODOO_IMAGE_REFERENCE:\?[^}]+\}"/gu) ?? []).length, 3);
-  assert.equal((compose.match(/pull_policy: never/gu) ?? []).length, 31);
+  assert.equal((compose.match(/image: "\$\{ZUGFOLGE_ODOO_IMAGE_REFERENCE:\?[^}]+\}"/gu) ?? []).length, 2);
+  assert.equal((compose.match(/pull_policy: never/gu) ?? []).length, 30);
   assert.doesNotMatch(compose, /^\s+image: zugfolge-game-api(?::[^\s]+)?\s*$/mu);
   assert.equal((rollbackCompose.match(/image: "\$\{MAP_RELEASE_PREFLIGHT_RUNTIME_IMAGE_REFERENCE:\?[^}]+\}"/gu) ?? []).length, 5);
   assert.equal((rollbackCompose.match(/image: "\$\{PRODUCTION_RECOVERY_ODOO_IMAGE_REFERENCE:\?[^}]+\}"/gu) ?? []).length, 1);
