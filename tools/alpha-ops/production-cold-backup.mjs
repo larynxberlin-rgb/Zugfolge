@@ -17,6 +17,7 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-
 const SAFE_ID = /^[a-z0-9][a-z0-9._-]{0,79}$/u;
 const SAFE_DATABASE = /^[a-z0-9_]+$/u;
 const SAFE_IDENTIFIER = /^[a-z_][a-z0-9_$]*$/u;
+const SAFE_FILESTORE_FILE = /^(?:[a-f0-9]{2}\/|[a-z0-9][a-z0-9._-]{0,79}\/[a-f0-9]{2}\/)[a-f0-9]{40}$/u;
 const CONTAINER_ID = /^[a-f0-9]{12,64}$/u;
 const REQUIRED_DATABASE_SERVICES = Object.freeze(["odoo-postgres", "postgres", "recovery-verify-odoo-postgres", "recovery-verify-postgres"]);
 const MAX_JSON_BYTES = 4 * 1_024 * 1_024;
@@ -266,7 +267,7 @@ export async function inspectColdDatabase(databaseUrl, { game, postgresFactory }
         migrationLedger = migrationRows.map((row) => ({ id: row.id, hash: row.hash, createdAt: row.created_at }));
       }
       const state = Object.freeze({
-        columnsSha256: canonicalSha256(columnRows),
+        columnsSha256: canonicalSha256(normalizeColdColumnRows(columnRows)),
         constraintsSha256: canonicalSha256(constraintRows),
         databaseIdentity,
         indexesSha256: canonicalSha256(indexRows),
@@ -287,6 +288,19 @@ export async function inspectColdDatabase(databaseUrl, { game, postgresFactory }
   }
 }
 
+export function normalizeColdColumnRows(rows) {
+  invariant(Array.isArray(rows), "Spalteninventar ist keine Liste.");
+  return rows.map((row) => {
+    const column = { ...row };
+    delete column.ordinal_position;
+    return column;
+  });
+}
+
+export function isColdFilestoreFileName(name) {
+  return typeof name === "string" && SAFE_FILESTORE_FILE.test(name);
+}
+
 async function collectFilestoreFiles(root, directory = root, files = []) {
   for (const entry of await readdir(directory, { withFileTypes: true })) {
     const path = resolve(directory, entry.name);
@@ -294,7 +308,7 @@ async function collectFilestoreFiles(root, directory = root, files = []) {
     if (entry.isDirectory()) {
       await collectFilestoreFiles(root, path, files);
     } else {
-      invariant(entry.isFile() && /^[a-f0-9]{2}\/[a-f0-9]{40}$/u.test(name), `Odoo-Filestore enthaelt einen unsicheren Eintrag '${name}'.`);
+      invariant(entry.isFile() && isColdFilestoreFileName(name), `Odoo-Filestore enthaelt einen unsicheren Eintrag '${name}'.`);
       files.push({ name, path });
     }
   }

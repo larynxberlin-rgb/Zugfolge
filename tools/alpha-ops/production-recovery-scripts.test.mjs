@@ -11,6 +11,8 @@ import { promisify } from "node:util";
 import {
   assertProductionColdBackupPreflight,
   createProductionColdBackupReceipt,
+  isColdFilestoreFileName,
+  normalizeColdColumnRows,
   validateProductionColdBackupReceipt,
 } from "./production-cold-backup.mjs";
 
@@ -26,6 +28,30 @@ const sortedValue = (value) => {
   return value;
 };
 const canonicalHash = (value) => sha256(Buffer.from(JSON.stringify(sortedValue(value)), "utf8"));
+
+test("kalter Restore ignoriert nur physische Luecken in PostgreSQL-Spaltennummern", () => {
+  const common = {
+    table_schema: "public", table_name: "regional_simulation_states", column_name: "initialization_hash",
+    data_type: "text", udt_schema: "pg_catalog", udt_name: "text", is_nullable: "YES",
+    column_default: "", is_generated: "NEVER", generation_expression: "",
+  };
+  assert.deepEqual(
+    normalizeColdColumnRows([{ ...common, ordinal_position: "11" }]),
+    normalizeColdColumnRows([{ ...common, ordinal_position: "10" }]),
+  );
+  assert.notDeepEqual(
+    normalizeColdColumnRows([{ ...common, ordinal_position: "11" }]),
+    normalizeColdColumnRows([{ ...common, ordinal_position: "10", is_nullable: "NO" }]),
+  );
+});
+
+test("kalter Odoo-Restore inventarisiert kanonische und einfach namespaced Hashdateien", () => {
+  const hash = "a".repeat(40);
+  for (const name of [`89/${hash}`, `checklist/89/${hash}`]) assert.equal(isColdFilestoreFileName(name), true);
+  for (const name of [`/89/${hash}`, `../89/${hash}`, `checklist/../89/${hash}`, `checklist/nested/89/${hash}`, "checklist/89/not-a-hash"]) {
+    assert.equal(isColdFilestoreFileName(name), false);
+  }
+});
 
 function shellPath() {
   return process.platform === "win32" ? "C:\\Program Files\\Git\\bin\\sh.exe" : "sh";
