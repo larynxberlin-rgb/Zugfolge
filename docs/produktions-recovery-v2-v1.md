@@ -78,6 +78,10 @@ Aktivierungsquelle sein.
   temporäre Dateien und atomare Hardlinks publiziert. Die Promotion erscheint
   zuletzt. Ein abgebrochener Lauf kann deshalb keinen unvollständigen Zustand
   aktivierbar machen.
+- Das bereits signierte Welt-Deployment darf wie im Schema-29-Runtime-Drill
+  höchstens 16 MiB groß sein. Die übrigen Recovery-Steuerbelege bleiben auf
+  höchstens 4 MiB begrenzt. Beide Grenzen gelten sowohl beim ersten Lesen als
+  auch bei der unveränderten Revalidierung unmittelbar vor der Publikation.
 
 ## 0. Kanonische Vorbereitung vor dem ersten V1→V2-Cutover
 
