@@ -29,6 +29,7 @@ test("Schema-29 runtime drill binds the before snapshot, real legacy scheduler w
   const previousWorldId = "00000000-0000-4000-8000-000000000014";
   const gameDigest = `sha256:${"a".repeat(64)}`;
   const odooDigest = `sha256:${"b".repeat(64)}`;
+  const producerOdooStateSha256 = "4".repeat(64);
   const keycloakReference = "quay.io/keycloak/keycloak:26.7.0@sha256:0f198be292568439d700cdbfb893e69a6009bb43a94a06a945b1d3d506c76b13";
   const baselinePayload = {
     candidateReleaseId: "infra-deutschland-2026.4",
@@ -55,6 +56,16 @@ test("Schema-29 runtime drill binds the before snapshot, real legacy scheduler w
     schema31PreparationReceiptSha256: null,
     writerContainersRunning: 0,
   };
+  const pristineOdooRestorePath = join(evidence, `${recoveryId}.schema29.odoo-restore.json`);
+  const pristineOdooRestoreReceipt = {
+    authoritativeStateSha256: producerOdooStateSha256,
+    database: "zugfolge_odoo_recovery_v1_schema29_test",
+    databaseSha256: baselinePayload.odoo.databaseDumpSha256, filestoreArchiveSha256: baselinePayload.odoo.filestoreArchiveSha256,
+    filestoreTreeSha256: baselinePayload.odoo.filestoreTreeSha256, identical: true, recoveryId,
+    schema: "zugfolge-production-odoo-restore/v1",
+  };
+  await writeFile(pristineOdooRestorePath, `${JSON.stringify(pristineOdooRestoreReceipt)}\n`);
+  baselinePayload.odoo.restoreReceiptSha256 = createHash("sha256").update(await readFile(pristineOdooRestorePath)).digest("hex");
   const baseline = { ...baselinePayload, receiptHash: canonicalSha256(baselinePayload) };
   const baselinePath = join(evidence, `${recoveryId}.schema29-cold-qualified.json`);
   await writeFile(baselinePath, `${JSON.stringify(baseline)}\n`);
@@ -87,7 +98,7 @@ test("Schema-29 runtime drill binds the before snapshot, real legacy scheduler w
   await writeFile(gameRestorePath, `${JSON.stringify(gameRestoreReceipt)}\n`);
   const odooRestorePath = join(evidence, `${recoveryId}.schema29-runtime.odoo-restore.json`);
   const odooRestoreReceipt = {
-    authoritativeStateSha256: baseline.odoo.stateSha256,
+    authoritativeStateSha256: producerOdooStateSha256,
     database: "zugfolge_odoo_recovery_v1_schema29_runtime_test",
     databaseSha256: baseline.odoo.databaseDumpSha256, filestoreArchiveSha256: baseline.odoo.filestoreArchiveSha256,
     filestoreTreeSha256: baseline.odoo.filestoreTreeSha256, identical: true, recoveryId,
@@ -188,6 +199,7 @@ test("Schema-29 runtime drill binds the before snapshot, real legacy scheduler w
     PRODUCTION_SCHEMA29_ODOO_FILESTORE_OPEN_RECEIPT_PATH: openPath,
     PRODUCTION_SCHEMA29_ODOO_FILESTORE_SEAL_RECEIPT_PATH: sealPath,
     PRODUCTION_SCHEMA29_RUNTIME_GAME_RESTORE_RECEIPT_PATH: gameRestorePath,
+    PRODUCTION_SCHEMA29_PRISTINE_ODOO_RESTORE_RECEIPT_PATH: pristineOdooRestorePath,
     PRODUCTION_SCHEMA29_RUNTIME_ODOO_RESTORE_RECEIPT_PATH: odooRestorePath,
     PRODUCTION_SCHEMA29_RUNTIME_BEFORE_RECEIPT_PATH: beforePath,
     PRODUCTION_SCHEMA29_RUNTIME_RECEIPT_OUTPUT_PATH: outputPath,
@@ -278,6 +290,28 @@ test("Schema-29 runtime drill binds the before snapshot, real legacy scheduler w
   assert.throws(
     () => validateProductionSchema29RuntimeDrillReceipt({ ...receipt, odooProbeReceiptHash: "0".repeat(64) }),
     /kanonischen Receipt-Hash/u,
+  );
+  const wrongProducerRestorePath = join(evidence, `${recoveryId}.wrong-producer.odoo-restore.json`);
+  await writeFile(wrongProducerRestorePath, `${JSON.stringify({ ...odooRestoreReceipt, authoritativeStateSha256: "5".repeat(64) })}\n`);
+  await assert.rejects(
+    qualifyProductionSchema29RuntimeDrill({
+      environment: {
+        ...environment,
+        PRODUCTION_SCHEMA29_RUNTIME_ODOO_RESTORE_RECEIPT_PATH: wrongProducerRestorePath,
+        PRODUCTION_SCHEMA29_RUNTIME_RECEIPT_OUTPUT_PATH: join(evidence, "wrong-producer-state.json"),
+      },
+      inspectContainers,
+      inspectDatabase,
+      inspectFilestore: async () => ({ treeSha256: baseline.odoo.filestoreTreeSha256 }),
+      inspectFilestoreAccess: async () => ({
+        access: "read-only", accessSha256: sealPayload.finalAccessSha256, fileCount: 0,
+        ownerGid: 101, ownerUid: 100, treeSha256: baseline.odoo.filestoreTreeSha256,
+      }),
+      inspectHealth: async () => ({ bodySha256: "7".repeat(64), statusCode: 200 }),
+      inspectHeads: async () => afterHeads,
+      inspectKeycloak: async () => keycloakContinuity,
+    }),
+    /Producerzustand und Filestore des qualifizierten pristine Restore-Receipts/u,
   );
   await assert.rejects(
     qualifyProductionSchema29RuntimeDrill({
