@@ -172,6 +172,21 @@ test("Schema-29 runtime drill binds the before snapshot, real legacy scheduler w
   const odooUrl = "postgres://odoo:secret@recovery-verify-odoo-postgres:5432/zugfolge_odoo_recovery_v1_schema29_runtime_test";
   const pristineGameUrl = "postgres://game:secret@recovery-verify-postgres:5432/zugfolge_recovery_v1_schema29_test";
   const pristineOdooUrl = "postgres://odoo:secret@recovery-verify-odoo-postgres:5432/zugfolge_odoo_recovery_v1_schema29_test";
+  const pristineOdooState = {
+    columnsSha256: "1".repeat(64), constraintsSha256: "2".repeat(64), databaseIdentity: null,
+    indexesSha256: "3".repeat(64), migrationLedger: [], tables: [],
+    sequences: [
+      { cache_size: "1", cycle: false, increment_by: "1", last_value: "985", max_value: "2147483647", min_value: "1", schemaname: "public", sequencename: "ir_attachment_id_seq", start_value: "1" },
+      { cache_size: "1", cycle: false, increment_by: "1", last_value: "45", max_value: "2147483647", min_value: "1", schemaname: "public", sequencename: "ir_config_parameter_id_seq", start_value: "1" },
+    ],
+  };
+  const runtimeOdooState = {
+    ...pristineOdooState,
+    sequences: pristineOdooState.sequences.map((sequence) => ({
+      ...sequence,
+      last_value: String(Number(sequence.last_value) + 1),
+    })),
+  };
   const worldDeploymentPath = join(evidence, "alpha-world-deployment.json");
   await writeFile(worldDeploymentPath, `${JSON.stringify({
     deployment: { worldId: previousWorldId }, deploymentHash: "f".repeat(64),
@@ -308,10 +323,9 @@ test("Schema-29 runtime drill binds the before snapshot, real legacy scheduler w
       stateSha256: url === pristineGameUrl ? baseline.game.stateSha256 : "5".repeat(64),
       state: { databaseIdentity: null, migrationLedger: Array.from({ length: 29 }, () => ({})) },
     };
-    return {
-      endpointSha256: url === pristineOdooUrl ? baseline.odoo.restoreEndpointSha256 : "6".repeat(64),
-      stateSha256: baseline.odoo.stateSha256, state: {},
-    };
+    return url === pristineOdooUrl
+      ? { endpointSha256: baseline.odoo.restoreEndpointSha256, stateSha256: baseline.odoo.stateSha256, state: pristineOdooState }
+      : { endpointSha256: "6".repeat(64), stateSha256: "c".repeat(64), state: runtimeOdooState };
   };
   const afterHeads = [{
     publisherSequence: "11", regionId: "de-sn-leipzig", revision: "11", stateHash: "5".repeat(64),
@@ -350,6 +364,11 @@ test("Schema-29 runtime drill binds the before snapshot, real legacy scheduler w
   assert.deepEqual(receipt.keycloak.database.requiredClients, ["game-api", "game-web", "livemap", "operations-center"]);
   assert.equal(receipt.odoo.healthStatusCode, 200);
   assert.equal(receipt.odooFilestoreHostPath, environment.PRODUCTION_SCHEMA29_ODOO_FILESTORE_HOST_PATH);
+  assert.equal(receipt.odooRestoreStateSha256, "c".repeat(64));
+  assert.deepEqual(receipt.odooStartupSequenceAdvances, [
+    { afterLastValue: "986", beforeLastValue: "985", sequence: "public.ir_attachment_id_seq" },
+    { afterLastValue: "46", beforeLastValue: "45", sequence: "public.ir_config_parameter_id_seq" },
+  ]);
   assert.throws(
     () => validateProductionSchema29RuntimeDrillReceipt({
       ...receipt,
@@ -373,6 +392,20 @@ test("Schema-29 runtime drill binds the before snapshot, real legacy scheduler w
   assert.throws(
     () => validateProductionSchema29RuntimeDrillReceipt({ ...receipt, odooProbeReceiptHash: "0".repeat(64) }),
     /kanonischen Receipt-Hash/u,
+  );
+  assert.throws(
+    () => validateProductionSchema29RuntimeDrillReceipt({
+      ...receipt,
+      odooStartupSequenceAdvances: receipt.odooStartupSequenceAdvances.map((advance, index) => index === 0 ? { ...advance, afterLastValue: "987" } : advance),
+    }),
+    /nicht exakt eins/u,
+  );
+  assert.throws(
+    () => validateProductionSchema29RuntimeDrillReceipt({
+      ...receipt,
+      odooStartupSequenceAdvances: [...receipt.odooStartupSequenceAdvances, { afterLastValue: "2", beforeLastValue: "1", sequence: "public.foreign_id_seq" }],
+    }),
+    /nicht exakt die erwarteten/u,
   );
   const wrongProducerRestorePath = join(evidence, `${recoveryId}.wrong-producer.odoo-restore.json`);
   await writeFile(wrongProducerRestorePath, `${JSON.stringify({ ...odooRestoreReceipt, authoritativeStateSha256: "5".repeat(64) })}\n`);
@@ -427,6 +460,25 @@ test("Schema-29 runtime drill binds the before snapshot, real legacy scheduler w
       inspectKeycloak: async () => keycloakContinuity,
     }),
     /bytegleich zur Baseline versiegelt/u,
+  );
+  await assert.rejects(
+    qualifyProductionSchema29RuntimeDrill({
+      environment: { ...environment, PRODUCTION_SCHEMA29_RUNTIME_RECEIPT_OUTPUT_PATH: join(evidence, "odoo-table-drift.json") },
+      inspectContainers,
+      inspectDatabase: async (url, options) => {
+        const inspected = await inspectDatabase(url, options);
+        return url === odooUrl ? { ...inspected, state: { ...inspected.state, tables: [{ schema: "public", table: "res_users", rowCount: "5", rowsSha256: "f".repeat(64) }] } } : inspected;
+      },
+      inspectFilestore: async () => ({ treeSha256: baseline.odoo.filestoreTreeSha256 }),
+      inspectFilestoreAccess: async () => ({
+        access: "read-only", accessSha256: sealPayload.finalAccessSha256, fileCount: 0,
+        ownerGid: 101, ownerUid: 100, treeSha256: baseline.odoo.filestoreTreeSha256,
+      }),
+      inspectHealth: async () => ({ bodySha256: "7".repeat(64), statusCode: 200 }),
+      inspectHeads: async () => afterHeads,
+      inspectKeycloak: async () => keycloakContinuity,
+    }),
+    /nicht freigegebene Zustandsanteile/u,
   );
   await assert.rejects(
     qualifyProductionSchema29RuntimeDrill({

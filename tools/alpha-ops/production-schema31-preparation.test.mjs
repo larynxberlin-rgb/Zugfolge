@@ -142,7 +142,11 @@ test("Schema-31 preparation resumes 29/31 asymmetry, compares isolated state and
     odooFilestoreSealReceiptHash: "5".repeat(64), odooFilestoreSealReceiptSha256: "6".repeat(64),
     odooFilestoreTreeSha256: baseline.odoo.filestoreTreeSha256,
     odooProbeReceiptHash: "f".repeat(64), odooProbeReceiptSha256: "0".repeat(64),
-    odooRestoreReceiptSha256: "1".repeat(64), odooRestoreStateSha256: baseline.odoo.stateSha256,
+    odooRestoreReceiptSha256: "1".repeat(64), odooRestoreStateSha256: "c".repeat(64),
+    odooStartupSequenceAdvances: [
+      { afterLastValue: "986", beforeLastValue: "985", sequence: "public.ir_attachment_id_seq" },
+      { afterLastValue: "46", beforeLastValue: "45", sequence: "public.ir_config_parameter_id_seq" },
+    ],
     previousReleaseId: baseline.previousReleaseId,
     previousWorldId: "00000000-0000-4000-8000-000000000014",
     pristineGameRestoreStateSha256: baseline.game.stateSha256,
@@ -151,7 +155,7 @@ test("Schema-31 preparation resumes 29/31 asymmetry, compares isolated state and
     qualifiedAt: "2026-08-26T10:10:00.000Z",
     recoveryId,
     runtimeBeforeReceiptHash: "8".repeat(64), runtimeBeforeReceiptSha256: "9".repeat(64),
-    schema: "zugfolge-production-schema29-runtime-drill/v2",
+    schema: "zugfolge-production-schema29-runtime-drill/v3",
     worldDeploymentHash: "a".repeat(64), worldDeploymentSha256: "b".repeat(64),
   };
   await writeFile(runtimePath, `${JSON.stringify({ ...runtimePayload, receiptHash: canonicalSha256(runtimePayload) })}\n`);
