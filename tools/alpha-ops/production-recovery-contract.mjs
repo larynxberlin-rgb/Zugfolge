@@ -318,7 +318,8 @@ async function loadRuntimeRollbackEvidence({ environment, candidateReleaseId, pr
     "Runtime-Rollback-Attestation bindet nicht die bereitgestellten World-Deployment-Bytes.",
   );
   invariant(
-    worldDeploymentArtifact.value?.worldId === previousWorldId
+    worldDeploymentArtifact.value?.deployment?.schema === world.schema
+      && worldDeploymentArtifact.value.deployment.worldId === previousWorldId
       && world.worldId === previousWorldId,
     "Runtime-Rollback-Attestation und World-Deployment binden nicht die explizit erwartete Legacy-Welt-ID.",
   );
@@ -358,7 +359,7 @@ async function loadRuntimeRollbackEvidence({ environment, candidateReleaseId, pr
     artifacts: Object.freeze([attestationArtifact, trustedKeysArtifact, worldDeploymentArtifact, databaseRollbackArtifact]),
     binding,
     databaseRollbackProof: parsedDatabaseRollback.proof,
-    worldDeployment: Object.freeze({ ...worldDeploymentArtifact.value }),
+    worldDeployment: Object.freeze({ ...world }),
   });
 }
 
