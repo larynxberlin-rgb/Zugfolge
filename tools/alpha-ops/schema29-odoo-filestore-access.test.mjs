@@ -9,11 +9,25 @@ import { fileURLToPath } from "node:url";
 
 import {
   inspectSchema29OdooFilestore,
+  isSafeFilestoreEntry,
   openSchema29OdooFilestore,
   sealSchema29OdooFilestore,
   validateLegacyOdooSchema29WriteProbe,
   validateSchema29OdooFilestoreSealReceipt,
 } from "./schema29-odoo-filestore-access.mjs";
+
+test("filestore path contract accepts canonical and one legacy namespace only", () => {
+  const hash = "a".repeat(40);
+  for (const [path, isDirectory, depth] of [
+    ["89", true, 1], ["89/" + hash, false, 2], ["checklist", true, 1],
+    ["checklist/89", true, 2], ["checklist/89/" + hash, false, 3],
+  ]) assert.equal(isSafeFilestoreEntry(path, isDirectory, depth), true, path);
+  for (const [path, isDirectory, depth] of [
+    ["checklist/nested", true, 2], ["checklist/nested/89", true, 3],
+    ["checklist/nested/89/" + hash, false, 4], ["checklist/89/not-a-hash", false, 3],
+    ["../89/" + hash, false, 3],
+  ]) assert.equal(isSafeFilestoreEntry(path, isDirectory, depth), false, path);
+});
 
 function sortedValue(value) {
   if (Array.isArray(value)) return value.map(sortedValue);
@@ -156,11 +170,18 @@ test("filestore inspection distinguishes RO despite RW mount, exact owner and sy
   const filestore = join(directory, database);
   const bucket = join(filestore, "ab");
   const blob = join(bucket, "c".repeat(40));
+  const namespacedBucket = join(filestore, "checklist", "89");
+  const namespacedBlob = join(namespacedBucket, "d".repeat(40));
   await mkdir(bucket, { recursive: true });
+  await mkdir(namespacedBucket, { recursive: true });
   await writeFile(blob, "baseline");
+  await writeFile(namespacedBlob, "legacy namespace");
   const owner = await lstat(filestore);
   await chmod(blob, 0o400);
+  await chmod(namespacedBlob, 0o400);
   await chmod(bucket, 0o500);
+  await chmod(namespacedBucket, 0o500);
+  await chmod(join(filestore, "checklist"), 0o500);
   await chmod(filestore, 0o500);
 
   const readOnly = await inspectSchema29OdooFilestore(filestore, { expectedAccess: "read-only", expectedGid: owner.gid, expectedUid: owner.uid });
@@ -172,13 +193,24 @@ test("filestore inspection distinguishes RO despite RW mount, exact owner and sy
 
   await chmod(filestore, 0o700);
   await chmod(bucket, 0o700);
+  await chmod(join(filestore, "checklist"), 0o700);
+  await chmod(namespacedBucket, 0o700);
   await chmod(blob, 0o600);
+  await chmod(namespacedBlob, 0o600);
   const writable = await inspectSchema29OdooFilestore(filestore, { expectedAccess: "owner-writable", expectedGid: owner.gid, expectedUid: owner.uid });
   assert.equal(writable.treeSha256, readOnly.treeSha256);
   await assert.rejects(
     inspectSchema29OdooFilestore(filestore, { expectedAccess: "owner-writable", expectedGid: owner.gid, expectedUid: owner.uid + 1 }),
     /Runtime-Owner/u,
   );
+
+  const unsafe = join(filestore, "checklist", "nested");
+  await mkdir(unsafe);
+  await assert.rejects(
+    inspectSchema29OdooFilestore(filestore, { expectedAccess: "owner-writable", expectedGid: owner.gid, expectedUid: owner.uid }),
+    /unsicheren Pfad/u,
+  );
+  await rm(unsafe, { recursive: true });
 
   await symlink(blob, join(filestore, "cd"));
   await assert.rejects(
