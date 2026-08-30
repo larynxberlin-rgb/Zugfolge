@@ -3938,7 +3938,7 @@ test("verifiziert leeren Cache-Restore und verweigert Preflight bei fehlendem Ro
     );
 
     const deployment = {
-      schema: "zugfolge-alpha-world-deployment/v2",
+      schema: "zugfolge-alpha-world-deployment/v1",
       worldId: "00000000-0000-4000-8000-000000000014",
       worldDefinition: { epoch: "2026-08-10T00:00:00.000Z" },
       repeatEveryS: 86400,
@@ -4014,6 +4014,7 @@ test("verifiziert leeren Cache-Restore und verweigert Preflight bei fehlendem Ro
     assert.equal(cliRuntimeAttestationResult.databaseRollbackProofHash, databaseProof.proofHash);
     const runtimeSigned = JSON.parse(await readFile(rollbackAttestationPath, "utf8"));
     assert.equal(runtimeSigned.schema, "zugfolge-map-rollback-attestation/v3");
+    assert.equal(runtimeSigned.runtimeTuple.worldDeployment.schema, "zugfolge-alpha-world-deployment/v1");
     assert.equal(runtimeSigned.runtimeTuple.databaseRollback.sourceKeycloakIdentityHead.stateHash, databaseProof.source.keycloakIdentityHead.stateHash);
     assert.deepEqual(splitRuntimeSigned, runtimeSigned, "Getrennte Server-Vorbereitung und Offline-Signatur muessen dieselbe Attestation erzeugen.");
     rollbackAttestation = { path: rollbackAttestationPath, signed: runtimeSigned };
@@ -4052,6 +4053,23 @@ test("verifiziert leeren Cache-Restore und verweigert Preflight bei fehlendem Ro
     assert.equal(cliRuntimePreflightResult.rollbackEligible, true);
     assert.equal(cliRuntimePreflightResult.databaseRollbackEligible, true);
     assert.equal(cliRuntimePreflightResult.databaseRollbackProofHash, databaseProof.proofHash);
+    const v2Deployment = { ...deployment, schema: "zugfolge-alpha-world-deployment/v2" };
+    const v2DeploymentHash = alphaHash(v2Deployment.schema, v2Deployment);
+    const v2WorldSignature = signEd25519(null, Buffer.from(v2DeploymentHash, "hex"), value.worldPrivateKey);
+    const v2WorldPath = await write(value.root, "runtime/alpha-world-deployment-v2.json", `${JSON.stringify({
+      deployment: v2Deployment,
+      deploymentHash: v2DeploymentHash,
+      signature: { algorithm: "Ed25519", keyId: value.worldKeyId, valueBase64: v2WorldSignature.toString("base64") },
+    })}\n`);
+    await assert.rejects(
+      createMapRollbackAttestation({
+        deploymentRoot,
+        previousInstallPath: value.spec.deployment.previousInstallPath,
+        previousReleaseId: PREVIOUS_RELEASE_ID,
+        runtimeIdentity: { ...runtimeIdentity, worldDeploymentPath: v2WorldPath },
+      }),
+      /kein freigegebenes V1-Rollback-Schema/u,
+    );
     const { databaseRollbackProofPath: omittedDatabaseRollbackProofPath, ...runtimeWithoutDatabasePath } = runtimeIdentity;
     assert.equal(omittedDatabaseRollbackProofPath, databaseRollbackProofPath);
     await assert.rejects(
