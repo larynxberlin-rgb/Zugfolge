@@ -103,11 +103,17 @@ test("Schema-29 runtime before snapshot is create-new and binds untouched Game/O
       state: { databaseIdentity: null, migrationLedger: Array.from({ length: 29 }, () => ({})) },
     }
     : { endpointSha256: "6".repeat(64), stateSha256: baseline.odoo.stateSha256, state: {} };
+  const initializationBindingWindow = {
+    afterConstraintDefinitionSha256: "a".repeat(64), afterConstraintValidated: true,
+    beforeConstraintDefinitionSha256: "b".repeat(64), beforeConstraintValidated: false,
+    invalidRowCount: "0", legacyRowCount: "2", migrationCount: 29, operationalRowCount: "0",
+  };
   const result = await createProductionSchema29RuntimeBeforeReceipt({
     environment,
     inspectDatabase,
     inspectFilestore: async () => ({ treeSha256: baseline.odoo.filestoreTreeSha256 }),
     inspectHeads: async () => heads,
+    prepareRuntimeWindow: async () => initializationBindingWindow,
     now: () => new Date("2026-08-26T10:00:30.000Z"),
   });
   const receipt = validateProductionSchema29RuntimeBeforeReceipt(JSON.parse(await readFile(result.outputPath, "utf8")), {
@@ -115,6 +121,7 @@ test("Schema-29 runtime before snapshot is create-new and binds untouched Game/O
   });
   assert.equal(receipt.gameRestoreStateSha256, baseline.game.stateSha256);
   assert.equal(receipt.headsSha256, canonicalSha256(heads));
+  assert.deepEqual(receipt.initializationBindingWindow, initializationBindingWindow);
   await assert.rejects(
     createProductionSchema29RuntimeBeforeReceipt({ environment, inspectDatabase, inspectHeads: async () => heads }),
     /existiert bereits/u,

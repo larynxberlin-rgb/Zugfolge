@@ -202,7 +202,12 @@ vollständigen Game-Dump samt pristinem Restore auf der separaten
 `recovery-verify-postgres`-Instanz sowie einen Odoo-Dump mit passendem
 Filestore-Restore auf der zweiten Instanz `recovery-verify-odoo-postgres`.
 Zusätzliche Runtime-Restores werden vor dem Prozessstart read-only
-gesnapshottet. Erst danach öffnet ein netzloser Root-One-shot ausschließlich
+gesnapshottet. Der aktuelle, digestgebundene Prüfer ersetzt danach ausschließlich
+in der create-new Game-Runtime-Kopie die unvalidierte 0029-Constraint durch den
+exakten validierten V1/V2-Formvertrag aus 0030; Migrationsledger, Live-Datenbank
+und pristiner Restore bleiben dabei unverändert. Der V2-Vorher-Beleg bindet die
+Definitionen vor/nach der Änderung, Validierungsstatus und unveränderte
+Zeilenzahlen. Erst danach öffnet ein netzloser Root-One-shot ausschließlich
 die Odoo-Runtime-Kopie für den gebundenen Nicht-root-Owner; die pristine Kopie
 ist nie Teil eines RW-Mounts. Dann starten exakt das attestierte alte
 Game-/Odoo-Image und Keycloak 26.7.0 portlos im internen

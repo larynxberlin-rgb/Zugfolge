@@ -130,7 +130,12 @@ test("open and seal are create-new, receipt-bound mode transitions around an unc
     heads, headsSha256: canonicalSha256(heads), odooFilestoreTreeSha256: baseline,
     odooRestoreEndpointSha256: "8".repeat(64), odooRestoreReceiptSha256: "9".repeat(64),
     odooRestoreStateSha256: "a".repeat(64), previousReleaseId: "infra-deutschland-2026.2",
-    previousWorldId, recoveryId: "rollback-2026.4-001", schema: "zugfolge-production-schema29-runtime-before/v1",
+    initializationBindingWindow: {
+      afterConstraintDefinitionSha256: "a".repeat(64), afterConstraintValidated: true,
+      beforeConstraintDefinitionSha256: "b".repeat(64), beforeConstraintValidated: false,
+      invalidRowCount: "0", legacyRowCount: "2", migrationCount: 29, operationalRowCount: "0",
+    },
+    previousWorldId, recoveryId: "rollback-2026.4-001", schema: "zugfolge-production-schema29-runtime-before/v2",
   };
   const beforePath = join(evidence, "rollback-2026.4-001.schema29-runtime-before.json");
   await writeFile(beforePath, `${JSON.stringify({ ...beforePayload, receiptHash: canonicalSha256(beforePayload) })}\n`);

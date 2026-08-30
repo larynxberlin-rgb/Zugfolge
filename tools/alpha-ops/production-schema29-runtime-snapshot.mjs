@@ -10,8 +10,9 @@ import {
   inspectFilestoreTree,
   readProductionColdBackupReceipt,
 } from "./production-cold-backup.mjs";
+import { prepareSchema29LegacyRuntimeWindow } from "./schema29-runtime-window.mjs";
 
-const RECEIPT_SCHEMA = "zugfolge-production-schema29-runtime-before/v1";
+const RECEIPT_SCHEMA = "zugfolge-production-schema29-runtime-before/v2";
 const SHA256 = /^[a-f0-9]{64}$/u;
 const SAFE_ID = /^[a-z0-9][a-z0-9._-]{0,79}$/u;
 const SAFE_DATABASE = /^[a-z0-9_]+$/u;
@@ -151,15 +152,30 @@ export function validateProductionSchema29RuntimeBeforeReceipt(value, expected =
   exactKeys(value, [
     "baselineReceiptHash", "baselineReceiptSha256", "candidateReleaseId", "capturedAt", "gameRestoreBackendSha256",
     "gameRestoreEndpointSha256", "gameRestoreReceiptSha256", "gameRestoreStateSha256", "heads", "headsSha256", "odooRestoreReceiptSha256",
-    "odooRestoreEndpointSha256", "odooRestoreStateSha256", "odooFilestoreTreeSha256", "previousReleaseId",
+    "initializationBindingWindow", "odooRestoreEndpointSha256", "odooRestoreStateSha256", "odooFilestoreTreeSha256", "previousReleaseId",
     "previousWorldId", "receiptHash", "recoveryId", "schema",
   ], "Schema-29-Runtime-Vorher-Snapshot");
   invariant(value.schema === RECEIPT_SCHEMA && SAFE_ID.test(value.recoveryId), "Schema-29-Runtime-Vorher-Snapshot besitzt keinen gueltigen Vertrag.");
   validateHeads(value.heads, value.previousWorldId);
+  exactKeys(value.initializationBindingWindow, [
+    "afterConstraintDefinitionSha256", "afterConstraintValidated", "beforeConstraintDefinitionSha256",
+    "beforeConstraintValidated", "invalidRowCount", "legacyRowCount", "migrationCount", "operationalRowCount",
+  ], "Schema-29-Runtime-Initialisierungsfenster");
+  invariant(
+    value.initializationBindingWindow.afterConstraintValidated === true
+      && value.initializationBindingWindow.beforeConstraintValidated === false
+      && value.initializationBindingWindow.invalidRowCount === "0"
+      && /^(?:0|[1-9][0-9]*)$/u.test(value.initializationBindingWindow.legacyRowCount)
+      && BigInt(value.initializationBindingWindow.legacyRowCount) > 0n
+      && /^(?:0|[1-9][0-9]*)$/u.test(value.initializationBindingWindow.operationalRowCount)
+      && value.initializationBindingWindow.migrationCount === 29,
+    "Schema-29-Runtime-Vorher-Snapshot bindet kein validiertes isoliertes Legacy-Initialisierungsfenster.",
+  );
   invariant(value.headsSha256 === canonicalSha256(value.heads), "Schema-29-Runtime-Vorher-Snapshot besitzt keinen kanonischen Kopfhash.");
   for (const hash of [
     value.baselineReceiptHash, value.baselineReceiptSha256, value.gameRestoreBackendSha256,
     value.gameRestoreEndpointSha256, value.gameRestoreReceiptSha256, value.gameRestoreStateSha256, value.headsSha256,
+    value.initializationBindingWindow.afterConstraintDefinitionSha256, value.initializationBindingWindow.beforeConstraintDefinitionSha256,
     value.odooRestoreReceiptSha256, value.odooRestoreEndpointSha256, value.odooRestoreStateSha256,
     value.odooFilestoreTreeSha256, value.receiptHash,
   ]) {
@@ -188,6 +204,7 @@ export async function createProductionSchema29RuntimeBeforeReceipt({
   inspectDatabase = inspectColdDatabase,
   inspectFilestore = inspectFilestoreTree,
   inspectHeads = inspectSchema29GameRuntimeHeads,
+  prepareRuntimeWindow = prepareSchema29LegacyRuntimeWindow,
   now = () => new Date(),
 } = {}) {
   const recoveryId = requiredEnvironment(environment, "PRODUCTION_RECOVERY_ID");
@@ -253,6 +270,7 @@ export async function createProductionSchema29RuntimeBeforeReceipt({
       && filestore.treeSha256 === baseline.odoo.filestoreTreeSha256,
     "Schema-29-Runtime-Vorher-Snapshot adressiert keinen getrennten, unveraenderten Odoo-DB-/Filestore-Restore.",
   );
+  const initializationBindingWindow = await prepareRuntimeWindow(gameUrl);
   const payload = {
     baselineReceiptHash: baseline.receiptHash,
     baselineReceiptSha256: baselineArtifact.sha256,
@@ -264,6 +282,7 @@ export async function createProductionSchema29RuntimeBeforeReceipt({
     gameRestoreStateSha256: gameRestore.stateSha256,
     heads,
     headsSha256: canonicalSha256(heads),
+    initializationBindingWindow,
     odooFilestoreTreeSha256: filestore.treeSha256,
     odooRestoreEndpointSha256: odooRestore.endpointSha256,
     odooRestoreReceiptSha256: odooRestoreArtifact.sha256,
