@@ -99,6 +99,14 @@ PRODUCTION_SCHEMA29_RUNTIME_ODOO_RESTORE_DATABASE=zugfolge_odoo_recovery_v1_sche
 MAP_RELEASE_PREFLIGHT_RUNTIME_WORLD_DEPLOYMENT_PATH=/evidence/alpha-world-deployment.json
 ```
 
+Die Evidence-Wurzel gehoert auf dem Host `root` und der gebundenen
+`PRODUCTION_RECOVERY_ODOO_RUNTIME_GID`; ihr Modus ist `1770`. Das Sticky-Bit
+verhindert, dass die nicht-root laufenden Game- und Odoo-Proben fremde Belege
+entfernen. Root-One-shots publizieren und lesen die `0600`-Belege; die beiden
+Game-Proben behalten ihren Image-User und erhalten nur die gebundene
+Zusatzgruppe. Backupmaterial und Filestore-Wurzel bleiben davon getrennt und
+werden nicht fuer weitere Benutzer geoeffnet.
+
 Der erste One-shot ist zwingend noch auf dem realen Produktionskopf 29:
 
 ```bash
