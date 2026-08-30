@@ -231,7 +231,10 @@ niemals als Hot-Recovery-Beweis umgedeutet.
 Die Runtime-Rollback-Attestation bindet dabei ausschließlich das tatsächlich
 signierte `zugfolge-alpha-world-deployment/v1` des V1-Vorgängers. Das separate
 `zugfolge-alpha-world-deployment/v2` des Kandidaten darf diesen Rückweg weder
-ersetzen noch als kompatibler Ersatz akzeptiert werden.
+ersetzen noch als kompatibler Ersatz akzeptiert werden. Der Prüfer dekodiert
+dessen kanonische `$zugfolgeType=bigint`-Hüllen vor derselben Hashbildung wie
+der ursprüngliche Runtime-Signaturprüfer; serialisierte Hüllenbytes und
+Deployment-Hash bleiben zusätzlich unverändert gebunden.
 
 Nach Installation der signierten Attestation und des Trust-Keyrings wird der
 Prüf-Postgres gestoppt. Danach erzeugt der aktuelle digestgebundene Prüfer die
