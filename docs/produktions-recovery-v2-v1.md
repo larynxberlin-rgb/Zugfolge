@@ -125,7 +125,13 @@ publiziert `$PRODUCTION_RECOVERY_ID.schema29-cold-qualified.json`.
 Aus denselben Backupbytes entstehen anschließend zwei weitere create-new
 Runtime-Restores. Vor dem ersten Prozessstart bindet
 `$PRODUCTION_RECOVERY_ID.schema29-runtime-before.json` deren unveränderten
-Zustand und alle V1-Regionalheads. Dann starten ausschließlich das attestierte
+Zustand und alle V1-Regionalheads. Weil PostgreSQL auch eine `NOT VALID`
+0029-Check-Constraint bei jedem neuen Update durchsetzt, bereitet derselbe
+digestgebundene One-shot ausschließlich die isolierte Game-Runtime-Kopie auf
+den exakten validierten V1/V2-Formvertrag der 0030-Constraint vor. Der
+Migrationsledger bleibt bei 29; Live-Datenbank und pristiner Restore werden
+nicht verändert. Der V2-Vorher-Beleg bindet Definitionen, Validierungsstatus
+und unveränderte V1-/V2-Zeilenzahlen. Dann starten ausschließlich das attestierte
 alte Game- und Odoo-Image sowie
 `quay.io/keycloak/keycloak:26.7.0@sha256:0f198be292568439d700cdbfb893e69a6009bb43a94a06a945b1d3d506c76b13`
 portlos im internen Netz `schema29-recovery`; die Live-Datenbanken sind dort

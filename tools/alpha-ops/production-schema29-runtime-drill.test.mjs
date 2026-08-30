@@ -119,6 +119,11 @@ test("Schema-29 runtime drill binds the before snapshot, real legacy scheduler w
     gameRestoreStateSha256: baseline.game.stateSha256,
     heads: beforeHeads,
     headsSha256: canonicalSha256(beforeHeads),
+    initializationBindingWindow: {
+      afterConstraintDefinitionSha256: "a".repeat(64), afterConstraintValidated: true,
+      beforeConstraintDefinitionSha256: "b".repeat(64), beforeConstraintValidated: false,
+      invalidRowCount: "0", legacyRowCount: "2", migrationCount: 29, operationalRowCount: "0",
+    },
     odooFilestoreTreeSha256: baseline.odoo.filestoreTreeSha256,
     odooRestoreEndpointSha256: "6".repeat(64),
     odooRestoreReceiptSha256: createHash("sha256").update(await readFile(odooRestorePath)).digest("hex"),
@@ -126,7 +131,7 @@ test("Schema-29 runtime drill binds the before snapshot, real legacy scheduler w
     previousReleaseId: baseline.previousReleaseId,
     previousWorldId,
     recoveryId,
-    schema: "zugfolge-production-schema29-runtime-before/v1",
+    schema: "zugfolge-production-schema29-runtime-before/v2",
   };
   const beforePath = join(evidence, `${recoveryId}.schema29-runtime-before.json`);
   await writeFile(beforePath, `${JSON.stringify({ ...beforePayload, receiptHash: canonicalSha256(beforePayload) })}\n`);
