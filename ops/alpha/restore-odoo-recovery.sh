@@ -18,6 +18,7 @@ FILESTORE_ROOT=${PRODUCTION_RECOVERY_ODOO_FILESTORE_ROOT-}
 EVIDENCE_ROOT=${PRODUCTION_RECOVERY_EVIDENCE_ROOT-}
 ODOO_RUNTIME_UID=${PRODUCTION_RECOVERY_ODOO_RUNTIME_UID-}
 ODOO_RUNTIME_GID=${PRODUCTION_RECOVERY_ODOO_RUNTIME_GID-}
+SAFE_ARCHIVE_ENTRY_PATTERN='^(\./?|\./[a-f0-9]{2}/?|\./[a-f0-9]{2}/[a-f0-9]{40}|\./[a-z0-9][a-z0-9._-]{0,79}/?|\./[a-z0-9][a-z0-9._-]{0,79}/[a-f0-9]{2}/?|\./[a-z0-9][a-z0-9._-]{0,79}/[a-f0-9]{2}/[a-f0-9]{40})$'
 
 case "$ADMIN_DATABASE_URL" in
   postgres://*/postgres|postgresql://*/postgres) ;;
@@ -112,7 +113,7 @@ trap cleanup EXIT HUP INT TERM
 tar --list --gzip --file="$PREFIX.filestore.tar.gz" > "$LIST"
 tar --list --verbose --gzip --file="$PREFIX.filestore.tar.gz" > "$VERBOSE_LIST"
 while IFS= read -r ENTRY; do
-  printf '%s\n' "$ENTRY" | grep -Eq '^(\./?|\./[a-f0-9]{2}/?|\./[a-f0-9]{2}/[a-f0-9]{40})$' || {
+  printf '%s\n' "$ENTRY" | grep -Eq "$SAFE_ARCHIVE_ENTRY_PATTERN" || {
     echo "unsafe Odoo filestore archive path: $ENTRY" >&2
     exit 69
   }

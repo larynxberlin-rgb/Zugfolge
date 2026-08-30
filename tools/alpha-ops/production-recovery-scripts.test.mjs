@@ -67,6 +67,30 @@ test("Recovery-Backup-/Restore-Skripte publizieren create-new und binden sichere
   assert.ok(odoo.lastIndexOf("TARGET_FILESTORE_CREATED=0") > odoo.indexOf('ln -- "$RECEIPT_TEMP" "$RECEIPT"'));
 });
 
+test("Odoo-Recovery akzeptiert genau hashfoermige Filestore-Pfade mit optionalem Legacy-Namensraum", async () => {
+  const script = await read("ops/alpha/restore-odoo-recovery.sh");
+  const pattern = script.match(/^SAFE_ARCHIVE_ENTRY_PATTERN='([^']+)'$/mu)?.[1];
+  assert.ok(pattern, "sicheres Archivpfadmuster fehlt");
+  const matches = async (entry) => {
+    try {
+      await run(shellPath(), ["-c", "printf '%s\\n' \"$ARCHIVE_ENTRY\" | grep -Eq \"$SAFE_ARCHIVE_ENTRY_PATTERN\""], {
+        env: { ...process.env, ARCHIVE_ENTRY: entry, SAFE_ARCHIVE_ENTRY_PATTERN: pattern }, windowsHide: true,
+      });
+      return true;
+    } catch (error) {
+      if (error.code === 1) return false;
+      throw error;
+    }
+  };
+  const hash = "a".repeat(40);
+  for (const entry of ["./", "./ab/", `./ab/${hash}`, "./checklist/", "./checklist/89/", `./checklist/89/${hash}`]) {
+    assert.equal(await matches(entry), true, `sicherer Odoo-Filestore-Pfad wurde abgelehnt: ${entry}`);
+  }
+  for (const entry of ["/absolute", "../escape", "./../escape", "./checklist/../escape", "./checklist/89/not-a-hash", `./checklist/nested/89/${hash}`]) {
+    assert.equal(await matches(entry), false, `unsicherer Odoo-Filestore-Pfad wurde akzeptiert: ${entry}`);
+  }
+});
+
 test("Recovery-Restore-Skripte verweigern fremde Datenbanknamen ohne externe Programme aufzurufen", async () => {
   const directory = await mkdtemp(join(tmpdir(), "zugfolge-recovery-script-names-"));
   try {
