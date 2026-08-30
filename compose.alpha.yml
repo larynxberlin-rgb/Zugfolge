@@ -605,7 +605,7 @@ services:
       - "${MAP_RELEASE_DEPLOYMENT_HOST_ROOT:?MAP_RELEASE_DEPLOYMENT_HOST_ROOT fehlt}/releases/${PRODUCTION_RECOVERY_PREVIOUS_RELEASE_ID:?PRODUCTION_RECOVERY_PREVIOUS_RELEASE_ID fehlt}:/map-release:ro"
     networks: { schema29-recovery: {} }
     depends_on: { recovery-verify-postgres: { condition: service_healthy }, schema29-keycloak-runtime: { condition: service_healthy } }
-    healthcheck: { <<: *health, start_period: 15m, test: [CMD, node, -e, "fetch('http://localhost:3000/health/ready').then(async r=>{const body=await r.json();if(!r.ok||body.status==='down')process.exit(1)})"] }
+    healthcheck: { <<: *health, start_period: 2h, test: [CMD, node, -e, "fetch('http://localhost:3000/health/ready').then(async r=>{const body=await r.json();if(!r.ok||body.status==='down')process.exit(1)})"] }
     restart: "no"
   schema29-keycloak-runtime:
     profiles: [production-recovery-preparation]
