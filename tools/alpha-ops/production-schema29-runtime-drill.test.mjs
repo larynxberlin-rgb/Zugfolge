@@ -321,7 +321,7 @@ test("Schema-29 runtime drill binds the before snapshot, real legacy scheduler w
     authorizationSha256: "0".repeat(64), authorizationStatusCode: 200,
     database: {
       clientsSha256: "1".repeat(64), offlineClientSessionCount: "0", offlineUserSessionCount: "0", realmName: "zugfolge",
-      requiredClients: ["game-api", "game-web", "livemap", "operations-center", "provisioner"],
+      requiredClients: ["game-api", "game-web", "livemap", "operations-center"],
     },
     health: { bodySha256: "2".repeat(64), statusCode: 200 },
     jwksSha256: "3".repeat(64), jwksStatusCode: 200, oidcSha256: "4".repeat(64), oidcStatusCode: 200,
@@ -347,8 +347,29 @@ test("Schema-29 runtime drill binds the before snapshot, real legacy scheduler w
   assert.equal(receipt.game.healthStatusCode, 200);
   assert.equal(receipt.gameSchedulerAdvance.advancedRegionCount, 1);
   assert.equal(receipt.keycloak.database.realmName, "zugfolge");
+  assert.deepEqual(receipt.keycloak.database.requiredClients, ["game-api", "game-web", "livemap", "operations-center"]);
   assert.equal(receipt.odoo.healthStatusCode, 200);
   assert.equal(receipt.odooFilestoreHostPath, environment.PRODUCTION_SCHEMA29_ODOO_FILESTORE_HOST_PATH);
+  assert.throws(
+    () => validateProductionSchema29RuntimeDrillReceipt({
+      ...receipt,
+      keycloak: {
+        ...receipt.keycloak,
+        database: { ...receipt.keycloak.database, requiredClients: ["game-api", "game-web", "livemap"] },
+      },
+    }),
+    /Realm und alle Produktionsclients/u,
+  );
+  assert.throws(
+    () => validateProductionSchema29RuntimeDrillReceipt({
+      ...receipt,
+      keycloak: {
+        ...receipt.keycloak,
+        database: { ...receipt.keycloak.database, requiredClients: [...receipt.keycloak.database.requiredClients, "provisioner"] },
+      },
+    }),
+    /Realm und alle Produktionsclients/u,
+  );
   assert.throws(
     () => validateProductionSchema29RuntimeDrillReceipt({ ...receipt, odooProbeReceiptHash: "0".repeat(64) }),
     /kanonischen Receipt-Hash/u,
