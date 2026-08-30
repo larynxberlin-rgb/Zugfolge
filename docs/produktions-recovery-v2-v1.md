@@ -238,7 +238,9 @@ signierte `zugfolge-alpha-world-deployment/v1` des V1-Vorgängers. Das separate
 ersetzen noch als kompatibler Ersatz akzeptiert werden. Der Prüfer dekodiert
 dessen kanonische `$zugfolgeType=bigint`-Hüllen vor derselben Hashbildung wie
 der ursprüngliche Runtime-Signaturprüfer; serialisierte Hüllenbytes und
-Deployment-Hash bleiben zusätzlich unverändert gebunden.
+Deployment-Hash bleiben zusätzlich unverändert gebunden. Welt-ID und V1-Schema
+werden aus dem signierten `deployment`-Objekt der Hülle gelesen; ein historisches
+flaches Testformat ist kein zulässiges Produktionsartefakt.
 
 Nach Installation der signierten Attestation und des Trust-Keyrings wird der
 Prüf-Postgres gestoppt. Danach erzeugt der aktuelle digestgebundene Prüfer die

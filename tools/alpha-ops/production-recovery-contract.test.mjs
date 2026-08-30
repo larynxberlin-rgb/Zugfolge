@@ -233,7 +233,7 @@ test("Quiescence verweigert jeden noch laufenden Writer vor einer Datenbanksperr
   }
 });
 
-async function recoveryFixture({ worldDeploymentPaddingBytes = 0 } = {}) {
+async function recoveryFixture({ flatWorldDeployment = false, worldDeploymentPaddingBytes = 0 } = {}) {
   const root = await mkdtemp(join(tmpdir(), "zugfolge-production-recovery-"));
   const quiescence = await createQuiescence(root);
   const source = snapshot();
@@ -333,14 +333,24 @@ async function recoveryFixture({ worldDeploymentPaddingBytes = 0 } = {}) {
   await chmod(filestorePath, 0o550);
 
   const worldDeploymentPath = join(root, "attested-world-deployment.json");
-  const worldDeployment = {
-    deploymentHash: "d".repeat(64),
-    infrastructureReleaseId: PREVIOUS,
+  const worldDeploymentPayload = {
     ...(worldDeploymentPaddingBytes > 0 ? { qualificationPadding: "x".repeat(worldDeploymentPaddingBytes) } : {}),
+    repeatEveryS: 86_400,
     schema: "zugfolge-alpha-world-deployment/v1",
-    worldEpoch: LEGACY_WORLD_EPOCH,
+    worldDefinition: { epoch: LEGACY_WORLD_EPOCH },
     worldId: LEGACY_WORLD_ID,
   };
+  const worldDeployment = flatWorldDeployment
+    ? { ...worldDeploymentPayload, deploymentHash: "d".repeat(64) }
+    : {
+        deployment: worldDeploymentPayload,
+        deploymentHash: "d".repeat(64),
+        signature: {
+          algorithm: "Ed25519",
+          keyId: "test-world-key",
+          valueBase64: Buffer.alloc(64).toString("base64"),
+        },
+      };
   const worldDeploymentBytes = serializeMapReleaseBuildEvidence(worldDeployment);
   await writeFile(worldDeploymentPath, worldDeploymentBytes);
   const rollbackKeyId = "test-runtime-rollback";
@@ -378,8 +388,8 @@ async function recoveryFixture({ worldDeploymentPaddingBytes = 0 } = {}) {
       schema: "zugfolge-livemap-read-model-sqlite/v2",
       sha256: "a".repeat(64),
       userVersion: 2,
-      worldEpoch: worldDeployment.worldEpoch,
-      worldId: worldDeployment.worldId,
+      worldEpoch: worldDeploymentPayload.worldDefinition.epoch,
+      worldId: worldDeploymentPayload.worldId,
     },
     schema: "zugfolge-runtime-rollback-tuple/v3",
     sourceCommit: LEGACY_GAME_SOURCE_COMMIT,
@@ -392,17 +402,17 @@ async function recoveryFixture({ worldDeploymentPaddingBytes = 0 } = {}) {
       schemaSqlSha256: "b".repeat(64),
       sha256: "c".repeat(64),
       userVersion: 2,
-      worldId: worldDeployment.worldId,
+      worldId: worldDeploymentPayload.worldId,
     },
     worldDeployment: {
       bytes: worldDeploymentBytes.length,
       deploymentHash: worldDeployment.deploymentHash,
       keyId: "test-world-key",
       repeatEveryS: 86_400,
-      schema: worldDeployment.schema,
+      schema: worldDeploymentPayload.schema,
       sha256: sha256(worldDeploymentBytes),
-      worldEpoch: worldDeployment.worldEpoch,
-      worldId: worldDeployment.worldId,
+      worldEpoch: worldDeploymentPayload.worldDefinition.epoch,
+      worldId: worldDeploymentPayload.worldId,
     },
   };
   const unsignedAttestation = {
@@ -456,7 +466,7 @@ async function recoveryFixture({ worldDeploymentPaddingBytes = 0 } = {}) {
     PRODUCTION_RECOVERY_ODOO_RESTORE_ADMIN_DATABASE_URL: ODOO_TARGET_ADMIN,
     PRODUCTION_RECOVERY_ODOO_RESTORE_RECEIPT_PATH: odooRestoreReceiptPath,
     PRODUCTION_RECOVERY_ODOO_IMAGE_DIGEST: LEGACY_ODOO_IMAGE_DIGEST,
-    PRODUCTION_RECOVERY_PREVIOUS_WORLD_ID: worldDeployment.worldId,
+    PRODUCTION_RECOVERY_PREVIOUS_WORLD_ID: worldDeploymentPayload.worldId,
     PRODUCTION_RECOVERY_PREVIOUS_RELEASE_ID: PREVIOUS,
     PRODUCTION_RECOVERY_PROMOTION_OUTPUT_PATH: join(root, "promotion.json"),
     PRODUCTION_RECOVERY_QUIESCENCE_PATH: quiescence.output,
@@ -546,6 +556,22 @@ test("Recovery akzeptiert das bereits im Runtime-Drill erlaubte 16-MiB-Limit fue
       now: () => new Date("2026-08-26T12:15:00.000Z"),
     });
     assert.match(result.receiptHash, /^[a-f0-9]{64}$/u);
+  } finally {
+    await chmod(join(fixture.environment.PRODUCTION_RECOVERY_ODOO_RESTORED_FILESTORE_PATH, "aa"), 0o750).catch(() => {});
+    await chmod(fixture.environment.PRODUCTION_RECOVERY_ODOO_RESTORED_FILESTORE_PATH, 0o750).catch(() => {});
+    await rm(fixture.root, { recursive: true, force: true });
+  }
+});
+
+test("Recovery verweigert ein altes flaches Testformat statt der signierten World-Deployment-Huelle", async () => {
+  const fixture = await recoveryFixture({ flatWorldDeployment: true });
+  try {
+    await assert.rejects(
+      createProductionRecoveryArtifacts({ environment: fixture.environment, ...fixture.dependencies }),
+      /Legacy-Welt-ID/u,
+    );
+    await assert.rejects(readFile(fixture.environment.PRODUCTION_RECOVERY_RECEIPT_OUTPUT_PATH), /ENOENT/u);
+    await assert.rejects(readFile(fixture.environment.PRODUCTION_RECOVERY_PROMOTION_OUTPUT_PATH), /ENOENT/u);
   } finally {
     await chmod(join(fixture.environment.PRODUCTION_RECOVERY_ODOO_RESTORED_FILESTORE_PATH, "aa"), 0o750).catch(() => {});
     await chmod(fixture.environment.PRODUCTION_RECOVERY_ODOO_RESTORED_FILESTORE_PATH, 0o750).catch(() => {});
