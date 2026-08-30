@@ -227,7 +227,10 @@ Der echte alte Game-Server führt seinen ersten regionalen 1:1-Nachlauf noch
 vor dem HTTP-Listener aus. Dieser isolierte Legacy-Lauf besitzt deshalb ein
 festes hartes Zwei-Stunden-Limit; der allgemeine 600-Sekunden-Timeout der
 übrigen Recovery-One-shots darf ihn nicht vor dem belegten ersten
-Scheduler-/Publisherfortschritt abbrechen.
+Scheduler-/Publisherfortschritt abbrechen. Seine Docker-Health-Startperiode
+ist auf dieselben zwei Stunden gebunden: Ein früher erfolgreicher Check beendet
+die Startperiode sofort, ein noch rechnender Cold-Catch-up wird jedoch nicht
+vor dem Wrapper-Limit als `unhealthy` abgebrochen.
 
 `--prepare-v2-cold` liest diesen Beleg bytegenau erneut, erzeugt und qualifiziert
 das gekoppelte Schema-31-Backup-/Restore-Paar. Erst der dritte One-shot darf

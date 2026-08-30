@@ -129,7 +129,11 @@ Zustand und alle V1-Regionalheads. Dann starten ausschließlich das attestierte
 alte Game- und Odoo-Image sowie
 `quay.io/keycloak/keycloak:26.7.0@sha256:0f198be292568439d700cdbfb893e69a6009bb43a94a06a945b1d3d506c76b13`
 portlos im internen Netz `schema29-recovery`; die Live-Datenbanken sind dort
-nicht auflösbar. Der Aggregate-Beleg verlangt:
+nicht auflösbar. Der alte Game-Server rechnet seinen ersten regionalen
+Nachlauf noch vor dem HTTP-Listener. Compose wartet dafür höchstens zwei
+Stunden; die Health-Startperiode ist exakt gleich lang, damit nur das harte
+Wrapper-Limit und nicht ein kürzeres Docker-Retryfenster diesen Drill beendet.
+Der Aggregate-Beleg verlangt:
 
 - echten Game-/Odoo-/Keycloak-Health;
 - mindestens eine vom echten alten `apps/game-api/dist/server.js` dauerhaft

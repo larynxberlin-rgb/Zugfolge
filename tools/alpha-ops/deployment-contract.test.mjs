@@ -124,6 +124,7 @@ test("Alpha-Compose erzwingt Map- und Welt-Cutover-Gates, Migration, signierten 
   assert.match(schema29FilestoreAccessService, /user: "0:0"[\s\S]*schema29-odoo-filestore-access\.mjs, open[\s\S]*schema29-odoo-filestore-open\.json[\s\S]*schema29-odoo-filestore-seal\.json[\s\S]*PRODUCTION_SCHEMA29_RUNTIME_ODOO_RESTORE_DATABASE[^\n]+:\/odoo-recovery-filestore\/\$\{PRODUCTION_SCHEMA29_RUNTIME_ODOO_RESTORE_DATABASE[^\n]+:rw[\s\S]*network_mode: none/u);
   assert.match(schema29GameService, /image: "\$\{MAP_RELEASE_PREFLIGHT_RUNTIME_IMAGE_REFERENCE:[^\n]+[\s\S]*command: \[node, apps\/game-api\/dist\/server\.js\]/u);
   assert.match(schema29GameService, /ALPHA_WORLD_RELEASE_PATHS_JSON: '\["\$\{MAP_RELEASE_PREFLIGHT_RUNTIME_WORLD_DEPLOYMENT_PATH:[^\n]+[\s\S]*\.\/var\/alpha-evidence:\/evidence:ro[\s\S]*networks: \{ schema29-recovery: \{\} \}/u);
+  assert.match(schema29GameService, /healthcheck: \{ <<: \*health, start_period: 2h,[^\n]+\/health\/ready/u);
   assert.doesNotMatch(schema29GameService, /\n\s+ports:/u);
   assert.match(schema29KeycloakService, /quay\.io\/keycloak\/keycloak:26\.7\.0@sha256:0f198be292568439d700cdbfb893e69a6009bb43a94a06a945b1d3d506c76b13/u);
   assert.match(schema29KeycloakService, /KC_DB_URL: "jdbc:postgresql:\/\/recovery-verify-postgres:5432\/\$\{PRODUCTION_SCHEMA29_RUNTIME_GAME_RESTORE_DATABASE:[^\n]+[\s\S]*KC_DB_SCHEMA: public[\s\S]*networks: \{ schema29-recovery: \{\} \}/u);
