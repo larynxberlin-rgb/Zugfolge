@@ -23,7 +23,7 @@ import {
   validateLegacyOdooSchema29WriteProbe,
 } from "./schema29-odoo-filestore-access.mjs";
 
-const RECEIPT_SCHEMA = "zugfolge-production-schema29-runtime-drill/v2";
+const RECEIPT_SCHEMA = "zugfolge-production-schema29-runtime-drill/v3";
 const GAME_PROBE_SCHEMA = "zugfolge-legacy-schema29-write-probe/v1";
 const SHA256 = /^[a-f0-9]{64}$/u;
 const DIGEST = /^sha256:[a-f0-9]{64}$/u;
@@ -36,6 +36,10 @@ const SCHEMA29_GAME_RUNTIME_READY_TIMEOUT_MS = 2 * 60 * 60 * 1_000;
 const SCHEMA29_GAME_RUNTIME_READY_RETRY_MS = 5_000;
 const LEGACY_KEYCLOAK_IMAGE_REFERENCE = "quay.io/keycloak/keycloak:26.7.0@sha256:0f198be292568439d700cdbfb893e69a6009bb43a94a06a945b1d3d506c76b13";
 const REQUIRED_KEYCLOAK_CLIENTS = Object.freeze(["game-api", "game-web", "livemap", "operations-center"]);
+const EXPECTED_ODOO_STARTUP_SEQUENCE_ADVANCES = Object.freeze([
+  "public.ir_attachment_id_seq",
+  "public.ir_config_parameter_id_seq",
+]);
 const REQUIRED_SERVICES = Object.freeze([
   "odoo-postgres",
   "postgres",
@@ -83,6 +87,45 @@ function canonicalSha256(value) {
 
 function sameValue(left, right) {
   return JSON.stringify(sortedValue(left)) === JSON.stringify(sortedValue(right));
+}
+
+function validateOdooStartupSequenceAdvances(value) {
+  invariant(Array.isArray(value) && value.length === EXPECTED_ODOO_STARTUP_SEQUENCE_ADVANCES.length, "Schema-29-Odoo-Runtime besitzt nicht exakt die erwarteten Startup-Sequenzfortschritte.");
+  for (const advance of value) {
+    exactKeys(advance, ["afterLastValue", "beforeLastValue", "sequence"], "Schema-29-Odoo-Startup-Sequenzfortschritt");
+    invariant(/^[1-9][0-9]*$/u.test(advance.beforeLastValue) && /^[1-9][0-9]*$/u.test(advance.afterLastValue), "Schema-29-Odoo-Startup-Sequenzfortschritt besitzt keine positiven ganzzahligen Werte.");
+    invariant(BigInt(advance.afterLastValue) === BigInt(advance.beforeLastValue) + 1n, "Schema-29-Odoo-Startup-Sequenzfortschritt ist nicht exakt eins.");
+  }
+  invariant(sameValue(value.map(({ sequence }) => sequence), EXPECTED_ODOO_STARTUP_SEQUENCE_ADVANCES), "Schema-29-Odoo-Runtime veraenderte fremde oder unvollstaendige Sequenzen.");
+  return value;
+}
+
+function inspectOdooStartupSequenceAdvances(runtimeState, pristineState) {
+  invariant(Array.isArray(runtimeState?.sequences) && Array.isArray(pristineState?.sequences), "Schema-29-Odoo-Zustand besitzt kein Sequenzinventar.");
+  invariant(
+    sameValue({ ...runtimeState, sequences: pristineState.sequences }, pristineState),
+    "Schema-29-Odoo-Runtime veraenderte Tabellen, Schema oder andere nicht freigegebene Zustandsanteile.",
+  );
+  const runtimeSequences = new Map(runtimeState.sequences.map((sequence) => [`${sequence.schemaname}.${sequence.sequencename}`, sequence]));
+  const pristineSequences = new Map(pristineState.sequences.map((sequence) => [`${sequence.schemaname}.${sequence.sequencename}`, sequence]));
+  invariant(runtimeSequences.size === runtimeState.sequences.length && pristineSequences.size === pristineState.sequences.length, "Schema-29-Odoo-Zustand besitzt doppelte Sequenzidentitaeten.");
+  const advances = EXPECTED_ODOO_STARTUP_SEQUENCE_ADVANCES.map((sequence) => {
+    const runtime = runtimeSequences.get(sequence);
+    const pristine = pristineSequences.get(sequence);
+    invariant(runtime !== undefined && pristine !== undefined, `Schema-29-Odoo-Startup-Sequenz '${sequence}' fehlt.`);
+    const { last_value: afterLastValue, ...runtimeDefinition } = runtime;
+    const { last_value: beforeLastValue, ...pristineDefinition } = pristine;
+    invariant(sameValue(runtimeDefinition, pristineDefinition), `Schema-29-Odoo-Startup-Sequenz '${sequence}' veraenderte ihre Definition.`);
+    return { afterLastValue, beforeLastValue, sequence };
+  });
+  const expectedNames = new Set(EXPECTED_ODOO_STARTUP_SEQUENCE_ADVANCES);
+  for (const [sequence, runtime] of runtimeSequences) {
+    const pristine = pristineSequences.get(sequence);
+    invariant(pristine !== undefined, `Schema-29-Odoo-Runtime erzeugte die fremde Sequenz '${sequence}'.`);
+    if (!expectedNames.has(sequence)) invariant(sameValue(runtime, pristine), `Schema-29-Odoo-Runtime veraenderte die fremde Sequenz '${sequence}'.`);
+  }
+  invariant(runtimeSequences.size === pristineSequences.size, "Schema-29-Odoo-Runtime entfernte Sequenzen.");
+  return Object.freeze(validateOdooStartupSequenceAdvances(advances));
 }
 
 function imageDigestFromReference(reference, label) {
@@ -593,7 +636,7 @@ export function validateProductionSchema29RuntimeDrillReceipt(value, expected = 
     "gameProbeReceiptSha256", "gameRestoreReceiptSha256", "gameRestoreStateSha256", "gameSchedulerAdvance", "keycloak",
     "odoo", "odooFilestoreFinalAccessSha256", "odooFilestoreHostPath", "odooFilestoreOpenReceiptHash", "odooFilestoreOpenReceiptSha256",
     "odooFilestoreOwnerGid", "odooFilestoreOwnerUid", "odooFilestoreSealReceiptHash", "odooFilestoreSealReceiptSha256",
-    "odooFilestoreTreeSha256", "odooProbeReceiptHash", "odooProbeReceiptSha256", "odooRestoreStateSha256",
+    "odooFilestoreTreeSha256", "odooProbeReceiptHash", "odooProbeReceiptSha256", "odooRestoreStateSha256", "odooStartupSequenceAdvances",
     "previousReleaseId", "odooRestoreReceiptSha256", "previousWorldId", "pristineGameRestoreStateSha256",
     "pristineOdooFilestoreTreeSha256", "pristineOdooRestoreStateSha256", "qualifiedAt", "receiptHash", "recoveryId",
     "runtimeBeforeReceiptHash", "runtimeBeforeReceiptSha256", "schema", "worldDeploymentHash", "worldDeploymentSha256",
@@ -607,6 +650,7 @@ export function validateProductionSchema29RuntimeDrillReceipt(value, expected = 
   ], "Schema-29-Keycloak-Runtime-Bindung");
   exactKeys(value.keycloak.database, ["clientsSha256", "offlineClientSessionCount", "offlineUserSessionCount", "realmName", "requiredClients"], "Schema-29-Keycloak-Datenbankbindung");
   exactKeys(value.odoo, ["containerId", "healthBodySha256", "healthStatusCode", "imageDigest", "imageId", "imageReference", "runtimeUser"], "Schema-29-Odoo-Runtime-Bindung");
+  validateOdooStartupSequenceAdvances(value.odooStartupSequenceAdvances);
   invariant(value.game.healthStatusCode === 200 && value.keycloak.healthStatusCode === 200 && value.odoo.healthStatusCode === 200, "Schema-29-Runtime-Beleg besitzt keinen erfolgreichen echten Healthcheck.");
   invariant(value.keycloak.realmStatusCode === 200 && value.keycloak.oidcStatusCode === 200 && value.keycloak.jwksStatusCode === 200 && value.keycloak.authorizationStatusCode >= 200 && value.keycloak.authorizationStatusCode < 400, "Schema-29-Keycloak-Beleg besitzt keine erfolgreiche Realm-/OIDC-/JWKS-/Client-Kontinuitaet.");
   invariant(CONTAINER_ID.test(value.game.containerId) && CONTAINER_ID.test(value.keycloak.containerId) && CONTAINER_ID.test(value.odoo.containerId), "Schema-29-Runtime-Beleg besitzt keine Containeridentitaeten.");
@@ -795,7 +839,8 @@ export async function qualifyProductionSchema29RuntimeDrill({
       && gameRestore.stateSha256 !== baseline.game.stateSha256,
     "Schema-29-Game-Runtime verwendet nicht den vor Start gebundenen, anschliessend vom echten Server fortgeschriebenen Restore.",
   );
-  invariant(odooRestore.endpointSha256 !== baseline.odoo.restoreEndpointSha256 && odooRestore.stateSha256 === baseline.odoo.stateSha256, "Schema-29-Odoo-Runtime verwendet keinen getrennten unveraenderten create-new-Restore.");
+  invariant(odooRestore.endpointSha256 !== baseline.odoo.restoreEndpointSha256, "Schema-29-Odoo-Runtime verwendet keinen getrennten create-new-Restore.");
+  const odooStartupSequenceAdvances = inspectOdooStartupSequenceAdvances(odooRestore.state, pristineOdooRestore.state);
   invariant(
     filestore.access === "read-only"
       && filestore.ownerUid === expected.odooOwnerUid
@@ -873,6 +918,7 @@ export async function qualifyProductionSchema29RuntimeDrill({
     odooProbeReceiptSha256: odooProbeArtifact.sha256,
     odooRestoreReceiptSha256: odooRestoreArtifact.sha256,
     odooRestoreStateSha256: odooRestore.stateSha256,
+    odooStartupSequenceAdvances,
     previousReleaseId: expected.previousReleaseId,
     previousWorldId: expected.previousWorldId,
     pristineGameRestoreStateSha256: pristineGameRestore.stateSha256,
@@ -899,7 +945,7 @@ export async function qualifyProductionSchema29RuntimeDrill({
     odooFilestoreOwnerGid: expected.odooOwnerGid,
     odooFilestoreOwnerUid: expected.odooOwnerUid,
     odooFilestoreHostPath: expected.odooFilestoreHostPath,
-    odooRestoreStateSha256: baseline.odoo.stateSha256,
+    odooRestoreStateSha256: odooRestore.stateSha256,
     odooFilestoreTreeSha256: baseline.odoo.filestoreTreeSha256,
     pristineGameRestoreStateSha256: baseline.game.stateSha256,
     pristineOdooRestoreStateSha256: baseline.odoo.stateSha256,
