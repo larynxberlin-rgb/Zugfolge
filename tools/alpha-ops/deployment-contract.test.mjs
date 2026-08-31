@@ -211,6 +211,8 @@ test("Alpha-Compose erzwingt Map- und Welt-Cutover-Gates, Migration, signierten 
   assert.match(recoveryActionService, /command: \[node, tools\/alpha-ops\/activate-production-recovery\.mjs, prepared\]/u);
   assert.match(recoveryActionService, /PRODUCTION_RECOVERY_ACTION_RECEIPT_OUTPUT_PATH: "\/production-recovery\/\$\{PRODUCTION_RECOVERY_ID:\?[^}]+\}\.prepared\.json"/u);
   assert.match(recoveryActionService, /PRODUCTION_RECOVERY_CONTROL_SERVICE: production-recovery-action/u);
+  assert.match(recoveryActionService, /KEYCLOAK_SCHEMA_CATALOG_PATH: \/keycloak-schema-catalog\.json/u);
+  assert.match(recoveryActionService, /keycloak-pg16-object-catalog\.26\.7\.0\.json:\/keycloak-schema-catalog\.json:ro/u);
   assert.match(recoveryActionService, /depends_on: \{ postgres: \{ condition: service_healthy \}, odoo-postgres: \{ condition: service_healthy \} \}/u);
   for (const mutatingService of [keycloakMigrationService, keycloakRestoreService, keycloakPreflightService, mapReleasePreflightService]) {
     assert.match(mutatingService, /production-recovery-action: \{ condition: service_completed_successfully \}/u);

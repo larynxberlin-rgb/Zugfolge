@@ -973,6 +973,7 @@ services:
       PRODUCTION_RECOVERY_RUNTIME_ROLLBACK_TRUSTED_KEYS_PATH: /map-preflight/trusted-rollback-keys.json
       PRODUCTION_RECOVERY_ATTESTED_WORLD_DEPLOYMENT_PATH: "${MAP_RELEASE_PREFLIGHT_RUNTIME_WORLD_DEPLOYMENT_PATH:?MAP_RELEASE_PREFLIGHT_RUNTIME_WORLD_DEPLOYMENT_PATH fehlt}"
       PRODUCTION_RECOVERY_DATABASE_ROLLBACK_PROOF_PATH: "${MAP_RELEASE_PREFLIGHT_DATABASE_ROLLBACK_PROOF_PATH:?MAP_RELEASE_PREFLIGHT_DATABASE_ROLLBACK_PROOF_PATH fehlt}"
+      KEYCLOAK_SCHEMA_CATALOG_PATH: /keycloak-schema-catalog.json
       PRODUCTION_RECOVERY_DOCKER_PROJECT: zugfolge
       PRODUCTION_RECOVERY_DOCKER_SOCKET_PATH: /var/run/docker.sock
       PRODUCTION_RECOVERY_CONTROL_SERVICE: production-recovery-action
@@ -983,6 +984,7 @@ services:
       - "${PRODUCTION_RECOVERY_BACKUP_HOST_ROOT:?PRODUCTION_RECOVERY_BACKUP_HOST_ROOT fehlt}:/recovery-material:ro"
       - ./var/alpha-evidence:/evidence:ro
       - "${MAP_RELEASE_PREFLIGHT_HOST_DIR:?MAP_RELEASE_PREFLIGHT_HOST_DIR fehlt}:/map-preflight:ro"
+      - ./ops/alpha/keycloak/keycloak-pg16-object-catalog.26.7.0.json:/keycloak-schema-catalog.json:ro
     depends_on: { postgres: { condition: service_healthy }, odoo-postgres: { condition: service_healthy } }
     restart: "no"
   prometheus:
