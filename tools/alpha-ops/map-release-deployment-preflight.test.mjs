@@ -6,6 +6,7 @@ import {
   runMapReleaseDeploymentPreflight,
   runtimeIdentityFromEnvironment,
   validateMapPreflightResult,
+  validateMapRollbackPreflightResult,
 } from "./map-release-deployment-preflight.mjs";
 
 const evidence = Object.freeze({
@@ -60,6 +61,24 @@ test("manueller Vorlauf akzeptiert ausschliesslich den expliziten .1-Pointer", (
   assert.throws(
     () => expectedReleaseForMapPreflight(evidence, "pre-activation", evidence.releaseId),
     /widerspricht dem pre-activation-Vertrag/u,
+  );
+});
+
+test("attestierter Rollback qualifiziert nur den Vorgänger-Rückweg und niemals den Kandidaten", () => {
+  const expected = expectedReleaseForMapPreflight(evidence, "attested-rollback", evidence.previousReleaseId);
+  const rollback = {
+    ...result(expected, "pre-activation"),
+    mapActivationEligible: false,
+    activationEligible: false,
+  };
+  assert.equal(validateMapRollbackPreflightResult(rollback, evidence, expected).rollbackEligible, true);
+  assert.throws(
+    () => validateMapRollbackPreflightResult({ ...rollback, activationEligible: true }, evidence, expected),
+    /keinen Kartenkandidaten/u,
+  );
+  assert.throws(
+    () => expectedReleaseForMapPreflight(evidence, "attested-rollback", evidence.releaseId),
+    /attested-rollback-Vertrag/u,
   );
 });
 
@@ -120,7 +139,7 @@ test("falscher Pointerzustand und jeder unvollstaendige Full-Stack-Rollback werd
   );
   assert.throws(
     () => expectedReleaseForMapPreflight(evidence, "fallback", evidence.releaseId),
-    /pre-activation oder active-candidate/u,
+    /pre-activation, active-candidate oder attested-rollback/u,
   );
 });
 
@@ -217,9 +236,55 @@ test("Serverwrapper verweigert ein fehlendes Scope-Mapping vor jedem Artefaktzug
   assert.equal(artifactReadStarted, false);
 });
 
+test("Serverwrapper ruft im Rollbackmodus ausschließlich den kandidatenunabhängigen Rückwegprüfer auf", async () => {
+  const environment = {
+    MAP_RELEASE_PREFLIGHT_EVIDENCE_PATH: "/map-preflight/evidence.json",
+    MAP_RELEASE_PREFLIGHT_DEPLOYMENT_ROOT: "/map-deployment",
+    MAP_RELEASE_PREFLIGHT_RESTORE_PROOF_PATH: "/map-preflight/restore-proof.json",
+    MAP_RELEASE_PREFLIGHT_RESTORE_ROOT: "/map-restore",
+    MAP_RELEASE_PREFLIGHT_TRUSTED_KEYS_PATH: "/map-preflight/trusted-delivery-keys.json",
+    MAP_RELEASE_PREFLIGHT_DATABASE_ROLLBACK_PROOF_PATH: "/map-preflight/database-rollback-proof.json",
+    MAP_RELEASE_PREFLIGHT_EXPECTED_ACTIVE_RELEASE_ID: evidence.previousReleaseId,
+    RELEASE_TRUSTED_KEY_SCOPES_JSON: JSON.stringify({ alphaWorldDeployments: ["alpha"], mapInfraDeliveries: ["map"] }),
+    MAP_RELEASE_PREFLIGHT_RUNTIME_SOURCE_COMMIT: "a".repeat(40),
+    MAP_RELEASE_PREFLIGHT_RUNTIME_IMAGE_DIGEST: `sha256:${"b".repeat(64)}`,
+    PRODUCTION_RECOVERY_ODOO_IMAGE_DIGEST: `sha256:${"c".repeat(64)}`,
+    MAP_RELEASE_PREFLIGHT_RUNTIME_WORLD_DEPLOYMENT_PATH: "/evidence/world.json",
+  };
+  let activationCalled = false;
+  let rollbackCalled = false;
+  const loaded = await runMapReleaseDeploymentPreflight({
+    mode: "attested-rollback",
+    environment,
+    loadEvidence: async () => evidence,
+    loadRestoreProof: async () => Buffer.from("restore"),
+    loadTrustedKeys: async () => ({
+      trustedDeliveryKeys: { alpha: "alpha-key", map: "map-key" },
+      trustedDeliveryKeysBytes: Buffer.from("keys"),
+    }),
+    loadDatabaseRollbackProof: async () => Buffer.from("database"),
+    preflight: async () => {
+      activationCalled = true;
+      return result(evidence.releaseId, "active-candidate");
+    },
+    rollbackPreflight: async () => {
+      rollbackCalled = true;
+      return {
+        ...result(evidence.previousReleaseId, "pre-activation"),
+        mapActivationEligible: false,
+        activationEligible: false,
+      };
+    },
+  });
+  assert.equal(loaded.rollbackEligible, true);
+  assert.equal(activationCalled, false);
+  assert.equal(rollbackCalled, true);
+});
+
 test("beide Produktionsmodi verlangen die vollständige attestierte Runtime-Identität", () => {
   assert.throws(() => runtimeIdentityFromEnvironment({}, "active-candidate"), /vollstaendige .*Runtime-Identitaet/u);
   assert.throws(() => runtimeIdentityFromEnvironment({}, "pre-activation"), /vollstaendige .*Runtime-Identitaet/u);
+  assert.throws(() => runtimeIdentityFromEnvironment({}, "attested-rollback"), /vollstaendige .*Runtime-Identitaet/u);
   assert.throws(() => runtimeIdentityFromEnvironment({
     MAP_RELEASE_PREFLIGHT_RUNTIME_SOURCE_COMMIT: "a".repeat(40),
   }, "active-candidate"), /vollstaendige .*Runtime-Identitaet/u);

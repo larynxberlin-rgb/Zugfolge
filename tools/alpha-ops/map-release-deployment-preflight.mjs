@@ -5,6 +5,7 @@ import { pathToFileURL } from "node:url";
 
 import {
   preflightMapReleaseActivation,
+  preflightMapReleaseRollback,
   serializeMapReleaseBuildEvidence,
   validateMapReleaseBuildEvidence,
 } from "../tiles/map-release-build-evidence.mjs";
@@ -13,6 +14,7 @@ import { parseTrustedReleaseKeyScopes } from "../../apps/game-api/dist/trusted-r
 export const MAP_RELEASE_PREFLIGHT_MODES = Object.freeze([
   "pre-activation",
   "active-candidate",
+  "attested-rollback",
 ]);
 
 function invariant(condition, message) {
@@ -46,7 +48,7 @@ export function runtimeIdentityFromEnvironment(environment, mode) {
 }
 
 export function expectedReleaseForMapPreflight(evidence, mode, configuredReleaseId) {
-  invariant(MAP_RELEASE_PREFLIGHT_MODES.includes(mode), "Map-Preflight-Modus muss pre-activation oder active-candidate sein.");
+  invariant(MAP_RELEASE_PREFLIGHT_MODES.includes(mode), "Map-Preflight-Modus muss pre-activation, active-candidate oder attested-rollback sein.");
   const contractReleaseId = mode === "active-candidate"
     ? evidence?.releaseId
     : evidence?.previousReleaseId;
@@ -55,6 +57,19 @@ export function expectedReleaseForMapPreflight(evidence, mode, configuredRelease
     `Explizit erwartetes Kartenrelease '${configuredReleaseId}' widerspricht dem ${mode}-Vertrag '${contractReleaseId ?? "fehlend"}'.`,
   );
   return contractReleaseId;
+}
+
+export function validateMapRollbackPreflightResult(result, evidence, expectedActiveReleaseId) {
+  invariant(result?.mapActivationEligible === false && result?.activationEligible === false, "Rollback-Preflight darf keinen Kartenkandidaten zur Aktivierung freigeben.");
+  invariant(result?.mapRollbackEligible === true, "Rollback-Preflight besitzt keinen freigegebenen Map-/Runtime-Rollback.");
+  invariant(result?.databaseRollbackEligible === true, "Rollback-Preflight besitzt keinen freigegebenen Datenbank-Rollback.");
+  invariant(result?.writersQuiesced === true, "Rollback-Preflight besitzt keinen quieszierten Datenbankbeleg.");
+  invariant(result?.rollbackWindow === "pre-activation-only", "Rollback-Preflight besitzt kein ausschliessliches Pre-Activation-Rollbackfenster.");
+  invariant(result?.rollbackEligible === true, "Rollback-Preflight besitzt keinen vollständig gekoppelten Full-Stack-Rollbackvertrag.");
+  invariant(result.activationState === "pre-activation", "Rollback-Preflight meldet nicht den belegten Vorgänger-Pointerzustand.");
+  invariant(result.activeReleaseId === expectedActiveReleaseId, "Rollback-Preflight meldet ein anderes aktives Vorgängerrelease.");
+  invariant(result.releaseId === evidence.releaseId && result.previousReleaseId === evidence.previousReleaseId, "Rollback-Preflight meldet ein anderes Releasepaar.");
+  return result;
 }
 
 export function validateMapPreflightResult(result, evidence, mode, expectedActiveReleaseId) {
@@ -105,6 +120,7 @@ export async function runMapReleaseDeploymentPreflight({
   mode,
   environment = process.env,
   preflight = preflightMapReleaseActivation,
+  rollbackPreflight = preflightMapReleaseRollback,
   loadEvidence = readCanonicalEvidence,
   loadRestoreProof = (path) => readFile(resolve(path)),
   loadDatabaseRollbackProof = (path) => readFile(resolve(path)),
@@ -131,7 +147,8 @@ export async function runMapReleaseDeploymentPreflight({
     trustedKeyScopesJson,
     trustedKeyring.trustedDeliveryKeys,
   );
-  const result = await preflight({
+  const preflightFunction = mode === "attested-rollback" ? rollbackPreflight : preflight;
+  const result = await preflightFunction({
     evidence,
     deploymentRoot,
     restoreProofBytes,
@@ -144,14 +161,16 @@ export async function runMapReleaseDeploymentPreflight({
     runtimeIdentity,
     databaseRollbackProofBytes,
   });
-  return validateMapPreflightResult(result, evidence, mode, expectedActiveReleaseId);
+  return mode === "attested-rollback"
+    ? validateMapRollbackPreflightResult(result, evidence, expectedActiveReleaseId)
+    : validateMapPreflightResult(result, evidence, mode, expectedActiveReleaseId);
 }
 
 const invokedPath = process.argv[1] === undefined ? undefined : pathToFileURL(resolve(process.argv[1])).href;
 if (invokedPath === import.meta.url) {
   const [mode, ...extra] = process.argv.slice(2);
   if (extra.length > 0 || !MAP_RELEASE_PREFLIGHT_MODES.includes(mode)) {
-    throw new Error("Aufruf: map-release-deployment-preflight.mjs pre-activation|active-candidate");
+    throw new Error("Aufruf: map-release-deployment-preflight.mjs pre-activation|active-candidate|attested-rollback");
   }
   const result = await runMapReleaseDeploymentPreflight({ mode });
   process.stdout.write(`${JSON.stringify({

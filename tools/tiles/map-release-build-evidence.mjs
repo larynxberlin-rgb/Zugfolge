@@ -4091,6 +4091,112 @@ export async function preflightMapReleaseActivation({
   };
 }
 
+export async function preflightMapReleaseRollback({
+  evidence,
+  deploymentRoot,
+  trustedDeliveryKeys,
+  trustedDeliveryKeysBytes,
+  trustedAlphaWorldKeys,
+  trustedMapInfraKeys,
+  expectedActiveReleaseId,
+  runtimeIdentity,
+  databaseRollbackProofBytes,
+}) {
+  validateMapReleaseBuildEvidence(evidence);
+  invariant(expectedActiveReleaseId === evidence.previousReleaseId, "Attestierter Rollback verlangt den belegten Vorgänger als aktiven Kartenzeiger.");
+  const runtimeTrustedDeliveryKeys = runtimeTrustedDeliveryKeyring(evidence, trustedDeliveryKeys, trustedDeliveryKeysBytes);
+  const runtimeTrustedReleaseScopes = runtimeTrustedReleaseKeyScopes(
+    evidence,
+    runtimeTrustedDeliveryKeys,
+    trustedAlphaWorldKeys,
+    trustedMapInfraKeys,
+  );
+  const evidenceSha256 = sha256Bytes(serializeMapReleaseBuildEvidence(evidence));
+  const activation = await inspectActivationPointer(deploymentRoot, evidence, expectedActiveReleaseId);
+  const previous = await inspectInstalledMapPackage(
+    deploymentRoot,
+    evidence.deployment.previousInstallPath,
+    evidence.previousReleaseId,
+    "Rollbackrelease",
+  );
+  const rollbackAttestationPath = await containedRealPath(
+    deploymentRoot,
+    evidence.deployment.rollbackAttestationPath,
+    "Rollback-Attestation",
+  );
+  const rollbackAttestationBytes = await readFile(rollbackAttestationPath);
+  let rollbackAttestation;
+  try {
+    rollbackAttestation = JSON.parse(rollbackAttestationBytes.toString("utf8"));
+  } catch {
+    throw new Error("Rollback-Attestation ist kein gültiges JSON-Artefakt.");
+  }
+  invariant(rollbackAttestationBytes.equals(serializeMapReleaseBuildEvidence(rollbackAttestation)), "Rollback-Attestation ist nicht kanonisch serialisiert.");
+  const rollbackSigned = validateRollbackAttestation(rollbackAttestation, evidence.previousReleaseId);
+  const rollbackPublicKey = trustedDeliveryPublicKey(
+    runtimeTrustedReleaseScopes.mapInfraKeys,
+    rollbackSigned.keyId,
+    "Rollback-Attestation",
+  );
+  invariant(
+    verifyMapRollbackAttestation(rollbackAttestation, rollbackPublicKey),
+    "Rollback-Attestation besitzt keine gültige vertrauenswürdige Ed25519-Signatur.",
+  );
+  const previousReleaseEntry = previous.inventory.find(({ kind }) => kind === "release-manifest");
+  invariant(
+    rollbackAttestation.packageManifest.file === INSTALLED_PACKAGE_MANIFEST
+      && rollbackAttestation.packageManifest.bytes === previous.markerBytes.length
+      && rollbackAttestation.packageManifest.sha256 === sha256Bytes(previous.markerBytes),
+    "Rollback-Attestation weicht vom installierten kanonischen Paketmarker ab.",
+  );
+  invariant(
+    previousReleaseEntry !== undefined
+      && rollbackSigned.deliveryFile === previousReleaseEntry.installPath
+      && rollbackAttestation.deliveryManifest.bytes === previous.releaseBytes.length
+      && rollbackAttestation.deliveryManifest.sha256 === sha256Bytes(previous.releaseBytes),
+    "Rollback-Attestation weicht vom installierten Delivery-Manifest ab.",
+  );
+  const rollbackRuntime = await assessRuntimeRollbackTuple({
+    attestation: rollbackAttestation,
+    previous,
+    previousReleaseId: evidence.previousReleaseId,
+    candidateReleaseId: evidence.releaseId,
+    runtimeIdentity,
+    databaseRollbackProofBytes,
+    trustedKeys: runtimeTrustedReleaseScopes.alphaWorldKeys,
+  });
+  const fullStackRollbackEligible = rollbackRuntime.mapEligible === true
+    && rollbackRuntime.databaseEligible === true
+    && rollbackRuntime.writersQuiesced === true;
+  invariant(rollbackRuntime.eligible === fullStackRollbackEligible, "Full-Stack-Rollbackstatus widerspricht seinen Map-/Datenbank-/Quiescence-Gates.");
+  invariant(fullStackRollbackEligible, "Attestierter Rollback besitzt keinen vollständig qualifizierten Full-Stack-Rückweg.");
+  return {
+    releaseId: evidence.releaseId,
+    previousReleaseId: evidence.previousReleaseId,
+    mapActivationEligible: false,
+    activationEligible: false,
+    rollbackEligible: true,
+    rollbackEligibilityReason: rollbackRuntime.reason,
+    mapRollbackEligible: true,
+    databaseRollbackEligible: true,
+    writersQuiesced: true,
+    rollbackWindow: rollbackRuntime.rollbackWindow,
+    databaseRollbackProofHash: rollbackRuntime.databaseRollbackProofHash,
+    databaseBackupManifestSha256: rollbackRuntime.databaseBackupManifestSha256,
+    databaseRestoreProofSha256: rollbackRuntime.databaseRestoreProofSha256,
+    activationState: activation.state,
+    activeReleaseId: activation.activeReleaseId,
+    activationPointer: evidence.deployment.activationPointer,
+    activationPointerPath: activation.path,
+    previousRoot: previous.root,
+    rollbackAttestationPath,
+    rollbackAttestationSchema: rollbackSigned.schema,
+    rollbackAttestationKeyId: rollbackSigned.keyId,
+    rollbackAttestationHash: rollbackSigned.attestationHash,
+    evidenceSha256,
+  };
+}
+
 export const MAP_RELEASE_BUILD_EVIDENCE_SCHEMAS = Object.freeze({
   spec: SPEC_SCHEMA_V1,
   specV1: SPEC_SCHEMA_V1,
