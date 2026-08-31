@@ -22,8 +22,8 @@
     "postgres": "^3.4.9"
   },
   "devDependencies": {
-    "@electric-sql/pglite": "^0.5.7",
-    "@types/node": "26.3.0",
+    "@electric-sql/pglite": "^0.5.8",
+    "@types/node": "26.4.0",
     "drizzle-kit": "^0.31.10",
     "typescript": "^7.0.2",
     "vitest": "^4.1.11"
