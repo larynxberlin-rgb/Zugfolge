@@ -10,6 +10,10 @@ services:
     image: "${MAP_RELEASE_PREFLIGHT_RUNTIME_IMAGE_REFERENCE:?MAP_RELEASE_PREFLIGHT_RUNTIME_IMAGE_REFERENCE muss den attestierten Legacy-Digest referenzieren}"
     pull_policy: never
     command: [node, apps/game-api/dist/server.js]
+    # Der V1-Prozess baut den serverautoritativen Zustand vor dem HTTP-Listen
+    # synchron aus dem attestierten Restore auf. Dieses Fenster muss mit dem
+    # separaten Zwei-Stunden-Readiness-Gate des Rollback-Wrappers uebereinstimmen.
+    healthcheck: { start_period: 2h }
     environment:
       DATABASE_URL: "postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${PRODUCTION_RECOVERY_GAME_RESTORE_DATABASE:?PRODUCTION_RECOVERY_GAME_RESTORE_DATABASE fehlt}"
       ALPHA_PUBLIC_WORLD_ID: "${PRODUCTION_RECOVERY_PREVIOUS_WORLD_ID:?PRODUCTION_RECOVERY_PREVIOUS_WORLD_ID fehlt}"

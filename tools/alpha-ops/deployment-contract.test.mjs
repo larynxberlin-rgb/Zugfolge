@@ -202,9 +202,11 @@ test("Alpha-Compose erzwingt Map- und Welt-Cutover-Gates, Migration, signierten 
   assert.doesNotMatch(compose, /^\s+image: zugfolge-game-api(?::[^\s]+)?\s*$/mu);
   assert.equal((rollbackCompose.match(/image: "\$\{MAP_RELEASE_PREFLIGHT_RUNTIME_IMAGE_REFERENCE:\?[^}]+\}"/gu) ?? []).length, 5);
   assert.equal((rollbackCompose.match(/image: "\$\{PRODUCTION_RECOVERY_ODOO_IMAGE_REFERENCE:\?[^}]+\}"/gu) ?? []).length, 1);
+  const rollbackGameApi = rollbackCompose.slice(rollbackCompose.indexOf("  game-api:"), rollbackCompose.indexOf("  game-web:"));
   assert.match(rollbackCompose, /keycloak:[\s\S]*KC_DB_SCHEMA: keycloak/u);
   assert.doesNotMatch(rollbackCompose, /keycloak:[\s\S]*KC_DB_SCHEMA: public/u);
-  assert.match(rollbackCompose, /game-api:[\s\S]*command: \[node, apps\/game-api\/dist\/server\.js\]/u);
+  assert.match(rollbackGameApi, /command: \[node, apps\/game-api\/dist\/server\.js\]/u);
+  assert.match(rollbackGameApi, /healthcheck: \{ start_period: 2h \}/u);
   assert.match(rollbackCompose, /livemap:[\s\S]*command: \[node, tools\/alpha-ops\/static-server\.mjs/u);
   assert.doesNotMatch(rollbackCompose, /(?:map-release-preflight|world-deployment-cutover-preflight|game-migrate|game-bootstrap|keycloak-schema-(?:preflight|postflight)|keycloak-reconcile):/u);
   assert.doesNotMatch(recoveryActionService, /profiles:/u);
