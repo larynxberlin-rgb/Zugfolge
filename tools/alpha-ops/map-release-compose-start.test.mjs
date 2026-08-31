@@ -878,13 +878,15 @@ test("Compose restarts Game API and Livemap only through the explicit per-proces
   assert.doesNotMatch(compose, /^\s+image: zugfolge-game-api(?::[^\s]+)?\s*$/mu);
   assert.equal((rollbackCompose.match(/image: "\$\{MAP_RELEASE_PREFLIGHT_RUNTIME_IMAGE_REFERENCE:\?[^}]+\}"/gu) ?? []).length, 5);
   assert.equal((rollbackCompose.match(/image: "\$\{PRODUCTION_RECOVERY_ODOO_IMAGE_REFERENCE:\?[^}]+\}"/gu) ?? []).length, 1);
+  const rollbackGameApi = rollbackCompose.slice(rollbackCompose.indexOf("  game-api:"), rollbackCompose.indexOf("  game-web:"));
   assert.match(rollbackCompose, /keycloak:[\s\S]*KC_DB_SCHEMA: keycloak/u);
   assert.doesNotMatch(rollbackCompose, /keycloak:[\s\S]*KC_DB_SCHEMA: public/u);
   const rollbackOdoo = rollbackCompose.slice(rollbackCompose.indexOf("  odoo:"));
   assert.match(rollbackOdoo, /\$\{PRODUCTION_RECOVERY_ODOO_FILESTORE_HOST_ROOT:\?[^}]+\}\/\$\{PRODUCTION_RECOVERY_ODOO_RESTORE_DATABASE:\?[^}]+\}:\/var\/lib\/odoo\/filestore\/\$\{PRODUCTION_RECOVERY_ODOO_RESTORE_DATABASE:\?[^}]+\}:rw/u);
   assert.doesNotMatch(rollbackOdoo, /\$\{PRODUCTION_RECOVERY_ODOO_FILESTORE_HOST_ROOT:\?[^}]+\}:\/var\/lib\/odoo\/filestore:rw/u);
   assert.equal((rollbackOdoo.match(/\/var\/lib\/odoo\/filestore/gu) ?? []).length, 1);
-  assert.match(rollbackCompose, /game-api:[\s\S]*command: \[node, apps\/game-api\/dist\/server\.js\]/u);
+  assert.match(rollbackGameApi, /command: \[node, apps\/game-api\/dist\/server\.js\]/u);
+  assert.match(rollbackGameApi, /healthcheck: \{ start_period: 2h \}/u);
   assert.match(rollbackCompose, /livemap:[\s\S]*command: \[node, tools\/alpha-ops\/static-server\.mjs/u);
   assert.doesNotMatch(rollbackCompose, /(?:map-release-preflight|world-deployment-cutover-preflight|game-migrate|game-bootstrap|keycloak-schema-(?:preflight|postflight)|keycloak-reconcile):/u);
   const gameApi = compose.slice(compose.indexOf("  game-api:"), compose.indexOf("  game-web:"));
