@@ -212,7 +212,7 @@ test("rollback is explicit, ignores forged mode env, and requires container recr
 
   const rollback = runWrapper(fixture, ["--attested-rollback", "-f", "compose.alpha.yml", "up", "--no-build", "--force-recreate", "--wait", "--wait-timeout", "600"]);
   assert.equal(rollback.status, 0, rollback.stderr);
-  assert.match(rollback.stdout, /^START_PREFLIGHT_MODE=pre-activation$/mu);
+  assert.match(rollback.stdout, /^START_PREFLIGHT_MODE=attested-rollback$/mu);
   const calls = rollback.stdout.split("\n").filter((line) => line.startsWith("CALL=")).map((line) => line.slice(5));
   assert.equal(calls.length, 12);
   assert.match(calls[0], /-f .*compose\.alpha\.yml .*stop --timeout 60/u);
