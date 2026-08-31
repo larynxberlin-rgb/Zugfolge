@@ -231,6 +231,7 @@ test("Alpha-Compose erzwingt Map- und Welt-Cutover-Gates, Migration, signierten 
   assert.match(composeWrapper, /run_recovery_continuation\(\)[\s\S]*continue-production-recovery\.mjs/u);
   assert.match(composeWrapper, /local source_intent="\/production-recovery\/\$\{production_recovery_id\}\.source-\$\{action\}\.intent\.json"[\s\S]*PRODUCTION_RECOVERY_SOURCE_INTENT_OUTPUT_PATH="\$source_intent"/u);
   assert.match(composeWrapper, /start_database_services\(\)[\s\S]*up --no-recreate --no-deps --no-build/u);
+  assert.match(composeWrapper, /attested_rollback=1\n\s+preflight_mode=attested-rollback/u);
   const cutoverOrchestration = composeWrapper.slice(
     composeWrapper.indexOf("    cutover_completed=0"),
     composeWrapper.indexOf("  rollback_cleanup_running=0"),
@@ -287,6 +288,7 @@ test("Alpha-Compose erzwingt Map- und Welt-Cutover-Gates, Migration, signierten 
   assert.match(compose, /networks:[\s\S]*proxy: \{ external: true, name: zugfolge-proxy \}[\s\S]*mail: \{ external: true, name: zugfolge-mail \}/u);
   assert.match(mapPreflight, /expectedReleaseForMapPreflight\(evidence, mode, configuredReleaseId\)/u);
   assert.match(mapPreflight, /expectedActiveReleaseId/u);
+  assert.match(mapPreflight, /mode === "attested-rollback" \? rollbackPreflight : preflight/u);
   assert.doesNotMatch(mapPreflight, /fallback/u);
   assert.match(worldPreflight, /active_world_requires_operational_v2_cutover/u);
   assert.match(worldPreflight, /active_tutorial_requires_v2_cutover_archive/u);

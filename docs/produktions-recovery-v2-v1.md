@@ -395,6 +395,13 @@ samt Filestore und startet keine V2-Migration, keinen Welt-Cutover, keinen
 Bootstrap und kein Odoo-Upgrade. Die erhaltenen V2-Livequellen bleiben dabei
 gefenced.
 
+Der dafür eigene `attested-rollback`-Map-Preflight qualifiziert ausschließlich
+den bereits aktiven Vorgängerpointer, dessen vollständiges installiertes
+Paketinventar sowie die signierte Source-/Game-Image-/Odoo-Image-/Welt-/Map-/
+Datenbank-Rollback-Attestation. Er liest oder akzeptiert keine
+Kandidatenartefakte und kann deshalb einen belegten V1-Rückweg auch dann
+freigeben, wenn die V2-Kandidatenqualifikation zuvor fail-closed abgebrochen ist.
+
 Das Rollback-Compose bindet Odoos RW-Filestore nicht an die gesamte Recovery-
 Wurzel, sondern exakt an das datenbankgleiche Kind
 `${PRODUCTION_RECOVERY_ODOO_FILESTORE_HOST_ROOT}/${PRODUCTION_RECOVERY_ODOO_RESTORE_DATABASE}`

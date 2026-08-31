@@ -16,6 +16,7 @@ import {
   materializeOperationalBuildAuthorityFromBuildEvidenceSpec,
   materializeMapReleaseBuildEvidence,
   preflightMapReleaseActivation,
+  preflightMapReleaseRollback,
   prepareEmptyBuildCacheRestore,
   proveBuildCacheRestore,
   serializeMapReleaseBuildEvidence,
@@ -4249,10 +4250,19 @@ test("verifiziert leeren Cache-Restore und verweigert Preflight bei fehlendem Ro
       preflightMapReleaseActivation(preflightArguments),
       /Rollbackrelease-Artefakt welt-basiskarte ist beschädigt/,
     );
+    await assert.rejects(
+      preflightMapReleaseRollback({ ...preflightArguments, runtimeIdentity }),
+      /Rollbackrelease-Artefakt welt-basiskarte ist beschädigt/,
+    );
     await writeFile(previousBasemap, previousBasemapBytes);
 
     const unexpected = join(candidatePackage.installRoot, "nicht-inventarisiert.bin");
     await writeFile(unexpected, "nicht erlaubt");
+    const rollbackOnly = await preflightMapReleaseRollback({ ...preflightArguments, runtimeIdentity });
+    assert.equal(rollbackOnly.rollbackEligible, true);
+    assert.equal(rollbackOnly.mapActivationEligible, false);
+    assert.equal(rollbackOnly.activationEligible, false);
+    assert.equal(rollbackOnly.activeReleaseId, PREVIOUS_RELEASE_ID);
     await assert.rejects(preflightMapReleaseActivation(preflightArguments), /Kandidatenrelease enthält die unerwartete Datei/);
     await rm(unexpected);
   } finally {

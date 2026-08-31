@@ -80,7 +80,7 @@ elif [[ ${1:-} == --quiesced-cutover ]]; then
   fi
 elif [[ ${1:-} == --attested-rollback ]]; then
   attested_rollback=1
-  preflight_mode=pre-activation
+  preflight_mode=attested-rollback
   shift
   if (($# == 0)); then
     printf 'Der attestierte Rollbackmodus braucht ein Compose-Kommando.\n' >&2
