@@ -1,7 +1,7 @@
 import { PGlite } from "@electric-sql/pglite";
-import { domainEvents, fleetMobilizationSnapshots, fleetWorldCheckpoints, MIGRATIONS_FOLDER, operators, simulationCommands, worlds } from "@zugfolge/db";
+import { domainEvents, fleetWorldCheckpoints, MIGRATIONS_FOLDER, operators, simulationCommands, worlds } from "@zugfolge/db";
 import * as schema from "@zugfolge/db/schema";
-import { createFleetMobilizationEnvelope } from "@zugfolge/economy";
+import { applyFleetProducerCommand, initializeFleetProducer, loadFleetProducerCheckpoint } from "@zugfolge/economy";
 import { requestWorldAccess } from "@zugfolge/identity";
 import { LivemapRegistry, type LivemapReadModel } from "@zugfolge/livemap-stream";
 import { loadPlanningRuntime } from "@zugfolge/planning-runtime-native";
@@ -43,8 +43,9 @@ nativeIt("verknüpft HTTP, native Flotte, Nachfrage, Trassenkonkurrenz und Resto
     await db.insert(worlds).values({ id: WORLD, name: "Explizite SPFV-Integrationstestwelt", schedulePeriodWeeks: 3, epoch: new Date(0) });
     const account = await requestWorldAccess(db, { worldId: WORLD, keycloakSubject: "native-spfv-owner", displayName: "Test" });
     await db.insert(operators).values({ id: OPERATOR, worldId: WORLD, foundingAccountId: account.id, name: "Testverkehr" });
-    // Published fixture facts; fleet derivation, verification and formation are native.
-    const initialized = fleet.initializeFleet({ schemaVersion: FLEET_INITIALIZE_SCHEMA, worldId: WORLD, producedAt: 0,
+    // Explizite Testfakten; der echte Producer persistiert native Revisionen und Kommandobelege.
+    const initialized = await initializeFleetProducer({ db, runtime: fleet, ingestedAt: new Date(0), initialization: {
+      schemaVersion: FLEET_INITIALIZE_SCHEMA, worldId: WORLD, producedAt: 0,
       authorityRelease: { schemaVersion: "zugfolge-fleet-authority-release/v1", releaseId: "native-spfv-fleet", referenceYear: 2026,
         assets: [{ id: "asset", numericId: 1, operatorId: OPERATOR, vehicleTypeId: 1, classDesignation: "TEST", tradeName: "Testzug",
           buildYear: 2020, acquisitionYear: 2025, procurementChannel: "leasing", approvedLineIds: ["route"],
@@ -55,16 +56,20 @@ nativeIt("verknüpft HTTP, native Flotte, Nachfrage, Trassenkonkurrenz und Resto
             equipment: ["pis"], operatingCostCentsPerTrainKm: 700, replacementPlan: true }, deliveredAt: 0, retiredAt: 100_000 }],
         personnelPools: [], pathReceipts: [{ id: "path", numericRouteId: 1, operatorId: OPERATOR, serviceLineIds: ["route"], decision: "confirmed",
           validFrom: 0, validUntil: 100_000, platformLengthsMm: [150_000], electrifications: ["overhead-ac15kv"], requiredProtection: ["pzb"],
-          approvedClasses: ["TEST"], plannerStateHash: "b".repeat(64), conflictCheckHash: "c".repeat(64) }] } });
-    const formation = fleet.applyFleetCommand(initialized.state, { schemaVersion: FLEET_FORMATION_COMMAND_SCHEMA, worldId: WORLD,
+          approvedClasses: ["TEST"], plannerStateHash: "b".repeat(64), conflictCheckHash: "c".repeat(64) }] } } });
+    const formation = await applyFleetProducerCommand({ db, runtime: fleet, ingestedAt: new Date(1000), command: {
+      schemaVersion: FLEET_FORMATION_COMMAND_SCHEMA, worldId: WORLD,
       commandId: "native-spfv-formation", expectedStateHash: initialized.stateHash, expectedRevision: 0, atS: 1,
-      formationId: "formation", vehicleIds: ["asset"], pathReceiptId: "path" });
-    const snapshotHash = createFleetMobilizationEnvelope(formation.snapshot).snapshotHash;
-    await db.insert(fleetMobilizationSnapshots).values({ worldId: WORLD, revision: formation.state.revision, snapshotHash,
-      payload: formation.snapshot, producedAt: new Date(1000), ingestedAt: new Date(1000) });
-    await db.insert(fleetWorldCheckpoints).values({ worldId: WORLD, revision: formation.state.revision,
-      stateSchema: formation.state.schemaVersion, state: formation.state, stateHash: formation.stateHash, snapshotHash,
-      producedAt: new Date(1000), ingestedAt: new Date(1000) });
+      formationId: "formation", vehicleIds: ["asset"], pathReceiptId: "path" } });
+    expect(await loadFleetProducerCheckpoint(db, WORLD)).toMatchObject({
+      state: formation.state, stateHash: formation.commandReceipt.resultingStateHash,
+      snapshot: formation.snapshot, snapshotHash: formation.commandReceipt.resultingSnapshotHash,
+      commandId: formation.commandReceipt.commandId, commandSchema: FLEET_FORMATION_COMMAND_SCHEMA,
+      commandJson: formation.commandReceipt.canonicalCommandJson, commandHash: formation.commandReceipt.commandHash,
+    });
+    expect((await db.select({ revision: fleetWorldCheckpoints.revision }).from(fleetWorldCheckpoints)
+      .where(eq(fleetWorldCheckpoints.worldId, WORLD)).orderBy(fleetWorldCheckpoints.revision)).map((row) => row.revision))
+      .toEqual([initialized.state.revision, formation.commandReceipt.resultingRevision]);
 
     const input = JSON.parse(readFileSync(new URL("../../../crates/zugfolge-demand/examples/evaluation.json", import.meta.url), "utf8"));
     const stationIds = new Map([["leipzig-hbf", "a"], ["halle-hbf", "b"], ["erfurt-hbf", "c"]]);
