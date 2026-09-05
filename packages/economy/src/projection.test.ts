@@ -10,7 +10,7 @@ const competitorBid = Object.freeze({
 const ownBid = Object.freeze({ ...competitorBid, id: "bid-own", operatorId: "operator-own", orderingFeeCentsPerTrainKm: 1_100n });
 
 function state(phase: "open" | "awarded"): EconomyWorldState {
-  const tender = { id: "tender-1", worldId: "world-1" };
+  const tender = { id: "tender-1", worldId: "world-1", specification: { lines: ["game-line-1"] } };
   const lifecycle = phase === "open"
     ? { phase, tender, bids: [competitorBid, ownBid] }
     : { phase, tender, bids: [competitorBid, ownBid], winningBid: competitorBid };
@@ -23,6 +23,18 @@ function state(phase: "open" | "awarded"): EconomyWorldState {
 }
 
 describe("player-facing economy projection", () => {
+  it("zeigt das ausgeschriebene Angebot ohne interne Kürzungshinweise", () => {
+    const presentation = { designation: "RE 1", origin: "Bahnhof A", destination: "Bahnhof C" };
+    const internalPresentation = { ...presentation, adjustmentReasons: ["Vorlage: Außenstadt – Außenberg. Gekürzt auf Bahnhöfe mit Wendemöglichkeit."] };
+    const source = { ...state("open"), planning: { snapshot: { patterns: [
+      { lineId: "game-line-1", presentation: internalPresentation },
+      { lineId: "game-line-1", presentation },
+      { lineId: "anderes-los", presentation: { ...presentation, designation: "RE 99" } },
+    ] } } } as unknown as EconomyWorldState;
+    const projected = economyStateForPlayer(source, new Set()) as { tenders: Map<string, Record<string, unknown>> };
+    expect(projected.tenders.get("tender-1")?.["serviceLines"]).toEqual([presentation]);
+    expect(projected).not.toHaveProperty("planning");
+  });
   it("veroeffentlicht fremde Mobilisierungsnachweise weder vor noch nach Betriebsuebergang", () => {
     const source = state("awarded");
     const mobilization = { tenderId: "tender-1", winnerOperatorId: "operator-competitor", deadline: 100, completed: true,

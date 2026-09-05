@@ -70,6 +70,30 @@ export function deriveGtfsServiceSpecification(
 ): { readonly lot: GtfsServiceLot; readonly specification: ServiceSpecification; readonly evidence: TenderPlanningEvidence } {
   invariant(Number.isSafeInteger(periodDurationSeconds) && periodDurationSeconds > 0 && periodDurationSeconds % 86_400 === 0, "Vertragsperiode muss aus ganzen, positiven Verkehrstagen bestehen.");
   const lot = resolveGtfsPlanningLot(envelope, expectedWorldId, reference);
+  return deriveValidatedServiceSpecification(lot, reference, periodDurationSeconds);
+}
+
+/** Ein Hashnachweis je Scheduler-Runde statt einer Vollpruefung pro Los. */
+export function deriveGtfsServiceSpecifications(
+  envelope: GtfsPlanningEnvelope,
+  expectedWorldId: string,
+  periodDurationSeconds: number,
+): ReadonlyMap<string, ReturnType<typeof deriveGtfsServiceSpecification>> {
+  invariant(Number.isSafeInteger(periodDurationSeconds) && periodDurationSeconds > 0 && periodDurationSeconds % 86_400 === 0, "Vertragsperiode muss aus ganzen, positiven Verkehrstagen bestehen.");
+  validateGtfsPlanningEnvelope(envelope);
+  invariant(envelope.snapshot.worldId === expectedWorldId, "GTFS-Planung verletzt Weltisolation.");
+  return new Map(envelope.snapshot.lots.map((lot) => [lot.id, deriveValidatedServiceSpecification(lot, {
+    planningRevision: envelope.snapshot.revision,
+    snapshotHash: envelope.snapshotHash,
+    lotId: lot.id,
+  }, periodDurationSeconds)]));
+}
+
+function deriveValidatedServiceSpecification(
+  lot: GtfsServiceLot,
+  reference: GtfsPlanningLotReference,
+  periodDurationSeconds: number,
+): { readonly lot: GtfsServiceLot; readonly specification: ServiceSpecification; readonly evidence: TenderPlanningEvidence } {
   const days = periodDurationSeconds / 86_400;
   const basis = lot.specificationBasis;
   const specification: ServiceSpecification = Object.freeze({

@@ -1,5 +1,6 @@
 import { createReadStream } from "node:fs";
 import { createInterface } from "node:readline";
+import { trackInsidePlayableArea, validatePlayableArea } from "../playable-area.mjs";
 
 export const OPERATIONAL_TRACK_GRAPH_RULE =
   "observed-osm-track-graph-with-official-corridor-station-anchors/v1";
@@ -653,8 +654,11 @@ export async function buildGtfsTrackGraph({
   permittedProtectionModes = null,
   unknownMainlineSpeedKmh = 20,
   unknownServiceSpeedKmh = 10,
+  allowUnmappedStops = false,
 }) {
   const model = gtfsRoutingModel(snapshot);
+  const playableArea = validatePlayableArea(snapshot.playableArea);
+  if (snapshot.timetableGeneration !== undefined && playableArea === undefined) throw new Error("Generierter Fahrplan braucht die gepinnte Spielgebietsgrenze.");
   const permittedProtection = normalizePermittedProtectionModes(permittedProtectionModes);
   safeInteger(unknownMainlineSpeedKmh, "unknownMainlineSpeedKmh", 1);
   safeInteger(unknownServiceSpeedKmh, "unknownServiceSpeedKmh", 1);
@@ -669,6 +673,7 @@ export async function buildGtfsTrackGraph({
   let orderableTracksSeen = 0;
   let observedOrderableTracksInRoutingBounds = 0;
   let incompatibleProtectionTrackCount = 0;
+  let outsidePlayableTrackCount = 0;
 
   for await (const feature of readSequence(tracksPath, "Deutschland-Gleisgeometrien")) {
     tracksSeen += 1;
@@ -680,6 +685,10 @@ export async function buildGtfsTrackGraph({
     seenOrderableTrackIds.add(edgeId);
     const coordinates = lineCoordinates(feature.geometry, `${edgeId}.geometry`);
     if (!intersectsBounds(coordinates, bounds)) continue;
+    if (!trackInsidePlayableArea(playableArea, coordinates)) {
+      outsidePlayableTrackCount += 1;
+      continue;
+    }
     invariant(properties.feature_type === "track", `${edgeId} besitzt nicht feature_type=track.`);
     invariant(properties.source_id === "osm-pbf-deutschland", `${edgeId} stammt nicht aus dem gepinnten OSM-Layer.`);
     invariant(typeof properties.model_state === "string" && properties.model_state.startsWith("observed_osm_"), `${edgeId} behauptet keine beobachtete OSM-Topologie.`);
@@ -695,6 +704,9 @@ export async function buildGtfsTrackGraph({
     invariant(fromNodeId !== toNodeId, `${edgeId} ist keine lineare Kante.`);
     invariant(!edges.has(edgeId), `Gleiskante ${edgeId} ist doppelt.`);
     const speeds = directionalTrackSpeeds(properties, unknownMainlineSpeedKmh, unknownServiceSpeedKmh);
+    const tags = osmTags(properties, edgeId);
+    const allowedDirections = ["yes", "true", "1"].includes(tags.oneway)
+      ? ["along"] : ["-1", "reverse"].includes(tags.oneway) ? ["against"] : ["along", "against"];
     edges.set(edgeId, Object.freeze({
       edgeId,
       fromNodeId,
@@ -702,6 +714,7 @@ export async function buildGtfsTrackGraph({
       lengthMm,
       routeNumber: GTFS_SIMULATED_ROUTE_KEY,
       protectionSystems,
+      allowedDirections: Object.freeze(allowedDirections),
       ...speeds,
     }));
     components.union(fromNodeId, toNodeId);
@@ -719,7 +732,7 @@ export async function buildGtfsTrackGraph({
     }
   }
 
-  invariant(edges.size > 0, "Der reale OSM-Gleisgraph im GTFS-Routingraum ist leer.");
+  invariant(allowUnmappedStops || edges.size > 0, "Der reale OSM-Gleisgraph im GTFS-Routingraum ist leer.");
   const componentByEdge = new Map();
   const edgeCountByComponent = new Map();
   for (const edge of edges.values()) {
@@ -730,7 +743,7 @@ export async function buildGtfsTrackGraph({
   let maximumAnchorDistanceMm = 0;
   for (const station of model.stations) {
     const values = anchors.get(station.stopId) ?? [];
-    invariant(values.length > 0, `GTFS-Stop ${station.stopId} besitzt keinen realen Gleisanker innerhalb ${MAX_ANCHOR_DISTANCE_MM} mm.`);
+    invariant(allowUnmappedStops || values.length > 0, `GTFS-Stop ${station.stopId} besitzt keinen realen Gleisanker innerhalb ${MAX_ANCHOR_DISTANCE_MM} mm.`);
     for (const anchor of values) {
       invariant(componentByEdge.has(anchor.edgeId), `GTFS-Stop ${station.stopId} verweist auf eine verworfene Gleiskante.`);
       maximumAnchorDistanceMm = Math.max(maximumAnchorDistanceMm, anchor.distanceMm);
@@ -753,6 +766,7 @@ export async function buildGtfsTrackGraph({
       observedOrderableTracksInRoutingBounds,
       permittedProtectionModes: permittedProtection,
       incompatibleProtectionTrackCount,
+      outsidePlayableTrackCount,
       retainedTrackCount: edges.size,
       stationCount: model.stations.length,
       stationAnchorCount: [...anchors.values()].reduce((sum, values) => sum + values.length, 0),

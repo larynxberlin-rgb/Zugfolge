@@ -960,6 +960,12 @@ describe("native runtime ABI contract", () => {
       mobilizationProof: null,
       publicVehiclePool: ["public-1"],
     })).toThrow(/Weltisolation/);
+    for (const nextTimetableBoundaryS of [9, 10.5, Number.MAX_SAFE_INTEGER + 1]) {
+      expect(() => runtime.applyTransition(initialized.state, {
+        schemaVersion: OPERATING_TRANSITION_SCHEMA, worldId, commandId: "invalid-next", expectedStateHash: initialized.stateHash, expectedRevision: 0, lotId: "lot", atS: 10,
+        nextTimetableBoundaryS, winnerOperatorId: "public", reason: "failed-tender", mobilizationProof: null, publicVehiclePool: ["public-1"],
+      })).toThrow(/Folgestichtag/);
+    }
   });
 
   it("rejects malformed hashes at the ABI boundary", () => {

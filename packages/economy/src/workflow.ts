@@ -16,7 +16,9 @@ import type {
   OperatingTransitionResult,
   OperatingWorldInitialized,
 } from "@zugfolge/runtime-native";
-import { lotsFromGtfsPlanning } from "./service-planning.js";
+import { deriveGtfsServiceSpecifications, lotsFromGtfsPlanning } from "./service-planning.js";
+import { TENDER_GENERATION_TIMING, validateTenderGenerationPolicy, type TenderGenerationPolicy } from "./tender-generation-policy.js";
+import { compareUtf8 } from "./utf8.js";
 
 export interface EconomyNotice {
   /** Stabiler fachlicher Effekt-Identifier für persistente Deduplizierung. */
@@ -53,7 +55,7 @@ export type TenderLifecycle =
   | { readonly phase: "announced"; readonly tender: Tender; readonly bids: readonly Bid[] }
   | { readonly phase: "open"; readonly tender: Tender; readonly bids: readonly Bid[] }
   | { readonly phase: "awarded"; readonly tender: Tender; readonly bids: readonly Bid[]; readonly winningBid: Bid }
-  | { readonly phase: "failed"; readonly tender: Tender; readonly bids: readonly Bid[]; readonly publicOperation: PublicOperation };
+  | { readonly phase: "failed"; readonly tender: Tender; readonly bids: readonly Bid[]; readonly publicOperation: PublicOperation; readonly operationStarted?: boolean };
 
 export interface Mobilization {
   readonly tenderId: string;
@@ -83,6 +85,7 @@ export interface EconomyWorldState {
   readonly release: EconomyRelease;
   readonly lots: readonly Lot[];
   readonly planning?: GtfsPlanningEnvelope;
+  readonly tenderGeneration?: TenderGenerationPolicy;
   readonly calendar: readonly TenderCalendarEntry[];
   readonly tenders: ReadonlyMap<string, TenderLifecycle>;
   readonly contracts: ReadonlyMap<string, ServiceContract>;
@@ -123,11 +126,16 @@ export function startEconomyWorld(input: {
   readonly release: EconomyRelease;
   readonly lots?: readonly Lot[];
   readonly planning?: GtfsPlanningEnvelope;
+  readonly tenderGeneration?: TenderGenerationPolicy;
   readonly authorityBudgets: readonly AuthorityBudget[];
   readonly accounts: readonly string[];
   readonly publicVehiclePoolByLot?: Readonly<Record<string, readonly string[]>>;
 }): { readonly state: EconomyWorldState; readonly effects: EconomyEffects } {
   if ((input.lots === undefined) === (input.planning === undefined)) throw new Error("Weltstart braucht genau eine Losquelle: GTFS-Planung oder interne Testlose.");
+  if (input.tenderGeneration !== undefined) {
+    validateTenderGenerationPolicy(input.tenderGeneration);
+    if (input.planning === undefined) throw new Error("Automatische Ausschreibungen brauchen einen weltgebundenen Angebotsplan; Weltdeployment neu erzeugen.");
+  }
   const lots = input.planning === undefined ? input.lots! : lotsFromGtfsPlanning(input.planning, input.worldId);
   if (input.worldId.trim() === "" || new Set(lots.map((lot) => lot.id)).size !== lots.length) throw new Error("Welt und Lose müssen eindeutig sein.");
   const profile = deriveWorldProfile(input.durationMonths);
@@ -145,10 +153,104 @@ export function startEconomyWorld(input: {
     startPublicOperation(lot.id, input.publicVehiclePoolByLot?.[lot.id] ?? []),
   ]));
   const notices = input.accounts.map((recipientAccountId) => ({ id: `world-start:calendar:${recipientAccountId}`, worldId: input.worldId, recipientAccountId, type: "tender-calendar-published", at: 0, payload: { calendar } }));
-  return {
-    state: Object.freeze({ worldId: input.worldId, seed: input.seed, profile, releasePin: pinEconomyRelease(input.worldId, input.release), release: input.release, lots: Object.freeze([...lots]), ...(input.planning === undefined ? {} : { planning: input.planning }), calendar, tenders: new Map<string, TenderLifecycle>(), contracts: new Map<string, ServiceContract>(), mobilizations: new Map<string, Mobilization>(), tenderAutomation: new Map<string, TenderAutomation>(), publicOperations, budgets, prequalifications, insolventOperators: new Set<string>(), operatorRestrictions: new Map<string, InsolvencyDecision>(), settledPeriods: new Set<string>(), processedCommands: new Set<string>(), operatingRuntimeByLot: new Map<string, OperatingRuntimeSnapshot>(), revision: 0 }),
-    effects: { notices, journal: [] },
-  };
+  const initial: EconomyWorldState = Object.freeze({ worldId: input.worldId, seed: input.seed, profile, releasePin: pinEconomyRelease(input.worldId, input.release), release: input.release, lots: Object.freeze([...lots]), ...(input.planning === undefined ? {} : { planning: input.planning }), ...(input.tenderGeneration === undefined ? {} : { tenderGeneration: Object.freeze({ ...input.tenderGeneration }) }), calendar, tenders: new Map<string, TenderLifecycle>(), contracts: new Map<string, ServiceContract>(), mobilizations: new Map<string, Mobilization>(), tenderAutomation: new Map<string, TenderAutomation>(), publicOperations, budgets, prequalifications, insolventOperators: new Set<string>(), operatorRestrictions: new Map<string, InsolvencyDecision>(), settledPeriods: new Set<string>(), processedCommands: new Set<string>(), operatingRuntimeByLot: new Map<string, OperatingRuntimeSnapshot>(), revision: 0 });
+  const generated = generateDueTenders(initial, 0);
+  // Weltstart und seine ersten Vergaben sind ein atomarer Ausgangszustand.
+  return { state: Object.freeze({ ...generated.state, revision: 0 }), effects: { notices: [...notices, ...generated.effects.notices], journal: generated.effects.journal } };
+}
+
+/** Erzeugt das naechste faellige Verfahren je Los; der Fristworker holt seine Folgeereignisse nach. */
+export function generateDueTenders(initial: EconomyWorldState, at: number): {
+  readonly state: EconomyWorldState;
+  readonly effects: EconomyEffects;
+  readonly transitions: number;
+} {
+  if (initial.closed === true || initial.tenderGeneration === undefined) {
+    return { state: initial, effects: { notices: [], journal: [] }, transitions: 0 };
+  }
+  if (!Number.isSafeInteger(at) || at < 0) throw new Error("Vergabezeit braucht nichtnegative ganze Weltsekunden.");
+  const policy = initial.tenderGeneration;
+  validateTenderGenerationPolicy(policy);
+  const planning = initial.planning;
+  if (planning === undefined) throw new Error("Automatische Ausschreibungen brauchen einen weltgebundenen Angebotsplan; Weltdeployment neu erzeugen.");
+  const periodSeconds = initial.profile.periodWeeks * 7 * 86_400;
+  let state = initial;
+  let transitions = 0;
+  const notices: EconomyNotice[] = [];
+  let specifications: ReturnType<typeof deriveGtfsServiceSpecifications> | undefined;
+  const previousByLot = new Map<string, TenderLifecycle>();
+  for (const candidate of state.tenders.values()) {
+    const previous = previousByLot.get(candidate.tender.lotId);
+    if (previous === undefined || candidate.tender.operatingFrom > previous.tender.operatingFrom) previousByLot.set(candidate.tender.lotId, candidate);
+  }
+  for (const entry of initial.calendar) {
+    const previous = previousByLot.get(entry.lotId);
+    let announcementPeriod = entry.announcementPeriod;
+    if (previous !== undefined) {
+      if (previous.phase === "announced" || previous.phase === "open") continue;
+      if (previous.phase === "failed" && previous.operationStarted === false) continue;
+      const mobilization = state.mobilizations.get(previous.tender.id);
+      if (previous.phase === "awarded" && mobilization?.completed !== true) continue;
+      const contract = state.contracts.get(previous.tender.id);
+      announcementPeriod = contract === undefined
+        ? previous.tender.operatingFrom / periodSeconds + TENDER_GENERATION_TIMING.failedOperationRetenderPeriods - state.profile.tenderLeadPeriods
+        : contract.endsAt / periodSeconds - state.profile.tenderLeadPeriods;
+    }
+    if (!Number.isSafeInteger(announcementPeriod) || announcementPeriod < 0) throw new Error("Vergabe ist nicht an eine ganze Fahrplanperiode gebunden.");
+    const operatingPeriod = announcementPeriod + state.profile.tenderLeadPeriods;
+    const contractPeriods = state.profile.totalPeriods === undefined
+      ? state.profile.contractPeriods
+      : Math.min(state.profile.contractPeriods, state.profile.totalPeriods - operatingPeriod);
+    const announcedAt = announcementPeriod * periodSeconds;
+    const operatingFrom = operatingPeriod * periodSeconds;
+    if (!Number.isSafeInteger(announcedAt) || !Number.isSafeInteger(operatingFrom)) throw new Error("Vergabefrist liegt ausserhalb sicherer Weltsekunden.");
+    if (announcedAt > at || contractPeriods < 2) continue;
+    const tenderId = `tender:${entry.lotId}:${operatingPeriod}`;
+    specifications ??= deriveGtfsServiceSpecifications(planning, state.worldId, periodSeconds);
+    const planned = specifications.get(entry.lotId);
+    if (planned === undefined) throw new Error("Vergabekalender verweist auf ein Los ausserhalb des Angebotsplans.");
+    const budgets = mutableMap(state.budgets);
+    const budgetKey = `${policy.authorityId}:${announcementPeriod}`;
+    if (!budgets.has(budgetKey)) budgets.set(budgetKey, {
+      authorityId: policy.authorityId,
+      period: announcementPeriod,
+      availableCents: policy.authorityBudgetCentsPerPeriod,
+      committedCents: 0n,
+    });
+    const vehiclePool = state.publicOperations.get(entry.lotId)?.vehiclePool
+      ?? (previous === undefined ? undefined : state.tenderAutomation.get(previous.tender.id)?.vehiclePool)
+      ?? [];
+    const incumbentOperatorId = state.publicOperations.has(entry.lotId)
+      ? "public"
+      : [...state.contracts.values()]
+        .filter((contract) => contract.lotId === entry.lotId && contract.endsAt >= operatingFrom)
+        .sort((left, right) => right.endsAt - left.endsAt)[0]?.operatorId ?? "public";
+    const announced = announceTender(Object.freeze({ ...state, budgets }), {
+      commandId: `scheduler:${tenderId}:announce`,
+      release: state.release,
+      recipients: [...state.prequalifications.keys()].sort(compareUtf8),
+      tender: {
+        id: tenderId,
+        worldId: state.worldId,
+        lotId: entry.lotId,
+        incumbentOperatorId,
+        specification: planned.specification,
+        planningEvidence: planned.evidence,
+        announcedAt,
+        opensAt: announcedAt,
+        closesAt: announcedAt + (planned.lot.smallLot ? TENDER_GENERATION_TIMING.smallLotBidWindowSeconds : TENDER_GENERATION_TIMING.regularLotBidWindowSeconds),
+        operatingFrom,
+        contractPeriods,
+        periodDurationSeconds: periodSeconds,
+        smallLot: planned.lot.smallLot,
+      },
+      automation: { authorityId: policy.authorityId, budgetPeriod: announcementPeriod, vehiclePool, recipientByOperator: {}, failurePenaltyCents: policy.failurePenaltyCents },
+    });
+    state = openTender(announced.state, `scheduler:${tenderId}:open:${announcedAt}`, tenderId, announcedAt);
+    notices.push(...announced.effects.notices);
+    transitions += 2;
+  }
+  return { state, effects: { notices, journal: [] }, transitions };
 }
 
 /**
@@ -199,7 +301,7 @@ export function announceTender(state: EconomyWorldState, input: {
   if (input.tender.worldId !== state.worldId || state.tenders.has(input.tender.id)) throw new Error("Ausschreibung verletzt Weltisolation oder Eindeutigkeit.");
   const calendar = state.calendar.find((entry) => entry.lotId === input.tender.lotId);
   if (calendar === undefined) throw new Error("Los steht nicht im veröffentlichten Vergabekalender.");
-  const profiles = deterministicProfileOrder(input.release.tenderProfiles, state.seed);
+  const profiles = deterministicProfileOrder(input.release.tenderProfiles, state.seed, Math.floor(input.tender.announcedAt / input.tender.periodDurationSeconds));
   const lotIndex = state.calendar.findIndex((entry) => entry.lotId === input.tender.lotId);
   const profile = profiles[lotIndex % profiles.length]!;
   const tender = createTender({ ...input.tender, profile, release: input.release });
@@ -231,7 +333,13 @@ export function submitBid(state: EconomyWorldState, commandId: string, tenderId:
   scoreBid(current.tender, bid);
   const tenders = mutableMap(state.tenders);
   tenders.set(tenderId, { ...current, bids: Object.freeze([...current.bids, bid]) });
-  return withCommand(state, commandId, { tenders });
+  const tenderAutomation = mutableMap(state.tenderAutomation);
+  const automation = tenderAutomation.get(tenderId);
+  if (automation !== undefined) tenderAutomation.set(tenderId, {
+    ...automation,
+    recipientByOperator: { ...automation.recipientByOperator, [bid.operatorId]: qualification.accountId },
+  });
+  return withCommand(state, commandId, { tenders, tenderAutomation });
 }
 
 export function closeTender(state: EconomyWorldState, input: { readonly commandId: string; readonly tenderId: string; readonly at: number; readonly authorityId: string; readonly budgetPeriod: number; readonly vehiclePool: readonly string[]; readonly recipientByOperator: Readonly<Record<string, string>> }): { readonly state: EconomyWorldState; readonly effects: EconomyEffects } {
@@ -252,8 +360,9 @@ export function closeTender(state: EconomyWorldState, input: { readonly commandI
     const base = current.tender.viabilityThresholdCentsPerTrainKm * current.tender.specification.trainKmPerPeriod * 2n;
     const publicCost = base + base * BigInt(state.release.rules.publicOperationSurchargeBasisPoints) / 10_000n;
     budgets.set(budgetKey, commitAuthorityBudget(budget, publicCost));
-    publicOperations.set(current.tender.lotId, operation);
-    tenders.set(input.tenderId, { ...current, phase: "failed", publicOperation: operation });
+    const operationStarted = current.tender.incumbentOperatorId === "public" && !state.operatingRuntimeByLot.has(current.tender.lotId);
+    if (operationStarted) publicOperations.set(current.tender.lotId, operation);
+    tenders.set(input.tenderId, { ...current, phase: "failed", publicOperation: operation, operationStarted });
     return { state: withCommand(state, input.commandId, { tenders, publicOperations, mobilizations, budgets }), effects: { notices, journal: [] } };
   } else {
     const expectedCost = award.winner.orderingFeeCentsPerTrainKm * current.tender.specification.trainKmPerPeriod * BigInt(current.tender.contractPeriods);
@@ -268,6 +377,50 @@ export function closeTender(state: EconomyWorldState, input: { readonly commandI
     if (account !== undefined) notices.push({ id: `${input.commandId}:tender-awarded:${account}`, worldId: state.worldId, recipientAccountId: account, type: "tender-awarded", at: input.at, payload: { tenderId: input.tenderId, mobilizationDeadline: current.tender.operatingFrom } });
     return { state: withCommand(state, input.commandId, { tenders, publicOperations, mobilizations, budgets }), effects: { notices, journal: [] } };
   }
+}
+
+/** Ein erfolgloses Verfahren beendet den laufenden Vertrag erst am Betriebsstichtag. */
+export function startFailedTenderPublicOperation(state: EconomyWorldState, input: {
+  readonly commandId: string;
+  readonly tenderId: string;
+  readonly at: number;
+  readonly operatingTransition: OperatingTransitionResult;
+}): { readonly state: EconomyWorldState; readonly effects: EconomyEffects } {
+  if (!requireNewCommand(state, input.commandId)) return { state, effects: { notices: [], journal: [] } };
+  const current = lifecycle(state, input.tenderId);
+  if (current.phase !== "failed" || current.operationStarted === true || input.at !== current.tender.operatingFrom) throw new Error("Eigenbetrieb nach erfolgloser Vergabe beginnt ausschliesslich am veroeffentlichten Stichtag.");
+  const transition = input.operatingTransition;
+  const previousRevision = state.operatingRuntimeByLot.get(current.tender.lotId)?.state.revision ?? 0;
+  const ids = new Set(transition.outcome.trainRunIds);
+  if (
+    transition.schemaVersion !== "zugfolge-operating-transition-result/v1"
+    || transition.state.worldId !== state.worldId
+    || transition.state.revision !== previousRevision + 1
+    || transition.idempotentReplay
+    || transition.outcome.lotId !== current.tender.lotId
+    || transition.outcome.previousOperatorId !== current.tender.incumbentOperatorId
+    || transition.outcome.operatorId !== "public"
+    || transition.outcome.kind !== "public-operation"
+    || transition.outcome.seamless
+    || transition.outcome.penaltyRequired
+    || transition.outcome.livemapMarker !== "public-operator"
+    || ids.size === 0 || ids.size !== transition.outcome.trainRunIds.length
+    || new Set(transition.events.map((event) => event.eventId)).size !== transition.events.length
+    || transition.events.some((event) => event.worldId !== state.worldId || event.atS !== input.at)
+    || !transition.events.some((event) => event.eventType === "operating-duty-ended")
+    || !transition.events.some((event) => event.eventType === "operating-transition-completed")
+    || !transition.events.some((event) => event.eventType === "livemap-operation-marked")
+    || transition.events.filter((event) => event.eventType === "train-operation-assigned").length !== ids.size
+    || !/^[a-f0-9]{64}$/.test(transition.stateHash)
+  ) throw new Error("Rust-Eigenbetriebsuebergang widerspricht der erfolglosen Vergabe.");
+  if (current.publicOperation.vehiclePool.length === 0) throw new Error("Eigenbetrieb braucht eine nachgewiesene Ersatzfahrzeugflotte.");
+  const tenders = mutableMap(state.tenders);
+  tenders.set(input.tenderId, { ...current, operationStarted: true });
+  const publicOperations = mutableMap(state.publicOperations);
+  publicOperations.set(current.tender.lotId, current.publicOperation);
+  const operatingRuntimeByLot = mutableMap(state.operatingRuntimeByLot);
+  operatingRuntimeByLot.set(current.tender.lotId, { state: transition.state, stateHash: transition.stateHash });
+  return { state: withCommand(state, input.commandId, { tenders, publicOperations, operatingRuntimeByLot }), effects: { notices: [], journal: [], runtimeEvents: transition.events } };
 }
 
 /** Speichert nur stabile IDs/Hash; die eigentliche M5-Prüfung erfolgt an der Service-Grenze und erneut am Stichtag. */

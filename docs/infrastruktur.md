@@ -453,35 +453,25 @@ keinen JavaScript-Entscheider als Ersatz. Der Linux-NAPI-Job komponiert
 PlanningRun, PGlite-Worker, Projektion, Apply und Replay gegen dasselbe gebaute
 Addon.
 
-### 10.4 Gebietsüberschreitende Fahrten und logische Spielerplanung (E25)
+### 10.4 Spielgenerierte Fahrpläne innerhalb der Karte (E33)
 
-Ein GTFS-Zuglauf endet nicht künstlich am Kartenrand. Der jährliche
-Releasebau kompiliert ihn als `JourneyChain`: bestellbare `PlayableLeg`
-innerhalb des freigegebenen Betriebsgraphen wechseln an benannten
-`BoundaryPortal` mit nicht disponierbaren `ExternalLeg`. Der Außenlauf besitzt
-keine Kartenposition und keine scheinbare Außentrasse. Fahrzeug,
-Personaldienst, Verspätung und Fahrtkennung bleiben bis zur Rückkehr oder bis
-zum echten Außenende gebunden.
+Neue Spielzüge besitzen ausschließlich zusammenhängende Laufwege im gepinnten
+Spielgebiet. Der Angebotscompiler kürzt GTFS-Referenzen an Außenhalten oder
+nachgewiesenen Außenwegen und erzeugt daraus eigene innere Linien. Ein späterer
+Wiedereintritt wird unabhängig bedient. Alle Halte und die vollständige
+Gleisgeometrie müssen im Gebiet liegen; allein innere Endpunkte reichen nicht.
+Linienenden benötigen eine belegte Bahnhofseigenschaft und Wendemöglichkeit.
+Haltepunkte bleiben Zwischenhalte; fehlende Eignungsbelege schließen einen Halt
+als Endpunkt aus. Gewählt wird der längste zusammenhängende Abschnitt zwischen
+zwei verschiedenen geeigneten Bahnhöfen, bei Gleichstand der frühere Beginn.
+Ohne geeignetes Paar entfällt der Abschnitt mit dokumentiertem Grund.
 
-Für den Spieler bleibt der Antrag bewusst klein und verständlich. Er wählt
-Laufweg, Halte und Zeitlage im Spielgebiet sowie höchstens die Kennung eines
-angebotenen Grenzfensters. `packages/planning-worker` löst diese opaque Kennung
-serverseitig im gepinnten InfraRelease auf. Erst danach erhält Rust die
-unveränderlichen Ein- und Ausfahrfenster. Der Bildfahrplan zeigt Portal,
-Sollzeit und zulässiges Band, kennzeichnet sie aber als feste Randbedingung.
-Kandidaten außerhalb dieses Bands werden mit einer konkreten Erklärung
-abgelehnt; der Client kann weder die Grenzzeit noch Außenkosten unterschieben.
-
-Die `ExternalZone` ist während des Außenlaufs der deterministische Writer. Die
-Quellregion entfernt den Zug erst nach bestätigter Annahme. Vor einer
-Wiedereinfahrt prüft die Zielregion die ersten realen Konfliktressourcen. Sind
-sie belegt, bleibt der Zug sichtbar am Portal außerhalb und wartet, statt eine
-Belegung zu erzwingen. Nur vollständig qualifizierte Ketten mit benannten
-Portalen sind bestellbar; ein bloß erkannter Schnitt ist nur interne
-Builddiagnose. Gehört er zu einer erforderlichen Fahrtkette des Korpusscopes,
-blockiert er den Releasekandidaten und wird weder ausgeliefert noch sichtbar.
-Der vollständige Vertrag und seine
-Konsequenzen stehen in [ADR-0025](adr/0025-gebietsueberschreitende-fahrtketten.md).
+Der Spieler plant auf dem freigegebenen Betriebsgraphen. Es gibt keine aus GTFS
+übernommenen Außenportale, Grenzzeitfenster oder Außenbindungen. Wendezeit und
+Fahrzeugbedarf werden für das innere Angebot neu berechnet. Konfliktressourcen
+und deren Reservierung bleiben unverändert maßgeblich. Historische ExternalZone-
+Verträge können weiterhin alte Nachweise lesen, erzeugen aber keinen neuen
+Außenbetrieb. Details: [ADR-0034](adr/0034-spielgenerierte-fahrplaene-im-spielgebiet.md).
 
 ---
 

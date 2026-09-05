@@ -1,0 +1,8 @@
+{
+  "version": "regional-service-planning-alpha-2026.1",
+  "energyWhPerTrainKm": 10000,
+  "facilityMinutesPerVehicleDay": 60,
+  "minimumTurnaroundSeconds": 300,
+  "overnightBasisPoints": 10000,
+  "smallLotMaximumTrainKmPerDay": 1000
+}

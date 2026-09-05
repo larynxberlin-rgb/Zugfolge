@@ -179,16 +179,19 @@ einem der interessantesten Kapazitätsengpässe der Region.
 Ausgeschlossene Netze dürfen als blasse Kontextlinien gezeichnet werden, damit
 Städte richtig aussehen. Nicht auswählbar, keine Kapazität, kein Betrieb.
 
-**Durchgehende Linien am Gebietsrand (E25):** Eine reale Linie wird nicht am
-Kartenrand umbenannt oder mit einer erfundenen Wende verkürzt. Im
-Bildfahrplan plant der Spieler ausschließlich den Abschnitt im freigegebenen
-Netz. Benanntes Grenzportal, Sollzeit und zulässiges Zeitband sind als feste,
-serverseitig aus dem Release geladene Randbedingung sichtbar. Der Außenlauf
-bleibt derselbe Zug, hält Fahrzeug und gegebenenfalls Personal gebunden und
-erscheint in der Livemap als eigener Status ohne erfundene Kartenposition.
-Beim Wiedereintritt wartet er nötigenfalls außerhalb auf freie Kapazität.
-Nicht qualifizierte Übergänge sind sichtbar, aber nicht bestellbar. Details:
-[ADR-0025](adr/0025-gebietsueberschreitende-fahrtketten.md).
+**Linien innerhalb der Spielkarte (E33):** GTFS liefert die Referenz für das
+Angebot. Das Spiel erzeugt daraus eigene Linien und Fahrpläne, die vollständig
+im freigegebenen Spielgebiet liegen. Außenabschnitte entfallen; innere Abschnitte
+einer später wiederkehrenden Referenzlinie werden getrennt bedient. Eine Linie
+endet nur an Bahnhöfen mit belegter Wendemöglichkeit; Haltepunkte bleiben
+Zwischenhalte. Fehlt ein geeignetes Bahnhofspaar, entfällt der Abschnitt. Ziele
+nennen den tatsächlichen Endbahnhof. Ausschreibungen zeigen die Linienbezeichnung
+und tatsächlichen Endpunkte; die Linie gilt so, wie sie ausgeschrieben und bestellt
+wird. Die Spieleroberfläche enthält keine GTFS-Vorlagen oder Kürzungshinweise.
+Wende, Fahrzeugbedarf und Verkehrsleistung beziehen sich auf diesen Spielbetrieb.
+Es gibt keine versteckten Außenfahrten oder
+Fahrzeugbindungen außerhalb der Karte. Details:
+[ADR-0034](adr/0034-spielgenerierte-fahrplaene-im-spielgebiet.md).
 
 ## 5. Zwei Spielertypen, ein System
 

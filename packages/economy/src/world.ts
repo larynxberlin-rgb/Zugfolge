@@ -117,9 +117,6 @@ export function createTenderCalendar(
     rng.shuffle(bucket);
     return bucket.map((lot) => ({ lotId: lot.id, announcementPeriod: window, tenderPeriod: window + profile.tenderLeadPeriods, initialOperator: "public" as const }));
   });
-  const earliestRepeat = Math.min(...entries.map((entry) => entry.tenderPeriod + profile.contractPeriods));
-  const latestInitial = Math.max(...entries.map((entry) => entry.tenderPeriod));
-  if (earliestRepeat > latestInitial) throw new Error("Weltentwurf überlappt Erst- und Wiedervergabe nicht.");
   return Object.freeze(entries.sort((a, b) => a.tenderPeriod - b.tenderPeriod || compareUtf8(a.lotId, b.lotId)));
 }
 

@@ -91,9 +91,19 @@ struct TransitionCommand {
     expected_revision: u64,
     lot_id: String,
     at_s: i64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    next_timetable_boundary_s: Option<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    reason: Option<TransitionReason>,
     winner_operator_id: String,
     mobilization_proof: Option<MobilizationProof>,
     public_vehicle_pool: Vec<String>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "kebab-case")]
+enum TransitionReason {
+    FailedTender,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -368,6 +378,23 @@ fn apply_transition(
     }
     non_empty(&command.command_id, "commandId")?;
     non_empty(&command.winner_operator_id, "winnerOperatorId")?;
+    if command
+        .next_timetable_boundary_s
+        .is_some_and(|next| next < command.at_s)
+    {
+        return Err(RuntimeError::new(
+            "invalid_next_boundary",
+            "Folgestichtag liegt vor dem Betriebsuebergang",
+        ));
+    }
+    if command.reason.is_some()
+        && (command.winner_operator_id != "public" || command.mobilization_proof.is_some())
+    {
+        return Err(RuntimeError::new(
+            "invalid_public_operation",
+            "Gescheiterte Vergabe braucht Eigenbetrieb ohne Gewinnernachweis",
+        ));
+    }
     let command_hash = sha256_json(&command)?;
     if let Some(processed) = state.processed_commands.get(&command.command_id).cloned() {
         if processed.command_hash != command_hash {
@@ -417,7 +444,17 @@ fn apply_transition(
 
     let previous_operator_id = lot.operator_id.clone();
     let (operator_id, kind, seamless, penalty_required, livemap_marker, formations) =
-        if command.winner_operator_id == previous_operator_id {
+        if command.reason.is_some() {
+            unique_non_empty(&command.public_vehicle_pool, "publicVehiclePool")?;
+            (
+                "public".to_owned(),
+                TransitionKind::PublicOperation,
+                false,
+                false,
+                Some("public-operator".to_owned()),
+                command.public_vehicle_pool.clone(),
+            )
+        } else if command.winner_operator_id == previous_operator_id {
             (
                 command.winner_operator_id.clone(),
                 TransitionKind::SeamlessContinuation,
@@ -469,6 +506,9 @@ fn apply_transition(
     }
     lot.operator_id.clone_from(&operator_id);
     lot.livemap_marker.clone_from(&livemap_marker);
+    if let Some(next) = command.next_timetable_boundary_s {
+        lot.timetable_boundary_s = next;
+    }
     let train_run_ids = lot.train_runs.keys().cloned().collect::<Vec<_>>();
     let outcome = TransitionOutcome {
         lot_id: command.lot_id.clone(),
@@ -781,6 +821,82 @@ mod tests {
         )
         .expect_err("ohne Fahrzeug keine lueckenlose Uebernahme");
         assert!(error.to_string().starts_with("incomplete_evidence:"));
+    }
+
+    #[test]
+    fn folgevergabe_wechselt_erst_am_neuen_stichtag_und_ohne_bieterpoenale() {
+        let initial = initialized();
+        let mut first_command = command(
+            &initial["stateHash"],
+            "first-contract",
+            "new",
+            Some(complete_proof()),
+            json!([]),
+        );
+        first_command["nextTimetableBoundaryS"] = json!(1_209_600);
+        let first = apply(&initial["state"], &first_command);
+        assert_eq!(
+            first["state"]["lots"]["lot-s5x"]["timetableBoundaryS"],
+            1_209_600
+        );
+        assert_eq!(first["state"]["lots"]["lot-s5x"]["operatorId"], "new");
+
+        let mut fallback = command(
+            &first["stateHash"],
+            "failed-retender",
+            "public",
+            None,
+            json!(["public-1"]),
+        );
+        fallback["expectedRevision"] = json!(1);
+        fallback["reason"] = json!("failed-tender");
+        fallback["atS"] = json!(1_209_599);
+        fallback["nextTimetableBoundaryS"] = json!(1_814_400);
+        let early = apply_operating_transition(&first["state"].to_string(), &fallback.to_string())
+            .expect_err("Altbetreiber bleibt bis Vertragsende aktiv");
+        assert!(early.to_string().starts_with("not_timetable_boundary:"));
+        fallback["atS"] = json!(1_209_600);
+        let public = apply(&first["state"], &fallback);
+        assert_eq!(public["outcome"]["operatorId"], "public");
+        assert_eq!(public["outcome"]["previousOperatorId"], "new");
+        assert_eq!(public["outcome"]["kind"], "public-operation");
+        assert_eq!(public["outcome"]["penaltyRequired"], false);
+        assert_eq!(
+            public["state"]["lots"]["lot-s5x"]["timetableBoundaryS"],
+            1_814_400
+        );
+        let replay = apply(&public["state"], &fallback);
+        assert_eq!(replay["idempotentReplay"], true);
+        assert_eq!(replay["stateHash"], public["stateHash"]);
+
+        let mut following = command(
+            &public["stateHash"],
+            "next-contract",
+            "next",
+            Some(complete_proof()),
+            json!([]),
+        );
+        following["expectedRevision"] = json!(2);
+        following["atS"] = json!(1_814_400);
+        following["nextTimetableBoundaryS"] = json!(2_419_200);
+        let result = apply(&public["state"], &following);
+        assert_eq!(result["outcome"]["operatorId"], "next");
+        assert_eq!(result["state"]["revision"], 3);
+    }
+
+    #[test]
+    fn ruecklaeufiger_folgestichtag_und_fremder_gewinner_bleiben_gesperrt() {
+        let initial = initialized();
+        let mut invalid = command(&initial["stateHash"], "invalid", "old", None, json!([]));
+        invalid["nextTimetableBoundaryS"] = json!(604_799);
+        let error = apply_operating_transition(&initial["state"].to_string(), &invalid.to_string())
+            .expect_err("Stichtag darf nicht zuruecklaufen");
+        assert!(error.to_string().starts_with("invalid_next_boundary:"));
+        invalid["nextTimetableBoundaryS"] = json!(1_209_600);
+        invalid["reason"] = json!("failed-tender");
+        let error = apply_operating_transition(&initial["state"].to_string(), &invalid.to_string())
+            .expect_err("Erfolglose Vergabe darf keinen Spieler zum Gewinner machen");
+        assert!(error.to_string().starts_with("invalid_public_operation:"));
     }
 
     #[test]

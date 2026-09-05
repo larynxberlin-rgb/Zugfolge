@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { gameTimetableJourneyId, gameTimetableLineId, generateGameDepartures, type GameTimetableSpecification } from "./game-timetable.js";
 
 export const GTFS_PLANNING_SCHEMA = "zugfolge-gtfs-planning/v2" as const;
 export const GTFS_SERVICE_PATTERN_IDENTITY_SCHEMA = "zugfolge-gtfs-service-pattern-identity/v2" as const;
@@ -29,6 +30,7 @@ export interface GtfsPlanningSource {
 
 export interface PlanningInfrastructureNode {
   readonly id: string;
+  readonly inRegion?: boolean;
 }
 
 export interface PlanningInfrastructureEdge {
@@ -39,6 +41,7 @@ export interface PlanningInfrastructureEdge {
   readonly active: boolean;
   readonly bidirectional: boolean;
   readonly electrification: "none" | "ac" | "dc" | "third-rail";
+  readonly inRegion?: boolean;
 }
 
 export interface GtfsStopNodeMapping {
@@ -97,9 +100,12 @@ export interface GtfsPlanningInput {
     readonly patternMappings: readonly GtfsPatternInfrastructureMapping[];
   };
   readonly rules: GtfsPlanningRules;
+  readonly timetableGeneration?: { readonly seed: string; readonly specification: GameTimetableSpecification };
 }
 
 export interface PlannedJourney {
+  readonly id?: string;
+  readonly sourceTripIds?: readonly string[];
   readonly sourceTripId: string;
   readonly serviceDate: string;
   readonly departureServiceSeconds: number;
@@ -111,6 +117,11 @@ export interface PlannedJourney {
 export interface GtfsServicePattern {
   readonly id: string;
   readonly lineId: string;
+  readonly presentation?: {
+    readonly designation: string;
+    readonly origin: string;
+    readonly destination: string;
+  };
   readonly directionId: string;
   readonly sourceRouteIds: readonly string[];
   readonly stopIds: readonly string[];
@@ -162,6 +173,8 @@ export interface GtfsPlanningSnapshot {
   readonly infrastructureVersion: string;
   readonly rulesVersion: string;
   readonly serviceDates: readonly string[];
+  readonly sourceTimetableHash?: string;
+  readonly timetableGeneration?: { readonly seed: string; readonly specification: GameTimetableSpecification };
   readonly patterns: readonly GtfsServicePattern[];
   readonly lots: readonly GtfsServiceLot[];
 }
@@ -455,10 +468,12 @@ interface ResolvedMapping {
   readonly nodeIds: readonly string[];
   readonly stopNames: readonly string[];
   readonly distanceMeters: number;
+  readonly policyLineId: string;
 }
 
 function resolveMappings(input: GtfsPlanningInput): ReadonlyMap<string, ResolvedMapping> {
   const nodeIds = new Set(input.infrastructure.nodes.map((node) => node.id));
+  const outsideNodes = new Set(input.infrastructure.nodes.filter((node) => node.inRegion === false).map((node) => node.id));
   invariant(nodeIds.size === input.infrastructure.nodes.length, "Infrastruktur enthält doppelte Knoten-IDs.");
   const edges = new Map(input.infrastructure.edges.map((edge) => [edge.id, edge]));
   invariant(edges.size === input.infrastructure.edges.length, "Infrastruktur enthält doppelte Kanten-IDs.");
@@ -502,20 +517,42 @@ function resolveMappings(input: GtfsPlanningInput): ReadonlyMap<string, Resolved
       safeInteger(distanceMeters, `${name}.distanceMeters`, 1);
     }
     let previousIndex = -1;
+    const positions: number[] = [];
     for (const nodeId of mappedNodes) {
       const indexInPath = pathNodes.indexOf(nodeId, previousIndex + 1);
       invariant(indexInPath > previousIndex, `${name}: Haltknoten '${nodeId}' liegt nicht in korrekter Reihenfolge auf dem Pfad.`);
       previousIndex = indexInPath;
+      positions.push(indexInPath);
     }
     invariant(previousIndex === pathNodes.length - 1, `${name}: Der Infrastrukturpfad endet nicht am letzten GTFS-Halt.`);
-    const key = mappingKey(mapping.routeId, mapping.directionId ?? "", mapping.stopIds);
-    invariant(!result.has(key), `${name}: dieselbe externe Linienvariante wurde doppelt zugeordnet.`);
-    result.set(key, {
-      mapping,
-      nodeIds: Object.freeze([...mappedNodes]),
-      stopNames: Object.freeze(mapping.stopIds.map((stopId) => stops.get(stopId)?.["stop_name"] ?? stopId)),
-      distanceMeters,
-    });
+    let start = 0;
+    while (start < mappedNodes.length) {
+      if (outsideNodes.has(mappedNodes[start]!)) { start += 1; continue; }
+      let end = start;
+      while (end + 1 < mappedNodes.length) {
+        const from = positions[end]!;
+        const to = positions[end + 1]!;
+        if (pathNodes.slice(from, to + 1).some((nodeId) => outsideNodes.has(nodeId))
+          || mapping.edgeIds.slice(from, to).some((edgeId) => edges.get(edgeId)!.inRegion === false)) break;
+        end += 1;
+      }
+      if (end > start) {
+        const selectedNodes = mappedNodes.slice(start, end + 1);
+        const edgeIds = mapping.edgeIds.slice(positions[start], positions[end]);
+        const selectedStops = mapping.stopIds.slice(start, end + 1);
+        const lineId = start === 0 && end === mappedNodes.length - 1 ? mapping.lineId : gameTimetableLineId({ regionId: input.infrastructure.version, designation: mapping.lineId, directionId: mapping.directionId ?? "", nodeIds: selectedNodes });
+        const key = mappingKey(mapping.routeId, mapping.directionId ?? "", selectedStops);
+        invariant(!result.has(key), `${name}: dieselbe externe Linienvariante wurde doppelt zugeordnet.`);
+        result.set(key, {
+          mapping: { ...mapping, lineId, stopIds: selectedStops, edgeIds },
+          policyLineId: mapping.lineId,
+          nodeIds: Object.freeze(selectedNodes),
+          stopNames: Object.freeze(selectedStops.map((stopId) => stops.get(stopId)?.["stop_name"] ?? stopId)),
+          distanceMeters: edgeIds.reduce((sum, edgeId) => sum + edges.get(edgeId)!.distanceMeters, 0),
+        });
+      }
+      start = end + 1;
+    }
   }
   return result;
 }
@@ -630,6 +667,15 @@ function validateRules(rules: GtfsPlanningRules): ReadonlyMap<string, GtfsLinePo
  * Infrastrukturzuordnung und bildet daraus deterministische SPNV-Lose.
  */
 export function buildGtfsPlanningSnapshot(input: GtfsPlanningInput): GtfsPlanningSnapshot {
+  return buildPlanningSnapshot(input, false);
+}
+
+/** Ausschließlich für archivierte GTFS-Nachweise; neue Spielwelten verwenden den Generator. */
+export function buildGtfsReferenceReplaySnapshot(input: GtfsPlanningInput): GtfsPlanningSnapshot {
+  return buildPlanningSnapshot(input, true);
+}
+
+function buildPlanningSnapshot(input: GtfsPlanningInput, referenceReplay: boolean): GtfsPlanningSnapshot {
   nonEmpty(input.worldId, "worldId");
   safeInteger(input.revision, "revision");
   safeInteger(input.producedAt, "producedAt");
@@ -644,7 +690,11 @@ export function buildGtfsPlanningSnapshot(input: GtfsPlanningInput): GtfsPlannin
   gtfsLocalMidnightEpochSeconds(input.serviceDates[0]!, input.source.timeZone);
   nonEmpty(input.source.sourceLicense, "source.sourceLicense");
   nonEmpty(input.source.attribution, "source.attribution");
-  const policies = validateRules(input.rules);
+  const policies = new Map(validateRules(input.rules));
+  const timetableGeneration = input.timetableGeneration ?? { seed: input.rules.version, specification: { version: "game-timetable/v1", departureGridSeconds: 60, minimumRunningSeconds: 1 } };
+  safeInteger(timetableGeneration.specification.departureGridSeconds, "departureGridSeconds", 1);
+  safeInteger(timetableGeneration.specification.minimumRunningSeconds, "minimumRunningSeconds", 1);
+  nonEmpty(timetableGeneration.seed, "timetableGeneration.seed");
   const identityNamespace = gtfsPlanningIdentityNamespace({
     source: input.source,
     infrastructureVersion: input.infrastructure.version,
@@ -652,6 +702,10 @@ export function buildGtfsPlanningSnapshot(input: GtfsPlanningInput): GtfsPlannin
     serviceDates: input.serviceDates,
   });
   const resolvedMappings = resolveMappings(input);
+  for (const resolved of resolvedMappings.values()) {
+    const policy = policies.get(resolved.policyLineId);
+    if (policy !== undefined) policies.set(resolved.mapping.lineId, { ...policy, lineId: resolved.mapping.lineId });
+  }
   const routes = new Map(input.tables.routes.map((route) => [route["route_id"]!, route]));
   const timesByTrip = new Map<string, GtfsRow[]>();
   for (const stopTime of input.tables.stopTimes) {
@@ -687,12 +741,17 @@ export function buildGtfsPlanningSnapshot(input: GtfsPlanningInput): GtfsPlannin
           && (candidate.mapping.directionId ?? "") === directionId
           && contiguousSubsequenceIndex(stopIds, candidate.mapping.stopIds) >= 0)
         .sort((left, right) => right.mapping.stopIds.length - left.mapping.stopIds.length);
-      const resolved = matchingMappings[0];
-      if (resolved === undefined) continue;
-      invariant(
-        matchingMappings[1] === undefined || matchingMappings[1].mapping.stopIds.length !== resolved.mapping.stopIds.length,
-        `GTFS-Fahrt '${trip["trip_id"]!}' passt auf mehrere gleich spezifische Infrastrukturzuordnungen.`,
-      );
+      const selectedMappings: ResolvedMapping[] = [];
+      for (const candidate of matchingMappings) {
+        const start = contiguousSubsequenceIndex(stopIds, candidate.mapping.stopIds);
+        const overlap = selectedMappings.find((selected) => {
+          const selectedStart = contiguousSubsequenceIndex(stopIds, selected.mapping.stopIds);
+          return start < selectedStart + selected.mapping.stopIds.length && selectedStart < start + candidate.mapping.stopIds.length;
+        });
+        invariant(overlap === undefined || overlap.mapping.stopIds.length !== candidate.mapping.stopIds.length, `GTFS-Fahrt '${trip["trip_id"]!}' passt auf mehrere gleich spezifische Infrastrukturzuordnungen.`);
+        if (overlap === undefined) selectedMappings.push(candidate);
+      }
+      for (const resolved of selectedMappings) {
       const policy = policies.get(resolved.mapping.lineId);
       invariant(policy !== undefined, `Für Linie '${resolved.mapping.lineId}' fehlt eine versionierte Planungsregel.`);
       const segmentStart = contiguousSubsequenceIndex(stopIds, resolved.mapping.stopIds);
@@ -719,6 +778,7 @@ export function buildGtfsPlanningSnapshot(input: GtfsPlanningInput): GtfsPlannin
         }));
       }
       accumulators.set(id, accumulator);
+      }
     }
   }
   invariant(accumulators.size > 0, "Keine aktive GTFS-Fahrt besitzt eine vollständige Infrastrukturzuordnung.");
@@ -726,7 +786,19 @@ export function buildGtfsPlanningSnapshot(input: GtfsPlanningInput): GtfsPlannin
   const patterns: GtfsServicePattern[] = [];
   for (const [id, accumulator] of accumulators) {
     const policy = policies.get(accumulator.resolved.mapping.lineId)!;
-    const journeys = accumulator.journeys.sort((left, right) => left.departureEpochSeconds - right.departureEpochSeconds || left.sourceTripId.localeCompare(right.sourceTripId));
+    let journeys = accumulator.journeys.sort((left, right) => left.departureEpochSeconds - right.departureEpochSeconds || left.sourceTripId.localeCompare(right.sourceTripId));
+    if (!referenceReplay) {
+      const lineId = gameTimetableLineId({ regionId: input.infrastructure.version, designation: accumulator.resolved.mapping.lineId, directionId: accumulator.resolved.mapping.directionId ?? "", nodeIds: accumulator.resolved.nodeIds });
+      journeys = input.serviceDates.flatMap((serviceDate) => {
+        const references = accumulator.journeys.filter((journey) => journey.serviceDate === serviceDate);
+        if (references.length === 0) return [];
+        const duration = Math.max(timetableGeneration.specification.minimumRunningSeconds, median(references.map((journey) => journey.arrivalServiceSeconds - journey.departureServiceSeconds))!);
+        const generated = generateGameDepartures({ referenceDepartures: references.map((journey) => journey.departureServiceSeconds), seed: timetableGeneration.seed, lineId, departureGridSeconds: timetableGeneration.specification.departureGridSeconds });
+        const midnight = gtfsLocalMidnightEpochSeconds(serviceDate, input.source.timeZone);
+        const sourceTripIds = [...new Set(references.map((journey) => journey.sourceTripId))].sort();
+        return generated.departures.map((departure, index) => ({ id: gameTimetableJourneyId({ regionId: input.infrastructure.version, lineId, serviceDate, seed: timetableGeneration.seed, index }), sourceTripId: sourceTripIds[0]!, sourceTripIds, serviceDate, departureServiceSeconds: departure, arrivalServiceSeconds: departure + duration, departureEpochSeconds: midnight + departure, arrivalEpochSeconds: midnight + departure + duration }));
+      });
+    }
     const totalTrainMeters = BigInt(accumulator.resolved.distanceMeters) * BigInt(journeys.length);
     const totalStops = BigInt(accumulator.resolved.mapping.stopIds.length) * BigInt(journeys.length);
     const totalServiceSeconds = journeys.reduce((sum, journey) => sum + BigInt(journey.arrivalServiceSeconds - journey.departureServiceSeconds), 0n);
@@ -838,6 +910,7 @@ export function buildGtfsPlanningSnapshot(input: GtfsPlanningInput): GtfsPlannin
     infrastructureVersion: input.infrastructure.version,
     rulesVersion: input.rules.version,
     serviceDates: Object.freeze([...input.serviceDates]),
+    ...(!referenceReplay ? { timetableGeneration } : {}),
     patterns: Object.freeze(patterns),
     lots: Object.freeze(lots),
   });
@@ -850,6 +923,7 @@ export function validateGtfsPlanningSnapshot(snapshot: GtfsPlanningSnapshot): Gt
   safeInteger(snapshot.revision, "revision");
   safeInteger(snapshot.producedAt, "producedAt");
   invariant(/^[a-f0-9]{64}$/.test(snapshot.source.archiveSha256), "Feed-Hash ist kein SHA-256.");
+  if (snapshot.sourceTimetableHash !== undefined) invariant(/^[a-f0-9]{64}$/.test(snapshot.sourceTimetableHash), "Fahrplan-Hash ist kein SHA-256.");
   uniqueStrings(snapshot.serviceDates, "serviceDates");
   invariant(snapshot.patterns.length > 0, "GTFS-Planung besitzt keine Service-Patterns.");
   invariant(snapshot.lots.length > 0, "GTFS-Planung besitzt keine Lose.");

@@ -132,6 +132,7 @@ let marketQuery = "";
 let cooperationAtS = 0;
 let economyRevision = 0;
 let publicTenders: readonly PublicTenderView[] = [];
+let tendersUnavailable = false;
 let mailboxMessages: readonly MailboxMessageView[] = [];
 let publicWorldContracts: readonly PublicWorldContractView[] = [];
 let contractPageView: CooperationPageView = initialCooperationPageViews.contractPageView;
@@ -237,6 +238,7 @@ function cooperationState(): CooperationSurfaceState | undefined {
     ...(stationOptions === undefined ? {} : { stationOptions }),
     economyRevision,
     tenders: publicTenders,
+    tendersUnavailable,
     section: activeJourneySection === "markets" ? "markets"
       : activeJourneySection === "operations" ? "operations" : "all",
   };
@@ -739,10 +741,11 @@ async function refreshCooperation(preferredOperatorId = activeOperatorId): Promi
     client.loadWorldOperators(publicWorldId),
     client.loadVehicleMarket(publicWorldId, listingPageView, undefined, 50, cooperationDeadlineBeforeS),
     client.loadMailbox(publicWorldId),
-    client.loadEconomyState(publicWorldId).catch(() => ({ revision: 0, tenders: [] as readonly PublicTenderView[] })),
+    client.loadEconomyState(publicWorldId).catch(() => null),
   ]);
-  economyRevision = economy.revision;
-  publicTenders = economy.tenders;
+  tendersUnavailable = economy === null;
+  if (economy !== null) economyRevision = economy.revision;
+  publicTenders = economy?.tenders ?? [];
   cooperationAtS = atS;
   try { projection = await client.loadProjection(publicWorldId); }
   catch { projection = undefined; }

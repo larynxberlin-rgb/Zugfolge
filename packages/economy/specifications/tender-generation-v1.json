@@ -1,0 +1,23 @@
+{
+  "schemaVersion": "zugfolge-tender-generation/v1",
+  "scope": "public-world",
+  "initialOpening": "world-epoch",
+  "subsequentOpening": "calendar-announcement-period-boundary",
+  "smallLotBidWindowSeconds": 86400,
+  "regularLotBidWindowSeconds": 259200,
+  "operatingLeadPeriods": 1,
+  "failedOperationRetenderPeriods": 2,
+  "maximumCatchUpRoundsPerCycle": 64,
+  "rules": [
+    "Automatische Vergaben brauchen einen validierten, weltgebundenen Angebotsplan und eine signierte Generierungsregel. Interne Testlose aktivieren keine Automatik.",
+    "Das erste Kalenderfenster wird bei Weltepoche angekuendigt und geoeffnet. Weitere Lose bleiben nach dem veroeffentlichten Kalender gestaffelt.",
+    "Auch Karten mit nur einem Los sind spielbar. Sie brauchen keine kuenstlichen Lose, um Erst- und Wiedervergaben ueberlappen zu lassen.",
+    "Fristen bleiben beim Nachholen und nach Prozessneustarts unveraendert. Welt, Los und Betriebsperiode bestimmen die eindeutige Vergabe.",
+    "Ein Zuschlag vergibt erst zum Betriebsstichtag einen Vertrag. Ohne erfolgreichen Betrieb bleibt der Eigenbetrieb fuer zwei Perioden zustaendig.",
+    "Bei erfolgloser Folgevergabe bleibt der Altbetreiber bis zum Betriebsstichtag aktiv. Erst ein nativer, atomar persistierter Betriebsuebergang weist die Fahrten dem Eigenbetrieb zu; ohne Gewinner gibt es keine Bieterpoenale.",
+    "Ein erfolgreicher nativer Betriebsuebergang schreibt seinen naechsten Stichtag fort: Vertragsende bei aktivem Vertrag, zwei Perioden bei Eigenbetrieb. Alte Kommandos ohne Folgestichtag behalten ihre Semantik und ihren Replayhash.",
+    "Folgevergabe wird eine Periode vor Vertragsende angekuendigt. In der letzten Weltperiode entstehen keine neuen Vergaben; Vertraege brauchen mindestens zwei verbleibende Betriebsperioden.",
+    "Der signierte Integer-Cent-Betrag bestimmt das Aufgabentraegerbudget je Ankuendigungsperiode. Ein vorhandenes Budget wird niemals aufgefuellt oder ersetzt.",
+    "Eine Gebotsabgabe bindet das autoritativ gepruefte Gruenderkonto als Zuschlagsempfaenger, auch wenn das EVU erst nach der Ankuendigung gegruendet wurde."
+  ]
+}

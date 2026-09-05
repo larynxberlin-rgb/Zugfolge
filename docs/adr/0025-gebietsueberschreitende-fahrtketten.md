@@ -1,6 +1,6 @@
 # ADR-0025: Gebietsüberschreitende Fahrten bleiben eine Fahrtkette mit deterministischem Außenlauf
 
-- **Status:** Angenommen — bindend (entspricht E25)
+- **Status:** Abgelöst durch ADR-0034 (entspricht E25). Für neue Spielangebote gilt [ADR-0034 / E33](0034-spielgenerierte-fahrplaene-im-spielgebiet.md). Der folgende Text dokumentiert den historischen Vertrag für alte Nachweise und Replays.
 - **Bezug:** [../entscheidungen.md](../entscheidungen.md) · [../infrastruktur.md](../infrastruktur.md) · [../mitteldeutschland-alpha.md](../mitteldeutschland-alpha.md) · [GitHub-Issue #192](https://github.com/larynxberlin-rgb/Zugfolge/issues/192)
 - **Betrifft Milestones:** M3.4, M4.5, M9.2, M9.3, M14.1, später M14.2–M14.4
 - **Verwandte ADRs:** [ADR-0005](0005-rust-kern-typescript-plattform.md), [ADR-0009](0009-vollstaendige-transparenz-livemap.md), [ADR-0014](0014-netzabgrenzung-nur-ebo.md), [ADR-0019](0019-realismus-dient-dem-spiel.md), [ADR-0022](0022-jaehrliche-infrastrukturaktualisierung.md), [ADR-0024](0024-erweiterter-alpha-schnitt.md)

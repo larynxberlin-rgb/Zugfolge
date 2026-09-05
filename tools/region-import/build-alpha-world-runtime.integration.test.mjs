@@ -19,6 +19,7 @@ import {
   ALPHA_WORLD_DEPLOYMENT_SCHEMA,
   parseSignedAlphaWorldDeployment,
   serializeSignedAlphaWorldDeployment,
+  startAlphaDeploymentEconomy,
 } from "../../apps/game-api/dist/alpha-world-start.js";
 import { operationalSimulationInitializationHash } from "../../apps/game-api/dist/operational-initialization-hash.js";
 import { ActiveWorldDeploymentRuntime } from "../../apps/game-api/dist/world-deployment-runtime.js";
@@ -162,6 +163,25 @@ describe("echter Alpha-Builder bis zur produktiven Scheduler-Registry", () => {
       assert.equal(train.serviceOutcome.connectionAssessment, "unavailable");
     }
     assert.deepEqual(initialization.serviceOutcomePolicy.serviceIds, initialization.trains.filter((train) => train.publicPassengerStop).map((train) => train.id).sort());
+  });
+
+  test("oeffnet aus dem signierten Builder-Plan beim Weltstart echte Ausschreibungen", () => {
+    const deployment = signed.deployment;
+    const result = startAlphaDeploymentEconomy(deployment);
+    assert.equal(result.state.revision, 0);
+    assert.equal(result.state.planning.snapshotHash, deployment.economy.planning.snapshotHash);
+    assert.equal(result.state.planning.snapshot.sourceTimetableHash, deployment.blueprint.releases.timetable);
+    const open = [...result.state.tenders.values()].filter((entry) => entry.phase === "open");
+    assert.ok(open.length > 0);
+    for (const { tender } of open) {
+      assert.equal(tender.opensAt, 0);
+      assert.ok(tender.specification.trainKmPerPeriod > 0n);
+      assert.equal(tender.planningEvidence.snapshotHash, deployment.economy.planning.snapshotHash);
+    }
+    assert.deepEqual(
+      result.state.planning.snapshot.patterns.flatMap((pattern) => pattern.journeys.map((journey) => journey.id)).sort(),
+      deployment.regionalSimulation.trains.filter((train) => train.publicPassengerStop).map((train) => train.id).sort(),
+    );
   });
 
   test("hydriert das Builder-Deployment beim Serverstart nativ und registriert exakt sein Schedulerprogramm", {

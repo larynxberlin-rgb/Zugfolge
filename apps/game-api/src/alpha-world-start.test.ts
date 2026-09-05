@@ -1,4 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
+import { alphaHash } from "@zugfolge/alpha";
+import { buildEconomyRelease, deriveTenderAuthorityBudgetCents, lotsFromGtfsPlanning, startEconomyWorld, TENDER_GENERATION_SCHEMA } from "@zugfolge/economy";
+import { buildRegionalServicePlanning, createGtfsPlanningEnvelope } from "@zugfolge/gtfs";
 import {
   OPERATIONAL_PROTECTION_MODE_SELECTION_POLICY,
   type OperationalSimulationInitialization,
@@ -11,6 +14,10 @@ import {
   parsePersistedActiveAlphaWorldDeployment,
   publicOperationSnapshotVerification,
   validateDeploymentWorldDefinition,
+  startAlphaDeploymentEconomy,
+  validateAlphaEconomyPlanningBinding,
+  validatePersistedAlphaEconomyPlanning,
+  type AlphaWorldDeployment,
 } from "./alpha-world-start.js";
 import { operationalSimulationInitializationHash } from "./operational-initialization-hash.js";
 
@@ -21,6 +28,108 @@ const definition = {
   schedulePeriodWeeks: 4,
   epoch: "2026-08-10T00:00:00.000Z",
 };
+
+function plannedDeployment(): AlphaWorldDeployment {
+  const planning = buildRegionalServicePlanning({
+    worldId: "world-planning", revision: 1, producedAt: 0, serviceDate: "20260810", infrastructureVersion: "infra-planning", rulesVersion: "planning-v1", sourceTimetableHash: "b".repeat(64), smallLotMaximumTrainKmPerDay: 1_000,
+    timetableGeneration: { seed: "42", specification: { schemaVersion: "zugfolge-game-timetable-generation/v1", version: "game-timetable/v1", departureGridSeconds: 60, minimumRunningSeconds: 1, requireEligibleTerminals: true } },
+    source: { sourceId: "fixture", feedUrl: "https://example.test/fixture.zip", archiveSha256: "a".repeat(64), capturedAt: "2026-08-10T00:00:00Z", timeZone: "Europe/Berlin", sourceLicense: "fixture", attribution: "Fixture" },
+    lines: Array.from({ length: 8 }, (_, index) => ({
+      peakVehicles: 1,
+      policy: { lineId: `line-${index}`, energyWhPerTrainKm: 10_000, facilityMinutesPerVehicleDay: 60, minimumTurnaroundSeconds: 300, overnightBasisPoints: 10_000, requiredProtection: ["pzb"], requirements: { minimumSeats: 100, firstClassBasisPoints: 0, accessible: true, bicyclePlaces: 8, wheelchairPlaces: 2, requiredEquipment: [] } },
+      journeys: [{ id: `game-trip-${index}`, directionId: "0", sourceRouteId: "reference-route", routeLengthMm: 10_000_000, edgeIds: ["edge"], stops: [{ stopId: "a", name: "A", arrivalS: 3_600, departureS: 3_600 }, { stopId: "b", name: "B", arrivalS: 4_200, departureS: 4_200 }] }],
+    })),
+  });
+  const release = buildEconomyRelease({
+    version: "2026.1",
+    rates: { trackPerTrainKmCents: 100n, stationPerStopCents: 100n, facilityPerHourCents: 100n, energyPerKwhCents: 100n, personnelPerHourCents: 100n, administrationPerPeriodCents: 100n, vehiclePerPeriodCents: 100n, overnightStablingPerPeriodCents: 100n, protectionEquipmentPerPeriodCents: 100n, lateInterestBasisPoints: 500 },
+    rules: { qualityBaselinePunctualityBasisPoints: 8_500, pointsPerExtraSeat: 40, pointsPerPunctualityBasisPoint: 1, pointsPerAdditionalStop: 300, requirementFocusMaximumPoints: 1_500, contractBonusCentsPerPeriod: 100_000n, penaltyRates: { punctuality: 10n, cancellation: 10_000n, seats: 100n, connections: 1_000n }, penaltyFocusMultiplierBasisPoints: 20_000, publicOperationSurchargeBasisPoints: 2_000, failedPackageFeeStepBasisPoints: 500, failedPackageReductionStepBasisPoints: 400 },
+    tenderProfiles: [
+      { id: "price", weights: { price: 7_000, quality: 3_000 }, requirementFocus: "capacity", penaltyFocus: "punctuality", viabilitySurchargeBasisPoints: 1_000 },
+      { id: "quality", weights: { price: 3_000, quality: 7_000 }, requirementFocus: "comfort", penaltyFocus: "connections", viabilitySurchargeBasisPoints: 1_500 },
+    ],
+  });
+  const lots = lotsFromGtfsPlanning(planning, "world-planning");
+  const tenderGeneration = { schemaVersion: TENDER_GENERATION_SCHEMA, authorityId: "authority", failurePenaltyCents: 0n, authorityBudgetCentsPerPeriod: deriveTenderAuthorityBudgetCents(planning, "world-planning", release, 12) };
+  const economy = { durationMonths: 12 as const, release, planning, tenderGeneration, lots, authorityBudgets: [], accounts: [], publicVehiclePoolByLot: {} };
+  const { lots: _lots, ...startInput } = economy;
+  const started = startEconomyWorld({ worldId: "world-planning", seed: 42n, ...startInput });
+  const blueprintLots = planning.snapshot.lots.map((lot) => ({ lotId: lot.id, trainRunIds: planning.snapshot.patterns.filter((pattern) => lot.patternIds.includes(pattern.id)).flatMap((pattern) => pattern.journeys.map((journey) => journey.id!)) }));
+  return {
+    worldId: "world-planning", economy,
+    repeatEveryS: 86_400,
+    worldDefinition: { epoch: "2026-08-10T00:00:00Z" },
+    regionalSimulation: { trains: blueprintLots.flatMap((lot) => lot.trainRunIds.map((id) => ({ id, publicPassengerStop: true, scheduledDepartureMs: 3_600_000, serviceOutcome: { serviceId: id, serviceRunId: `${id}:service-day:2026-08-10`, lotId: lot.lotId, serviceDay: "2026-08-10", scheduledArrivalMs: 4_200_000 } }))) },
+    provenance: { infraReleaseId: "infra-planning", gtfsSnapshotHash: "b".repeat(64) },
+    blueprint: { seed: 42n, releases: { timetable: "b".repeat(64), economy: release.checksum }, lots: blueprintLots, tenderCalendarHash: alphaHash("zugfolge-alpha-tender-calendar/v1", started.state.calendar) },
+  } as unknown as AlphaWorldDeployment;
+}
+
+describe("produktiver Start der Spielplanung", () => {
+  it("verdrahtet den signierten Plan mit offenen Ausschreibungen und stabilen Spiel-Fahrtkennungen", () => {
+    const deployment = plannedDeployment();
+    const started = startAlphaDeploymentEconomy(deployment);
+    expect(started.state.revision).toBe(0);
+    expect(started.state.planning?.snapshotHash).toBe(deployment.economy.planning?.snapshotHash);
+    const open = [...started.state.tenders.values()].filter((entry) => entry.phase === "open");
+    expect(open.length).toBeGreaterThan(0);
+    expect(open.every((entry) => entry.tender.opensAt === 0 && entry.tender.specification.trainKmPerPeriod > 0n)).toBe(true);
+  });
+
+  it("laesst historische Deployments lesen, verhindert aber einen weiteren stillen Leerstart", () => {
+    const { planning: _planning, tenderGeneration: _generation, ...legacyEconomy } = plannedDeployment().economy;
+    const legacy = { ...plannedDeployment(), economy: legacyEconomy };
+    expect(() => validateAlphaEconomyPlanningBinding(legacy)).not.toThrow();
+    expect(() => startAlphaDeploymentEconomy(legacy)).toThrow(/neu bauen und signieren/u);
+  });
+
+  it("weist fremde Welt-, Infrastruktur-, Fahrplan-, Los- und Kalenderbindungen zurueck", () => {
+    const deployment = plannedDeployment();
+    for (const altered of [
+      { ...deployment, worldId: "foreign" },
+      { ...deployment, provenance: { ...deployment.provenance, infraReleaseId: "foreign" } },
+      { ...deployment, provenance: { ...deployment.provenance, gtfsSnapshotHash: "c".repeat(64) } },
+      { ...deployment, economy: { ...deployment.economy, lots: [] } },
+      { ...deployment, blueprint: { ...deployment.blueprint, tenderCalendarHash: "c".repeat(64) } },
+      { ...deployment, blueprint: { ...deployment.blueprint, seed: 43n } },
+      { ...deployment, regionalSimulation: { ...deployment.regionalSimulation, trains: [] } },
+      { ...deployment, regionalSimulation: { ...deployment.regionalSimulation, externalTrains: [{ id: "external" }] } },
+    ]) expect(() => startAlphaDeploymentEconomy(altered)).toThrow();
+  });
+
+  it("verhindert beim Wiederanlauf eine Mischung aus altem Zustand und neuer Planungsregel", () => {
+    const deployment = plannedDeployment();
+    const state = startAlphaDeploymentEconomy(deployment).state;
+    expect(() => validatePersistedAlphaEconomyPlanning(deployment, state)).not.toThrow();
+    expect(() => validatePersistedAlphaEconomyPlanning(deployment, {})).toThrow(/andere Spielplanung/u);
+    expect(() => validatePersistedAlphaEconomyPlanning(deployment, {
+      ...state,
+      tenderGeneration: { ...state.tenderGeneration!, authorityBudgetCentsPerPeriod: 1n },
+    })).toThrow(/Ausschreibungsgenerierung/u);
+  });
+
+  it("weist verschobene native Zeiten und umgebuchte Lose trotz gleicher Fahrt-ID-Menge ab", () => {
+    const deployment = plannedDeployment();
+    const first = deployment.regionalSimulation.trains[0]!;
+    for (const changed of [
+      { ...first, scheduledDepartureMs: first.scheduledDepartureMs + 1_000 },
+      { ...first, serviceOutcome: { ...first.serviceOutcome!, scheduledArrivalMs: first.serviceOutcome!.scheduledArrivalMs + 1_000 } },
+      { ...first, serviceOutcome: { ...first.serviceOutcome!, lotId: deployment.blueprint.lots[1]!.lotId } },
+    ]) expect(() => startAlphaDeploymentEconomy({ ...deployment, regionalSimulation: { ...deployment.regionalSimulation, trains: [changed, ...deployment.regionalSimulation.trains.slice(1)] } })).toThrow(/Abfahrts- oder Ankunftsbindungen/u);
+    const [firstLot, secondLot, ...otherLots] = deployment.blueprint.lots;
+    expect(() => startAlphaDeploymentEconomy({ ...deployment, blueprint: { ...deployment.blueprint, lots: [{ ...firstLot!, trainRunIds: secondLot!.trainRunIds }, { ...secondLot!, trainRunIds: firstLot!.trainRunIds }, ...otherLots] } })).toThrow(/unterschiedliche Fahrten/u);
+  });
+
+  it("bindet Fahrten nach 24 Uhr an dieselbe normalisierte native Tageszeit", () => {
+    const deployment = plannedDeployment();
+    const snapshot = deployment.economy.planning!.snapshot;
+    const planning = createGtfsPlanningEnvelope({ ...snapshot, patterns: snapshot.patterns.map((pattern) => ({
+      ...pattern,
+      journeys: pattern.journeys.map((journey) => ({ ...journey, departureServiceSeconds: journey.departureServiceSeconds + 86_400, arrivalServiceSeconds: journey.arrivalServiceSeconds + 86_400, departureEpochSeconds: journey.departureEpochSeconds + 86_400, arrivalEpochSeconds: journey.arrivalEpochSeconds + 86_400 })),
+    })) });
+    expect(() => startAlphaDeploymentEconomy({ ...deployment, economy: { ...deployment.economy, planning } })).not.toThrow();
+  });
+});
 
 describe("signierte Alpha-Weltepoche", () => {
   it("akzeptiert ausschliesslich einen Montag um 00:00:00 UTC", () => {

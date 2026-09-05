@@ -12,6 +12,7 @@ import {
 } from "../../packages/runtime-native/dist/index.js";
 import {
   alphaServiceLotIdentifiers,
+  assertPlayableGameTimetable,
   assertSignedGtfsTimetableBinding,
   germanyOperationalStableId,
   streamTimetableRouteBindings,
@@ -128,6 +129,30 @@ test("Weltbuild verlangt explizite Welt-, Regions-, Operational-v2- und Routebin
     const candidate = structuredClone(buildConfiguration());
     changed(candidate);
     assert.throws(() => validateAlphaWorldBuildConfiguration(candidate));
+  }
+});
+
+test("neue Welten verlangen einen erzeugten Binnenfahrplan und weisen Aussenlaeufe ohne Filterung ab", () => {
+  const snapshot = {
+    timetableGeneration: { schemaVersion: "zugfolge-game-timetable-generation/v1", requireEligibleTerminals: true, networkReference: { schemaVersion: "zugfolge-game-timetable-network-reference/v1", terminalCatalog: { bytes: 1, sha256: SHA_A, sourceId: "fixture-terminal-catalog" } } },
+    stations: [{ stopId: "a", inRegion: true }, { stopId: "b", inRegion: true }],
+    lines: [{ lineId: "line-1", adjustment: { terminalEvidenceIds: ["terminal-a", "terminal-b"] } }],
+    journeyChains: [{ worldId: "world-1", lineId: "line-1", journeyChainId: "game-trip-1", generation: "game-timetable/v1", orderable: true, planningWindows: [], legs: [{ kind: "playable", orderable: true, qualityClass: "B", entryPortalId: null, exitPortalId: null, stops: [{ stopId: "a" }, { stopId: "b" }] }] }],
+  };
+  assert.doesNotThrow(() => assertPlayableGameTimetable(snapshot, "world-1"));
+  for (const change of [
+    (value) => { delete value.timetableGeneration; },
+    (value) => { value.journeyChains[0].legs.push({ kind: "external" }); },
+    (value) => { value.journeyChains[0].legs[0].entryPortalId = "outside"; },
+    (value) => { value.journeyChains[0].legs[0].stops.pop(); },
+    (value) => { value.journeyChains[0].orderable = false; },
+    (value) => { value.stations[1].inRegion = false; },
+    (value) => { value.timetableGeneration.requireEligibleTerminals = false; },
+    (value) => { value.lines[0].adjustment.terminalEvidenceIds = []; },
+  ]) {
+    const changed = structuredClone(snapshot);
+    change(changed);
+    assert.throws(() => assertPlayableGameTimetable(changed, "world-1"));
   }
 });
 
@@ -275,6 +300,7 @@ test("Timetable-JSONSeq wird zeilenweise auf vollstaendige Fahrwege und native F
       templateId: "template:gtfs:pl-fixture:v1",
       dispatchInterlockingRouteId: "interlocking:synthetic-segment:dd5989d48e63372a719b3efaa3cdc1bda3c4172ef7d179a5ec50076ac9fba03d",
       routeLengthMm: 2_500,
+      edgeIds: ["edge-1", "edge-2"],
       routeLegCount: 2,
       protectionContractRuns: [{
         throughRouteLegIndex: 1,

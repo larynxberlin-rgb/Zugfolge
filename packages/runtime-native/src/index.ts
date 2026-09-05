@@ -464,6 +464,8 @@ export interface OperatingTransitionCommand {
   readonly expectedRevision: number;
   readonly lotId: string;
   readonly atS: number;
+  readonly nextTimetableBoundaryS?: number;
+  readonly reason?: "failed-tender";
   readonly winnerOperatorId: string;
   readonly mobilizationProof: OperatingMobilizationProof | null;
   readonly publicVehiclePool: readonly string[];
@@ -1870,6 +1872,7 @@ export function operatingRuntimeFromAddon(addon: NativeAddon): NativeRuntime {
       command: OperatingTransitionCommand,
     ) {
       invariant(state.worldId === command.worldId, "Runtime-Kommando verletzt die Weltisolation.");
+      invariant(command.nextTimetableBoundaryS === undefined || (Number.isSafeInteger(command.nextTimetableBoundaryS) && command.nextTimetableBoundaryS >= command.atS), "Runtime-Folgestichtag ist keine sichere Weltsekunde ab dem Betriebsuebergang.");
       const result = decodeTransition(addon.applyOperatingTransition(JSON.stringify(state), JSON.stringify(command)));
       invariant(result.state.worldId === command.worldId, "Rust-Uebergang verletzte die Weltisolation.");
       invariant(result.outcome.lotId === command.lotId, "Rust-Uebergang gehoert zu einem anderen Los.");

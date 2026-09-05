@@ -30,13 +30,16 @@ import {
 import {
   closeTender,
   completeMobilization,
+  generateDueTenders,
   openTender,
+  startFailedTenderPublicOperation,
   type EconomyEffects,
   type EconomyJournalEntry,
   type EconomyNotice,
   type TenderLifecycle,
   type EconomyWorldState,
 } from "./workflow.js";
+import { TENDER_GENERATION_TIMING } from "./tender-generation-policy.js";
 
 function record(value: unknown): Readonly<Record<string, unknown>> | undefined {
   return typeof value === "object" && value !== null && !Array.isArray(value)
@@ -175,7 +178,7 @@ type AwardedTender = Extract<TenderLifecycle, { readonly phase: "awarded" }>;
 
 function trainRunsForLot(
   state: EconomyWorldState,
-  current: AwardedTender,
+  current: TenderLifecycle,
   proof: MobilizationProof | undefined,
 ): readonly { readonly trainRunId: string; readonly formationId: string | null }[] {
   if (state.planning === undefined) return [];
@@ -184,12 +187,12 @@ function trainRunsForLot(
   const patterns = state.planning.snapshot.patterns
     .filter((pattern) => lot.patternIds.includes(pattern.id))
     .sort((left, right) => compareUtf8(left.id, right.id));
-  const incumbentFormationId = current.winningBid.operatorId === current.tender.incumbentOperatorId
+  const incumbentFormationId = current.phase === "awarded" && current.winningBid.operatorId === current.tender.incumbentOperatorId
     ? (proof?.formationIds[0] ?? current.winningBid.vehicle.formationId)
     : null;
   const trainRuns = patterns.flatMap((pattern) => pattern.journeys
     .map((journey) => ({
-      trainRunId: `${pattern.id}:${journey.sourceTripId}:${journey.serviceDate}:${journey.departureEpochSeconds}`,
+      trainRunId: journey.id ?? `${pattern.id}:${journey.sourceTripId}:${journey.serviceDate}:${journey.departureEpochSeconds}`,
       formationId: incumbentFormationId,
     }))
     .sort((left, right) => compareUtf8(left.trainRunId, right.trainRunId)));
@@ -224,9 +227,46 @@ function applyOperatingTransition(
     expectedRevision: initialized.state.revision,
     lotId: current.tender.lotId,
     atS: current.tender.operatingFrom,
+    ...(state.tenderGeneration === undefined ? {} : {
+      nextTimetableBoundaryS: nextTimetableBoundary(current, proof !== undefined || current.winningBid.operatorId === current.tender.incumbentOperatorId),
+    }),
     winnerOperatorId: current.winningBid.operatorId,
     mobilizationProof: proof ?? null,
     publicVehiclePool,
+  });
+}
+
+function nextTimetableBoundary(current: TenderLifecycle, contractActive: boolean): number {
+  const periods = contractActive ? current.tender.contractPeriods : TENDER_GENERATION_TIMING.failedOperationRetenderPeriods;
+  const next = current.tender.operatingFrom + periods * current.tender.periodDurationSeconds;
+  if (!Number.isSafeInteger(next)) throw new RangeError("Folgestichtag liegt ausserhalb sicherer Weltsekunden.");
+  return next;
+}
+
+function applyFailedTenderTransition(
+  runtime: OperatingRuntime,
+  state: EconomyWorldState,
+  current: Extract<TenderLifecycle, { readonly phase: "failed" }>,
+  commandId: string,
+): OperatingTransitionResult {
+  const initialized = state.operatingRuntimeByLot.get(current.tender.lotId) ?? runtime.initialize({
+    schemaVersion: OPERATING_INITIALIZE_SCHEMA,
+    worldId: state.worldId,
+    lots: [{ lotId: current.tender.lotId, incumbentOperatorId: current.tender.incumbentOperatorId, timetableBoundaryS: current.tender.operatingFrom, trainRuns: trainRunsForLot(state, current, undefined) }],
+  });
+  return runtime.applyTransition(initialized.state, {
+    schemaVersion: OPERATING_TRANSITION_SCHEMA,
+    worldId: state.worldId,
+    commandId,
+    expectedStateHash: initialized.stateHash,
+    expectedRevision: initialized.state.revision,
+    lotId: current.tender.lotId,
+    atS: current.tender.operatingFrom,
+    nextTimetableBoundaryS: nextTimetableBoundary(current, false),
+    reason: "failed-tender",
+    winnerOperatorId: "public",
+    mobilizationProof: null,
+    publicVehiclePool: current.publicOperation.vehiclePool,
   });
 }
 
@@ -234,7 +274,7 @@ function applyOperatingTransition(
  * Holt versäumte exakte Fristen deterministisch nach: Das fachliche Kommando
  * trägt stets den veröffentlichten Zeitpunkt, nicht die zufällige Workerzeit.
  */
-async function advanceWorld(
+async function advanceWorldRound(
   db: EconomyDatabase,
   initial: EconomyWorldState,
   nowSeconds: number,
@@ -243,9 +283,11 @@ async function advanceWorld(
   if (initial.closed === true) {
     return { state: initial, effects: { notices: [], journal: [], runtimeEvents: [] }, transitions: 0 };
   }
-  let state = initial;
-  let transitions = 0;
+  const generated = generateDueTenders(initial, nowSeconds);
+  let state = generated.state;
+  let transitions = generated.transitions;
   const effects = { notices: [] as EconomyNotice[], journal: [] as EconomyJournalEntry[], runtimeEvents: [] as NonNullable<EconomyEffects["runtimeEvents"]>[number][] };
+  appendEffects(effects, generated.effects);
   const tenderIds = [...state.tenders.keys()].sort(compareUtf8);
   for (const tenderId of tenderIds) {
     let current = state.tenders.get(tenderId);
@@ -268,6 +310,19 @@ async function advanceWorld(
       });
       state = closed.state;
       appendEffects(effects, closed.effects);
+      transitions += 1;
+      current = state.tenders.get(tenderId);
+    }
+    if (current?.phase === "failed" && current.operationStarted === false && current.tender.operatingFrom <= nowSeconds) {
+      const commandId = `scheduler:${tenderId}:public-operation:${current.tender.operatingFrom}`;
+      const completed = startFailedTenderPublicOperation(state, {
+        commandId,
+        tenderId,
+        at: current.tender.operatingFrom,
+        operatingTransition: applyFailedTenderTransition(operatingRuntime, state, current, commandId),
+      });
+      state = completed.state;
+      appendEffects(effects, completed.effects);
       transitions += 1;
       current = state.tenders.get(tenderId);
     }
@@ -340,6 +395,26 @@ async function advanceWorld(
       appendEffects(effects, completed.effects);
       transitions += 1;
     }
+  }
+  return { state, effects, transitions };
+}
+
+async function advanceWorld(
+  db: EconomyDatabase,
+  initial: EconomyWorldState,
+  nowSeconds: number,
+  operatingRuntime: OperatingRuntime,
+): Promise<{ readonly state: EconomyWorldState; readonly effects: EconomyEffects; readonly transitions: number }> {
+  let state = initial;
+  let transitions = 0;
+  const effects = { notices: [] as EconomyNotice[], journal: [] as EconomyJournalEntry[], runtimeEvents: [] as NonNullable<EconomyEffects["runtimeEvents"]>[number][] };
+  if (nowSeconds < 0) return { state, effects, transitions };
+  for (let round = 0; round < TENDER_GENERATION_TIMING.maximumCatchUpRoundsPerCycle; round += 1) {
+    const advanced = await advanceWorldRound(db, state, nowSeconds, operatingRuntime);
+    if (advanced.transitions === 0) break;
+    state = advanced.state;
+    transitions += advanced.transitions;
+    appendEffects(effects, advanced.effects);
   }
   return { state, effects, transitions };
 }

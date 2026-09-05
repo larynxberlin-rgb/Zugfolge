@@ -126,6 +126,17 @@ describe("GameApiClient", () => {
     }
   });
 
+  it("übernimmt das ausgeschriebene Angebot ohne interne Kürzungshinweise", async () => {
+    const serviceLines = [{ designation: "RE 1", origin: "Bahnhof A", destination: "Bahnhof C" }];
+    const fetchImplementation = vi.fn(async () => new Response(JSON.stringify({ revision: 0,
+      tenders: { $zugfolgeType: "map", entries: [["tender-1", { phase: "open", bidCount: 0,
+        tender: { lotId: "lot-1", closesAt: 1_000 }, serviceLines: serviceLines.map((line) => ({ ...line, adjustmentReasons: ["Interner Kürzungsnachweis"] })) }]] },
+    }), { status: 200 }));
+    const client = new GameApiClient("https://api.test", "token", fetchImplementation as typeof fetch);
+    const result = await client.loadEconomyState("world/1");
+    expect(result.tenders[0]?.serviceLines).toEqual(serviceLines);
+  });
+
   it("spricht den vollständigen M12-Vertrags- und Marktpfad mit weltgebundenen URLs an", async () => {
     const fetchImplementation = vi.fn(async (input: RequestInfo | URL, _init?: RequestInit) => new Response(
       JSON.stringify(String(input).endsWith("/simulation-time") ? { atS: 123 }
