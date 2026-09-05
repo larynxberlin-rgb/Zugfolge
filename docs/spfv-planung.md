@@ -55,6 +55,21 @@ gespeichert. Die Vorschau gilt höchstens 300 Simulationssekunden und höchstens
 bis zur Sekunde vor der ersten gewünschten Abfahrt. Die Vorschau vergibt
 keine Zugnummer und erzeugt keinen Trassenantrag.
 
+Bei Linienänderungen enthält die Vorschau neben internen
+`replacementTrainIds` auch `replacementTrips`: belegte Zugnummer,
+Abfahrtssekunde und Stationsnamen der zu ersetzenden Fahrten. Die Fakten
+stammen aus eigenen verarbeiteten Anträgen und den nativen Reservierungen;
+höchstens 256 Fahrten gehören in eine gemeinsame Änderung. Der Vorschauhash
+bindet auch diese Angaben. Die Bestätigung verlangt bei unveränderten
+Kennungen erneut dieselben Zeiten, Nummern und Stationsangaben. Die
+Spieleransicht zeigt lesbare Zugnummern, Weltzeiten und Strecken sowie die
+geprüften `capacityFacts`; der frühere Katalog ersetzt diese Fakten nicht.
+
+Eine über die Karten-URL ausgewählte Fahrt bleibt Navigationskontext und
+wird nicht als ungeprüfte Modellreferenz in einen neuen Entwurf übernommen.
+Eine gespeicherte Linie kann ihre gepinnte Referenz weiterverwenden; sonst
+wählt der Server sie aus dem freigegebenen Korpus.
+
 ## Bestätigung, Wiederholung und Persistenz
 
 Unter dem Weltmutex werden Eigentümer, Weltstatus, Frist, Vorschauhash,

@@ -12,6 +12,11 @@ Reihenfolge: [Gestaltungsbasis #531](https://github.com/larynxberlin-rgb/Zugfolg
 → [API, Oberfläche und Kalibrierung #534](https://github.com/larynxberlin-rgb/Zugfolge/pull/534).
 Die drei M10-PRs bleiben bis zur fachlichen Abnahme Entwürfe.
 
+Der ergänzende [Abgleich aller acht Issue-Anforderungen mit Code und Tests](m10-issue-verknuepfung.md)
+unterscheidet die vollständig implementierten Fachumfänge #169–#172 von den
+konkreten offenen Abnahmekriterien in #210, #173, #361 und #379. Schließende
+Verknüpfungen werden am gesamten Stack über #534 geführt.
+
 ## Fachlicher Umfang
 
 | Issue | Implementierung und reproduzierbarer Nachweis | Abnahmegrenze |
@@ -95,8 +100,10 @@ und verspätete Vorschauergebnisse. Sie ersetzen keine produktiven Fahrgastdaten
 Die schmalen Ansichten sind als [Fernverkehr auf Mobilgeräten](screenshots/m10/spfv-mobile.png)
 und [Nachfrageliste auf Mobilgeräten](screenshots/m10/demand-mobile.png) dokumentiert.
 
-Lokal nachgewiesen: 835 Rust-Workspace-Tests (ohne die beiden Linux-NAPI-Crates),
-14 Nachfragekerntests einschließlich Golden und Properties, 13 native
+Lokal nachgewiesen: 835 Rust-Workspace-Tests im Basislauf (ohne die beiden
+Linux-NAPI-Crates) sowie drei ergänzte Issue-Akzeptanztests. Die
+Nachfrageprüfung umfasst damit 17 Kerntests einschließlich Golden und
+Properties; hinzu kommen 13 native
 Planning-Runtime-Tests sowie die fokussierten API-, Privacy-, Planner- und
 Browsernachweise sowie fünf Python-Tests zu freien Originalquellen,
 Trainings-/Holdout-Trennung und bytegenauen JSON-Pins. Clippy, Typprüfung und 15 Repositorywächter sind Bestandteil

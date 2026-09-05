@@ -7,7 +7,7 @@ export async function mountSpfv(app: HTMLElement): Promise<void> {
   const parameters = new URLSearchParams(window.location.search);
   const runtime = loadRuntimeConfiguration();
   const worldId = runtime.publicWorldId;
-  const referenceTrainId = parameters.get("train") ?? undefined;
+  const selectedTrainId = parameters.get("train") ?? undefined;
   let operatorId = parameters.get("operator") ?? "";
   let catalog: SpfvCatalog | undefined;
   let draft: SpfvLineDraft | undefined;
@@ -34,7 +34,7 @@ export async function mountSpfv(app: HTMLElement): Promise<void> {
     app.querySelector(".spfv-preview")?.remove();
   };
   const render = (): void => {
-    app.innerHTML = renderSpfv({ worldId, operatorId, liveUrl: liveUrl(), ...(catalog ? {catalog} : {}), ...(draft ? {draft} : {}), stopIds, ...(preview ? {preview} : {}), busy, message, error, ...(referenceTrainId ? {referenceTrainId} : {}), ...(submission ? {submission} : {}) });
+    app.innerHTML = renderSpfv({ worldId, operatorId, liveUrl: liveUrl(), ...(catalog ? {catalog} : {}), ...(draft ? {draft} : {}), stopIds, ...(preview ? {preview} : {}), busy, message, error, ...(selectedTrainId ? {selectedTrainId} : {}), ...(submission ? {submission} : {}) });
     if (retainedFields !== undefined) {
       app.querySelectorAll<HTMLInputElement | HTMLSelectElement>("#spfv-form [name]").forEach((control) => { const value = retainedFields?.[control.name]; if (value !== undefined) control.value = value; });
     }
@@ -72,8 +72,8 @@ export async function mountSpfv(app: HTMLElement): Promise<void> {
       const own = context.operators.map((operator) => operator.id);
       if (!own.includes(operatorId)) operatorId = own[0] ?? "";
       if (operatorId === "") throw new Error("Gründe oder wähle zuerst dein Unternehmen im Bereich Unternehmen.");
-      catalog = await api.loadSpfvCatalog(worldId, operatorId, referenceTrainId);
-      const line = referenceTrainId === undefined ? undefined : catalog.lines.find((item) => item.referenceTrainId === referenceTrainId);
+      catalog = await api.loadSpfvCatalog(worldId, operatorId);
+      const line = selectedTrainId === undefined ? undefined : catalog.lines.find((item) => item.referenceTrainId === selectedTrainId);
       if (line !== undefined) { draft = { ...line, lineId: line.id }; stopIds = [...line.stopIds]; }
       else if (parameters.get("station") && catalog.stops.some((item) => item.id === parameters.get("station"))) stopIds = [parameters.get("station")!];
     } catch (value) { failure(value); }
@@ -82,6 +82,9 @@ export async function mountSpfv(app: HTMLElement): Promise<void> {
   const check = async (): Promise<void> => {
     if (!catalog || !api || busy) return;
     retainedFields = capture();
+    // A selected player train is navigation context, not a release reference.
+    // Saved line references come from the server; otherwise it chooses a pinned base service.
+    const referenceTrainId = catalog.lines.find((line) => line.id === retainedFields!["lineId"])?.referenceTrainId;
     try { draft = parseSpfvDraft(retainedFields, stopIds, catalog, referenceTrainId); }
     catch (value) { failure(value); render(); return; }
     const current = ++revision; preview = undefined; busy = true; error = false; message = ""; render();
