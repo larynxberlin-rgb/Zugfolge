@@ -335,15 +335,15 @@ const wait: WaitImplementation = (milliseconds, signal) =>
       reject(new Error("Vorgang abgebrochen."));
       return;
     }
-    const timer = setTimeout(resolve, milliseconds);
-    signal?.addEventListener(
-      "abort",
-      () => {
-        clearTimeout(timer);
-        reject(new Error("Vorgang abgebrochen."));
-      },
-      { once: true },
-    );
+    const aborted = () => {
+      clearTimeout(timer);
+      reject(new Error("Vorgang abgebrochen."));
+    };
+    const timer = setTimeout(() => {
+      signal?.removeEventListener("abort", aborted);
+      resolve();
+    }, milliseconds);
+    signal?.addEventListener("abort", aborted, { once: true });
   });
 
 function positiveInteger(value: number | undefined, fallback: number, name: string): number {
@@ -1039,22 +1039,41 @@ export class GameApiClient {
     return typeof this.#accessToken === "string" ? Promise.resolve(this.#accessToken) : this.#accessToken(forceRefresh);
   }
 
+  async #authorizedFetch(path: string, init: RequestInit = {}): Promise<Response> {
+    const request = async (forceRefresh = false): Promise<Response> => this.#fetch(`${this.#baseUrl}${path}`, {
+      ...init,
+      headers: { ...init.headers, authorization: `Bearer ${await this.#token(forceRefresh)}` },
+    });
+    let response = await request();
+    if ((response.status === 401 || response.status === 403) && typeof this.#accessToken !== "string") {
+      await response.body?.cancel();
+      response = await request(true);
+    }
+    return response;
+  }
+
   async #journeyJson<T>(path: string, init: RequestInit = {}): Promise<T> {
     const controller = init.signal === undefined ? new AbortController() : undefined;
     const timer = controller === undefined ? undefined : setTimeout(() => controller.abort(), JOURNEY_TIMEOUT_MS);
-    let response: Response;
     try {
-      const request = async (forceRefresh = false): Promise<Response> => this.#fetch(`${this.#baseUrl}${path}`, {
+      const response = await this.#authorizedFetch(path, {
         ...init,
         signal: init.signal ?? controller?.signal,
         headers: {
-          authorization: `Bearer ${await this.#token(forceRefresh)}`,
           ...(init.body === undefined ? {} : { "content-type": "application/json" }),
           ...init.headers,
         },
       });
-      response = await request();
-      if ((response.status === 401 || response.status === 403) && typeof this.#accessToken !== "string") response = await request(true);
+      if (!response.ok) {
+        let message = `Spielerreise nicht verfügbar (HTTP ${response.status}).`;
+        try {
+          const problem = await response.json() as { error?: unknown };
+          if (typeof problem.error === "string") message = problem.error;
+        } catch { /* HTTP-Status bleibt die erklaerbare Rueckmeldung. */ }
+        throw new GameApiError(message, response.status >= 500, response.status);
+      }
+      try { return await response.json() as T; }
+      catch { throw new GameApiError("Spielerreise lieferte kein gültiges JSON.", false); }
     } catch (error) {
       if (controller?.signal.aborted === true) throw new GameApiError("Spielerreise antwortet nicht. Bitte erneut versuchen.", true);
       if (error instanceof TypeError) throw new GameApiError("Verbindung zur Spielerreise wurde unterbrochen. Bitte erneut versuchen.", true);
@@ -1062,16 +1081,6 @@ export class GameApiClient {
     } finally {
       if (timer !== undefined) clearTimeout(timer);
     }
-    if (!response.ok) {
-      let message = `Spielerreise nicht verfügbar (HTTP ${response.status}).`;
-      try {
-        const problem = await response.json() as { error?: unknown };
-        if (typeof problem.error === "string") message = problem.error;
-      } catch { /* HTTP-Status bleibt die erklaerbare Rueckmeldung. */ }
-      throw new GameApiError(message, response.status >= 500, response.status);
-    }
-    try { return await response.json() as T; }
-    catch { throw new GameApiError("Spielerreise lieferte kein gültiges JSON.", false); }
   }
 
   startTutorial(publicWorldId: string): Promise<TutorialSessionView> {
@@ -1079,25 +1088,11 @@ export class GameApiClient {
   }
 
   async loadActiveTutorial(publicWorldId: string): Promise<TutorialSessionView | undefined> {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), JOURNEY_TIMEOUT_MS);
-    let response: Response;
     try {
-      response = await this.#fetch(`${this.#baseUrl}/worlds/${encodeURIComponent(publicWorldId)}/tutorial-sessions/active`, {
-        headers: { authorization: `Bearer ${await this.#token()}` }, signal: controller.signal,
-      });
+      return parseTutorialSessionV1(await this.#journeyJson(`/worlds/${encodeURIComponent(publicWorldId)}/tutorial-sessions/active`));
     } catch (error) {
-      if (controller.signal.aborted) throw new GameApiError("Tutorialstatus antwortet nicht. Bitte erneut versuchen.", true);
+      if (error instanceof GameApiError && error.status === 404) return undefined;
       throw error;
-    } finally {
-      clearTimeout(timer);
-    }
-    if (response.status === 404) return undefined;
-    if (!response.ok) throw new GameApiError(`Tutorialstatus nicht verfügbar (HTTP ${response.status}).`, response.status >= 500, response.status);
-    try { return parseTutorialSessionV1(await response.json()); }
-    catch (error) {
-      if (error instanceof GameApiError) throw error;
-      throw new GameApiError("Tutorialstatus lieferte kein gültiges JSON.", false);
     }
   }
 
@@ -1333,10 +1328,9 @@ export class GameApiClient {
   }
 
   async loadProjection(worldId: string, signal?: AbortSignal): Promise<PlanningProjectionV1> {
-    const response = await this.#fetch(
-      `${this.#baseUrl}/worlds/${encodeURIComponent(worldId)}/planning/diagram`,
+    const response = await this.#authorizedFetch(
+      `/worlds/${encodeURIComponent(worldId)}/planning/diagram`,
       {
-        headers: { authorization: `Bearer ${await this.#token()}` },
         signal,
       },
     );
@@ -1382,12 +1376,11 @@ export class GameApiClient {
 
     for (let attempt = 1; attempt <= attempts; attempt += 1) {
       try {
-        const response = await this.#fetch(
-          `${this.#baseUrl}/worlds/${encodeURIComponent(worldId)}/planning/alternatives`,
+        const response = await this.#authorizedFetch(
+          `/worlds/${encodeURIComponent(worldId)}/planning/alternatives`,
           {
             method: "POST",
             headers: {
-              authorization: `Bearer ${await this.#token()}`,
               "content-type": "application/json",
             },
             body,

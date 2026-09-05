@@ -42,6 +42,59 @@ function rawEventStream(value: string): Response {
 }
 
 describe("OperationsApi Live-Betrieb", () => {
+  it("liefert nach Abbruch kein weiteres bereits gepuffertes Ereignis", async () => {
+    const controller = new AbortController();
+    const request = vi.fn().mockResolvedValue(eventStream(decision(1), decision(2)));
+    const api = new OperationsApi("", "token", "welt", "evu", request);
+    const received: number[] = [];
+    await api.stream(controller.signal, 0, (item) => {
+      received.push(item.sequence);
+      controller.abort();
+    });
+    expect(received).toEqual([1]);
+    expect(request).toHaveBeenCalledOnce();
+  });
+
+  it("schließt einen noch offenen Ereignisstrom beim Abbruch und bei Vertragsfehlern", async () => {
+    for (const malformed of [false, true]) {
+      const controller = new AbortController();
+      const cancel = vi.fn();
+      const response = new Response(new ReadableStream<Uint8Array>({
+        start(stream) {
+          stream.enqueue(new TextEncoder().encode(`data: ${JSON.stringify({ decision: decision(malformed ? 0 : 1) })}\n\n`));
+        },
+        cancel,
+      }), { headers: { "content-type": "text/event-stream" } });
+      const api = new OperationsApi("", "token", "welt", "evu", vi.fn().mockResolvedValue(response));
+      const pending = api.stream(controller.signal, 0, () => controller.abort());
+      if (malformed) await expect(pending).rejects.toThrow(/Ereignissequenz/);
+      else await expect(pending).resolves.toBeUndefined();
+      expect(cancel).toHaveBeenCalledOnce();
+    }
+  });
+
+  it("verwirft einen erst nach Abbruch eintreffenden Reset-Snapshot", async () => {
+    const controller = new AbortController();
+    let finish!: (response: Response) => void;
+    let entered!: () => void;
+    const resetting = new Promise<void>((resolve) => { entered = resolve; });
+    const request = vi.fn()
+      .mockResolvedValueOnce(rawEventStream("event: reset\ndata: {}\n\n"))
+      .mockImplementationOnce((_input, init) => {
+        expect(init.signal).toBe(controller.signal);
+        entered();
+        return new Promise<Response>((resolve) => { finish = resolve; });
+      });
+    const reset = vi.fn();
+    const api = new OperationsApi("", "token", "welt", "evu", request);
+    const pending = api.stream(controller.signal, 0, vi.fn(), reset);
+    await resetting;
+    controller.abort();
+    finish(new Response(JSON.stringify({ throughSequence: 9 })));
+    await pending;
+    expect(reset).not.toHaveBeenCalled();
+  });
+
   it("erneuert den Zugriff nach 401 vor dem SSE-Handshake", async () => {
     const controller = new AbortController();
     const token = vi.fn(async (forceRefresh = false) => forceRefresh ? "neu" : "alt");

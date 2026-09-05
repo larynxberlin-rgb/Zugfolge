@@ -62,32 +62,51 @@ export function formatSignedShiftS(shiftS: number): string {
   return `${sign}${formatDurationS(Math.abs(shiftS))}`;
 }
 
+// Jede bestätigte Revision ist ein neues readonly-Projektionsobjekt. WeakMap
+// hält ältere Revisionen nicht fest und vermeidet Vollscans je SVG-Koordinate.
+const timeExtents = new WeakMap<PlanningProjectionV1, readonly [number, number]>();
+const distanceExtents = new WeakMap<PlanningProjectionV1, readonly [number, number]>();
+
 export function timeExtentS(projection: PlanningProjectionV1): readonly [number, number] {
-  const values = [
-    ...projection.trains.flatMap((train) => train.calls.map((call) => call.timeS)),
-    ...projection.occupations.flatMap((occupation) => [occupation.startS, occupation.endS]),
-    ...projection.conflicts.flatMap((conflict) => [conflict.window.startS, conflict.window.endS]),
-  ];
-  if (values.length === 0) return [0, 3_600];
-  const minimum = Math.min(...values);
-  const maximum = Math.max(...values);
+  const cached = timeExtents.get(projection);
+  if (cached !== undefined) return cached;
+  let minimum = Infinity;
+  let maximum = -Infinity;
+  for (const train of projection.trains) for (const call of train.calls) {
+    minimum = Math.min(minimum, call.timeS);
+    maximum = Math.max(maximum, call.timeS);
+  }
+  for (const occupation of projection.occupations) {
+    minimum = Math.min(minimum, occupation.startS, occupation.endS);
+    maximum = Math.max(maximum, occupation.startS, occupation.endS);
+  }
+  for (const conflict of projection.conflicts) {
+    minimum = Math.min(minimum, conflict.window.startS, conflict.window.endS);
+    maximum = Math.max(maximum, conflict.window.startS, conflict.window.endS);
+  }
   const from = Math.floor((minimum - 300) / 300) * 300;
   const to = Math.ceil((maximum + 300) / 300) * 300;
-  return to > from ? [from, to] : [from, from + 600];
+  const extent = Object.freeze<readonly [number, number]>(minimum === Infinity ? [0, 3_600] : to > from ? [from, to] : [from, from + 600]);
+  timeExtents.set(projection, extent);
+  return extent;
 }
 
 export function distanceExtentMm(projection: PlanningProjectionV1): readonly [number, number] {
-  const values = [
-    ...projection.stations.map((station) => station.distanceMm),
-    ...projection.occupations.flatMap((occupation) => [
-      occupation.startDistanceMm,
-      occupation.endDistanceMm,
-    ]),
-  ];
-  if (values.length === 0) return [0, 1];
-  const minimum = Math.min(...values);
-  const maximum = Math.max(...values);
-  return maximum > minimum ? [minimum, maximum] : [minimum, minimum + 1];
+  const cached = distanceExtents.get(projection);
+  if (cached !== undefined) return cached;
+  let minimum = Infinity;
+  let maximum = -Infinity;
+  for (const station of projection.stations) {
+    minimum = Math.min(minimum, station.distanceMm);
+    maximum = Math.max(maximum, station.distanceMm);
+  }
+  for (const occupation of projection.occupations) {
+    minimum = Math.min(minimum, occupation.startDistanceMm, occupation.endDistanceMm);
+    maximum = Math.max(maximum, occupation.startDistanceMm, occupation.endDistanceMm);
+  }
+  const extent = Object.freeze<readonly [number, number]>(minimum === Infinity ? [0, 1] : maximum > minimum ? [minimum, maximum] : [minimum, minimum + 1]);
+  distanceExtents.set(projection, extent);
+  return extent;
 }
 
 export function positionY(

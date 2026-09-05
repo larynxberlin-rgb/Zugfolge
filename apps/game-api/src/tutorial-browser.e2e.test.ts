@@ -211,11 +211,31 @@ async function expectFriendlyTutorialHeader(page: Page, reference: string): Prom
     await page.getByRole("heading", { name: "Ein tragfähiges Angebot abgeben" }).waitFor();
     await expectFriendlyTutorialHeader(page, reference!);
 
+    // Ein Poll aus Kapitel 1 kommt erst nach der verbindlich bestätigten
+    // Aktion zurück. Er darf die sichtbare Sitzung nicht zurücksetzen.
+    let releasePoll!: () => void;
+    let pollEntered!: () => void;
+    const heldPoll = new Promise<void>((resolve) => { releasePoll = resolve; });
+    const polling = new Promise<void>((resolve) => { pollEntered = resolve; });
+    const sessionPath = `**/worlds/${new URL(page.url()).searchParams.get("world")}/tutorial-session`;
+    await page.route(sessionPath, async (route) => {
+      const response = await route.fetch();
+      pollEntered();
+      await heldPoll;
+      await route.fulfill({ response });
+    }, { times: 1 });
+    await polling;
     await page.getByLabel("Bestellerentgelt je Zug-km").fill("14,50");
     await page.getByLabel("Pünktlichkeitsversprechen").fill("92,00");
     await page.getByLabel("Zusätzliche Sitzplätze").fill("12");
     await page.getByRole("button", { name: "Angebot verbindlich abgeben" }).click();
     await page.getByRole("heading", { name: "Ein Fahrzeug selbst leasen" }).waitFor();
+    const staleResponse = page.waitForResponse((response) => response.url().endsWith("/tutorial-session") && response.request().method() === "GET");
+    releasePoll();
+    await staleResponse;
+    await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => resolve())));
+    await page.locator("#tutorial-why").click();
+    expect(await page.locator(".tutorial-task h2").textContent()).toBe("Ein Fahrzeug selbst leasen");
     await page.locator('[data-tutorial-offer="lease-economy"]').click();
     await page.getByRole("heading", { name: "Eine berechnete Trasse bestätigen" }).waitFor();
     await page.locator('[data-tutorial-path="path-robust"]').click();

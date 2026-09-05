@@ -58,6 +58,8 @@ function render(): void {
   // Live-Lesemodelle beruehren weder Editor noch modalen Entwurf. Damit bleiben
   // auch IME-Komposition und noch nicht durch change uebernommene Werte erhalten.
   if (state.program !== undefined && state.program === renderedProgram && root.querySelector(".shell") !== null) {
+    const activeElement = document.activeElement;
+    const focus = captureEditorFocus(root);
     reportDay = root.querySelector<HTMLInputElement>("#report-day")?.value ?? reportDay;
     const template = document.createElement("template");
     template.innerHTML = renderApp(state);
@@ -85,6 +87,7 @@ function render(): void {
       if (button !== null) button.disabled = state.operations?.consumerAvailable === false || state.saving || !savedProgramMatches(state.program, state.savedProgram);
     }
     bindLive();
+    if (document.activeElement !== activeElement) restoreEditorFocus(root, focus);
     return;
   }
   const focus = captureEditorFocus(root);
@@ -177,7 +180,11 @@ function bind(): void {
   root.querySelector<HTMLButtonElement>("#run-backtest")?.addEventListener("click", () => void backtest());
   root.querySelector<HTMLDialogElement>("#override-dialog")?.addEventListener("close", () => { overrideDraft.open = false; });
   root.querySelector<HTMLDialogElement>("#override-dialog")?.addEventListener("cancel", () => { overrideDraft.open = false; });
-  root.querySelector<HTMLButtonElement>("#submit-override")?.addEventListener("click", (event) => { event.preventDefault(); void submitOverride(); });
+  root.querySelector<HTMLFormElement>("#override-dialog form")?.addEventListener("submit", (event) => {
+    if ((event as SubmitEvent).submitter?.id !== "submit-override") return;
+    event.preventDefault();
+    void submitOverride();
+  });
   bindRuleEditor();
 }
 
