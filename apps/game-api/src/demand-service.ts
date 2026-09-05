@@ -85,8 +85,11 @@ export function poolDemandWindows(windows: DemandDeployment["windows"]): DemandD
   });
 }
 
-function demandHorizon(input: Readonly<Record<string, unknown>>): number {
-  return Math.max(demandInteger(input["windowEndMs"]), ...demandList(input["services"]).flatMap((service) => demandList(service["stops"]).map((stop) => demandInteger(stop["departureMs"]))));
+function demandHorizon(input: Readonly<Record<string, unknown>>, services = demandList(input["services"])): number {
+  let horizon = demandInteger(input["windowEndMs"]);
+  for (const service of services) for (const stop of demandList(service["stops"]))
+    horizon = Math.max(horizon, demandInteger(stop["departureMs"]));
+  return horizon;
 }
 
 export class DemandService {
@@ -131,15 +134,47 @@ export class DemandService {
     demandInteger(nowMs);
     this.currentMs = nowMs;
     const { deployment, readModel, livemap } = this.deps;
-    const template = this.pools.find((input) => {
-      const horizon = demandHorizon(input);
-      return demandInteger(input["windowStartMs"]) <= nowMs && nowMs < horizon;
-    });
-    if (template === undefined) throw new DemandError(503, "Für diesen Zeitraum ist kein Nachfragerelease freigegeben.");
     const config = await readModel?.getConfig(deployment.worldId);
     if (config?.infrastructureReleaseId !== deployment.infrastructureReleaseId) throw new DemandError(503, "Nachfrage und aktive Spielkarte verwenden unterschiedliche Infrastruktur.");
     const snapshot = livemap?.initializedWorld(deployment.worldId)?.snapshot();
     if (snapshot === undefined) throw new DemandError(503, "Bestätigter Betriebsstand für Nachfrage fehlt.");
+    const live = new Map(snapshot.trains.map((train) => [train.id, train]));
+    const previous = await this.store.latest(deployment.worldId);
+    if (previous !== undefined && nowMs < demandInteger(previous.input["nowMs"]))
+      throw new DemandError(409, "Nachfragezeit darf nicht hinter den gespeicherten Betriebsstand zurückgehen.");
+    const previousIndex = previous === undefined ? -1 : this.pools.findIndex((pool) => pool["periodId"] === previous.input["periodId"]);
+    let selected: { template: Readonly<Record<string, unknown>>; services: readonly Record<string, unknown>[];
+      provenance: Readonly<Record<string, unknown>> } | undefined;
+    // Ein bereits begonnener Release bleibt bis zum wirksamen Fahrtende gepinnt.
+    // Bei Kaltstart werden höchstens 256 zeitlich begrenzte Pools geprüft; nach
+    // Restore beginnen wir beim gespeicherten Pool und öffnen ältere nicht neu.
+    for (const template of this.pools.slice(Math.max(0, previousIndex))) {
+      if (demandInteger(template["windowStartMs"]) > nowMs) break;
+      const baseServices = demandList(template["services"]);
+      const accepted = await loadCommittedSpfvServices(this.deps.db, deployment.worldId, baseServices,
+        { windowStartMs: demandInteger(template["windowStartMs"]), windowEndMs: demandInteger(template["windowEndMs"]) });
+      const previousServices = previous !== undefined && previous.input["periodId"] === template["periodId"]
+        ? new Map(demandList(previous.input["services"]).map((service) => [service["trainRunId"], service])) : new Map();
+      const allServices = new Map(baseServices.map((service) => [service["trainRunId"], service]));
+      for (const service of accepted.services) {
+        const departure = demandInteger(demandList(service["stops"])[0]?.["departureMs"]);
+        if (departure < demandInteger(template["windowStartMs"]) || departure >= demandInteger(template["windowEndMs"])) continue;
+        if (allServices.has(service["trainRunId"])) throw new DemandError(503, "Bestätigte Fernverkehrsfahrt ist im Nachfragekorpus doppelt.");
+        allServices.set(service["trainRunId"], service);
+      }
+      const services = [...allServices.values()].map((service) => {
+        const train = live.get(demandText(service["trainRunId"]));
+        if (train === undefined) return previousServices.get(service["trainRunId"]) ?? service;
+        if (train.operatorId !== service["operatorId"]) throw new DemandError(503, "Nachfragezug gehört nicht zum bestätigten Betreiber.");
+        const delayMs = (train.delaySeconds ?? 0) * 1000;
+        return { ...service, cancelled: train.status === "cancelled", stops: demandList(service["stops"]).map((stop) => ({
+          ...stop, arrivalMs: demandInteger(stop["arrivalMs"]) + delayMs, departureMs: demandInteger(stop["departureMs"]) + delayMs,
+        })) };
+      });
+      if (nowMs < demandHorizon(template, services)) { selected = { template, services, provenance: accepted.provenance }; break; }
+    }
+    if (selected === undefined) throw new DemandError(503, "Für diesen Zeitraum ist kein Nachfragerelease freigegeben.");
+    const { template, services, provenance } = selected;
     if (!this.verifiedWindows.has(template)) {
       if (readModel?.getScheduledCall === undefined) throw new DemandError(503, "Exakte Fahrplanreferenzen für Nachfrage fehlen.");
       for (const service of demandList(template["services"])) {
@@ -156,32 +191,6 @@ export class DemandService {
       }
       this.verifiedWindows.add(template);
     }
-    const live = new Map(snapshot.trains.map((train) => [train.id, train]));
-    const previous = await this.store.latest(deployment.worldId);
-    const previousServices = previous !== undefined && previous.input["periodId"] === template["periodId"]
-      ? new Map(demandList(previous.input["services"]).map((service) => [service["trainRunId"], service])) : new Map();
-    const baseServices = demandList(template["services"]);
-    const accepted = await loadCommittedSpfvServices(this.deps.db, deployment.worldId, baseServices,
-      { windowStartMs: demandInteger(template["windowStartMs"]), windowEndMs: demandInteger(template["windowEndMs"]) });
-    const proposedServices = accepted.services.filter((service) => {
-      const stops = demandList(service["stops"]);
-      return demandInteger(stops[0]!["departureMs"]) >= demandInteger(template["windowStartMs"])
-        && demandInteger(stops[0]!["departureMs"]) < demandInteger(template["windowEndMs"]);
-    });
-    const allServices = new Map(baseServices.map((service) => [service["trainRunId"], service]));
-    for (const service of proposedServices) {
-      if (allServices.has(service["trainRunId"])) throw new DemandError(503, "Bestätigte Fernverkehrsfahrt ist im Nachfragekorpus doppelt.");
-      allServices.set(service["trainRunId"], service);
-    }
-    const services = [...allServices.values()].map((service) => {
-      const train = live.get(demandText(service["trainRunId"]));
-      if (train === undefined) return previousServices.get(service["trainRunId"]) ?? service;
-      if (train.operatorId !== service["operatorId"]) throw new DemandError(503, "Nachfragezug gehört nicht zum bestätigten Betreiber.");
-      const delayMs = (train.delaySeconds ?? 0) * 1000;
-      return { ...service, cancelled: train.status === "cancelled", stops: demandList(service["stops"]).map((stop) => ({
-        ...stop, arrivalMs: demandInteger(stop["arrivalMs"]) + delayMs, departureMs: demandInteger(stop["departureMs"]) + delayMs,
-      })) };
-    });
     const signature = demandHash({ ...template, services, nowMs: 0, revision: 0 });
     if (signature === this.lastInputHash) { this.available = true; return; }
     if (previous !== undefined && previous.deploymentHash === this.deps.deploymentHash
@@ -189,7 +198,7 @@ export class DemandService {
       this.lastInputHash = signature; this.available = true; return;
     }
     const input = { ...template, services, nowMs, revision: previous === undefined ? 1 : demandInteger(previous.input["revision"]) + 1 };
-    await this.store.commit(input, this.deps.deploymentHash, occurredAt, accepted.provenance);
+    await this.store.commit(input, this.deps.deploymentHash, occurredAt, provenance);
     this.lastInputHash = signature;
     this.available = true;
     this.failure = "";
@@ -316,13 +325,20 @@ export class DemandService {
     if (draft.validFromS * 1000 < demandInteger(checkpoint.input["windowStartMs"])
       || draft.validUntilS * 1000 > demandInteger(checkpoint.input["windowEndMs"])) return unavailable("Die Betriebszeit muss im angezeigten Nachfragefenster liegen.");
     const services = demandList(checkpoint.input["services"]);
-    const reference = services.find((service) => {
+    const pinnedPool = this.pools.find((pool) => pool["periodId"] === checkpoint.input["periodId"]);
+    if (pinnedPool === undefined) return unavailable("Für diesen Zeitraum fehlt der gepinnte Referenzkorpus.");
+    // Identische Referenzmenge und Reihenfolge wie bei der Projektion bestätigter
+    // SPFV-Fahrten: Spielerangebote dürfen keine neue Herkunftskette eröffnen.
+    const reference = [...demandList(pinnedPool["services"])].sort((left, right) => {
+      const a = demandText(left["trainRunId"]), b = demandText(right["trainRunId"]);
+      return a < b ? -1 : a > b ? 1 : 0;
+    }).find((service) => {
       if (draft.referenceTrainId !== undefined && service["trainRunId"] !== draft.referenceTrainId) return false;
       const ids = demandList(service["stops"]).map((stop) => stop["stationId"]);
       const indices = draft.stopIds.map((id) => ids.indexOf(id));
       return indices.every((index, position) => index >= 0 && (position === 0 || index > indices[position - 1]!));
     });
-    if (reference === undefined) return unavailable("Für diese Haltefolge fehlen bestätigte Referenzfahrzeiten.");
+    if (reference === undefined) return unavailable("Für diese Haltefolge fehlen Referenzfahrzeiten im freigegebenen Nachfragekorpus.");
     const referenceStops = demandList(reference["stops"]);
     const first = referenceStops.find((stop) => stop["stationId"] === draft.stopIds[0])!;
     const originMs = demandInteger(first["departureMs"]);

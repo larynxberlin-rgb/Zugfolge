@@ -272,7 +272,10 @@
         { "number": 173, "kind": "issue", "labels": ["area:economy", "type:enhancement", "priority:p1"] },
         { "number": 210, "kind": "issue", "labels": ["area:economy", "area:simulation", "type:enhancement", "priority:p1"] },
         { "number": 361, "kind": "issue", "labels": ["area:livemap", "type:enhancement", "priority:p1"] },
-        { "number": 379, "kind": "issue", "labels": ["area:livemap", "type:enhancement", "priority:p1"] }
+        { "number": 379, "kind": "issue", "labels": ["area:livemap", "type:enhancement", "priority:p1"] },
+        { "number": 532, "kind": "pull_request" },
+        { "number": 533, "kind": "pull_request" },
+        { "number": 534, "kind": "pull_request" }
       ]
     },
     {

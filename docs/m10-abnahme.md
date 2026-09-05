@@ -1,10 +1,16 @@
 # M10 — Implementierung und Abnahmegrenzen
 
-Stand: 05.09.2026. Gemeint ist **M10 — Personenverkehrsnachfrage und SPFV**,
+Stand: 06.09.2026. Gemeint ist **M10 — Personenverkehrsnachfrage und SPFV**,
 GitHub-Milestone 11. Die technische Implementierung ist als PR-Stack auf der
-Gestaltungsbasis #531 vorbereitet. #530 wurde während der Arbeit in `main`
+Gestaltungsbasis #531 veröffentlicht. #530 wurde während der Arbeit in `main`
 übernommen. Es werden keine Issues oder Milestones durch diesen Bericht
 automatisch geschlossen.
+
+Reihenfolge: [Gestaltungsbasis #531](https://github.com/larynxberlin-rgb/Zugfolge/pull/531)
+→ [Nachfragekern #532](https://github.com/larynxberlin-rgb/Zugfolge/pull/532)
+→ [Trassenplanung #533](https://github.com/larynxberlin-rgb/Zugfolge/pull/533)
+→ [API, Oberfläche und Kalibrierung #534](https://github.com/larynxberlin-rgb/Zugfolge/pull/534).
+Die drei M10-PRs bleiben bis zur fachlichen Abnahme Entwürfe.
 
 ## Fachlicher Umfang
 
@@ -30,8 +36,14 @@ Nachfrageberechnung und keinen automatisch aktivierten Beispielkorpus.
 Alle Generationfenster einer Periode werden unter einem Release und Seed in
 einem Kapazitätspool ausgewertet. Doppelte Fahrtkennungen müssen identische
 Fakten besitzen. Ein Pool bleibt für die enthaltenen Reisen über das reine
-Erzeugungsfenster hinaus verfügbar. Überlappende Reisen verschiedener
+Erzeugungsfenster hinaus verfügbar. Bereits im Korpus überlappende
 Periodenreleases werden ohne gemeinsamen Übergangsbeleg zurückgewiesen.
+Bestätigte SPFV-Fahrten und aktuelle Verspätungen verlängern dagegen den
+wirksamen Horizont der laufenden Periode: Der bisherige Pool bleibt bis zum
+letzten Fahrtende lesbar, der nächste wird bis dahin zurückgestellt. Der
+gespeicherte Checkpoint erhält diese Zuordnung über Neustarts. Ohne vorherigen
+Checkpoint werden höchstens 256 begonnene Pools mit ihren jeweils begrenzten
+Planungsprojektionen geprüft; dies ersetzt keinen Deutschlandlastnachweis.
 
 Der Scheduler aktualisiert die Prognose höchstens alle 30 Sekunden nach einem
 bestätigten Betriebsschritt. Unveränderte Eingaben erzeugen auch nach Neustart
@@ -86,7 +98,8 @@ und [Nachfrageliste auf Mobilgeräten](screenshots/m10/demand-mobile.png) dokume
 Lokal nachgewiesen: 835 Rust-Workspace-Tests (ohne die beiden Linux-NAPI-Crates),
 14 Nachfragekerntests einschließlich Golden und Properties, 13 native
 Planning-Runtime-Tests sowie die fokussierten API-, Privacy-, Planner- und
-Browsernachweise. Clippy, Typprüfung und 15 Repositorywächter sind Bestandteil
+Browsernachweise sowie fünf Python-Tests zu freien Originalquellen,
+Trainings-/Holdout-Trennung und bytegenauen JSON-Pins. Clippy, Typprüfung und 15 Repositorywächter sind Bestandteil
 der Prüfung. Der vollständige Windows-TypeScript-Lauf wurde wegen Zeitlimits
 in unveränderten PGlite-Bestandstests unter paralleler Compilerlast abgebrochen;
 er wird nicht als grün ausgegeben. Der Linux-CI-Lauf bleibt maßgeblich.

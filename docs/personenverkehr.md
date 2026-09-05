@@ -69,6 +69,17 @@ addiert und als gemeinsam kapazitätsgeprüfte Belegung veröffentlicht werden.
 Gesamtgrenzen für Reisende, Sucharbeit und Manifestgröße gelten für den ganzen
 Pool, nicht jeweils erneut pro Fenster.
 
+Die Plattform hält den bisherigen Pool bis zum Maximum aus Fensterende und
+wirksamen Fahrtenden seiner Dienste verfügbar. Dabei berücksichtigt sie bereits
+gespeicherte Betriebsfakten, aktuelle bestätigte Verspätungen und neu native
+zugeteilte SPFV-Fahrten vor der Poolwahl. Ein angrenzender Release wird bis zu
+diesem Ende zurückgestellt; danach beginnt er mit seinem eigenen Pin. Statisch
+überlappende Releasekorpora bleiben unzulässig. Ein Kaltstart prüft höchstens 256
+bereits begonnene Pools mit jeweils zeitlich begrenzter SPFV-Projektion; deren
+Cache hält höchstens 256 Einträge. Nach Restore beginnt die Suche beim zuletzt
+gespeicherten Pool und öffnet abgeschlossene Releases nicht erneut. Diese
+Horizonte bleiben Prognosezeiten, solange die operativen Haltquittungen fehlen.
+
 ## 2. Release und gemeinsame Kohorten
 
 Ein Release enthält mindestens zwei eindeutige `DemandZoneV1`, Nachfrageprofile,

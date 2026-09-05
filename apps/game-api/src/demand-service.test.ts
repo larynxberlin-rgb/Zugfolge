@@ -78,6 +78,57 @@ describe("Nachfrage: Persistenz, Replay und Zugriff", () => {
 
 // Die reguläre Native-ABI-CI setzt den echten Addonpfad. Kein JS-Ersatz für Fachnachweise.
 describe.skipIf(process.env["ZUGFOLGE_RUNTIME_NATIVE_PATH"] === undefined && process.env["ZUGFOLGE_DEMAND_TEST_BINARY"] === undefined)("Nachfrage: echter Rust → Journal → Spielerprojektion", () => {
+  it("verwendet nur gepinnte Referenzen, auch wenn bestätigter Spieler-SPFV im Nachfragecheckpoint steht", async () => {
+    const binary = process.env["ZUGFOLGE_DEMAND_TEST_BINARY"];
+    const native = binary === undefined ? loadDemandRuntime() : demandRuntimeFromAddon({ evaluatePassengerDemand(input) {
+      const result = spawnSync(binary, [], { input, encoding: "utf8", maxBuffer: 16 * 1024 * 1024 });
+      if (result.status !== 0) throw new Error(result.stderr);
+      return result.stdout;
+    } });
+    const nativeCalls: Readonly<Record<string, unknown>>[] = [];
+    const runtime: DemandRuntime = { evaluate(input) { nativeCalls.push(input); return native.evaluate(input); } };
+    const original = JSON.parse(readFileSync(new URL("../../../crates/zugfolge-demand/examples/evaluation.json", import.meta.url), "utf8"));
+    original.worldId = WORLD;
+    for (const service of original.services) { service.worldId = WORLD; service.operatorId = OPERATOR; }
+    for (const alternative of original.alternatives) alternative.worldId = WORLD;
+    const client = new PGlite(), db = drizzle(client, { schema });
+    try {
+      await migrate(db, { migrationsFolder: MIGRATIONS_FOLDER });
+      await db.insert(worlds).values({ id: WORLD, name: "Referenzbindung", schedulePeriodWeeks: 3, epoch: new Date(0) });
+      const registry = new LivemapRegistry();
+      registry.initializeWorld(WORLD, { at: 0, trains: [] });
+      const readModel = { async getConfig() { return { infrastructureReleaseId: "infra" }; },
+        async getScheduledCall(_world: string, stationId: string, trainId: string, atS: number, kind: string) {
+          const train = original.services.find((service: any) => service.trainRunId === trainId);
+          return train?.stops.some((stop: any) => stop.stationId === stationId && stop[kind === "arrival" ? "arrivalMs" : "departureMs"] === atS * 1000)
+            ? { trainId, scheduledTimeS: atS } : undefined;
+        } } as unknown as LivemapReadModel;
+      const deployment: DemandDeployment = { schemaVersion: "zugfolge-demand-deployment/v1", worldId: WORLD,
+        infrastructureReleaseId: "infra", windows: [original] };
+      const service = new DemandService({ db, runtime, deployment, deploymentHash: "pin", readModel, livemap: registry, infrastructure: [] });
+      await service.refresh(120_000, new Date(120_000));
+      const checkpoint = await service.checkpoint(WORLD);
+      // Explicit admitted-service transport fixture, at the same persisted input
+      // boundary produced by loadCommittedSpfvServices; acceptance is tested there.
+      const admitted = { ...original.services.find((train: any) => train.mode === "spfv"),
+        trainRunId: "accepted-player-service", reliabilityBasisPoints: 7_777, comfortBasisPoints: 7_777 };
+      await service.store.commit({ ...checkpoint.input, revision: 2, services: [admitted, ...original.services] }, "pin", new Date(120_000));
+      const estimateInput = { worldId: WORLD, operatorId: OPERATOR, atS: 120,
+        draft: { name: "Referenzprobe", stopIds: ["leipzig-hbf", "erfurt-hbf"], headwayS: 3600,
+          fareCents: "100", formationId: "formation", validFromS: 200, validUntilS: 201 },
+        capacity: 20, firstClassSeats: 0, bicyclePlaces: 1, wheelchairPlaces: 1, operatingCostCentsPerTrainKm: 50,
+        routeDistanceMm: 100_000_000, fleetRevision: 1, fleetStateHash: "f".repeat(64), infrastructureReleaseId: "infra" };
+      const explicit = await service.estimateSpfv({ ...estimateInput, draft: { ...estimateInput.draft, referenceTrainId: admitted.trainRunId } });
+      expect(explicit.requested).toBeNull();
+      expect(explicit.conflicts).toEqual([expect.stringContaining("freigegebenen Nachfragekorpus")]);
+      const implicit = await service.estimateSpfv(estimateInput);
+      expect(implicit.requested).not.toBeNull();
+      const proposal = demandList(nativeCalls.at(-1)!["services"]).find((train) => String(train["trainRunId"]).startsWith("spfv-proposal:"));
+      expect(proposal).toMatchObject({ reliabilityBasisPoints: 9800, comfortBasisPoints: 8500 });
+      expect((await service.checkpoint(WORLD)).input["revision"]).toBe(2);
+    } finally { await client.close(); }
+  }, 30_000);
+
   it("revidiert Kapazität nach Ausfall, schützt Fahrberechtigungen und restauriert bitgleich", async () => {
     const binary = process.env["ZUGFOLGE_DEMAND_TEST_BINARY"];
     const native = binary === undefined ? loadDemandRuntime() : demandRuntimeFromAddon({ evaluatePassengerDemand(input) {
