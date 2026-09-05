@@ -1,6 +1,8 @@
 import { createReadStream, statSync } from "node:fs";
 import { createServer, request as httpRequest } from "node:http";
+import { request as httpsRequest } from "node:https";
 import { extname, resolve, sep } from "node:path";
+import { pipeline } from "node:stream";
 import { pathToFileURL } from "node:url";
 import { parseSingleByteRange } from "./static-range.mjs";
 
@@ -70,7 +72,7 @@ function serveFile(request, response, path, immutable) {
   if (range === undefined) {
     response.writeHead(200, { ...headers, "content-length": stat.size });
     if (request.method === "HEAD") response.end();
-    else createReadStream(path).pipe(response);
+    else pipeline(createReadStream(path), response, () => undefined);
     return;
   }
   response.writeHead(206, {
@@ -79,7 +81,7 @@ function serveFile(request, response, path, immutable) {
     "content-range": `bytes ${range.start}-${range.end}/${stat.size}`,
   });
   if (request.method === "HEAD") response.end();
-  else createReadStream(path, { start: range.start, end: range.end }).pipe(response);
+  else pipeline(createReadStream(path, { start: range.start, end: range.end }), response, () => undefined);
 }
 
 export function createStaticServer({
@@ -94,11 +96,18 @@ export function createStaticServer({
       : resolve(environment["STATIC_ARTIFACT_ROOT"])
     : resolve(artifactRootDirectory);
   const runtimeConfig = runtimeConfiguration(environment);
+  const apiOrigin = environment["GAME_API_INTERNAL_URL"]
+    ? new URL(environment["GAME_API_INTERNAL_URL"])
+    : undefined;
+  if (apiOrigin !== undefined && !["http:", "https:"].includes(apiOrigin.protocol)) {
+    throw new Error("GAME_API_INTERNAL_URL muss eine HTTP- oder HTTPS-URL sein.");
+  }
 
   return createServer((request, response) => {
-    const url = new URL(request.url ?? "/", "http://localhost");
+    let url;
     let requested;
     try {
+      url = new URL(request.url ?? "/", "http://localhost");
       requested = decodeURIComponent(url.pathname).replace(/^\/+/, "");
     } catch {
       response.writeHead(400, { "cache-control": "no-store" }).end("invalid path");
@@ -106,28 +115,37 @@ export function createStaticServer({
     }
 
     if (requested === "api" || requested.startsWith("api/")) {
-      const internal = environment["GAME_API_INTERNAL_URL"];
-      if (!internal) {
+      if (apiOrigin === undefined) {
         response.writeHead(502).end("game api proxy is not configured");
         return;
       }
       // Requestpfade sind keine URL-Referenzen: //host darf die konfigurierte
       // Upstream-Origin auch mit Authentifizierungsheadern niemals ersetzen.
-      const upstreamUrl = new URL(internal);
+      const upstreamUrl = new URL(apiOrigin);
       upstreamUrl.pathname = url.pathname.slice(4) || "/";
       upstreamUrl.search = url.search;
       upstreamUrl.hash = "";
-      const upstream = httpRequest(upstreamUrl, {
+      const upstream = (upstreamUrl.protocol === "https:" ? httpsRequest : httpRequest)(upstreamUrl, {
         method: request.method,
         // Der Game-API-Hostguard prueft den urspruenglichen Subdomain-Host.
         // Ein interner oder fest erwarteter Ersatzhost wuerde diese Grenze
         // entweder blockieren oder Requests fremder Hosts verschleiern.
         headers: { ...request.headers },
       }, (upstreamResponse) => {
+        if (response.destroyed) {
+          upstreamResponse.destroy();
+          return;
+        }
         response.writeHead(upstreamResponse.statusCode ?? 502, upstreamResponse.headers);
-        upstreamResponse.pipe(response);
+        pipeline(upstreamResponse, response, () => undefined);
       });
-      upstream.on("error", () => response.writeHead(502).end("game api unavailable"));
+      upstream.on("error", () => {
+        if (response.destroyed) return;
+        if (response.headersSent) response.destroy();
+        else response.writeHead(502).end("game api unavailable");
+      });
+      request.once("error", () => upstream.destroy());
+      response.once("close", () => upstream.destroy());
       request.pipe(upstream);
       return;
     }
@@ -172,9 +190,13 @@ export function createStaticServer({
       serveFile(request, response, path, false);
     } catch {
       const index = resolve(root, "index.html");
-      if (extname(path) === "" && index.startsWith(`${root}${sep}`)) {
-        serveFile(request, response, index, false);
-        return;
+      if (extname(path) === "" && within(root, index)) {
+        try {
+          serveFile(request, response, index, false);
+          return;
+        } catch {
+          // Auch ein fehlender SPA-Einstieg bleibt ein einzelner 404-Request.
+        }
       }
       response.writeHead(404).end("not found");
     }
