@@ -224,19 +224,38 @@ async function expectFriendlyTutorialHeader(page: Page, reference: string): Prom
       await heldPoll;
       await route.fulfill({ response });
     }, { times: 1 });
-    await polling;
-    await page.getByLabel("Bestellerentgelt je Zug-km").fill("14,50");
-    await page.getByLabel("Pünktlichkeitsversprechen").fill("92,00");
-    await page.getByLabel("Zusätzliche Sitzplätze").fill("12");
-    await page.getByRole("button", { name: "Angebot verbindlich abgeben" }).click();
-    await page.getByRole("heading", { name: "Ein Fahrzeug selbst leasen" }).waitFor();
-    const staleResponse = page.waitForResponse((response) => response.url().endsWith("/tutorial-session") && response.request().method() === "GET");
-    releasePoll();
-    await staleResponse;
+    try {
+      await polling;
+      await page.getByLabel("Bestellerentgelt je Zug-km").fill("14,50");
+      await page.getByLabel("Pünktlichkeitsversprechen").fill("92,00");
+      await page.getByLabel("Zusätzliche Sitzplätze").fill("12");
+      await page.getByRole("button", { name: "Angebot verbindlich abgeben" }).click();
+      await page.getByRole("heading", { name: "Ein Fahrzeug selbst leasen" }).waitFor();
+      const staleResponse = page.waitForResponse((response) => response.url().endsWith("/tutorial-session") && response.request().method() === "GET");
+      releasePoll();
+      await (await staleResponse).finished();
+    } finally {
+      releasePoll();
+    }
     await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => resolve())));
-    await page.locator("#tutorial-why").click();
-    expect(await page.locator(".tutorial-task h2").textContent()).toBe("Ein Fahrzeug selbst leasen");
-    await page.locator('[data-tutorial-offer="lease-economy"]').click();
+    // Die nächste Aktion rendert den gespeicherten Zustand sofort erneut.
+    // Ihre Antwort darf einen unbemerkten Rückfall in Kapitel 1 nicht verdecken.
+    let releaseLease!: () => void;
+    let leaseEntered!: () => void;
+    const heldLease = new Promise<void>((resolve) => { releaseLease = resolve; });
+    const leasing = new Promise<void>((resolve) => { leaseEntered = resolve; });
+    await page.route(`${sessionPath}/actions`, async (route) => {
+      leaseEntered();
+      await heldLease;
+      await route.continue();
+    }, { times: 1 });
+    try {
+      await page.locator('[data-tutorial-offer="lease-economy"]').click();
+      await leasing;
+      expect(await page.locator(".tutorial-task h2").textContent()).toBe("Ein Fahrzeug selbst leasen");
+    } finally {
+      releaseLease();
+    }
     await page.getByRole("heading", { name: "Eine berechnete Trasse bestätigen" }).waitFor();
     await page.locator('[data-tutorial-path="path-robust"]').click();
     await page.getByRole("heading", { name: "Eine Regel ändern und aktivieren" }).waitFor();
