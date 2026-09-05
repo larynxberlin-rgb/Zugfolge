@@ -4500,6 +4500,245 @@ fn dispatcher_is_stable_and_does_not_accept_caller_safety_booleans() {
     assert_eq!(world.route_locks.len(), 1);
 }
 
+fn dispatch_pair_world(infra: OperationalInfraRelease) -> OperationalWorld {
+    let mut world = world_with_release(infra);
+    for (id, number, route, formation) in [
+        ("train:a", "RB 1", "route:v1", "formation:1"),
+        ("train:b", "RB 2", "route:opposing", "formation:2"),
+    ] {
+        world
+            .materialize_train(
+                id,
+                number,
+                "operator",
+                MovementKind::Train,
+                route,
+                formation,
+                0,
+                None,
+                false,
+            )
+            .unwrap();
+    }
+    world
+}
+
+#[test]
+fn dispatcher_wakes_waiters_at_tail_release_while_the_leader_keeps_moving() {
+    for shared_continuation_lock in [false, true] {
+        let mut infra = release_with_independent_opposing_route();
+        if shared_continuation_lock {
+            infra
+                .interlocking_routes
+                .get_mut("interlocking:train:b")
+                .unwrap()
+                .flank_resources
+                .insert("route-resource:common".to_owned());
+        }
+        let mut world = dispatch_pair_world(infra);
+        world
+            .submit_dispatch_requests(&[dispatch_request("train:a", "interlocking:train", 0)])
+            .unwrap();
+        assert!(
+            world
+                .submit_dispatch_requests(&[dispatch_request(
+                    "train:b",
+                    "interlocking:opposing",
+                    0
+                )])
+                .unwrap()
+                .is_empty()
+        );
+        let mut replay = world.clone();
+
+        for _ in 0..32 {
+            if !world
+                .route_locks
+                .values()
+                .any(|lock| lock.template_id == "interlocking:train")
+            {
+                break;
+            }
+            let end_ms = world.trains["train:a"]
+                .motion_segment
+                .as_ref()
+                .unwrap()
+                .valid_until_ms;
+            world.advance_to(end_ms).unwrap();
+        }
+
+        assert!(
+            !world
+                .route_locks
+                .values()
+                .any(|lock| lock.template_id == "interlocking:train")
+        );
+        let leader = &world.trains["train:a"];
+        assert!(leader.head_route_mm < 120_000);
+        assert_eq!(leader.motion_state, MotionState::Moving);
+        let waiter = &world.trains["train:b"];
+        if shared_continuation_lock {
+            assert!(waiter.authority.is_none());
+            assert_eq!(
+                waiter.waiting_reason.as_deref(),
+                Some("waiting-for-route-lock")
+            );
+        } else {
+            assert_eq!(waiter.motion_state, MotionState::Moving);
+            assert_eq!(
+                waiter.authority.as_ref().unwrap().issued_at_ms,
+                world.now_ms
+            );
+            assert!(waiter.waiting_reason.is_none());
+            assert_eq!(
+                serde_json::to_value(&world).unwrap()["waitingByResource"],
+                serde_json::json!({})
+            );
+        }
+        world.verify_invariants().unwrap();
+        replay.advance_to(world.now_ms).unwrap();
+        assert_eq!(world.state_hash(), replay.state_hash());
+    }
+}
+
+#[test]
+fn dispatcher_rejects_conflicting_duplicates_before_mutating_the_batch() {
+    let mut world = dispatch_pair_world(release_with_independent_opposing_route());
+    let request = dispatch_request("train:a", "interlocking:train", 0);
+    let conflicting = DispatchRequest {
+        passenger_impact: 1,
+        ..request.clone()
+    };
+    let before = world.clone();
+    for requests in [
+        [request.clone(), conflicting.clone()],
+        [conflicting, request.clone()],
+    ] {
+        assert_eq!(
+            world.submit_dispatch_requests(&requests),
+            Err(OperationalError::InvalidDispatchRequest(
+                "train:a".to_owned()
+            ))
+        );
+        assert_eq!(world, before);
+    }
+    assert_eq!(
+        world
+            .submit_dispatch_requests(&[request.clone(), request])
+            .unwrap(),
+        vec!["train:a"]
+    );
+    assert_eq!(
+        world
+            .events
+            .iter()
+            .filter(|event| event.kind == "dispatcher-decision")
+            .count(),
+        1
+    );
+    world.verify_invariants().unwrap();
+}
+
+#[test]
+fn dispatcher_batch_preserves_priorities_and_replay_across_input_permutations() {
+    for blocked_high_priority in [false, true] {
+        let mut infra = release_with_independent_opposing_route();
+        let opposing = infra
+            .interlocking_routes
+            .get_mut("interlocking:opposing")
+            .unwrap();
+        opposing.flank_resources.remove("route-resource:common");
+        opposing.switch_positions.clear();
+        let mut world = dispatch_pair_world(infra);
+        if blocked_high_priority {
+            world
+                .activate_disruption(
+                    "closed",
+                    OperationalDisruption::ResourceClosed {
+                        resource_id: "block:a".to_owned(),
+                    },
+                )
+                .unwrap();
+        }
+        let mut replay = world.clone();
+        let high = DispatchRequest {
+            passenger_impact: 10,
+            ..dispatch_request("train:a", "interlocking:train", 0)
+        };
+        let low = dispatch_request("train:b", "interlocking:opposing", 0);
+        let selected = world
+            .submit_dispatch_requests(&[low.clone(), high.clone()])
+            .unwrap();
+        let reversed = replay.submit_dispatch_requests(&[high, low]).unwrap();
+        assert_eq!(
+            selected,
+            if blocked_high_priority {
+                vec!["train:b"]
+            } else {
+                vec!["train:a", "train:b"]
+            }
+        );
+        assert_eq!(selected, reversed);
+        assert_eq!(world.state_hash(), replay.state_hash());
+        world.verify_invariants().unwrap();
+        if blocked_high_priority {
+            assert_eq!(
+                world.trains["train:a"].waiting_reason.as_deref(),
+                Some("waiting-for-route-lock")
+            );
+            world
+                .clear_disruption("closed", "technical-release")
+                .unwrap();
+            assert_eq!(world.trains["train:a"].motion_state, MotionState::Moving);
+            world.verify_invariants().unwrap();
+        }
+    }
+}
+
+#[test]
+fn motion_geometry_keeps_both_track_offsets_at_the_next_edge_boundary() {
+    let mut world = dispatched_profile_world(release());
+    for _ in 0..32 {
+        let segment = world.trains["t"].motion_segment.as_ref().unwrap();
+        if segment.segment_end_route_mm == 60_000 {
+            break;
+        }
+        world.advance_to(segment.valid_until_ms).unwrap();
+    }
+    let projection = world
+        .project(ProjectionKind::LiveMap, &BTreeSet::new())
+        .unwrap();
+    let train = &projection.trains[0];
+    assert_eq!(
+        train.motion_segment.as_ref().unwrap().segment_end_route_mm,
+        60_000
+    );
+    let boundary = train
+        .motion_geometry
+        .iter()
+        .filter(|point| point.route_mm == 60_000)
+        .collect::<Vec<_>>();
+    assert_eq!(boundary.len(), 2);
+    assert_eq!(boundary[0].edge_id, "edge:a");
+    assert_eq!(boundary[0].edge_offset_mm, 60_000);
+    assert_eq!(boundary[1].edge_id, "edge:b");
+    assert_eq!(boundary[1].edge_offset_mm, 60_000);
+    assert_eq!(boundary[0].latitude_e7, boundary[1].latitude_e7);
+    assert_eq!(boundary[0].longitude_e7, boundary[1].longitude_e7);
+    let expected_head = boundary[1].clone();
+    world
+        .advance_to(train.motion_segment.as_ref().unwrap().valid_until_ms)
+        .unwrap();
+    assert_eq!(
+        world
+            .project(ProjectionKind::LiveMap, &BTreeSet::new())
+            .unwrap()
+            .trains[0]
+            .head_geometry,
+        expected_head
+    );
+}
+
 #[test]
 fn projection_carries_exact_release_vehicle_and_standing_geometry() {
     let mut world = world();

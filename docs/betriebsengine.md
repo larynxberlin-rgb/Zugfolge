@@ -178,6 +178,14 @@ Programmauftrag über alle Abschnitte erhalten und wird erst am echten
 Laufwegende entfernt. Erneut autorisiert werden ausschließlich stehende Züge
 ohne Fahrberechtigung und ohne laufenden Bewegungsabschnitt.
 
+Eine Zugschlussfreigabe weckt die betroffenen Ressourcen-Warteindizes noch
+am selben Bewegungsereignis, auch wenn die freigebende Fahrt weiterfährt.
+Jeder Zuteilungsbatch wird einmal in der bestehenden Prioritätsfolge geprüft:
+Neue Locks können einen zuvor gesperrten Fahrweg nicht freigeben. Mehrere
+inhaltlich unterschiedliche Aufträge derselben Fahrt innerhalb eines Batches
+werden vor jeder Zustandsänderung abgewiesen; identische Wiederholungen sind
+zulässig.
+
 Der virtuelle Lokführer leitet Beschleunigen, Beharren und Bremsen aus
 Formation, Kantenprofil, Neigung, Fahrberechtigung und Zielhalt ab. Verspätete
 Züge nutzen die zulässige Leistung. Pünktliche Personenzüge fahren
