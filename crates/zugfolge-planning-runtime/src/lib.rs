@@ -2594,29 +2594,48 @@ mod tests {
         conflicting["trainId"] = json!("replacement-two");
         conflicting["trainNumber"] = json!(26806);
         conflicting["requestNumericId"] = json!(2);
-        replacement["requests"].as_array_mut().unwrap().push(conflicting);
+        replacement["requests"]
+            .as_array_mut()
+            .unwrap()
+            .push(conflicting);
         replacement["previousState"] = initial["state"].clone();
         replacement["expectedProjectionRevision"] = json!(1);
         replacement["replaceTrainIds"] = json!(["old"]);
         replacement["effectiveFromS"] = json!(600);
-        assert!(coordinate_planning_run(&replacement.to_string()).unwrap_err().to_string().starts_with("replacement_conflict:"));
+        assert!(
+            coordinate_planning_run(&replacement.to_string())
+                .unwrap_err()
+                .to_string()
+                .starts_with("replacement_conflict:")
+        );
     }
 
     #[test]
     fn batchgrenze_nimmt_256_fahrten_an_und_weist_die_257te_ab() {
         let mut input = single_absolute_input(28_800, "batch-0", 26802);
         let template = input["requests"][0].clone();
-        input["requests"] = json!((0..256).map(|index| {
-            let mut request = template.clone();
-            let departure = 28_800 + index * 3_600;
-            request["trainId"] = json!(format!("batch-{index}"));
-            request["requestNumericId"] = json!(index + 1);
-            request["trainNumber"] = json!(26_802 + index * 2);
-            request["desiredDepartureS"] = json!(departure);
-            request["serviceWindow"] = json!({"validFromS":departure,"validUntilS":departure+1});
-            request
-        }).collect::<Vec<_>>());
-        assert_eq!(evaluate_json(&input)["state"]["reservations"].as_object().unwrap().len(), 256);
+        input["requests"] = json!(
+            (0..256)
+                .map(|index| {
+                    let mut request = template.clone();
+                    let departure = 28_800 + index * 3_600;
+                    request["trainId"] = json!(format!("batch-{index}"));
+                    request["requestNumericId"] = json!(index + 1);
+                    request["trainNumber"] = json!(26_802 + index * 2);
+                    request["desiredDepartureS"] = json!(departure);
+                    request["serviceWindow"] =
+                        json!({"validFromS":departure,"validUntilS":departure+1});
+                    request
+                })
+                .collect::<Vec<_>>()
+        );
+        assert_eq!(
+            evaluate_json(&input)["state"]["reservations"]
+                .as_object()
+                .unwrap()
+                .len(),
+            256
+        );
         input["requests"].as_array_mut().unwrap().push(template);
         assert!(coordinate_planning_run(&input.to_string()).is_err());
     }
