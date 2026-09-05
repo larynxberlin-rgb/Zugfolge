@@ -50,6 +50,11 @@ verarbeitet. Die Trennung personenbezogener Daten vom unveraenderlichen
 Archiv-Seal ist ein offener Implementierungsbefund; der Purge umgeht den
 Archivschutz nicht.
 
+Der [geprüfte Archivvertrag](datenschutz-archivgrenze.md) trennt die
+kryptografische Grenze bereits attestierter Cutover-Vorgänger vom möglichen
+künftigen Purge normaler fachlicher Archive und nennt den ausführbaren
+Integrationstest. Issue #520 bleibt offen.
+
 Ein geraeumter Nachrichtendatensatz enthaelt eine leere Payload, einen neutralen
 Typ und den Raeumzeitpunkt. Kennung, Empfaenger, Idempotenzschluessel und
 unveraenderlicher Inhaltshash bleiben als Zustellbeleg erhalten. Ein spaeter

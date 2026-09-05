@@ -548,6 +548,22 @@ function boundaryCommands(
   const dayZeroRoots = day === 0
     ? activeTrains.filter(({ train }) => program.dayZeroRootIds.has(train.id))
     : [];
+  const serviceOutcomeFor = (train: OperationalTrainInitialization, instanceDay: number) => {
+    if (train.serviceOutcome === undefined) return {};
+    const shiftMs = instanceDay * program.repeatEveryMs;
+    const scheduledArrivalMs = train.serviceOutcome.scheduledArrivalMs + shiftMs;
+    const epochDay = Date.parse(`${train.serviceOutcome.serviceDay}T00:00:00.000Z`);
+    if (!Number.isSafeInteger(scheduledArrivalMs) || !Number.isFinite(epochDay)) {
+      throw new RangeError("Tagesfahrt besitzt keine gueltige signierte Abschlussbindung.");
+    }
+    const serviceDay = new Date(epochDay + shiftMs).toISOString().slice(0, 10);
+    return { serviceOutcome: {
+      ...structuredClone(train.serviceOutcome),
+      serviceRunId: `${train.serviceOutcome.serviceId}:service-day:${serviceDay}`,
+      serviceDay,
+      scheduledArrivalMs,
+    } };
+  };
   for (const train of dayZeroRoots) {
     commands.push(Object.freeze({
       commandId: `${prefix}:materialize:${train.train.id}`,
@@ -556,6 +572,7 @@ function boundaryCommands(
         type: "materialize",
         train: Object.freeze({
           ...structuredClone(train.train),
+          ...serviceOutcomeFor(train.train, day),
           id: recurringTrainId(train.train.id, day),
           scheduledDepartureMs: atMs,
         }),
@@ -603,6 +620,7 @@ function boundaryCommands(
         predecessorTrainId,
         predecessorBaseRouteVersionId: continuation.template.predecessorBaseRouteVersionId,
         successor: Object.freeze({
+          ...serviceOutcomeFor(continuation.successor.train, successorDay),
           id: successorTrainId,
           trainNumber: continuation.successor.train.trainNumber,
           operatorId: continuation.successor.train.operatorId,

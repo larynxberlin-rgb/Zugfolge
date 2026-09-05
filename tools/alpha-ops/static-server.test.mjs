@@ -53,6 +53,29 @@ function parseEnvironmentExample(source) {
     }));
 }
 
+test("API-Pfade mit doppeltem Slash koennen keinen fremden Upstream oder Headerempfaenger waehlen", async (t) => {
+  let foreignRequests = 0;
+  const foreign = createServer((_request, response) => { foreignRequests += 1; response.end("foreign"); });
+  const upstream = createServer((request, response) => {
+    response.setHeader("content-type", "application/json");
+    response.end(JSON.stringify({ url: request.url, authorization: request.headers.authorization }));
+  });
+  foreign.listen(0, "127.0.0.1");
+  upstream.listen(0, "127.0.0.1");
+  await Promise.all([once(foreign, "listening"), once(upstream, "listening")]);
+  const proxy = createStaticServer({ rootDirectory: ".", environment: { GAME_API_INTERNAL_URL: `http://127.0.0.1:${upstream.address().port}` } });
+  proxy.listen(0, "127.0.0.1");
+  await once(proxy, "listening");
+  t.after(async () => {
+    await Promise.all([proxy, upstream, foreign].map((server) => new Promise((resolve) => server.close(resolve))));
+  });
+  const path = `//127.0.0.1:${foreign.address().port}/worlds?world=foreign`;
+  const response = await fetch(`http://127.0.0.1:${proxy.address().port}/api${path}`, { headers: { authorization: "Bearer proxy-regression" } });
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), { url: path, authorization: "Bearer proxy-regression" });
+  assert.equal(foreignRequests, 0);
+});
+
 test("Paketplan, ReadModel v3, Alpha-Compose und Runtime-Konfiguration verwenden dieselbe Releasewurzel", async () => {
   const [planSource, readModelSpecSource, compose, environmentSource] = await Promise.all([
     readFile(new URL("../tiles/map-package.annual-2026.2.plan.json", import.meta.url), "utf8"),

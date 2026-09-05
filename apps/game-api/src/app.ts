@@ -202,6 +202,7 @@ import { createAuthenticator, type TokenVerifier } from "./auth.js";
 import { guardAlphaAction, registerAlphaRoutes, type AlphaAbuseServices, type AlphaRouteServices } from "./alpha-routes.js";
 import { registerCooperationRoutes } from "./cooperation-routes.js";
 import { GameCooperationAuthority } from "./cooperation-authority.js";
+import { contractReportPeriod } from "./contract-report-period.js";
 import { GameFleetAssetTransferWriter } from "./fleet-market-writer.js";
 import type { FleetAuthorityWorldConfiguration } from "./fleet-configuration.js";
 import { registerInfraPackageUploadRoutes } from "./infra-package-routes.js";
@@ -1986,14 +1987,12 @@ export function buildApp(deps: AppDependencies): FastifyInstance {
         const periodStartS = contract.startsAt + period * tender.periodDurationSeconds;
         const periodEndS = Math.min(contract.endsAt, periodStartS + tender.periodDurationSeconds);
         if (!Number.isSafeInteger(periodStartS) || !Number.isSafeInteger(periodEndS) || periodStartS >= contract.endsAt) throw new Error("Serverseitige Vertragsperiode liegt ausserhalb der Vertragslaufzeit.");
-        const firstServiceDay = new Date(epoch.getTime() + periodStartS * 1_000).toISOString().slice(0, 10);
-        const lastServiceDay = new Date(epoch.getTime() + Math.max(periodStartS, periodEndS - 1) * 1_000).toISOString().slice(0, 10);
+        const { firstServiceDay, lastServiceDay, expectedServiceDays } = contractReportPeriod(epoch, periodStartS, periodEndS);
         const reports = await deps.db.select().from(dailyOperationReports).where(and(
           eq(dailyOperationReports.worldId, request.params.worldId),
           eq(dailyOperationReports.operatorId, request.params.operatorId),
           sql`${dailyOperationReports.serviceDay} between ${firstServiceDay} and ${lastServiceDay}`,
         )).orderBy(asc(dailyOperationReports.serviceDay));
-        const expectedServiceDays = Math.floor((Date.parse(lastServiceDay) - Date.parse(firstServiceDay)) / 86_400_000) + 1;
         if (reports.length !== expectedServiceDays) return reply.code(409).send({ error: "Serverseitige Betriebsberichte der Vertragsperiode sind unvollstaendig." });
         let total = 0;
         let punctual = 0;
@@ -2001,7 +2000,7 @@ export function buildApp(deps: AppDependencies): FastifyInstance {
         let missingSeats = 0;
         let minimumSeatsProvided: number | undefined;
         let missedConnections = 0;
-        let trainKm = 0n;
+        let distanceMm = 0n;
         let costCents = 0n;
         let contractPenaltyCents = 0n;
         const evidence: string[] = [];
@@ -2012,22 +2011,29 @@ export function buildApp(deps: AppDependencies): FastifyInstance {
           const trainRuns = contractEvidence?.["trainRuns"] as Readonly<Record<string, unknown>> | undefined;
           const settlements = contractEvidence?.["settlements"] as Readonly<Record<string, unknown>> | undefined;
           if (trainRuns === undefined || settlements === undefined) throw new Error("Serverseitiger Betriebsbericht ist unvollstaendig.");
-          const dayTotal = Number(trainRuns["total"] ?? 0);
-          const dayPunctual = Number(trainRuns["punctual"] ?? 0);
-          const dayCancellations = Number(trainRuns["cancelled"] ?? 0);
-          const dayMissingSeats = Number(trainRuns["missingSeats"] ?? 0);
+          if (contractEvidence?.["evidenceComplete"] !== true || settlements["evidenceComplete"] !== true) throw new Error("Serverseitiger Betriebs- oder Kostennachweis ist unvollstaendig.");
+          const dayTotal = trainRuns["total"];
+          const dayPunctual = trainRuns["punctual"];
+          const dayCancellations = trainRuns["cancelled"];
+          const dayMissingSeats = trainRuns["missingSeats"];
           if (contract.qualityPromises !== undefined && contract.qualityPromises.extraSeats > 0) {
             const daySeats = trainRuns["minimumSeatsProvided"];
             if (typeof daySeats !== "number" || !Number.isSafeInteger(daySeats) || daySeats < 0) throw new Error("Serverseitiger Betriebsbericht besitzt keinen Nachweis der zugesagten Sitzplatzkapazitaet.");
             minimumSeatsProvided = Math.min(minimumSeatsProvided ?? daySeats, daySeats);
           }
-          const dayMissedConnections = Number(trainRuns["missedConnections"] ?? 0);
-          const dayTrainKm = BigInt(String(trainRuns["trainKm"] ?? "0"));
-          const dayCosts = BigInt(String(settlements["costCents"] ?? "0"));
-          const dayPenalties = BigInt(String(settlements["contractPenaltyCents"] ?? "0"));
-          if (![dayTotal, dayPunctual, dayCancellations, dayMissingSeats, dayMissedConnections].every(Number.isSafeInteger)
-            || [dayTotal, dayPunctual, dayCancellations, dayMissingSeats, dayMissedConnections].some((value) => value < 0)
-            || dayPunctual + dayCancellations > dayTotal || dayTrainKm < 0n || dayCosts < 0n || dayPenalties < 0n) {
+          const dayMissedConnections = trainRuns["missedConnections"];
+          const verifiedInteger = (value: unknown): value is number => typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
+          const verifiedBigInt = (value: unknown): bigint => {
+            if (typeof value !== "string" || !/^(?:0|[1-9]\d*)$/u.test(value)) throw new Error("Serverseitiger Betriebsbericht besitzt keinen expliziten ganzzahligen Leistungs- oder Kostenbeleg.");
+            return BigInt(value);
+          };
+          const dayTrainKm = verifiedBigInt(trainRuns["trainKm"]);
+          const dayDistanceMm = trainRuns["distanceMm"] === undefined ? dayTrainKm * 1_000_000n : verifiedBigInt(trainRuns["distanceMm"]);
+          const dayCosts = verifiedBigInt(settlements["costCents"]);
+          const dayPenalties = verifiedBigInt(settlements["contractPenaltyCents"]);
+          if (!verifiedInteger(dayTotal) || !verifiedInteger(dayPunctual) || !verifiedInteger(dayCancellations)
+            || !verifiedInteger(dayMissingSeats) || !verifiedInteger(dayMissedConnections)
+            || dayPunctual + dayCancellations > dayTotal || dayDistanceMm / 1_000_000n !== dayTrainKm) {
             throw new Error("Serverseitiger Betriebsbericht besitzt ungueltige Leistungs- oder Kostenwerte.");
           }
           const nextCounts: [number, number, number, number, number] = [
@@ -2039,11 +2045,12 @@ export function buildApp(deps: AppDependencies): FastifyInstance {
           ];
           if (!nextCounts.every(Number.isSafeInteger)) throw new Error("Serverseitiger Betriebsbericht ueberschreitet sichere Ganzzahlgrenzen.");
           [total, punctual, cancellations, missingSeats, missedConnections] = nextCounts;
-          trainKm += dayTrainKm;
+          distanceMm += dayDistanceMm;
           costCents += dayCosts;
           contractPenaltyCents += dayPenalties;
           evidence.push(`daily-report:${report.id}`);
         }
+        const trainKm = distanceMm / 1_000_000n;
         if (trainKm > tender.specification.trainKmPerPeriod) throw new Error("Serverseitige Zugkilometer ueberschreiten die bestellte Periodenleistung.");
         const punctualityBasisPoints = total === 0 ? 0 : Number(BigInt(punctual) * 10_000n / BigInt(total));
         const reference = `daily-reports:${firstServiceDay}:${lastServiceDay}`;
@@ -3820,7 +3827,10 @@ export function buildApp(deps: AppDependencies): FastifyInstance {
       if (identity === undefined) return reply.code(401).send({ error: "Keine Identität." });
       try {
         await requireOperatorOwner(deps.db, request.params.worldId, request.params.operatorId, identity.keycloakSubject);
-        return reply.send(projectOperations(await worldEventLog(deps.db, request.params.worldId).list(), request.params.operatorId));
+        return reply.send({
+          ...projectOperations(await worldEventLog(deps.db, request.params.worldId).list(), request.params.operatorId),
+          consumerAvailable: deps.dispatchConsumerReady?.(request.params.worldId) === true,
+        });
       } catch (error) {
         return sendError(reply, error);
       }

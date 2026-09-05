@@ -69,6 +69,11 @@ function render(): void {
     root.querySelector(".message")?.remove();
     const message = template.content.querySelector(".message");
     if (message !== null) root.querySelector(".operations-workspace")?.prepend(message);
+    root.querySelector(".execution-status")?.remove();
+    const executionStatus = template.content.querySelector(".execution-status");
+    if (executionStatus !== null) root.querySelector(".operations-workspace")?.prepend(executionStatus);
+    const overrideButton = root.querySelector<HTMLButtonElement>("#submit-override");
+    if (overrideButton !== null) overrideButton.disabled = state.operations?.consumerAvailable === false;
     const day = root.querySelector<HTMLInputElement>("#report-day");
     if (day !== null) day.value = reportDay;
     root.querySelectorAll<HTMLInputElement | HTMLSelectElement>("#program input, #program select").forEach((input) => { input.disabled = state.saving; });
@@ -77,7 +82,7 @@ function render(): void {
     if (saveButton !== null) { saveButton.disabled = state.saving; saveButton.textContent = state.saving ? "Speichert …" : "Neue Version speichern"; }
     for (const id of ["#activate-program", "#run-backtest"]) {
       const button = root.querySelector<HTMLButtonElement>(id);
-      if (button !== null) button.disabled = state.saving || !savedProgramMatches(state.program, state.savedProgram);
+      if (button !== null) button.disabled = state.operations?.consumerAvailable === false || state.saving || !savedProgramMatches(state.program, state.savedProgram);
     }
     bindLive();
     return;
@@ -245,6 +250,7 @@ async function save(): Promise<void> {
 
 async function activate(): Promise<void> {
   if (api === undefined) return;
+  if (state.operations?.consumerAvailable === false) return;
   if (!savedProgramMatches(state.program, state.savedProgram) || state.saving) { setState({ message: "Bitte den sichtbaren Entwurf zuerst speichern.", messageTone: "error" }); return; }
   const saved = state.savedProgram!;
   try { await api.activate(saved.version); await refresh(); setState({ message: `Aktivierung von Version ${saved.version} · ${saved.checksum.slice(0, 12)}… wurde dem Single Writer übergeben.`, messageTone: "status" }); }
@@ -253,6 +259,7 @@ async function activate(): Promise<void> {
 
 async function backtest(): Promise<void> {
   if (api === undefined) return;
+  if (state.operations?.consumerAvailable === false) return;
   if (!savedProgramMatches(state.program, state.savedProgram) || state.saving) { setState({ message: "Bitte den sichtbaren Entwurf zuerst speichern.", messageTone: "error" }); return; }
   const saved = state.savedProgram!;
   try { await api.backtest(saved.version, state.operations?.throughSequence ?? 1); setState({ message: `Rücktest für Version ${saved.version} · ${saved.checksum.slice(0, 12)}… wurde eingereiht.`, messageTone: "status" }); }
@@ -265,7 +272,9 @@ async function submitOverride(): Promise<void> {
   const action = root.querySelector<HTMLSelectElement>("#override-action")?.value ?? "";
   const reason = root.querySelector<HTMLTextAreaElement>("#override-reason")?.value ?? "";
   try {
-    const current = (await api.operations()).decisions.find((entry) => entry.decisionId === decisionId);
+    const latest = await api.operations();
+    if (latest.consumerAvailable === false) throw new Error("Die Ausführung von Betriebsprogrammen ist auf diesem Weltserver noch nicht verfügbar. Der Entwurf bleibt erhalten.");
+    const current = latest.decisions.find((entry) => entry.decisionId === decisionId);
     if (current === undefined || JSON.stringify(current) !== overrideDraft.fingerprint) throw new Error("Die Entscheidung hat sich geändert oder ist nicht mehr verfügbar. Der Entwurf bleibt erhalten; bitte die aktuelle Betriebslage prüfen.");
     await api.override(decisionId, action, reason);
     overrideDraft.open = false;

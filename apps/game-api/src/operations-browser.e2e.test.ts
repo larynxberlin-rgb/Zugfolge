@@ -35,11 +35,13 @@ function decision(sequence = 1) {
   let streams: Set<ServerResponse>;
   let operationsReads: number;
   let overrideRequests: number;
+  let consumerAvailable: boolean;
 
   beforeEach(async () => {
     versions = [{ ...version(initial), status: "active" }];
     activated = undefined; loseSaveResponse = false; rejectSave = false; sequence = 1;
     decisions = [decision()]; streams = new Set(); operationsReads = 0; overrideRequests = 0;
+    consumerAvailable = true;
     app = Fastify();
     const index = readFileSync(resolve(dist, "index.html"), "utf8").replace('<script src="./runtime-config.js"></script>', `<script>sessionStorage.setItem("zugfolge.oidc.operations-center.accessToken","browser-test");sessionStorage.setItem("zugfolge.oidc.operations-center.accessTokenExpiresAt",String(Date.now()+3600000));</script>`);
     app.get("/", async (_request, reply) => reply.type("text/html").send(index));
@@ -62,7 +64,7 @@ function decision(sequence = 1) {
       if (activated !== undefined) activated.status = "active";
       return {};
     });
-    app.get(`${base}/operations`, async () => { operationsReads++; return { throughSequence: sequence, decisions, majorEvents: [], manualInterventions: [], cancellations: [] }; });
+    app.get(`${base}/operations`, async () => { operationsReads++; return { consumerAvailable, throughSequence: sequence, decisions, majorEvents: [], manualInterventions: [], cancellations: [] }; });
     app.get(`${base}/operations/reports`, async () => []);
     app.post(`${base}/operations/decisions/:id/override`, async () => { overrideRequests++; return {}; });
     app.get("/worlds/world/me/operator-context", async () => ({ schemaVersion: "zugfolge-operator-context/v1", worldId: "world", operators: [{ id: "operator", name: "Test-EVU", finance: { mode: "unlimited" } }] }));
@@ -95,7 +97,8 @@ function decision(sequence = 1) {
     }
   }
 
-  it("speichert zwei Bearbeitungen als Version 2/3 und aktiviert exakt den sichtbaren Inhalt", async () => {
+  // Browserreisen besitzen ein eigenes Laufzeitbudget; dies ist kein Latenzbenchmark.
+  it("speichert zwei Bearbeitungen als Version 2/3 und aktiviert exakt den sichtbaren Inhalt", { timeout: 30_000 }, async () => {
     await open("program");
     for (const [priority, number] of [[200, 2], [300, 3]]) {
       await page.locator("[data-priority]").fill(String(priority)); await page.locator("[data-priority]").press("Tab");
@@ -113,7 +116,7 @@ function decision(sequence = 1) {
     expect(activated?.canonicalProgram.rules[0]?.priority).toBe(300);
   });
 
-  it("erhält Entwurf bei Konflikt und erkennt ein verlorenes Speicher-Ack", async () => {
+  it("erhält Entwurf bei Konflikt und erkennt ein verlorenes Speicher-Ack", { timeout: 30_000 }, async () => {
     await open("program");
     await page.locator("[data-priority]").fill("250"); await page.locator("[data-priority]").press("Tab");
     rejectSave = true; await page.locator("#save-program").click();
@@ -125,7 +128,7 @@ function decision(sequence = 1) {
     expect(await page.locator("#activate-program").isDisabled()).toBe(false);
   });
 
-  it("erhält Regel-Rohtext und Fokus während eines Stream-Ereignisses vor change", async () => {
+  it("erhält Regel-Rohtext und Fokus während eines Stream-Ereignisses vor change", { timeout: 30_000 }, async () => {
     await open("program");
     await page.locator("[data-rule-id-input]").fill("regel-neuer-entwurf");
     await event();
@@ -136,7 +139,7 @@ function decision(sequence = 1) {
     await expect.poll(() => versions.at(-1)?.canonicalProgram.rules[0]?.id).toBe("regel-neuer-entwurf");
   });
 
-  it("erhält Dialog, Aktion, Begründung und Auswahl; verwirft geänderte Entscheidung ohne Textverlust", async () => {
+  it("erhält Dialog, Aktion, Begründung und Auswahl; verwirft geänderte Entscheidung ohne Textverlust", { timeout: 30_000 }, async () => {
     await open("operations");
     expect(await page.locator(".metrics-strip strong").first().textContent()).toBe("1");
     await page.locator("[data-open-override]").click();
@@ -151,5 +154,18 @@ function decision(sequence = 1) {
     await expect.poll(() => page.locator(".message").textContent()).toContain("nicht mehr verfügbar");
     expect(await page.locator("#override-reason").inputValue()).toBe("Die vollständige Begründung bleibt erhalten.");
     expect(overrideRequests).toBe(0);
+  });
+
+  it("bindet verfügbare Programmaktionen an den gemeldeten Weltserverstatus, auch nach einem Livewechsel", { timeout: 30_000 }, async () => {
+    consumerAvailable = false;
+    await open("program");
+    expect(await page.locator(".topbar").textContent()).toContain("Programmausführung nicht verfügbar");
+    expect(await page.locator("#activate-program").isDisabled()).toBe(true);
+    expect(await page.locator("#run-backtest").isDisabled()).toBe(true);
+    expect(await page.locator("#save-program").isDisabled()).toBe(false);
+    consumerAvailable = true;
+    await event();
+    expect(await page.locator("#activate-program").isDisabled()).toBe(false);
+    expect(await page.locator(".execution-status").count()).toBe(0);
   });
 });

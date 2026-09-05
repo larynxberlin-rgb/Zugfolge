@@ -33,6 +33,11 @@ export type AlphaAbuseServices = Pick<AlphaRouteServices, "abuse" | "pseudonymSe
 
 const worldParams = { type: "object", required: ["worldId"], additionalProperties: false, properties: { worldId: { type: "string", format: "uuid" } } } as const;
 
+/** Kopierbarer Token-API-Beleg hinter dem oeffentlichen /api-Proxy. */
+export function alphaMonitoringApiUrl(publicOrigin: string, worldId: string): string {
+  return new URL(`/api/worlds/${encodeURIComponent(worldId)}/alpha-monitoring`, publicOrigin).href;
+}
+
 function payload(value: unknown): unknown {
   if (typeof value === "bigint") return value.toString();
   if (value instanceof Date) return value.toISOString();

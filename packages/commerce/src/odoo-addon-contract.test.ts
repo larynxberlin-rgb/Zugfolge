@@ -46,7 +46,7 @@ describe("Odoo-Administrationsmodul", () => {
     const security = await readFile(resolve(addon, "security/zugfolge_admin_security.xml"), "utf8");
     const views = await readFile(resolve(addon, "views/zugfolge_admin_views.xml"), "utf8");
 
-    expect(manifest).toContain('"version": "19.0.2.0.5"');
+    expect(manifest).toContain('"version": "19.0.2.0.6"');
     expect(manifest).toContain('"application": True');
     expect(security.match(/model="res\.groups\.privilege"/g)).toHaveLength(4);
     expect(security.match(/<field name="privilege_id"/g)).toHaveLength(4);

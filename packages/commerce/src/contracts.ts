@@ -16,6 +16,7 @@ export const COMMAND_TYPES = [
   "admin.world_access_revoke",
   "admin.infra_release_adoption",
   "admin.manual_disruption_create",
+  "admin.disruption_policy_schedule",
   "admin.abuse_sanction_activate",
   "admin.world_close",
   "admin.world_deploy",
@@ -33,6 +34,7 @@ export const ADMIN_ACTION_TYPES = [
   "world_access_revoke",
   "infra_release_adoption",
   "manual_disruption_create",
+  "disruption_policy_schedule",
   "abuse_sanction_activate",
   "world_close",
   "world_deploy",
@@ -136,6 +138,18 @@ export interface ManualDisruption {
   readonly declaredEffect: Readonly<Record<string, unknown>>;
 }
 
+export interface DisruptionPolicySchedule {
+  readonly schemaVersion: "zugfolge-disruption-policy-schedule/v1";
+  /** Verifizierte OIDC-Bindung des Odoo-Antragstellers, kein frei gewaehltes Konto. */
+  readonly requesterSubject: string;
+  readonly effectiveAt: string;
+  readonly plannedWorksMode: "REALISTIC" | "SIMULATED" | "MANUAL";
+  readonly operationalIncidentMode: "REALISTIC" | "SIMULATED" | "MANUAL";
+  readonly providerSetId?: string;
+  readonly simulationProfile: Readonly<Record<string, unknown>>;
+  readonly rulesetVersion: string;
+}
+
 export interface AdminCommandPayload {
   readonly kind: Exclude<OdooCommandType, "entitlement.change" | "world.participation.change">;
   readonly worldId: string;
@@ -167,6 +181,7 @@ export interface AdminCommandPayload {
    * fachlichen Ausfuehrung.
    */
   readonly manualDisruption?: ManualDisruption;
+  readonly disruptionPolicy?: DisruptionPolicySchedule;
 }
 
 export type OdooCommandPayload = EntitlementChangePayload | WorldParticipationChangePayload | AdminCommandPayload;

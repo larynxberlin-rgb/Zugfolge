@@ -1,0 +1,18 @@
+{
+  "schemaVersion": "zugfolge-operational-service-outcome-policy/v1",
+  "bindingSchemaVersion": "zugfolge-operational-service-outcome-binding/v1",
+  "outcomeSchemaVersion": "zugfolge-operational-train-outcome/v1",
+  "serviceRunId": "<signed-serviceId>:service-day:<YYYY-MM-DD>",
+  "serviceIdentity": "signed serviceIds allowlist; strictly increasing Gregorian service day at each start or region import",
+  "completion": "head at physical route end, speed zero, no motion segment, no movement authority",
+  "distanceMm": "physical final head coordinate minus materialized head coordinate; unsigned decimal string; route changes preserve coordinate continuity",
+  "delaySeconds": "ceil(max(0, actualArrivalMs - scheduledArrivalMs) / 1000)",
+  "minimumSeatsProvided": "minimum sum of signed physical vehicle capacities over every formation used before completion; null if any capacity is unknown",
+  "missingSeats": "max(0, requiredSeats - minimumSeatsProvided), or null if either fact is unknown",
+  "missedConnections": "0 only for an explicit signed none-contracted assessment; null for unavailable",
+  "safeStop": "no inferred cancellation or completion",
+  "retry": "per-service monotone day fence survives retirement and handover; no daily receipt accumulation",
+  "legacy": "absent optional policy/binding preserves original serialized state and produces no inferred outcome",
+  "dailyReport": "sum exact millimetres before kilometre conversion; signed serviceDay survives overnight completion; knownServicesComplete does not prove dayPlanComplete",
+  "settlement": "requires explicit complete daily manifest, operational obligations and cost evidence; absence is never zero"
+}

@@ -60,7 +60,7 @@ def signature(secret, timestamp, payload):
     return hmac.new(secret.encode("utf-8"), (timestamp + "." + canonical_json(payload)).encode("utf-8"), hashlib.sha256).hexdigest()
 
 
-def game_command_targets(env, command):
+def _game_world_origins(env):
     """Every public/private Game server has exactly one configured canonical origin."""
     try:
         worlds = json.loads(_parameter(env, "zugfolge_admin.game_world_origins_json"))
@@ -84,6 +84,18 @@ def game_command_targets(env, command):
                 or parsed.hostname.endswith(".") or origin in origins):
             raise UserError("Jede Zugfolge-Hauptwelt braucht eine eigene kanonische HTTPS-Origin ohne Pfad.")
         origins.add(origin)
+    return worlds
+
+
+def game_world_origin(env, world_id):
+    worlds = _game_world_origins(env)
+    if world_id not in worlds:
+        raise UserError("Fuer die Zielwelt ist kein eigener Game-Server registriert.")
+    return worlds[world_id]
+
+
+def game_command_targets(env, command):
+    worlds = _game_world_origins(env)
     if not isinstance(command, dict):
         raise UserError("Zugfolge-Kommando ist ungueltig.")
     if command.get("kind") == "entitlement.change":

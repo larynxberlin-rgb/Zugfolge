@@ -95,6 +95,8 @@ struct FormationInput {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct TrainInput {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    service_outcome: Option<zugfolge_sim::operational::ServiceOutcomeBinding>,
     id: String,
     train_number: String,
     operator_id: String,
@@ -179,6 +181,8 @@ struct InitializationValidationReceipt {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct Initialization {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    service_outcome_policy: Option<zugfolge_sim::operational::ServiceOutcomePolicy>,
     schema_version: String,
     world_id: String,
     region_id: String,
@@ -779,6 +783,7 @@ fn movement_continuation_evidence(
 
 fn materialization_from_train_input(train: &TrainInput) -> TrainMaterialization {
     TrainMaterialization {
+        service_outcome: train.service_outcome.clone(),
         id: train.id.clone(),
         train_number: train.train_number.clone(),
         operator_id: train.operator_id.clone(),
@@ -1258,6 +1263,7 @@ fn materialize(
     train: TrainInput,
 ) -> Result<(), OperationalRuntimeError> {
     let TrainInput {
+        service_outcome,
         id,
         train_number,
         operator_id,
@@ -1271,6 +1277,7 @@ fn materialize(
         protection_mode_selection_runs,
     } = train;
     let materialization = TrainMaterialization {
+        service_outcome,
         id,
         train_number,
         operator_id,
@@ -1281,6 +1288,9 @@ fn materialize(
         scheduled_departure_ms,
         public_passenger_stop,
     };
+    world
+        .validate_service_outcome_template(&materialization)
+        .map_err(operational_command_rejection)?;
     world
         .inspect_train_program_template_with_protection_modes(
             &materialization,
@@ -1372,6 +1382,7 @@ fn inspect_program_template(
     protection_mode_selection_policy: &str,
 ) -> Result<OperationalProgramTemplatePredicates, OperationalRuntimeError> {
     let materialization = TrainMaterialization {
+        service_outcome: train.service_outcome.clone(),
         id: train.id.clone(),
         train_number: train.train_number.clone(),
         operator_id: train.operator_id.clone(),
@@ -1382,6 +1393,9 @@ fn inspect_program_template(
         scheduled_departure_ms: train.scheduled_departure_ms,
         public_passenger_stop: train.public_passenger_stop,
     };
+    world
+        .validate_service_outcome_template(&materialization)
+        .map_err(operational_command_rejection)?;
     world
         .inspect_train_program_template_with_protection_modes(
             &materialization,
@@ -1455,6 +1469,11 @@ pub fn initialize_operational_simulation(
             .map_err(|error| {
                 OperationalRuntimeError::new("invalid_formation", error.to_string())
             })?;
+    }
+    if let Some(policy) = input.service_outcome_policy {
+        world.configure_service_outcomes(policy).map_err(|error| {
+            OperationalRuntimeError::new("invalid_service_outcome_policy", error.to_string())
+        })?;
     }
     let program_train_count = input.trains.len();
     let validated_train_numbers = input
@@ -2252,6 +2271,7 @@ mod tests {
             release_after_tail_route_mm: 100_000,
         };
         Initialization {
+            service_outcome_policy: None,
             schema_version: INITIALIZE_SCHEMA.to_owned(),
             world_id: "world:1".to_owned(),
             region_id: "region:1".to_owned(),
@@ -2338,6 +2358,7 @@ mod tests {
                 vehicle_ids: vec!["vehicle:1".to_owned()],
             }],
             trains: vec![TrainInput {
+                service_outcome: None,
                 id: "train:1".to_owned(),
                 train_number: "RB 1".to_owned(),
                 operator_id: "operator:1".to_owned(),
@@ -2582,6 +2603,7 @@ mod tests {
                      dispatch_interlocking_route_id: &str,
                      scheduled_departure_ms: i64,
                      public_passenger_stop: bool| TrainInput {
+            service_outcome: None,
             id: id.to_owned(),
             train_number: train_number.to_owned(),
             operator_id: "operator:graph".to_owned(),
@@ -3402,6 +3424,68 @@ mod tests {
     }
 
     #[test]
+    fn native_service_outcome_is_atomic_restorable_and_retry_idempotent() {
+        let mut input = serde_json::to_value(initialization()).unwrap();
+        input["serviceOutcomePolicy"] = json!({
+            "schemaVersion":"zugfolge-operational-service-outcome-policy/v1", "serviceIds":["service:1"],
+            "vehicleCapacities":[{"vehicleId":"vehicle:1","seats":120,"sourceReference":"fleet:verified:vehicle:1"}]
+        });
+        input["trains"][0]["scheduledDepartureMs"] = json!(0);
+        input["trains"][0]["publicPassengerStop"] = json!(true);
+        input["trains"][0]["serviceOutcome"] = json!({
+            "schemaVersion":"zugfolge-operational-service-outcome-binding/v1", "serviceId":"service:1",
+            "serviceRunId":"service:1:service-day:2026-09-05", "lotId":"lot:1", "serviceDay":"2026-09-05",
+            "scheduledArrivalMs":1000,"requiredSeats":100,"connectionAssessment":"none-contracted"
+        });
+        let initialized: Value =
+            serde_json::from_str(&initialize_operational_simulation(&input.to_string()).unwrap())
+                .unwrap();
+        let materialized = apply_value(
+            &initialized["state"],
+            "outcome:materialize",
+            json!({"type":"materialize","train":input["trains"][0]}),
+        );
+        assert_eq!(
+            materialized["events"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .filter(|event| event["kind"] == "train-service-planned")
+                .count(),
+            1
+        );
+        let dispatched = apply_value(
+            &materialized["state"],
+            "outcome:dispatch",
+            json!({"type":"dispatch","requests":[{
+                "trainId":"train:1","interlockingRouteId":"interlocking:1","committedRank":0,"timetableDeviationMs":0,
+                "passengerImpact":0,"contractualImpact":0,"networkImpact":0,"resourceConsequence":0,"recoveryRank":0,"waitingSinceMs":0
+            }]}),
+        );
+        let restored =
+            restore_value(&dispatched["state"], &initialized["initializationHash"]).unwrap();
+        let command = json!({"type":"advance-to","atMs":1000000});
+        let finished = apply_value(&dispatched["state"], "outcome:finish", command.clone());
+        let replayed = apply_value(&restored["state"], "outcome:finish", command.clone());
+        assert_eq!(finished["stateHash"], replayed["stateHash"]);
+        assert_eq!(finished["events"], replayed["events"]);
+        let outcomes: Vec<_> = finished["events"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|event| event["kind"] == "train-outcome")
+            .collect();
+        assert_eq!(outcomes.len(), 1);
+        let facts: Value = serde_json::from_str(outcomes[0]["detail"].as_str().unwrap()).unwrap();
+        assert_eq!(facts["minimumSeatsProvided"], 120);
+        assert_eq!(facts["evidenceComplete"], true);
+        let retried = apply_value(&finished["state"], "outcome:finish", command);
+        assert_eq!(retried["stateHash"], finished["stateHash"]);
+        assert!(retried["events"].as_array().unwrap().is_empty());
+        assert_eq!(retried["idempotentReplay"], true);
+    }
+
+    #[test]
     fn native_batch_is_atomic_and_keeps_idempotent_replays_in_order() {
         let initialized: Value = serde_json::from_str(
             &initialize_operational_simulation(&encode(&initialization()).unwrap()).unwrap(),
@@ -4062,6 +4146,7 @@ mod tests {
             vehicle_ids: vec!["vehicle:2".to_owned()],
         });
         input.trains.push(TrainInput {
+            service_outcome: None,
             id: "train:standing".to_owned(),
             train_number: "RB 2".to_owned(),
             operator_id: "operator:2".to_owned(),

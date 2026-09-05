@@ -5,11 +5,13 @@ import threading
 import time
 import uuid
 from datetime import datetime
-from urllib.parse import urlsplit
 
 from odoo import _, http
+from odoo.exceptions import UserError
 from odoo.http import request
 from odoo.addons.portal.controllers.portal import CustomerPortal
+
+from ..services import game_world_origin
 
 
 _BUCKET_LOCK = threading.Lock()
@@ -169,8 +171,11 @@ class ZugfolgeWebsiteController(CustomerPortal):
         ], limit=1)
         if not participation:
             return request.not_found()
-        target = participation.offer_id.game_url_template.replace("{world_id}", world_id)
-        parsed = urlsplit(target)
-        if parsed.scheme or parsed.netloc or not parsed.path.startswith("/") or parsed.path.startswith("//"):
-            return request.not_found()
-        return request.redirect(target)
+        try:
+            origin = game_world_origin(request.env, participation.world_id)
+        except UserError:
+            return request.make_response(_("Der Weltserver ist derzeit nicht erreichbar. Bitte versuchen Sie es spaeter erneut."),
+                                         status=503, headers=[("Cache-Control", "no-store"), ("Content-Type", "text/plain; charset=utf-8")])
+        # Only the trusted canonical registry may choose an external destination.
+        # Odoo's default local redirect would strip its world-specific hostname.
+        return request.redirect(origin + "/?world=" + participation.world_id, local=False)

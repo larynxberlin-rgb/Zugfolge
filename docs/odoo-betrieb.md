@@ -130,7 +130,7 @@ werden im Secret Store der jeweils getrennten Betriebsumgebung hinterlegt.
 # Game API: Odoo -> Game
 ODOO_WEBHOOK_TENANT_ID=production-tenant-id
 ODOO_WEBHOOK_KEYS_JSON=[{"id":"2026-08","secret":"<secret>","activeFrom":"2026-08-01T00:00:00Z"},{"id":"2026-09","secret":"<next-secret>","activeFrom":"2026-09-01T00:00:00Z"}]
-ODOO_WEBHOOK_AUTHORIZED_ACTORS_JSON={"commerce-service":["entitlement.change","world.participation.change"],"admin-service":["admin.world_deploy","admin.world_access_revoke","admin.infra_release_adoption","admin.manual_disruption_create"]}
+ODOO_WEBHOOK_AUTHORIZED_ACTORS_JSON={"commerce-service":["entitlement.change","world.participation.change"],"admin-service":["admin.world_deploy","admin.world_access_revoke","admin.infra_release_adoption","admin.manual_disruption_create","admin.disruption_policy_schedule"]}
 
 # Game API: Game -> Odoo
 ODOO_PROJECTION_URL=https://odoo.example.invalid/zugfolge/projection
@@ -160,6 +160,14 @@ Die bisherige globale `game_webhook_url` wird nicht als Fallback verwendet.
 Tutorialwelten besitzen keinen kaufmännischen Eintrag und erhalten weder
 Teilnahme- noch Verwaltungsbefehle über diesen Kanal.
 
+„Spiel öffnen“ im Portal verwendet ebenfalls dieses geprüfte Register. Nach
+Prüfung der eigenen aktiven Teilnahme führt der Link zur HTTPS-Subdomain der
+konkreten Welt und übergibt deren UUID als `world`-Parameter. Alte
+`game_url_template`-Werte am Angebot werden nicht mehr ausgewertet; relative
+Odoo-Pfade oder fremde Ziel-URLs können die Serverzuordnung nicht ersetzen.
+Ein fehlender Registereintrag zeigt einen vorübergehend nicht verfügbaren
+Weltserver an und leitet nicht zu einer anderen Welt weiter.
+
 Ein zentrales Odoo darf mehrere eigenständige Weltserver verwalten. Odoo-
 Mandant und Accounting-Company bezeichnen kaufmännische Zuständigkeiten;
 sie sind keine Spielwelt und berechtigen keinen Server zum Betrieb weiterer
@@ -174,6 +182,12 @@ nachliefern“. Wiederanlaufbare Queue-Jobs senden die eingefrorenen Ereignisse
 mit ihren ursprünglichen Kennungen an alle registrierten Server. Historische
 Rechnungen ohne Ereignisjournal erhalten zunächst einen aus dem aktuellen
 nativen Zahlungs-/Erstattungszustand abgeleiteten Beleg.
+
+Das Monitoringfeld „API-Beleg (Zugriffstoken erforderlich)“ ist ein kopierbarer
+Nachweis-URI unter der jeweiligen öffentlichen Origin mit dem Präfix
+`/api/worlds/<UUID>/alpha-monitoring`. Es ist kein Browser-Drilldown. Ein
+API-Werkzeug muss ein gültiges Bearer-Zugriffstoken eines berechtigten
+Weltadministrators mitsenden; ohne Token antwortet der Endpunkt weiterhin401.
 
 Der Receiver prüft die Zielwelt vor dem Queue-Commit. Der Worker prüft sie
 erneut vor jeder Wirkung, auch bei historischen Queue-Einträgen. Ein

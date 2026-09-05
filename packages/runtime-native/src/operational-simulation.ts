@@ -185,7 +185,25 @@ export interface OperationalRouteLockProjection {
   readonly lockedAtMs: number;
 }
 
+export interface OperationalServiceOutcomeBinding {
+  readonly schemaVersion: "zugfolge-operational-service-outcome-binding/v1";
+  readonly serviceId: string;
+  readonly serviceRunId: string;
+  readonly lotId: string;
+  readonly serviceDay: string;
+  readonly scheduledArrivalMs: number;
+  readonly requiredSeats: number | null;
+  readonly connectionAssessment: "none-contracted" | "unavailable";
+}
+
+export interface OperationalServiceOutcomePolicy {
+  readonly schemaVersion: "zugfolge-operational-service-outcome-policy/v1";
+  readonly serviceIds: readonly string[];
+  readonly vehicleCapacities: readonly Readonly<{ vehicleId: string; seats: number; sourceReference: string }>[];
+}
+
 export interface OperationalTrainInitialization {
+  readonly serviceOutcome?: OperationalServiceOutcomeBinding;
   readonly id: string;
   readonly trainNumber: string;
   readonly operatorId: string;
@@ -274,6 +292,7 @@ export interface OperationalInitializationValidationReceipt {
 }
 
 export interface OperationalSimulationInitialization {
+  readonly serviceOutcomePolicy?: OperationalServiceOutcomePolicy;
   readonly schemaVersion: typeof OPERATIONAL_SIMULATION_INITIALIZE_SCHEMA;
   readonly worldId: string;
   readonly regionId: string;

@@ -393,3 +393,49 @@ Datenblocker und dürfen nicht durch Laufzeitannahmen verdeckt werden.
 
 Der reproduzierbare Kernlauf und seine bewusst getrennten offenen Systemgates
 stehen in `betriebsengine-lastnachweis.md`.
+
+
+### Native Tagesfahrt-Abschlussbelege (ServiceOutcome v1)
+
+Der optionale signierte Startvertrag `serviceOutcomePolicy` bindet konkrete
+Sitzkapazitaeten an physische Fahrzeug-IDs und deren FleetAuthority-Beleg sowie
+eine endliche Allowlist der `serviceIds`. Jede Personenfahrt bindet separat
+`serviceId`, `serviceRunId`, `lotId`, `serviceDay`, `scheduledArrivalMs`, die
+bestellte Mindestkapazitaet oder explizit `requiredSeats:null` und die
+Anschlussbewertung `none-contracted` oder `unavailable`. Die genaue Regeldatei
+ist `crates/zugfolge-sim/specifications/operational-service-outcomes-v1.json`.
+
+Die Tagesinstanz heisst kanonisch `<serviceId>:service-day:<YYYY-MM-DD>`.
+Materialisierung und Regionsimport verlangen fuer dieselbe signierte
+Basisfahrt einen strikt spaeteren Betriebstag als die letzte Startquittung.
+Dieser begrenzte Index bleibt nach Retirement bestehen. Ein neues Kommando
+kann deshalb dieselbe Tagesfahrt nicht erneut produzieren. Die physische
+Zugidentitaet darf davon abweichen und bleibt Teil des Belegs.
+
+`train-service-planned` deklariert die konkrete Instanz bei Materialisierung
+oder Queue der physischen Fortsetzung. `train-outcome` entsteht einmalig erst
+am real erreichten Laufwegende, mit Geschwindigkeit null, ohne Segment und
+ohne Fahrberechtigung. Beide nativen Ereignisse werden im Regionscommit als
+`operations.train-service-planned` beziehungsweise `operations.train-outcome`
+atomar gespeichert. Das bekannte Kopfkoordinatensystem bleibt bei Reroutes
+stetig; die Differenz zum Startkopf liefert tatsaechlich gefahrene Millimeter.
+Ankunft und aufgerundete positive Verspaetungssekunden stammen ausschliesslich
+aus der Ereigniszeit. Formationswechsel aktualisieren die kleinste belegte
+Sitzkapazitaet vor Abschluss. Ein SafeStop ist kein behaupteter Ausfall.
+
+Fehlende bestellte Kapazitaet oder Anschlussgrundlage bleiben im Outcome
+`null`; die echten Sitz- und Bewegungsmesswerte bleiben trotzdem sichtbar.
+Alte signierte Starts ohne beide optionalen Felder behalten ihre bisherigen
+serialisierten Bytes und erzeugen keine nachtraeglich erfundenen Ergebnisse.
+
+Tagesberichte ordnen diese Ereignisse anhand des signierten Betriebstags ein,
+auch bei verspaeteter Ankunft am Folgetag. Sie summieren Millimeter vor der
+Umrechnung zu ganzen Zugkilometern. `knownServicesComplete` bewertet nur die
+bereits publizierten Plaene. Ein vollstaendiges Tagesplanmanifest samt
+Day-Close-Vertrag fehlt derzeit; `dayPlanComplete` und die uebergeordnete
+Vollstaendigkeit bleiben deshalb false. Auch der lueckenlose native
+Kostenbeleg sowie die bei Tendervergabe aktualisierte Betreiber-/Vertrags-
+und Anschlussbindung fehlen noch. Die Vertragsabrechnung verlangt diese
+Nachweise explizit und bleibt fuer diese unvollstaendige Ausgangslage gesperrt.
+Diese verbleibenden Integrationen gehoeren zu Issue #518; aktive Cancel-Run-
+Massnahmen erfordern zudem den autoritativen Dispositionsvertrag aus #517.

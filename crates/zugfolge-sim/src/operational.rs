@@ -13,6 +13,13 @@ use std::sync::Arc;
 use serde::{Deserialize, Serialize};
 use zugfolge_determinism::{StateHash, StateHasher};
 
+mod service_outcomes;
+use service_outcomes::ServiceOutcomeState;
+pub use service_outcomes::{
+    ServiceConnectionAssessment, ServiceOutcomeBinding, ServiceOutcomePolicy,
+    ServiceOutcomeProgress, ServiceVehicleCapacity,
+};
+
 /// Millisekunden seit der unveraenderlichen Weltepoche.
 pub type SimMillis = i64;
 /// Millimeter entlang eines unveraenderlichen Laufwegs.
@@ -972,6 +979,11 @@ pub trait OperationalInfrastructure: fmt::Debug + Send + Sync {
     fn release_id(&self) -> &str;
     fn binding_identity(&self) -> &str;
     fn validate_attachment(&self) -> Result<(), OperationalError>;
+    /// Prueft konkrete Stoerungsziele gegen denselben gebundenen Release.
+    fn contains_disruption_target(
+        &self,
+        effect: &OperationalDisruption,
+    ) -> Result<bool, OperationalError>;
     fn route_version(&self, id: &str) -> Result<Option<RouteVersion>, OperationalError>;
     fn interlocking_route(
         &self,
@@ -1037,6 +1049,28 @@ impl InMemoryOperationalInfrastructure {
 }
 
 impl OperationalInfrastructure for InMemoryOperationalInfrastructure {
+    fn contains_disruption_target(
+        &self,
+        effect: &OperationalDisruption,
+    ) -> Result<bool, OperationalError> {
+        Ok(match effect {
+            OperationalDisruption::ResourceClosed { resource_id }
+            | OperationalDisruption::TrackDetectionFailed { resource_id } => {
+                self.release.block_resources.contains(resource_id)
+            }
+            OperationalDisruption::SpeedRestriction {
+                edge_id,
+                maximum_speed_mmps,
+            } => *maximum_speed_mmps > 0 && self.release.directed_edges.contains_key(edge_id),
+            OperationalDisruption::SignalFailed { signal_id } => {
+                self.release.signals.contains(signal_id)
+            }
+            OperationalDisruption::SwitchFailed { switch_id } => {
+                self.release.switches.contains(switch_id)
+            }
+            OperationalDisruption::VehicleRestricted { .. } => true,
+        })
+    }
     fn release_id(&self) -> &str {
         &self.release.id
     }
@@ -1125,6 +1159,8 @@ impl Eq for AttachedOperationalInfrastructure {}
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct OperationalTrain {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub service_outcome: Option<ServiceOutcomeProgress>,
     pub id: String,
     pub train_number: String,
     pub operator_id: String,
@@ -1149,6 +1185,8 @@ pub struct OperationalTrain {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct TrainMaterialization {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub service_outcome: Option<ServiceOutcomeBinding>,
     pub id: String,
     pub train_number: String,
     pub operator_id: String,
@@ -1569,6 +1607,8 @@ pub struct OperationalCheckpoint {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct OperationalWorld {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    service_outcome_state: Option<ServiceOutcomeState>,
     pub world_id: String,
     pub region_id: String,
     pub infra_release_id: String,
@@ -1992,6 +2032,7 @@ impl OperationalWorld {
             pending_movement_continuations: BTreeMap::new(),
             completed_movement_continuations: BTreeMap::new(),
             route_completed_at_ms: BTreeMap::new(),
+            service_outcome_state: None,
             prepared_handovers: BTreeMap::new(),
             accepted_handovers: BTreeMap::new(),
             finished_handovers: BTreeMap::new(),
@@ -2560,7 +2601,12 @@ impl OperationalWorld {
         if !self.prepared_handovers.is_empty() {
             return Err(OperationalError::InvalidHandover);
         }
+        if self.trains.contains_key(&input.id) {
+            return Err(OperationalError::DuplicateId(input.id));
+        }
+        let service_input = input.clone();
         let TrainMaterialization {
+            service_outcome: _,
             id,
             train_number,
             operator_id,
@@ -2605,7 +2651,10 @@ impl OperationalWorld {
             .leg_at(head_route_mm)
             .ok_or_else(|| OperationalError::IncompleteRoute(route.id.clone()))?
             .direction;
+        let service_outcome =
+            self.start_service_outcome(&service_input, &service_input.formation_version_id)?;
         let train = OperationalTrain {
+            service_outcome,
             id: id.clone(),
             train_number,
             operator_id,
@@ -2657,6 +2706,7 @@ impl OperationalWorld {
         public_passenger_stop: bool,
     ) -> Result<(), OperationalError> {
         self.materialize(TrainMaterialization {
+            service_outcome: None,
             id: id.into(),
             train_number: train_number.into(),
             operator_id: operator_id.into(),
@@ -3182,6 +3232,7 @@ impl OperationalWorld {
         }
         let mut staged = self.clone();
         staged.validate_movement_continuation(&continuation)?;
+        staged.plan_service_outcome(&continuation.successor)?;
         let continuation_id = continuation.id.clone();
         let detail = format!(
             "from={};to={};continuity={}",
@@ -3224,6 +3275,7 @@ impl OperationalWorld {
 
     fn refresh_route_completion(&mut self, train_id: &str) -> Result<(), OperationalError> {
         if self.physical_route_complete(train_id)? {
+            self.complete_service_outcome(train_id)?;
             self.route_completed_at_ms
                 .entry(train_id.to_owned())
                 .or_insert(self.now_ms);
@@ -3449,7 +3501,10 @@ impl OperationalWorld {
                 .performance
                 .length_mm,
         );
+        let service_outcome =
+            self.start_service_outcome(&continuation.successor, &predecessor.formation_version_id)?;
         let successor = OperationalTrain {
+            service_outcome,
             id: continuation.successor.id.clone(),
             train_number: continuation.successor.train_number.clone(),
             operator_id: continuation.successor.operator_id.clone(),
@@ -4630,6 +4685,7 @@ impl OperationalWorld {
         train.occupied_intervals = intervals;
         train.occupied_blocks = occupied_blocks;
         self.rebuild_resource_lifecycle();
+        self.update_service_capacity(train_id);
         self.record("formation-changed", train_id, formation.id)?;
         Ok(())
     }
@@ -4776,8 +4832,18 @@ impl OperationalWorld {
             return Err(OperationalError::InvalidHandover);
         }
         let disruption_id = disruption_id.into();
-        if self.active_disruptions.contains_key(&disruption_id) {
-            return Ok(());
+        if let Some(existing) = self.active_disruptions.get(&disruption_id) {
+            return if existing == &effect {
+                Ok(())
+            } else {
+                Err(OperationalError::UnsafeState)
+            };
+        }
+        if disruption_id.trim().is_empty()
+            || !self.infrastructure()?.contains_disruption_target(&effect)?
+            || matches!(&effect, OperationalDisruption::VehicleRestricted { vehicle_id, .. } if !self.vehicles.contains_key(vehicle_id))
+        {
+            return Err(OperationalError::UnsafeState);
         }
         let infrastructure_affected: Vec<String> = self
             .trains
@@ -5331,6 +5397,7 @@ impl OperationalWorld {
         candidate
             .formations
             .insert(handover.formation.id.clone(), handover.formation.clone());
+        candidate.adopt_service_outcome(&handover.train)?;
         candidate
             .trains
             .insert(handover.train.id.clone(), handover.train.clone());
@@ -5439,6 +5506,7 @@ impl OperationalWorld {
         candidate
             .vehicles
             .retain(|id, _| !handover.vehicles.contains_key(id));
+        candidate.release_service_plan(&handover.train);
         candidate.prepared_handovers.remove(&handover.id);
         candidate
             .finished_handovers
@@ -5456,6 +5524,7 @@ impl OperationalWorld {
     }
 
     pub fn verify_invariants(&self) -> Result<(), OperationalError> {
+        self.verify_service_outcomes()?;
         for (id, handover) in &self.prepared_handovers {
             if id != &handover.id
                 || handover.acknowledged
@@ -6223,6 +6292,7 @@ fn first_boundary_or_event_ms(
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum OperationalError {
+    InvalidServiceOutcome,
     ArithmeticOverflow,
     EventBudgetExceeded,
     OutsideMotionValidity,
@@ -6366,6 +6436,7 @@ mod invariant_tests {
         occupied_intervals: Vec<TrackInterval>,
     ) -> OperationalTrain {
         OperationalTrain {
+            service_outcome: None,
             id: id.to_owned(),
             train_number: train_number.to_owned(),
             operator_id: "operator:test".to_owned(),
@@ -6428,6 +6499,7 @@ mod invariant_tests {
             processed_command_ids: BTreeSet::new(),
             infra: None,
             handover_protection_by_train: BTreeMap::new(),
+            service_outcome_state: None,
             prepared_handovers: BTreeMap::new(),
             accepted_handovers: BTreeMap::new(),
             finished_handovers: BTreeMap::new(),

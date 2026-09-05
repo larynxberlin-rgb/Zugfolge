@@ -111,7 +111,12 @@ export function createStaticServer({
         response.writeHead(502).end("game api proxy is not configured");
         return;
       }
-      const upstreamUrl = new URL(`${url.pathname.slice(4)}${url.search}`, internal.endsWith("/") ? internal : `${internal}/`);
+      // Requestpfade sind keine URL-Referenzen: //host darf die konfigurierte
+      // Upstream-Origin auch mit Authentifizierungsheadern niemals ersetzen.
+      const upstreamUrl = new URL(internal);
+      upstreamUrl.pathname = url.pathname.slice(4) || "/";
+      upstreamUrl.search = url.search;
+      upstreamUrl.hash = "";
       const upstream = httpRequest(upstreamUrl, {
         method: request.method,
         // Der Game-API-Hostguard prueft den urspruenglichen Subdomain-Host.

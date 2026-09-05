@@ -1,4 +1,5 @@
 import type { OperationalSimulationCommandPayload } from "@zugfolge/runtime-native";
+import { compareUtf8 } from "./utf8.js";
 
 const EFFECT_SCHEMA = "zugfolge-manual-disruption-effect/v1" as const;
 const EFFECTS = new Set([
@@ -19,6 +20,8 @@ type ActivateDisruption = Extract<
 
 /** Strukturell kompatibler M13-Handlerkontext ohne Abhaengigkeit auf Commerce. */
 export interface ManualDisruptionAdminContext {
+  readonly effectIdempotencyKey?: string;
+  readonly markEffectApplied?: () => void;
   readonly commandId: string;
   readonly eventId: string;
   readonly correlationId: string;
@@ -44,24 +47,18 @@ export interface ManualDisruptionAdminContext {
 export interface ManualDisruptionAdminResult {
   readonly state: "completed";
   readonly gameAuditEventId: string;
+  readonly result?: Readonly<Record<string, unknown>>;
 }
 
-export interface ManualDisruptionAdminWorker {
-  readonly apply: (
-    work: {
-      readonly worldId: string;
-      readonly regionId: string;
-      readonly commandId: string;
-      readonly command: OperationalSimulationCommandPayload;
-    },
-    persistedAt: Date,
-  ) => Promise<unknown>;
+export interface ManualDisruptionSchedule {
+  readonly context: ManualDisruptionAdminContext;
+  readonly startsAt: Date;
+  readonly endsAt: Date;
+  readonly targets: readonly { readonly regionId: string; readonly effect: ActivateDisruption["effect"] }[];
 }
 
 export interface ManualDisruptionAdminDependencies {
-  readonly worker: ManualDisruptionAdminWorker;
-  /** Liefert die gepinnte Weltepoche; kein Wandzeit-Zugriff im Simulationskern. */
-  readonly worldEpoch: (worldId: string) => Promise<Date> | Date;
+  readonly schedule: (input: ManualDisruptionSchedule) => Promise<ManualDisruptionAdminResult>;
 }
 
 export class ManualDisruptionAdminError extends Error {
@@ -101,6 +98,7 @@ function decodeTarget(value: unknown): Target {
   if (
     !nonempty(target["resourceId"]) ||
     !nonempty(target["regionId"])
+    || Object.keys(target).some((key) => !["resourceId", "regionId", "maximumSpeedMmps", "vehicleRestriction"].includes(key))
   ) {
     throw new ManualDisruptionAdminError("resources");
   }
@@ -138,11 +136,13 @@ function decodeEffect(value: Readonly<Record<string, unknown>>): DecodedEffect {
     !/^[a-z0-9]+(?:[.-][a-z0-9]+)*$/.test(value["fineCauseId"]) ||
     !Array.isArray(value["targets"]) ||
     value["targets"].length === 0
+    || value["targets"].length > 64
+    || Object.keys(value).some((key) => !["schemaVersion", "kind", "causeCode", "fineCauseId", "targets"].includes(key))
   ) {
     throw new ManualDisruptionAdminError("effect");
   }
   const targets = value["targets"].map(decodeTarget).sort((left, right) =>
-    left.regionId.localeCompare(right.regionId) || left.resourceId.localeCompare(right.resourceId));
+    compareUtf8(left.regionId, right.regionId) || compareUtf8(left.resourceId, right.resourceId));
   if (new Set(targets.map((target) => target.resourceId)).size !== targets.length) {
     throw new ManualDisruptionAdminError("resources");
   }
@@ -155,23 +155,12 @@ function decodeEffect(value: Readonly<Record<string, unknown>>): DecodedEffect {
 }
 
 function concreteEffect(effect: DecodedEffect, target: Target): ActivateDisruption["effect"] {
-  if (target.resourceId.startsWith("signal:")) {
-    return { "signal-failed": { signalId: target.resourceId } };
-  }
-  if (target.resourceId.startsWith("switch:")) {
-    return { "switch-failed": { switchId: target.resourceId } };
-  }
-  if (effect.fineCauseId === "signalling.track-occupation") {
-    return { "track-detection-failed": { resourceId: target.resourceId } };
-  }
   switch (effect.effect) {
     case "closure":
-    case "single-track":
-    case "traffic-hold":
-    case "route-deviation":
+      if (target.maximumSpeedMmps !== undefined || target.vehicleRestriction !== undefined) throw new ManualDisruptionAdminError("effect");
       return { "resource-closed": { resourceId: target.resourceId } };
     case "speed-restriction":
-      if (target.maximumSpeedMmps === undefined) throw new ManualDisruptionAdminError("effect");
+      if (target.maximumSpeedMmps === undefined || target.vehicleRestriction !== undefined) throw new ManualDisruptionAdminError("effect");
       return {
         "speed-restriction": {
           edgeId: target.resourceId,
@@ -179,13 +168,9 @@ function concreteEffect(effect: DecodedEffect, target: Target): ActivateDisrupti
         },
       };
     case "vehicle-restriction":
-      if (target.vehicleRestriction === undefined) throw new ManualDisruptionAdminError("effect");
-      return {
-        "vehicle-restricted": {
-          vehicleId: target.resourceId,
-          restriction: target.vehicleRestriction,
-        },
-      };
+    case "single-track":
+    case "traffic-hold":
+    case "route-deviation":
     case "platform-change":
     case "platform-usable-length":
       throw new ManualDisruptionAdminError("effect");
@@ -194,19 +179,11 @@ function concreteEffect(effect: DecodedEffect, target: Target): ActivateDisrupti
   }
 }
 
-function secondsSinceEpoch(value: Date, epoch: Date): number {
-  const seconds = Math.floor((value.getTime() - epoch.getTime()) / 1_000);
-  if (!Number.isSafeInteger(seconds) || seconds < 0) {
-    throw new ManualDisruptionAdminError("time");
-  }
-  return seconds;
-}
-
 /** Von M13 als `manual_disruption_create`-Capability an Odoo projizierbar. */
 export const MANUAL_DISRUPTION_ADMIN_CAPABILITY = Object.freeze({
   actionType: "manual_disruption_create" as const,
   availability: "available" as const,
-  detail: `M8.3 aktiv; Wirkungsschema ${EFFECT_SCHEMA}; Game-Pruefung bleibt autoritativ.`,
+  detail: `Wirkungsschema ${EFFECT_SCHEMA}: nur Ressourcensperre und numerische La ohne Scopeeinschraenkung; nativer Zielbeweis und dauerhafter Beginn/Ablauf.`,
 });
 
 /**
@@ -245,8 +222,7 @@ export function createManualDisruptionAdminHandler(
     if (
       Number.isNaN(startsAt.getTime()) ||
       Number.isNaN(endsAt.getTime()) ||
-      endsAt <= startsAt ||
-      endsAt <= context.now
+      endsAt <= startsAt
     ) {
       throw new ManualDisruptionAdminError("time");
     }
@@ -259,29 +235,10 @@ export function createManualDisruptionAdminHandler(
       throw new ManualDisruptionAdminError("resources");
     }
 
-    const epoch = await dependencies.worldEpoch(payload.worldId);
-    if (Number.isNaN(epoch.getTime())) throw new ManualDisruptionAdminError("time");
-    const nowS = secondsSinceEpoch(context.now, epoch);
-    const requestedStartS = secondsSinceEpoch(startsAt, epoch);
-    const validUntilS = secondsSinceEpoch(endsAt, epoch);
-    if (requestedStartS > nowS || validUntilS <= nowS) throw new ManualDisruptionAdminError("time");
-
-    for (const [index, target] of effect.targets.entries()) {
-      const disruptionId = `admin:${context.commandId}:${index}`;
-      await dependencies.worker.apply({
-        worldId: payload.worldId,
-        regionId: target.regionId,
-        commandId: `odoo-manual-disruption:${context.eventId}:${index}`,
-        command: {
-          type: "activate-disruption",
-          disruptionId,
-          effect: concreteEffect(effect, target),
-        },
-      }, context.now);
-    }
-    return {
-      state: "completed",
-      gameAuditEventId: `manual-disruption:${payload.worldId}:${context.commandId}`,
-    };
+    // Alle Wirkungen vor der ersten Mutation aufloesen. Der persistente
+    // Scheduler entscheidet den genauen Beginn, nicht ein paralleler Worker.
+    return dependencies.schedule({ context, startsAt, endsAt,
+      targets: effect.targets.map((target) => ({ regionId: target.regionId, effect: concreteEffect(effect, target) })),
+    });
   };
 }

@@ -1,3 +1,4 @@
+import { decodeOperationalServiceEvent } from "./operational-service-outcome.js";
 import type {
   OperationalDisruption,
   OperationalProjection,
@@ -228,6 +229,7 @@ export function adaptOperationalDomainEvents(
   contexts: readonly OperationalCommitEventContext[],
   operatorIds: readonly string[],
   regionId: string,
+  worldId?: string,
 ): readonly AdaptedOperationalDomainEvent[] {
   nonempty(regionId, "Operative Ereignisprojektion besitzt keine Region.");
   const contextByCommit = new Map<number, OperationalCommitEventContext>();
@@ -249,6 +251,10 @@ export function adaptOperationalDomainEvents(
       subjectId: event.subjectId,
       detail: event.detail,
     };
+    if (event.kind === "train-service-planned" || event.kind === "train-outcome") {
+      const facts = decodeOperationalServiceEvent(event.kind, event.detail, event.subjectId, event.atMs, worldId);
+      return Object.freeze({ eventType: `operations.${event.kind}`, payload: Object.freeze({ ...common, ...facts }) });
+    }
     if (event.kind !== "disruption-activated" && event.kind !== "disruption-cleared") {
       return Object.freeze({
         eventType: `operational.${event.kind}`,

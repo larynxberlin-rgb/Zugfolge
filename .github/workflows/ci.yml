@@ -155,7 +155,7 @@ jobs:
           pnpm --filter @zugfolge/game-web... build
           pnpm --filter @zugfolge/operations-center... build
           # Echte NAPI-Registries und PGlite-Welten nicht zwischen Vitest-Worker-Isolates parallelisieren.
-          pnpm --filter @zugfolge/game-api exec vitest run --no-file-parallelism src/world-deployment-runtime.test.ts src/fleet-configuration.native.integration.test.ts src/economy-native.integration.test.ts src/tutorial-world-factory.native.integration.test.ts src/tutorial-browser.e2e.test.ts
+          pnpm --filter @zugfolge/game-api exec vitest run --no-file-parallelism src/world-deployment-runtime.test.ts src/fleet-configuration.native.integration.test.ts src/economy-native.integration.test.ts src/tutorial-world-factory.native.integration.test.ts src/disruption-policy-admin.test.ts src/manual-disruption-admin.test.ts src/manual-disruption-catalog.native.integration.test.ts src/odoo-manual-disruption.e2e.test.ts src/tutorial-browser.e2e.test.ts
           pnpm --filter @zugfolge/game-api exec vitest run src/operations-browser.e2e.test.ts
           # Echter Alpha-Builder -> serialisierter Compact-v2-Vertrag -> Serverstart-Registry.
           node --test tools/region-import/build-alpha-world-runtime.integration.test.mjs

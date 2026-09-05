@@ -112,7 +112,7 @@ export class DailyRestrictionCommandCatalog implements RegionalScheduledCommandC
       .sort((left, right) => compareUtf8(left.regionId, right.regionId));
   }
 
-  validatePolicy(worldId: string, policy: OperationalDailyRestrictionPolicy): void {
+  validatePolicy(worldId: string, policy: OperationalDailyRestrictionPolicy): readonly OperationalDailyRestrictionsGenerated[] {
     if (!Number.isSafeInteger(policy.validFromMs) || policy.validFromMs < 0
       || policy.validFromMs % OPERATIONAL_DAY_MS !== 0
       || (policy.validUntilMs !== null && (!Number.isSafeInteger(policy.validUntilMs) || policy.validUntilMs <= policy.validFromMs))) {
@@ -120,13 +120,12 @@ export class DailyRestrictionCommandCatalog implements RegionalScheduledCommandC
     }
     const sources = [...this.#sources.values()].filter((source) => source.worldId === worldId);
     if (sources.length === 0) throw new Error("La-Policy besitzt keine aktive signierte Operational-Weltbindung.");
-    if (policy.plannedWorksMode === "MANUAL" && policy.operationalIncidentMode === "MANUAL") return;
-    for (const source of sources) this.#generate({
+    return sources.map((source) => this.#generate({
       schemaVersion: OPERATIONAL_DAILY_RESTRICTIONS_SCHEMA,
       ...source,
       dayStartMs: policy.validFromMs,
       policy,
-    });
+    }));
   }
 
   #day(worldId: string, regionId: string, dayStartMs: number): OperationalDailyRestrictionsGenerated | undefined {

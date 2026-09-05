@@ -29,6 +29,7 @@ export interface OperationsDecision {
 }
 
 export interface OperationsProjection {
+  readonly consumerAvailable?: boolean;
   readonly throughSequence: number;
   readonly decisions: readonly OperationsDecision[];
   readonly cancellations: readonly OperationsDecision[];
@@ -39,6 +40,7 @@ export interface OperationsProjection {
 export interface DailyReportRow {
   readonly serviceDay: string;
   readonly projection: {
+    readonly evidenceComplete?: boolean;
     readonly trainRuns: { readonly total: number; readonly punctual: number; readonly delayed: number; readonly cancelled: number; readonly replacementServices: number };
     readonly settlements: { readonly revenueCents: string; readonly costCents: string; readonly contractPenaltyCents: string };
     readonly decisionsByAction: Readonly<Record<string, number>>;

@@ -20,8 +20,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use zugfolge_sim::operational::{
-    EdgeGeometryPoint, InterlockingRouteTemplate, MovementKind, OperationalError,
-    OperationalInfrastructure, RouteMillimetres, RouteVersion, TrackInterval,
+    EdgeGeometryPoint, InterlockingRouteTemplate, MovementKind, OperationalDisruption,
+    OperationalError, OperationalInfrastructure, RouteMillimetres, RouteVersion, TrackInterval,
 };
 
 const SCHEMA: &str = "operational-infrastructure-v2";
@@ -2253,6 +2253,39 @@ impl OperationalInfrastructureV2Store {
 }
 
 impl OperationalInfrastructure for OperationalInfrastructureV2Store {
+    fn contains_disruption_target(
+        &self,
+        effect: &OperationalDisruption,
+    ) -> std::result::Result<bool, OperationalError> {
+        let transaction = self.database.begin_read().map_err(runtime_access_error)?;
+        let (table, id) = match effect {
+            OperationalDisruption::ResourceClosed { resource_id }
+            | OperationalDisruption::TrackDetectionFailed { resource_id } => {
+                (BLOCK_RESOURCES, resource_id)
+            }
+            OperationalDisruption::SignalFailed { signal_id } => (SIGNALS, signal_id),
+            OperationalDisruption::SwitchFailed { switch_id } => (SWITCHES, switch_id),
+            OperationalDisruption::SpeedRestriction {
+                edge_id,
+                maximum_speed_mmps,
+            } => {
+                return Ok(*maximum_speed_mmps > 0
+                    && transaction
+                        .open_table(DIRECTED_EDGES)
+                        .map_err(runtime_access_error)?
+                        .get(edge_id.as_str())
+                        .map_err(runtime_access_error)?
+                        .is_some());
+            }
+            OperationalDisruption::VehicleRestricted { .. } => return Ok(true),
+        };
+        Ok(transaction
+            .open_table(table)
+            .map_err(runtime_access_error)?
+            .get(id.as_str())
+            .map_err(runtime_access_error)?
+            .is_some())
+    }
     fn release_id(&self) -> &str {
         &self.release_id
     }

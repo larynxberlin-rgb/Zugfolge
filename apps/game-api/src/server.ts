@@ -102,6 +102,7 @@ import {
   MANUAL_DISRUPTION_ADMIN_CAPABILITY,
   createManualDisruptionAdminHandler,
 } from "./manual-disruption-admin.js";
+import { createDisruptionPolicyAdminHandler, DISRUPTION_POLICY_ADMIN_CAPABILITY } from "./disruption-policy-admin.js";
 import {
   ABUSE_SANCTION_ACTIVATE_CAPABILITY,
   WORLD_ACCESS_REVOKE_CAPABILITY,
@@ -121,6 +122,7 @@ import {
 import { createProviderDisruptionConsumer } from "./provider-disruption-consumer.js";
 import { DailyRestrictionCommandCatalog, createDailyRestrictionPolicyLoader } from "./daily-restriction-catalog.js";
 import { generateDailyOperationReports, previousBerlinServiceDay } from "./daily-reports.js";
+import { alphaMonitoringApiUrl } from "./alpha-routes.js";
 import {
   parsePlanningAuthorityAccountIdsJson,
   parsePlanningInfrastructureReleasesJson,
@@ -132,6 +134,7 @@ import {
   regionalSimulationStartupRouteAllowed,
 } from "./regional-simulation-cycle.js";
 import { advanceRegionalSimulations } from "./regional-simulation-scheduler.js";
+import { ManualDisruptionCommandCatalog } from "./manual-disruption-catalog.js";
 import {
   createRegionalSimulationSchedulerHealthCheck,
   LIVEMAP_FRESHNESS_MAXIMUM_AGE_MS,
@@ -440,14 +443,6 @@ const {
   planningInfrastructureReleases,
   worldEpochs,
 } = deploymentRuntime;
-const manualDisruptionAdminHandler = createManualDisruptionAdminHandler({
-  worker: regionalSimulation,
-  worldEpoch(worldId) {
-    const epoch = worldEpochs.get(worldId);
-    if (epoch === undefined) throw new Error(`Weltepoche fuer '${worldId}' fehlt.`);
-    return epoch;
-  },
-});
 const worldAccessRevokeAdminHandler = createWorldAccessRevokeAdminHandler({ db, keycloak: keycloakAdmin });
 const worldParticipationHandler = createWorldParticipationHandler(db);
 const alphaMonitoring = new AlphaMonitoringService(db);
@@ -661,6 +656,22 @@ const dailyRestrictionCatalog = new DailyRestrictionCommandCatalog({
     return operationalSimulationRuntime.dailyRestrictions(input);
   },
 });
+const disruptionPolicyAdminHandler = createDisruptionPolicyAdminHandler({
+  db,
+  validatePolicy: (worldId, policy) => dailyRestrictionCatalog.validatePolicy(worldId, policy),
+});
+const manualDisruptionCatalog = new ManualDisruptionCommandCatalog({
+  db,
+  base: dailyRestrictionCatalog,
+  runtime: operationalSimulationRuntime,
+  regions: () => {
+    const ready = new Map(regionalSimulation.readyRegions().map((region) => [`${region.worldId}\u0000${region.regionId}`, region.nowMs]));
+    return deploymentRuntime.realtimeRegions().map((region) => ({ ...region, nowMs: ready.get(`${region.worldId}\u0000${region.regionId}`) ?? 0 }));
+  },
+});
+const manualDisruptionAdminHandler = createManualDisruptionAdminHandler({
+  schedule: (input) => manualDisruptionCatalog.schedule(input),
+});
 const app = buildApp({
   worldScope,
   metricsApp,
@@ -758,6 +769,7 @@ if (odooProjectionClient !== undefined) {
     if (world.worldId !== worldScope.worldId) continue;
     for (const capability of [
       MANUAL_DISRUPTION_ADMIN_CAPABILITY,
+      { ...DISRUPTION_POLICY_ADMIN_CAPABILITY, availability: operationalSimulationRuntime.dailyRestrictions === undefined ? "unavailable" as const : "available" as const },
       WORLD_ACCESS_REVOKE_CAPABILITY,
       ABUSE_SANCTION_ACTIVATE_CAPABILITY,
       WORLD_CLOSE_CAPABILITY,
@@ -818,7 +830,7 @@ const runAlphaProjection = () => {
           runtimeStatus,
           workerStatus,
           telemetry: snapshot,
-          authoritativeEventUrl: `${worldScope.publicOrigin}/worlds/${profile.worldId}/alpha-monitoring`,
+          authoritativeEventUrl: alphaMonitoringApiUrl(worldScope.publicOrigin, profile.worldId),
         },
       });
       try {
@@ -914,7 +926,7 @@ app.addHook("onClose", async () => {
 const regionalAdvanceCoordinator = new RegionalSimulationCycleCoordinator({
   monitor: regionalSimulationMonitor,
   logger: app.log,
-  run: async ({ at, reportProgress }) => {
+  run: async ({ at, reportProgress }) => manualDisruptionCatalog.exclusive(async () => {
     const regions = deploymentRuntime.realtimeRegions();
     await dailyRestrictionCatalog.refresh(regions.map((region) => {
       const signed = signedDeployments.get(region.worldId);
@@ -933,8 +945,9 @@ const regionalAdvanceCoordinator = new RegionalSimulationCycleCoordinator({
       dailyRestrictionSources.set(signed, source);
       return source;
     }));
-    return advanceRegionalSimulations(regionalSimulation, regions, worldEpochs, at, dailyRestrictionCatalog, reportProgress);
-  },
+    await manualDisruptionCatalog.refresh();
+    return advanceRegionalSimulations(regionalSimulation, regions, worldEpochs, at, manualDisruptionCatalog, reportProgress);
+  }),
 });
 const runRegionalAdvance = () => {
   void regionalAdvanceCoordinator.run(new Date()).then((result) => {
@@ -963,6 +976,7 @@ const runCommerce = () => {
       participationHandler: worldParticipationHandler,
       adminHandlers: {
         manual_disruption_create: manualDisruptionAdminHandler,
+        disruption_policy_schedule: disruptionPolicyAdminHandler,
         world_access_revoke: worldAccessRevokeAdminHandler,
         abuse_sanction_activate: abuseSanctionActivateAdminHandler,
         world_close: worldCloseAdminHandler,

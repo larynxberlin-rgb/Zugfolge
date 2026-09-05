@@ -10,6 +10,7 @@ ADMIN_ACTIONS = [
     ("world_access_revoke", "Weltzugang entziehen"),
     ("infra_release_adoption", "InfraRelease zur Periode uebernehmen"),
     ("manual_disruption_create", "Manuelle Stoerung anlegen"),
+    ("disruption_policy_schedule", "Stoerungsrichtlinie veroeffentlichen"),
     ("abuse_sanction_activate", "Schwere Missbrauchsmassnahme aktivieren"),
     ("world_close", "Weltabschluss einleiten"),
     ("world_deploy", "Signierte Welt bereitstellen"),

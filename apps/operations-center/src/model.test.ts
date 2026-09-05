@@ -31,6 +31,15 @@ const viewContext = {
 };
 
 describe("zugängliche Editor-Operationen", () => {
+  it("zeigt ohne Programmausführung kein altes Programm als wirksam und erlaubt weiter das Speichern", () => {
+    const saved = { version: 1, status: "active" as const, checksum: "a".repeat(64), canonicalProgram: program };
+    const html = renderApp({ ...viewContext, activePanel: "program", program, savedProgram: saved, templates: [], versions: [saved], operations: { consumerAvailable: false, throughSequence: 0, decisions: [], cancellations: [], manualInterventions: [], majorEvents: [] }, reports: [], loading: false, saving: false, message: "", messageTone: "status", selectedDecisionId: "" });
+    expect(html).toContain("Programmausführung nicht verfügbar");
+    expect(html).not.toContain("Programm v1 aktiv");
+    expect(html).toContain('id="activate-program" class="danger-button" disabled');
+    expect(html).toContain('id="run-backtest" class="quiet-button" disabled');
+    expect(html).toContain('id="save-program" class="primary-button">');
+  });
   it("bietet im Fehlerzustand Wiederholung und einen Rückweg zur Spielwelt", () => {
     const html = renderApp({ ...viewContext, templates: [], versions: [], reports: [], loading: false, saving: false, message: "Failed to fetch", messageTone: "error", selectedDecisionId: "" });
     expect(html).toContain('id="refresh"');
@@ -60,6 +69,7 @@ describe("zugängliche Editor-Operationen", () => {
     const report = {
       serviceDay: "2026-08-11",
       projection: {
+        evidenceComplete: false,
         trainRuns: { total: 1, punctual: 0, delayed: 0, cancelled: 1, replacementServices: 1 },
         settlements: { revenueCents: "0", costCents: "1000", contractPenaltyCents: "200" },
         decisionsByAction: { trigger_rail_replacement: 1 },
@@ -73,6 +83,7 @@ describe("zugängliche Editor-Operationen", () => {
     expect(html).toContain("closure-short-turn");
     expect(html).toContain("capacity");
     expect(html).toContain("Nächste Hebel");
+    expect(html).toContain("Der Leistungsnachweis ist unvollständig");
   });
 
   it("trennt globale Navigation, feste Betriebstabs und lokal scrollenden Inhalt", () => {

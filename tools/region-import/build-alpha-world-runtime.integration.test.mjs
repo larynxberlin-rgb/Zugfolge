@@ -7,6 +7,8 @@ import { after, before, describe, test } from "node:test";
 
 import { alphaHash } from "../../packages/alpha/dist/index.js";
 import { decodeEconomyValue } from "../../packages/economy/dist/index.js";
+import { buildDailyReport } from "../../packages/dispatch/dist/index.js";
+import { adaptOperationalDomainEvents } from "../../apps/game-api/dist/operational-domain-event-adapter.js";
 import {
   OPERATIONAL_DAILY_RESTRICTIONS_SCHEMA,
   OPERATIONAL_SIMULATION_COMMAND_SCHEMA,
@@ -21,6 +23,7 @@ import {
 import { operationalSimulationInitializationHash } from "../../apps/game-api/dist/operational-initialization-hash.js";
 import { ActiveWorldDeploymentRuntime } from "../../apps/game-api/dist/world-deployment-runtime.js";
 import { DailyRestrictionCommandCatalog } from "../../apps/game-api/dist/daily-restriction-catalog.js";
+import { ManualDisruptionCommandCatalog } from "../../apps/game-api/dist/manual-disruption-catalog.js";
 import {
   MINIMAL_BUILDER_EPOCH,
   MINIMAL_BUILDER_REGION_ID,
@@ -135,6 +138,30 @@ describe("echter Alpha-Builder bis zur produktiven Scheduler-Registry", () => {
       Object.hasOwn(signed.deployment.regionalSimulation.infraRelease, "interlockingRoutes"),
       false,
     );
+  });
+
+  test("bindet Fahrtenabschluesse an echte GTFS-Lose und Fleet-Assets ohne Leistungszusagen zu erfinden", () => {
+    const deployment = signed.deployment;
+    const initialization = deployment.regionalSimulation;
+    const lotsByTrain = new Map(deployment.blueprint.lots.flatMap((lot) => lot.trainRunIds.map((id) => [id, lot.lotId])));
+    const assetsById = new Map(deployment.fleet.authorityRelease.assets.map((asset) => [asset.id, asset]));
+    assert.equal(initialization.serviceOutcomePolicy.schemaVersion, "zugfolge-operational-service-outcome-policy/v1");
+    assert.deepEqual(initialization.serviceOutcomePolicy.vehicleCapacities.map(({ vehicleId }) => vehicleId).sort(), initialization.vehicles.map(({ id }) => id).sort());
+    for (const capacity of initialization.serviceOutcomePolicy.vehicleCapacities) {
+      assert.equal(capacity.seats, assetsById.get(capacity.vehicleId).passenger.seats);
+      assert.equal(capacity.sourceReference, `fleet-authority:${deployment.blueprint.releases.fleet}:vehicle:${capacity.vehicleId}`);
+    }
+    for (const train of initialization.trains) {
+      if (!train.publicPassengerStop) { assert.equal(train.serviceOutcome, undefined); continue; }
+      assert.equal(train.serviceOutcome.serviceId, train.id);
+      assert.equal(train.serviceOutcome.serviceRunId, `${train.id}:service-day:${MINIMAL_BUILDER_EPOCH.slice(0, 10)}`);
+      assert.equal(train.serviceOutcome.lotId, lotsByTrain.get(train.id));
+      assert.equal(train.serviceOutcome.serviceDay, MINIMAL_BUILDER_EPOCH.slice(0, 10));
+      assert.ok(train.serviceOutcome.scheduledArrivalMs > train.scheduledDepartureMs);
+      assert.equal(train.serviceOutcome.requiredSeats, null);
+      assert.equal(train.serviceOutcome.connectionAssessment, "unavailable");
+    }
+    assert.deepEqual(initialization.serviceOutcomePolicy.serviceIds, initialization.trains.filter((train) => train.publicPassengerStop).map((train) => train.id).sort());
   });
 
   test("hydriert das Builder-Deployment beim Serverstart nativ und registriert exakt sein Schedulerprogramm", {
@@ -256,6 +283,66 @@ describe("echter Alpha-Builder bis zur produktiven Scheduler-Registry", () => {
       } else {
         process.env[OPERATIONAL_INFRASTRUCTURE_ROOTS_ENV] = previousRoots;
       }
+    }
+  });
+
+  test("echte Fahrt erzeugt via NAPI genau einen restartfesten Abschluss und einen ehrlich unvollstaendigen Tagesbericht", { skip: !nativeAvailable }, async () => {
+    const previousRoots = process.env[OPERATIONAL_INFRASTRUCTURE_ROOTS_ENV];
+    process.env[OPERATIONAL_INFRASTRUCTURE_ROOTS_ENV] = JSON.stringify({ [fixture.infraReleaseId]: fixture.infrastructureRoot });
+    try {
+      const native = loadOperationalSimulationRuntime();
+      const registry = new ActiveWorldDeploymentRuntime({ activeWorlds: [], operationalProgramPreflight: (input) => native.initialize(input).validationReceipt });
+      registry.prepareOperationalProgram(signed);
+      registry.register(signed, new Date(MINIMAL_BUILDER_EPOCH));
+      // A newly started server has no manual plans. The outer catalog must
+      // still preserve the real materialize/continuation/dispatch ordering.
+      const scheduled = new ManualDisruptionCommandCatalog({ db: {}, runtime: native, base: registry, regions: () => [] });
+      await scheduled.refresh();
+      const first = signed.deployment.regionalSimulation.trains.find((train) => train.publicPassengerStop);
+      assert.ok(first?.serviceOutcome);
+      let result = native.initialize(signed.deployment.regionalSimulation);
+      const events = [...result.events];
+      const apply = (state, commandId, command) => native.apply(state, {
+        schemaVersion: OPERATIONAL_SIMULATION_COMMAND_SCHEMA,
+        worldId: MINIMAL_BUILDER_WORLD_ID, regionId: MINIMAL_BUILDER_REGION_ID,
+        commandId, expectedStateHash: state.stateHash, expectedRevision: state.revision,
+        expectedPublisherSequence: state.publisherSequence, command,
+      });
+      const commit = async (commandId, command) => { result = await apply(result.state, commandId, command); events.push(...result.events); };
+      for (const entry of scheduled.at(MINIMAL_BUILDER_WORLD_ID, MINIMAL_BUILDER_REGION_ID, 0)) await commit(entry.commandId, entry.command);
+      for (const boundary of scheduled.dueBoundaries(MINIMAL_BUILDER_WORLD_ID, MINIMAL_BUILDER_REGION_ID, 0, first.scheduledDepartureMs)) {
+        await commit(`outcome:boundary:${boundary.atMs}`, { type: "advance-to", atMs: boundary.atMs });
+        for (const entry of boundary.commands) await commit(entry.commandId, entry.command);
+      }
+      const checkpoint = result;
+      const finish = { type: "advance-to", atMs: first.serviceOutcome.scheduledArrivalMs + 6 * 3_600_000 };
+      await commit("outcome:physical-finish", finish);
+      const restored = native.restore(checkpoint.state, checkpoint.initializationHash);
+      const replay = await apply(restored.state, "outcome:physical-finish", finish);
+      assert.equal(replay.stateHash, result.stateHash);
+      assert.deepEqual(replay.events, result.events);
+      const retried = await apply(result.state, "outcome:physical-finish", finish);
+      assert.equal(retried.stateHash, result.stateHash);
+      assert.equal(retried.events.length, 0);
+      const completed = events.filter((event) => event.kind === "train-outcome").map((event) => JSON.parse(event.detail));
+      const firstOutcomes = completed.filter((outcome) => outcome.serviceRunId === first.serviceOutcome.serviceRunId);
+      assert.equal(firstOutcomes.length, 1);
+      const outcome = firstOutcomes[0];
+      assert.ok(BigInt(outcome.distanceMm) > 0n);
+      assert.ok(outcome.minimumSeatsProvided > 0);
+      assert.equal(outcome.missingSeats, null);
+      assert.equal(outcome.missedConnections, null);
+      assert.equal(outcome.evidenceComplete, false);
+      const adapted = adaptOperationalDomainEvents(events, [], [], MINIMAL_BUILDER_REGION_ID, MINIMAL_BUILDER_WORLD_ID);
+      const report = buildDailyReport(adapted.map((event, index) => ({ ...event, sequence: index + 1, occurredAt: new Date(Date.parse(MINIMAL_BUILDER_EPOCH) + events[index].atMs) })), first.operatorId, first.serviceOutcome.serviceDay);
+      assert.ok(report.trainRuns.total >= 1);
+      assert.ok(BigInt(report.trainRuns.distanceMm) > 0n);
+      assert.equal(report.trainRuns.missingSeats, null);
+      assert.equal(report.evidenceComplete, false);
+      assert.equal(report.contracts[first.serviceOutcome.lotId].settlements.evidenceComplete, false);
+    } finally {
+      if (previousRoots === undefined) delete process.env[OPERATIONAL_INFRASTRUCTURE_ROOTS_ENV];
+      else process.env[OPERATIONAL_INFRASTRUCTURE_ROOTS_ENV] = previousRoots;
     }
   });
 

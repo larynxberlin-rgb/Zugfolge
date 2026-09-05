@@ -1,3 +1,4 @@
+import { nativeServiceEvidence, type ServiceOutcomeEvidence } from "./service-outcomes.js";
 export interface LoggedEvent {
   readonly sequence: number;
   readonly eventType: string;
@@ -67,6 +68,11 @@ export interface DailyDecisionFact {
 }
 
 export interface DailyOperationsReport {
+  readonly evidenceComplete?: boolean;
+  readonly knownServicesComplete?: boolean;
+  readonly dayPlanComplete?: boolean;
+  readonly plannedServiceRunIds?: readonly string[];
+  readonly missingServiceRunIds?: readonly string[];
   readonly schema: "daily-operations-report/v1";
   readonly serviceDay: string;
   readonly sourceFromSequence: number;
@@ -78,15 +84,22 @@ export interface DailyOperationsReport {
     readonly cancelled: number;
     readonly replacementServices: number;
     /** Autoritativ vom Runtime-Ereignis gemeldete, ganzzahlige Zugkilometer. */
+    readonly distanceMm?: string;
+    readonly minimumSeatsProvided?: number | null;
     readonly trainKm: string;
-    readonly missingSeats: number;
-    readonly missedConnections: number;
+    readonly missingSeats: number | null;
+    readonly missedConnections: number | null;
   };
   readonly settlements: { readonly revenueCents: string; readonly costCents: string; readonly contractPenaltyCents: string };
   /** Vertrag-/Los-spezifische Teilmenge; verhindert Abrechnung fremder Leistungen. */
   readonly contracts: Readonly<Record<string, {
-    readonly trainRuns: { readonly total: number; readonly punctual: number; readonly cancelled: number; readonly trainKm: string; readonly missingSeats: number; readonly missedConnections: number };
-    readonly settlements: { readonly costCents: string; readonly contractPenaltyCents: string };
+    readonly evidenceComplete?: boolean;
+    readonly knownServicesComplete?: boolean;
+    readonly dayPlanComplete?: boolean;
+    readonly plannedServiceRunIds?: readonly string[];
+    readonly missingServiceRunIds?: readonly string[];
+    readonly trainRuns: { readonly distanceMm?: string; readonly minimumSeatsProvided?: number | null; readonly total: number; readonly punctual: number; readonly cancelled: number; readonly trainKm: string; readonly missingSeats: number | null; readonly missedConnections: number | null };
+    readonly settlements: { readonly evidenceComplete?: boolean; readonly costCents: string; readonly contractPenaltyCents: string };
   }>>;
   readonly decisionsByAction: Readonly<Record<string, number>>;
   readonly infrastructureEffects: readonly string[];
@@ -239,7 +252,11 @@ function integerOrNull(value: unknown): number | null {
 
 export function buildDailyReport(events: readonly LoggedEvent[], operatorId: string, serviceDay: string): DailyOperationsReport {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(serviceDay)) throw new RangeError("Betriebstag muss YYYY-MM-DD entsprechen.");
-  const selected = events.filter((event) => event.occurredAt.toISOString().slice(0, 10) === serviceDay).filter((event) => {
+  const selected = events.filter((event) => {
+    const value = payload(event.payload);
+    const native = value?.["schemaVersion"] === "zugfolge-operational-train-service-planned/v1" || value?.["schemaVersion"] === "zugfolge-operational-train-outcome/v1";
+    return native ? value?.["serviceDay"] === serviceDay : event.occurredAt.toISOString().slice(0, 10) === serviceDay;
+  }).filter((event) => {
     const value = payload(event.payload);
     return value !== undefined && operatorMatches(value, operatorId);
   });
@@ -276,6 +293,7 @@ export function buildDailyReport(events: readonly LoggedEvent[], operatorId: str
   for (const event of selected) {
     const value = payload(event.payload)!;
     const impact = payload(value.impact) ?? {};
+    if (event.eventType === "operations.train-service-planned") evidenceFor(value);
     if (event.eventType === "operations.train-outcome") {
       const contract = evidenceFor(value);
       total += 1;
@@ -340,7 +358,28 @@ export function buildDailyReport(events: readonly LoggedEvent[], operatorId: str
       }
     }
   }
+  const serviceEvidence = nativeServiceEvidence(selected.map((event) => payload(event.payload)!));
+  const contractServices = new Map<string, ServiceOutcomeEvidence>();
+  for (const reference of contractEvidence.keys()) {
+    const evidence = nativeServiceEvidence(selected.map((event) => payload(event.payload)!).filter((value) => text(value.contractId ?? value.contract_id ?? value.lotId ?? value.lot_id) === reference));
+    if (evidence !== undefined) contractServices.set(reference, evidence);
+  }
+  const completeness = (evidence: ServiceOutcomeEvidence | undefined) => evidence === undefined ? {} : {
+    evidenceComplete: false,
+    knownServicesComplete: evidence.evidenceComplete,
+    dayPlanComplete: false,
+    plannedServiceRunIds: evidence.plannedServiceRunIds,
+    missingServiceRunIds: evidence.missingServiceRunIds,
+  };
+  const measured = (evidence: ServiceOutcomeEvidence | undefined) => evidence === undefined ? {} : {
+    distanceMm: evidence.distanceMm,
+    trainKm: (BigInt(evidence.distanceMm) / 1_000_000n).toString(),
+    minimumSeatsProvided: evidence.minimumSeatsProvided,
+    missingSeats: evidence.missingSeats,
+    missedConnections: evidence.missedConnections,
+  };
   const nextLevers: string[] = [];
+  if (serviceEvidence !== undefined) nextLevers.push("Betriebsnachweis unvollstaendig: Tagesplanabschluss, Kostenbelege und offene Fahrt-/Vertragsfakten pruefen; keine Vertragsabrechnung freigegeben.");
   if (cancelled > 0) nextLevers.push("Ausfallregeln und sichere Ersatzmaßnahmen im Rücktest vergleichen.");
   if (delayed > 0) nextLevers.push("Verspätungsschwellen und Anschlussprioritäten im Rücktest vergleichen.");
   if (decisionFacts.some((entry) => entry.rejectedAlternatives.length > 0)) nextLevers.push("Abgelehnte Maßnahmen an den protokollierten Betriebsgrenzen prüfen.");
@@ -348,15 +387,17 @@ export function buildDailyReport(events: readonly LoggedEvent[], operatorId: str
   if (contractPenaltyCents !== 0n) nextLevers.push("Vertragswirkung der häufigsten Maßnahme im Rücktest prüfen.");
   if (nextLevers.length === 0) nextLevers.push("Kein unmittelbarer Regelhebel; aktive Programmversion weiter beobachten.");
   return {
+    ...completeness(serviceEvidence),
     schema: "daily-operations-report/v1",
     serviceDay,
     sourceFromSequence: selected[0]?.sequence ?? 0,
     sourceThroughSequence: selected.at(-1)?.sequence ?? 0,
-    trainRuns: { total, punctual, delayed, cancelled, replacementServices, trainKm: trainKm.toString(), missingSeats, missedConnections },
+    trainRuns: { total, punctual, delayed, cancelled, replacementServices, trainKm: trainKm.toString(), missingSeats, missedConnections, ...measured(serviceEvidence) },
     settlements: { revenueCents: revenueCents.toString(), costCents: costCents.toString(), contractPenaltyCents: contractPenaltyCents.toString() },
     contracts: Object.fromEntries([...contractEvidence].sort(([left], [right]) => left.localeCompare(right)).map(([reference, evidence]) => [reference, {
-      trainRuns: { total: evidence.total, punctual: evidence.punctual, cancelled: evidence.cancelled, trainKm: evidence.trainKm.toString(), missingSeats: evidence.missingSeats, missedConnections: evidence.missedConnections },
-      settlements: { costCents: evidence.costCents.toString(), contractPenaltyCents: evidence.contractPenaltyCents.toString() },
+      ...completeness(contractServices.get(reference)),
+      trainRuns: { total: evidence.total, punctual: evidence.punctual, cancelled: evidence.cancelled, trainKm: evidence.trainKm.toString(), missingSeats: evidence.missingSeats, missedConnections: evidence.missedConnections, ...measured(contractServices.get(reference)) },
+      settlements: { ...(contractServices.has(reference) ? { evidenceComplete: false } : {}), costCents: evidence.costCents.toString(), contractPenaltyCents: evidence.contractPenaltyCents.toString() },
     }])),
     decisionsByAction: Object.fromEntries(Object.entries(decisionsByAction).sort(([left], [right]) => left.localeCompare(right))),
     infrastructureEffects: unique(infrastructureEffects),
