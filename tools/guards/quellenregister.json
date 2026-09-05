@@ -10,6 +10,18 @@
   },
   "quellen": [
     {
+      "id": "maplibre-demotiles-noto-browserfixture",
+      "titel": "Noto Sans Regular Glyphen aus MapLibre demotiles für Browserprüfungen",
+      "status": "freigegeben",
+      "lizenz": "OFL-1.1",
+      "bereitstellung": "https://demotiles.maplibre.org/font/Noto%20Sans%20Regular/0-255.pbf, unverändert am 2026-09-06 geladen; SHA-256 ef1f38a3f1978591e846e9eaddf8a54f7047f546fc6aaed7872cc53151a5de78. Lizenztext aus https://raw.githubusercontent.com/notofonts/noto-fonts/main/LICENSE, SHA-256 0dab92d0544f7b233403f14b84a663bdbfa746982eda629e7f4f9ffe1b036feb.",
+      "attribution": "Noto Project Authors; SIL Open Font License 1.1. Vollständiger Copyright- und Lizenztext liegt unverändert bei den Testglyphen.",
+      "nutzung": "Ausschließlich lokaler, reproduzierbarer M10-MapLibre-Browsertest. Keine externe Abhängigkeit im Testlauf und keine Änderung des produktiven Kartenreleases.",
+      "entscheidung": { "datum": "2026-09-06", "pruefer": "Codex – Quellenprüfung im ausdrücklichen Nutzerauftrag für frei nutzbare Quellen" },
+      "hinweis": "OFL erlaubt unveränderte Weitergabe mit Copyright- und Lizenztext. Keine Änderung von Glyphen oder Schriftnamen. Apps/game-api/src/fixtures/demand-map-font dokumentiert Quelle, unveränderte Bytes und Hashes.",
+      "milestone": "M10"
+    },
+    {
       "id": "nvbw-fahrgastzaehlung-2025",
       "titel": "NVBW AFZS-/RES-Fahrgastzählungen Baden-Württemberg, 1. Halbjahr 2025",
       "status": "freigegeben",

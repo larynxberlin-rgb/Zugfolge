@@ -33,6 +33,15 @@ tatsächlichen Haltbelegen. Seine interne Projektion bleibt bei den derzeitigen
 produktiven M10-Prognosen gesperrt. Der M10-Stack erhält additive Commits;
 der Manifestvertrag wird für den nachgelagerten PR nicht umgeschrieben.
 
+Der Anschlussabgleich von #535 (Head `a13fbc5`) bestätigt den gemeinsamen
+Manifesttyp, die Ablehnung von Prognosen und eine datensparsame Projektion.
+Die verbesserte native Flottenfixture wurde in #534 übernommen; der
+Textkonflikt ist beseitigt. Ein konkreter M15-Prüfpunkt bleibt:
+`apps/game-api/src/conductor-projection.ts` prüft Weltstatus und Eigentümer,
+aber noch nicht `operators.lifecycle === "active"`. Vor der öffentlichen
+Sitzungseinbindung braucht dieser interne Dienst die Aktivitätsprüfung samt
+Negativtest. Das gehört zur M15-Abnahme und wird durch M10 nicht geschlossen.
+
 #530 entfernt Tutorialwelten, erzwingt eine Welt je Server und verwendet
 Schema 35. M10 führt diese alten Konzepte nicht erneut ein. Die ausdrücklich
 abgenommene M9.1-Hinweisfunktion bleibt erhalten. #531 liefert Layout,

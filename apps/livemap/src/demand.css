@@ -26,7 +26,7 @@
 .demand-plan-link { display: block; padding: 12px; margin: 14px 0; background: #e5233d; color: #fff; border-radius: 6px; text-align: center; text-decoration: none; font-size: 13px; font-weight: 650; }
 .railway-map #toggle-demand { color: #c8bfff; }
 .railway-map #toggle-demand[aria-pressed="true"] { border-color: #a9a1ff; background: #302a48; }
-.demand-map-key { position: absolute; left: 12px; bottom: 48px; z-index: 3; max-width: calc(100% - 24px); padding: 10px 12px; background: #181e25ee; border: 1px solid #605b81; border-radius: 6px; display: grid; gap: 7px; font-size: 11px; color: #f5f7fa; pointer-events: none; }
+.demand-map-key { position: absolute; left: 12px; bottom: 120px; z-index: 3; max-width: calc(100% - 24px); padding: 10px 12px; background: #181e25ee; border: 1px solid #605b81; border-radius: 6px; display: grid; gap: 7px; font-size: 11px; color: #f5f7fa; pointer-events: none; }
 .demand-map-key[hidden] { display: none; }
 .demand-map-key small { overflow-wrap: anywhere; color: #b5c0cc; }
 @media(max-width: 620px) { .railway-map .map-toolbar { flex-wrap: wrap; max-width: calc(100% - 20px); gap: 6px; } .railway-map .map-toolbar .train-scope { flex-wrap: wrap; } }
