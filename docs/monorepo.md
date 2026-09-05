@@ -333,10 +333,13 @@ haben: `no-random` (Zufall nur aus benannten Substreams) und
 `no-unordered-iteration` (`BTreeMap` statt `HashMap`). Ohne sie ist Invariante
 „gleicher Seed ⇒ gleicher Zustand" nicht haltbar.
 
-Und der Wächter `layer-separation` (E16, M0.5) hält die proprietären Schichten —
-`EconomyRelease`, Balancing, Fahrzeugkatalog, Weltdaten, Markenassets — aus dem
-öffentlichen Baum. `.gitignore` ist die Bitte, der Wächter der Riegel. Herleitung
-in `docs/rechteschutz.md`.
+Und der Wächter `layer-separation` (E16, M0.5) hält die konfigurierten
+proprietären Schichten — `EconomyRelease`, Balancing, Fahrzeugkatalog,
+Weltdaten und private Markenpakete unter `assets/brand/` — aus dem öffentlichen
+Baum. Bewusst veröffentlichte UI-Zeichen im Design-System und
+[Dokumentationsgrafiken](brand/README.md) gehören zur sichtbaren Oberfläche.
+`.gitignore` und der Wächter sichern die festgelegten Pfade;
+[Rechteschutz](rechteschutz.md) beschreibt die Abgrenzung.
 
 Vollständige Liste: `pnpm guards -- --list`.
 

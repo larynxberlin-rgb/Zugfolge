@@ -93,8 +93,10 @@ Der Nachweis umfasst 34 Layouts bei 1440×900, 1366×768, 1024×768, 390×844 un
 Registerwechsel, geöffnete Formulare beim Aktualisieren, eigene Züge,
 Zugsuche, Detailansicht sowie eingeblendete Spielhinweise auf 320 Pixeln. Das maschinenlesbare Ergebnis steht in
 [screenshots/qa.json](screenshots/qa.json). Die 207 Tests der vier beteiligten
-Pakete und drei bestehende Tooltip-Browsertests im gebauten Spiel ergänzen
-diesen UI-Nachweis. Ein vollständiger Produktions-, Last- oder Anmeldetest ist
+Pakete und acht bestehende Browsertests im gebauten Spiel ergänzen
+diesen UI-Nachweis: drei zur Tooltip-Hilfe und fünf zur Betriebszentrale
+einschließlich Eingabe-, Fokus- und Dialogerhaltung bei Live-Aktualisierungen.
+Ein vollständiger Produktions-, Last- oder Anmeldetest ist
 damit nicht verbunden.
 
 ## Inspiration und Gestaltung

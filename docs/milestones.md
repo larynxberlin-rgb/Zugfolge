@@ -863,10 +863,12 @@ zugfolge-alpha-dag:end -->
 
 Die historische Auswahl für M14.1 ist erfolgt: **Variante B — Mitteldeutsches
 Metropol-Korridornetz** aus `docs/mitteldeutschland-alpha.md`.
-Gebietsüberschreitende GTFS-Fahrten folgen
-[E25/ADR-0025](adr/0025-gebietsueberschreitende-fahrtketten.md): Spieler planen
-den qualifizierten Innenabschnitt gegen sichtbare Release-Grenzfenster; der
-deterministische Außenlauf bleibt dieselbe Zugfahrt.
+Der damalige Nachweis verwendete gebietsüberschreitende GTFS-Fahrten nach
+[E25/ADR-0025](adr/0025-gebietsueberschreitende-fahrtketten.md): qualifizierter
+Innenabschnitt, Release-Grenzfenster und deterministischer Außenlauf.
+Neue Spielangebote werden dagegen nach [E33/ADR-0034](adr/0034-spielgenerierte-fahrplaene-im-spielgebiet.md)
+im freigegebenen Spielnetz generiert; der historische Nachweis führt keine
+Außenabschnitte in neue Angebote ein.
 
 Nach [E28/ADR-0028](adr/0028-spielhinweise-im-spiel.md) erfolgt die Einführung durch neue Tooltipps
 direkt im laufenden Spiel. Jede Welt besitzt einen eigenen Server und eine
@@ -904,9 +906,10 @@ signierte und bei der Zugangsbestätigung unveränderlich gebundene
 `StartingCapitalPolicy`: null und endliche Integer-Cent werden bei der ersten
 EVU-Gründung atomar genau einmal ausgeglichen gebucht; der explizite Modus
 `unlimited` bleibt nichtnumerisch und erzeugt keine Startbuchung. Beide Modi
-sind rangneutral. Heatmap, Glossar und Assistent bleiben M9.3-Folgearbeit und
-werden nicht durch die fertige Kapitalintegration oder die Tooltipps als
-abgeschlossen ausgegeben.
+sind rangneutral. Der Glossar-Layer ist bereits in den drei Frontends
+erreichbar; seine vollständige kontextuelle Verständlichkeit bleibt Teil
+der M9.3-Spielerabnahme. Heatmap und Betriebsassistent bleiben Folgearbeit.
+Kapitalintegration und Tooltipps schließen diese Abnahmen nicht automatisch ab.
 
 Phase 3 schließt die noch fehlende ausführbare Betriebsschicht für M9.4,
 M9.5 und M9.7: Einladungskonten werden nur noch über einen Odoo-

@@ -45,7 +45,7 @@ zu einem bestimmten Dialog-/Seitenaufbau entfallen.
 
 | Issue | Aktualisierte Einordnung |
 | --- | --- |
-| [#159 — M9.1](https://github.com/larynxberlin-rgb/Zugfolge/issues/159) | Spielhinweise an echten Bedienelementen gemäß #530; alte Tutorialwelt und Pflichtkapitel abgelöst |
+| [#159 — M9.1](https://github.com/larynxberlin-rgb/Zugfolge/issues/159) | Bereits mit #530 aktualisiert und fachlich abgeschlossen: Spielhinweise an echten Bedienelementen; Abschlussnachweis unverändert übernommen |
 | [#161 — M9.3](https://github.com/larynxberlin-rgb/Zugfolge/issues/161) | „Spiel starten“ und „Unternehmen gründen“; Kapitalregel und verbleibende Heatmap-/Assistentenabnahme |
 | [#167 — M9.9](https://github.com/larynxberlin-rgb/Zugfolge/issues/167) | Externe Alpha mit deutschlandweiter Orientierung und ausdrücklich qualifiziertem Spielnetz |
 | [#179 — M12.1](https://github.com/larynxberlin-rgb/Zugfolge/issues/179) | Zusammenarbeit im Markt; verständliche Leistungen und Vertragsfolgen |
@@ -57,8 +57,10 @@ zu einem bestimmten Dialog-/Seitenaufbau entfallen.
 
 Ein neues Layout schließt keine fachliche Abnahme ab. Bestehende technische
 Invarianten, Berechtigungen, Release-, Betriebs- und Datenschutznachweise bleiben
-erforderlich. Die Issues bleiben bis zu ihren jeweils verlinkten Nachweisen
-offen. Die Screenshotdaten sind ausdrücklich illustrative Fixtures.
+erforderlich. Die offenen Gestaltungsabnahmen bleiben bis zu ihren jeweils
+verlinkten Nachweisen offen. Die abgeschlossene Tooltip-Abnahme M9.1/#159
+bleibt erhalten; Nutzerbeobachtung in der externen Alpha gehört zu M9.9.
+Die Screenshotdaten sind ausdrücklich illustrative Fixtures.
 
 Regionale Abnahmeberichte wie M14.1/Variante B dokumentieren ihren damaligen
 Release. Sie sind keine aktuelle Grenze der Gestaltung und übertragen keine
