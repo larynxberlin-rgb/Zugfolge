@@ -82,6 +82,9 @@ jobs:
       - name: App- und Pakettests einmal ausfuehren
         run: pnpm test
 
+      - name: Echten Pixelart-Korpus gegen Manifest und Belegbytes prüfen
+        run: pnpm --filter @zugfolge/conductor-art check:release
+
   native-runtime-smoke:
     name: Native Runtime ABI (Linux, echtes NAPI)
     runs-on: ubuntu-latest
