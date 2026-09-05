@@ -1,0 +1,342 @@
+{
+  "schemaVersion": "art-atlas-browser-review/v1",
+  "browser": "153.0.4234.19",
+  "recordedAt": "2026-09-05T23:23:37.557Z",
+  "browserChannel": "msedge",
+  "preparedSha256": "9ee844e8c0d54f48241858af85461161cf611b4020db4110dbd059bbb478d942",
+  "observedManifestSha256": "d1aa506327fa735276a67f7efba64f3a6a690b7d89d35878c67c77d1a3ed00e9",
+  "observedManifestStatus": "candidate",
+  "assets": 172,
+  "animations": 60,
+  "files": [
+    {
+      "id": "passenger-red",
+      "sha256": "7f0cd9c264bc5404d957675bc84ed886039dc84f2faab54b8e8d8a1e72b4b346"
+    },
+    {
+      "id": "passenger-teal",
+      "sha256": "3aaadd3f90131877bd5f482c6d96b292b8f42471ef699bf4c4ea0e8cdd9c33ad"
+    },
+    {
+      "id": "passenger-amber",
+      "sha256": "e781ead10d891f00ea99b744c2232441311bb70b8b53b1a5ab3c99fb7653ad04"
+    },
+    {
+      "id": "passenger-slate",
+      "sha256": "c1807f78b0318d07ec1000004a4035600f82640f211c6455e04acec2ee998480"
+    },
+    {
+      "id": "conductor",
+      "sha256": "e42490973eb0ea458a500b0b5278382d48fdbcdd1ed83424263151d1422a8c4a"
+    },
+    {
+      "id": "modules",
+      "sha256": "9ddda097bed0c264600f1416cf3b7ce708e56201096be699cbb6e316ded1eb3c"
+    }
+  ],
+  "proof": "Local graphics review only; no game world, M10 operations or release activation proof.",
+  "reducedMotionStartsPaused": true,
+  "pausePreservesFrame": true,
+  "missingMotifHasNoReplacement": true,
+  "declaredHashesVerifiedAgainstServedBytes": true,
+  "integerZooms": [
+    1,
+    2,
+    3,
+    4
+  ],
+  "layouts": [
+    {
+      "name": "desktop-scene",
+      "width": 1440,
+      "scrollWidth": 1440
+    },
+    {
+      "name": "desktop-zoom-1",
+      "width": 1440,
+      "scrollWidth": 1440
+    },
+    {
+      "name": "desktop-zoom-2",
+      "width": 1440,
+      "scrollWidth": 1440
+    },
+    {
+      "name": "desktop-zoom-3",
+      "width": 1440,
+      "scrollWidth": 1440
+    },
+    {
+      "name": "desktop-zoom-4",
+      "width": 1440,
+      "scrollWidth": 1440
+    },
+    {
+      "name": "mobile-390-scene-1x",
+      "width": 390,
+      "scrollWidth": 390
+    },
+    {
+      "name": "mobile-390-scene-2x",
+      "width": 390,
+      "scrollWidth": 390
+    },
+    {
+      "name": "mobile-390-scene-3x",
+      "width": 390,
+      "scrollWidth": 390
+    },
+    {
+      "name": "mobile-390-scene-4x",
+      "width": 390,
+      "scrollWidth": 390
+    },
+    {
+      "name": "mobile-390-actors-1x",
+      "width": 390,
+      "scrollWidth": 390
+    },
+    {
+      "name": "mobile-390-actors-2x",
+      "width": 390,
+      "scrollWidth": 390
+    },
+    {
+      "name": "mobile-390-actors-3x",
+      "width": 390,
+      "scrollWidth": 390
+    },
+    {
+      "name": "mobile-390-actors-4x",
+      "width": 390,
+      "scrollWidth": 390
+    },
+    {
+      "name": "mobile-390-gallery-1x",
+      "width": 390,
+      "scrollWidth": 390
+    },
+    {
+      "name": "mobile-390-gallery-2x",
+      "width": 390,
+      "scrollWidth": 390
+    },
+    {
+      "name": "mobile-390-gallery-3x",
+      "width": 390,
+      "scrollWidth": 390
+    },
+    {
+      "name": "mobile-390-gallery-4x",
+      "width": 390,
+      "scrollWidth": 390
+    },
+    {
+      "name": "mobile-390-evidence-1x",
+      "width": 390,
+      "scrollWidth": 390
+    },
+    {
+      "name": "mobile-390-evidence-2x",
+      "width": 390,
+      "scrollWidth": 390
+    },
+    {
+      "name": "mobile-390-evidence-3x",
+      "width": 390,
+      "scrollWidth": 390
+    },
+    {
+      "name": "mobile-390-evidence-4x",
+      "width": 390,
+      "scrollWidth": 390
+    },
+    {
+      "name": "mobile-320-scene-1x",
+      "width": 320,
+      "scrollWidth": 320
+    },
+    {
+      "name": "mobile-320-scene-2x",
+      "width": 320,
+      "scrollWidth": 320
+    },
+    {
+      "name": "mobile-320-scene-3x",
+      "width": 320,
+      "scrollWidth": 320
+    },
+    {
+      "name": "mobile-320-scene-4x",
+      "width": 320,
+      "scrollWidth": 320
+    },
+    {
+      "name": "mobile-320-actors-1x",
+      "width": 320,
+      "scrollWidth": 320
+    },
+    {
+      "name": "mobile-320-actors-2x",
+      "width": 320,
+      "scrollWidth": 320
+    },
+    {
+      "name": "mobile-320-actors-3x",
+      "width": 320,
+      "scrollWidth": 320
+    },
+    {
+      "name": "mobile-320-actors-4x",
+      "width": 320,
+      "scrollWidth": 320
+    },
+    {
+      "name": "mobile-320-gallery-1x",
+      "width": 320,
+      "scrollWidth": 320
+    },
+    {
+      "name": "mobile-320-gallery-2x",
+      "width": 320,
+      "scrollWidth": 320
+    },
+    {
+      "name": "mobile-320-gallery-3x",
+      "width": 320,
+      "scrollWidth": 320
+    },
+    {
+      "name": "mobile-320-gallery-4x",
+      "width": 320,
+      "scrollWidth": 320
+    },
+    {
+      "name": "mobile-320-evidence-1x",
+      "width": 320,
+      "scrollWidth": 320
+    },
+    {
+      "name": "mobile-320-evidence-2x",
+      "width": 320,
+      "scrollWidth": 320
+    },
+    {
+      "name": "mobile-320-evidence-3x",
+      "width": 320,
+      "scrollWidth": 320
+    },
+    {
+      "name": "mobile-320-evidence-4x",
+      "width": 320,
+      "scrollWidth": 320
+    }
+  ],
+  "pageErrors": [],
+  "screenshots": [
+    {
+      "file": "scene-small-rural-1x.png",
+      "sha256": "e14589713bf18a010665952d1929d7d45b7ebdc83e5fd4dab187ad9e8a19a4bd",
+      "viewport": {
+        "width": 1440,
+        "height": 1100
+      }
+    },
+    {
+      "file": "scene-medium-suburban-1x.png",
+      "sha256": "a8d2a60a79e81d047e61e51629f1e3419856aedb83fe18f4f65218dd98f9aca0",
+      "viewport": {
+        "width": 1440,
+        "height": 1100
+      }
+    },
+    {
+      "file": "scene-large-urban-1x.png",
+      "sha256": "802a4af02ae3887cd2b66aea5e39bcc5b0eb44f7807c7cbad20c4dec3c3b8e00",
+      "viewport": {
+        "width": 1440,
+        "height": 1100
+      }
+    },
+    {
+      "file": "scene-roofs-1x.png",
+      "sha256": "710f3b66a9d29b0b691a7e615c30421fcbff3d7885d356173ab269db4713c135",
+      "viewport": {
+        "width": 1440,
+        "height": 1100
+      }
+    },
+    {
+      "file": "actors-walk-paused-2x.png",
+      "sha256": "d9cb5096fc219062360aebc16d80ddf8d3c60f95a0178590d934d101aae5cfb6",
+      "viewport": {
+        "width": 1440,
+        "height": 1100
+      }
+    },
+    {
+      "file": "actors-sitting-2x.png",
+      "sha256": "db2c1022875f39b2458c75c65a3168fd5fef6a0ec559f50c8386daf9b2585e56",
+      "viewport": {
+        "width": 1440,
+        "height": 1100
+      }
+    },
+    {
+      "file": "gallery-complete-1x.png",
+      "sha256": "4a14f4500a5932b5bc9e9267344b68b0e39c586fdf02081504bdb7833db76714",
+      "viewport": {
+        "width": 1440,
+        "height": 1100
+      }
+    },
+    {
+      "file": "gallery-stations-2x.png",
+      "sha256": "93616d9d202ebb585d4e06f9b37e0f7c897debfc7d2b59e017f1c74ef3db9d0a",
+      "viewport": {
+        "width": 1440,
+        "height": 1100
+      }
+    },
+    {
+      "file": "release-evidence.png",
+      "sha256": "59fd2ed76a693b25779798288ab70b518c83ce3f04b5edafc238a588720e286e",
+      "viewport": {
+        "width": 1440,
+        "height": 1100
+      }
+    },
+    {
+      "file": "mobile-390-scene.png",
+      "sha256": "6a08bf8184c3036453789cc0cbc1b41b66b98334d6b1b341960a53d71bfc807f",
+      "viewport": {
+        "width": 390,
+        "height": 900
+      }
+    },
+    {
+      "file": "mobile-390-actors.png",
+      "sha256": "d17ab00f096d257f7bcbbb7b5a6d05702d46b068b5a0615c73fef6d2f711eeb3",
+      "viewport": {
+        "width": 390,
+        "height": 900
+      }
+    },
+    {
+      "file": "mobile-320-scene.png",
+      "sha256": "01c8256385eaaf5345b6d267cd92f6dbc5326119594814924159b5974de2e77d",
+      "viewport": {
+        "width": 320,
+        "height": 900
+      }
+    },
+    {
+      "file": "mobile-320-actors.png",
+      "sha256": "eae31996d63368e4bc0c1fc62989af6973fc58000c01690ea605359779d0478d",
+      "viewport": {
+        "width": 320,
+        "height": 900
+      }
+    }
+  ]
+}

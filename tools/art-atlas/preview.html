@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>Zugfolge · Pixelart prüfen</title>
+  <link rel="stylesheet" href="/preview.css">
+  <script type="module" src="/preview.mjs"></script>
+</head>
+<body>
+  <a class="skip" href="#main">Zur Grafikprüfung</a>
+  <header class="app-header">
+    <a class="wordmark" href="/" aria-label="Zugfolge – Grafikprüfung"><img class="mark" src="/brand.svg" alt=""><span>ZUGFOLGE<small>DEINE BAHN. DEINE WELT.</small></span></a>
+    <span class="review-mode">Grafikprüfung · keine laufende Spielwelt</span>
+    <button id="reload" class="quiet">Stand neu laden</button>
+  </header>
+  <main id="main">
+    <section class="intro" aria-labelledby="title">
+      <div><p class="eyebrow">SCHAFFNERMODUS / M15.3</p><h1 id="title">Bahnflair, Pixel für Pixel.</h1><p class="lede">Die tatsächlichen Atlasgrafiken im Zusammenspiel prüfen.</p></div>
+      <div class="release-summary"><span class="status-pill" id="approval">Noch kein Freigabebeleg</span><strong id="asset-count">Grafiken werden geladen …</strong><span id="file-count"></span></div>
+    </section>
+    <p id="load-state" role="status" aria-live="polite">Lade den lokalen Grafikstand.</p>
+    <nav class="tabs" aria-label="Prüfbereiche" role="tablist">
+      <button role="tab" id="tab-scene" aria-selected="true" aria-controls="panel-scene" tabindex="0">Zusammenspiel</button>
+      <button role="tab" id="tab-actors" aria-selected="false" aria-controls="panel-actors" tabindex="-1">Figuren & Bewegung</button>
+      <button role="tab" id="tab-gallery" aria-selected="false" aria-controls="panel-gallery" tabindex="-1">Alle Motive <span id="gallery-count"></span></button>
+      <button role="tab" id="tab-evidence" aria-selected="false" aria-controls="panel-evidence" tabindex="-1">Stand & Nachweise</button>
+    </nav>
+    <div class="global-controls" aria-label="Darstellung">
+      <fieldset class="zoom"><legend>Pixelzoom</legend><div id="zooms"><button data-zoom="1" aria-pressed="true">1×</button><button data-zoom="2" aria-pressed="false">2×</button><button data-zoom="3" aria-pressed="false">3×</button><button data-zoom="4" aria-pressed="false">4×</button></div></fieldset>
+      <button id="motion" aria-pressed="false">Grafikanimation starten</button><span class="control-note">32 px/m · Nearest Neighbor</span>
+    </div>
+    <section id="panel-scene" class="panel" role="tabpanel" aria-labelledby="tab-scene">
+      <div class="scene-controls"><label>Station<select id="station"><option value="small">Kleiner Haltepunkt</option><option value="medium">Mittlerer Bahnhof</option><option value="large">Großer Bahnhof</option></select></label><label>Umgebung<select id="environment"><option value="rural">Umland</option><option value="suburban">Vorstadt</option><option value="urban">Stadt</option></select></label><label class="check"><input id="roof" type="checkbox"> Wagendach</label><label class="check"><input id="platform-roof" type="checkbox"> Bahnsteigdach</label></div>
+      <div class="scene-heading"><div><h2 id="scene-title">Umland · Kleiner Haltepunkt</h2><p>Illustrative Modulmontage aus den vorhandenen Bildern.</p></div><span class="tag">KEINE BETRIEBSDATEN</span></div>
+      <div class="scene-navigation" aria-label="Bildbereich wählen"><button id="focus-train" class="quiet">Zum Zug</button><button id="focus-station" class="quiet">Zum Bahnhof</button><span>Bei großem Pixelzoom innerhalb der Grafik scrollen.</span></div>
+      <div class="scene-viewport" tabindex="0" aria-label="Grafikmontage, bei Vergrößerung innen scrollbar"><canvas id="scene" width="896" height="400" aria-label="Zusammengesetzte Grafikprüfung mit tatsächlichen Wagen-, Stations- und Umgebungsmotiven"></canvas></div>
+      <p class="scene-caption">Figurenbewegung zeigt nur die Bildfolge. Zugfahrt, Halte, Personenbelegung und Kapazität werden hier nicht simuliert.</p>
+      <details class="missing"><summary id="scene-missing-summary">Noch fehlende Szenenmotive</summary><ul id="scene-missing"></ul></details>
+    </section>
+    <section id="panel-actors" class="panel" role="tabpanel" aria-labelledby="tab-actors" hidden>
+      <div class="section-heading"><div><h2>Eine Figur, jede Perspektive.</h2><p>Vier Fahrgastsets und ein Schaffner. Feste Pivots, unveränderte Originalframes.</p></div><label>Pose<select id="pose"><option value="idle">Ruhend</option><option value="walk">Gehfolge</option><option value="sitting">Sitzend</option></select></label></div>
+      <div id="actor-grid" class="actor-grid"></div>
+    </section>
+    <section id="panel-gallery" class="panel" role="tabpanel" aria-labelledby="tab-gallery" hidden>
+      <div class="section-heading"><div><h2>Der vollständige Motivekatalog.</h2><p>Vorhandene Motive und offene Pflichtbestandteile bleiben unterscheidbar.</p></div></div>
+      <div class="gallery-controls"><label>Motiv suchen<input type="search" id="search" placeholder="Kennung oder Kategorie"></label><label>Familie<select id="category"><option value="all">Alle Familien</option><option value="actor">Figuren</option><option value="interior">Innenraum</option><option value="vehicle">Wagen</option><option value="station">Stationen</option><option value="environment">Umgebung</option><option value="signal">Signale</option><option value="accessory">Zubehör</option></select></label><span id="result-count" role="status"></span></div>
+      <div id="gallery" class="gallery"></div>
+    </section>
+    <section id="panel-evidence" class="panel" role="tabpanel" aria-labelledby="tab-evidence" hidden>
+      <h2>Prüfstand, kein Freigabeversprechen.</h2><p>Diese Galerie liest die Bilddateien. Sie prüft weder die Releasesignatur noch die produktive Weltanbindung.</p>
+      <dl id="evidence" class="evidence"></dl><h3>Gepinnte Palette</h3><div id="palette" class="palette"></div>
+    </section>
+    <footer><span>M15.3 · Eigene Zugfolge-Pixelart</span><span id="revision">Lokaler Kandidat</span></footer>
+  </main>
+  <dialog id="asset-dialog" aria-labelledby="asset-title"><div class="dialog-heading"><h2 id="asset-title"></h2><button id="asset-close">Schließen</button></div><p>Originalausschnitt · ganzzahliger Pixelzoom · innen scrollbar</p><div id="asset-detail"></div></dialog>
+</body>
+</html>
+
