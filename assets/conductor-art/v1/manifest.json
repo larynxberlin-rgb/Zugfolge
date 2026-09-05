@@ -101,7 +101,7 @@
       "source": "sources/accessories.png",
       "sha256": "398e103da7964b2aa8c0320cd93ec879ca4da4b1b5c71b9e3cffb7e0a11d71b9",
       "rightsStatus": "unverified",
-      "evidenceId": "generation-accessories"
+      "evidenceId": null
     },
     {
       "id": "reference-conductor",
@@ -109,7 +109,7 @@
       "source": "sources/conductor.png",
       "sha256": "c2ad8c6e6022636665b476fc2c01fd2093d91ad75bda6ab143e83717483f72d5",
       "rightsStatus": "unverified",
-      "evidenceId": "generation-conductor"
+      "evidenceId": null
     },
     {
       "id": "reference-passenger-amber",
@@ -117,7 +117,7 @@
       "source": "sources/passenger-amber.png",
       "sha256": "394ca81a44b3e67db8bde737de71fb5c5a8187d138341c7b29a1a7c20e380c4a",
       "rightsStatus": "unverified",
-      "evidenceId": "generation-passenger-amber"
+      "evidenceId": null
     },
     {
       "id": "reference-passenger-red",
@@ -125,7 +125,7 @@
       "source": "sources/passenger-red.png",
       "sha256": "b30657809b5262048e4f5a288b9122d0c7dc37b018a3e6686e4caf92596594d7",
       "rightsStatus": "unverified",
-      "evidenceId": "generation-passenger-red"
+      "evidenceId": null
     },
     {
       "id": "reference-passenger-slate",
@@ -133,7 +133,7 @@
       "source": "sources/passenger-slate.png",
       "sha256": "f551d9209c34b4cbde3f9c9967386611be7b4b5247f12382b97ed9d776c0189f",
       "rightsStatus": "unverified",
-      "evidenceId": "generation-passenger-slate"
+      "evidenceId": null
     },
     {
       "id": "reference-passenger-teal",
@@ -141,7 +141,7 @@
       "source": "sources/passenger-teal.png",
       "sha256": "b3af182eeafe14069dfc1be64a5c053f5a525ab77e4089823109b0e79f144e9b",
       "rightsStatus": "unverified",
-      "evidenceId": "generation-passenger-teal"
+      "evidenceId": null
     },
     {
       "id": "reference-train",
@@ -149,7 +149,7 @@
       "source": "sources/train.png",
       "sha256": "72f19564ff8899a4b768baac671ff8659e7d488dba7b5322368fd51ab2669b0d",
       "rightsStatus": "unverified",
-      "evidenceId": "generation-train"
+      "evidenceId": null
     }
   ],
   "evidence": [
@@ -318,7 +318,7 @@
     {
       "id": "atlas-review-record",
       "path": "review.json",
-      "sha256": "06eab26729fc4523a28d3edba6c2199ac1942f91ae37c8640e0c4b14904512be",
+      "sha256": "4a2830bba5b6e0c890976a3ef7f25559f3c9ed46e64fc868d508e4fe35af2aa3",
       "mediaType": "application/json"
     },
     {

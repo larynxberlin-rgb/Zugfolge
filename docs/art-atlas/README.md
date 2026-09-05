@@ -45,6 +45,9 @@ die vollständige Kontaktübersicht.
 - Neun Pakettests prüfen unter anderem falsche Welt-/Releasepins, Signaturen,
   manipulierte PNGs, Raster-/Palettenfehler, identische Gehphasen, fehlende
   Modellbelege und defensive Kopien der geladenen Daten.
+- Drei Builder-/Checkerregressionen verhindern die Übernahme alter Sichtungen
+  auf geänderte Inhalte, automatische Ersatzbelege für Rechtefreigaben und
+  die Annahme technischer Lücken durch den Kandidatenscan.
 - Die reale Korpusprüfung dekodiert alle sechs PNGs mit zusammen 4.603.904
   Pixeln. Sie prüft die vollständigen 172 Motive und 60 Animationen sowie
   sämtliche referenzierten Belegbytes. Offen bleiben ausschließlich die
@@ -72,6 +75,20 @@ ersetzt diese Einträge nicht. Erst ein belegter Review, der strenge Checker
 ohne `--allow-pending` und eine gültige Signatur über den exakten Manifesthash
 erlauben dem weltgebundenen Loader, den Atlas zu aktivieren. Es wurde kein
 Produktionsschlüssel erzeugt oder Weltpin geändert.
+
+Vor einer formalen Sichtung liefert `node tools/art-atlas/manifest.mjs
+--review-input` den zu prüfenden `inputSha256`. Dieser bindet den vollständig
+aufgebauten, noch ungeprüften Manifestinhalt einschließlich PNG-Hashes,
+Geometrie, Animationen, Zuordnungen und Generierungsbelegen. Reviewdatei und
+deren eigene Belege gehören wegen der sonst zirkulären Bindung nicht hinein.
+Der tatsächliche Prüfer übernimmt diesen Hash in `review.json` und trägt
+seine Entscheidungen mit eigenen Belegen ein; der Builder vergibt keine
+Freigaben. Ohne passende Bindung wird jede Freigabe oder Ablehnung verworfen.
+Rein ausstehende Einträge dürfen `inputSha256: null` behalten. Jede spätere
+Inhaltsänderung verlangt eine erneute Sichtung; ein automatisches Umschreiben
+des Reviewhashs ist keine solche Sichtung. Danach werden Manifest und Bericht
+neu gebaut; die produktive Signatur bindet weiterhin die exakten finalen
+Manifestbytes.
 
 M15.4 liefert weiterhin die begehbare Geometrie aus tatsächlichen
 Fahrzeugkonfigurationen; M15.5 bindet Stationen und Umgebung an den laufenden
