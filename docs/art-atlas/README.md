@@ -53,9 +53,11 @@ die vollständige Kontaktübersicht.
   Originalhashes, Zoom 1–4, Pause, reduzierte Bewegung, Tastaturbedienung und
   390/320-Pixel-Ansichten ohne äußeren horizontalen Überlauf. Der versionierte
   Bericht enthält 13 Screenshots und bindet sie an ihre tatsächlichen Bytes.
-- Die technische Aufbereitung wird aus vorhandenen Originalen wiederholt.
-  JSON und Text verwenden feste LF-Zeilenenden, damit Git-Checkouts unter
-  Windows und Linux die Dateihashes nicht verändern.
+- Die wiederholte technische Aufbereitung aus vorhandenen Originalen liefert
+  alle 52 Korpusdateien bytegleich. Auch die tatsächlich committed Bytes
+  stimmen mit der geprüften Arbeitskopie überein. JSON und Text verwenden
+  feste LF-Zeilenenden, damit Git-Checkouts unter Windows und Linux die
+  Dateihashes nicht verändern.
 
 Reproduktionsbefehle stehen im [Korpus-README](../../assets/conductor-art/v1/README.md).
 Für eine neue Browserprüfung kann `ART_PREVIEW_SCREENSHOT_DIR` auf einen
