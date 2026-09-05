@@ -24,7 +24,7 @@ Verknüpfungen werden am gesamten Stack über #534 geführt.
 | #169 | `zugfolge-demand`: versionierte Zonen, Stationsanbindung, Profile, Saison, Tagesgang, deterministische Kohorten; Pilot-Golden und Poolingtests | Datenparameter bleiben sichtbar `balanced`, solange sie nicht beobachtet und belegt sind |
 | #170 | Lexikographische Verkehrsmittel-/Verbindungs-/Zugwahl, Kapazitätsalternativen, Zugausfall, Anschlussverlust, Preis und Komfort; Permutations-/Replayszenarien | Nationale Laufzeit- und Abdeckungstests sind keine Folge des kleinen Pilotnachweises |
 | #171 | Abschnittspreise, Vertriebsverfügbarkeit, Komfort-/Sonderplätze, durchgehende Reservierungen und Stehplätze; gemeinsame Kapazität über Generationfenster | Prognostizierte Erlöse lösen keine tatsächlichen Einnahmebuchungen aus |
-| #210 | Deterministische SPNV-Manifeste, versteckte Fahrberechtigungen, stabile Schlüssel; tatsächliche Haltbelege frieren bereits gereiste Abschnitte, Sitze und gebuchte Preise ein | Der produktive Betrieb liefert diese Haltbelege noch nicht. Die API kennzeichnet ihre aktuellen Ansichten als Prognose/Annahme |
+| #210 | Deterministische SPNV-Manifeste, versteckte Fahrberechtigungen, stabile Schlüssel; tatsächliche Haltbelege frieren bereits gereiste Abschnitte, Sitze und gebuchte Preise ein | Signierte Zwischenhaltbindungen, native Ankunfts-/Abfahrtsbelege und persistenter Nachfrageconsumer fehlen. Native Fahrtabschlussbelege existieren bereits. Die API kennzeichnet ihre aktuellen Ansichten als Prognose/Annahme |
 | #172 | Linien-/Halte-/Takt-/Preis-/Formationsvorschau; bestehende Flotten-/Zugnummernautorität; atomare Anträge und Batchkoordinierung; Ablaufgrenzen und sichere künftige Ersetzung; bestätigte Reservierungen fließen zurück in die Nachfrage | Aktivierung im Betriebsprogramm, Umlaufvollständigkeit und Ist-Erlöse brauchen die vorhandenen Betriebsproducer |
 | #361, #379 | Nachfrageoverlay und Listenalternative, Legende, Zeitraum, Herkunft, Abschnitte, gestufte Eigentümerdaten, SPFV-Planungsablauf, Filter-/Auswahlerhalt; Desktop-/Mobil-Browsernachweise | Deutschlandweite Last und externe Produktabnahme bleiben offen |
 | #173 | Recherchierte freie Quellen, unveränderte Lizenz-/Hashbelege, echte AFZS-Trainings-/Holdout-Tage, nativer Vergleich und strenges Kalibrierungsgate | Eine bestandene gemeinsame SPNV-/SPFV-Abnahme wird nicht behauptet; SPFV- und Umstiegsholdouts fehlen |
@@ -120,7 +120,7 @@ stehen in [M10-Kalibrierungsquellen](m10-kalibrierungsquellen.md).
 
 Der [Issue-/PR-Audit](m10-issue-audit.md) enthält den gesichteten Gesamtbestand
 und die fachliche Zuordnung. Besonders relevant bleiben #517/#518
-(Betriebsprogramm und Ist-Abschlüsse), #509/#393/#398 (Skalierung), #350
+(Betriebsprogramm und Abschluss-/Abrechnungsanbindung), #509/#393/#398 (Skalierung), #350
 (Zugnummernautorität), #419 (dauerhafte Kommandowiederholung), #504
 (belegte Kapazitätszusagen), #502/#520 (Datenschutz) sowie die unabhängige
 M9-/Deutschland-/Produktionsabnahme. M15 erhält ausschließlich den M10-Vertrag;

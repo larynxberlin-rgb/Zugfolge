@@ -664,7 +664,7 @@ const spfv = demand === undefined ? undefined : new SpfvService({
     if (epoch === undefined) throw new Error("Fahrplanwelt besitzt keine Weltepoche.");
     return Math.max(0, Math.trunc((Date.now() - epoch.getTime()) / 1000));
   },
-  estimate: (input) => demand.estimateSpfv(input),
+  estimate: (input, tx) => demand.estimateSpfv(input, tx),
 });
 const app = buildApp({
   worldScope,
