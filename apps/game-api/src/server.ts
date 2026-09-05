@@ -69,12 +69,15 @@ import { purgeExpiredAccountData } from "@zugfolge/privacy";
 import {
   FLEET_INITIALIZE_SCHEMA,
   loadOperatingRuntime,
+  loadDemandRuntime,
   loadOperationalSimulationRuntime,
   type OperatingRuntimeEvent,
 } from "@zugfolge/runtime-native";
 import { and, asc, eq } from "drizzle-orm";
 
 import { buildApp } from "./app.js";
+import { DemandService, loadDemandDeployment } from "./demand-service.js";
+import { SpfvService } from "./spfv-service.js";
 import {
   createDisruptionProviderHealthCheck,
   createDisruptionProviderStore,
@@ -641,6 +644,28 @@ const manualDisruptionCatalog = new ManualDisruptionCommandCatalog({
 const manualDisruptionAdminHandler = createManualDisruptionAdminHandler({
   schedule: (input) => manualDisruptionCatalog.schedule(input),
 });
+const demandDeploymentPath = optionalEnv("ZUGFOLGE_DEMAND_DEPLOYMENT_PATH");
+const demandConfiguration = demandDeploymentPath === undefined ? undefined : await loadDemandDeployment(
+  demandDeploymentPath, requireEnv("ZUGFOLGE_DEMAND_DEPLOYMENT_SHA256"), worldScope.worldId,
+);
+const demandInfrastructure = demandConfiguration === undefined ? undefined : planningInfrastructureReleases.get(
+  worldScope.worldId, demandConfiguration.deployment.infrastructureReleaseId,
+);
+if (demandConfiguration !== undefined && demandInfrastructure === undefined) throw new Error("Nachfrage benötigt die exakt freigegebene Planungsinfrastruktur.");
+const demand = demandConfiguration === undefined ? undefined : new DemandService({
+  db, runtime: loadDemandRuntime(), deployment: demandConfiguration.deployment, deploymentHash: demandConfiguration.hash,
+  readModel: livemapReadModel, livemap, infrastructure: demandInfrastructure === undefined ? [] : [demandInfrastructure],
+});
+const spfv = demand === undefined ? undefined : new SpfvService({
+  db, fleetRuntime: operatingRuntime,
+  infrastructureReleaseForWorld: (worldId) => demandInfrastructure?.worldId === worldId ? demandInfrastructure : undefined,
+  async timeForWorld(worldId) {
+    const epoch = worldEpochs.get(worldId);
+    if (epoch === undefined) throw new Error("Fahrplanwelt besitzt keine Weltepoche.");
+    return Math.max(0, Math.trunc((Date.now() - epoch.getTime()) / 1000));
+  },
+  estimate: (input) => demand.estimateSpfv(input),
+});
 const app = buildApp({
   worldScope,
   metricsApp,
@@ -648,6 +673,8 @@ const app = buildApp({
   verifyToken,
   livemap,
   livemapReadModel,
+  demand,
+  spfv,
   operations,
   simulationIngestToken: requireEnv("SIMULATION_INGEST_TOKEN"),
   regionalSimulation,
@@ -899,9 +926,21 @@ const regionalAdvanceCoordinator = new RegionalSimulationCycleCoordinator({
     return advanceRegionalSimulations(regionalSimulation, regions, worldEpochs, at, manualDisruptionCatalog, reportProgress);
   }),
 });
+let nextDemandRefreshAtMs = 0;
 const runRegionalAdvance = () => {
   void regionalAdvanceCoordinator.run(new Date()).then((result) => {
-    if (result.status === "completed") regionalSimulationStartupReady = true;
+    if (result.status === "completed") {
+      regionalSimulationStartupReady = true;
+      const epoch = worldEpochs.get(worldScope.worldId);
+      if (demand !== undefined && epoch !== undefined) {
+        const at = new Date();
+        if (at.getTime() >= nextDemandRefreshAtMs) {
+          nextDemandRefreshAtMs = at.getTime() + 30_000;
+          void demand.refresh(Math.max(0, at.getTime() - epoch.getTime()), at)
+            .catch(() => app.log.warn({ failure: "demand_refresh_failed" }, "Nachfrage wartet auf konsistente Betriebsdaten"));
+        }
+      }
+    }
   }).catch(() => undefined);
 };
 // Der Plattformtakt uebergibt die exakte Weltzeit in Millisekunden. Der

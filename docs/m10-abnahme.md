@@ -1,0 +1,111 @@
+# M10 — Implementierung und Abnahmegrenzen
+
+Stand: 05.09.2026. Gemeint ist **M10 — Personenverkehrsnachfrage und SPFV**,
+GitHub-Milestone 11. Die technische Implementierung ist als PR-Stack auf der
+Gestaltungsbasis #531 vorbereitet. #530 wurde während der Arbeit in `main`
+übernommen. Es werden keine Issues oder Milestones durch diesen Bericht
+automatisch geschlossen.
+
+## Fachlicher Umfang
+
+| Issue | Implementierung und reproduzierbarer Nachweis | Abnahmegrenze |
+|---|---|---|
+| #169 | `zugfolge-demand`: versionierte Zonen, Stationsanbindung, Profile, Saison, Tagesgang, deterministische Kohorten; Pilot-Golden und Poolingtests | Datenparameter bleiben sichtbar `balanced`, solange sie nicht beobachtet und belegt sind |
+| #170 | Lexikographische Verkehrsmittel-/Verbindungs-/Zugwahl, Kapazitätsalternativen, Zugausfall, Anschlussverlust, Preis und Komfort; Permutations-/Replayszenarien | Nationale Laufzeit- und Abdeckungstests sind keine Folge des kleinen Pilotnachweises |
+| #171 | Abschnittspreise, Vertriebsverfügbarkeit, Komfort-/Sonderplätze, durchgehende Reservierungen und Stehplätze; gemeinsame Kapazität über Generationfenster | Prognostizierte Erlöse lösen keine tatsächlichen Einnahmebuchungen aus |
+| #210 | Deterministische SPNV-Manifeste, versteckte Fahrberechtigungen, stabile Schlüssel; tatsächliche Haltbelege frieren bereits gereiste Abschnitte, Sitze und gebuchte Preise ein | Der produktive Betrieb liefert diese Haltbelege noch nicht. Die API kennzeichnet ihre aktuellen Ansichten als Prognose/Annahme |
+| #172 | Linien-/Halte-/Takt-/Preis-/Formationsvorschau; bestehende Flotten-/Zugnummernautorität; atomare Anträge und Batchkoordinierung; Ablaufgrenzen und sichere künftige Ersetzung; bestätigte Reservierungen fließen zurück in die Nachfrage | Aktivierung im Betriebsprogramm, Umlaufvollständigkeit und Ist-Erlöse brauchen die vorhandenen Betriebsproducer |
+| #361, #379 | Nachfrageoverlay und Listenalternative, Legende, Zeitraum, Herkunft, Abschnitte, gestufte Eigentümerdaten, SPFV-Planungsablauf, Filter-/Auswahlerhalt; Desktop-/Mobil-Browsernachweise | Deutschlandweite Last und externe Produktabnahme bleiben offen |
+| #173 | Recherchierte freie Quellen, unveränderte Lizenz-/Hashbelege, echte AFZS-Trainings-/Holdout-Tage, nativer Vergleich und strenges Kalibrierungsgate | Eine bestandene gemeinsame SPNV-/SPFV-Abnahme wird nicht behauptet; SPFV- und Umstiegsholdouts fehlen |
+
+## Betriebs- und Datenschutzgrenze
+
+`ZUGFOLGE_DEMAND_DEPLOYMENT_PATH` und
+`ZUGFOLGE_DEMAND_DEPLOYMENT_SHA256` aktivieren einen lokalen, bytegenau
+gepinnten Korpus für die konfigurierte Welt und Infrastruktur. Ohne Korpus
+antworten die fachlichen Routen mit Nichtverfügbarkeit; Nullwerte werden nicht
+als leere Züge dargestellt. Es gibt keinen JavaScript-Ersatz für die native
+Nachfrageberechnung und keinen automatisch aktivierten Beispielkorpus.
+
+Alle Generationfenster einer Periode werden unter einem Release und Seed in
+einem Kapazitätspool ausgewertet. Doppelte Fahrtkennungen müssen identische
+Fakten besitzen. Ein Pool bleibt für die enthaltenen Reisen über das reine
+Erzeugungsfenster hinaus verfügbar. Überlappende Reisen verschiedener
+Periodenreleases werden ohne gemeinsamen Übergangsbeleg zurückgewiesen.
+
+Der Scheduler aktualisiert die Prognose höchstens alle 30 Sekunden nach einem
+bestätigten Betriebsschritt. Unveränderte Eingaben erzeugen auch nach Neustart
+keinen weiteren Checkpoint. Ausfall-/Verspätungsfakten werden beim Entfernen
+eines Zuges aus dem Kartensnapshot nicht auf den ursprünglichen Fahrplan
+zurückgesetzt. Die statische Fahrplanbindung nutzt exakte indizierte Halteabfragen;
+die auf 160 Einträge begrenzte Stationsanzeige dient nicht als Datenautorität.
+
+`demand.evaluated`, `spfv.preview`, `spfv.submitted` und `spfv.confirm` benutzen
+das vorhandene Weltjournal beziehungsweise die Kommandoqueue. Weltmutex,
+Archivfence, monotone Revision, Freigabepin, Inhaltskonflikt und natives Replay
+werden geprüft. Neue Datenbanktabellen oder konkurrierende Migrationsnummern
+werden nicht benötigt. Öffentlicher Ingest kann diese Fachbelege nicht erzeugen.
+
+Öffentliche Abfragen liefern Aggregate. Die separate Manifestansicht prüft
+aktiven Weltzugang und Unternehmenseigentum bei jeder Anfrage und paginiert
+höchstens 50 synthetische Fahrgastkennungen. `fareFact`, Herkunft der
+Fahrberechtigung, Seeds und vollständige Reise-/Sitzplatzjournale bleiben privat.
+Auch Datenbankfehler werden ohne Queryparameter oder rohe Exceptiondetails
+protokolliert. Diese Kennungen sind keine Identitäten realer Menschen.
+
+## Reproduzieren
+
+```sh
+pnpm install --frozen-lockfile
+pnpm build
+pnpm typecheck
+pnpm test
+pnpm guards
+pnpm licenses list --json | node tools/guards/dist/licenses-cli.js
+cargo test --locked -p zugfolge-demand -p zugfolge-conflict -p zugfolge-planner -p zugfolge-planning-runtime
+python -m unittest discover -s tools/demand-calibration -p 'test_*.py'
+node .github/scripts/sync-milestones.mjs check
+```
+
+Der reguläre Linux-NAPI-Job führt `demand-service.test.ts` mit dem echten
+Addon aus; `demand-browser.e2e.test.ts` läuft mit dem gebauten Browserclient.
+Lokal wurde zusätzlich der echte Rust-JSON-CLI mit PGlite und API-Projektion
+komponiert (`ZUGFOLGE_DEMAND_TEST_BINARY`); das ist ein Testtransport und kein
+Produktionsfallback. Native Planung prüft bestehende Trassen, tägliche
+Verkehrstage, absolute Gültigkeit, Zwischenhalte und atomare Ersetzungen.
+
+Browsernachweise verwenden explizite Beispieldaten bei Breiten von 1920,
+1366, 768, 390 und 320 Pixeln. Sie prüfen auch verlorene Bestätigungsantworten
+und verspätete Vorschauergebnisse. Sie ersetzen keine produktiven Fahrgastdaten.
+
+![Fernverkehrsplanung mit gekennzeichneten Beispieldaten](screenshots/m10/spfv-desktop.png)
+
+Die schmalen Ansichten sind als [Fernverkehr auf Mobilgeräten](screenshots/m10/spfv-mobile.png)
+und [Nachfrageliste auf Mobilgeräten](screenshots/m10/demand-mobile.png) dokumentiert.
+
+Lokal nachgewiesen: 835 Rust-Workspace-Tests (ohne die beiden Linux-NAPI-Crates),
+14 Nachfragekerntests einschließlich Golden und Properties, 13 native
+Planning-Runtime-Tests sowie die fokussierten API-, Privacy-, Planner- und
+Browsernachweise. Clippy, Typprüfung und 15 Repositorywächter sind Bestandteil
+der Prüfung. Der vollständige Windows-TypeScript-Lauf wurde wegen Zeitlimits
+in unveränderten PGlite-Bestandstests unter paralleler Compilerlast abgebrochen;
+er wird nicht als grün ausgegeben. Der Linux-CI-Lauf bleibt maßgeblich.
+
+Die echten Quelldaten und den wiederholbaren nativen Vergleich beschreibt
+[tools/demand-calibration](../tools/demand-calibration/README.md).
+Die vollständige Quellen-/Lizenzentscheidung und ausgeschlossene Datensätze
+stehen in [M10-Kalibrierungsquellen](m10-kalibrierungsquellen.md).
+
+## Berücksichtigte offene Abhängigkeiten
+
+Der [Issue-/PR-Audit](m10-issue-audit.md) enthält den gesichteten Gesamtbestand
+und die fachliche Zuordnung. Besonders relevant bleiben #517/#518
+(Betriebsprogramm und Ist-Abschlüsse), #509/#393/#398 (Skalierung), #350
+(Zugnummernautorität), #419 (dauerhafte Kommandowiederholung), #504
+(belegte Kapazitätszusagen), #502/#520 (Datenschutz) sowie die unabhängige
+M9-/Deutschland-/Produktionsabnahme. M15 erhält ausschließlich den M10-Vertrag;
+der Schaffnermodus erzeugt keine zweite Nachfrage oder Fahrberechtigung.
+
+Die Implementierung ermöglicht überprüfbare technische Reviews. Die gesamte
+M10-Abnahme bleibt offen, bis gemessene SPFV-/Umstiegsholdouts, passende
+Toleranznachweise und produktive Betriebs-/Last-/Spielerbelege vorliegen.

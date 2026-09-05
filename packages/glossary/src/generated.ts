@@ -146,6 +146,11 @@ export const GENERATED_GLOSSARY_ENTRIES = Object.freeze([
     "definition": "angekündigte Einschränkung mit Vorlauf, Planungsfenster und Ersatzkonzept"
   },
   {
+    "term": "Bedarfsgebiet",
+    "code": "DemandZoneV1",
+    "definition": "Gebiet mit Bevölkerung, Arbeitsplätzen, POIs und freigegebener statischer Stationsanbindung"
+  },
+  {
     "term": "Belegungsbuch",
     "code": "OccupationLedger",
     "definition": "nach Konfliktressource gruppierte Sammlung aller Sperrzeiten einer Welt; nimmt über try_insert nur konfliktfreie Fahrten auf und hält Invariante 1 dadurch durch Konstruktion"
@@ -291,6 +296,21 @@ export const GENERATED_GLOSSARY_ENTRIES = Object.freeze([
     "definition": "harte, zug- und laufweggebundene Grenze, bis zu der die gemeinsame Bewegungsengine eine Zug- oder Rangierbewegung führen darf"
   },
   {
+    "term": "Fahrberechtigungsmodell",
+    "code": "FareCompliancePolicyV1",
+    "definition": "Gepinnte beobachtete oder ausdrücklich balancierte Verteilung verdeckter Fahrberechtigungen, unabhängig von Komfort und Platzbedarf"
+  },
+  {
+    "term": "Fahrgastbelegung",
+    "code": "CapacityAllocationV1",
+    "definition": "Ganzzahlige Abschnittsbelegung mit Sitz-, Steh-, Sonder- und Reservierungsplätzen sowie prognostizierten Erlösen"
+  },
+  {
+    "term": "Fahrgastbetriebsbeleg",
+    "code": "DemandOperationalProgressV1",
+    "definition": "Expliziter weltgebundener Beleg tatsächlicher Ankunft und Abfahrt; schützt bereits gereiste Reiseabschnitte"
+  },
+  {
     "term": "Fahrgastinformationsanzeige",
     "code": "PassengerInformationDisplay",
     "definition": "öffentliche, zuggebundene Projektion von Ziel, nächstem Halt, Folgehalten, Verspätung und Meldungen; Grundlage des generischen FIS-Monitors"
@@ -391,6 +411,11 @@ export const GENERATED_GLOSSARY_ENTRIES = Object.freeze([
     "definition": "mehrdimensionaler, ganzzahliger Zustand für Mechanik, Antrieb, Bremsen, Betrieb und Innenraum; wird im Lebenslauf fortgeschrieben"
   },
   {
+    "term": "Fernverkehrslinienentwurf",
+    "code": "SpfvDraft",
+    "definition": "Spielerabsicht für Linie, Halte, Formation, Takt, Abschnittspreis und begrenzte Gültigkeit"
+  },
+  {
     "term": "Flankenschutz",
     "code": "flank_resources",
     "definition": "zusätzlich zum Fahrweg verriegelte Ressourcen, die unbeabsichtigte seitliche Einfahrten in eine eingestellte Fahrstraße verhindern"
@@ -469,6 +494,11 @@ export const GENERATED_GLOSSARY_ENTRIES = Object.freeze([
     "term": "Kartenposition",
     "code": "mapPosition",
     "definition": "ausschließlich exakte öffentliche Kartenlage der autoritativen Zugspitze; Unsicherheit führt zu sicherem Halt und Freeze statt Schätzung"
+  },
+  {
+    "term": "Komfortklasse",
+    "code": "ComfortClassV1",
+    "definition": "Standard- oder Premiumklasse für Tarif und Sitzplatzvergabe"
   },
   {
     "term": "Konfliktbericht",
@@ -566,6 +596,21 @@ export const GENERATED_GLOSSARY_ENTRIES = Object.freeze([
     "definition": "Zeit zwischen Zuschlag und Betriebsaufnahme; nachweispflichtig auf Fahrzeuge, Personal und Trassen"
   },
   {
+    "term": "Nachfrageauswertung",
+    "code": "DemandEvaluationV1",
+    "definition": "Kanonisches Ergebnis des gemeinsamen SPNV-/SPFV-Kerns mit Wahlbegründungen, Belegungen und privaten Manifesten"
+  },
+  {
+    "term": "Nachfragefensterpool",
+    "code": "DemandGenerationWindowV1",
+    "definition": "Zeitlich begrenzte Kohortenerzeugung innerhalb eines gemeinsamen Kapazitätspools"
+  },
+  {
+    "term": "Nachfragefreigabe",
+    "code": "DemandReleaseV1",
+    "definition": "Versionierter Quellen-, Zonen-, Profil-, Tagesgang- und Regelkorpus einer Fahrplanperiode"
+  },
+  {
     "term": "Nachricht (Postfach)",
     "code": "MailboxMessage",
     "definition": "generischer Postfach-Eintrag mit messageType und payload; trägt später Trassenangebote, Ausschreibungen, Störungsmeldungen"
@@ -604,6 +649,11 @@ export const GENERATED_GLOSSARY_ENTRIES = Object.freeze([
     "term": "Öffnungszeit",
     "code": "OpeningHours",
     "definition": "durchgehende oder tägliche Zeitspanne, in der eine Anlage nutzbar ist"
+  },
+  {
+    "term": "ÖPNV-Stationsanbindung",
+    "code": "StationTransitAccessV1",
+    "definition": "Statische Zugangszeit, Takt und Barrierefreiheit zwischen einem Bedarfsgebiet und einer Station"
   },
   {
     "term": "Outbox",
@@ -699,6 +749,11 @@ export const GENERATED_GLOSSARY_ENTRIES = Object.freeze([
     "term": "Regionsübergabe",
     "code": "RegionHandover",
     "definition": "Übergang einer Zugfahrt zwischen zwei regionalen Single-Writer-Prozessen, mit Bestätigung"
+  },
+  {
+    "term": "Reisenachfragekohorte",
+    "code": "JourneyDemandV1",
+    "definition": "Deterministisch erzeugte Reisen mit stabilem Gebiet-, Anlass-, Fenster- und Profilbezug"
   },
   {
     "term": "Reise- oder Fahrtkette",
@@ -851,6 +906,11 @@ export const GENERATED_GLOSSARY_ENTRIES = Object.freeze([
     "definition": "asynchrone Rückmeldung an den Spieler: was ist passiert, welche Regel hat wann was getan"
   },
   {
+    "term": "Tarifprodukt",
+    "code": "FareProductV1",
+    "definition": "Abschnittspreis, Komfortklasse, Vertriebsverfügbarkeit und Reservierungspflicht"
+  },
+  {
     "term": "Toleranz",
     "code": "Tolerance",
     "definition": "vorab definierte zulässige Abweichung zwischen berechneter und gleichartig definierter Referenzzeit — absoluter Sockel und relativer Anteil, der größere gilt"
@@ -874,6 +934,11 @@ export const GENERATED_GLOSSARY_ENTRIES = Object.freeze([
     "term": "Umlauf",
     "code": "VehicleRotation",
     "definition": "die Folge von Zugfahrten, die ein Fahrzeug oder eine Formation nacheinander leistet"
+  },
+  {
+    "term": "Verbindungswahl",
+    "code": "ConnectionChoiceV1",
+    "definition": "Erklärte Verkehrsmittel- und Reisekettenwahl nach veröffentlichten lexikographischen Kriterien"
   },
   {
     "term": "Vergabekalender",
@@ -1059,6 +1124,11 @@ export const GENERATED_GLOSSARY_ENTRIES = Object.freeze([
     "term": "Zugspitze",
     "code": "head_route_mm",
     "definition": "vorderes Ende der Formation als exakter Laufwegmillimeter; darf niemals die Fahrberechtigung überschreiten"
+  },
+  {
+    "term": "Zugwahl",
+    "code": "TrainChoiceV1",
+    "definition": "Konkreter Bahnabschnitt einer Reisekette mit Ein-/Ausstieg und gebundenem Tarif"
   },
   {
     "term": "Zulässige Abweichung",

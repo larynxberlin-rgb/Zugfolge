@@ -66,11 +66,28 @@ Kalibrierwerkzeug (E10) und wird nie eine Laufzeitabhängigkeit.
 
 ## 3. Die Quellen
 
+Für M10.5 wurden am 05.09.2026 im ausdrücklichen Nutzerauftrag ausschließlich
+frei weiterverwendbare Quellen geprüft. `nvbw-fahrgastzaehlung-2025` und
+`hvv-sbahn-fahrgastzahlen-2025` weisen im offiziellen Datenportal die
+Datenlizenz Deutschland – Namensnennung 2.0 aus; `nahsh-querschnittsbesetzung`
+weist CC BY 4.0 aus. Alle drei erlauben kommerzielle Nutzung und Bearbeitung
+mit den dokumentierten Namens-/Lizenzangaben. Die Prüferangabe benennt
+transparent Codex als ausführenden Prüfer, keinen nicht beteiligten Menschen.
+Originale beziehungsweise reproduzierbare Quellauswahl, Metadaten und SHA-256
+stehen in `tools/demand-calibration/sources`. Die Daten behalten dort ihre
+eigenen Lizenzen. Die Quellenfreigabe bestätigt weder eine bestandene
+Kalibrierung noch einen produktiven Welt-Release. Umfang, Einschränkungen
+und ausgeschlossene nichtkommerzielle Quellen erklärt
+[`m10-kalibrierungsquellen.md`](m10-kalibrierungsquellen.md).
+
 Vollständig mit Bereitstellungsweg, Attribution und Hinweis im Register. Hier
 der Überblick; die Spalte `id` ist die Kennung, die auch der Importmarker nennt.
 
 | `id` | Quelle | Status | ab |
 |------|--------|--------|----|
+| `nvbw-fahrgastzaehlung-2025` | NVBW/MobiData BW AFZS-/RES-Zählungen 2025 H1, dl-de/by-2-0 | `freigegeben` | M10.5 |
+| `hvv-sbahn-fahrgastzahlen-2025` | hvv S-Bahn-Stationen 2025, dl-de/by-2-0 | `freigegeben` | M10.5 |
+| `nahsh-querschnittsbesetzung` | NAH.SH SPNV-Querschnitte 2010–2019, CC BY 4.0 | `freigegeben` | M10.5 |
 | `osm-pbf-lhe` | OSM-PBF-Extract Leipzig–Halle–Erfurt | `freigegeben` | M1.2 |
 | `osm-pbf-mitteldeutschland-b` | OSM-PBF-Extract der freigegebenen Alpha-Variante B | `freigegeben` | M14.1 |
 | `osm-pbf-deutschland` | OSM-PBF-Extract Deutschland | `freigegeben` | M14.2 |

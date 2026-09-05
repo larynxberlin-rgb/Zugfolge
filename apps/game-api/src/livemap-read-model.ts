@@ -286,6 +286,11 @@ export class PinnedLivemapReadModel implements LivemapReadModel {
     return this.#passengerInformation.get(`${worldId}:${trainId}`);
   }
 
+  async getScheduledCall(worldId: string, stationId: string, trainId: string, atS: number, callType: "arrival" | "departure") {
+    const board = this.#boards.get(`${worldId}:${stationId}`);
+    return board?.[callType === "arrival" ? "arrivals" : "departures"].find((call) => call.trainId === trainId && call.scheduledTimeS === atS);
+  }
+
   async getOwnerTrainDetail(
     worldId: string,
     operatorId: string,
@@ -444,6 +449,7 @@ export class SQLiteLivemapReadModel implements LivemapReadModel {
   readonly #station: StatementSync;
   readonly #callBounds: StatementSync;
   readonly #calls: StatementSync;
+  readonly #exactCall: StatementSync;
   readonly #passengerInformation: StatementSync;
   #closed = false;
 
@@ -475,6 +481,8 @@ export class SQLiteLivemapReadModel implements LivemapReadModel {
         FROM station_schedule_calls
         WHERE world_id = ? AND station_id = ? AND scheduled_time_s BETWEEN ? AND ?
         ORDER BY scheduled_time_s, train_id, call_type LIMIT 160`);
+      this.#exactCall = this.#database.prepare(`SELECT train_id, train_number, category FROM station_schedule_calls
+        WHERE world_id = ? AND station_id = ? AND scheduled_time_s = ? AND call_type = ?`);
       this.#passengerInformation = this.#database.prepare(`SELECT destination, following_stops_json, messages_json
         FROM passenger_information WHERE world_id = ? AND train_id = ?`);
     } catch (error) {
@@ -485,6 +493,23 @@ export class SQLiteLivemapReadModel implements LivemapReadModel {
 
   #assertOpen(): void {
     if (this.#closed) throw new Error("Livemap-SQLite ist bereits geschlossen.");
+  }
+
+  async getScheduledCall(worldId: string, stationId: string, trainId: string, atS: number, callType: "arrival" | "departure") {
+    this.#assertOpen();
+    if (worldId !== this.#scheduleTime.worldId || !Number.isSafeInteger(atS) || atS < 0) return undefined;
+    const bounds = sqliteRow(this.#callBounds.get(worldId, stationId), "Nachfrage-Fahrplanzeitgrenzen");
+    if (bounds?.["minimum_s"] === null || bounds?.["minimum_s"] === undefined || bounds["maximum_s"] === null) return undefined;
+    const minimum = sqliteInteger(bounds["minimum_s"], "minimum"), maximum = sqliteInteger(bounds["maximum_s"], "maximum");
+    const repeat = this.#scheduleTime.repeatEveryS;
+    for (let day = Math.max(0, Math.ceil((atS - maximum) / repeat)); day <= Math.floor((atS - minimum) / repeat); day += 1) {
+      for (const row of statementRows(this.#exactCall, worldId, stationId, atS - day * repeat, callType)) {
+        if (concreteScheduleTrainId(sqliteText(row["train_id"], "trainId"), day) !== trainId) continue;
+        return { trainId, trainNumber: sqliteText(row["train_number"], "trainNumber"), category: sqliteText(row["category"], "category"),
+          scheduledTimeS: atS, expectedTimeS: atS, status: "scheduled" as const };
+      }
+    }
+    return undefined;
   }
 
   async getConfig(worldId: string): Promise<LivemapConfigV2 | undefined> {

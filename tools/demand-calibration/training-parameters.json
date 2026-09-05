@@ -1,0 +1,1367 @@
+{
+  "schemaVersion": "zugfolge-demand-training-parameters/v1",
+  "trainingDate": "2025-01-14",
+  "sourceRowNumbers": [
+    2374681,
+    2374682,
+    2374683,
+    2374684,
+    2374685,
+    2374686,
+    2374687,
+    2374688,
+    2374689,
+    2374690,
+    2374691,
+    2374692,
+    2374693,
+    2374694,
+    2374695,
+    2374696,
+    2374697,
+    2374698,
+    2374699,
+    2374700,
+    2374701,
+    2386816,
+    2386817,
+    2386818,
+    2386819,
+    2386820,
+    2386821,
+    2386822,
+    2386823,
+    2386824,
+    2386825,
+    2386826,
+    2386827,
+    2386828,
+    2386829,
+    2386830,
+    2386831,
+    2386832,
+    2386833,
+    2386834,
+    2386835,
+    2386836,
+    2397232,
+    2397233,
+    2397234,
+    2397235,
+    2397236,
+    2397237,
+    2397238,
+    2397239,
+    2397240,
+    2397241,
+    2397242,
+    2397243,
+    2397244,
+    2397245,
+    2397246,
+    2397247,
+    2397248,
+    2397249,
+    2397250,
+    2397251,
+    2397252,
+    2397253,
+    2397254,
+    2397255,
+    2397256,
+    2391425,
+    2391426,
+    2391427,
+    2391428,
+    2391429,
+    2391430,
+    2391431,
+    2391432,
+    2391433,
+    2391434,
+    2391435,
+    2391436,
+    2391437,
+    2391438,
+    2391439,
+    2391440,
+    2391441,
+    2391442,
+    2391443,
+    2391444,
+    2391445,
+    2391446,
+    2391447,
+    2391448,
+    2391449,
+    2406147,
+    2406148,
+    2406149,
+    2406150,
+    2406151,
+    2406152,
+    2406153,
+    2406154,
+    2406155,
+    2406156,
+    2406157,
+    2406158,
+    2406159,
+    2406160,
+    2406161,
+    2406162,
+    2406163,
+    2406164,
+    2406165,
+    2406166,
+    2400259,
+    2400260,
+    2400261,
+    2400262,
+    2400263,
+    2400264,
+    2400265,
+    2400266,
+    2400267,
+    2400268,
+    2400269,
+    2400270,
+    2400271,
+    2400272,
+    2400273,
+    2400274,
+    2400275,
+    2400276,
+    2400277,
+    2400278,
+    2400279,
+    2400280,
+    2400281,
+    2400282,
+    2400283,
+    2409290,
+    2409291,
+    2409292,
+    2409293,
+    2409294,
+    2409295,
+    2409296,
+    2409297,
+    2409298,
+    2409299,
+    2409300,
+    2409301,
+    2409302,
+    2409303,
+    2409304,
+    2406826,
+    2406827,
+    2406828,
+    2406829,
+    2406830,
+    2406831,
+    2406832,
+    2406833,
+    2406834,
+    2406835,
+    2406836,
+    2406837,
+    2406838,
+    2406839,
+    2406840,
+    2406841,
+    2406842,
+    2406843,
+    2406844,
+    2406845,
+    2416695,
+    2416696,
+    2416697,
+    2416698,
+    2416699,
+    2416700,
+    2416701,
+    2416702,
+    2416703,
+    2416704,
+    2416705,
+    2416706,
+    2416707,
+    2416708,
+    2416709,
+    2416710,
+    2416711,
+    2416712,
+    2416713,
+    2416714,
+    2430419,
+    2430420,
+    2430421,
+    2430422,
+    2430423,
+    2430424,
+    2430425,
+    2430426,
+    2430427,
+    2430428,
+    2430429,
+    2430430,
+    2430431,
+    2430432,
+    2430433,
+    2430434,
+    2430435,
+    2430436,
+    2430437,
+    2430438,
+    2430439,
+    2430440,
+    2430441,
+    2430442,
+    2430443,
+    2430444,
+    2430445,
+    2419198,
+    2419199,
+    2419200,
+    2419201,
+    2419202,
+    2419203,
+    2419204,
+    2419205,
+    2419206,
+    2419207,
+    2419208,
+    2419209,
+    2419210,
+    2419211,
+    2419212,
+    2419213,
+    2419214,
+    2419215,
+    2419216,
+    2419217,
+    2419218,
+    2419219,
+    2419220,
+    2419221,
+    2419222,
+    2419223,
+    2419224,
+    2419225,
+    2419226,
+    2435535,
+    2435536,
+    2435537,
+    2435538,
+    2435539,
+    2435540,
+    2435541,
+    2435542,
+    2435543,
+    2435544,
+    2435545,
+    2435546,
+    2435547,
+    2435548,
+    2435549,
+    2435550,
+    2435551,
+    2435552,
+    2435553,
+    2435554,
+    2436838,
+    2436839,
+    2436840,
+    2436841,
+    2436842,
+    2436843,
+    2436844,
+    2436845,
+    2436846,
+    2436847,
+    2436848,
+    2436849,
+    2436850,
+    2445737,
+    2445738,
+    2445739,
+    2445740,
+    2445741,
+    2445742,
+    2445743,
+    2445744,
+    2445745,
+    2445746,
+    2445747,
+    2445748,
+    2445749,
+    2386408,
+    2386409,
+    2386410,
+    2386411,
+    2386412,
+    2386413,
+    2386414,
+    2386415,
+    2386416,
+    2386417,
+    2386418,
+    2386419,
+    2386420,
+    2386421,
+    2386422,
+    2386423,
+    2386424,
+    2386425,
+    2386426,
+    2386427,
+    2396942,
+    2396943,
+    2396944,
+    2396945,
+    2396946,
+    2396947,
+    2396948,
+    2396949,
+    2396950,
+    2396951,
+    2396952,
+    2396953,
+    2396954,
+    2396955,
+    2396956,
+    2396957,
+    2396958,
+    2396959,
+    2396960,
+    2396961,
+    2387525,
+    2387526,
+    2387527,
+    2387528,
+    2387529,
+    2387530,
+    2387531,
+    2387532,
+    2387533,
+    2387534,
+    2387535,
+    2387536,
+    2387537,
+    2387538,
+    2387539,
+    2374041,
+    2374042,
+    2374043,
+    2374044,
+    2374045,
+    2374046,
+    2374047,
+    2374048,
+    2374049,
+    2374050,
+    2374051,
+    2374052,
+    2374053,
+    2374054,
+    2374055,
+    2374056,
+    2374057,
+    2374058,
+    2374059,
+    2374060,
+    2374061,
+    2374062,
+    2374063,
+    2374064,
+    2374065,
+    2374066,
+    2374067,
+    2374068,
+    2374069,
+    2374070,
+    2429208,
+    2429209,
+    2429210,
+    2429211,
+    2429212,
+    2429213,
+    2429214,
+    2429215,
+    2429216,
+    2429217,
+    2429218,
+    2429219,
+    2429220,
+    2429221,
+    2429222,
+    2429223,
+    2429224,
+    2429225,
+    2429226,
+    2429227,
+    2429228,
+    2419970,
+    2419971,
+    2419972,
+    2419973,
+    2419974,
+    2419975,
+    2419976,
+    2419977,
+    2419978,
+    2419979,
+    2419980,
+    2419981,
+    2419982,
+    2419983,
+    2455296,
+    2455297,
+    2455298,
+    2455299,
+    2455300,
+    2455301,
+    2455302,
+    2455303,
+    2455304,
+    2455305,
+    2455306,
+    2455307,
+    2455308,
+    2455309,
+    2455310,
+    2455311,
+    2455312,
+    2455313,
+    2455314,
+    2455315,
+    2455316,
+    2455317,
+    2455318,
+    2455319,
+    2455320,
+    2455321,
+    2455322,
+    2448898,
+    2448899,
+    2448900,
+    2448901,
+    2448902,
+    2448903,
+    2448904,
+    2448905,
+    2448906,
+    2448907,
+    2448908,
+    2448909,
+    2448910,
+    2448911,
+    2448912,
+    2448913,
+    2448914,
+    2448915,
+    2448916,
+    2448917,
+    2448918
+  ],
+  "effectiveGeneratedPassengers": 29577,
+  "stationCount": 48,
+  "releaseSha256": "6f2a9fb603b3503f72df96d7382c38f17136c05e6a676c11574afad2608500d0",
+  "provenance": "balanced",
+  "hourlySharesBasisPoints": [
+    23,
+    0,
+    0,
+    0,
+    0,
+    278,
+    720,
+    700,
+    866,
+    420,
+    277,
+    249,
+    668,
+    533,
+    660,
+    985,
+    1165,
+    1002,
+    643,
+    242,
+    334,
+    170,
+    47,
+    18
+  ],
+  "release": {
+    "schemaVersion": "zugfolge-demand-release/v1",
+    "id": "nvbw-re7-training-2025-01-14-v1",
+    "provenance": "balanced",
+    "sources": [
+      {
+        "id": "nvbw-fahrgastzaehlung-2025",
+        "url": "https://mobidata-bw.de/dataset/automatische-fahrgast-zahldaten-baden-wurttemberg",
+        "license": "dl-de/by-2-0",
+        "artifactSha256": "74de5f8b36d8b9819d30cfc2a435cf26595bdae49d09c184375a2e45b6af63ff",
+        "rightsApproved": true
+      }
+    ],
+    "zones": [
+      {
+        "id": "ch:23005:300",
+        "population": 245,
+        "workplaces": 328,
+        "poiWeight": 0,
+        "stations": [
+          {
+            "stationId": "ch:23005:300",
+            "accessMs": 0,
+            "serviceIntervalMs": 0,
+            "stepFree": true
+          }
+        ]
+      },
+      {
+        "id": "ch:23005:6",
+        "population": 1836,
+        "workplaces": 1390,
+        "poiWeight": 0,
+        "stations": [
+          {
+            "stationId": "ch:23005:6",
+            "accessMs": 0,
+            "serviceIntervalMs": 0,
+            "stepFree": true
+          }
+        ]
+      },
+      {
+        "id": "de:08211:1847",
+        "population": 634,
+        "workplaces": 798,
+        "poiWeight": 0,
+        "stations": [
+          {
+            "stationId": "de:08211:1847",
+            "accessMs": 0,
+            "serviceIntervalMs": 0,
+            "stepFree": true
+          }
+        ]
+      },
+      {
+        "id": "de:08212:90",
+        "population": 1640,
+        "workplaces": 1460,
+        "poiWeight": 0,
+        "stations": [
+          {
+            "stationId": "de:08212:90",
+            "accessMs": 0,
+            "serviceIntervalMs": 0,
+            "stepFree": true
+          }
+        ]
+      },
+      {
+        "id": "de:08215:1840",
+        "population": 0,
+        "workplaces": 0,
+        "poiWeight": 0,
+        "stations": [
+          {
+            "stationId": "de:08215:1840",
+            "accessMs": 0,
+            "serviceIntervalMs": 0,
+            "stepFree": true
+          }
+        ]
+      },
+      {
+        "id": "de:08215:1841",
+        "population": 0,
+        "workplaces": 0,
+        "poiWeight": 0,
+        "stations": [
+          {
+            "stationId": "de:08215:1841",
+            "accessMs": 0,
+            "serviceIntervalMs": 0,
+            "stepFree": true
+          }
+        ]
+      },
+      {
+        "id": "de:08215:8306",
+        "population": 0,
+        "workplaces": 0,
+        "poiWeight": 0,
+        "stations": [
+          {
+            "stationId": "de:08215:8306",
+            "accessMs": 0,
+            "serviceIntervalMs": 0,
+            "stepFree": true
+          }
+        ]
+      },
+      {
+        "id": "de:08216:1843",
+        "population": 0,
+        "workplaces": 0,
+        "poiWeight": 0,
+        "stations": [
+          {
+            "stationId": "de:08216:1843",
+            "accessMs": 0,
+            "serviceIntervalMs": 0,
+            "stepFree": true
+          }
+        ]
+      },
+      {
+        "id": "de:08216:1844",
+        "population": 674,
+        "workplaces": 600,
+        "poiWeight": 0,
+        "stations": [
+          {
+            "stationId": "de:08216:1844",
+            "accessMs": 0,
+            "serviceIntervalMs": 0,
+            "stepFree": true
+          }
+        ]
+      },
+      {
+        "id": "de:08216:32227",
+        "population": 596,
+        "workplaces": 728,
+        "poiWeight": 0,
+        "stations": [
+          {
+            "stationId": "de:08216:32227",
+            "accessMs": 0,
+            "serviceIntervalMs": 0,
+            "stepFree": true
+          }
+        ]
+      },
+      {
+        "id": "de:08311:6508",
+        "population": 8667,
+        "workplaces": 7400,
+        "poiWeight": 0,
+        "stations": [
+          {
+            "stationId": "de:08311:6508",
+            "accessMs": 0,
+            "serviceIntervalMs": 0,
+            "stepFree": true
+          }
+        ]
+      },
+      {
+        "id": "de:08311:6510",
+        "population": 12,
+        "workplaces": 46,
+        "poiWeight": 0,
+        "stations": [
+          {
+            "stationId": "de:08311:6510",
+            "accessMs": 0,
+            "serviceIntervalMs": 0,
+            "stepFree": true
+          }
+        ]
+      },
+      {
+        "id": "de:08311:6512",
+        "population": 11,
+        "workplaces": 11,
+        "poiWeight": 0,
+        "stations": [
+          {
+            "stationId": "de:08311:6512",
+            "accessMs": 0,
+            "serviceIntervalMs": 0,
+            "stepFree": true
+          }
+        ]
+      },
+      {
+        "id": "de:08311:6589",
+        "population": 15,
+        "workplaces": 5,
+        "poiWeight": 0,
+        "stations": [
+          {
+            "stationId": "de:08311:6589",
+            "accessMs": 0,
+            "serviceIntervalMs": 0,
+            "stepFree": true
+          }
+        ]
+      },
+      {
+        "id": "de:08315:6501",
+        "population": 1776,
+        "workplaces": 1949,
+        "poiWeight": 0,
+        "stations": [
+          {
+            "stationId": "de:08315:6501",
+            "accessMs": 0,
+            "serviceIntervalMs": 0,
+            "stepFree": true
+          }
+        ]
+      },
+      {
+        "id": "de:08315:6514",
+        "population": 15,
+        "workplaces": 21,
+        "poiWeight": 0,
+        "stations": [
+          {
+            "stationId": "de:08315:6514",
+            "accessMs": 0,
+            "serviceIntervalMs": 0,
+            "stepFree": true
+          }
+        ]
+      },
+      {
+        "id": "de:08315:6522",
+        "population": 1254,
+        "workplaces": 1406,
+        "poiWeight": 0,
+        "stations": [
+          {
+            "stationId": "de:08315:6522",
+            "accessMs": 0,
+            "serviceIntervalMs": 0,
+            "stepFree": true
+          }
+        ]
+      },
+      {
+        "id": "de:08315:6642",
+        "population": 45,
+        "workplaces": 11,
+        "poiWeight": 0,
+        "stations": [
+          {
+            "stationId": "de:08315:6642",
+            "accessMs": 0,
+            "serviceIntervalMs": 0,
+            "stepFree": true
+          }
+        ]
+      },
+      {
+        "id": "de:08315:6644",
+        "population": 62,
+        "workplaces": 34,
+        "poiWeight": 0,
+        "stations": [
+          {
+            "stationId": "de:08315:6644",
+            "accessMs": 0,
+            "serviceIntervalMs": 0,
+            "stepFree": true
+          }
+        ]
+      },
+      {
+        "id": "de:08315:6661",
+        "population": 22,
+        "workplaces": 6,
+        "poiWeight": 0,
+        "stations": [
+          {
+            "stationId": "de:08315:6661",
+            "accessMs": 0,
+            "serviceIntervalMs": 0,
+            "stepFree": true
+          }
+        ]
+      },
+      {
+        "id": "de:08315:6665",
+        "population": 765,
+        "workplaces": 858,
+        "poiWeight": 0,
+        "stations": [
+          {
+            "stationId": "de:08315:6665",
+            "accessMs": 0,
+            "serviceIntervalMs": 0,
+            "stepFree": true
+          }
+        ]
+      },
+      {
+        "id": "de:08315:6670",
+        "population": 8,
+        "workplaces": 3,
+        "poiWeight": 0,
+        "stations": [
+          {
+            "stationId": "de:08315:6670",
+            "accessMs": 0,
+            "serviceIntervalMs": 0,
+            "stepFree": true
+          }
+        ]
+      },
+      {
+        "id": "de:08315:6677",
+        "population": 232,
+        "workplaces": 288,
+        "poiWeight": 0,
+        "stations": [
+          {
+            "stationId": "de:08315:6677",
+            "accessMs": 0,
+            "serviceIntervalMs": 0,
+            "stepFree": true
+          }
+        ]
+      },
+      {
+        "id": "de:08316:5290",
+        "population": 467,
+        "workplaces": 733,
+        "poiWeight": 0,
+        "stations": [
+          {
+            "stationId": "de:08316:5290",
+            "accessMs": 0,
+            "serviceIntervalMs": 0,
+            "stepFree": true
+          }
+        ]
+      },
+      {
+        "id": "de:08316:6505",
+        "population": 788,
+        "workplaces": 969,
+        "poiWeight": 0,
+        "stations": [
+          {
+            "stationId": "de:08316:6505",
+            "accessMs": 0,
+            "serviceIntervalMs": 0,
+            "stepFree": true
+          }
+        ]
+      },
+      {
+        "id": "de:08316:6518",
+        "population": 538,
+        "workplaces": 808,
+        "poiWeight": 0,
+        "stations": [
+          {
+            "stationId": "de:08316:6518",
+            "accessMs": 0,
+            "serviceIntervalMs": 0,
+            "stepFree": true
+          }
+        ]
+      },
+      {
+        "id": "de:08316:6562",
+        "population": 619,
+        "workplaces": 954,
+        "poiWeight": 0,
+        "stations": [
+          {
+            "stationId": "de:08316:6562",
+            "accessMs": 0,
+            "serviceIntervalMs": 0,
+            "stepFree": true
+          }
+        ]
+      },
+      {
+        "id": "de:08316:6667",
+        "population": 6,
+        "workplaces": 6,
+        "poiWeight": 0,
+        "stations": [
+          {
+            "stationId": "de:08316:6667",
+            "accessMs": 0,
+            "serviceIntervalMs": 0,
+            "stepFree": true
+          }
+        ]
+      },
+      {
+        "id": "de:08316:6668",
+        "population": 14,
+        "workplaces": 12,
+        "poiWeight": 0,
+        "stations": [
+          {
+            "stationId": "de:08316:6668",
+            "accessMs": 0,
+            "serviceIntervalMs": 0,
+            "stepFree": true
+          }
+        ]
+      },
+      {
+        "id": "de:08316:729",
+        "population": 21,
+        "workplaces": 14,
+        "poiWeight": 0,
+        "stations": [
+          {
+            "stationId": "de:08316:729",
+            "accessMs": 0,
+            "serviceIntervalMs": 0,
+            "stepFree": true
+          }
+        ]
+      },
+      {
+        "id": "de:08316:90",
+        "population": 1910,
+        "workplaces": 2176,
+        "poiWeight": 0,
+        "stations": [
+          {
+            "stationId": "de:08316:90",
+            "accessMs": 0,
+            "serviceIntervalMs": 0,
+            "stepFree": true
+          }
+        ]
+      },
+      {
+        "id": "de:08317:12103",
+        "population": 1279,
+        "workplaces": 1222,
+        "poiWeight": 0,
+        "stations": [
+          {
+            "stationId": "de:08317:12103",
+            "accessMs": 0,
+            "serviceIntervalMs": 0,
+            "stepFree": true
+          }
+        ]
+      },
+      {
+        "id": "de:08317:13554",
+        "population": 86,
+        "workplaces": 154,
+        "poiWeight": 0,
+        "stations": [
+          {
+            "stationId": "de:08317:13554",
+            "accessMs": 0,
+            "serviceIntervalMs": 0,
+            "stepFree": true
+          }
+        ]
+      },
+      {
+        "id": "de:08317:14120",
+        "population": 160,
+        "workplaces": 258,
+        "poiWeight": 0,
+        "stations": [
+          {
+            "stationId": "de:08317:14120",
+            "accessMs": 0,
+            "serviceIntervalMs": 0,
+            "stepFree": true
+          }
+        ]
+      },
+      {
+        "id": "de:08317:14506",
+        "population": 2172,
+        "workplaces": 2295,
+        "poiWeight": 0,
+        "stations": [
+          {
+            "stationId": "de:08317:14506",
+            "accessMs": 0,
+            "serviceIntervalMs": 0,
+            "stepFree": true
+          }
+        ]
+      },
+      {
+        "id": "de:08317:16220",
+        "population": 36,
+        "workplaces": 12,
+        "poiWeight": 0,
+        "stations": [
+          {
+            "stationId": "de:08317:16220",
+            "accessMs": 0,
+            "serviceIntervalMs": 0,
+            "stepFree": true
+          }
+        ]
+      },
+      {
+        "id": "de:08317:16700",
+        "population": 162,
+        "workplaces": 206,
+        "poiWeight": 0,
+        "stations": [
+          {
+            "stationId": "de:08317:16700",
+            "accessMs": 0,
+            "serviceIntervalMs": 0,
+            "stepFree": true
+          }
+        ]
+      },
+      {
+        "id": "de:08317:18601",
+        "population": 247,
+        "workplaces": 330,
+        "poiWeight": 0,
+        "stations": [
+          {
+            "stationId": "de:08317:18601",
+            "accessMs": 0,
+            "serviceIntervalMs": 0,
+            "stepFree": true
+          }
+        ]
+      },
+      {
+        "id": "de:08317:33013",
+        "population": 536,
+        "workplaces": 454,
+        "poiWeight": 0,
+        "stations": [
+          {
+            "stationId": "de:08317:33013",
+            "accessMs": 0,
+            "serviceIntervalMs": 0,
+            "stepFree": true
+          }
+        ]
+      },
+      {
+        "id": "de:08336:6628",
+        "population": 178,
+        "workplaces": 116,
+        "poiWeight": 0,
+        "stations": [
+          {
+            "stationId": "de:08336:6628",
+            "accessMs": 0,
+            "serviceIntervalMs": 0,
+            "stepFree": true
+          }
+        ]
+      },
+      {
+        "id": "de:08336:6629",
+        "population": 22,
+        "workplaces": 11,
+        "poiWeight": 0,
+        "stations": [
+          {
+            "stationId": "de:08336:6629",
+            "accessMs": 0,
+            "serviceIntervalMs": 0,
+            "stepFree": true
+          }
+        ]
+      },
+      {
+        "id": "de:08336:6631",
+        "population": 295,
+        "workplaces": 244,
+        "poiWeight": 0,
+        "stations": [
+          {
+            "stationId": "de:08336:6631",
+            "accessMs": 0,
+            "serviceIntervalMs": 0,
+            "stepFree": true
+          }
+        ]
+      },
+      {
+        "id": "de:08336:6632",
+        "population": 16,
+        "workplaces": 6,
+        "poiWeight": 0,
+        "stations": [
+          {
+            "stationId": "de:08336:6632",
+            "accessMs": 0,
+            "serviceIntervalMs": 0,
+            "stepFree": true
+          }
+        ]
+      },
+      {
+        "id": "de:08336:6633",
+        "population": 3,
+        "workplaces": 3,
+        "poiWeight": 0,
+        "stations": [
+          {
+            "stationId": "de:08336:6633",
+            "accessMs": 0,
+            "serviceIntervalMs": 0,
+            "stepFree": true
+          }
+        ]
+      },
+      {
+        "id": "de:08336:6634",
+        "population": 81,
+        "workplaces": 54,
+        "poiWeight": 0,
+        "stations": [
+          {
+            "stationId": "de:08336:6634",
+            "accessMs": 0,
+            "serviceIntervalMs": 0,
+            "stepFree": true
+          }
+        ]
+      },
+      {
+        "id": "de:08336:6638",
+        "population": 251,
+        "workplaces": 158,
+        "poiWeight": 0,
+        "stations": [
+          {
+            "stationId": "de:08336:6638",
+            "accessMs": 0,
+            "serviceIntervalMs": 0,
+            "stepFree": true
+          }
+        ]
+      },
+      {
+        "id": "de:08336:6639",
+        "population": 950,
+        "workplaces": 1010,
+        "poiWeight": 0,
+        "stations": [
+          {
+            "stationId": "de:08336:6639",
+            "accessMs": 0,
+            "serviceIntervalMs": 0,
+            "stepFree": true
+          }
+        ]
+      },
+      {
+        "id": "de:08336:6678",
+        "population": 231,
+        "workplaces": 155,
+        "poiWeight": 0,
+        "stations": [
+          {
+            "stationId": "de:08336:6678",
+            "accessMs": 0,
+            "serviceIntervalMs": 0,
+            "stepFree": true
+          }
+        ]
+      }
+    ],
+    "profiles": [
+      {
+        "id": "marginal-balance",
+        "purpose": "unspecified-training-marginals",
+        "dailyTripsBasisPoints": 10000,
+        "workplaceWeight": 1,
+        "poiWeight": 0,
+        "populationWeight": 0,
+        "comfortClass": "standard",
+        "spaceNeeds": "ordinary",
+        "requiresReservation": false,
+        "maxFareCents": 0,
+        "maxJourneyMs": 86400000,
+        "ranking": [
+          "fare",
+          "time",
+          "transfers",
+          "frequency",
+          "reliability",
+          "comfort"
+        ]
+      }
+    ],
+    "daySlices": [
+      {
+        "id": "hour-00",
+        "startOffsetMs": 0,
+        "endOffsetMs": 3600000,
+        "shareBasisPoints": 23
+      },
+      {
+        "id": "hour-01",
+        "startOffsetMs": 3600000,
+        "endOffsetMs": 7200000,
+        "shareBasisPoints": 0
+      },
+      {
+        "id": "hour-02",
+        "startOffsetMs": 7200000,
+        "endOffsetMs": 10800000,
+        "shareBasisPoints": 0
+      },
+      {
+        "id": "hour-03",
+        "startOffsetMs": 10800000,
+        "endOffsetMs": 14400000,
+        "shareBasisPoints": 0
+      },
+      {
+        "id": "hour-04",
+        "startOffsetMs": 14400000,
+        "endOffsetMs": 18000000,
+        "shareBasisPoints": 0
+      },
+      {
+        "id": "hour-05",
+        "startOffsetMs": 18000000,
+        "endOffsetMs": 21600000,
+        "shareBasisPoints": 278
+      },
+      {
+        "id": "hour-06",
+        "startOffsetMs": 21600000,
+        "endOffsetMs": 25200000,
+        "shareBasisPoints": 720
+      },
+      {
+        "id": "hour-07",
+        "startOffsetMs": 25200000,
+        "endOffsetMs": 28800000,
+        "shareBasisPoints": 700
+      },
+      {
+        "id": "hour-08",
+        "startOffsetMs": 28800000,
+        "endOffsetMs": 32400000,
+        "shareBasisPoints": 866
+      },
+      {
+        "id": "hour-09",
+        "startOffsetMs": 32400000,
+        "endOffsetMs": 36000000,
+        "shareBasisPoints": 420
+      },
+      {
+        "id": "hour-10",
+        "startOffsetMs": 36000000,
+        "endOffsetMs": 39600000,
+        "shareBasisPoints": 277
+      },
+      {
+        "id": "hour-11",
+        "startOffsetMs": 39600000,
+        "endOffsetMs": 43200000,
+        "shareBasisPoints": 249
+      },
+      {
+        "id": "hour-12",
+        "startOffsetMs": 43200000,
+        "endOffsetMs": 46800000,
+        "shareBasisPoints": 668
+      },
+      {
+        "id": "hour-13",
+        "startOffsetMs": 46800000,
+        "endOffsetMs": 50400000,
+        "shareBasisPoints": 533
+      },
+      {
+        "id": "hour-14",
+        "startOffsetMs": 50400000,
+        "endOffsetMs": 54000000,
+        "shareBasisPoints": 660
+      },
+      {
+        "id": "hour-15",
+        "startOffsetMs": 54000000,
+        "endOffsetMs": 57600000,
+        "shareBasisPoints": 985
+      },
+      {
+        "id": "hour-16",
+        "startOffsetMs": 57600000,
+        "endOffsetMs": 61200000,
+        "shareBasisPoints": 1165
+      },
+      {
+        "id": "hour-17",
+        "startOffsetMs": 61200000,
+        "endOffsetMs": 64800000,
+        "shareBasisPoints": 1002
+      },
+      {
+        "id": "hour-18",
+        "startOffsetMs": 64800000,
+        "endOffsetMs": 68400000,
+        "shareBasisPoints": 643
+      },
+      {
+        "id": "hour-19",
+        "startOffsetMs": 68400000,
+        "endOffsetMs": 72000000,
+        "shareBasisPoints": 242
+      },
+      {
+        "id": "hour-20",
+        "startOffsetMs": 72000000,
+        "endOffsetMs": 75600000,
+        "shareBasisPoints": 334
+      },
+      {
+        "id": "hour-21",
+        "startOffsetMs": 75600000,
+        "endOffsetMs": 79200000,
+        "shareBasisPoints": 170
+      },
+      {
+        "id": "hour-22",
+        "startOffsetMs": 79200000,
+        "endOffsetMs": 82800000,
+        "shareBasisPoints": 47
+      },
+      {
+        "id": "hour-23",
+        "startOffsetMs": 82800000,
+        "endOffsetMs": 86400000,
+        "shareBasisPoints": 18
+      }
+    ],
+    "seasonBasisPoints": 10000,
+    "minimumTransferMs": 0,
+    "maxTransfers": 0,
+    "maxGeneratedPassengers": 100000,
+    "maxConnectionsPerCohort": 256,
+    "fareCompliance": {
+      "schemaVersion": "fare-compliance-policy/v1",
+      "validBasisPoints": 10000,
+      "unpresentableBasisPoints": 0,
+      "provenance": "balanced",
+      "sourceIds": []
+    }
+  }
+}

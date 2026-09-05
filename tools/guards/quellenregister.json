@@ -10,6 +10,42 @@
   },
   "quellen": [
     {
+      "id": "nvbw-fahrgastzaehlung-2025",
+      "titel": "NVBW AFZS-/RES-Fahrgastzählungen Baden-Württemberg, 1. Halbjahr 2025",
+      "status": "freigegeben",
+      "lizenz": "dl-de/by-2-0",
+      "bereitstellung": "https://mobidata-bw.de/dataset/automatische-fahrgast-zahldaten-baden-wurttemberg; CSV-GZip 2025_1.HJ_20241215-20250614, SHA-256 74de5f8b36d8b9819d30cfc2a435cf26595bdae49d09c184375a2e45b6af63ff. Offizielles CKAN-Metadatum weist dl-de/by-2-0 aus.",
+      "attribution": "NVBW / MobiData BW, Fahrgast-Zähldaten im Schienenpersonennahverkehr Baden-Württemberg, https://mobidata-bw.de/dataset/automatische-fahrgast-zahldaten-baden-wurttemberg, Datenlizenz Deutschland – Namensnennung – Version 2.0, https://www.govdata.de/dl-de/by-2-0; Auswahl, Normalisierung und Aggregation durch Zugfolge.",
+      "nutzung": "Offline-Nachfragekalibrierung: getrennte beobachtete AFZS-Zählfahrten und rechnerisch ergänzte Fahrplanfahrten. Keine personenbezogenen Rohsensoren, kein externer Laufzeitdienst.",
+      "entscheidung": { "datum": "2026-09-05", "pruefer": "Codex – Quellenprüfung im ausdrücklichen Nutzerauftrag, nur frei nutzbare Quellen" },
+      "hinweis": "Lizenz erlaubt kommerzielle und nichtkommerzielle Nutzung, Weitergabe und Bearbeitung mit Attribution. Quellen- und Lizenzangabe sowie Änderungsvermerk werden im getrennten Datenpaket mitgeführt. Diese Rechteentscheidung ist keine fachliche Kalibrierabnahme oder Freigabe eines produktiven DemandRelease.",
+      "milestone": "M10.5"
+    },
+    {
+      "id": "hvv-sbahn-fahrgastzahlen-2025",
+      "titel": "hvv S-Bahn Fahrgastzahlen 2025",
+      "status": "freigegeben",
+      "lizenz": "dl-de/by-2-0",
+      "bereitstellung": "https://suche.transparenz.hamburg.de/dataset/hvv-fahrgastzahlen-2025; S-Bahn-XLSX vom 02.06.2026, SHA-256 b5657e0047e9e923151a8bb77ceea4a20291b6d5a2881071d949aa338220b85f. CKAN terms_of_use nennt is_free_to_use=true und dl-de-by-2.0.",
+      "attribution": "Freie und Hansestadt Hamburg, hvv Fahrgastzahlen 2025, https://suche.transparenz.hamburg.de/dataset/hvv-fahrgastzahlen-2025, Datenlizenz Deutschland – Namensnennung – Version 2.0, https://www.govdata.de/dl-de/by-2-0; Aufbereitung durch Zugfolge.",
+      "nutzung": "Durchschnittliche werktägliche Ein- und Aussteiger je S-Bahn-Haltestelle und Richtung als eigenständige Entwicklungsbeobachtungen. U-Bahn, Bus und Fähre werden nicht als SPNV übernommen.",
+      "entscheidung": { "datum": "2026-09-05", "pruefer": "Codex – Quellenprüfung im ausdrücklichen Nutzerauftrag, nur frei nutzbare Quellen" },
+      "hinweis": "Lizenzmetadaten einschließlich vorgeschriebener Attribution archiviert. Tagesmittel belegen weder Stundengänge noch tatsächliche Umstiege. Keine fachliche Kalibrierabnahme oder produktive Releasefreigabe.",
+      "milestone": "M10.5"
+    },
+    {
+      "id": "nahsh-querschnittsbesetzung",
+      "titel": "NAH.SH Querschnittsbesetzung 2010–2019",
+      "status": "freigegeben",
+      "lizenz": "CC-BY-4.0",
+      "bereitstellung": "https://opendata.schleswig-holstein.de/dataset/querschnittsbesetzung; offizieller CSV-Download und CKAN package_show, archiviert mit SHA-256 im M10-Quellenmanifest.",
+      "attribution": "NAH.SH / Land Schleswig-Holstein, Querschnittsbesetzung, https://opendata.schleswig-holstein.de/dataset/querschnittsbesetzung, Creative Commons Namensnennung 4.0 International, https://creativecommons.org/licenses/by/4.0/; Auswahl und Normalisierung durch Zugfolge.",
+      "nutzung": "Gemittelte jährliche SPNV-Abschnittsbesetzung je Tagtyp für zeitlich getrennte Referenzen und Holdouts.",
+      "entscheidung": { "datum": "2026-09-05", "pruefer": "Codex – Quellenprüfung im ausdrücklichen Nutzerauftrag, nur frei nutzbare Quellen" },
+      "hinweis": "Offizielle Metadaten und GovData bestätigen CC BY 4.0, einschließlich kommerzieller Bearbeitung mit Quellen-/Lizenzangabe und Änderungsvermerk. np_str_id braucht eine explizite Infrastrukturzuordnung. Kein Nachweis von SPFV, Tagesstunden oder Umstiegen.",
+      "milestone": "M10.5"
+    },
+    {
       "id": "osm-pbf-lhe",
       "titel": "OSM-PBF-Extract Leipzig–Halle–Erfurt",
       "status": "freigegeben",
