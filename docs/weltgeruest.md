@@ -300,25 +300,36 @@ Datenkategorie eine Frist — oder ausdrücklich keine:
 | Kategorie | Frist | Begründung |
 |-----------|-------|------------|
 | Konto, Weltzugang | 90 Tage nach Löschanfrage | Übergangsfrist gegen eine versehentliche oder erschlichene Löschung |
-| Postfach-Nachricht | 1 Jahr nach Versand/Quittierung | ohne Betriebsrelevanz danach |
+| Postfach-Nachricht | 365 Tage nach ursprünglichem Versand; eine zukünftige fachliche Frist hält den Inhalt bis zu ihrem Ende | Lesen und Quittieren verschieben die Aufbewahrung nicht |
 | Event-Log | unbefristet | Audit- und Replay-Grundlage der Welt (`architektur.md` 2) |
 | Ledger | unbefristet | gesetzliche Aufbewahrungspflicht für Geschäftsunterlagen; ohnehin unveränderlich (M2.4) |
 
-Der Produktionsserver führt täglich den Kontopurge nach der 90-Tage-Frist
-und den Postfach-Räumlauf nach 365 Tagen aus. Wiederholte Löschanträge
+Der Produktionsserver startet täglich den Kontopurge nach der 90-Tage-Frist
+und den Postfach-Räumlauf nach 365 Tagen ab ursprünglichem Versand.
+Beide räumen derzeit beschreibbare Welten. Wiederholte Löschanträge
 verschieben den ursprünglichen Zeitpunkt nicht. Abgelaufene Postfachinhalte
 werden entfernt; ein minimierter technischer Deduplizierungsbeleg verhindert,
 dass ein späterer Zustell-Retry den Inhalt wiederherstellt. Fristen und
 Räumlauf sind mit expliziter Prüfzeit testbar. Der tatsächliche Betrieb und
 die Überwachung dieses Jobs im Zielstack bleiben Teil der M9-Betriebsdrills.
+Der Schreibschutz archivierter Welten blockiert die personenbezogene Räumung
+weiterhin; solche Fälle bleiben protokollierter Rückstand, während andere
+Konten und Welten weiterverarbeitet werden. Das ist die offene
+[Archivgrenze #520](https://github.com/larynxberlin-rgb/Zugfolge/issues/520),
+keine umgesetzte Aufbewahrungsausnahme. Der
+[geprüfte Archivvertrag](datenschutz-archivgrenze.md) und das
+[Datenschutzinventar](datenschutz-inventar.md#aufbewahrung-und-wiederholung)
+beschreiben Frist-Holds, Grenzen und Nachweise.
 
-**Warum Ledger und Event-Log nicht Teil der Löschung sind.** Beide sind
-unveränderlich (M2.2, M2.4) und tragen keine natürliche Person — der Ledger
-kennt EVU, das Event-Log Weltverlauf. Eine Löschanfrage betrifft die Person,
-nicht das EVU oder die Welt; „Recht auf Löschung“ hat ohnehin dort eine
-Grenze, wo eine gesetzliche Aufbewahrungspflicht oder ein berechtigtes
-Interesse besteht (Geschäftsunterlagen, Audit-Grundlage) — dieselbe Grenze,
-die diese Tabellen bereits aus anderem Grund unveränderlich macht.
+**Unveränderliche Betriebsbelege.** Der Kontopurge schreibt Ledger und
+Event-Log nicht um. Diese bewahren den EVU- und Weltverlauf für Audit und
+Replay (M2.2, M2.4). Daraus folgt nicht, dass alle Belege personenfrei sind:
+Administrative Ereignisse können Antragsteller und andere Kontobezüge
+enthalten. Das [Datenschutzinventar](datenschutz-inventar.md) ordnet direkte
+und mittelbare Bezüge sowie deren Auskunftswege zu. Die technische
+Unveränderlichkeit ist keine pauschale Aufbewahrungsausnahme; die noch
+fehlende datenschutzgerechte Trennung bestehender Archivbelege bleibt
+ausdrücklich unter #520 dokumentiert.
 
 Code: `packages/db/src/schema/accounts.ts` (`erasedAt`),
 `packages/identity/src/accounts.ts` (Selbstbedienungs-Ausnahme in

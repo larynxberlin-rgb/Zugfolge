@@ -118,13 +118,15 @@ Backup-Identity-Head ausschließlich aus diesem isolierten Restore ab.
 Für den produktiven V2-Cutover qualifiziert
 `tools/alpha-ops/create-database-backup-restore-evidence.mjs` genau diese realen
 Dump-/Restore-Ergebnisse. Es vergleicht Quelle und Restore vollständig bis auf
-den Reihenfingerprint jeder autoritativen Schema-32- und Keycloak-Tabelle,
+den Reihenfingerprint jeder autoritativen Game- und Keycloak-Tabelle,
 fordert getrennte Endpunkte und physische Backends und publiziert gemeinsam
 `zugfolge-database-backup-manifest/v1` sowie
 `zugfolge-database-restore-proof/v1`. Erst dieses Paar darf in den
-`zugfolge-database-rollback-proof/v3` eingehen. Damit benötigt der Restore-Drill
-nach einer legitimen neuen Migration keine hart codierte Sollwertänderung und
-bleibt bei jeder Cross-Binding-Abweichung fail-closed.
+`zugfolge-database-rollback-proof/v3` fuer Schema 33 beziehungsweise v4 fuer
+Schema 34 eingehen. Der Schreiber verlangt denselben explizit qualifizierten
+Migrationsstand im Dump-Manifest, Restore-Receipt und beiden Datenbank-Ledgern
+sowie den zugehoerigen versionierten Tabellenkatalog. Unbekannte Migrationen
+und jede Cross-Binding-Abweichung werden abgelehnt.
 
 Keycloak teilt die PostgreSQL-Instanz, liegt aber nach dem versionierten Cutover
 ausschließlich im Schema `keycloak`. Deshalb ist der Custom-Dump vor der
