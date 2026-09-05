@@ -167,11 +167,10 @@ jobs:
         run: |
           pnpm --filter @zugfolge/game-api... build
           pnpm --filter @zugfolge/game-web... build
-          pnpm --filter @zugfolge/livemap... build
           pnpm --filter @zugfolge/operations-center... build
           # Echte NAPI-Registries und PGlite-Welten nicht zwischen Vitest-Worker-Isolates parallelisieren.
           pnpm --filter @zugfolge/game-api exec vitest run --no-file-parallelism src/world-deployment-runtime.test.ts src/fleet-configuration.native.integration.test.ts src/economy-native.integration.test.ts src/disruption-policy-admin.test.ts src/manual-disruption-catalog.native.integration.test.ts src/demand-service.test.ts src/spfv-native.integration.test.ts
-          pnpm --filter @zugfolge/game-api exec vitest run --no-file-parallelism src/operations-browser.e2e.test.ts src/game-hints.browser.test.ts src/demand-browser.e2e.test.ts src/demand-map-browser.e2e.test.ts
+          pnpm --filter @zugfolge/game-api exec vitest run --no-file-parallelism src/operations-browser.e2e.test.ts src/game-hints.browser.test.ts src/demand-browser.e2e.test.ts
           # Echter Alpha-Builder -> serialisierter Compact-v2-Vertrag -> Serverstart-Registry.
           node --test tools/region-import/build-alpha-world-runtime.integration.test.mjs
 
@@ -184,6 +183,13 @@ jobs:
           pnpm --filter @zugfolge/db exec vitest run src/postgres.integration.test.ts
           pnpm --filter @zugfolge/alpha exec vitest run src/world-end.postgres.integration.test.ts
           pnpm --filter @zugfolge/game-api exec vitest run src/world-access-postgres.integration.test.ts
+
+      - name: M10-MapLibre mit Deutschland- und Knotenlast
+        env:
+          ZUGFOLGE_BROWSER_E2E: "1"
+        run: |
+          pnpm --filter @zugfolge/livemap... build
+          pnpm --filter @zugfolge/game-api exec vitest run --no-file-parallelism src/demand-map-browser.e2e.test.ts
 
   guards:
     # ASCII-only: GitHub branch protection compares this check name byte-for-byte.
