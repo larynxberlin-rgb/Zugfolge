@@ -48,7 +48,7 @@ Ausstiege; die nächste bestätigte Abfahrt übernimmt den neuen Abschnitt.
 
 Die strikte native JSON-Grenze und der TypeScript-Adapter liefern nur die
 sichtbare `PassengerProjectionV1`. `ConductorProjectionService` liest den
-bestehenden `DemandStore`, prüft aktiven Weltzugang und eigenes EVU und
+bestehenden `DemandStore`, prüft aktiven Weltzugang und eigenes aktives EVU und
 erwartet den bekannten Nachfragehash. Layout und vorheriger Snapshot sind
 interne Serverparameter. Eine neue HTTP-Route oder Schaffnersitzung ist kein
 Teil dieser Lieferung; deren Berechtigungs-, Lease- und Streamvertrag bleibt
@@ -87,6 +87,16 @@ Der reguläre Linux-Job für die native Runtime verwendet das echte NAPI-Addon.
 Ein lokaler Rust-JSON-Prozesstransport ist ausschließlich ein Testweg und kein
 Fallback bei fehlendem Produktionsaddon. Ein wegen fehlender nativer Runtime
 übersprungener Test gilt nicht als erfolgreicher Integrationsbeweis.
+
+Der [CI-Lauf auf `363b120`](https://github.com/larynxberlin-rgb/Zugfolge/actions/runs/33997523580)
+bestand alle vier Jobs: Rust/Determinismus, TypeScript, Linux-NAPI und
+Repositorywächter. Danach wurde der additive M10-Stand `32dfcf3` übernommen;
+die CI führt sowohl den neuen M10-Kartenlasttest als auch die bestehende
+Conductor-Integration jeweils einmal aus. Der im M10-Anschlussaudit genannte
+Aktivitätscheck für Unternehmen ist ergänzt: `exited` und `deleted` werden
+bereits vor Nachfragejournal und Rust-Kern abgewiesen. Der vorhandene
+Autorisierungstest deckt beide Zustände ab. Der frühere grüne CI-Lauf ist
+kein Prüfnachweis dieser späteren Änderungen.
 
 Der lokale Prozessnachweis baut `evaluate_json` aus `zugfolge-demand` und
 `project_json` aus `zugfolge-conductor` über `cargo build --locked -p <crate>

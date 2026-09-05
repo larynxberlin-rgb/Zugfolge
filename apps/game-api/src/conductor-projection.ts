@@ -43,8 +43,9 @@ export class ConductorProjectionService {
     if (world?.status !== "active") throw new DemandError(409, "Die Spielwelt ist nicht aktiv.");
     const [operator] = await db.select({ id: operators.id }).from(operators).where(and(
       eq(operators.worldId, access.worldId), eq(operators.id, access.operatorId), eq(operators.foundingAccountId, account.id),
+      eq(operators.lifecycle, "active"),
     ));
-    if (operator === undefined) throw new DemandError(403, "Dieses Unternehmen gehört nicht zu deinem Zugang.");
+    if (operator === undefined) throw new DemandError(403, "Dieses Unternehmen ist für deinen Zugang nicht verfügbar.");
     const checkpoint = await this.store.latest(access.worldId);
     if (checkpoint === undefined) throw new DemandError(503, "Es fehlt ein bestätigter M10-Nachfragestand.");
     const evaluation = checkpoint.result;
