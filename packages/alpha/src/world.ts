@@ -275,7 +275,9 @@ function exactTrainRuns(blueprint: AlphaWorldBlueprint): readonly string[] {
 }
 
 function sameSet(actual: readonly string[], expected: readonly string[]): boolean {
-  return actual.length === expected.length && [...actual].sort().every((value, index) => value === [...expected].sort()[index]);
+  if (actual.length !== expected.length) return false;
+  const sortedExpected = [...expected].sort();
+  return [...actual].sort().every((value, index) => value === sortedExpected[index]);
 }
 
 async function appendWorldEvent(db: AlphaDatabase, worldId: string, eventType: string, payload: Record<string, unknown>, occurredAt: Date) {

@@ -18,7 +18,7 @@ import {
   type LedgerTransaction,
 } from "@zugfolge/db";
 import { getOperator } from "@zugfolge/operators";
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import type { PgDatabase, PgQueryResultHKT } from "drizzle-orm/pg-core";
 
 import { isBalanced, sumEntries } from "./balance.js";
@@ -379,9 +379,9 @@ export async function ledgerAccountBalance(
   db: EconomyDatabase,
   input: { readonly worldId: string; readonly ledgerAccountId: string },
 ): Promise<bigint> {
-  const rows = await db
-    .select({ amountCents: ledgerEntries.amountCents })
+  const [row] = await db
+    .select({ balance: sql<string>`coalesce(sum(${ledgerEntries.amountCents}), 0)::text` })
     .from(ledgerEntries)
     .where(and(eq(ledgerEntries.worldId, input.worldId), eq(ledgerEntries.ledgerAccountId, input.ledgerAccountId)));
-  return sumEntries(rows.map((row) => row.amountCents));
+  return BigInt(row!.balance);
 }

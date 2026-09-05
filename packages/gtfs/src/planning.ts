@@ -567,26 +567,29 @@ interface PlannedLine {
   readonly totalEnergyWh: bigint;
 }
 
-function connected(left: PlannedLine, right: PlannedLine): boolean {
-  return [...left.nodeIds].some((nodeId) => right.nodeIds.has(nodeId));
+function connected(left: ReadonlySet<string>, right: ReadonlySet<string>): boolean {
+  for (const nodeId of left) if (right.has(nodeId)) return true;
+  return false;
 }
 
 function lotLineGroups(lines: readonly PlannedLine[], maximum: number): readonly (readonly PlannedLine[])[] {
   safeInteger(maximum, "maxLinesPerLot", 1);
-  const remaining = new Map(lines.map((line) => [line.id, line]));
+  const remaining = new Map([...lines].sort((left, right) => left.id.localeCompare(right.id)).map((line) => [line.id, line]));
   const groups: PlannedLine[][] = [];
   while (remaining.size > 0) {
-    const seed = [...remaining.values()].sort((left, right) => left.id.localeCompare(right.id))[0]!;
+    const seed = remaining.values().next().value!;
     remaining.delete(seed.id);
     const group = [seed];
+    const groupNodeIds = new Set(seed.nodeIds);
     while (group.length < maximum) {
-      const candidates = [...remaining.values()]
-        .filter((candidate) => group.some((member) => connected(member, candidate)))
-        .sort((left, right) => left.id.localeCompare(right.id));
-      const next = candidates[0];
+      let next: PlannedLine | undefined;
+      for (const candidate of remaining.values()) {
+        if (connected(candidate.nodeIds, groupNodeIds)) { next = candidate; break; }
+      }
       if (next === undefined) break;
       remaining.delete(next.id);
       group.push(next);
+      for (const nodeId of next.nodeIds) groupNodeIds.add(nodeId);
     }
     groups.push(group);
   }
@@ -779,7 +782,7 @@ export function buildGtfsPlanningSnapshot(input: GtfsPlanningInput): GtfsPlannin
   }).sort((left, right) => left.id.localeCompare(right.id));
 
   const lots: GtfsServiceLot[] = lotLineGroups(lines, input.rules.maxLinesPerLot).map((group) => {
-    invariant(group.length === 1 || group.slice(1).every((line, index) => group.slice(0, index + 1).some((member) => connected(member, line))), "Losgenerator hat unverbundene Linien gebündelt.");
+    invariant(group.length === 1 || group.slice(1).every((line, index) => group.slice(0, index + 1).some((member) => connected(member.nodeIds, line.nodeIds))), "Losgenerator hat unverbundene Linien gebündelt.");
     const lineIds = group.map((line) => line.id).sort();
     const patternIds = group.flatMap((line) => line.patternIds).sort();
     const nodeCounts = new Map<string, number>();

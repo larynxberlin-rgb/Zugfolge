@@ -28,7 +28,8 @@ function record(value: unknown): value is Record<string, unknown> {
 
 function exactKeys(value: Record<string, unknown>, expected: readonly string[]): boolean {
   const actual = Object.keys(value).sort();
-  return actual.length === expected.length && actual.every((key, index) => key === [...expected].sort()[index]);
+  const sortedExpected = [...expected].sort();
+  return actual.length === expected.length && actual.every((key, index) => key === sortedExpected[index]);
 }
 
 function finiteAmount(amountCents: bigint): bigint {

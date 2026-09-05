@@ -31,14 +31,18 @@ async function runOne(
   try {
     const timeout = new Promise<never>((_resolve, reject) => {
       timer = setTimeout(() => {
-        controller.abort();
         reject(new HealthCheckTimeoutError(check.name));
+        controller.abort();
       }, timeoutMs);
     });
     const outcome = await Promise.race([check.check(controller.signal), timeout]);
     return { name: check.name, ...outcome, durationMs: Date.now() - start };
   } catch (error) {
-    onError?.(check.name, error);
+    try {
+      onError?.(check.name, error);
+    } catch {
+      // Auch ein ausgefallener Logger darf den Health-Bericht nicht verhindern.
+    }
     const timedOut = error instanceof HealthCheckTimeoutError;
     return {
       name: check.name,

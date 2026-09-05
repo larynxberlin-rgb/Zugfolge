@@ -63,16 +63,18 @@ describe("runHealthChecks", () => {
     expect(report.checks[0]).not.toHaveProperty("detail");
   });
 
-  it("begrenzt eine nie auflösende Prüfung und signalisiert den Abbruch", async () => {
+  it.each([false, true])("begrenzt eine haengende Pruefung auch bei sofortiger Abort-Ablehnung (%s)", async (rejectOnAbort) => {
     let aborted = false;
     const started = Date.now();
     const report = await runHealthChecks(
       [
         check("haengt", (signal) => {
-          signal?.addEventListener("abort", () => {
-            aborted = true;
+          return new Promise((_resolve, reject) => {
+            signal?.addEventListener("abort", () => {
+              aborted = true;
+              if (rejectOnAbort) reject(new Error("Abgebrochen"));
+            });
           });
-          return new Promise(() => undefined);
         }),
       ],
       { timeoutMs: 20 },
@@ -80,6 +82,18 @@ describe("runHealthChecks", () => {
     expect(Date.now() - started).toBeLessThan(500);
     expect(aborted).toBe(true);
     expect(report.checks[0]).toMatchObject({ status: "down", code: "timeout" });
+  });
+
+  it("liefert den Bericht auch bei einem Fehler im internen Fehlerkanal", async () => {
+    const report = await runHealthChecks([
+      check("defekt", async () => { throw new Error("Verbindung fehlgeschlagen"); }),
+      check("bereit", async () => ({ status: "ok" })),
+    ], { onError: () => { throw new Error("Logger nicht erreichbar"); } });
+    expect(report.status).toBe("down");
+    expect(report.checks.map(({ name, status }) => ({ name, status }))).toEqual([
+      { name: "defekt", status: "down" },
+      { name: "bereit", status: "ok" },
+    ]);
   });
 
   it("leitet die vollständige Ursache nur an den internen Fehlerkanal", async () => {

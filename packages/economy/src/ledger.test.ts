@@ -116,19 +116,24 @@ describe("postLedgerTransaction", () => {
     const kasse = await openLedgerAccount(db, { worldId: WORLD_LHE, operatorId, name: "Kasse" });
     const trassenentgelt = await openLedgerAccount(db, { worldId: WORLD_LHE, operatorId, name: "Trassenentgelt" });
 
-    await postLedgerTransaction(db, {
-      worldId: WORLD_LHE,
-      operatorId,
-      description: "Trassenentgelt Januar",
-      postedAt: POSTED_AT,
-      entries: [
-        { ledgerAccountId: kasse.id, amountCents: -12_345n },
-        { ledgerAccountId: trassenentgelt.id, amountCents: 12_345n },
-      ],
-    });
-
-    expect(await ledgerAccountBalance(db, { worldId: WORLD_LHE, ledgerAccountId: kasse.id })).toBe(-12_345n);
-    expect(await ledgerAccountBalance(db, { worldId: WORLD_LHE, ledgerAccountId: trassenentgelt.id })).toBe(12_345n);
+    // Einzelbuchungen bleiben i64; ihre Summe darf weder in Number gerundet
+    // noch beim Aggregieren auf einen einzelnen i64-Betrag verengt werden.
+    const amounts = [12_345n, 9_223_372_036_854_775_807n, 9_223_372_036_854_775_807n];
+    for (const amount of amounts) {
+      await postLedgerTransaction(db, {
+        worldId: WORLD_LHE,
+        operatorId,
+        description: "Trassenentgelt Januar",
+        postedAt: POSTED_AT,
+        entries: [
+          { ledgerAccountId: kasse.id, amountCents: -amount },
+          { ledgerAccountId: trassenentgelt.id, amountCents: amount },
+        ],
+      });
+    }
+    const total = sumEntries(amounts);
+    expect(await ledgerAccountBalance(db, { worldId: WORLD_LHE, ledgerAccountId: kasse.id })).toBe(-total);
+    expect(await ledgerAccountBalance(db, { worldId: WORLD_LHE, ledgerAccountId: trassenentgelt.id })).toBe(total);
   });
 
   it("lehnt eine Transaktion mit nur einer Buchung ab", async () => {
