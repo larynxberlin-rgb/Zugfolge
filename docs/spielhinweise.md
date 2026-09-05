@@ -37,7 +37,37 @@ Keine API, Datenbanktabelle oder Simulationskomponente ist an den Hinweisen bete
 
 ## Abnahme
 
-Verhaltenstests prüfen Tastatur und Berührung, Abschalten und Wiederaufnahme,
-Neurendern, kleine Viewports sowie ausbleibende Netzwerk- und Spielaktionen.
-Die Verständlichkeit für neue Spieler wird in der geschlossenen Alpha geprüft.
-Ein automatisierter Browserlauf ersetzt diese Nutzerbeobachtung nicht.
+**M9.1 ist abgeschlossen.** Der Projektverantwortliche hat das neue Tutorial
+am 2026-09-05 ausdrücklich fachlich abgenommen und den vollständigen Abschluss
+freigegeben. Diese Produktabnahme bildet zusammen mit den ausgeführten
+Verhaltenstests den Abschlussnachweis.
+
+Abgenommen sind 20 vollständig neue Tooltipps in Unternehmensansicht (10),
+Livemap (4) und Betriebszentrale (6), ihre Bedienung per Maus, Tastatur und Touch
+sowie Abschalten und Wiederaufnahme über lokale Browserpräferenzen. Die
+Hinweise lösen keine Netzwerk- oder Spielaktionen aus. Die Umsetzung entfernt
+das alte Tutorial samt Laufzeit, Inhalten und Welten; Datenbank- und
+Odoo-Migrationen bereinigen dessen Bestände. Jeder Game-Server betreibt genau
+seine konfigurierte Welt und Subdomain. Odoo verwaltet weiterhin die getrennten
+Weltserver.
+
+Die Umsetzung und ihre Nachweise sind in
+[PR #530](https://github.com/larynxberlin-rgb/Zugfolge/pull/530) verknüpft.
+Für den Implementierungsstand
+`db0a0ce13587f2b061a801de5c72c7688b8bc270` sind beide CI-Läufe vollständig
+erfolgreich:
+
+- [Reguläre CI](https://github.com/larynxberlin-rgb/Zugfolge/actions/runs/33984164374):
+  Build, Typprüfung, Pakettests, Rust und Determinismus, echte NAPI-,
+  PostgreSQL- und Browserintegration sowie Repository-Wächter. Die Browserfälle
+  prüfen Tastatur und Berührung, Abschalten und Wiederaufnahme, Neurendern,
+  kleine Viewports sowie ausbleibende Netzwerk- und Spielaktionen.
+- [Erweiterte Prüfungen](https://github.com/larynxberlin-rgb/Zugfolge/actions/runs/33984162571):
+  Odoo 19 einschließlich Bereinigung, Werkzeuge und Datenimporte,
+  Produktionsimage, PostgreSQL-/Keycloak-/Wiederherstellungsdrills,
+  Lastziel und 48-Stunden-Offlineszenario.
+
+Der Abschluss wird in
+[#159](https://github.com/larynxberlin-rgb/Zugfolge/issues/159) geführt.
+Die spätere Nutzerbeobachtung gehört zur geschlossenen Alpha M9.9. Ein Lauf
+mit externen Spielern wird durch diese Produktabnahme nicht behauptet.
