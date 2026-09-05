@@ -181,7 +181,7 @@ Nur dieser Modus darf danach die initiale 0032/0033-DDL bis Zielkopf 33 starten:
 
 ```bash
 bash tools/alpha-ops/compose-with-map-release-env.sh \
-  --schema33-after-cold -f /opt/zugfolge/compose.yml
+  --schema35-after-cold -f /opt/zugfolge/compose.yml
 ```
 
 `game-schema33-migrate` prüft beide Receipt-Hashes, Containerinventar, den unveränderten
@@ -202,7 +202,7 @@ Hostpfade neu, getrennt, nicht verschachtelt und symlinkfrei sein; das
 
 ```bash
 bash tools/alpha-ops/compose-with-map-release-env.sh \
-  --keycloak-after-schema33 -f /opt/zugfolge/compose.yml
+  --keycloak-after-schema35 -f /opt/zugfolge/compose.yml
 ```
 
 Dieser einzige Produktionsmodus prüft erneut den exakten Schema-33-Kopf,
@@ -212,7 +212,7 @@ Keycloak-Prüfdatenbank wieder her und führt anschließend `bind-backup`,
 zum Live-Endpunkt und Objektkatalog passenden Up- oder Up-Recover-Receipt; ein
 Fresh-Bootstrap-Receipt ist hier unzulässig. Bricht der Prozess nach dem
 DB-Commit, aber vor dem Receipt ab, wird ausschließlich derselbe Plan über
-`--keycloak-recover-after-schema33` wieder aufgenommen. Jeder andere Fehler
+`--keycloak-recover-after-schema35` wieder aufgenommen. Jeder andere Fehler
 lässt alle Writer gestoppt.
 
 Erst danach folgt der Hot-Drill:

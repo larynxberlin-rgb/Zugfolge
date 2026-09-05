@@ -2,7 +2,7 @@
   "schemaVersion": "zugfolge-operational-infrastructure-binding/v2",
   "infraReleaseId": "operations-fixture-v1",
   "file": "operational-infrastructure-v2.json",
-  "bytes": 3025,
-  "sha256": "49012416f2cb7ccc31db1beae0b8048bafc71dc2ae812d5cb884c4cb54017f58",
-  "stateHash": "e9aa3f0414f9be2451945f6ec9ade48a8bc22df4a05a06c8a6e862fe3409316c"
+  "bytes": 3259,
+  "sha256": "2d176e67a929360f57b290706c2ffea358a4779dd22494553977506eee859f1f",
+  "stateHash": "2e578fb5752e8a7edcc715f6982372a65a83409e96c6ff892b2de51794219961"
 }

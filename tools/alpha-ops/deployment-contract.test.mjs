@@ -151,7 +151,7 @@ test("Alpha-Compose erzwingt Map- und Welt-Cutover-Gates, Migration, signierten 
   assert.match(compose, /production-recovery-cold-qualify:[\s\S]*PRODUCTION_SCHEMA31_RECEIPT_PATH:[^\n]+schema31-prepared\.json/u);
   assert.match(compose, /game-schema33-migrate:[\s\S]*PRODUCTION_SCHEMA31_RECEIPT_PATH:[^\n]+schema31-prepared\.json/u);
   assert.match(compose, /game-schema33-migrate:[\s\S]*production-cold-backup\.mjs, preflight, node, packages\/db\/dist\/migrate\.js/u);
-  assert.match(composeWrapper, /--schema33-after-cold[\s\S]*game-schema33-migrate[\s\S]*select count\(\*\) from drizzle\.__drizzle_migrations"\)" = 35/u);
+  assert.match(composeWrapper, /--schema35-after-cold[\s\S]*game-schema33-migrate[\s\S]*select count\(\*\) from drizzle\.__drizzle_migrations"\)" = 35/u);
   assert.match(
     composeWrapper,
     /if \(\(keycloak_after_schema33 == 1\)\); then[\s\S]*select count\(\*\) from drizzle\.__drizzle_migrations"\)" = 35[\s\S]*keycloak-schema-backup[\s\S]*keycloak-schema-restore[\s\S]*bind-backup[\s\S]*plan-up[\s\S]*keycloak_schema_command up[\s\S]*keycloak_schema_command recover[\s\S]*keycloak_schema_command preflight-up/u,
@@ -373,9 +373,9 @@ test("Produktionsfreigabe dokumentiert .2 nur manuell und startet Fresh-Compose 
   assert.doesNotMatch(environmentSource, /^LIVEMAP_TRAIN_PROJECTION_PATH=/mu);
 
   assert.match(installation, /--prepare-v2-cold -f \/opt\/zugfolge\/compose\.yml/u);
-  assert.match(installation, /--schema33-after-cold -f \/opt\/zugfolge\/compose\.yml/u);
-  assert.match(installation, /--keycloak-after-schema33 -f \/opt\/zugfolge\/compose\.yml/u);
-  assert.match(installation, /--keycloak-recover-after-schema33/u);
+  assert.match(installation, /--schema35-after-cold -f \/opt\/zugfolge\/compose\.yml/u);
+  assert.match(installation, /--keycloak-after-schema35 -f \/opt\/zugfolge\/compose\.yml/u);
+  assert.match(installation, /--keycloak-recover-after-schema35/u);
   assert.match(installation, /--prepare-v2-hot -f \/opt\/zugfolge\/compose\.yml/u);
   assert.match(installation, /KC_DB_SCHEMA=keycloak[\s\S]*keine[^\n]*Keycloak-[\s\S]*Down-Migration/u);
   assert.match(installation, /schema29-keycloak-runtime[\s\S]*KC_DB_SCHEMA=public/u);
@@ -434,7 +434,7 @@ test("aktueller Karteninstallationsvertrag bindet 2026.4 an den echten 2026.2-Ru
   assert.doesNotMatch(currentContract, /infra-deutschland-2026\.1/u);
 });
 
-test("Produktions-Runbooks erzwingen Schema 33, Keycloak-Up und Hot-Drill in dieser Reihenfolge", async () => {
+test("Produktions-Runbooks erzwingen Schema 35, Keycloak-Up und Hot-Drill in dieser Reihenfolge", async () => {
   const [installation, recovery, keycloak, rollbackCompose] = await Promise.all([
     read("ALPHA-INSTALL.md"),
     read("docs/produktions-recovery-v2-v1.md"),
@@ -442,14 +442,14 @@ test("Produktions-Runbooks erzwingen Schema 33, Keycloak-Up und Hot-Drill in die
     read("compose.alpha.rollback.yml"),
   ]);
   for (const source of [installation, recovery]) {
-    const schema33 = source.indexOf("--schema33-after-cold");
-    const keycloakUp = source.indexOf("--keycloak-after-schema33", schema33);
+    const schema35 = source.indexOf("--schema35-after-cold");
+    const keycloakUp = source.indexOf("--keycloak-after-schema35", schema35);
     const hot = source.indexOf("--prepare-v2-hot", keycloakUp);
-    assert.ok(schema33 >= 0 && keycloakUp > schema33 && hot > keycloakUp);
+    assert.ok(schema35 >= 0 && keycloakUp > schema35 && hot > keycloakUp);
     assert.match(source, /preflight-up[\s\S]*Fresh-Bootstrap-Receipt[\s\S]*unzulässig/u);
   }
-  assert.match(keycloak, /--keycloak-after-schema33[\s\S]*bind-backup[\s\S]*plan-up[\s\S]*`up`[\s\S]*preflight-up/u);
-  assert.match(keycloak, /--keycloak-recover-after-schema33/u);
+  assert.match(keycloak, /--keycloak-after-schema35[\s\S]*bind-backup[\s\S]*plan-up[\s\S]*`up`[\s\S]*preflight-up/u);
+  assert.match(keycloak, /--keycloak-recover-after-schema35/u);
   assert.match(recovery, /Rollback-Compose[\s\S]*KC_DB_SCHEMA=keycloak[\s\S]*KC_DB_SCHEMA=public[\s\S]*schema29-keycloak-runtime/u);
   assert.match(recovery, /PRODUCTION_RECOVERY_PREVIOUS_WORLD_ID[\s\S]*exakten[\s\S]*Regionsmenge[\s\S]*wartet derselbe[\s\S]*`\/health\/ready`[\s\S]*neue\s+autoritative Revision in genau dieser Welt/u);
   assert.match(recovery, /continuity-000000-origin[\s\S]*origin\(0\) → reseal\(1\) → continue\(2\)[\s\S]*Revision `N → N\+1`/u);
