@@ -194,6 +194,27 @@ jobs:
           pnpm --filter @zugfolge/livemap... build
           pnpm --filter @zugfolge/game-api exec vitest run --no-file-parallelism src/demand-map-browser.e2e.test.ts
 
+      - name: M15.3-Atlasgalerie mit echtem Browser und mobilen Pixelzooms
+        shell: bash
+        env:
+          ART_PREVIEW_BROWSER_TEST: "1"
+          ART_PREVIEW_SCREENSHOT_DIR: ${{ runner.temp }}/art-atlas/screenshots
+          ART_PREVIEW_REPORT_PATH: ${{ runner.temp }}/art-atlas/browser-report.json
+        run: |
+          set -euo pipefail
+          # Wie M6/M10 den vorhandenen Systembrowser verwenden; playwright-core lädt keinen Browser herunter.
+          for art_browser in "${ZUGFOLGE_BROWSER_EXECUTABLE:-}" /usr/bin/google-chrome /usr/bin/chromium; do
+            if [[ -n "${art_browser}" && -x "${art_browser}" ]]; then
+              export PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH="${art_browser}"
+              break
+            fi
+          done
+          if [[ -z "${PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH:-}" ]]; then
+            echo "M15.3-Browserprüfung benötigt Chrome oder Chromium." >&2
+            exit 1
+          fi
+          node --test tools/art-atlas/preview.test.mjs
+
   guards:
     # ASCII-only: GitHub branch protection compares this check name byte-for-byte.
     # Keeping non-ASCII out prevents a required-check context such as `W?chter`
