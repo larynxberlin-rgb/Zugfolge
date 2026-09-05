@@ -204,10 +204,14 @@ export class DemandService {
     this.failure = "";
   }
 
-  async checkpoint(worldId: string): Promise<DemandCheckpoint> {
+  async checkpoint(worldId: string, db?: IdentityDatabase): Promise<DemandCheckpoint> {
     this.assertWorld(worldId);
     if (!this.available) throw new DemandError(503, this.failure);
-    const checkpoint = await this.store.latest(worldId, this.deps.deploymentHash);
+    // SPFV reads under its world mutex on the same connection. Opening a read
+    // through the outer pool can deadlock a single-connection database. A scoped
+    // verifier also avoids caching facts from a transaction that may roll back.
+    const store = db === undefined ? this.store : new DemandStore(db, this.deps.runtime);
+    const checkpoint = await store.latest(worldId, this.deps.deploymentHash);
     if (checkpoint === undefined) throw new DemandError(503, "Nachfrage wurde noch nicht berechnet.");
     return checkpoint;
   }
@@ -315,8 +319,8 @@ export class DemandService {
   }
 
   /** Reale bestehende Fahrten liefern Referenzlaufzeiten, nie fertige freie Trassen. */
-  async estimateSpfv(input: SpfvEstimateInput): Promise<SpfvEstimate> {
-    const checkpoint = await this.checkpoint(input.worldId);
+  async estimateSpfv(input: SpfvEstimateInput, db?: IdentityDatabase): Promise<SpfvEstimate> {
+    const checkpoint = await this.checkpoint(input.worldId, db);
     const source = { ...this.period(checkpoint), stateHash: checkpoint.result["stateHash"], kind: "forecast" };
     const unavailable = (message: string): SpfvEstimate => ({ source, requested: null, served: null, unserved: null,
       fareRevenueCents: null, costsCents: null, conflicts: [message], connectionEffects: [] });

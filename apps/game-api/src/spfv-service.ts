@@ -58,7 +58,7 @@ export interface SpfvServiceDependencies {
   readonly fleetRuntime?: Pick<FleetRuntime, "verifyFleetWorldState">;
   readonly infrastructureReleaseForWorld: (worldId: string) => PlanningInfrastructureRelease | undefined;
   readonly timeForWorld: (worldId: string) => Promise<number>;
-  readonly estimate: (input: SpfvEstimateInput) => Promise<SpfvEstimate>;
+  readonly estimate: (input: SpfvEstimateInput, db: EconomyDatabase) => Promise<SpfvEstimate>;
 }
 
 export interface SpfvReplacementTrip {
@@ -270,7 +270,7 @@ export class SpfvService {
     const estimate = await this.deps.estimate({ worldId: scope.worldId, operatorId: scope.operatorId, atS, draft, capacity, replaceTrainIds,
       operatingCostCentsPerTrainKm: formation.characteristics.operatingCostCentsPerTrainKm,
       firstClassSeats, bicyclePlaces: formation.characteristics.bicyclePlaces, wheelchairPlaces: formation.characteristics.wheelchairPlaces,
-      routeDistanceMm: Number(distance), fleetRevision: checkpoint.state.revision, fleetStateHash: checkpoint.stateHash, infrastructureReleaseId: release.releaseId });
+      routeDistanceMm: Number(distance), fleetRevision: checkpoint.state.revision, fleetStateHash: checkpoint.stateHash, infrastructureReleaseId: release.releaseId }, db);
     for (const value of [estimate.requested, estimate.served, estimate.unserved]) valid(value === null || Number.isSafeInteger(value) && value >= 0, "Nachfragevorschau enthält ungültige Fahrgastzahlen.", 503);
     for (const value of [estimate.fareRevenueCents, estimate.costsCents]) valid(value === null || /^(0|[1-9][0-9]{0,18})$/.test(value) && BigInt(value) <= 9_223_372_036_854_775_807n, "Nachfragevorschau enthält ungültige Geldwerte.", 503);
     // Weitere Reisende dürfen Bestandszüge oder andere Verkehrsmittel wählen.

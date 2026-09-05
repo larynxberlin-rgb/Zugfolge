@@ -126,6 +126,15 @@ abgelehnte oder abgelöste Fahrten erhöhen das Angebot nicht. Referenzkomfort
 und Zuverlässigkeit bleiben ausdrücklich Prognoseannahmen.
 
 Die Übernahme dieser Planung in das produktive Betriebsprogramm, vollständige
-Fahrzeugumläufe und tatsächliche Halt-/Abschlussbelege bleiben an die vorhandenen
-Betriebsgrenzen (#517/#518) gebunden. Das ist keine Produktionsfreigabe oder
+Fahrzeugumläufe und Abrechnungsanbindung bleiben eigene Betriebsaufgaben
+(#517/#518). Native Fahrtabschlussbelege existieren bereits; für #210 fehlen
+dagegen signierte Zwischenhaltbindungen, native Haltquittungen und ihr
+persistenter Nachfrageconsumer. Das ist keine Produktionsfreigabe oder
 Fahrgelderlösbuchung; siehe [M10-Abnahmebericht](m10-abnahme.md).
+
+Vorschau und Bestätigung lesen den Nachfragecheckpoint über dieselbe
+Datenbanktransaktion, die den Weltmutex hält. Die native Verifikation dieses
+Lesezugriffs verwendet keinen transaktionsübergreifenden Cache. Dadurch
+bleiben Flotte, Nachfrage und Vorschau zusammen gebunden; auch eine einzelne
+Datenbankverbindung wartet nicht auf eine zweite Abfrage außerhalb ihrer
+eigenen Transaktion.

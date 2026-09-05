@@ -108,6 +108,16 @@ an diesen Modus. Die derzeitige API ist ausdrücklich eine Prognose. Es fehlt
 die durchgehende Kette vom Betriebsproducer bis zum persistenten revidierten
 Ist-Manifest; der vorhandene Kern braucht dafür keinen zweiten Nachfragedienst.
 
+Die konkrete Lücke liegt vor dem Consumer: `OperationalTrain` und
+`TrainMaterialization` in [operational.rs](../crates/zugfolge-sim/src/operational.rs)
+besitzen noch keine geordnete, physisch gebundene Zwischenhaltliste. Benötigt
+werden signierte Haltanker, native Ankunfts-/Abfahrtsquittungen mit Aufenthalt
+und deren persistenter Nachfrageconsumer einschließlich Ausgangsmanifest.
+Der vorhandene [Fahrtabschlussproducer](../crates/zugfolge-sim/src/operational/service_outcomes.rs)
+erzeugt bereits `train-outcome`; dieser Terminalbeleg ersetzt keine
+Zwischenhalte. #518 ist benachbarte Abschluss-/Abrechnungsarbeit und keine
+zwingende externe Blockade für diese noch offene M10-Implementierung.
+
 **#173:** [Kalibrierungsquellen](m10-kalibrierungsquellen.md) und
 [nativer Vergleich](../tools/demand-calibration/README.md) belegen freie
 Quellen, getrennte Daten und reproduzierbare Abweichungen. Der SPNV-Holdout

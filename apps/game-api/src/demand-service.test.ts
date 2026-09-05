@@ -171,7 +171,9 @@ describe.skipIf(process.env["ZUGFOLGE_RUNTIME_NATIVE_PATH"] === undefined && pro
           fareCents: "100", formationId: "formation", validFromS: 200, validUntilS: 201 },
         capacity: 20, firstClassSeats: 0, bicyclePlaces: 1, wheelchairPlaces: 1, operatingCostCentsPerTrainKm: 50,
         routeDistanceMm: 100_000_000, fleetRevision: 1, fleetStateHash: "f".repeat(64), infrastructureReleaseId: "infra" };
-      const estimate = await service.estimateSpfv(estimateInput);
+      // The real SPFV preview holds a transaction while reading demand. This
+      // must share its connection, including on a single-connection database.
+      const estimate = await db.transaction((tx) => service.estimateSpfv(estimateInput, tx));
       expect(estimate.served).not.toBeNull();
       expect(estimate.costsCents).toBe("5000");
       await service.estimateSpfv({ ...estimateInput, replaceTrainIds: ["express-1"] });

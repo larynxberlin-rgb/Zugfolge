@@ -26,6 +26,13 @@ Der neue M10-Stack baut darauf in dieser Reihenfolge auf:
 [#534](https://github.com/larynxberlin-rgb/Zugfolge/pull/534) (API, Oberfläche,
 freie Kalibrierungsdaten und gemeinsame Abnahmematrix).
 
+Während der Abschlussprüfung kam
+[#535](https://github.com/larynxberlin-rgb/Zugfolge/pull/535) hinzu. Dieser
+M15-Entwurf baut auf #534 auf und übernimmt M10-Manifeste ausschließlich mit
+tatsächlichen Haltbelegen. Seine interne Projektion bleibt bei den derzeitigen
+produktiven M10-Prognosen gesperrt. Der M10-Stack erhält additive Commits;
+der Manifestvertrag wird für den nachgelagerten PR nicht umgeschrieben.
+
 #530 entfernt Tutorialwelten, erzwingt eine Welt je Server und verwendet
 Schema 35. M10 führt diese alten Konzepte nicht erneut ein. Die ausdrücklich
 abgenommene M9.1-Hinweisfunktion bleibt erhalten. #531 liefert Layout,
