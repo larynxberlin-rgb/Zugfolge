@@ -1,4 +1,6 @@
 from odoo import Command
+from unittest.mock import patch
+from odoo.exceptions import AccessError
 from odoo.addons.account.tests.common import AccountTestInvoicingCommon
 
 
@@ -85,3 +87,66 @@ class TestWorldPaymentParticipation(AccountTestInvoicingCommon):
         ])
         self.assertEqual(len(replay), 1)
         self.assertEqual(replay.idempotency_key, first_key)
+
+    def test_entitlement_payment_refund_retry_and_server_backfill_use_frozen_revisions(self):
+        self.product_b.product_tmpl_id.zugfolge_product_kind = "cosmetic"
+        invoice = self.init_invoice("out_invoice", partner=self.partner_a, post=True, products=[self.product_b], taxes=[], journal=self.sale_journal)
+        invoice.zugfolge_subject_reference = self.partner_a.zugfolge_keycloak_subject
+        self._register_payment(invoice, journal_id=self.payment_journal.id)
+        invoice.invalidate_recordset()
+        events = list(invoice.zugfolge_entitlement_events)
+        self.assertEqual(len(events), 1)
+        self.assertEqual(events[0]["command"]["change"], "grant")
+        invoice._invoice_paid_hook()
+        self.assertEqual(invoice.zugfolge_entitlement_events, events)
+        with self.assertRaises(AccessError):
+            invoice.zugfolge_subject_reference = "another-subject"
+        self.product_b.product_tmpl_id.zugfolge_product_kind = "zugfolge_plus"
+
+        refund = invoice._reverse_moves(default_values_list=[{"date": invoice.date}], cancel=False)
+        self.assertFalse(refund._zugfolge_command_change())
+        refund.action_post()
+        invoice.invalidate_recordset()
+        self.assertEqual(len(invoice.zugfolge_entitlement_events), 2)
+        revoked = invoice.zugfolge_entitlement_events[1]
+        self.assertEqual(revoked["command"]["change"], "revoke")
+        self.assertEqual(revoked["command"]["sourceReference"], events[0]["command"]["sourceReference"])
+        self.assertEqual(revoked["command"]["subject"], events[0]["command"]["subject"])
+        self.assertEqual(revoked["command"]["productKind"], "cosmetic")
+        self.assertNotEqual(revoked["correlationId"], events[0]["correlationId"])
+
+        with patch("odoo.addons.zugfolge_admin.models.account_move.dispatch_signed_game_command") as dispatch:
+            invoice._dispatch_zugfolge_entitlement(1)
+            invoice._dispatch_zugfolge_entitlement(2)
+            invoice.invalidate_recordset()
+            invoice._dispatch_zugfolge_entitlement(2)
+            invoice._dispatch_zugfolge_entitlement()
+        self.assertEqual(dispatch.call_count, 5)
+        self.assertEqual(dispatch.call_args_list[0].args[3], events[0]["command"])
+        self.assertEqual(dispatch.call_args_list[1].args[1:], dispatch.call_args_list[2].args[1:])
+        self.assertEqual(dispatch.call_args_list[3].args[3], events[0]["command"])
+        self.assertEqual(dispatch.call_args_list[4].args[3], revoked["command"])
+        invoice.action_replay_zugfolge_entitlements()
+        self.assertEqual(len(invoice.zugfolge_entitlement_events), 2)
+        with self.assertRaises(AccessError):
+            invoice.write({"zugfolge_entitlement_events": []})
+
+    def test_pre_upgrade_queued_entitlement_materializes_before_transport_instead_of_disappearing(self):
+        self.product_b.product_tmpl_id.zugfolge_product_kind = "cosmetic"
+        invoice = self.init_invoice("out_invoice", partner=self.partner_a, post=True, products=[self.product_b], taxes=[], journal=self.sale_journal)
+        invoice.zugfolge_subject_reference = self.partner_a.zugfolge_keycloak_subject
+        # Simuliert den vor 19.0.2.0.5 bereits gequeueten Job ohne neues Journal.
+        with patch.object(type(invoice), "_sync_zugfolge_entitlement", return_value=None):
+            self._register_payment(invoice, journal_id=self.payment_journal.id)
+        invoice.invalidate_recordset()
+        self.assertEqual(invoice.payment_state, "paid")
+        self.assertFalse(invoice.zugfolge_entitlement_events)
+        with patch("odoo.addons.zugfolge_admin.models.account_move.dispatch_signed_game_command") as dispatch:
+            invoice._dispatch_zugfolge_entitlement()
+            self.assertEqual(invoice.zugfolge_event_state, "queued")
+            self.assertEqual(len(invoice.zugfolge_entitlement_events), 1)
+            dispatch.assert_not_called()
+            invoice.invalidate_recordset()
+            invoice._dispatch_zugfolge_entitlement(1)
+            dispatch.assert_called_once()
+        self.assertEqual(invoice.zugfolge_event_state, "accepted")

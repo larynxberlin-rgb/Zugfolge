@@ -5,21 +5,19 @@ mit hohem betrieblichem, infrastrukturellem und wirtschaftlichem Realismus.
 Öffentliche Welten laufen dauerhaft in 1:1-Echtzeit ohne Wipes. Erste
 Pilotregion: **Leipzig–Halle–Erfurt**.
 
-> **Stand nach dem Projektaudit (August 2026):** M0 bis M7 sind fachlich
-> abgenommen und reproduzierbar nachgewiesen. M1.13 akzeptiert die korrigierte
-> Trassenfinder-Kalibrierung (+3 Sekunden innerhalb der definierten Toleranz)
-> zusammen mit dem getrennten GTFS-Fahrplan-Holdout als Milestone-Beweis. Der
-> konkrete Pilot bleibt bewusst `calibration-only` und
-> `releaseQualified: false`; seine unabhängige produktive Qualifizierung und
-> echte Signatur werden als Betriebsreife-Folgearbeit in Issue #48 geführt und
-> blockieren M1 nicht. M3.10, M4.6 und M6.7 sind über die echten Rust-,
-> Persistenz-, API- und Clientpfade abgeschlossen. M8 ist fachlich vollständig
-> abgenommen, bleibt aber wegen seines Betriebs-Gates formal offen. M9 bleibt
-> bis zu seinen Abhängigkeiten und Betriebsnachweisen blockiert; M10 bis M15
-> bilden den weiteren Produktausbau. Der
-> detaillierte Status steht in
-> [`docs/milestones.md`](docs/milestones.md); „erledigt“ bedeutet dort wieder
-> einen reproduzierbaren Beweis und nicht nur vorhandenen Quellcode.
+> **Stand September 2026:** M0 bis M8 sind fachlich abgenommen und
+> reproduzierbar nachgewiesen. Die unabhängige Release-Qualifizierung und
+> echte Signatur des Pilot-InfraRelease sind nachgewiesen
+> ([Issue #48, geschlossen](https://github.com/larynxberlin-rgb/Zugfolge/issues/48)).
+> Davon getrennte Kalibrierungsfixtures bleiben bewusst `calibration-only`
+> und `releaseQualified: false`; sie sind keine produktiven Releases.
+> M9 bleibt in Arbeit: Betriebsdrills gegen den laufenden Zielstack, Backup/
+> Restore, Alarmierung, Release-/Rollback-Abnahme sowie der Betrieb mit
+> externen Spielern sind jeweils durch konkrete Protokolle zu belegen.
+> Neue Auditbefunde werden in [#491](https://github.com/larynxberlin-rgb/Zugfolge/issues/491)
+> nachverfolgt. Die kanonische Milestone-Statusquelle ist
+> [`docs/milestones.md`](docs/milestones.md); Quellcode und grüne PR-CI ersetzen
+> keinen dort verlangten Betriebsnachweis.
 
 ## Wo was steht
 
@@ -27,7 +25,7 @@ Pilotregion: **Leipzig–Halle–Erfurt**.
 |------------|---------|
 | verstehen, worum es geht | [`docs/produkt.md`](docs/produkt.md) |
 | wissen, was entschieden ist | [`docs/entscheidungen.md`](docs/entscheidungen.md), [`docs/adr/`](docs/adr/README.md) |
-| Code beitragen | [`docs/monorepo.md`](docs/monorepo.md) und [`CLAUDE.md`](CLAUDE.md) |
+| Code beitragen | [`docs/monorepo.md`](docs/monorepo.md) und [`AGENTS.md`](AGENTS.md) |
 | Begriffe nachschlagen | [`docs/glossar.md`](docs/glossar.md) |
 | die Reihenfolge kennen | [`docs/milestones.md`](docs/milestones.md) |
 | das UX-Zielbild und die künftigen Arbeitsräume verstehen | [`docs/ux-spieler-shell.md`](docs/ux-spieler-shell.md) |
@@ -64,9 +62,13 @@ Vollständig mit Domänengrenzen und Durchsetzung:
 
 ## Loslegen
 
-Vorausgesetzt sind eine Rust-Werkzeugkette (Kanal `stable`), Node.js 24 LTS
+Vorausgesetzt sind Rust **1.94.1** gemäß [`rust-toolchain.toml`](rust-toolchain.toml), Node.js 24 LTS
 und pnpm 11 — oder ein Lauf von `bash .claude/setup.sh`, das genau das
 einrichtet.
+
+Der Rust-Pin hält Release-Artefakte reproduzierbar. Ein Wechsel wird bewusst
+im Commit begründet und anhand der Release-Golden-Master geprüft; siehe
+[`docs/monorepo.md`](docs/monorepo.md#2-werkzeugkette).
 
 ```bash
 cargo test --workspace

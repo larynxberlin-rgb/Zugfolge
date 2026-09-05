@@ -531,25 +531,26 @@ test("direkter Quell-.mjs-Aufruf ist hart noneligible und startet keinen Release
 });
 
 test("optionaler Command-Printer besitzt keine Prozesskante und bleibt aus der Release-Closure ausgeschlossen", { skip: process.platform !== "win32" }, async (t) => {
-  const printerPath = join(HERE, "print-operational-infrastructure-v2-system-launch-command.mjs");
+  const value = await executorFixture(t);
+  const prepared = await value.prepare('throw new Error("command-printer-must-not-execute-validator");\n');
+  const printerPath = value.paths.commandBuilder;
   const printerSource = await readFile(printerPath, "utf8");
   assert.doesNotMatch(printerSource, /node:child_process|\bspawn(?:Sync)?\s*\(|\bexec(?:File|Sync)?\s*\(/u);
-  const root = await mkdtemp(join(tmpdir(), "zugfolge-operational-command-printer-"));
-  t.after(() => rm(root, { recursive: true, force: true }));
+  const root = value.paths.root;
   const nativeReceipt = join(root, "must-not-exist.native-receipt.json");
-  const executionPinsPath = join(HERE, "operational-infrastructure-v2-execution-pins.annual-2026.5.json");
-  const result = spawnSync(process.execPath, [
+  const arguments_ = [
     printerPath,
     process.execPath,
-    executionPinsPath,
-    join(HERE, "operational-infrastructure.annual-2026.5.json"),
-    REPOSITORY_ROOT,
+    value.paths.pins,
+    value.paths.specification,
+    value.paths.sourceRoot,
     join(root, "candidate.json"),
     join(root, "candidate.sidecar.json"),
     join(root, "report.json"),
     nativeReceipt,
-  ], {
-    cwd: REPOSITORY_ROOT,
+  ];
+  const options = {
+    cwd: root,
     encoding: "utf8",
     env: {
       ...process.env,
@@ -560,10 +561,11 @@ test("optionaler Command-Printer besitzt keine Prozesskante und bleibt aus der R
     maxBuffer: 4 * 1024 * 1024,
     shell: false,
     windowsHide: true,
-  });
+  };
+  const result = spawnSync(process.execPath, arguments_, options);
   assert.equal(result.status, 0, result.stderr);
   const metadata = JSON.parse(result.stdout);
-  const pins = (await loadGermanyOperationalExecutionPins({ workspaceRoot: REPOSITORY_ROOT, executionPinsPath })).value;
+  const pins = prepared.executionPinsSource.value;
   assert.equal(metadata.schema, "zugfolge-operational-v2-direct-system-launch-command/v1");
   assert.equal(metadata.mode, "source-only-print-direct-command-v1");
   assert.deepEqual(metadata.directCommand, {
@@ -587,6 +589,15 @@ test("optionaler Command-Printer besitzt keine Prozesskante und bleibt aus der R
     assert.equal(Object.hasOwn(metadata, field), false, `Diagnoseausgabe darf ${field} nicht transportieren.`);
   }
   assert.doesNotMatch(result.stdout, /BEGIN EXACT DIRECT OS COMMAND|EncodedCommand|run-capture-operational-infrastructure-v2\.mjs/u);
+  await assert.rejects(readFile(nativeReceipt), (error) => error?.code === "ENOENT");
+
+  const driftedPins = structuredClone(pins);
+  driftedPins.runner.runtime.sha256 = "0".repeat(64);
+  await writeFile(value.paths.pins, serializeGermanyOperationalExecutionPins(driftedPins, RELEASE_ID));
+  const rejected = spawnSync(process.execPath, arguments_, options);
+  assert.notEqual(rejected.status, 0);
+  assert.match(rejected.stderr, /Systemlauncher-Node driftet von den Execution-Pins/u);
+  assert.equal(rejected.stdout, "");
   await assert.rejects(readFile(nativeReceipt), (error) => error?.code === "ENOENT");
 });
 

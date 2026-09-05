@@ -141,7 +141,7 @@ class TestZugfolgeAdminRequest(TransactionCase):
 
     def test_world_deploy_without_projection_serializes_finite_policy_and_world_definition(self):
         self.env["zugfolge.admin.capability"].with_context(zugfolge_game_projection=True).create({
-            "world_id": GLOBAL_WORLD_DEPLOY_CAPABILITY_SCOPE_ID,
+            "world_id": self._world_deploy_values()["world_id"],
             "action_type": "world_deploy",
             "availability": "available",
             "observed_at": "2026-01-01 00:00:00",
@@ -158,6 +158,17 @@ class TestZugfolgeAdminRequest(TransactionCase):
         self.assertEqual(payload["worldDefinition"]["kind"], "public")
         self.assertEqual(payload["signedDeployment"]["deploymentHash"], "d" * 64)
         self.assertEqual(payload["deploymentRevision"], 1)
+
+    def test_world_deploy_capability_of_another_server_or_legacy_global_scope_is_not_authority(self):
+        capabilities = self.env["zugfolge.admin.capability"].with_context(zugfolge_game_projection=True)
+        base = {"action_type": "world_deploy", "availability": "available", "observed_at": "2026-01-01 00:00:00", "payload_hash": "a" * 64}
+        capabilities.create({**base, "world_id": GLOBAL_WORLD_DEPLOY_CAPABILITY_SCOPE_ID})
+        capabilities.create({**base, "world_id": "99999999-9999-4999-8999-999999999999"})
+        request = self.env["zugfolge.admin.request"].create(self._world_deploy_values())
+        self.assertEqual(request.game_capability_state, "prepared")
+        capabilities.create({**base, "world_id": request.world_id})
+        request._compute_game_capability()
+        self.assertEqual(request.game_capability_state, "available")
 
     def test_world_deploy_draft_exports_configuration_before_external_signature(self):
         values = self._world_deploy_values()
@@ -787,6 +798,62 @@ class TestZugfolgeAdminRequest(TransactionCase):
         request._write_controlled({"state": "approved"})
         with self.assertRaises(UserError):
             request.action_dispatch()
+
+    def test_disruption_policy_requires_explicit_modes_and_verified_requester_then_freezes_four_eyes_payload(self):
+        values = {
+            "world_projection_id": self.projection.id, "action_type": "disruption_policy_schedule",
+            "reason": "Offen ausgewiesene La zur naechsten Fahrplanperiode",
+            "requested_period_start": "2026-08-31 00:00:00",
+            "disruption_planned_mode": "SIMULATED", "disruption_incident_mode": "SIMULATED",
+            "disruption_simulation_profile": {
+                "id": "explicit-policy-test/v1", "eventsPerPeriod": 6,
+                "minimumSeverityBasisPoints": 1000, "maximumSeverityBasisPoints": 8000,
+                "minimumDurationSeconds": 1800, "maximumDurationSeconds": 1814400,
+                "minimumNoticeSeconds": 604800, "maximumNoticeSeconds": 1814400,
+                "dailyRestrictionsPerDay": 4, "infrastructureIncidentsPer100Days": 1,
+                "vehicleIncidentsPer10000TrainRuns": 1, "dwellIncidentsPer10000Stops": 1,
+            },
+            "disruption_ruleset_version": "disruption-rules/v1",
+        }
+        with self.assertRaises(ValidationError):
+            self.env["zugfolge.admin.request"].create(values)
+        self.env.user.partner_id._bind_zugfolge_keycloak_subject("kc-policy-requester")
+        with self.assertRaises(ValidationError):
+            self.env["zugfolge.admin.request"].create({**values, "disruption_planned_mode": False})
+        with self.assertRaises(ValidationError):
+            self.env["zugfolge.admin.request"].create({**values, "disruption_planned_mode": "REALISTIC"})
+        request = self.env["zugfolge.admin.request"].create(values)
+        self.assertEqual(request.risk_class, "high")
+        self.assertEqual(request.game_capability_state, "prepared")
+        self.assertIn("wirkungslos", request.effect_preview["notice"])
+        request.action_submit()
+        with self.assertRaises(UserError):
+            request.write({"disruption_incident_mode": "MANUAL"})
+        with self.assertRaises(AccessError):
+            request.action_approve()
+        approver = self.env["res.users"].create({
+            "name": "La-Freigabe", "login": "policy-approver", "email": "policy-approver@example.test",
+            "group_ids": [Command.set([self.env.ref("base.group_user").id, self.env.ref("zugfolge_admin.group_zugfolge_approver").id])],
+        })
+        request.with_user(approver).action_approve()
+        with self.assertRaises(UserError):
+            request.action_dispatch()
+        self.env["zugfolge.admin.capability"].with_context(zugfolge_game_projection=True).upsert_game_projection({
+            "worldId": self.projection.world_id, "occurredAt": "2026-08-11T12:00:00Z",
+            "payload": {"actionType": "disruption_policy_schedule", "availability": "available", "detail": "Nativer Policyhandler vorhanden"},
+        })
+        request.invalidate_recordset()
+        request.action_dispatch()
+        first = request._game_command_payload()
+        self.assertEqual(first, request._game_command_payload())
+        self.assertEqual(first["kind"], "admin.disruption_policy_schedule")
+        self.assertEqual(first["worldId"], self.projection.world_id)
+        self.assertNotEqual(first["requesterReference"], first["approverReference"])
+        self.assertEqual(first["disruptionPolicy"], {
+            "schemaVersion": "zugfolge-disruption-policy-schedule/v1", "requesterSubject": "kc-policy-requester",
+            "effectiveAt": "2026-08-31T00:00:00Z", "plannedWorksMode": "SIMULATED", "operationalIncidentMode": "SIMULATED",
+            "simulationProfile": values["disruption_simulation_profile"], "rulesetVersion": "disruption-rules/v1",
+        })
 
     def test_capability_projection_cannot_be_created_by_staff(self):
         with self.assertRaises(AccessError):

@@ -55,7 +55,8 @@ describe("M6-Plattformadapter", () => {
     // Neustart: Eine neue Adapterinstanz muss dieselben fachlichen Effekte weiterhin erkennen.
     const restarted = createEconomyPlatformAdapters({ db, accountsByOperator: { [operator.id]: { cashAccountId: cash.id, revenueAccountId: revenue.id, costAccountIds: costAccounts } } });
     await restarted.postJournal({ worldId: WORLD_ID, operatorId: operator.id, idempotencyKey: "settlement:1", at: 1_800_000_000, description: "Periodenabrechnung", revenueCents: 10_000n, postings: [{ amountCents: 2_000n, costType: "energy", costCentreId: "lot-1", reference: "period-1" }] });
-    await restarted.sendNotice({ id: "insolvency:1:account", worldId: WORLD_ID, recipientAccountId: account.id, type: "insolvency-stage-1", at: 1_800_000_000, payload: { forecast: "changed-on-retry" } });
+    await expect(restarted.sendNotice({ id: "insolvency:1:account", worldId: WORLD_ID, recipientAccountId: account.id, type: "insolvency-stage-1", at: 1_800_000_000, payload: { forecast: "changed-on-retry" } })).rejects.toThrow(/Idempotenzschluessel/);
+    await restarted.sendNotice({ id: "insolvency:1:account", worldId: WORLD_ID, recipientAccountId: account.id, type: "insolvency-stage-1", at: 1_800_000_000, payload: { forecast: "negative" } });
     expect(await listLedgerTransactions(db, { worldId: WORLD_ID, operatorId: operator.id })).toHaveLength(1);
     expect(await db.select().from(mailboxMessages)).toHaveLength(2);
     expect(await db.select().from(economyEffects)).toHaveLength(3);

@@ -16,6 +16,7 @@ export const COMMAND_TYPES = [
   "admin.world_access_revoke",
   "admin.infra_release_adoption",
   "admin.manual_disruption_create",
+  "admin.disruption_policy_schedule",
   "admin.abuse_sanction_activate",
   "admin.world_close",
   "admin.world_deploy",
@@ -33,6 +34,7 @@ export const ADMIN_ACTION_TYPES = [
   "world_access_revoke",
   "infra_release_adoption",
   "manual_disruption_create",
+  "disruption_policy_schedule",
   "abuse_sanction_activate",
   "world_close",
   "world_deploy",
@@ -48,6 +50,8 @@ export interface GameAdminCapabilityProjection {
   readonly actionType: AdminActionType;
   readonly availability: GameAdminCapabilityAvailability;
   readonly detail?: string;
+  /** Pre-world world_deploy transportiert global, bindet aber genau einen Zielserver. */
+  readonly targetWorldId?: string;
 }
 
 export type RiskClass = "standard" | "high";
@@ -110,6 +114,20 @@ export interface EntitlementChangePayload {
   readonly quantity: number;
   /** Odoo-Belegreferenz, kein Zahlungsinstrument und keine Personaldaten. */
   readonly sourceReference: string;
+  /** Monotoner Zustand derselben Belegquelle; Transport-/Retryzeit hat keine Prioritaet. */
+  readonly sourceRevision?: number;
+}
+
+export function validateEntitlementChange(payload: EntitlementChangePayload): void {
+  if (!isProductKind(payload.productKind) || !["grant", "renew", "revoke", "restore", "expire"].includes(payload.change)
+    || typeof payload.subject !== "string" || payload.subject.length === 0
+    || typeof payload.sourceReference !== "string" || payload.sourceReference.length === 0
+    || !Number.isSafeInteger(payload.quantity) || payload.quantity < 1
+    || typeof payload.validFrom !== "string" || !Number.isFinite(new Date(payload.validFrom).getTime())
+    || (payload.validUntil !== undefined && (typeof payload.validUntil !== "string" || !Number.isFinite(new Date(payload.validUntil).getTime()) || new Date(payload.validUntil) <= new Date(payload.validFrom)))
+    || (payload.sourceRevision !== undefined && (!Number.isSafeInteger(payload.sourceRevision) || payload.sourceRevision < 1))) {
+    throw new Error("Ungueltiger Entitlement-Lifecycle-Befehl.");
+  }
 }
 
 export interface ManualDisruption {
@@ -118,6 +136,18 @@ export interface ManualDisruption {
   readonly cause: string;
   readonly affectedResourceIds: readonly string[];
   readonly declaredEffect: Readonly<Record<string, unknown>>;
+}
+
+export interface DisruptionPolicySchedule {
+  readonly schemaVersion: "zugfolge-disruption-policy-schedule/v1";
+  /** Verifizierte OIDC-Bindung des Odoo-Antragstellers, kein frei gewaehltes Konto. */
+  readonly requesterSubject: string;
+  readonly effectiveAt: string;
+  readonly plannedWorksMode: "REALISTIC" | "SIMULATED" | "MANUAL";
+  readonly operationalIncidentMode: "REALISTIC" | "SIMULATED" | "MANUAL";
+  readonly providerSetId?: string;
+  readonly simulationProfile: Readonly<Record<string, unknown>>;
+  readonly rulesetVersion: string;
 }
 
 export interface AdminCommandPayload {
@@ -151,6 +181,7 @@ export interface AdminCommandPayload {
    * fachlichen Ausfuehrung.
    */
   readonly manualDisruption?: ManualDisruption;
+  readonly disruptionPolicy?: DisruptionPolicySchedule;
 }
 
 export type OdooCommandPayload = EntitlementChangePayload | WorldParticipationChangePayload | AdminCommandPayload;

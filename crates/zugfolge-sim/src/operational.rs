@@ -13,6 +13,13 @@ use std::sync::Arc;
 use serde::{Deserialize, Serialize};
 use zugfolge_determinism::{StateHash, StateHasher};
 
+mod service_outcomes;
+use service_outcomes::ServiceOutcomeState;
+pub use service_outcomes::{
+    ServiceConnectionAssessment, ServiceOutcomeBinding, ServiceOutcomePolicy,
+    ServiceOutcomeProgress, ServiceVehicleCapacity,
+};
+
 /// Millisekunden seit der unveraenderlichen Weltepoche.
 pub type SimMillis = i64;
 /// Millimeter entlang eines unveraenderlichen Laufwegs.
@@ -24,6 +31,10 @@ pub const OPERATIONAL_PROJECTION_VALIDITY_MS: SimMillis = 75_000;
 pub const MAX_PENDING_OPERATIONAL_EVENTS: usize = 16_384;
 /// Begrenztes Replay-Suffix abgeschlossener physischer Fortsetzungen.
 pub const MAX_COMPLETED_MOVEMENT_CONTINUATION_RECEIPTS: usize = 1_024;
+/// Versionierter Fachvertrag in docs/betriebsengine.md, Abschnitt 5.
+pub const OPERATIONAL_MOTION_POLICY: &str = "operational-motion/v1";
+/// 25 km/h, konservativ auf ganze mm/s abgerundet.
+pub const SHUNTING_MAXIMUM_SPEED_MMPS: u32 = 6_944;
 
 /// Deterministische Rundung fuer die analytische Bewegung.
 ///
@@ -161,6 +172,7 @@ impl RouteVersion {
                 || !direction_matches_offsets
                 || leg.route_start_mm != expected
                 || leg.speed_limit_mmps == 0
+                || !(-100..=100).contains(&leg.gradient_per_mille)
                 || leg.block_ids.is_empty()
                 || !canonical_protection_systems(&leg.available_protection_systems, false)
                 || !canonical_protection_systems(
@@ -967,6 +979,11 @@ pub trait OperationalInfrastructure: fmt::Debug + Send + Sync {
     fn release_id(&self) -> &str;
     fn binding_identity(&self) -> &str;
     fn validate_attachment(&self) -> Result<(), OperationalError>;
+    /// Prueft konkrete Stoerungsziele gegen denselben gebundenen Release.
+    fn contains_disruption_target(
+        &self,
+        effect: &OperationalDisruption,
+    ) -> Result<bool, OperationalError>;
     fn route_version(&self, id: &str) -> Result<Option<RouteVersion>, OperationalError>;
     fn interlocking_route(
         &self,
@@ -996,12 +1013,19 @@ pub trait OperationalInfrastructure: fmt::Debug + Send + Sync {
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct InMemoryOperationalInfrastructure {
     release: OperationalInfraRelease,
+    binding_identity: String,
     train_route_index: BTreeMap<(String, RouteMillimetres), String>,
 }
 
 impl InMemoryOperationalInfrastructure {
     fn new(release: OperationalInfraRelease) -> Result<Self, OperationalError> {
         release.validate()?;
+        let mut hash = StateHasher::new("operational-in-memory-infrastructure/v1");
+        hash.bytes(
+            "release",
+            &serde_json::to_vec(&release).expect("serializable infrastructure"),
+        );
+        let binding_identity = hash.finish().to_hex();
         let train_route_index = release
             .interlocking_routes
             .values()
@@ -1018,18 +1042,41 @@ impl InMemoryOperationalInfrastructure {
             .collect();
         Ok(Self {
             release,
+            binding_identity,
             train_route_index,
         })
     }
 }
 
 impl OperationalInfrastructure for InMemoryOperationalInfrastructure {
+    fn contains_disruption_target(
+        &self,
+        effect: &OperationalDisruption,
+    ) -> Result<bool, OperationalError> {
+        Ok(match effect {
+            OperationalDisruption::ResourceClosed { resource_id }
+            | OperationalDisruption::TrackDetectionFailed { resource_id } => {
+                self.release.block_resources.contains(resource_id)
+            }
+            OperationalDisruption::SpeedRestriction {
+                edge_id,
+                maximum_speed_mmps,
+            } => *maximum_speed_mmps > 0 && self.release.directed_edges.contains_key(edge_id),
+            OperationalDisruption::SignalFailed { signal_id } => {
+                self.release.signals.contains(signal_id)
+            }
+            OperationalDisruption::SwitchFailed { switch_id } => {
+                self.release.switches.contains(switch_id)
+            }
+            OperationalDisruption::VehicleRestricted { .. } => true,
+        })
+    }
     fn release_id(&self) -> &str {
         &self.release.id
     }
 
     fn binding_identity(&self) -> &str {
-        &self.release.id
+        &self.binding_identity
     }
 
     fn validate_attachment(&self) -> Result<(), OperationalError> {
@@ -1112,6 +1159,8 @@ impl Eq for AttachedOperationalInfrastructure {}
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct OperationalTrain {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub service_outcome: Option<ServiceOutcomeProgress>,
     pub id: String,
     pub train_number: String,
     pub operator_id: String,
@@ -1136,6 +1185,8 @@ pub struct OperationalTrain {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct TrainMaterialization {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub service_outcome: Option<ServiceOutcomeBinding>,
     pub id: String,
     pub train_number: String,
     pub operator_id: String,
@@ -1484,13 +1535,41 @@ pub struct OperationalProjection {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct RegionHandover {
     pub id: String,
+    pub world_id: String,
+    pub infra_release_id: String,
+    pub infra_binding_identity: String,
     pub source_region_id: String,
     pub target_region_id: String,
+    pub at_ms: SimMillis,
+    pub source_state_hash: String,
+    pub source_event_sequence: u64,
+    pub payload_hash: String,
     pub train: OperationalTrain,
     pub formation: FormationVersion,
+    pub route: RouteVersion,
+    pub vehicles: BTreeMap<String, PhysicalVehicle>,
+    pub vehicle_types: BTreeMap<String, VehicleType>,
+    pub route_locks: BTreeMap<String, RouteLock>,
+    pub interlocking_routes: BTreeMap<String, InterlockingRouteTemplate>,
+    pub switch_positions: BTreeMap<String, String>,
+    pub active_disruptions: BTreeMap<String, OperationalDisruption>,
+    pub dispatch_request: Option<DispatchRequest>,
+    pub route_completed_at_ms: Option<SimMillis>,
     pub protected_resources: BTreeSet<String>,
     pub source_commit_sequence: u64,
     pub acknowledged: bool,
+}
+
+impl RegionHandover {
+    fn calculate_payload_hash(&self) -> String {
+        let mut canonical = self.clone();
+        canonical.payload_hash.clear();
+        canonical.acknowledged = false;
+        let bytes = serde_json::to_vec(&canonical).expect("serializable handover");
+        let mut hasher = StateHasher::new("operational-region-handover/v1");
+        hasher.bytes("canonical-json", &bytes);
+        hasher.finish().to_hex()
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Ord, PartialOrd, Serialize)]
@@ -1528,6 +1607,8 @@ pub struct OperationalCheckpoint {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct OperationalWorld {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    service_outcome_state: Option<ServiceOutcomeState>,
     pub world_id: String,
     pub region_id: String,
     pub infra_release_id: String,
@@ -1555,6 +1636,14 @@ pub struct OperationalWorld {
     pending_movement_continuations: BTreeMap<String, MovementContinuation>,
     completed_movement_continuations: BTreeMap<String, MovementContinuationReceipt>,
     route_completed_at_ms: BTreeMap<String, SimMillis>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    prepared_handovers: BTreeMap<String, RegionHandover>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    accepted_handovers: BTreeMap<String, String>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    finished_handovers: BTreeMap<String, String>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    handover_protection_by_train: BTreeMap<String, BTreeSet<String>>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -1717,6 +1806,21 @@ fn cross_train_route_lock_overlap<'a>(locks: impl IntoIterator<Item = &'a RouteL
         }
     }
     false
+}
+
+fn continuation_graph_reaches(graph: &BTreeMap<&str, &str>, source: &str, target: &str) -> bool {
+    let mut cursor = source;
+    let mut visited = BTreeSet::new();
+    while cursor != target {
+        if !visited.insert(cursor) {
+            return false;
+        }
+        let Some(next) = graph.get(cursor) else {
+            return false;
+        };
+        cursor = next;
+    }
+    true
 }
 
 fn canonical_continuation_intervals(
@@ -1928,6 +2032,11 @@ impl OperationalWorld {
             pending_movement_continuations: BTreeMap::new(),
             completed_movement_continuations: BTreeMap::new(),
             route_completed_at_ms: BTreeMap::new(),
+            service_outcome_state: None,
+            prepared_handovers: BTreeMap::new(),
+            accepted_handovers: BTreeMap::new(),
+            finished_handovers: BTreeMap::new(),
+            handover_protection_by_train: BTreeMap::new(),
         })
     }
 
@@ -2021,6 +2130,9 @@ impl OperationalWorld {
         vehicle_type: VehicleType,
         powered: bool,
     ) -> Result<(), OperationalError> {
+        if !self.prepared_handovers.is_empty() {
+            return Err(OperationalError::InvalidHandover);
+        }
         vehicle_type.validate(powered)?;
         if self.vehicle_types.contains_key(&vehicle_type.id) {
             return Err(OperationalError::DuplicateId(vehicle_type.id));
@@ -2031,6 +2143,9 @@ impl OperationalWorld {
     }
 
     pub fn register_vehicle(&mut self, vehicle: PhysicalVehicle) -> Result<(), OperationalError> {
+        if !self.prepared_handovers.is_empty() {
+            return Err(OperationalError::InvalidHandover);
+        }
         let Some(vehicle_type) = self.vehicle_types.get(&vehicle.type_id) else {
             return Err(OperationalError::UnknownVehicleType(vehicle.type_id));
         };
@@ -2304,6 +2419,9 @@ impl OperationalWorld {
         predecessor_id: Option<String>,
         vehicle_ids: Vec<String>,
     ) -> Result<FormationVersion, OperationalError> {
+        if !self.prepared_handovers.is_empty() {
+            return Err(OperationalError::InvalidHandover);
+        }
         let formation = self.derive_formation(id.into(), predecessor_id, vehicle_ids)?;
         if self
             .formations
@@ -2480,7 +2598,15 @@ impl OperationalWorld {
     }
 
     pub fn materialize(&mut self, input: TrainMaterialization) -> Result<(), OperationalError> {
+        if !self.prepared_handovers.is_empty() {
+            return Err(OperationalError::InvalidHandover);
+        }
+        if self.trains.contains_key(&input.id) {
+            return Err(OperationalError::DuplicateId(input.id));
+        }
+        let service_input = input.clone();
         let TrainMaterialization {
+            service_outcome: _,
             id,
             train_number,
             operator_id,
@@ -2525,7 +2651,10 @@ impl OperationalWorld {
             .leg_at(head_route_mm)
             .ok_or_else(|| OperationalError::IncompleteRoute(route.id.clone()))?
             .direction;
+        let service_outcome =
+            self.start_service_outcome(&service_input, &service_input.formation_version_id)?;
         let train = OperationalTrain {
+            service_outcome,
             id: id.clone(),
             train_number,
             operator_id,
@@ -2577,6 +2706,7 @@ impl OperationalWorld {
         public_passenger_stop: bool,
     ) -> Result<(), OperationalError> {
         self.materialize(TrainMaterialization {
+            service_outcome: None,
             id: id.into(),
             train_number: train_number.into(),
             operator_id: operator_id.into(),
@@ -2594,6 +2724,9 @@ impl OperationalWorld {
     /// strikt abgelehnt; die Runtime kann dadurch den gesamten Tagesgrenzen-
     /// Batch atomar verwerfen.
     pub fn retire_train(&mut self, train_id: &str) -> Result<(), OperationalError> {
+        if !self.prepared_handovers.is_empty() {
+            return Err(OperationalError::InvalidHandover);
+        }
         let train = self
             .trains
             .get(train_id)
@@ -2654,6 +2787,7 @@ impl OperationalWorld {
             self.signal_aspects.remove(signal_id);
         }
         self.trains.remove(train_id);
+        self.handover_protection_by_train.remove(train_id);
         self.scheduled_motion_ends
             .retain(|scheduled| scheduled.train_id != train_id);
         self.pending_dispatch_requests.remove(train_id);
@@ -2995,15 +3129,6 @@ impl OperationalWorld {
                         continuation.successor.train_number.clone(),
                     )
                 })?;
-        if self.trains.values().any(|train| {
-            train.id != continuation.predecessor_train_id
-                && operational_train_number_numeric_part(&train.train_number)
-                    == Some(successor_number)
-        }) {
-            return Err(OperationalError::MovementContinuationTargetOccupied(
-                continuation.successor.id.clone(),
-            ));
-        }
         if self
             .pending_movement_continuations
             .values()
@@ -3017,29 +3142,45 @@ impl OperationalWorld {
             ));
         }
 
-        let mut outgoing: BTreeMap<String, String> = self
+        let mut outgoing: BTreeMap<&str, &str> = self
             .pending_movement_continuations
             .values()
             .map(|candidate| {
                 (
-                    candidate.predecessor_train_id.clone(),
-                    candidate.successor.id.clone(),
+                    candidate.predecessor_train_id.as_str(),
+                    candidate.successor.id.as_str(),
                 )
             })
             .collect();
         outgoing.insert(
-            continuation.predecessor_train_id.clone(),
-            continuation.successor.id.clone(),
+            continuation.predecessor_train_id.as_str(),
+            continuation.successor.id.as_str(),
         );
         let mut cursor = continuation.successor.id.as_str();
         let mut visited = BTreeSet::new();
         while let Some(next) = outgoing.get(cursor) {
-            if next == &continuation.predecessor_train_id || !visited.insert(cursor.to_owned()) {
+            if *next == continuation.predecessor_train_id || !visited.insert(cursor) {
                 return Err(OperationalError::CyclicMovementContinuation(
                     continuation.id.clone(),
                 ));
             }
             cursor = next;
+        }
+
+        // Eine vorab gebundene Tageskette darf die Nummer eines noch lebenden
+        // Vorfahren wiederverwenden. Jeder Weg bis zur unmittelbaren Quelle
+        // muss bereits explizit gebunden sein; fremde aktive Nummern bleiben
+        // gesperrt. Bei der Aktivierung gilt weiterhin die strikte Live-Pruefung.
+        if self.trains.values().any(|train| {
+            if operational_train_number_numeric_part(&train.train_number) != Some(successor_number)
+            {
+                return false;
+            }
+            !continuation_graph_reaches(&outgoing, &train.id, &continuation.predecessor_train_id)
+        }) {
+            return Err(OperationalError::MovementContinuationTargetOccupied(
+                continuation.successor.id.clone(),
+            ));
         }
 
         self.validate_known_continuation_binding(continuation)
@@ -3053,6 +3194,9 @@ impl OperationalWorld {
         &mut self,
         continuation: MovementContinuation,
     ) -> Result<(), OperationalError> {
+        if !self.prepared_handovers.is_empty() {
+            return Err(OperationalError::InvalidHandover);
+        }
         if let Some(existing) = self.pending_movement_continuations.get(&continuation.id) {
             if existing != &continuation {
                 return Err(OperationalError::ConflictingMovementContinuationId(
@@ -3088,6 +3232,7 @@ impl OperationalWorld {
         }
         let mut staged = self.clone();
         staged.validate_movement_continuation(&continuation)?;
+        staged.plan_service_outcome(&continuation.successor)?;
         let continuation_id = continuation.id.clone();
         let detail = format!(
             "from={};to={};continuity={}",
@@ -3130,6 +3275,7 @@ impl OperationalWorld {
 
     fn refresh_route_completion(&mut self, train_id: &str) -> Result<(), OperationalError> {
         if self.physical_route_complete(train_id)? {
+            self.complete_service_outcome(train_id)?;
             self.route_completed_at_ms
                 .entry(train_id.to_owned())
                 .or_insert(self.now_ms);
@@ -3261,13 +3407,16 @@ impl OperationalWorld {
             &continuation.successor,
             &continuation.successor_dispatch.interlocking_route_id,
         )?;
-        let (_target_route, target_intervals, target_blocks, target_direction) = self
+        let (_target_route, target_intervals, mut target_blocks, target_direction) = self
             .validate_continuation_intervals(
                 &continuation,
                 &predecessor.route_version_id,
                 &predecessor.formation_version_id,
                 &predecessor.occupied_intervals,
             )?;
+        if let Some(protection) = self.handover_protection_by_train.get(&predecessor.id) {
+            target_blocks.extend(protection.iter().cloned());
+        }
         let successor_number =
             operational_train_number_numeric_part(&continuation.successor.train_number)
                 .ok_or_else(|| {
@@ -3330,6 +3479,10 @@ impl OperationalWorld {
         self.route_locks
             .retain(|lock_id, _| !predecessor_lock_ids.contains(lock_id));
         self.trains.remove(&predecessor.id);
+        if let Some(protection) = self.handover_protection_by_train.remove(&predecessor.id) {
+            self.handover_protection_by_train
+                .insert(continuation.successor.id.clone(), protection);
+        }
         self.scheduled_motion_ends
             .retain(|scheduled| scheduled.train_id != predecessor.id);
         self.pending_dispatch_requests.remove(&predecessor.id);
@@ -3348,7 +3501,10 @@ impl OperationalWorld {
                 .performance
                 .length_mm,
         );
+        let service_outcome =
+            self.start_service_outcome(&continuation.successor, &predecessor.formation_version_id)?;
         let successor = OperationalTrain {
+            service_outcome,
             id: continuation.successor.id.clone(),
             train_number: continuation.successor.train_number.clone(),
             operator_id: continuation.successor.operator_id.clone(),
@@ -3456,6 +3612,9 @@ impl OperationalWorld {
         train_id: &str,
         template_id: &str,
     ) -> Result<MovementAuthority, OperationalError> {
+        if !self.prepared_handovers.is_empty() {
+            return Err(OperationalError::InvalidHandover);
+        }
         self.lock_route_at(train_id, template_id, false, true)
     }
 
@@ -3651,6 +3810,9 @@ impl OperationalWorld {
         &mut self,
         requests: &[DispatchRequest],
     ) -> Result<Option<String>, OperationalError> {
+        if !self.prepared_handovers.is_empty() {
+            return Err(OperationalError::InvalidHandover);
+        }
         let mut candidates = requests.to_vec();
         candidates.sort_by(|left, right| right.key(self.now_ms).cmp(&left.key(self.now_ms)));
         for candidate in candidates {
@@ -3677,6 +3839,9 @@ impl OperationalWorld {
         &mut self,
         requests: &[DispatchRequest],
     ) -> Result<Vec<String>, OperationalError> {
+        if !self.prepared_handovers.is_empty() {
+            return Err(OperationalError::InvalidHandover);
+        }
         for request in requests {
             if request.train_id.is_empty()
                 || request.interlocking_route_id.is_empty()
@@ -3840,6 +4005,13 @@ impl OperationalWorld {
 
     /// Virtueller Lokfuehrer erzeugt den naechsten unveraenderlichen Abschnitt.
     pub fn plan_motion(&mut self, train_id: &str) -> Result<MotionSegment, OperationalError> {
+        if self
+            .prepared_handovers
+            .values()
+            .any(|handover| handover.train.id == train_id)
+        {
+            return Err(OperationalError::InvalidHandover);
+        }
         let train = self
             .trains
             .get(train_id)
@@ -3881,29 +4053,100 @@ impl OperationalWorld {
                 train_id.to_owned(),
             ));
         }
-        let mut limit = leg
-            .speed_limit_mmps
-            .min(formation.performance.maximum_speed_mmps);
-        for effect in self.active_disruptions.values() {
-            if let OperationalDisruption::SpeedRestriction {
-                edge_id,
-                maximum_speed_mmps,
-            } = effect
-            {
-                if edge_id == &leg.edge_id {
+        let leg_limit = |profile: &RouteLeg| {
+            let mut limit = profile
+                .speed_limit_mmps
+                .min(formation.performance.maximum_speed_mmps);
+            if train.movement_kind == MovementKind::Shunting {
+                limit = limit.min(SHUNTING_MAXIMUM_SPEED_MMPS);
+            }
+            for effect in self.active_disruptions.values() {
+                if let OperationalDisruption::SpeedRestriction {
+                    edge_id,
+                    maximum_speed_mmps,
+                } = effect
+                    && edge_id == &profile.edge_id
+                {
                     limit = limit.min(*maximum_speed_mmps);
                 }
             }
+            limit
+        };
+        // Eine Erhoehung gilt erst hinter dem Zugschluss; eine Reduktion bereits
+        // an der Spitze. Bei Profilwechseln ist die gesamte Formation gebunden.
+        let mut limit = leg_limit(leg);
+        let mut maximum_gradient = directed_gradient(leg)?;
+        let mut minimum_gradient = maximum_gradient;
+        let mut next_tail_boundary = authority.end_route_mm;
+        for profile in &route.legs {
+            if profile.route_end_mm() > train.tail_route_mm
+                && profile.route_start_mm <= train.head_route_mm
+            {
+                limit = limit.min(leg_limit(profile));
+                maximum_gradient = maximum_gradient.max(directed_gradient(profile)?);
+            }
+            if profile.route_end_mm() > train.tail_route_mm
+                && profile.route_start_mm < authority.end_route_mm
+            {
+                minimum_gradient = minimum_gradient.min(directed_gradient(profile)?);
+            }
+            let boundary = profile
+                .route_end_mm()
+                .saturating_add(i64::from(formation.performance.length_mm));
+            if boundary > train.head_route_mm {
+                next_tail_boundary = next_tail_boundary.min(boundary);
+            }
         }
-        let remaining = authority.end_route_mm.saturating_sub(train.head_route_mm);
-        let brake = formation.performance.service_brake_mmps2.max(1);
+        let grade_acceleration = |gradient: i32| -> i128 {
+            // g=9.80665 m/s²; Steigung belastet Traktion, Gefaelle die Bremse.
+            div_round_half_away(i128::from(gradient) * 980_665, 100_000)
+        };
+        let traction = i128::from(formation.performance.acceleration_mmps2)
+            - grade_acceleration(maximum_gradient);
+        let brake = i128::from(formation.performance.service_brake_mmps2)
+            + grade_acceleration(minimum_gradient);
+        if traction <= 0 || brake <= 0 {
+            self.safe_stop(train_id, "insufficient-gradient-traction-or-braking")?;
+            return Err(OperationalError::UnsafeState);
+        }
+        let traction = i32::try_from(traction).map_err(|_| OperationalError::ArithmeticOverflow)?;
+        let brake = u32::try_from(brake).map_err(|_| OperationalError::ArithmeticOverflow)?;
+        // Jede folgende Vmax bildet ein Bremsziel. Der aequivalente Weg bis
+        // Geschwindigkeit null erlaubt dieselbe Integer-Huellkurve wie ein Halt.
+        let mut remaining = authority.end_route_mm.saturating_sub(train.head_route_mm);
+        let mut target_speed = 0;
+        for profile in &route.legs {
+            if profile.route_start_mm > train.head_route_mm
+                && profile.route_start_mm < authority.end_route_mm
+            {
+                let target_limit = leg_limit(profile);
+                let equivalent = profile
+                    .route_start_mm
+                    .saturating_sub(train.head_route_mm)
+                    .saturating_add(stopping_distance_mm(target_limit, brake)?);
+                if equivalent < remaining {
+                    remaining = equivalent;
+                    target_speed = target_limit;
+                }
+            }
+        }
         let stopping_distance = stopping_distance_mm(train.speed_mmps, brake)?;
-        let acceleration = if remaining <= stopping_distance {
-            -i32::try_from(formation.performance.service_brake_mmps2)
-                .map_err(|_| OperationalError::ArithmeticOverflow)?
+        let rounding_margin = if target_speed > 0 {
+            i64::from(train.speed_mmps.div_ceil(1_000)).saturating_add(2)
+        } else {
+            0
+        };
+        let acceleration = if train.speed_mmps > limit
+            || remaining <= stopping_distance.saturating_add(rounding_margin)
+        {
+            -i32::try_from(brake).map_err(|_| OperationalError::ArithmeticOverflow)?
         } else if train.speed_mmps < limit {
-            i32::try_from(formation.performance.acceleration_mmps2)
-                .map_err(|_| OperationalError::ArithmeticOverflow)?
+            // Auch bei weniger als einem ms bis Vmax darf Rundung keine
+            // Geschwindigkeitsueberschreitung erzeugen.
+            traction.min(
+                i32::try_from(limit.saturating_sub(train.speed_mmps).saturating_mul(1_000))
+                    .unwrap_or(i32::MAX),
+            )
         } else {
             0
         };
@@ -3911,6 +4154,7 @@ impl OperationalWorld {
         let infrastructure_boundary = authority
             .end_route_mm
             .min(leg.route_end_mm())
+            .min(next_tail_boundary)
             .saturating_sub(train.head_route_mm)
             .max(0);
         let (duration_ms, distance_boundary) = if acceleration > 0 {
@@ -3918,7 +4162,7 @@ impl OperationalWorld {
                 train.speed_mmps,
                 acceleration,
                 brake,
-                remaining,
+                remaining.saturating_sub(rounding_margin),
                 limit,
             )?;
             let duration_ms = first_boundary_or_event_ms(
@@ -3936,22 +4180,44 @@ impl OperationalWorld {
             .max(0);
             (duration_ms, covered)
         } else if acceleration == 0 {
-            let brake_start_distance = remaining.saturating_sub(stopping_distance);
+            let brake_start_distance = remaining
+                .saturating_sub(stopping_distance)
+                .saturating_sub(rounding_margin)
+                .max(1);
             let distance_boundary = infrastructure_boundary.min(brake_start_distance);
             (
                 analytic_duration_ms(train.speed_mmps, acceleration, distance_boundary, limit)?,
                 distance_boundary,
             )
         } else {
-            (
-                analytic_duration_ms(
+            let target_speed = if train.speed_mmps > limit {
+                limit
+            } else {
+                target_speed.min(limit)
+            };
+            let to_target = ((i64::from(train.speed_mmps.saturating_sub(target_speed)) * 1_000
+                + i64::from(brake)
+                - 1)
+                / i64::from(brake))
+            .max(1);
+            let duration = first_boundary_or_event_ms(
+                train.speed_mmps,
+                acceleration,
+                infrastructure_boundary,
+                to_target,
+            );
+            let covered = if target_speed == 0 {
+                infrastructure_boundary
+            } else {
+                checked_i64(kinematic_distance_mm(
                     train.speed_mmps,
                     acceleration,
-                    infrastructure_boundary,
-                    limit,
-                )?,
-                infrastructure_boundary,
-            )
+                    duration,
+                ))?
+                .min(infrastructure_boundary)
+                .max(0)
+            };
+            (duration, covered)
         };
         let valid_until_ms = self.now_ms.saturating_add(duration_ms.max(1));
         let segment = MotionSegment {
@@ -3983,6 +4249,11 @@ impl OperationalWorld {
 
     /// Verarbeitet ausschliesslich faellige Ereignisse; kein Zug-Vollscan.
     pub fn advance_to(&mut self, target_ms: SimMillis) -> Result<(), OperationalError> {
+        // Prepare friert den regionalen Writer bis zum bestaetigten Commit ein.
+        // Der Zielwriter ist ab Accept die einzige bewegliche Autoritaet.
+        if !self.prepared_handovers.is_empty() && target_ms != self.now_ms {
+            return Err(OperationalError::InvalidHandover);
+        }
         if target_ms < self.now_ms {
             return Err(OperationalError::TimeRegression);
         }
@@ -4063,7 +4334,10 @@ impl OperationalWorld {
         let tail = head.saturating_sub(i64::from(length));
         let intervals = intervals_for(&route, tail, head)?;
         self.ensure_intervals_free(train_id, &intervals)?;
-        let blocks = blocks_for(&route, tail, head);
+        let mut blocks = blocks_for(&route, tail, head);
+        if let Some(protection) = self.handover_protection_by_train.get(train_id) {
+            blocks.extend(protection.iter().cloned());
+        }
         {
             let train = self.trains.get_mut(train_id).expect("train exists");
             if head
@@ -4106,7 +4380,11 @@ impl OperationalWorld {
                 .expect("train exists")
                 .authority = None;
         }
-        self.rebuild_resource_lifecycle();
+        let changed_resources = previous_blocks
+            .union(&self.trains[train_id].occupied_blocks)
+            .cloned()
+            .collect();
+        self.refresh_resource_lifecycle(&changed_resources);
         let cleared_blocks = previous_blocks
             .difference(&blocks)
             .cloned()
@@ -4219,9 +4497,41 @@ impl OperationalWorld {
                 lock.template_id,
             )?;
         }
-        self.rebuild_signal_aspects()?;
+        if !released_resources.is_empty() {
+            self.rebuild_signal_aspects()?;
+            self.refresh_resource_lifecycle(&released_resources);
+        }
         self.wake_movement_continuations_for_resources(&released_resources)?;
         Ok(())
+    }
+
+    fn refresh_resource_lifecycle(&mut self, resources: &BTreeSet<String>) {
+        for resource in resources {
+            let state = if self
+                .trains
+                .values()
+                .any(|train| train.occupied_blocks.contains(resource))
+            {
+                Some(ResourceLifecycle::OccupiedByFormation)
+            } else if self
+                .route_locks
+                .values()
+                .any(|lock| lock.resources.contains(resource))
+                || self
+                    .prepared_handovers
+                    .values()
+                    .any(|handover| handover.protected_resources.contains(resource))
+            {
+                Some(ResourceLifecycle::RouteLocked)
+            } else {
+                None
+            };
+            if let Some(state) = state {
+                self.resource_lifecycle.insert(resource.clone(), state);
+            } else {
+                self.resource_lifecycle.remove(resource);
+            }
+        }
     }
 
     fn rebuild_resource_lifecycle(&mut self) {
@@ -4230,6 +4540,12 @@ impl OperationalWorld {
         self.resource_lifecycle.clear();
         for lock in self.route_locks.values() {
             for resource in &lock.resources {
+                self.resource_lifecycle
+                    .insert(resource.clone(), ResourceLifecycle::RouteLocked);
+            }
+        }
+        for handover in self.prepared_handovers.values() {
+            for resource in &handover.protected_resources {
                 self.resource_lifecycle
                     .insert(resource.clone(), ResourceLifecycle::RouteLocked);
             }
@@ -4285,6 +4601,9 @@ impl OperationalWorld {
     }
 
     pub fn safe_stop(&mut self, train_id: &str, reason: &str) -> Result<(), OperationalError> {
+        if !self.prepared_handovers.is_empty() {
+            return Err(OperationalError::InvalidHandover);
+        }
         let train = self
             .trains
             .get_mut(train_id)
@@ -4326,6 +4645,9 @@ impl OperationalWorld {
         new_formation_id: impl Into<String>,
         vehicle_ids: Vec<String>,
     ) -> Result<(), OperationalError> {
+        if !self.prepared_handovers.is_empty() {
+            return Err(OperationalError::InvalidHandover);
+        }
         let train = self
             .trains
             .get(train_id)
@@ -4363,6 +4685,7 @@ impl OperationalWorld {
         train.occupied_intervals = intervals;
         train.occupied_blocks = occupied_blocks;
         self.rebuild_resource_lifecycle();
+        self.update_service_capacity(train_id);
         self.record("formation-changed", train_id, formation.id)?;
         Ok(())
     }
@@ -4376,6 +4699,9 @@ impl OperationalWorld {
         train_id: &str,
         route_version_id: &str,
     ) -> Result<(), OperationalError> {
+        if !self.prepared_handovers.is_empty() {
+            return Err(OperationalError::InvalidHandover);
+        }
         let train = self
             .trains
             .get(train_id)
@@ -4430,6 +4756,9 @@ impl OperationalWorld {
         train_id: &str,
         interlocking_route_id: &str,
     ) -> Result<(), OperationalError> {
+        if !self.prepared_handovers.is_empty() {
+            return Err(OperationalError::InvalidHandover);
+        }
         let kind = self
             .trains
             .get(train_id)
@@ -4455,6 +4784,9 @@ impl OperationalWorld {
         &mut self,
         need: &AutomaticShuntingNeed,
     ) -> Result<String, OperationalError> {
+        if !self.prepared_handovers.is_empty() {
+            return Err(OperationalError::InvalidHandover);
+        }
         if need.id.is_empty() || need.minimum_authority_end_route_mm <= 0 {
             return Err(OperationalError::InvalidShuntingNeed);
         }
@@ -4496,9 +4828,22 @@ impl OperationalWorld {
         disruption_id: impl Into<String>,
         effect: OperationalDisruption,
     ) -> Result<(), OperationalError> {
+        if !self.prepared_handovers.is_empty() {
+            return Err(OperationalError::InvalidHandover);
+        }
         let disruption_id = disruption_id.into();
-        if self.active_disruptions.contains_key(&disruption_id) {
-            return Ok(());
+        if let Some(existing) = self.active_disruptions.get(&disruption_id) {
+            return if existing == &effect {
+                Ok(())
+            } else {
+                Err(OperationalError::UnsafeState)
+            };
+        }
+        if disruption_id.trim().is_empty()
+            || !self.infrastructure()?.contains_disruption_target(&effect)?
+            || matches!(&effect, OperationalDisruption::VehicleRestricted { vehicle_id, .. } if !self.vehicles.contains_key(vehicle_id))
+        {
+            return Err(OperationalError::UnsafeState);
         }
         let infrastructure_affected: Vec<String> = self
             .trains
@@ -4511,10 +4856,30 @@ impl OperationalWorld {
                             lock.train_id == train.id && lock.resources.contains(resource_id)
                         })
                 }
-                OperationalDisruption::SpeedRestriction { edge_id, .. } => train
-                    .occupied_intervals
-                    .iter()
-                    .any(|interval| &interval.edge_id == edge_id),
+                OperationalDisruption::SpeedRestriction { edge_id, .. } => {
+                    train
+                        .occupied_intervals
+                        .iter()
+                        .any(|interval| &interval.edge_id == edge_id)
+                        || self
+                            .infrastructure()
+                            .and_then(|infrastructure| {
+                                Ok(infrastructure
+                                    .route_version(&train.route_version_id)?
+                                    .is_some_and(|route| {
+                                        route.legs.iter().any(|leg| {
+                                            &leg.edge_id == edge_id
+                                                && leg.route_start_mm >= train.head_route_mm
+                                                && train.authority.as_ref().is_some_and(
+                                                    |authority| {
+                                                        leg.route_start_mm < authority.end_route_mm
+                                                    },
+                                                )
+                                        })
+                                    }))
+                            })
+                            .unwrap_or(true)
+                }
                 OperationalDisruption::SignalFailed { signal_id } => self
                     .route_locks
                     .values()
@@ -4610,6 +4975,9 @@ impl OperationalWorld {
         disruption_id: &str,
         release_reference: &str,
     ) -> Result<(), OperationalError> {
+        if !self.prepared_handovers.is_empty() {
+            return Err(OperationalError::InvalidHandover);
+        }
         if release_reference.trim().is_empty() {
             return Err(OperationalError::MissingTechnicalRelease);
         }
@@ -4805,32 +5173,127 @@ impl OperationalWorld {
         handover_id: impl Into<String>,
         train_id: &str,
         target_region_id: impl Into<String>,
-        protected_resources: BTreeSet<String>,
+        mut protected_resources: BTreeSet<String>,
     ) -> Result<RegionHandover, OperationalError> {
+        let id = handover_id.into();
+        let target_region_id = target_region_id.into();
+        if protected_resources.is_empty() {
+            return Err(OperationalError::UnprotectedHandover);
+        }
+        if let Some(previous_protection) = self.handover_protection_by_train.get(train_id) {
+            protected_resources.extend(previous_protection.iter().cloned());
+        }
+        if let Some(existing) = self.prepared_handovers.get(&id) {
+            if existing.train.id == train_id
+                && existing.target_region_id == target_region_id
+                && existing.protected_resources == protected_resources
+            {
+                return Ok(existing.clone());
+            }
+            return Err(OperationalError::InvalidHandover);
+        }
+        if id.is_empty()
+            || target_region_id.is_empty()
+            || target_region_id == self.region_id
+            || self.finished_handovers.contains_key(&id)
+            || !self.prepared_handovers.is_empty()
+            || self
+                .pending_movement_continuations
+                .values()
+                .any(|link| link.predecessor_train_id == train_id)
+        {
+            return Err(OperationalError::InvalidHandover);
+        }
         let train = self
             .trains
             .get(train_id)
             .ok_or_else(|| OperationalError::UnknownTrain(train_id.to_owned()))?
             .clone();
-        let formation = self.formations[&train.formation_version_id].clone();
-        if protected_resources.is_empty() {
+        let formation = self
+            .formations
+            .get(&train.formation_version_id)
+            .ok_or_else(|| OperationalError::UnknownFormation(train.formation_version_id.clone()))?
+            .clone();
+        let infra = self.infrastructure()?;
+        let route = infra
+            .route_version(&train.route_version_id)?
+            .ok_or_else(|| OperationalError::UnknownRoute(train.route_version_id.clone()))?;
+        let route_locks = self
+            .route_locks
+            .iter()
+            .filter(|(_, lock)| lock.train_id == train_id)
+            .map(|(id, lock)| (id.clone(), lock.clone()))
+            .collect::<BTreeMap<_, _>>();
+        let mut interlocking_routes = BTreeMap::new();
+        let mut switch_positions = BTreeMap::new();
+        for lock in route_locks.values() {
+            let template = infra
+                .interlocking_route(&lock.template_id)?
+                .ok_or_else(|| {
+                    OperationalError::UnknownInterlockingRoute(lock.template_id.clone())
+                })?;
+            switch_positions.extend(template.switch_positions.clone());
+            interlocking_routes.insert(template.id.clone(), template);
+        }
+        let mut vehicles = BTreeMap::new();
+        let mut vehicle_types = BTreeMap::new();
+        for vehicle_id in &formation.vehicle_ids {
+            let vehicle = self
+                .vehicles
+                .get(vehicle_id)
+                .ok_or_else(|| OperationalError::UnknownVehicle(vehicle_id.clone()))?
+                .clone();
+            let kind = self
+                .vehicle_types
+                .get(&vehicle.type_id)
+                .ok_or_else(|| OperationalError::UnknownVehicleType(vehicle.type_id.clone()))?
+                .clone();
+            vehicle_types.insert(kind.id.clone(), kind);
+            vehicles.insert(vehicle.id.clone(), vehicle);
+        }
+        if self.route_locks.values().any(|lock| {
+            lock.train_id != train_id && !lock.resources.is_disjoint(&protected_resources)
+        }) || self.trains.values().any(|other| {
+            other.id != train_id && !other.occupied_blocks.is_disjoint(&protected_resources)
+        }) {
             return Err(OperationalError::UnprotectedHandover);
         }
-        for resource in &protected_resources {
-            self.resource_lifecycle
-                .insert(resource.clone(), ResourceLifecycle::RouteLocked);
-        }
-        let handover = RegionHandover {
-            id: handover_id.into(),
+        let mut handover = RegionHandover {
+            id,
+            world_id: self.world_id.clone(),
+            infra_release_id: self.infra_release_id.clone(),
+            infra_binding_identity: infra.binding_identity().to_owned(),
             source_region_id: self.region_id.clone(),
-            target_region_id: target_region_id.into(),
+            target_region_id,
+            at_ms: self.now_ms,
+            source_state_hash: self.state_hash().to_hex(),
+            source_event_sequence: self.event_sequence,
+            payload_hash: String::new(),
             train,
             formation,
+            route,
+            vehicles,
+            vehicle_types,
+            route_locks,
+            interlocking_routes,
+            switch_positions,
+            active_disruptions: self.active_disruptions.clone(),
+            dispatch_request: self.pending_dispatch_requests.get(train_id).cloned(),
+            route_completed_at_ms: self.route_completed_at_ms.get(train_id).copied(),
             protected_resources,
             source_commit_sequence: self.commit_sequence,
             acknowledged: false,
         };
-        self.record("handover-prepared", train_id, &handover.target_region_id)?;
+        handover.payload_hash = handover.calculate_payload_hash();
+        // Alle falliblen Pruefungen/Events werden vor der sichtbaren Mutation ausgefuehrt.
+        let mut candidate = self.clone();
+        candidate.record("handover-prepared", train_id, &handover.target_region_id)?;
+        candidate
+            .prepared_handovers
+            .insert(handover.id.clone(), handover.clone());
+        candidate.rebuild_resource_lifecycle();
+        candidate.verify_invariants()?;
+        *self = candidate;
         Ok(handover)
     }
 
@@ -4838,64 +5301,269 @@ impl OperationalWorld {
         &mut self,
         handover: &mut RegionHandover,
     ) -> Result<(), OperationalError> {
-        if handover.target_region_id != self.region_id || handover.acknowledged {
+        if handover.world_id != self.world_id
+            || handover.infra_release_id != self.infra_release_id
+            || handover.infra_binding_identity != self.infrastructure()?.binding_identity()
+            || handover.target_region_id != self.region_id
+            || handover.source_region_id == self.region_id
+            || handover.id.is_empty()
+            || handover.source_region_id.is_empty()
+            || handover.payload_hash != handover.calculate_payload_hash()
+        {
             return Err(OperationalError::InvalidHandover);
         }
-        let train_number_numeric_part = operational_train_number_numeric_part(
-            &handover.train.train_number,
-        )
-        .ok_or_else(|| OperationalError::InvalidTrainNumber(handover.train.train_number.clone()))?;
-        if self.trains.values().any(|train| {
-            operational_train_number_numeric_part(&train.train_number)
-                == Some(train_number_numeric_part)
-        }) {
-            return Err(OperationalError::DuplicateTrainNumber(
-                train_number_numeric_part,
-            ));
+        if let Some(receipt) = self.accepted_handovers.get(&handover.id) {
+            if receipt != &handover.payload_hash {
+                return Err(OperationalError::InvalidHandover);
+            }
+            handover.acknowledged = true;
+            return Ok(());
         }
-        self.formations
-            .insert(handover.formation.id.clone(), handover.formation.clone());
-        self.ensure_intervals_free(&handover.train.id, &handover.train.occupied_intervals)?;
-        if self
-            .trains
-            .insert(handover.train.id.clone(), handover.train.clone())
-            .is_some()
+        if handover.acknowledged
+            || handover.at_ms != self.now_ms
+            || handover.source_state_hash.len() != 64
+            || self.trains.contains_key(&handover.train.id)
+            || self.formations.contains_key(&handover.formation.id)
+            || handover
+                .vehicles
+                .keys()
+                .any(|id| self.vehicles.contains_key(id))
+            || handover
+                .vehicle_types
+                .iter()
+                .any(|(id, kind)| self.vehicle_types.get(id).is_some_and(|own| own != kind))
+            || handover
+                .route_locks
+                .keys()
+                .any(|id| self.route_locks.contains_key(id))
+            || !self.prepared_handovers.is_empty()
+            || self.active_disruptions != handover.active_disruptions
         {
-            return Err(OperationalError::DuplicateId(handover.train.id.clone()));
+            return Err(OperationalError::InvalidHandover);
         }
-        for resource in &handover.protected_resources {
-            self.resource_lifecycle
-                .insert(resource.clone(), ResourceLifecycle::RouteLocked);
+        let infra = self.infrastructure()?;
+        if infra.route_version(&handover.route.id)?.as_ref() != Some(&handover.route)
+            || handover.train.route_version_id != handover.route.id
+            || handover.train.formation_version_id != handover.formation.id
+        {
+            return Err(OperationalError::InvalidHandover);
         }
-        handover.acknowledged = true;
-        self.record(
+        for (id, template) in &handover.interlocking_routes {
+            if infra.interlocking_route(id)?.as_ref() != Some(template) {
+                return Err(OperationalError::InvalidHandover);
+            }
+        }
+        for (id, position) in &handover.switch_positions {
+            if self
+                .switch_positions
+                .get(id)
+                .is_some_and(|own| own != position)
+            {
+                return Err(OperationalError::InvalidHandover);
+            }
+        }
+        let transferred_resources = handover
+            .route_locks
+            .values()
+            .flat_map(|lock| lock.resources.iter())
+            .chain(handover.protected_resources.iter())
+            .cloned()
+            .collect::<BTreeSet<_>>();
+        if self
+            .route_locks
+            .values()
+            .any(|lock| !lock.resources.is_disjoint(&transferred_resources))
+            || self
+                .trains
+                .values()
+                .any(|train| !train.occupied_blocks.is_disjoint(&transferred_resources))
+        {
+            return Err(OperationalError::UnprotectedHandover);
+        }
+        self.ensure_intervals_free(&handover.train.id, &handover.train.occupied_intervals)?;
+        let mut candidate = self.clone();
+        candidate.vehicles.extend(handover.vehicles.clone());
+        candidate
+            .vehicle_types
+            .extend(handover.vehicle_types.clone());
+        if candidate.derive_formation(
+            handover.formation.id.clone(),
+            handover.formation.predecessor_id.clone(),
+            handover.formation.vehicle_ids.clone(),
+        )? != handover.formation
+        {
+            return Err(OperationalError::InvalidHandover);
+        }
+        candidate
+            .formations
+            .insert(handover.formation.id.clone(), handover.formation.clone());
+        candidate.adopt_service_outcome(&handover.train)?;
+        candidate
+            .trains
+            .insert(handover.train.id.clone(), handover.train.clone());
+        candidate
+            .trains
+            .get_mut(&handover.train.id)
+            .expect("transferred train")
+            .occupied_blocks
+            .extend(handover.protected_resources.iter().cloned());
+        candidate.handover_protection_by_train.insert(
+            handover.train.id.clone(),
+            handover.protected_resources.clone(),
+        );
+        candidate.route_locks.extend(handover.route_locks.clone());
+        candidate
+            .switch_positions
+            .extend(handover.switch_positions.clone());
+        if let Some(segment) = &handover.train.motion_segment {
+            if segment.started_at_ms > self.now_ms || segment.valid_until_ms < self.now_ms {
+                return Err(OperationalError::InvalidHandover);
+            }
+            candidate.scheduled_motion_ends.insert(ScheduledMotionEnd {
+                at_ms: segment.valid_until_ms,
+                train_id: handover.train.id.clone(),
+                segment_started_at_ms: segment.started_at_ms,
+            });
+        }
+        if let Some(request) = &handover.dispatch_request {
+            candidate
+                .pending_dispatch_requests
+                .insert(handover.train.id.clone(), request.clone());
+        }
+        if let Some(at_ms) = handover.route_completed_at_ms {
+            candidate
+                .route_completed_at_ms
+                .insert(handover.train.id.clone(), at_ms);
+        }
+        candidate
+            .accepted_handovers
+            .insert(handover.id.clone(), handover.payload_hash.clone());
+        candidate.rebuild_resource_lifecycle();
+        candidate.rebuild_signal_aspects()?;
+        candidate.record(
             "handover-accepted",
             &handover.train.id,
             &handover.source_region_id,
         )?;
+        candidate.verify_invariants()?;
+        *self = candidate;
+        handover.acknowledged = true;
         Ok(())
     }
 
     pub fn finish_handover(&mut self, handover: &RegionHandover) -> Result<(), OperationalError> {
-        if !handover.acknowledged || handover.source_region_id != self.region_id {
+        if !handover.acknowledged
+            || handover.world_id != self.world_id
+            || handover.infra_release_id != self.infra_release_id
+            || handover.source_region_id != self.region_id
+            || handover.payload_hash != handover.calculate_payload_hash()
+        {
             return Err(OperationalError::InvalidHandover);
         }
-        self.trains
-            .remove(&handover.train.id)
-            .ok_or_else(|| OperationalError::UnknownTrain(handover.train.id.clone()))?;
-        for resource in &handover.protected_resources {
-            self.resource_lifecycle
-                .insert(resource.clone(), ResourceLifecycle::Free);
+        if let Some(receipt) = self.finished_handovers.get(&handover.id) {
+            return if receipt == &handover.payload_hash {
+                Ok(())
+            } else {
+                Err(OperationalError::InvalidHandover)
+            };
         }
-        self.record(
+        if self
+            .prepared_handovers
+            .get(&handover.id)
+            .is_none_or(|prepared| prepared.payload_hash != handover.payload_hash)
+            || self.trains.get(&handover.train.id) != Some(&handover.train)
+        {
+            return Err(OperationalError::InvalidHandover);
+        }
+        let mut candidate = self.clone();
+        candidate.trains.remove(&handover.train.id);
+        candidate
+            .handover_protection_by_train
+            .remove(&handover.train.id);
+        candidate
+            .route_locks
+            .retain(|_, lock| lock.train_id != handover.train.id);
+        candidate
+            .scheduled_motion_ends
+            .retain(|event| event.train_id != handover.train.id);
+        candidate
+            .pending_dispatch_requests
+            .remove(&handover.train.id);
+        candidate.route_completed_at_ms.remove(&handover.train.id);
+        for waiting in candidate.waiting_by_resource.values_mut() {
+            waiting.remove(&handover.train.id);
+        }
+        candidate
+            .waiting_by_resource
+            .retain(|_, waiting| !waiting.is_empty());
+        // Historische Formationen duerfen nicht als zweite Fahrzeugreserve weiterleben.
+        candidate.formations.retain(|_, formation| {
+            formation
+                .vehicle_ids
+                .iter()
+                .all(|id| !handover.vehicles.contains_key(id))
+        });
+        candidate
+            .vehicles
+            .retain(|id, _| !handover.vehicles.contains_key(id));
+        candidate.release_service_plan(&handover.train);
+        candidate.prepared_handovers.remove(&handover.id);
+        candidate
+            .finished_handovers
+            .insert(handover.id.clone(), handover.payload_hash.clone());
+        candidate.rebuild_resource_lifecycle();
+        candidate.rebuild_signal_aspects()?;
+        candidate.record(
             "handover-finished",
             &handover.train.id,
             &handover.target_region_id,
         )?;
+        candidate.verify_invariants()?;
+        *self = candidate;
         Ok(())
     }
 
     pub fn verify_invariants(&self) -> Result<(), OperationalError> {
+        self.verify_service_outcomes()?;
+        for (id, handover) in &self.prepared_handovers {
+            if id != &handover.id
+                || handover.acknowledged
+                || handover.world_id != self.world_id
+                || handover.source_region_id != self.region_id
+                || handover.target_region_id == self.region_id
+                || handover.infra_release_id != self.infra_release_id
+                || handover.at_ms != self.now_ms
+                || handover.payload_hash != handover.calculate_payload_hash()
+                || self.trains.get(&handover.train.id) != Some(&handover.train)
+                || handover
+                    .protected_resources
+                    .iter()
+                    .any(|resource| !self.resource_lifecycle.contains_key(resource))
+            {
+                return Err(OperationalError::InvalidHandover);
+            }
+        }
+        for (train_id, protection) in &self.handover_protection_by_train {
+            if protection.is_empty()
+                || self
+                    .trains
+                    .get(train_id)
+                    .is_none_or(|train| !protection.is_subset(&train.occupied_blocks))
+            {
+                return Err(OperationalError::InvalidHandover);
+            }
+        }
+        for receipts in [&self.accepted_handovers, &self.finished_handovers] {
+            if receipts.iter().any(|(id, hash)| {
+                id.is_empty()
+                    || hash.len() != 64
+                    || !hash
+                        .bytes()
+                        .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+            }) {
+                return Err(OperationalError::InvalidHandover);
+            }
+        }
         if self.events.len() > MAX_PENDING_OPERATIONAL_EVENTS
             || self.events.last().map_or(0, |event| event.event_sequence) > self.event_sequence
             || self
@@ -5074,11 +5742,14 @@ impl OperationalWorld {
         for continuation in self.pending_movement_continuations.values() {
             if self.trains.contains_key(&continuation.successor.id)
                 || self.trains.values().any(|train| {
-                    train.id != continuation.predecessor_train_id
-                        && operational_train_number_numeric_part(&train.train_number)
-                            == operational_train_number_numeric_part(
-                                &continuation.successor.train_number,
-                            )
+                    !continuation_graph_reaches(
+                        &continuation_graph,
+                        &train.id,
+                        &continuation.predecessor_train_id,
+                    ) && operational_train_number_numeric_part(&train.train_number)
+                        == operational_train_number_numeric_part(
+                            &continuation.successor.train_number,
+                        )
                 })
                 || self
                     .trains
@@ -5189,6 +5860,7 @@ impl OperationalWorld {
             return Err(OperationalError::UnsafeState);
         }
         if self.infra.is_some() {
+            let mut backed_signals = BTreeSet::new();
             for lock in self.route_locks.values() {
                 let Some(train) = self.trains.get(&lock.train_id) else {
                     return Err(OperationalError::UnsafeState);
@@ -5223,6 +5895,7 @@ impl OperationalWorld {
                 }) {
                     return Err(OperationalError::UnsafeState);
                 }
+                backed_signals.insert((template.signal_id.clone(), template.movement_kind));
                 let expected_aspect = if template.movement_kind == MovementKind::Train {
                     SignalAspect::Proceed
                 } else {
@@ -5241,30 +5914,23 @@ impl OperationalWorld {
                     SignalAspect::Stop | SignalAspect::Failed => None,
                 };
                 if let Some(expected_movement) = expected_movement {
-                    let mut backed = false;
-                    for lock in self.route_locks.values() {
-                        let template = self
-                            .infrastructure()?
-                            .interlocking_route(&lock.template_id)?
-                            .ok_or_else(|| {
-                                OperationalError::UnknownInterlockingRoute(lock.template_id.clone())
-                            })?;
-                        if template.signal_id == *signal_id
-                            && template.movement_kind == expected_movement
-                        {
-                            backed = true;
-                            break;
-                        }
-                    }
-                    if !backed {
+                    if !backed_signals.contains(&(signal_id.clone(), expected_movement)) {
                         return Err(OperationalError::UnsafeState);
                     }
                 }
             }
         }
+        let mut owners_by_block: BTreeMap<&str, BTreeSet<&str>> = BTreeMap::new();
+        for train in self.trains.values() {
+            for block in &train.occupied_blocks {
+                owners_by_block.entry(block).or_default().insert(&train.id);
+            }
+        }
         if self.route_locks.values().any(|lock| {
-            self.trains.values().any(|train| {
-                train.id != lock.train_id && !train.occupied_blocks.is_disjoint(&lock.resources)
+            lock.resources.iter().any(|resource| {
+                owners_by_block
+                    .get(resource.as_str())
+                    .is_some_and(|owners| owners.iter().any(|owner| *owner != lock.train_id))
             })
         }) {
             return Err(OperationalError::UnsafeState);
@@ -5281,6 +5947,7 @@ impl OperationalWorld {
         let bytes = serde_json::to_vec(&canonical)
             .expect("OperationalWorld besitzt ausschliesslich serialisierbare Zustandsfelder");
         let mut hash = StateHasher::new("operational-world/v5");
+        hash.bytes("motion-policy", OPERATIONAL_MOTION_POLICY.as_bytes());
         hash.bytes("canonical-json", &bytes);
         hash.finish()
     }
@@ -5485,6 +6152,16 @@ fn stopping_distance_for_speed(speed_mmps: i128, brake_mmps2: u32) -> i128 {
         / denominator
 }
 
+fn directed_gradient(leg: &RouteLeg) -> Result<i32, OperationalError> {
+    if !(-100..=100).contains(&leg.gradient_per_mille) {
+        return Err(OperationalError::IncompleteRoute(leg.edge_id.clone()));
+    }
+    Ok(match leg.direction {
+        Direction::Along => i32::from(leg.gradient_per_mille),
+        Direction::Against => -i32::from(leg.gradient_per_mille),
+    })
+}
+
 fn stopping_distance_mm(speed_mmps: u32, brake_mmps2: u32) -> Result<i64, OperationalError> {
     checked_i64(stopping_distance_for_speed(
         i128::from(speed_mmps),
@@ -5506,7 +6183,7 @@ fn acceleration_brake_boundary_ms(
     let acceleration = i64::from(acceleration_mmps2.unsigned_abs().max(1));
     let to_limit_ms = i64::from(speed_limit_mmps.saturating_sub(start_speed_mmps))
         .saturating_mul(1_000)
-        .saturating_add(acceleration - 1)
+        .saturating_add(499)
         / acceleration;
     let required = |elapsed_ms| {
         let speed = kinematic_speed_mmps(start_speed_mmps, acceleration_mmps2, elapsed_ms);
@@ -5615,6 +6292,7 @@ fn first_boundary_or_event_ms(
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum OperationalError {
+    InvalidServiceOutcome,
     ArithmeticOverflow,
     EventBudgetExceeded,
     OutsideMotionValidity,
@@ -5758,6 +6436,7 @@ mod invariant_tests {
         occupied_intervals: Vec<TrackInterval>,
     ) -> OperationalTrain {
         OperationalTrain {
+            service_outcome: None,
             id: id.to_owned(),
             train_number: train_number.to_owned(),
             operator_id: "operator:test".to_owned(),
@@ -5819,6 +6498,11 @@ mod invariant_tests {
             events: Vec::new(),
             processed_command_ids: BTreeSet::new(),
             infra: None,
+            handover_protection_by_train: BTreeMap::new(),
+            service_outcome_state: None,
+            prepared_handovers: BTreeMap::new(),
+            accepted_handovers: BTreeMap::new(),
+            finished_handovers: BTreeMap::new(),
             scheduled_motion_ends: BTreeSet::new(),
             scheduled_continuation_due: BTreeSet::new(),
             waiting_by_resource: BTreeMap::new(),
@@ -6128,6 +6812,53 @@ mod invariant_tests {
         );
 
         assert_eq!(world.verify_invariants(), Ok(()));
+    }
+
+    #[test]
+    fn incremental_resource_refresh_matches_full_reference_with_shared_locks() {
+        let mut state = world(
+            vec![train("t", "RB 1", Vec::new())],
+            vec![
+                lock("one", "t", &["shared", "first"]),
+                lock("two", "t", &["shared", "second"]),
+            ],
+        );
+        state.rebuild_resource_lifecycle();
+        let resources = ["shared", "first", "second", "occupied"]
+            .into_iter()
+            .map(str::to_owned)
+            .collect();
+        for step in 0..4 {
+            match step {
+                0 => {
+                    state
+                        .trains
+                        .get_mut("t")
+                        .unwrap()
+                        .occupied_blocks
+                        .insert("occupied".into());
+                }
+                1 => {
+                    state.route_locks.remove("one");
+                }
+                2 => {
+                    state
+                        .trains
+                        .get_mut("t")
+                        .unwrap()
+                        .occupied_blocks
+                        .insert("shared".into());
+                    state.route_locks.remove("two");
+                }
+                _ => {
+                    state.trains.get_mut("t").unwrap().occupied_blocks.clear();
+                }
+            }
+            state.refresh_resource_lifecycle(&resources);
+            let incremental = state.resource_lifecycle.clone();
+            state.rebuild_resource_lifecycle();
+            assert_eq!(incremental, state.resource_lifecycle, "step={step}");
+        }
     }
 
     #[test]

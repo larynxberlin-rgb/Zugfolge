@@ -180,6 +180,22 @@ export function validateAdminCommand(command: AdminCommandPayload): void {
       throw new AdminWorkflowError("Manuelle Stoerungen brauchen eine deklarierte Wirkung.");
     }
   }
+  if (command.actionType === "disruption_policy_schedule") {
+    const policy = command.disruptionPolicy;
+    const modes = ["REALISTIC", "SIMULATED", "MANUAL"];
+    if (command.riskClass !== "high" || command.reason.trim().length < 8
+      || policy?.schemaVersion !== "zugfolge-disruption-policy-schedule/v1"
+      || typeof policy.requesterSubject !== "string" || policy.requesterSubject.trim() === ""
+      || typeof policy.effectiveAt !== "string" || !/Z$/.test(policy.effectiveAt) || Number.isNaN(Date.parse(policy.effectiveAt))
+      || !modes.includes(policy.plannedWorksMode) || !modes.includes(policy.operationalIncidentMode)
+      || typeof policy.rulesetVersion !== "string" || policy.rulesetVersion.trim() === ""
+      || record(policy.simulationProfile) === undefined
+      || Object.keys(policy).some((key) => !["schemaVersion", "requesterSubject", "effectiveAt", "plannedWorksMode", "operationalIncidentMode", "providerSetId", "simulationProfile", "rulesetVersion"].includes(key))
+      || ((policy.plannedWorksMode === "REALISTIC" || policy.operationalIncidentMode === "REALISTIC")
+        && (typeof policy.providerSetId !== "string" || policy.providerSetId.trim() === ""))) {
+      throw new AdminWorkflowError("Stoerungsrichtlinie braucht Vier-Augen-Freigabe, Kontobindung, Stichtag und einen expliziten Generatorvertrag.");
+    }
+  }
   if (["world_access_revoke", "abuse_sanction_activate", "world_close"].includes(command.actionType) && command.riskClass !== "high") {
     throw new AdminWorkflowError("Kontoentzug, schwere Sanktionen und Weltende sind immer hochriskant.");
   }

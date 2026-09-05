@@ -35,6 +35,25 @@ const vehicle = {
 };
 
 describe("M6 vollständig", () => {
+  it("weist extreme oder unbelegte Qualitaetszusagen vor Vorschau und Zuschlag zurueck", () => {
+    const valid: Bid = { id: "valid", operatorId: "own", vehicle, orderingFeeCentsPerTrainKm: 0n, promises: { extraSeats: 20, additionalStops: 0, punctualityBasisPoints: 9_600 }, submittedAt: tender.closesAt };
+    const exaggerated = { ...valid, id: "exaggerated", orderingFeeCentsPerTrainKm: tender.viabilityThresholdCentsPerTrainKm, promises: { extraSeats: 1_000_000, additionalStops: 1_000_000, punctualityBasisPoints: 9_600 } };
+    expect(() => scoreBid(tender, exaggerated)).toThrow(/Sitzplatz/);
+    expect(awardTender(tender, [valid, exaggerated], tender.closesAt).winner?.id).toBe("valid");
+    expect(() => scoreBid(tender, { ...valid, promises: { ...valid.promises, additionalStops: 1 } })).toThrow(/Halte|Zusatz/);
+    expect(() => scoreBid(tender, { ...valid, promises: { ...valid.promises, extraSeats: Number.MAX_SAFE_INTEGER + 1 } })).toThrow(/Wertebereich/);
+    expect(scoreBid(tender, valid).qualityPoints).toBeLessThanOrEqual(tender.profile.weights.quality);
+  });
+
+  it("misst vertragliche Sitzplatz- und Puenktlichkeitszusagen statt fester Zielwerte", () => {
+    const contract = { id: "quality", worldId: "w1", lotId: "lot", operatorId: "own", startsAt: 0, endsAt: 1,
+      orderingFeeCentsPerTrainKm: 10n, bonusCentsPerPeriod: 100n, penaltyRates: { punctuality: 1n, cancellation: 1n, seats: 2n, connections: 1n }, evidenceRequired: [],
+      qualityPromises: { schemaVersion: "zugfolge-quality-promises/v2" as const, extraSeats: 20, minimumSeats: 220, additionalStops: 0, punctualityBasisPoints: 9_800 } };
+    const performance = { trainKm: 1n, punctualityBasisPoints: 9_600, minimumSeatsProvided: 210, cancellations: 0, missingSeats: 0, missedConnections: 0, evidence: [] };
+    expect(settleContract(contract, performance)).toMatchObject({ bonusCents: 0n, penaltyCents: 220n });
+    expect(() => settleContract(contract, { ...performance, minimumSeatsProvided: undefined })).toThrow(/Nachweis|nachweis/);
+    expect(settleContract(contract, { ...performance, minimumSeatsProvided: 220, punctualityBasisPoints: 9_800 })).toMatchObject({ bonusCents: 100n, penaltyCents: 0n });
+  });
   it("friert Release ein und leitet alle Weltprofile ab", () => {
     expect(release.checksum).toHaveLength(64);
     expect(deriveWorldProfile(6)).toMatchObject({ periodWeeks: 3, contractPeriods: 2, totalPeriods: 8 });
@@ -57,7 +76,7 @@ describe("M6 vollständig", () => {
 
   it("prüft Fahrzeugkonfiguration, zeigt Wertung, assistiert und schlägt sofort zu", () => {
     expect(validateVehicle(spec.requirements, vehicle)).toEqual([]);
-    const base: Omit<Bid, "orderingFeeCentsPerTrainKm"> = { id: "b1", operatorId: "op1", vehicle, promises: { extraSeats: 20, punctualityBasisPoints: 9_600, additionalStops: 1 }, submittedAt: tender.closesAt - 1 };
+    const base: Omit<Bid, "orderingFeeCentsPerTrainKm"> = { id: "b1", operatorId: "op1", vehicle, promises: { extraSeats: 20, punctualityBasisPoints: 9_600, additionalStops: 0 }, submittedAt: tender.closesAt - 1 };
     const assisted = assistBid(tender, { ...base, expectedCostCentsPerTrainKm: tender.viabilityThresholdCentsPerTrainKm * 9n / 10n, targetMarginBasisPoints: 500 });
     expect(assisted.preview).toEqual(scoreBid(tender, assisted));
     const award = awardTender(tender, [assisted], tender.closesAt);

@@ -6,7 +6,6 @@ from odoo import _, api, fields, models
 from odoo.exceptions import AccessError, UserError, ValidationError
 
 from ..services import dispatch_signed_game_command
-from .admin_capability import GLOBAL_WORLD_DEPLOY_CAPABILITY_SCOPE_ID
 
 
 MAX_MONEY_CENTS = 9_223_372_036_854_775_807
@@ -91,6 +90,7 @@ class ZugfolgeAdminRequest(models.Model):
             ("world_access_revoke", "Weltzugang entziehen"),
             ("infra_release_adoption", "InfraRelease zur Periode uebernehmen"),
             ("manual_disruption_create", "Manuelle Stoerung anlegen"),
+            ("disruption_policy_schedule", "Stoerungsrichtlinie veroeffentlichen"),
             ("abuse_sanction_activate", "Schwere Missbrauchsmassnahme aktivieren"),
             ("world_close", "Weltabschluss einleiten"),
             ("world_deploy", "Signierte Welt bereitstellen"),
@@ -127,6 +127,11 @@ class ZugfolgeAdminRequest(models.Model):
     manual_disruption_cause = fields.Text()
     manual_disruption_resource_ids = fields.Json(default=list)
     manual_disruption_effect = fields.Json(default=dict)
+    disruption_planned_mode = fields.Selection([("REALISTIC", "Realistisch"), ("SIMULATED", "Simuliert"), ("MANUAL", "Manuell")], string="Geplante Baustellen")
+    disruption_incident_mode = fields.Selection([("REALISTIC", "Realistisch"), ("SIMULATED", "Simuliert"), ("MANUAL", "Manuell")], string="Betriebsstoerungen")
+    disruption_provider_set = fields.Char(string="Rechtegeprueftes Provider-Set")
+    disruption_simulation_profile = fields.Json(string="Vollstaendiges versioniertes Generatorprofil")
+    disruption_ruleset_version = fields.Char(string="Stoerungsregelversion")
     starting_capital_mode = fields.Selection(
         [("finite", "Begrenzt"), ("unlimited", "Unbegrenzt (\u221e)")],
         default="finite",
@@ -150,11 +155,7 @@ class ZugfolgeAdminRequest(models.Model):
     def _compute_game_capability(self):
         capability_model = self.env["zugfolge.admin.capability"].sudo()
         for record in self:
-            world_id = (
-                GLOBAL_WORLD_DEPLOY_CAPABILITY_SCOPE_ID
-                if record.action_type == "world_deploy"
-                else record.world_projection_id.world_id or record.world_id
-            )
+            world_id = record.world_id if record.action_type == "world_deploy" else record.world_projection_id.world_id or record.world_id
             capability = capability_model.search([
                 ("world_id", "=", world_id),
                 ("action_type", "=", record.action_type),
@@ -240,6 +241,13 @@ class ZugfolgeAdminRequest(models.Model):
                 "deploymentHash": normalized.get("deployment_hash", current.deployment_hash if current else None),
                 "deploymentRevision": normalized.get("deployment_revision", current.deployment_revision if current else 1),
             }
+        if normalized.get("action_type", current.action_type if current else None) == "disruption_policy_schedule":
+            normalized["risk_class"] = "high"
+            normalized["effect_preview"] = {
+                "kind": "disruption-policy-schedule",
+                "supportedEffectContract": "numeric-speed/both-directions/all-traffic/v1",
+                "notice": "Das Game prueft das Profil nativ. Nicht darstellbare Wirkungen und Scopes bleiben sichtbar und wirkungslos; auch null anwendbare La sind moeglich.",
+            }
         return normalized
 
     @api.model_create_multi
@@ -284,6 +292,7 @@ class ZugfolgeAdminRequest(models.Model):
             "manual_disruption_start", "manual_disruption_end", "manual_disruption_cause",
             "manual_disruption_resource_ids", "manual_disruption_effect", "starting_capital_mode", "starting_capital_input",
             "starting_capital_amount_cents", "signed_world_deployment", "deployment_hash", "deployment_revision",
+            "disruption_planned_mode", "disruption_incident_mode", "disruption_provider_set", "disruption_simulation_profile", "disruption_ruleset_version",
         }
         if decision_fields.intersection(values) and any(record.state != "draft" for record in self):
             raise UserError(_("Antragsinhalt und Autoritaetsbindungen sind nach dem Einreichen unveraenderlich."))
@@ -300,6 +309,7 @@ class ZugfolgeAdminRequest(models.Model):
         "manual_disruption_effect", "world_projection_id", "world_id", "world_name", "world_kind",
         "ranking_status", "schedule_period_weeks", "world_epoch", "starting_capital_mode",
         "starting_capital_input", "starting_capital_amount_cents", "signed_world_deployment", "deployment_hash", "deployment_revision", "state",
+        "disruption_planned_mode", "disruption_incident_mode", "disruption_provider_set", "disruption_simulation_profile", "disruption_ruleset_version",
     )
     def _check_authoritative_shape(self):
         for record in self:
@@ -311,6 +321,17 @@ class ZugfolgeAdminRequest(models.Model):
                 raise ValidationError(_("Die Uebernahme eines InfraRelease ist immer hochriskant."))
             if record.action_type == "infra_release_adoption" and record.release_hash and not SHA256_RE.fullmatch(record.release_hash):
                 raise ValidationError(_("Der InfraRelease-Hash muss SHA-256 besitzen."))
+            if record.action_type == "disruption_policy_schedule":
+                if record.risk_class != "high" or not record.requested_period_start or len(record.reason.strip()) < 8:
+                    raise ValidationError(_("Stoerungsrichtlinien brauchen Vier-Augen-Freigabe, Fahrplanstichtag und eine ausfuehrliche Begruendung."))
+                if not record.disruption_planned_mode or not record.disruption_incident_mode:
+                    raise ValidationError(_("Beide Stoerungsmodi muessen ausdruecklich gewaehlt werden."))
+                if not isinstance(record.disruption_simulation_profile, dict) or not record.disruption_simulation_profile or not (record.disruption_ruleset_version or "").strip():
+                    raise ValidationError(_("Stoerungsrichtlinien brauchen ein vollstaendiges Generatorprofil und eine Regelversion."))
+                if "REALISTIC" in (record.disruption_planned_mode, record.disruption_incident_mode) and not (record.disruption_provider_set or "").strip():
+                    raise ValidationError(_("Realistische Modi brauchen ein benanntes rechtegeprueftes Provider-Set."))
+                if not record.requester_id.partner_id.zugfolge_keycloak_subject:
+                    raise ValidationError(_("Der Antragsteller braucht eine durch OIDC verifizierte Keycloak-Bindung und einen Administratorzugang zur Zielwelt."))
             if record.action_type == "manual_disruption_create":
                 if record.risk_class != "high":
                     raise ValidationError(_("Eine manuelle Stoerung ist immer hochriskant."))
@@ -506,6 +527,18 @@ class ZugfolgeAdminRequest(models.Model):
                 "affectedResourceIds": self.manual_disruption_resource_ids,
                 "declaredEffect": self.manual_disruption_effect,
             }
+        if self.action_type == "disruption_policy_schedule":
+            payload["disruptionPolicy"] = {
+                "schemaVersion": "zugfolge-disruption-policy-schedule/v1",
+                "requesterSubject": self.requester_id.partner_id.zugfolge_keycloak_subject,
+                "effectiveAt": requested_period_start.isoformat().replace("+00:00", "Z"),
+                "plannedWorksMode": self.disruption_planned_mode,
+                "operationalIncidentMode": self.disruption_incident_mode,
+                "simulationProfile": self.disruption_simulation_profile,
+                "rulesetVersion": self.disruption_ruleset_version,
+            }
+            if self.disruption_provider_set:
+                payload["disruptionPolicy"]["providerSetId"] = self.disruption_provider_set
         if self.action_type == "world_deploy":
             epoch = fields.Datetime.to_datetime(self.world_epoch).replace(tzinfo=timezone.utc)
             payload.update({

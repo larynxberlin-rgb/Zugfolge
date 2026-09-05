@@ -130,7 +130,7 @@ werden im Secret Store der jeweils getrennten Betriebsumgebung hinterlegt.
 # Game API: Odoo -> Game
 ODOO_WEBHOOK_TENANT_ID=production-tenant-id
 ODOO_WEBHOOK_KEYS_JSON=[{"id":"2026-08","secret":"<secret>","activeFrom":"2026-08-01T00:00:00Z"},{"id":"2026-09","secret":"<next-secret>","activeFrom":"2026-09-01T00:00:00Z"}]
-ODOO_WEBHOOK_AUTHORIZED_ACTORS_JSON={"commerce-service":["entitlement.change","world.participation.change"],"admin-service":["admin.world_deploy","admin.world_access_revoke","admin.infra_release_adoption","admin.manual_disruption_create"]}
+ODOO_WEBHOOK_AUTHORIZED_ACTORS_JSON={"commerce-service":["entitlement.change","world.participation.change"],"admin-service":["admin.world_deploy","admin.world_access_revoke","admin.infra_release_adoption","admin.manual_disruption_create","admin.disruption_policy_schedule"]}
 
 # Game API: Game -> Odoo
 ODOO_PROJECTION_URL=https://odoo.example.invalid/zugfolge/projection
@@ -139,7 +139,7 @@ ODOO_PROJECTION_SECRET=<different-direction-secret>
 ODOO_RECONCILIATION_URL=https://odoo.example.invalid/zugfolge/reconciliation/snapshot
 ```
 
-Im Odoo-Systemparameter-Store stehen getrennt `zugfolge_admin.game_webhook_url`,
+Im Odoo-Systemparameter-Store stehen getrennt `zugfolge_admin.game_world_origins_json`,
 `zugfolge_admin.tenant_id`, `zugfolge_admin.webhook_key_id`,
 `zugfolge_admin.webhook_secret` und `zugfolge_admin.projection_keys_json` (JSON-Key-ID→Secret, während Rotation mit beiden aktiven IDs).
 `zugfolge_admin.actor_reference` muss genau den technischen Akteur des
@@ -148,6 +148,81 @@ Im Odoo-Systemparameter-Store stehen getrennt `zugfolge_admin.game_webhook_url`,
 Kommando erhalten. Je Richtung gelten verschiedene Schlüssel. Rotation bedeutet: neuen Schlüssel
 zuerst auf der empfangenden Seite zusätzlich aktivieren, Senden umstellen, das
 fünfminütige Zeitfenster abwarten und den alten Schlüssel erst danach entfernen.
+
+Das Weltserverregister ist ein JSON-Objekt von Hauptwelt-UUID zu kanonischer
+HTTPS-Origin, zum Beispiel
+`{"11111111-1111-4111-8111-111111111111":"https://welt-a.example.invalid"}`.
+Jede Origin darf genau einmal vorkommen; Pfad, Benutzerinfo und Query sind
+unzulässig. Das Add-on sendet an `/api/integrations/odoo/webhooks` dieser
+Origin und folgt keinen Weiterleitungen. Damit erreicht der HTTP-Host genau
+die an `ZUGFOLGE_WORLD_ID` und `PUBLIC_GAME_URL` gebundene Serverinstanz.
+Die bisherige globale `game_webhook_url` wird nicht als Fallback verwendet.
+Tutorialwelten besitzen keinen kaufmännischen Eintrag und erhalten weder
+Teilnahme- noch Verwaltungsbefehle über diesen Kanal.
+
+„Spiel öffnen“ im Portal verwendet ebenfalls dieses geprüfte Register. Nach
+Prüfung der eigenen aktiven Teilnahme führt der Link zur HTTPS-Subdomain der
+konkreten Welt und übergibt deren UUID als `world`-Parameter. Alte
+`game_url_template`-Werte am Angebot werden nicht mehr ausgewertet; relative
+Odoo-Pfade oder fremde Ziel-URLs können die Serverzuordnung nicht ersetzen.
+Ein fehlender Registereintrag zeigt einen vorübergehend nicht verfügbaren
+Weltserver an und leitet nicht zu einer anderen Welt weiter.
+
+Ein zentrales Odoo darf mehrere eigenständige Weltserver verwalten. Odoo-
+Mandant und Accounting-Company bezeichnen kaufmännische Zuständigkeiten;
+sie sind keine Spielwelt und berechtigen keinen Server zum Betrieb weiterer
+Hauptwelten. Konkrete Weltangebote, Rechnungsableitung, Jobs und Rückmeldungen
+binden ihre Zielwelt. Kontoweite Entitlements wie Plus/Kosmetik behalten ihren
+weltunabhängigen Vertrag und werden mit identischer Event-ID ausdrücklich auf
+alle registrierten Hauptweltserver projiziert. Beim Hinzufügen eines Servers
+sind bestehende Entitlements vor Verkaufsfreigabe ebenfalls dorthin zu
+projizieren: Die Buchhaltungsverwaltung markiert die betroffenen gebuchten
+Rechnungen und startet im Aktionsmenü „Zugfolge-Berechtigungen an Weltserver
+nachliefern“. Wiederanlaufbare Queue-Jobs senden die eingefrorenen Ereignisse
+mit ihren ursprünglichen Kennungen an alle registrierten Server. Historische
+Rechnungen ohne Ereignisjournal erhalten zunächst einen aus dem aktuellen
+nativen Zahlungs-/Erstattungszustand abgeleiteten Beleg.
+
+Das Monitoringfeld „API-Beleg (Zugriffstoken erforderlich)“ ist ein kopierbarer
+Nachweis-URI unter der jeweiligen öffentlichen Origin mit dem Präfix
+`/api/worlds/<UUID>/alpha-monitoring`. Es ist kein Browser-Drilldown. Ein
+API-Werkzeug muss ein gültiges Bearer-Zugriffstoken eines berechtigten
+Weltadministrators mitsenden; ohne Token antwortet der Endpunkt weiterhin401.
+
+Der Receiver prüft die Zielwelt vor dem Queue-Commit. Der Worker prüft sie
+erneut vor jeder Wirkung, auch bei historischen Queue-Einträgen. Ein
+`world_deploy`-Kommando trägt die tatsächliche Zielwelt; der globale
+Capability-Scope ist dafür keine zulässige Ersatzwelt. Eine vor der
+Welterzeugung versandte Capability verwendet im Envelope weiterhin den
+eng begrenzten globalen Scope, bindet ihre `targetWorldId` aber an genau
+einen Server. Odoo bewertet Freigaben ausschließlich unter dieser Zielwelt;
+alte globale Belege ohne Zielwelt erzeugen keine Freigabe. Der Reconciliation-
+Aufruf trägt die Serverhauptwelt und vergleicht nur deren lokale Belege.
+Globale Capabilities/Abschlussquittungen gehören nur bei bekannter lokaler
+Message-ID zum Server; andere Welten eines zentralen Odoo werden nicht als
+fremde Restore-Belege quarantänisiert.
+
+Infra-Jahresimporte benutzen ebenfalls das Weltserverregister. Eine am Import
+ausgewählte Welt bestimmt das Ziel; vor dem ersten Weltstart bindet der
+explizite Systemparameter `zugfolge_admin.infra_upload_world_id` das Staging
+an die registrierte künftige Hauptwelt. Ein globaler Upload-URL-Fallback
+existiert nicht. Die HTTPS-URL enthält `/api`, die HMAC bindet den danach im
+Game ankommenden Integrationspfad ohne dieses Proxypräfix. Uploads folgen
+keinen Weiterleitungen und aktivieren weiterhin keinen Release.
+
+Ab Add-on `19.0.2.0.5` speichert die Ursprungrechnung jede echte
+Entitlementänderung mit monotoner `sourceRevision`, eingefrorenem Zeitpunkt,
+Payload und eigener Ereigniskennung. Grant und Erstattung/Revoke besitzen
+verschiedene Kennungen; technische Retries verändern keinen Beleg. Auch
+Gutschriften benennen die ursprüngliche Rechnungsnummer. Teilweise erstattete
+Produktmengen reduzieren die verbleibende ganzzahlige Berechtigung.
+Der Game-Leser reduziert sämtliche Auditereignisse pro Subject, Produkt und
+Ursprungsbeleg auf dessen letzte zum Abfragezeitpunkt gültige Revision.
+Revoke/Expiry entfernen damit alte Grants; verspätete ältere Zustellungen
+geben sie nicht erneut frei. Unversionierte historische Belege werden anhand
+ihres fachlichen Zeitpunkts reduziert, bis ein versionierter Quellenstand
+übernommen wurde. Die Originalereignisse bleiben unverändert für Auskünfte
+und Audit erhalten.
 
 ## Vertrag, Wiederholung und Reconciliation
 
@@ -166,7 +241,15 @@ signierten Controller in schreibgeschützte Projektionsmodelle.
 Der Nachtlauf fragt den nur dafür freigegebenen Odoo-Reconciliation-Snapshot ab,
 vergleicht stabile IDs, Korrelation und Hash und
 erzeugt bei fehlenden, doppelten oder divergierenden Einträgen eine auditierte
-Korrekturaufgabe. Er überschreibt weder Game- noch Odoo-Daten still. Der
+Korrekturaufgabe. Auch bekannte Outboxnachrichten ohne Empfangsbestaetigung
+werden verglichen: Ein verlorenes Ack ist kein unbekannter Beleg. Als fehlend
+gelten nur bereits vor Beginn der Snapshotanfrage bestaetigte Zustellungen;
+spaetere Acks erzeugen keinen falschen Fehlbestand. Beobachtungen ohne Game-ID
+kommen dedupliziert in `odoo_projection_quarantine`, auch wenn ihre Welt nach
+einem asynchronen Restore nicht mehr existiert. Diese Quarantaene ist ein
+administrativer Befund, keine Spielautoritaet. Die Aufloesung ist manuell zu
+auditieren; es gibt keine automatische Loeschung oder Uebernahme.
+Er überschreibt weder Game- noch Odoo-Daten still. Der
 Reconciler ist erst nach einem echten externen Odoo-Testdienst als
 Abnahmenachweis ausführbar.
 

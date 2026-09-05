@@ -8,9 +8,8 @@ import test from "node:test";
 import { serializeMapReleaseBuildEvidence } from "../tiles/map-release-build-evidence.mjs";
 import { createDatabaseBackupRestoreEvidenceArtifacts } from "./create-database-backup-restore-evidence.mjs";
 import { createDatabaseRollbackProofArtifact } from "./create-database-rollback-proof.mjs";
+import { databaseAuthoritativeCatalog } from "./database-cutover-schema-contract.mjs";
 import {
-  DATABASE_AUTHORITATIVE_TABLE_COUNT,
-  DATABASE_AUTHORITATIVE_TABLE_SET_SHA256,
   databaseCutoverConstraintProofs,
   databaseCutoverGuardProofs,
   keycloakIdentityHeadFixture,
@@ -26,10 +25,11 @@ function sha256(bytes) {
   return createHash("sha256").update(bytes).digest("hex");
 }
 
-function snapshot(overrides = {}) {
+function snapshot(overrides = {}, migrationCount = 33) {
+  const catalog = databaseAuthoritativeCatalog(migrationCount);
   return {
     databaseIdentity: DATABASE_ID,
-    migrationLedger: Array.from({ length: 33 }, (_, index) => ({
+    migrationLedger: Array.from({ length: migrationCount }, (_, index) => ({
       id: index + 1,
       hash: (index + 1).toString(16).padStart(64, "0"),
       createdAt: 1_787_000_000_000 + index,
@@ -39,8 +39,8 @@ function snapshot(overrides = {}) {
     heads: { total: 0, v2: 0, nonNullInitializationHash: 0, incompatible: 0 },
     authoritativeHead: {
       schema: "zugfolge-database-authoritative-head/v1",
-      tableCount: DATABASE_AUTHORITATIVE_TABLE_COUNT,
-      tableSetSha256: DATABASE_AUTHORITATIVE_TABLE_SET_SHA256,
+      tableCount: catalog.tables.length,
+      tableSetSha256: catalog.tableSetSha256,
       worldCount: 1,
       regionalStateCount: 0,
       domainEventCount: "0",
@@ -55,7 +55,7 @@ function inspected(snapshotValue, backendSha256) {
   return Object.freeze({ snapshot: snapshotValue, backendSha256 });
 }
 
-async function fixture({ dump = Buffer.from("bound-game-backup", "utf8") } = {}) {
+async function fixture({ dump = Buffer.from("bound-game-backup", "utf8"), migrationCount = 33 } = {}) {
   const root = await mkdtemp(join(tmpdir(), "zugfolge-db-evidence-"));
   const dumpPath = join(root, "game.dump");
   const gameManifestPath = join(root, "game.manifest.json");
@@ -70,7 +70,7 @@ async function fixture({ dump = Buffer.from("bound-game-backup", "utf8") } = {})
     createdAt: "2026-08-25T10:00:00Z",
     bytes: dump.length,
     sha256: dumpSha256,
-    migrationCount: 33,
+    migrationCount,
     rpoSeconds: 300,
   };
   const gameManifestBytes = Buffer.from(`${JSON.stringify(gameManifest)}\n`, "utf8");
@@ -89,7 +89,7 @@ async function fixture({ dump = Buffer.from("bound-game-backup", "utf8") } = {})
     dumpSha256,
     identical: true,
     manifestSha256: sha256(gameManifestBytes),
-    migrationCount: 33,
+    migrationCount,
     schema: "zugfolge-game-restore/v2",
   };
   await Promise.all([
@@ -125,22 +125,24 @@ async function fixture({ dump = Buffer.from("bound-game-backup", "utf8") } = {})
   };
 }
 
-function inspectPair({ restoredSnapshot = snapshot(), sourceBackend = SOURCE_BACKEND, restoredBackend = RESTORE_BACKEND } = {}) {
+function inspectPair({ sourceSnapshot = snapshot(), restoredSnapshot = sourceSnapshot, sourceBackend = SOURCE_BACKEND, restoredBackend = RESTORE_BACKEND } = {}) {
   return async (url) => url === RESTORE_URL
     ? inspected(restoredSnapshot, restoredBackend)
-    : inspected(snapshot(), sourceBackend);
+    : inspected(sourceSnapshot, sourceBackend);
 }
 
 async function missing(path) {
   await assert.rejects(access(path), { code: "ENOENT" });
 }
 
-test("erzeugt aus echtem Dump-/Restore-Vertrag das kanonische v1-Paar und einen gueltigen v3-Rollbackbeleg", async () => {
-  const value = await fixture();
+for (const migrationCount of [33, 34]) {
+test(`erzeugt aus Schema ${migrationCount} das kanonische v1-Paar und einen gueltigen v${migrationCount === 34 ? 4 : 3}-Rollbackbeleg`, async () => {
+  const value = await fixture({ migrationCount });
+  const inspect = inspectPair({ sourceSnapshot: snapshot({}, migrationCount) });
   try {
     const result = await createDatabaseBackupRestoreEvidenceArtifacts({
       environment: value.environment,
-      inspect: inspectPair(),
+      inspect,
       now: () => new Date("2026-08-25T10:10:00.000Z"),
     });
     assert.match(result.backupManifestSha256, /^[a-f0-9]{64}$/u);
@@ -164,14 +166,35 @@ test("erzeugt aus echtem Dump-/Restore-Vertrag das kanonische v1-Paar und einen 
         DATABASE_ROLLBACK_PROOF_OUTPUT_PATH: value.paths.rollbackProofPath,
       },
       postgresFactory: () => undefined,
-      inspect: inspectPair(),
+      inspect,
     });
     assert.match(rollback.proofHash, /^[a-f0-9]{64}$/u);
-    assert.equal(JSON.parse(await readFile(value.paths.rollbackProofPath, "utf8")).schema, "zugfolge-database-rollback-proof/v3");
+    assert.equal(JSON.parse(await readFile(value.paths.rollbackProofPath, "utf8")).schema, `zugfolge-database-rollback-proof/v${migrationCount === 34 ? 4 : 3}`);
   } finally {
     await rm(value.root, { recursive: true, force: true });
   }
 });
+}
+
+for (const scenario of [
+  { name: "Schema-34-Manifest mit Schema-33-Datenbank", migrationCount: 34, sourceSnapshot: snapshot(), error: /Schema-34-Migrationsledger/u },
+  { name: "Schema-33-Manifest mit Schema-34-Datenbank", migrationCount: 33, sourceSnapshot: snapshot({}, 34), error: /Schema-33-Migrationsledger/u },
+  { name: "Schema-34-Ledger mit historischem Schema-33-Tabellensatz", migrationCount: 34, sourceSnapshot: snapshot({ authoritativeHead: snapshot().authoritativeHead }, 34), error: /Schema-34-Tabellensatz/u },
+  { name: "unqualifiziertes Schema 35", migrationCount: 35, sourceSnapshot: snapshot(), error: /keinen qualifizierten autoritativen Tabellenvertrag/u },
+]) {
+  test(`publiziert keine Belege fuer ${scenario.name}`, async () => {
+    const value = await fixture({ migrationCount: scenario.migrationCount });
+    try {
+      await assert.rejects(createDatabaseBackupRestoreEvidenceArtifacts({
+        environment: value.environment,
+        inspect: inspectPair({ sourceSnapshot: scenario.sourceSnapshot }),
+      }), scenario.error);
+      await Promise.all([missing(value.paths.backupManifestPath), missing(value.paths.restoreProofPath)]);
+    } finally {
+      await rm(value.root, { recursive: true, force: true });
+    }
+  });
+}
 
 test("hasht einen grossen Game-Dump streaming statt ihn als JSON-Artefakt in den Speicher zu laden", async () => {
   const value = await fixture({ dump: Buffer.alloc(5 * 1_024 * 1_024, 0x5a) });

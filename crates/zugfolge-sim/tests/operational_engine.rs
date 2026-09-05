@@ -337,12 +337,357 @@ fn world() -> OperationalWorld {
     world_with_release(release())
 }
 
+fn speed_profile_release(first_limit: u32, second_limit: u32) -> OperationalInfraRelease {
+    let mut infra = release();
+    for route in infra.route_versions.values_mut() {
+        route.legs[0].speed_limit_mmps = first_limit;
+        route.legs[1].speed_limit_mmps = second_limit;
+        route.legs[1].edge_entry_mm = 600_000;
+        for leg in &mut route.legs {
+            leg.gradient_per_mille = 0;
+        }
+    }
+    infra.directed_edges.insert("edge:b".into(), 600_000);
+    infra.edge_geometries.get_mut("edge:b").unwrap()[1].edge_offset_mm = 600_000;
+    let lock = infra
+        .interlocking_routes
+        .get_mut("interlocking:train:b")
+        .unwrap();
+    lock.authority_end_route_mm = 660_000;
+    lock.release_after_tail_route_mm = 660_000;
+    infra
+}
+
+fn dispatched_profile_world(infra: OperationalInfraRelease) -> OperationalWorld {
+    let mut world = world_with_release(infra);
+    world
+        .materialize_train(
+            "t",
+            "RB 1",
+            "o",
+            MovementKind::Train,
+            "route:v1",
+            "formation:1",
+            0,
+            None,
+            false,
+        )
+        .unwrap();
+    world
+        .submit_dispatch_requests(&[DispatchRequest {
+            train_id: "t".into(),
+            interlocking_route_id: "interlocking:train".into(),
+            committed_rank: 0,
+            timetable_deviation_ms: 0,
+            passenger_impact: 0,
+            contractual_impact: 0,
+            network_impact: 0,
+            resource_consequence: 0,
+            recovery_rank: 0,
+            waiting_since_ms: 0,
+        }])
+        .unwrap();
+    world
+}
+
+#[test]
+fn newly_activated_lower_limit_on_an_upcoming_authorized_edge_stops_existing_motion() {
+    let mut world = dispatched_profile_world(speed_profile_release(20_000, 20_000));
+    world.advance_to(1_000).unwrap();
+    assert!(world.trains["t"].motion_segment.is_some());
+    assert!(
+        world.trains["t"]
+            .occupied_intervals
+            .iter()
+            .all(|interval| interval.edge_id != "edge:b")
+    );
+    let locks = world.route_locks.clone();
+    world
+        .activate_disruption(
+            "new-la",
+            OperationalDisruption::SpeedRestriction {
+                edge_id: "edge:b".into(),
+                maximum_speed_mmps: 1_000,
+            },
+        )
+        .unwrap();
+    assert!(world.trains["t"].motion_segment.is_none());
+    assert!(matches!(
+        world.trains["t"].motion_state,
+        MotionState::SafeStop { .. }
+    ));
+    assert_eq!(world.route_locks, locks);
+    world.verify_invariants().unwrap();
+}
+
+#[test]
+fn lower_vmax_is_reached_before_the_edge_in_both_directions() {
+    for reverse in [false, true] {
+        let mut infra = speed_profile_release(20_000, 1_000);
+        if reverse {
+            for route in infra.route_versions.values_mut() {
+                for leg in &mut route.legs {
+                    std::mem::swap(&mut leg.edge_entry_mm, &mut leg.edge_exit_mm);
+                    leg.direction = match leg.direction {
+                        Direction::Along => Direction::Against,
+                        Direction::Against => Direction::Along,
+                    };
+                }
+            }
+        }
+        let mut world = dispatched_profile_world(infra);
+        let mut replay = OperationalWorld::restore(&world.checkpoint()).unwrap();
+        let mut crossed = false;
+        for at in (0..=120_000).step_by(10) {
+            world.advance_to(at).unwrap();
+            let train = &world.trains["t"];
+            if let Some(segment) = &train.motion_segment {
+                let head = segment.position_at(at).unwrap();
+                if head >= 60_000 {
+                    crossed = true;
+                    assert!(
+                        segment.speed_at(at).unwrap() <= 1_000,
+                        "head={head}; segment={segment:?}"
+                    );
+                }
+            }
+        }
+        assert!(crossed);
+        replay.advance_to(120_000).unwrap();
+        assert_eq!(world.state_hash(), replay.state_hash());
+        world.verify_invariants().unwrap();
+    }
+}
+
+#[test]
+fn higher_vmax_waits_for_the_tail_and_existing_overspeed_brakes() {
+    let mut world = dispatched_profile_world(speed_profile_release(1_000, 20_000));
+    let mut accelerated = false;
+    for at in (0..=120_000).step_by(10) {
+        world.advance_to(at).unwrap();
+        if let Some(segment) = &world.trains["t"].motion_segment {
+            let head = segment.position_at(at).unwrap();
+            let speed = segment.speed_at(at).unwrap();
+            if head < 70_000 {
+                assert!(speed <= 1_000, "higher limit before tail: {segment:?}");
+            }
+            if head > 70_000 && speed > 1_000 {
+                accelerated = true;
+            }
+        }
+    }
+    assert!(accelerated);
+    let mut overspeed = dispatched_profile_world(speed_profile_release(1_000, 20_000));
+    overspeed.trains.get_mut("t").unwrap().speed_mmps = 5_000;
+    assert!(overspeed.plan_motion("t").unwrap().acceleration_mmps2 < 0);
+}
+
+#[test]
+fn gradient_changes_dynamics_with_direction_and_rejects_impossible_profiles() {
+    fn segment(gradient: i16, reverse: bool) -> zugfolge_sim::operational::MotionSegment {
+        let mut infra = release();
+        for route in infra.route_versions.values_mut() {
+            for leg in &mut route.legs {
+                leg.gradient_per_mille = gradient;
+            }
+            if reverse {
+                let leg = &mut route.legs[0];
+                std::mem::swap(&mut leg.edge_entry_mm, &mut leg.edge_exit_mm);
+                leg.direction = Direction::Against;
+            }
+        }
+        let mut world = world_with_release(infra);
+        world
+            .materialize_train(
+                "t",
+                "RB 1",
+                "o",
+                MovementKind::Train,
+                "route:v1",
+                "formation:1",
+                0,
+                None,
+                false,
+            )
+            .unwrap();
+        world.lock_route("t", "interlocking:train").unwrap();
+        world.plan_motion("t").unwrap()
+    }
+    let uphill = segment(40, false);
+    let level = segment(0, false);
+    let downhill = segment(-40, false);
+    assert!(uphill.acceleration_mmps2 < level.acceleration_mmps2);
+    assert!(level.acceleration_mmps2 < downhill.acceleration_mmps2);
+    assert_eq!(
+        uphill.acceleration_mmps2,
+        segment(-40, true).acceleration_mmps2
+    );
+    assert_ne!(uphill.valid_until_ms, downhill.valid_until_ms);
+    let mut invalid = release();
+    invalid.route_versions.get_mut("route:v1").unwrap().legs[0].gradient_per_mille = 101;
+    assert!(OperationalWorld::new("w", "r", 0, invalid).is_err());
+}
+
+#[test]
+fn shunting_has_its_own_limit_in_the_actual_motion_projection() {
+    for gradient in [0, 40, -40] {
+        let mut infra = speed_profile_release(20_000, 20_000);
+        for route in infra.route_versions.values_mut() {
+            for leg in &mut route.legs {
+                leg.gradient_per_mille = if leg.direction == Direction::Along {
+                    gradient
+                } else {
+                    -gradient
+                };
+            }
+        }
+        infra
+            .interlocking_routes
+            .get_mut("interlocking:shunting")
+            .unwrap()
+            .authority_end_route_mm = 660_000;
+        infra
+            .interlocking_routes
+            .get_mut("interlocking:shunting")
+            .unwrap()
+            .release_after_tail_route_mm = 660_000;
+        let mut world = world_with_release(infra);
+        world
+            .materialize_train(
+                "t",
+                "RB 1",
+                "o",
+                MovementKind::Shunting,
+                "route:v1",
+                "formation:1",
+                10_000,
+                None,
+                false,
+            )
+            .unwrap();
+        world.lock_route("t", "interlocking:shunting").unwrap();
+        world.plan_motion("t").unwrap();
+        let mut reached_limit = false;
+        for at in (0..=50_000).step_by(10) {
+            world.advance_to(at).unwrap();
+            if let Some(segment) = &world.trains["t"].motion_segment {
+                let speed = segment.speed_at(at).unwrap();
+                assert!(
+                    speed <= zugfolge_sim::operational::SHUNTING_MAXIMUM_SPEED_MMPS,
+                    "{segment:?}"
+                );
+                reached_limit |= speed == zugfolge_sim::operational::SHUNTING_MAXIMUM_SPEED_MMPS;
+            }
+        }
+        assert!(reached_limit);
+        world.verify_invariants().unwrap();
+    }
+}
+
+#[test]
+fn moving_handover_transfers_events_locks_vehicles_and_survives_retries_and_restore() {
+    let mut source = dispatched_profile_world(speed_profile_release(20_000, 20_000));
+    let mut target = OperationalWorld::new(
+        "world:1",
+        "region:b",
+        0,
+        speed_profile_release(20_000, 20_000),
+    )
+    .unwrap();
+    let mut handover = source
+        .begin_handover("h", "t", "region:b", set(&["boundary:west"]))
+        .unwrap();
+    source = OperationalWorld::restore(&source.checkpoint()).unwrap();
+    let before = source.state_hash();
+    assert!(source.advance_to(1).is_err());
+    assert!(source.safe_stop("t", "during-handover").is_err());
+    assert!(
+        source
+            .activate_disruption(
+                "during-handover",
+                OperationalDisruption::SpeedRestriction {
+                    edge_id: "edge:a".into(),
+                    maximum_speed_mmps: 1_000
+                }
+            )
+            .is_err()
+    );
+    assert_eq!(before, source.state_hash());
+    target.accept_handover(&mut handover).unwrap();
+    let accepted = target.state_hash();
+    target.accept_handover(&mut handover).unwrap();
+    assert_eq!(accepted, target.state_hash());
+    target = OperationalWorld::restore(&target.checkpoint()).unwrap();
+    source.finish_handover(&handover).unwrap();
+    let finished = source.state_hash();
+    source.finish_handover(&handover).unwrap();
+    assert_eq!(finished, source.state_hash());
+    assert!(!source.vehicles.contains_key("vehicle:1"));
+    assert!(source.route_locks.is_empty());
+    assert!(target.vehicles.contains_key("vehicle:1"));
+    target.advance_to(60_000).unwrap();
+    assert!(target.trains["t"].head_route_mm > 0);
+    assert!(target.trains["t"].occupied_blocks.contains("boundary:west"));
+    source.verify_invariants().unwrap();
+    target.verify_invariants().unwrap();
+    OperationalWorld::restore(&source.checkpoint()).unwrap();
+    OperationalWorld::restore(&target.checkpoint()).unwrap();
+}
+
+#[test]
+fn handover_rejects_foreign_world_release_time_route_and_inventory_atomically() {
+    let mut source = dispatched_profile_world(speed_profile_release(20_000, 20_000));
+    let original = source
+        .begin_handover("h", "t", "region:b", set(&["boundary:west"]))
+        .unwrap();
+    for case in 0..6 {
+        let mut infra = speed_profile_release(20_000, 20_000);
+        if case == 1 {
+            infra.id = "foreign-release".into();
+        }
+        if case == 3 {
+            infra.route_versions.get_mut("route:v1").unwrap().legs[0].speed_limit_mmps = 10_000;
+        }
+        let mut target = OperationalWorld::new(
+            if case == 0 {
+                "foreign-world"
+            } else {
+                "world:1"
+            },
+            "region:b",
+            if case == 2 { 1 } else { 0 },
+            infra,
+        )
+        .unwrap();
+        if case == 4 {
+            target
+                .register_vehicle_type(vehicle_type("type:short", 10_000), true)
+                .unwrap();
+            target
+                .register_vehicle(vehicle("vehicle:1", "type:short"))
+                .unwrap();
+        }
+        let mut handover = original.clone();
+        if case == 5 {
+            handover.source_event_sequence += 1;
+        }
+        let before = target.state_hash();
+        assert!(
+            target.accept_handover(&mut handover).is_err(),
+            "case={case}"
+        );
+        assert_eq!(before, target.state_hash());
+        assert!(!handover.acknowledged);
+    }
+}
+
 fn program_template(
     id: &str,
     movement_kind: MovementKind,
     head_route_mm: i64,
 ) -> TrainMaterialization {
     TrainMaterialization {
+        service_outcome: None,
         id: id.to_owned(),
         train_number: "RB 1".to_owned(),
         operator_id: "operator:1".to_owned(),
@@ -860,6 +1205,7 @@ fn continuation(
         predecessor_train_id: predecessor_train_id.to_owned(),
         predecessor_base_route_version_id: predecessor_base_route_version_id.to_owned(),
         successor: TrainMaterialization {
+            service_outcome: None,
             id: successor_id.to_owned(),
             train_number: successor_number.to_owned(),
             operator_id: "operator:1".to_owned(),
@@ -896,6 +1242,172 @@ fn advance_until(world: &mut OperationalWorld, train_id: &str, present: bool) {
         world.advance_to(next).unwrap();
     }
     panic!("erwarteter Zugzustand wurde nicht erreicht");
+}
+
+#[test]
+fn handover_boundary_protection_survives_another_region_and_movement_continuation_until_retirement()
+{
+    let mut release = continuation_release(false);
+    release.region_boundaries.insert("boundary:second".into());
+    let mut source = world_with_release(release.clone());
+    source
+        .materialize_train(
+            "source",
+            "RB 101",
+            "operator:1",
+            MovementKind::Train,
+            "route:continuation:source",
+            "formation:1",
+            0,
+            None,
+            false,
+        )
+        .unwrap();
+    let mut target = OperationalWorld::new("world:1", "region:b", 0, release.clone()).unwrap();
+    let mut first = source
+        .begin_handover(
+            "first",
+            "source",
+            "region:b",
+            set(&["boundary:continuation"]),
+        )
+        .unwrap();
+    target.accept_handover(&mut first).unwrap();
+    source.finish_handover(&first).unwrap();
+    let mut final_region = OperationalWorld::new("world:1", "region:c", 0, release).unwrap();
+    let mut second = target
+        .begin_handover("second", "source", "region:c", set(&["boundary:second"]))
+        .unwrap();
+    assert_eq!(
+        second.protected_resources,
+        set(&["boundary:continuation", "boundary:second"])
+    );
+    assert_eq!(
+        target
+            .begin_handover("second", "source", "region:c", set(&["boundary:second"]))
+            .unwrap(),
+        second
+    );
+    final_region.accept_handover(&mut second).unwrap();
+    target.finish_handover(&second).unwrap();
+    final_region
+        .queue_movement_continuation(continuation(
+            "continue",
+            "source",
+            "successor",
+            "RB 102",
+            "route:continuation:successor",
+            "formation:1",
+            10_000,
+            "continuation:successor:exit",
+            0,
+            0,
+            MovementContinuity::SameDirection,
+        ))
+        .unwrap();
+    final_region
+        .submit_dispatch_requests(&[dispatch_request("source", "continuation:source", 0)])
+        .unwrap();
+    advance_until(&mut final_region, "successor", true);
+    assert!(
+        second
+            .protected_resources
+            .is_subset(&final_region.trains["successor"].occupied_blocks)
+    );
+    let mut restored = OperationalWorld::restore(&final_region.checkpoint()).unwrap();
+    let mut invalid = restored.clone();
+    invalid
+        .trains
+        .get_mut("successor")
+        .unwrap()
+        .occupied_blocks
+        .remove("boundary:continuation");
+    assert_eq!(
+        invalid.verify_invariants(),
+        Err(OperationalError::InvalidHandover)
+    );
+    restored.advance_to(120_000).unwrap();
+    assert!(
+        second
+            .protected_resources
+            .is_subset(&restored.trains["successor"].occupied_blocks)
+    );
+    restored.retire_train("successor").unwrap();
+    restored.verify_invariants().unwrap();
+    assert!(
+        second
+            .protected_resources
+            .iter()
+            .all(|resource| !restored.resource_lifecycle.contains_key(resource))
+    );
+    OperationalWorld::restore(&restored.checkpoint()).unwrap();
+}
+
+#[test]
+fn queued_chain_reuses_only_a_proven_ancestor_number_then_activates_atomically() {
+    let mut world = world_with_release(continuation_release(false));
+    world
+        .materialize_train(
+            "source",
+            "RB 101",
+            "operator:1",
+            MovementKind::Train,
+            "route:continuation:source",
+            "formation:1",
+            0,
+            None,
+            false,
+        )
+        .unwrap();
+    let first = continuation(
+        "first",
+        "source",
+        "successor",
+        "RB 102",
+        "route:continuation:successor",
+        "formation:1",
+        10_000,
+        "continuation:successor:exit",
+        0,
+        0,
+        MovementContinuity::SameDirection,
+    );
+    let second = continuation(
+        "second",
+        "successor",
+        "third",
+        "RB 101",
+        "route:continuation:third",
+        "formation:1",
+        10_000,
+        "continuation:third:exit",
+        0,
+        0,
+        MovementContinuity::SameDirection,
+    );
+    let before = world.state_hash();
+    assert_eq!(
+        world.queue_movement_continuation(second.clone()),
+        Err(OperationalError::MovementContinuationTargetOccupied(
+            "third".into()
+        ))
+    );
+    assert_eq!(world.state_hash(), before);
+    world.queue_movement_continuation(first).unwrap();
+    world.queue_movement_continuation(second.clone()).unwrap();
+    world.queue_movement_continuation(second).unwrap();
+    let mut replay = OperationalWorld::restore(&world.checkpoint()).unwrap();
+    for candidate in [&mut world, &mut replay] {
+        candidate
+            .submit_dispatch_requests(&[dispatch_request("source", "continuation:source", 0)])
+            .unwrap();
+        advance_until(candidate, "third", true);
+        assert!(!candidate.trains.contains_key("source"));
+        assert!(!candidate.trains.contains_key("successor"));
+        assert_eq!(candidate.trains["third"].train_number, "RB 101");
+        candidate.verify_invariants().unwrap();
+    }
+    assert_eq!(world.state_hash(), replay.state_hash());
 }
 
 #[test]
@@ -3756,6 +4268,37 @@ fn disruptions_change_real_resources_and_physical_vehicle_until_release() {
 }
 
 #[test]
+fn unknown_disruption_targets_are_rejected_without_partial_effects() {
+    for effect in [
+        OperationalDisruption::ResourceClosed {
+            resource_id: "foreign-resource".into(),
+        },
+        OperationalDisruption::TrackDetectionFailed {
+            resource_id: "foreign-resource".into(),
+        },
+        OperationalDisruption::SpeedRestriction {
+            edge_id: "foreign-edge".into(),
+            maximum_speed_mmps: 5_555,
+        },
+        OperationalDisruption::SignalFailed {
+            signal_id: "foreign-signal".into(),
+        },
+        OperationalDisruption::SwitchFailed {
+            switch_id: "foreign-switch".into(),
+        },
+        OperationalDisruption::VehicleRestricted {
+            vehicle_id: "foreign-vehicle".into(),
+            restriction: VehicleRestriction::MaximumSpeed(5_555),
+        },
+    ] {
+        let mut world = world();
+        let before = world.clone();
+        assert!(world.activate_disruption("unknown-target", effect).is_err());
+        assert_eq!(world, before);
+    }
+}
+
+#[test]
 fn unsafe_state_stops_without_releasing_occupation() {
     let mut world = world();
     world
@@ -4183,4 +4726,239 @@ fn exhaustive_interval_property_never_accepts_overlap() {
             );
         }
     }
+}
+
+fn service_outcome_world(complete_contract: bool) -> (OperationalWorld, TrainMaterialization) {
+    use zugfolge_sim::operational::{
+        ServiceConnectionAssessment, ServiceOutcomeBinding, ServiceOutcomePolicy,
+        ServiceVehicleCapacity,
+    };
+    let mut world = world();
+    world
+        .configure_service_outcomes(ServiceOutcomePolicy {
+            schema_version: "zugfolge-operational-service-outcome-policy/v1".into(),
+            service_ids: vec!["service".into()],
+            vehicle_capacities: vec![
+                ServiceVehicleCapacity {
+                    vehicle_id: "vehicle:1".into(),
+                    seats: 120,
+                    source_reference: "fleet:verified:vehicle:1".into(),
+                },
+                ServiceVehicleCapacity {
+                    vehicle_id: "vehicle:2".into(),
+                    seats: 80,
+                    source_reference: "fleet:verified:vehicle:2".into(),
+                },
+            ],
+        })
+        .unwrap();
+    let train = TrainMaterialization {
+        id: "service:day-0".into(),
+        train_number: "RE 42".into(),
+        operator_id: "operator:1".into(),
+        movement_kind: MovementKind::Train,
+        route_version_id: "route:v1".into(),
+        formation_version_id: "formation:1".into(),
+        head_route_mm: 0,
+        scheduled_departure_ms: Some(0),
+        public_passenger_stop: true,
+        service_outcome: Some(ServiceOutcomeBinding {
+            schema_version: "zugfolge-operational-service-outcome-binding/v1".into(),
+            service_id: "service".into(),
+            service_run_id: "service:service-day:2026-09-05".into(),
+            lot_id: "lot:1".into(),
+            service_day: "2026-09-05".into(),
+            scheduled_arrival_ms: 1_000,
+            required_seats: complete_contract.then_some(100),
+            connection_assessment: if complete_contract {
+                ServiceConnectionAssessment::NoneContracted
+            } else {
+                ServiceConnectionAssessment::Unavailable
+            },
+        }),
+    };
+    (world, train)
+}
+
+fn service_outcomes(world: &OperationalWorld) -> Vec<serde_json::Value> {
+    world
+        .events
+        .iter()
+        .filter(|event| event.kind == "train-outcome")
+        .map(|event| serde_json::from_str(&event.detail).unwrap())
+        .collect()
+}
+
+#[test]
+fn service_outcome_uses_actual_motion_capacity_and_survives_checkpoint_exactly_once() {
+    let (mut world, input) = service_outcome_world(true);
+    world.materialize(input).unwrap();
+    assert!(service_outcomes(&world).is_empty());
+    world
+        .change_formation(
+            "service:day-0",
+            "formation:changed",
+            vec!["vehicle:2".into()],
+        )
+        .unwrap();
+    world
+        .submit_dispatch_requests(&[dispatch_request("service:day-0", "interlocking:train", 0)])
+        .unwrap();
+    world.advance_to(1_000).unwrap();
+    let mut restored = OperationalWorld::restore(&world.checkpoint()).unwrap();
+    world.events.clear();
+    for candidate in [&mut world, &mut restored] {
+        candidate.advance_to(1_000_000).unwrap();
+        candidate.verify_invariants().unwrap();
+        let outcomes = service_outcomes(candidate);
+        assert_eq!(outcomes.len(), 1);
+        let outcome = &outcomes[0];
+        assert_eq!(outcome["distanceMm"], "120000");
+        assert_eq!(outcome["minimumSeatsProvided"], 80);
+        assert_eq!(outcome["missingSeats"], 20);
+        assert_eq!(outcome["missedConnections"], 0);
+        assert_eq!(outcome["evidenceComplete"], true);
+        assert!(outcome["actualArrivalMs"].as_i64().unwrap() < candidate.now_ms);
+        candidate.advance_to(2_000_000).unwrap();
+        assert_eq!(service_outcomes(candidate).len(), 1);
+    }
+    assert_eq!(world.events, restored.events);
+    assert_eq!(world.state_hash(), restored.state_hash());
+}
+
+#[test]
+fn service_outcome_does_not_invent_missing_contract_obligations_or_a_cancellation() {
+    let (mut world, input) = service_outcome_world(false);
+    world.materialize(input).unwrap();
+    world
+        .safe_stop("service:day-0", "authority-missing")
+        .unwrap();
+    world.advance_to(2_000).unwrap();
+    assert!(service_outcomes(&world).is_empty());
+    assert_eq!(
+        world
+            .events
+            .iter()
+            .filter(|event| event.kind == "train-service-planned")
+            .count(),
+        1
+    );
+    let (mut world, input) = service_outcome_world(false);
+    world.materialize(input).unwrap();
+    world
+        .submit_dispatch_requests(&[dispatch_request("service:day-0", "interlocking:train", 0)])
+        .unwrap();
+    world.advance_to(1_000_000).unwrap();
+    let outcome = service_outcomes(&world).remove(0);
+    assert_eq!(outcome["minimumSeatsProvided"], 120);
+    assert_eq!(outcome["missingSeats"], serde_json::Value::Null);
+    assert_eq!(outcome["missedConnections"], serde_json::Value::Null);
+    assert_eq!(outcome["evidenceComplete"], false);
+}
+
+#[test]
+fn service_outcome_binding_requires_signed_policy_and_rejects_duplicate_materialization() {
+    let (mut world, input) = service_outcome_world(true);
+    let mut without_policy = world_with_release(release());
+    assert_eq!(
+        without_policy.materialize(input.clone()),
+        Err(OperationalError::InvalidServiceOutcome)
+    );
+    world.materialize(input.clone()).unwrap();
+    let before = world.state_hash();
+    assert_eq!(
+        world.materialize(input),
+        Err(OperationalError::DuplicateId("service:day-0".into()))
+    );
+    assert_eq!(world.state_hash(), before);
+}
+
+#[test]
+fn service_outcome_receipt_rejects_same_day_after_retirement_and_allows_next_day() {
+    let (mut world, input) = service_outcome_world(true);
+    world.materialize(input.clone()).unwrap();
+    world
+        .submit_dispatch_requests(&[dispatch_request("service:day-0", "interlocking:train", 0)])
+        .unwrap();
+    world.advance_to(1_000_000).unwrap();
+    world.retire_train("service:day-0").unwrap();
+    let before = world.state_hash();
+    assert_eq!(
+        world.materialize(input.clone()),
+        Err(OperationalError::InvalidServiceOutcome)
+    );
+    assert_eq!(world.state_hash(), before);
+    let mut next = input;
+    next.id = "service:day-1".into();
+    let binding = next.service_outcome.as_mut().unwrap();
+    binding.service_day = "2026-09-06".into();
+    binding.service_run_id = "service:service-day:2026-09-06".into();
+    binding.scheduled_arrival_ms += 86_400_000;
+    world.materialize(next).unwrap();
+    world.verify_invariants().unwrap();
+    let value = serde_json::to_value(&world).unwrap();
+    assert_eq!(
+        value["serviceOutcomeState"]["latestStartedDay"]
+            .as_object()
+            .unwrap()
+            .len(),
+        1
+    );
+}
+
+#[test]
+fn service_outcome_rejects_invalid_dates_unknown_services_and_restored_capacity_tampering() {
+    let (mut world, input) = service_outcome_world(true);
+    for day in ["2026-99-99", "2026-02-29", "2026-04-31"] {
+        let mut invalid = input.clone();
+        let binding = invalid.service_outcome.as_mut().unwrap();
+        binding.service_day = day.into();
+        binding.service_run_id = format!("service:service-day:{day}");
+        assert_eq!(
+            world.materialize(invalid),
+            Err(OperationalError::InvalidServiceOutcome)
+        );
+    }
+    world.materialize(input).unwrap();
+    for field in ["startHeadRouteMm", "minimumSeatsProvided"] {
+        let mut encoded = serde_json::to_value(&world).unwrap();
+        encoded["trains"]["service:day-0"]["serviceOutcome"][field] = serde_json::json!(999999);
+        let corrupted: OperationalWorld = serde_json::from_value(encoded).unwrap();
+        assert_eq!(
+            corrupted.verify_invariants(),
+            Err(OperationalError::InvalidServiceOutcome)
+        );
+    }
+}
+
+#[test]
+fn service_outcome_handover_transfers_measurements_and_keeps_semantic_replay_fence() {
+    let (mut source, input) = service_outcome_world(true);
+    let (mut target, _) = service_outcome_world(true);
+    target.region_id = "region:b".into();
+    target.vehicles.clear();
+    target.formations.clear();
+    source.materialize(input.clone()).unwrap();
+    source
+        .submit_dispatch_requests(&[dispatch_request("service:day-0", "interlocking:train", 0)])
+        .unwrap();
+    let mut handover = source
+        .begin_handover(
+            "outcome:handover",
+            "service:day-0",
+            "region:b",
+            set(&["boundary:west"]),
+        )
+        .unwrap();
+    target.accept_handover(&mut handover).unwrap();
+    source.finish_handover(&handover).unwrap();
+    source.verify_invariants().unwrap();
+    target.advance_to(1_000_000).unwrap();
+    assert_eq!(service_outcomes(&target).len(), 1);
+    assert_eq!(service_outcomes(&target)[0]["distanceMm"], "120000");
+    target.retire_train("service:day-0").unwrap();
+    assert_eq!(
+        target.materialize(input),
+        Err(OperationalError::InvalidServiceOutcome)
+    );
 }

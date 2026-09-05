@@ -1,12 +1,13 @@
+import { randomUUID } from "node:crypto";
 import { abuseObservations, abuseSanctions, rateLimitBuckets, type AbuseObservation } from "@zugfolge/db";
-import { and, eq, inArray, sql } from "drizzle-orm";
+import { and, eq, inArray, isNotNull, isNull, gt, lte, or, sql } from "drizzle-orm";
 
 import { AlphaConflictError, AlphaValidationError } from "./errors.js";
 import { alphaHash } from "./hash.js";
 import type { AlphaDatabase } from "./world.js";
 
 export const ABUSE_POLICY = Object.freeze({
-  schemaVersion: "zugfolge-abuse-policy/v1",
+  schemaVersion: "zugfolge-abuse-policy/v2",
   bucketSeconds: 60,
   limits: {
     anonymous: { endpoint: 30, action: 10, distinctTargets: 8 },
@@ -21,6 +22,7 @@ export type IdentityClass = keyof typeof ABUSE_POLICY.limits;
 export type AbuseResponse = AbuseObservation["response"];
 
 export interface AbuseFacts {
+  readonly observationKey?: string;
   readonly worldId: string;
   readonly identityHash: string;
   readonly identityClass: IdentityClass;
@@ -79,6 +81,9 @@ export class AbuseGuard {
   async evaluate(facts: AbuseFacts): Promise<AbuseObservation> {
     if (!/^[a-f0-9]{64}$/.test(facts.identityHash)) throw new AlphaValidationError("Identitaet ist nicht pseudonymisiert.");
     const result = evaluateAbuse(facts);
+    const { observationKey: requestedKey, ...immutableFacts } = facts;
+    const factsHash = alphaHash("zugfolge-abuse-facts/v2", immutableFacts);
+    const observationKey = requestedKey ?? factsHash;
     const bucketStartS = facts.atS - facts.atS % ABUSE_POLICY.bucketSeconds;
     let [observation] = await this.db.insert(abuseObservations).values({
       worldId: facts.worldId,
@@ -94,18 +99,15 @@ export class AbuseGuard {
       ruleCodes: result.ruleCodes,
       response: result.response,
       correlationId: facts.correlationId,
-    }).onConflictDoNothing({ target: [abuseObservations.worldId, abuseObservations.correlationId] }).returning();
+      observationKey,
+      factsHash,
+    }).onConflictDoNothing({ target: [abuseObservations.worldId, abuseObservations.observationKey] }).returning();
     if (observation === undefined) {
       [observation] = await this.db.select().from(abuseObservations).where(and(
-        eq(abuseObservations.worldId, facts.worldId), eq(abuseObservations.correlationId, facts.correlationId),
+        eq(abuseObservations.worldId, facts.worldId), eq(abuseObservations.observationKey, observationKey),
       )).limit(1);
       if (observation === undefined) throw new Error("Missbrauchsbeobachtung konnte nicht gelesen werden.");
-      const expected = alphaHash("zugfolge-abuse-observation/v1", { ...facts, ...result, bucketStartS });
-      const actual = alphaHash("zugfolge-abuse-observation/v1", {
-        ...facts, scoreBasisPoints: observation.scoreBasisPoints, ruleCodes: observation.ruleCodes,
-        response: observation.response, delayMs: observation.response === "delay" ? Math.min(2_000, observation.scoreBasisPoints / 5) : 0, bucketStartS,
-      });
-      if (actual !== expected) throw new AlphaConflictError("Korrelations-ID gehoert zu anderen Missbrauchsfakten.", "abuse_replay_conflict");
+      if (observation.factsHash !== factsHash) throw new AlphaConflictError("Beobachtungsschluessel gehoert zu anderen Missbrauchsfakten.", "abuse_replay_conflict");
     }
     if (observation.response === "manual-review") {
       await this.db.insert(abuseSanctions).values({
@@ -118,7 +120,20 @@ export class AbuseGuard {
         explanation: { policy: ABUSE_POLICY.schemaVersion, scoreBasisPoints: observation.scoreBasisPoints, ruleCodes: observation.ruleCodes, appealAvailable: true },
       }).onConflictDoNothing();
     }
-    return observation;
+    // Einspruch suspendiert eine bestaetigte Massnahme nicht. Ein angefochtener
+    // Vorschlag besitzt keine administrative Aktivierung und bleibt unwirksam.
+    const sanctions = await this.db.select().from(abuseSanctions).where(and(
+      eq(abuseSanctions.worldId, facts.worldId), eq(abuseSanctions.identityHash, facts.identityHash),
+      or(eq(abuseSanctions.status, "active"), and(eq(abuseSanctions.status, "appealed"), isNotNull(abuseSanctions.odooAdminRequestId))),
+      lte(abuseSanctions.startsAtS, facts.atS), or(isNull(abuseSanctions.endsAtS), gt(abuseSanctions.endsAtS, facts.atS)),
+    ));
+    const rank: Record<AbuseResponse, number> = { observe: 0, delay: 1, limit: 2, block: 3, "manual-review": 4 };
+    let response = observation.response;
+    for (const sanction of sanctions) {
+      const candidate = sanction.sanction === "temporary-block" ? "block" : sanction.sanction;
+      if (rank[candidate] > rank[response]) response = candidate;
+    }
+    return { ...observation, response, scoreBasisPoints: response === "delay" ? Math.max(2_500, observation.scoreBasisPoints) : observation.scoreBasisPoints };
   }
 
   async consume(request: AbuseRequest): Promise<AbuseObservation> {
@@ -160,6 +175,7 @@ export class AbuseGuard {
     }).length;
     const targets = typeof bucket.targetHashes === "object" && bucket.targetHashes !== null ? bucket.targetHashes as Record<string, unknown> : {};
     return this.evaluate({
+      observationKey: randomUUID(),
       worldId: request.worldId,
       identityHash: request.identityHash,
       identityClass: request.identityClass,

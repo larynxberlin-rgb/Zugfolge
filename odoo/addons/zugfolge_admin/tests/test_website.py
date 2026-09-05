@@ -1,10 +1,65 @@
 import json
 
 from odoo.tests import HttpCase, tagged
+from odoo.tests.common import new_test_user
 
 
 @tagged("post_install", "-at_install")
 class TestZugfolgeWebsite(HttpCase):
+    def _portal_participation(self, world_id, partner, active=True):
+        projection = self.env["zugfolge.world.projection"].with_context(zugfolge_game_projection=True).create({
+            "world_id": world_id, "world_name": "Portalwelt", "projection_revision": "portal-1",
+            "observed_at": "2026-09-05 10:00:00", "freshness": "live", "payload_hash": "a" * 64,
+        })
+        offer = self.env["zugfolge.world.offer"].create({
+            "projection_id": projection.id, "participation_conditions": "Portaltest",
+            "game_url_template": "https://untrusted.example.test/{world_id}",
+        })
+        participation = self.env["zugfolge.world.participation"]._create_from_commerce({
+            "partner_id": partner.id, "offer_id": offer.id, "keycloak_subject": "portal-%s" % partner.id,
+            "odoo_order_reference": "portal-order-" + world_id, "payment_reference": "portal-payment-" + world_id,
+            "state": "provisioning" if active else "pending_payment",
+        })
+        if active:
+            participation.sudo().with_context(zugfolge_game_projection=True).apply_game_result({
+                "worldId": world_id, "action": "provision", "idempotencyKey": participation.idempotency_key + ":provision",
+                "state": "active", "participationId": "game-" + world_id, "gameAccountReference": "account-" + world_id,
+            })
+        return participation
+
+    def test_portal_opens_each_world_on_its_registered_subdomain(self):
+        user = new_test_user(self.env, login="world-portal", password="portal-test", groups="base.group_portal")
+        worlds = {
+            "11111111-1111-4111-8111-111111111111": "https://alpha.example.test",
+            "22222222-2222-4222-8222-222222222222": "https://beta.example.test",
+        }
+        self.env["ir.config_parameter"].sudo().set_param("zugfolge_admin.game_world_origins_json", json.dumps(worlds))
+        for world_id in worlds:
+            self._portal_participation(world_id, user.partner_id)
+        self.authenticate(user.login, "portal-test")
+        for world_id, origin in worlds.items():
+            response = self.url_open("/my/worlds/%s/open" % world_id, allow_redirects=False)
+            self.assertEqual(response.status_code, 303)
+            self.assertEqual(response.headers["Location"], origin + "/?world=" + world_id)
+
+    def test_portal_never_opens_foreign_pending_or_unregistered_worlds(self):
+        user = new_test_user(self.env, login="restricted-portal", password="portal-test", groups="base.group_portal")
+        other_partner = self.env["res.partner"].create({"name": "Anderes Portalprofil"})
+        foreign = "11111111-1111-4111-8111-111111111111"
+        pending = "22222222-2222-4222-8222-222222222222"
+        unregistered = "33333333-3333-4333-8333-333333333333"
+        self._portal_participation(foreign, other_partner)
+        self._portal_participation(pending, user.partner_id, active=False)
+        self._portal_participation(unregistered, user.partner_id)
+        self.env["ir.config_parameter"].sudo().set_param("zugfolge_admin.game_world_origins_json", json.dumps({
+            foreign: "https://alpha.example.test", pending: "https://beta.example.test",
+        }))
+        self.authenticate(user.login, "portal-test")
+        for world_id, status in ((foreign, 404), (pending, 404), (unregistered, 503)):
+            response = self.url_open("/my/worlds/%s/open" % world_id, allow_redirects=False)
+            self.assertEqual(response.status_code, status)
+            self.assertNotIn("Location", response.headers)
+
     def test_public_worlds_empty_state_and_snippets_are_installed(self):
         response = self.url_open("/welten")
         self.assertEqual(response.status_code, 200)

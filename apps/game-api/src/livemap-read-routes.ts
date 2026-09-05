@@ -117,14 +117,32 @@ function findTrain(
 function stationCallStatus(
   callType: "arrival" | "departure",
   train: PublicTrain | PublicExternalTrain | undefined,
+  board: StationBoardV1,
+  call: StationBoardCall,
 ): StationBoardCall["status"] {
   if (train === undefined) return "scheduled";
   if (train.status === "cancelled") return "cancelled";
   if (train.status === "completed" || train.status === "completed-outside") {
     return callType === "arrival" ? "arrived" : "departed";
   }
-  if (callType === "departure" && train.status === "at_platform") return "boarding";
-  if (callType === "arrival" && train.status === "at_platform") return "arrived";
+  if (train.status !== "at_platform" || !("nextOperatingPoint" in train)
+    || (train.nextOperatingPoint !== board.stationId && train.nextOperatingPoint !== board.stationName)) return "scheduled";
+  // Ohne Haltindex ist ausschliesslich ein eindeutiges, aktuelles Haltpaar
+  // beweisbar. Gleiche Station bei einer spaeteren Rundfahrt bleibt geplant.
+  const delay = train.delaySeconds;
+  if (delay === undefined) return "scheduled";
+  const scheduledNow = board.atS - delay;
+  const arrivals = board.arrivals.filter((candidate) => candidate.trainId === call.trainId);
+  const departures = board.departures.filter((candidate) => candidate.trainId === call.trainId).sort((a, b) => a.scheduledTimeS - b.scheduledTimeS);
+  const current = arrivals.flatMap((arrival) => {
+    const departure = departures.find((candidate) => candidate.scheduledTimeS >= arrival.scheduledTimeS);
+    return departure !== undefined && arrival.scheduledTimeS <= scheduledNow && scheduledNow <= departure.scheduledTimeS ? [{ arrival, departure }] : [];
+  });
+  if (current.length !== 1) return "scheduled";
+  const { arrival, departure } = current[0]!;
+  if (call.scheduledTimeS < arrival.scheduledTimeS) return callType === "arrival" ? "arrived" : "departed";
+  if (callType === "arrival" && call.scheduledTimeS === arrival.scheduledTimeS) return "arrived";
+  if (callType === "departure" && call.scheduledTimeS === departure.scheduledTimeS) return "boarding";
   return "scheduled";
 }
 
@@ -142,6 +160,7 @@ function projectStationCalls(
   calls: readonly StationBoardCall[],
   callType: "arrival" | "departure",
   trains: ReadonlyMap<string, PublicTrain | PublicExternalTrain>,
+  board: StationBoardV1,
 ): readonly StationBoardCall[] {
   return Object.freeze(calls.map((call) => {
     const train = verifiedLiveTrainForScheduleCall(call.trainId, trains.get(call.trainId));
@@ -149,7 +168,7 @@ function projectStationCalls(
     return Object.freeze({
       ...call,
       expectedTimeS: Math.max(0, call.scheduledTimeS + delay),
-      status: stationCallStatus(callType, train),
+      status: stationCallStatus(callType, train, board, call),
     });
   }).sort((left, right) =>
     left.expectedTimeS - right.expectedTimeS ||
@@ -166,8 +185,8 @@ export function projectStationBoardWithLiveState(
   [...trains, ...externalTrains].forEach((train) => byId.set(train.id, train));
   return Object.freeze({
     ...board,
-    departures: projectStationCalls(board.departures, "departure", byId),
-    arrivals: projectStationCalls(board.arrivals, "arrival", byId),
+    departures: projectStationCalls(board.departures, "departure", byId, board),
+    arrivals: projectStationCalls(board.arrivals, "arrival", byId, board),
   });
 }
 

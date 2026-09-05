@@ -34,6 +34,102 @@ keine Doppelzählung mit dem Provider. Personalausfälle, Fahrzeugverfügbarkeit
 oder andere Ursachen, die bereits aus einem autoritativen Spielzustand
 entstehen, bleiben dessen Ereignisse und werden ebenfalls nicht dupliziert.
 
+### Operational-v2-Anschluss des Tagesmodells
+
+`zugfolge-operational-daily-restrictions/v1` bindet Welt, Region, den Seed aus
+dem unveränderten signierten Blueprint, die externe Infrastrukturbindung,
+die validierten Laufwegversionen und eine ausdrücklich veröffentlichte
+`DisruptionPolicy`. Die native Grenze erzeugt
+`zugfolge-operational-daily-restrictions-generated/v1`; TypeScript zieht keine
+Zufallswerte und entscheidet keine Generatorwirkung. Die Sekunden der
+Policy werden an der Plattformgrenze einmal exakt in Weltmillisekunden
+umgerechnet. Die Tagesgrenze ist ein ganzzahliges Vielfaches von 86.400.000 ms.
+
+Der produktive Scheduler verwendet für La und Zugprogramm denselben
+zeitlichen Katalog. Jede unterstützte La wird mit stabiler Kennung aktiviert
+und zum nativen Ablaufzeitpunkt aufgehoben. Bis zu zwei vorherige Modelltage
+werden für tagesübergreifende Abläufe erneut deterministisch abgeleitet;
+dadurch bleiben Stop/Start, Catch-up und Policywechsel nachvollziehbar.
+Die Tagesergebnisse werden nur begrenzt pro Region zwischengespeichert.
+Abgelaufene Folgepolicies aktivieren keine ältere Policy erneut.
+
+Es gibt keine implizite Initialpolicy für bereits signierte Welten. Der erste
+Policyantrag und jede Folgeversion durchlaufen die vorhandene Autorisierung,
+Veröffentlichung und Fahrplanstichtagsgrenze. Zusätzlich prüft die native
+Generierungsgrenze das vollständige Generatorprofil vor der Speicherung.
+`MANUAL` in beiden Kanälen erzeugt keine La. Eine fehlende wirksame Policy
+erscheint als `missing-policy` in der weltisolierten Diagnose von
+`GET /worlds/:worldId/disruptions/policy`; sie wird weder durch einen
+Default noch durch einen Provider-Fallback ersetzt.
+
+Produktive Antraege beginnen in Odoo als **Stoerungsrichtlinie
+veroeffentlichen**. Die Game-Capability `disruption_policy_schedule` muss fuer
+die konkrete Hauptwelt als verfuegbar projiziert sein. Der Integrationsakteur
+braucht die ausdrueckliche Freigabe `admin.disruption_policy_schedule` in
+`ODOO_WEBHOOK_AUTHORIZED_ACTORS_JSON`. Beide Modi besitzen keinen vorausgewaehlten
+Wert. Antragsteller und Freigeber sind verschieden; der Antragsteller bindet
+seine durch OIDC verifizierte Keycloak-Identitaet. Das Game verlangt dafuer
+einen aktiven Administratorzugang in genau dieser Welt. Der direkte
+Policy-POST bleibt in Produktion gesperrt.
+
+`zugfolge-disruption-policy-schedule/v1` enthaelt den UTC-Fahrplanstichtag,
+beide Modi, das vollstaendige Generatorprofil, Regelversion und bei
+`REALISTIC` das rechtegepruefte Provider-Set. Die erste Version darf vor dem
+Weltstart ausdruecklich fuer dessen noch zukuenftige Epoche (Weltzeit null)
+veroeffentlicht werden. In einer bereits laufenden Welt beginnt auch die
+erste Version am naechsten zukuenftigen Fahrplanstichtag. Eine bestehende
+signierte Welt erhaelt keine rueckwirkende Policy. Das Game prueft das Profil nativ vor dem
+atomaren Policy-/Audit-Commit. Der unveraenderliche Wirkungsschluessel bindet
+die Antragsbytes, sodass ein Abbruch nach dem Commit beim Retry dieselbe
+Version quittiert. Das Odoo-Ergebnis bezeichnet die Policy als `scheduled`
+und nennt je Region die unterstuetzte und nicht unterstuetzte Ereigniszahl
+des ersten Tages. Die Detaildiagnose bleibt am Policy-GET mit der expliziten
+Weltzeit `?atS=...` abrufbar.
+
+Ein vollstaendiges explizites Pilotprofil ist beispielsweise:
+
+```json
+{
+  "id": "explicit-public-la/v1",
+  "eventsPerPeriod": 6,
+  "minimumSeverityBasisPoints": 1000,
+  "maximumSeverityBasisPoints": 8000,
+  "minimumDurationSeconds": 1800,
+  "maximumDurationSeconds": 1814400,
+  "minimumNoticeSeconds": 604800,
+  "maximumNoticeSeconds": 1814400,
+  "dailyRestrictionsPerDay": 4,
+  "infrastructureIncidentsPer100Days": 1,
+  "vehicleIncidentsPer10000TrainRuns": 1,
+  "dwellIncidentsPer10000Stops": 1
+}
+```
+
+Die vier gezogenen Originalereignisse garantieren keine vier anwendbaren
+Operational-v2-La. Es koennen auch null sein; das wird sichtbar ausgewiesen.
+Es gibt weder eine still veraenderte Verteilung noch ein Auffuellen durch
+andere Wirkungen. `RouteLeg.Direction` beschreibt die Kantenkoordinaten,
+nicht die betriebliche Regelrichtung eines Gleises; ohne deren freigegebene
+Zuordnung werden Regel-/Gegenrichtung weiterhin nicht geraten.
+
+Der zunächst angeschlossene Operational-v2-Vertrag aktiviert ausschließlich
+numerische Langsamfahrstellen für beide Richtungen und alle Verkehrsarten
+ohne eingeschränkte Zugmenge. Nur diese Wirkung lässt sich gegen die
+vorhandenen physischen Kanten ohne zusätzliche Fachannahmen darstellen.
+Der deterministische Ressourcenbezug `sorted-operational-edges/v1` verwendet
+die Kanten der validierten Laufwege; mangels freigegebener Belastungswerte
+weist er `loadBasisPoints=0` ausdrücklich aus.
+
+Alle übrigen generierten Wirkungen oder Richtung-/Verkehrsartscopes bleiben
+in `unsupportedRestrictions` mit unverändertem Effekt, Scope, Herkunft und
+konkretem Ablehnungsgrund sichtbar. Sie werden nicht als globale Sperre
+oder als wirksame Langsamfahrstelle ausgegeben. Der Status
+`partially-supported` kennzeichnet diese Abnahmegrenze. Für vollständige
+Scope- und Wirkungsabdeckung bleibt Issue #516 offen. Jeder native
+Generierungsbeleg nennt Modell, Kalibrierung, Seed, Infrastruktur,
+Regelversion und Ursachencodes; die Diagnose ergänzt die committed
+La-Projektion, ersetzt sie aber nicht.
+
 ## 2. Entstehung und Wirkung
 
 Der Generator verwendet ausschließlich die benannten Seed-Substreams
@@ -215,13 +311,25 @@ Zeitraum, Ressourcen, Haupt-/Feincode sowie eine konkrete, nicht leere
 Wirkung erneut. Odoo ist weder Simulationskern noch Source of Truth.
 
 Das deklarierte Wirkungsschema `zugfolge-manual-disruption-effect/v1` enthält
-Wirkungsart, Hauptcode, Feincode, ganzzahlige Verzögerung und je Ziel die
-Region, Kartenposition, stabile Konfliktressource und betroffenen Zugläufe.
-Mehrere Ziele erhalten stabile Teilkommandos; ein Retry bleibt durch Ereignis-
-und Teilkennung idempotent. Erfolgreiche Ausführung liefert einen
-autoritativen Game-Auditverweis zurück. Wirkungslose Werte wie
-`radio-unavailable`, Selbstfreigabe, unbekannte Ressourcen oder bereits
-abgelaufene Zeitfenster werden vor dem Single Writer abgelehnt.
+Wirkungsart, Hauptcode, Feincode sowie je Ziel `regionId` und `resourceId`.
+Unterstützt sind `closure` auf einer nachgewiesenen Konfliktressource und
+`speed-restriction` auf einer nachgewiesenen Kante mit positivem, ganzzahligem
+`maximumSpeedMmps`. Andere Wirkungen und einschränkende Richtungs-, Verkehrs-
+oder Zugfilter werden ausdrücklich abgelehnt. Ressourcenpräfixe und Feincodes
+dürfen die erklärte Wirkung nicht in eine andere umdeuten.
+
+Die native Vorschau prüft alle Ziele vor der ersten Persistenz. Beginn und Ende
+werden als unveränderlicher `disruption.manual-scheduled`-Domainbeleg mit
+Welt-, Regions- und Initialisierungshash gespeichert. Derselbe Regionaltakt
+führt die stabilen Aktivierungs- und Aufhebungskommandos aus und lädt den Plan
+nach einem Neustart wieder. Bei verspäteter Erstzustellung beginnt die Wirkung
+frühestens am bereits erreichten Simulationskopf; das freigegebene Ende bleibt
+unverändert. Bereits abgelaufene Erstzustellungen werden abgelehnt. Ein Retry
+nach verlorenem Empfangsbeleg liefert auch nach Ablauf denselben Zeitplan.
+Die Odoo-Rückmeldung `manualDisruptionStatus: scheduled` bestätigt die
+dauerhafte Planung mit effektiver Anfangs- und Endzeit; die Betriebsprojektion
+zeigt anschließend die tatsächlich aktive Wirkung. Überlappende Eingriffe
+besitzen getrennte Kennungen und heben einander nicht auf.
 
 Die bereitgestellte aktuelle Einschränkungsliste dient als Wirkungstaxonomie:
 Neben Total- und Teilsperrung treten Fahrzeitverlängerung,

@@ -261,6 +261,24 @@ Bonus und Pönale. Alles Weitere liegt aufgeklappt darunter.
 | Fahrzeugkonzept | Formation und Ausstattung (→ `betrieb.md` 3) — erfüllt die Mindestanforderungen oder übertrifft sie |
 | Optionale Qualitätszusagen | zusätzliche Halte, höhere Pünktlichkeitsgarantie, mehr Sitzplätze — bringen Wertungspunkte und kosten Geld |
 
+Der aktuelle Annahmevertrag `zugfolge-quality-promises/v2` begrenzt jede der
+vier Qualitaetsdimensionen auf 2.500 Punkte, insgesamt hoechstens 10.000 vor
+Profilgewichtung. Zusatzsitze duerfen die belegte M5-Formationskapazitaet
+abzueglich ausgeschriebener Mindestkapazitaet nicht uebersteigen. Zusatzhalte
+werden derzeit vor Angebotsannahme abgelehnt: Der vorhandene Planungsvertrag
+belegt nur die ausgeschriebenen Halte, keine frei behaupteten Ergaenzungen.
+Eine kuenftige Freigabe braucht einen versionierten, serverseitigen Halte- und
+Trassennachweis.
+
+Angenommene Zusagen werden samt Mindestkapazitaet unveraenderlich im
+ServiceContract gespeichert. Bonus und Puenktlichkeitspoenale beruecksichtigen
+das vertragliche Ziel; fehlende zugesagte Sitze verhindern den Bonus und kosten
+Sitzplatzpoenale. Bei Zusatzsitzen muss der Betriebsbericht die tatsaechlich
+bereitgestellte Mindestkapazitaet belegen. Ein fehlender Nachweis wird nicht aus
+dem Angebot ergaenzt und blockiert die Abrechnung. Der native
+Betriebsabschluss-/Kapazitaetsnachweis ist eine separat dokumentierte
+Operational-v2-Anbindungsluecke.
+
 **Die Wertung ist vor Abgabe sichtbar.** Der Spieler sieht die Aufschlüsselung
 seines *eigenen* Angebots — Preispunkte, Qualitätspunkte, Gesamtwertung — bevor
 er einreicht. Das lehrt das System nebenbei und ersetzt jede Anleitung. Angebote

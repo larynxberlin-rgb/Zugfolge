@@ -181,6 +181,7 @@ export interface TutorialSessionView {
 }
 
 export interface TutorialSessionOptions {
+  readonly publicWorldId?: string;
   readonly clock?: () => Date;
   readonly template?: TutorialTemplate;
 }
@@ -260,6 +261,7 @@ function firstIncomplete(evidence: TutorialScenarioEvidence): number {
 }
 
 export class TutorialSessionService {
+  readonly #publicWorldId: string | undefined;
   readonly #clock: () => Date;
   readonly #template: TutorialTemplate;
   readonly #templateHash: string;
@@ -269,6 +271,7 @@ export class TutorialSessionService {
     private readonly factory: TutorialWorldFactory,
     options: TutorialSessionOptions = {},
   ) {
+    this.#publicWorldId = options.publicWorldId;
     this.#clock = options.clock ?? (() => new Date());
     this.#template = options.template ?? TUTORIAL_TEMPLATE;
     this.#templateHash = alphaHash(this.#template.schemaVersion, this.#template);
@@ -362,8 +365,18 @@ export class TutorialSessionService {
     readonly keycloakSubject: string;
     readonly displayName: string;
   }): Promise<TutorialSessionView> {
+    if (this.#publicWorldId !== undefined && input.publicWorldId !== this.#publicWorldId) {
+      throw new AlphaAuthorizationError("Tutorialstart liegt ausserhalb der oeffentlichen Hauptwelt.");
+    }
     const now = this.#clock();
     let session = await this.db.transaction(async (tx) => {
+      const [parent] = await tx.select({ kind: worlds.worldKind, lifecycle: worlds.lifecycleStatus, profileKind: alphaWorldProfiles.profileKind })
+        .from(worlds).leftJoin(alphaWorldProfiles, eq(alphaWorldProfiles.worldId, worlds.id))
+        .where(eq(worlds.id, input.publicWorldId)).limit(1);
+      if (parent?.kind !== "public" || parent.lifecycle !== "active"
+        || (parent.profileKind !== null && parent.profileKind !== "public")) {
+        throw new AlphaAuthorizationError("Tutorialstart erfordert eine aktive oeffentliche Hauptwelt.");
+      }
       await tx.execute(sql`select ${accounts.id} from ${accounts} where ${accounts.worldId} = ${input.publicWorldId} and ${accounts.id} = ${input.publicAccountId} for update`);
       const [publicAccount] = await tx.select().from(accounts).where(and(
         eq(accounts.worldId, input.publicWorldId),

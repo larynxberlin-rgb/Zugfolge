@@ -31,7 +31,7 @@ function context(): ManualDisruptionAdminContext {
         affectedResourceIds: ["track:4"],
         declaredEffect: {
           schemaVersion: "zugfolge-manual-disruption-effect/v1",
-          kind: "traffic-hold",
+          kind: "closure",
           causeCode: 26,
           fineCauseId: "switch.drive",
           targets: [{
@@ -52,36 +52,20 @@ describe("M8.3 Odoo-Administrationshandler", () => {
     });
   });
 
-  it("prueft Vier-Augen-Daten und uebergibt die Wirkung an den Single Writer", async () => {
-    const apply = vi.fn(async () => undefined);
-    const handler = createManualDisruptionAdminHandler({
-      worker: { apply },
-      worldEpoch: () => new Date("2026-01-01T00:00:00.000Z"),
-    });
+  it("prueft Vier-Augen-Daten und uebergibt Wirkung sowie beide Zeitgrenzen an den dauerhaften Scheduler", async () => {
+    const schedule = vi.fn(async () => ({ state: "completed" as const, gameAuditEventId: "audit-1" }));
+    const handler = createManualDisruptionAdminHandler({ schedule });
     await expect(handler(context())).resolves.toMatchObject({
       state: "completed",
-      gameAuditEventId: expect.stringContaining(worldId),
+      gameAuditEventId: "audit-1",
     });
-    expect(apply).toHaveBeenCalledWith(
-      expect.objectContaining({
-        worldId,
-        regionId: "leipzig",
-        commandId: "odoo-manual-disruption:odoo-event-0001:0",
-        command: {
-          type: "activate-disruption",
-          disruptionId: "admin:aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa:0",
-          effect: { "resource-closed": { resourceId: "track:4" } },
-        },
-      }),
-      now,
-    );
+    expect(schedule).toHaveBeenCalledWith({ context: context(), startsAt: new Date("2026-08-11T11:55:00.000Z"),
+      endsAt: new Date("2026-08-11T13:00:00.000Z"), targets: [{ regionId: "leipzig", effect: { "resource-closed": { resourceId: "track:4" } } }] });
   });
 
   it("lehnt Selbstfreigabe, wirkungslose Nutzdaten und nicht aufgeloeste Ressourcen ab", async () => {
-    const handler = createManualDisruptionAdminHandler({
-      worker: { apply: vi.fn(async () => undefined) },
-      worldEpoch: () => new Date("2026-01-01T00:00:00.000Z"),
-    });
+    const schedule = vi.fn(async () => ({ state: "completed" as const, gameAuditEventId: "audit-1" }));
+    const handler = createManualDisruptionAdminHandler({ schedule });
     const selfApproved = context();
     await expect(handler({
       ...selfApproved,
@@ -112,18 +96,6 @@ describe("M8.3 Odoo-Administrationshandler", () => {
       },
     })).rejects.toMatchObject({ code: "resources" });
 
-    const future = context();
-    await expect(handler({
-      ...future,
-      payload: {
-        ...future.payload,
-        manualDisruption: {
-          ...future.payload.manualDisruption!,
-          startsAt: "2026-08-11T12:05:00.000Z",
-        },
-      },
-    })).rejects.toMatchObject({ code: "time" });
-
     const inventedSpeed = context();
     await expect(handler({
       ...inventedSpeed,
@@ -138,5 +110,23 @@ describe("M8.3 Odoo-Administrationshandler", () => {
         },
       },
     })).rejects.toMatchObject({ code: "effect" });
+    expect(schedule).not.toHaveBeenCalled();
+  });
+
+  it("plant zukuenftige Eingriffe und deutet weder Scopes noch andere Wirkungen um", async () => {
+    const schedule = vi.fn(async () => ({ state: "completed" as const, gameAuditEventId: "audit-1" }));
+    const handler = createManualDisruptionAdminHandler({ schedule });
+    const original = context();
+    await handler({ ...original, payload: { ...original.payload, manualDisruption: { ...original.payload.manualDisruption!, startsAt: "2026-08-11T12:05:00.000Z" } } });
+    expect(schedule).toHaveBeenCalledOnce();
+    schedule.mockClear();
+    for (const declaredEffect of [
+      { ...original.payload.manualDisruption!.declaredEffect, kind: "traffic-hold" },
+      { ...original.payload.manualDisruption!.declaredEffect, kind: "single-track" },
+      { ...original.payload.manualDisruption!.declaredEffect, kind: "route-deviation" },
+      { ...original.payload.manualDisruption!.declaredEffect, scope: { direction: "regular-direction" } },
+      { ...original.payload.manualDisruption!.declaredEffect, targets: [{ resourceId: "track:4", regionId: "leipzig", trainIds: ["train-1"] }] },
+    ]) await expect(handler({ ...original, payload: { ...original.payload, manualDisruption: { ...original.payload.manualDisruption!, declaredEffect } } })).rejects.toThrow();
+    expect(schedule).not.toHaveBeenCalled();
   });
 });

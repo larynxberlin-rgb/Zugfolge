@@ -19,12 +19,12 @@ import { loadEconomyWorldState } from "@zugfolge/economy";
 import { and, asc, desc, eq, isNull } from "drizzle-orm";
 
 import type { AlphaDatabase } from "./world.js";
+import { regionalMonitoringSummary } from "./monitoring-regional.js";
 
 function record(value: unknown): Readonly<Record<string, unknown>> {
   return typeof value === "object" && value !== null && !Array.isArray(value) ? value as Readonly<Record<string, unknown>> : {};
 }
 
-function array(value: unknown): readonly unknown[] { return Array.isArray(value) ? value : []; }
 function dateAgeSeconds(date: Date | undefined, now: Date): number | null { return date === undefined ? null : Math.max(0, Math.floor((now.getTime() - date.getTime()) / 1_000)); }
 function counts<T extends string>(values: readonly T[]): Readonly<Record<T, number>> {
   const result = {} as Record<T, number>;
@@ -58,11 +58,7 @@ export class AlphaMonitoringService {
     const profile = profileRows[0];
     if (world === undefined || profile === undefined) throw new Error("Alpha-Monitoring findet Welt oder Release-Pins nicht.");
     const economy = await loadEconomyWorldState(this.db as never, worldId);
-    const currentState = regions.map((row) => record(row.state));
-    const snapshots = currentState.map((state) => record(state["snapshot"]));
-    const trains = snapshots.flatMap((snapshot) => array(snapshot["trains"]));
-    const disruptions = snapshots.flatMap((snapshot) => array(snapshot["disruptions"]));
-    const trainRecords = trains.map(record);
+    const regional = regionalMonitoringSummary(regions.map((row) => row.state));
     const eventKinds = counts(events.map((event) => event.eventType));
     const latestEvent = events[0];
     const pendingProjections = projectionRows.filter((row) => row.deliveredAt === null);
@@ -77,16 +73,17 @@ export class AlphaMonitoringService {
       projectedAt: now.toISOString(),
       world: {
         worldId, name: world.name, status: profile.state, lifecycleStatus: world.lifecycleStatus,
-        simulationTimeS: Math.max(0, Math.floor((now.getTime() - world.epoch.getTime()) / 1_000) * profile.accelerationFactor),
+        simulationTimeS: regional.simulationTimeS,
+        authoritativeTimeAvailable: regional.authoritativeTimeAvailable,
         schedulePeriodWeeks: world.schedulePeriodWeeks, currentPeriod: profile.currentPeriod, periodCount: profile.periodCount,
         releases: { infra: profile.infraReleaseHash, timetable: profile.timetableReleaseHash, fleet: profile.fleetReleaseHash, economy: profile.economyReleaseHash },
       },
       live: {
         projectionClass: "live-state" as const,
-        runningTrains: trainRecords.filter((train) => train["status"] !== "cancelled").length,
-        delayedTrains: trainRecords.filter((train) => typeof train["delaySeconds"] === "number" && (train["delaySeconds"] as number) > 0).length,
-        cancelledTrains: trainRecords.filter((train) => train["status"] === "cancelled").length,
-        disruptions: disruptions.length,
+        runningTrains: regional.runningTrains,
+        delayedTrains: regional.delayedTrains,
+        cancelledTrains: regional.cancelledTrains,
+        disruptions: regional.disruptions,
         replacementConcepts: eventKinds["dispatch.major-event"] ?? 0,
         eventRatePerMinute: liveEventCount,
       },
@@ -120,6 +117,7 @@ export class AlphaMonitoringService {
         feedback: counts(feedback.map((row) => row.status)),
       },
       freshness: {
+        regionAgeSeconds: regions.length === 0 ? null : Math.max(...regions.map((row) => dateAgeSeconds(row.updatedAt, now) ?? 0)),
         eventAgeSeconds: dateAgeSeconds(latestEvent?.occurredAt, now),
         projectionAgeSeconds: dateAgeSeconds(lastProjection?.deliveredAt ?? undefined, now),
         providerAgeSeconds: providerRows.length === 0 ? null : Math.max(...providerRows.map((row) => dateAgeSeconds(row.checkedAt, now) ?? Number.MAX_SAFE_INTEGER)),

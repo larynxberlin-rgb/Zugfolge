@@ -208,11 +208,14 @@ export const abuseObservations = pgTable("abuse_observations", {
   scoreBasisPoints: integer("score_basis_points").notNull(),
   ruleCodes: jsonb("rule_codes").notNull(),
   response: text("response", { enum: ["observe", "delay", "limit", "block", "manual-review"] }).notNull(),
+  observationKey: text("observation_key"),
+  factsHash: text("facts_hash"),
   correlationId: text("correlation_id").notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [
   uniqueIndex("abuse_observations_world_id_idx").on(table.worldId, table.id),
-  uniqueIndex("abuse_observations_world_correlation_idx").on(table.worldId, table.correlationId),
+  uniqueIndex("abuse_observations_world_observation_key_idx").on(table.worldId, table.observationKey),
+  index("abuse_observations_world_correlation_idx").on(table.worldId, table.correlationId),
   index("abuse_observations_world_identity_bucket_idx").on(table.worldId, table.identityHash, table.bucketStartS),
 ]);
 

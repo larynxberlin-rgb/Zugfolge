@@ -4,6 +4,16 @@ from odoo.tests.common import TransactionCase
 
 
 class TestZugfolgeBackendVisibility(TransactionCase):
+    def test_monitoring_api_evidence_is_copyable_text_with_explicit_token_requirement(self):
+        field = self.env["zugfolge.world.projection"].fields_get(["authoritative_event_url"])["authoritative_event_url"]
+        self.assertEqual(field["string"], "API-Beleg (Zugriffstoken erforderlich)")
+        self.assertTrue(field["readonly"])
+        view = self.env.ref("zugfolge_admin.view_zugfolge_world_projection_form")
+        from lxml import etree
+        fields = etree.fromstring(view.arch_db.encode()).xpath("//field[@name='authoritative_event_url']")
+        self.assertEqual(len(fields), 1)
+        self.assertIsNone(fields[0].get("widget"))
+
     def test_builtin_admin_can_open_zugfolge_app(self):
         admin = self.env.ref("base.user_admin")
         self.assertTrue(admin.has_group("zugfolge_admin.group_zugfolge_admin"))

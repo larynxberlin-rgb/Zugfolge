@@ -1481,7 +1481,8 @@ class ZugfolgeInfraReleaseImport(models.Model):
             self._mark_failed("staging_failed", error)
             return True
         try:
-            result = stage_infra_package(self.env, self.import_id, manifest, parts, self.game_finalization_nonce)
+            result = stage_infra_package(self.env, self.import_id, manifest, parts, self.game_finalization_nonce,
+                                        world_id=self.world_projection_id.world_id or None)
         except Exception as error:  # Remote-Commit kann trotz verlorener Antwort bereits erfolgt sein
             self._mark_staging_retryable(error)
             return True

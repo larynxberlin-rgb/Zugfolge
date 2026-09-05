@@ -2,9 +2,11 @@ import uuid
 from datetime import datetime, timezone
 
 from odoo import _, api, fields, models
-from odoo.exceptions import ValidationError
+from odoo.exceptions import AccessError, ValidationError
 
 from ..services import dispatch_signed_game_command
+
+_ENTITLEMENT_WRITE_TOKEN = object()
 
 
 PRODUCT_KINDS = [
@@ -41,6 +43,13 @@ class AccountMove(models.Model):
         default="none", readonly=True, copy=False,
     )
     zugfolge_participation_id = fields.Many2one("zugfolge.world.participation", readonly=True, copy=False)
+    zugfolge_entitlement_events = fields.Json(readonly=True, copy=False, default=list)
+
+    @api.model_create_multi
+    def create(self, values_list):
+        if any(values.get("zugfolge_entitlement_events") for values in values_list):
+            raise AccessError(_("Entitlementbelege duerfen nicht beim Anlegen einer Rechnung vorgegeben werden."))
+        return super().create(values_list)
 
     def _zugfolge_product_line(self):
         lines = self.invoice_line_ids.filtered(lambda line: line.product_id.product_tmpl_id.zugfolge_product_kind)
@@ -50,52 +59,109 @@ class AccountMove(models.Model):
 
     def _zugfolge_command_change(self):
         self.ensure_one()
-        line = self._zugfolge_product_line()
-        if not line or not self.zugfolge_subject_reference:
+        source = self.reversed_entry_id if self.move_type == "out_refund" else self
+        if not source or self.state != "posted":
+            return None
+        events = source.zugfolge_entitlement_events or []
+        first = events[0] if events else None
+        frozen = first["command"] if first else None
+        line = source.invoice_line_ids.filtered(lambda line: line.product_id.id == first["productId"]) if first else source._zugfolge_product_line()
+        subject = frozen["subject"] if frozen else source.zugfolge_subject_reference
+        if len(line) != 1 or not subject:
             return None
         product_template = line.product_id.product_tmpl_id
+        product_kind = frozen["productKind"] if frozen else product_template.zugfolge_product_kind
         if (
-            product_template.zugfolge_product_kind == "public_world_slot"
+            frozen is None and product_kind == "public_world_slot"
             and self.env["zugfolge.world.offer"].sudo().search_count([("product_tmpl_id", "=", product_template.id)])
         ):
             # Der bezahlte konkrete Weltplatz wird ausschliesslich ueber den
             # weltgebundenen Participation-Command autorisiert. Ein zusaetzlicher
             # generischer Slot-Grant waere eine zweite kommerzielle Wirkung.
             return None
-        if self.payment_state == "paid" and self.move_type == "out_invoice":
-            change = "grant"
-        elif self.payment_state == "reversed" or self.move_type == "out_refund":
+        quantity = int(line.quantity)
+        if quantity < 1 or quantity != line.quantity:
+            raise ValidationError(_("Ein Entitlement braucht eine positive ganzzahlige Menge."))
+        posted_refunds = source.reversal_move_ids.filtered(lambda move: move.state == "posted" and move.move_type == "out_refund")
+        returned = sum(refund_line.quantity for refund in posted_refunds for refund_line in refund.invoice_line_ids
+                       if refund_line.product_id == line.product_id)
+        if returned != int(returned) or returned < 0:
+            raise ValidationError(_("Eine Entitlementerstattung braucht eine ganzzahlige Menge."))
+        remaining = max(0, quantity - int(returned))
+        if remaining == 0 or source.payment_state == "reversed":
             change = "revoke"
+        elif source.payment_state == "paid" and source.move_type == "out_invoice":
+            change = "grant"
         else:
             return None
         now = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
         return {
             "kind": "entitlement.change",
-            "subject": self.zugfolge_subject_reference,
-            "productKind": line.product_id.product_tmpl_id.zugfolge_product_kind,
+            "subject": subject,
+            "productKind": product_kind,
             "change": change,
             "validFrom": now,
-            "quantity": max(1, int(line.quantity)),
-            "sourceReference": self.name,
+            "quantity": remaining if change == "grant" else quantity,
+            # Behaelt den historischen v1-Schluessel; Gutschriften benennen
+            # dieselbe Ursprungsrechnung statt einen zweiten Berechtigungsvertrag.
+            "sourceReference": frozen["sourceReference"] if frozen else source.name,
         }
 
+    def _sync_zugfolge_entitlement(self):
+        for move in self:
+            command = move._zugfolge_command_change()
+            if command is None:
+                continue
+            source = move.reversed_entry_id if move.move_type == "out_refund" else move
+            self.env.cr.execute("SELECT id FROM account_move WHERE id = %s FOR UPDATE", (source.id,))
+            source.invalidate_recordset(["zugfolge_entitlement_events", "payment_state", "reversal_move_ids"])
+            command = source._zugfolge_command_change()
+            if command is None:
+                continue
+            events = list(source.zugfolge_entitlement_events or [])
+            # Aenderungszeit und Revision werden einmal vor dem Queue-Commit
+            # eingefroren. Doppelter Payment-Hook erzeugt kein neues Ereignis.
+            comparable = {key: value for key, value in command.items() if key != "validFrom"}
+            previous = events[-1]["command"] if events else None
+            if previous is not None and comparable == {key: value for key, value in previous.items() if key not in ("validFrom", "sourceRevision")}:
+                continue
+            revision = len(events) + 1
+            command["sourceRevision"] = revision
+            product_id = events[0]["productId"] if events else source._zugfolge_product_line().product_id.id
+            event = {"correlationId": "%s:entitlement:%s" % (source.zugfolge_correlation_id, revision), "productId": product_id, "command": command}
+            events.append(event)
+            source.with_context(zugfolge_entitlement_write_token=_ENTITLEMENT_WRITE_TOKEN, zugfolge_skip_dispatch=True).write({
+                "zugfolge_entitlement_events": events, "zugfolge_event_state": "queued",
+            })
+            source.with_delay(description="Zugfolge-Entitlementrevision an Game senden")._dispatch_zugfolge_entitlement(revision)
+
     def write(self, values):
+        if "zugfolge_entitlement_events" in values and self.env.context.get("zugfolge_entitlement_write_token") is not _ENTITLEMENT_WRITE_TOKEN:
+            raise AccessError(_("Entitlementbelege duerfen nur durch den kaufmaennischen Lifecycle entstehen."))
+        if "zugfolge_subject_reference" in values and any(move.zugfolge_entitlement_events and values["zugfolge_subject_reference"] != move.zugfolge_entitlement_events[0]["command"]["subject"] for move in self):
+            raise AccessError(_("Die Kontobindung eines ausgestellten Entitlementbelegs ist unveraenderlich."))
         result = super().write(values)
-        if self.env.context.get("zugfolge_skip_dispatch") or "payment_state" not in values:
+        if self.env.context.get("zugfolge_skip_dispatch") or not {"payment_state", "state"}.intersection(values):
             return result
         for move in self:
-            if move._zugfolge_command_change() is not None:
-                move.with_context(zugfolge_skip_dispatch=True).write({"zugfolge_event_state": "queued"})
-                move.with_delay(description="Zugfolge-Entitlement an Game senden")._dispatch_zugfolge_entitlement()
+            move._sync_zugfolge_entitlement()
             move._sync_zugfolge_world_participation()
+        self.mapped("reversed_entry_id")._sync_zugfolge_entitlement()
         return result
 
     def _invoice_paid_hook(self):
         """Odoo 19 calls this after reconciliation changed an invoice to paid."""
         result = super()._invoice_paid_hook()
         if not self.env.context.get("zugfolge_skip_dispatch"):
+            self._sync_zugfolge_entitlement()
             self._sync_zugfolge_world_participation()
         return result
+
+    def _post(self, soft=True):
+        posted = super()._post(soft=soft)
+        if not self.env.context.get("zugfolge_skip_dispatch"):
+            posted._sync_zugfolge_entitlement()
+        return posted
 
     def _zugfolge_world_offer(self):
         self.ensure_one()
@@ -151,15 +217,36 @@ class AccountMove(models.Model):
                 participation._write_from_commerce({"state": "refund_pending"})
                 participation.with_delay(description="Zugfolge-Weltteilnahme erstatten")._dispatch("refund")
 
-    def _dispatch_zugfolge_entitlement(self):
+    def _dispatch_zugfolge_entitlement(self, revision=None):
         """OCA queue_job retried transport; duplicate attempts share the Game event ID."""
         for move in self:
-            command = move._zugfolge_command_change()
-            if command is None:
+            events = list(move.zugfolge_entitlement_events or [])
+            if not events:
+                # Ein vor dem Upgrade gequeueter Job muss erst einen dauerhaften
+                # Beleg anlegen. Dessen neuer Queuejob sendet nach dem Commit;
+                # ein verlorener HTTP-Ack kann so keine Payload neu erzeugen.
+                move._sync_zugfolge_entitlement()
+                if not move.zugfolge_entitlement_events:
+                    raise ValidationError(_("Historischer Entitlementjob besitzt keinen nachweisbaren kaufmaennischen Zustand."))
                 continue
+            selected = [event for event in events if revision is None or event["command"]["sourceRevision"] == revision]
+            if not selected:
+                raise ValidationError(_("Die angeforderte Entitlementrevision ist nicht gespeichert."))
             try:
-                dispatch_signed_game_command(move.env, move.zugfolge_correlation_id, "commerce-service", command)
+                for event in selected:
+                    dispatch_signed_game_command(move.env, event["correlationId"], "commerce-service", event["command"])
                 move.with_context(zugfolge_skip_dispatch=True).write({"zugfolge_event_state": "accepted"})
             except Exception:
                 move.with_context(zugfolge_skip_dispatch=True).write({"zugfolge_event_state": "failed"})
                 raise
+
+    def action_replay_zugfolge_entitlements(self):
+        """Expliziter Nachlieferungslauf an alle derzeit registrierten Hauptweltserver."""
+        if not self.env.user.has_group("account.group_account_manager"):
+            raise AccessError(_("Nur die Buchhaltungsverwaltung darf Entitlements nachliefern."))
+        sources = self.filtered(lambda move: move.move_type == "out_invoice" and move.state == "posted")
+        sources._sync_zugfolge_entitlement()
+        for source in sources:
+            if source.zugfolge_entitlement_events:
+                source.with_delay(description="Zugfolge-Entitlementhistorie an Weltserver nachliefern")._dispatch_zugfolge_entitlement()
+        return True

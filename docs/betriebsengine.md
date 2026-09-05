@@ -22,6 +22,15 @@ Der Altpfad ist kein Rollback innerhalb einer v2-Welt. Ein Rollback setzt das
 gesamte Deployment auf seinen getrennten v1-Datenstand zurück. Dynamische
 Zustände werden in keine Richtung übersetzt.
 
+Signierte Bewegungsfortsetzungen dürfen als vollständige Tageskette vorab
+gebunden werden. Eine künftige Bewegung darf die Zugnummer eines noch aktiven
+Vorfahren wiederverwenden, wenn jeder Übergang von diesem Vorfahren bis zu
+ihrem unmittelbaren Vorgänger bereits explizit und widerspruchsfrei gebunden
+ist. Ohne diesen Nachweis bleibt eine aktive gleiche Nummer gesperrt. Bei
+der späteren atomaren Aktivierung muss die Nummer weiterhin exklusiv sein;
+nur der dabei ersetzte unmittelbare Vorgänger darf sie noch tragen. Der
+Checkpoint prüft denselben Kettenvertrag.
+
 ## 2. Unveränderliche Eingaben
 
 Ein operatives `InfraRelease` enthält zusätzlich zum Betriebsgraphen:
@@ -177,6 +186,50 @@ Nur die veröffentlichte Abfahrt eines Fahrgasthalts ist eine harte
 Untergrenze. Güter-, Leer-, Zusatz- und Rangierbewegungen dürfen nach lokaler
 Konfliktprüfung früh fahren, erwerben dadurch keinen Vorrang.
 
+### Bewegungsregel `operational-motion/v1`
+
+Die releasegebundene Engine wendet die folgenden versionierten Regeln an;
+die Regelkennung ist Bestandteil des kanonischen Zustands-Hashs. Eine Änderung
+verlangt einen neuen signierten Engine-Stand und einen neuen Zustandsnachweis.
+
+- Jede kommende niedrigere Kanten-Vmax innerhalb der gesicherten
+  Fahrberechtigung ist ein Bremsziel. Die Geschwindigkeit muss schon beim
+  Erreichen dieser Grenze zulässig sein. Eine höhere Vmax gilt erst, nachdem
+  der Zugschluss den vorigen Profilabschnitt verlassen hat. Fahrzeuglimit und
+  aktive Langsamfahrstellen begrenzen dieselbe Kurve. Eine bestehende
+  Überschreitung löst Betriebsbremsung aus; eine plötzlich aktivierte
+  Infrastrukturwirkung nutzt zunächst die bestehende sichere Stop-Grenze.
+  Eine neue La betrifft dabei auch noch nicht belegte Kanten innerhalb der
+  bereits gesicherten Fahrberechtigung; eine alte analytische Kurve darf
+  nicht bis zur nächsten Kante über ihre neue Bremsgrenze weiterlaufen.
+- `gradientPerMille` ist die Neigung in ganzen Promille in Richtung steigender
+  Kantenkoordinate; `against` kehrt ihr Vorzeichen um. Zulässig sind −100 bis
+  +100 ‰. Fehlende, nichtganzzahlige oder außerhalb liegende Werte werden
+  abgewiesen. Null ist ein ausdrücklich im Release belegtes ebenes Profil.
+- Die Schwerkraftkomponente ist `round_half_away(gradient * 980665 / 100000)`
+  mm/s², ausschließlich mit 128-Bit-Zwischenwerten. Sie wird von der
+  Anfahrbeschleunigung abgezogen und zur Bremsverzögerung addiert. Bei einer
+  Formation über mehreren Abschnitten gilt konservativ die größte Steigung
+  für Traktion; die Bremsvorschau nutzt das ungünstigste Gefälle zwischen
+  Zugschluss und Fahrberechtigungsende. Das verhindert eine optimistische
+  Bremsannahme beim bevorstehenden Profilwechsel, ohne eine unbekannte
+  Massenverteilung entlang der Formation zu erfinden. Fehlendes positives
+  Anfahr- oder Bremsvermögen führt zur sicheren Stop-Grenze.
+- Rangieren ist auf 25 km/h begrenzt, konservativ `6944` mm/s. Dies ist die
+  gemeinsame betriebliche Obergrenze dieser Regelversion; lokale Bedingungen
+  dürfen sie über Kanten-/Störungsprofile weiter senken. Höhere lokale
+  Ausnahmen sind in v1 nicht freigegeben und erfordern eine neue belegte,
+  signierte Regelversion. Nach einem Wechsel der Bewegungsart wird dieselbe
+  Kurve neu abgeleitet. LiveMap und RZÜ verwenden ihre tatsächlichen
+  analytischen Bewegungsabschnitte.
+
+Fachliche Quelle der Rangierobergrenze ist DB InfraGO,
+[Ril 408.4814, Abschnitt 3 und 5, gültig ab 14.12.2025](https://www.dbinfrago.com/resource/blob/13175006/cc92a18c23e49005417fe32f9b0faf32/Ril-408-48-INB-2026-data.pdf).
+Die besondere 40-km/h-Freigabe verlangt zusätzliche belegte Voraussetzungen
+und wird von dieser Version nicht unterstellt. Für Baugleise muss das
+signierte lokale Geschwindigkeitsprofil höchstens 20 km/h vorgeben; v1
+erfindet aus einer normalen Kante keinen Baugleisstatus.
+
 ## 6. Formationen, Rangieren und Bahnsteige
 
 Kuppeln, Trennen, Teilen, Vereinigen, Verstärken, Schwächen, Lok-/Richtungs-
@@ -247,6 +300,35 @@ des Protokolls eine geschützte, identische Übergabekopie, aber niemals zwei
 bewegliche Autoritäten. Statische Releases werden geteilt, dynamischer Zustand
 nicht.
 
+`operational-region-handover/v1` bindet Welt, Quell-/Zielregion, Release,
+exakte Laufweg- und Stellwerksvorlagen, Quellzeit, Quellcommit, Eventsequenz,
+Quellhash sowie einen kanonischen Payloadhash. Übertragen werden Zug,
+Formation, ihre physischen Fahrzeuge und Typen, Fahrstraßenlocks,
+Weichenlagen, aktiver Störungskontext, Dispatchauftrag und das verbleibende
+Bewegungsende. Accept setzt dieselbe Weltzeit und denselben fachlichen
+Infrastruktur-/Störungsstand voraus. Fremde Inventar-IDs werden nicht
+überschrieben; identische Typdefinitionen dürfen geteilt werden.
+
+Prepare friert den Quellwriter bis Finish ein. Ein lokaler Checkpoint hält
+diesen Zustand einschließlich Übergabepayload fest. Accept installiert den
+Zielzustand atomar und terminiert das originale Bewegungsende; nur der
+Zielwriter darf danach fortschreiten. Finish entfernt Zug, übergebene
+Fahrzeuge, zugehörige historische Formationen, Locks, Zeitereignisse und
+Warteindizes der Quelle atomar. Dauerhafte, payloadgebundene Accept-/Finish-
+Receipts machen identische Wiederholungen wirkungslos. Ein noch anhängiger
+Grenzschutz wird im Ziel als zusätzliche reale Belegung bis zum Retirement
+erhalten, solange das Release keine genauere Schlussfreigabe dieser
+Grenzressource belegt. Er wird nicht bei einem bloßen Bewegungsereignis
+vergessen. Bei einer erst im Ziel gebundenen Bewegungsfortsetzung geht diese
+Schutzmenge atomar auf den Nachfolger über; eine weitere Regionsübergabe
+übernimmt auch noch nicht freigegebene Schutzressourcen früherer Übergaben.
+Der Checkpoint verlangt für jede solche Schutzmenge einen vorhandenen Zug
+und deren vollständige Aufnahme in seine tatsächliche Belegung. Ein noch anhängiger
+Bewegungsfortsetzungsgraph wird vor Prepare abgewiesen und muss an der
+äußeren Betriebsgrenze zuerst vollständig aufgelöst werden. Eine
+Netzwerkautorisierung ersetzen diese Kernbindungen nicht: Beide Writer
+müssen durch dieselbe vertrauenswürdige Übergabekoordination verbunden sein.
+
 Physische Bewegungsfortsetzungen sind davon getrennt. Ein signierter
 `MovementContinuation`-Link bindet Vorgänger, Zielzug, Zielroute,
 Ziel-Fahrstraße, frühesten Zeitpunkt, Mindestaufenthalt und die Orientierung
@@ -311,3 +393,49 @@ Datenblocker und dürfen nicht durch Laufzeitannahmen verdeckt werden.
 
 Der reproduzierbare Kernlauf und seine bewusst getrennten offenen Systemgates
 stehen in `betriebsengine-lastnachweis.md`.
+
+
+### Native Tagesfahrt-Abschlussbelege (ServiceOutcome v1)
+
+Der optionale signierte Startvertrag `serviceOutcomePolicy` bindet konkrete
+Sitzkapazitaeten an physische Fahrzeug-IDs und deren FleetAuthority-Beleg sowie
+eine endliche Allowlist der `serviceIds`. Jede Personenfahrt bindet separat
+`serviceId`, `serviceRunId`, `lotId`, `serviceDay`, `scheduledArrivalMs`, die
+bestellte Mindestkapazitaet oder explizit `requiredSeats:null` und die
+Anschlussbewertung `none-contracted` oder `unavailable`. Die genaue Regeldatei
+ist `crates/zugfolge-sim/specifications/operational-service-outcomes-v1.json`.
+
+Die Tagesinstanz heisst kanonisch `<serviceId>:service-day:<YYYY-MM-DD>`.
+Materialisierung und Regionsimport verlangen fuer dieselbe signierte
+Basisfahrt einen strikt spaeteren Betriebstag als die letzte Startquittung.
+Dieser begrenzte Index bleibt nach Retirement bestehen. Ein neues Kommando
+kann deshalb dieselbe Tagesfahrt nicht erneut produzieren. Die physische
+Zugidentitaet darf davon abweichen und bleibt Teil des Belegs.
+
+`train-service-planned` deklariert die konkrete Instanz bei Materialisierung
+oder Queue der physischen Fortsetzung. `train-outcome` entsteht einmalig erst
+am real erreichten Laufwegende, mit Geschwindigkeit null, ohne Segment und
+ohne Fahrberechtigung. Beide nativen Ereignisse werden im Regionscommit als
+`operations.train-service-planned` beziehungsweise `operations.train-outcome`
+atomar gespeichert. Das bekannte Kopfkoordinatensystem bleibt bei Reroutes
+stetig; die Differenz zum Startkopf liefert tatsaechlich gefahrene Millimeter.
+Ankunft und aufgerundete positive Verspaetungssekunden stammen ausschliesslich
+aus der Ereigniszeit. Formationswechsel aktualisieren die kleinste belegte
+Sitzkapazitaet vor Abschluss. Ein SafeStop ist kein behaupteter Ausfall.
+
+Fehlende bestellte Kapazitaet oder Anschlussgrundlage bleiben im Outcome
+`null`; die echten Sitz- und Bewegungsmesswerte bleiben trotzdem sichtbar.
+Alte signierte Starts ohne beide optionalen Felder behalten ihre bisherigen
+serialisierten Bytes und erzeugen keine nachtraeglich erfundenen Ergebnisse.
+
+Tagesberichte ordnen diese Ereignisse anhand des signierten Betriebstags ein,
+auch bei verspaeteter Ankunft am Folgetag. Sie summieren Millimeter vor der
+Umrechnung zu ganzen Zugkilometern. `knownServicesComplete` bewertet nur die
+bereits publizierten Plaene. Ein vollstaendiges Tagesplanmanifest samt
+Day-Close-Vertrag fehlt derzeit; `dayPlanComplete` und die uebergeordnete
+Vollstaendigkeit bleiben deshalb false. Auch der lueckenlose native
+Kostenbeleg sowie die bei Tendervergabe aktualisierte Betreiber-/Vertrags-
+und Anschlussbindung fehlen noch. Die Vertragsabrechnung verlangt diese
+Nachweise explizit und bleibt fuer diese unvollstaendige Ausgangslage gesperrt.
+Diese verbleibenden Integrationen gehoeren zu Issue #518; aktive Cancel-Run-
+Massnahmen erfordern zudem den autoritativen Dispositionsvertrag aus #517.

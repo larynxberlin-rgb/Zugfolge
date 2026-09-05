@@ -168,7 +168,8 @@ describe("spielergebundene Tutorialreise", () => {
         releases: { infra: "b".repeat(64), timetable: "c".repeat(64), fleet: "d".repeat(64), economy: "e".repeat(64) },
       }],
     });
-    expect(html).toContain("Öffentliche Welten vergleichen");
+    expect(html).toContain("Weltvertrag prüfen");
+    expect(html).not.toContain("Öffentliche Welten vergleichen");
     expect(html).toContain("Leipzig–Halle–Erfurt");
     expect(html).toContain("Dauerhaft, keine Wipes");
     expect(html).toContain("0,00 €");

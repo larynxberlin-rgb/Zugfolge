@@ -61,6 +61,7 @@ import {
 } from "./alpha-world-start.js";
 import { operationalSimulationInitializationHash } from "./operational-initialization-hash.js";
 import type { RegionalSimulationWorker } from "./regional-simulation-worker.js";
+import { assertServerWorldDeployment, serverWorldScope, type ServerWorldScope } from "./server-world-scope.js";
 import {
   WorldDeploymentAdminError,
   createWorldDeployAdminHandler,
@@ -699,7 +700,7 @@ describe("Game world_deploy: signierte Weltanlage", () => {
 
   afterEach(async () => client.close());
 
-  function handler(registerStartedWorld = vi.fn(), registerOperationalProgram = true) {
+  function handler(registerStartedWorld = vi.fn(), registerOperationalProgram = true, scope?: ServerWorldScope) {
     const fleet = fleetRuntime();
     let prepared: SignedAlphaWorldDeployment | undefined;
     const rollback = vi.fn(() => { prepared = undefined; });
@@ -731,6 +732,7 @@ describe("Game world_deploy: signierte Weltanlage", () => {
           },
         },
         prepareWorldProgram,
+        ...(scope === undefined ? {} : { validateSignedDeployment: (signed: SignedAlphaWorldDeployment) => assertServerWorldDeployment(scope, signed.deployment) }),
         registerStartedWorld,
       }),
       fleet,
@@ -739,6 +741,23 @@ describe("Game world_deploy: signierte Weltanlage", () => {
       registerStartedWorld,
     };
   }
+
+  it("weist ein gueltig signiertes Tutorial-Hauptdeployment vor jeder DB- oder Runtimewirkung ab", async () => {
+    const base = deployment();
+    const signed = signedDeployment({ ...base,
+      worldDefinition: { ...base.worldDefinition, kind: "tutorial", rankingStatus: "unranked" },
+      blueprint: { ...base.blueprint, profileKind: "tutorial", accelerationFactor: 60, entryFacilityPolicy: { schemaVersion: PUBLIC_ENTRY_FACILITY_SCHEMA, mode: "disabled" } },
+    });
+    const scope = serverWorldScope(WORLD_ID, "https://elbe.zugfolge.test");
+    const { run, prepareWorldProgram, registerStartedWorld } = handler(vi.fn(), true, scope);
+    expect(parseSignedAlphaWorldDeployment(signed, { [KEY_ID]: PUBLIC_KEY_PEM }).deployment.blueprint.profileKind).toBe("tutorial");
+    await expect(run(context(commandFor(signed)))).rejects.toThrow("Serverhauptweltbindung");
+    expect(await db.select().from(worlds)).toHaveLength(0);
+    expect(await db.select().from(alphaWorldProfiles)).toHaveLength(0);
+    expect(await db.select().from(alphaWorldDeployments)).toHaveLength(0);
+    expect(prepareWorldProgram).not.toHaveBeenCalled();
+    expect(registerStartedWorld).not.toHaveBeenCalled();
+  });
 
   it("nimmt eine live gestartete Welt und den globalen Scope sofort in den Odoo-Dispatch auf", () => {
     expect(worldIdsForOdooProjectionDispatch([])).toEqual([

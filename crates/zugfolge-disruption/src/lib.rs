@@ -38,7 +38,8 @@ pub use cause_codes::{
 const SECONDS_PER_DAY: i64 = 86_400;
 
 /// Modus einer Störungsquelle für geplante oder ungeplante Ereignisse.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Deserialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum DisruptionMode {
     /// Freigegebener externer Provider; ohne Rechtefreigabe fail-closed.
     Realistic,
@@ -49,7 +50,8 @@ pub enum DisruptionMode {
 }
 
 /// Versioniertes, rein ganzzahliges Generatorprofil.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, serde::Deserialize, serde::Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct SimulationProfile {
     /// Stabile Profilkennung.
     pub id: String,

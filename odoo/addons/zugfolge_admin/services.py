@@ -60,9 +60,59 @@ def signature(secret, timestamp, payload):
     return hmac.new(secret.encode("utf-8"), (timestamp + "." + canonical_json(payload)).encode("utf-8"), hashlib.sha256).hexdigest()
 
 
+def _game_world_origins(env):
+    """Every public/private Game server has exactly one configured canonical origin."""
+    try:
+        worlds = json.loads(_parameter(env, "zugfolge_admin.game_world_origins_json"))
+    except (TypeError, ValueError) as error:
+        raise UserError("Zugfolge-Weltserverregister ist kein gueltiges JSON.") from error
+    if not isinstance(worlds, dict) or not worlds:
+        raise UserError("Zugfolge-Weltserverregister ist leer.")
+    origins = set()
+    for world_id, origin in worlds.items():
+        if not isinstance(world_id, str) or not re.fullmatch(r"[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}", world_id):
+            raise UserError("Zugfolge-Weltserverregister enthaelt keine gueltige Hauptwelt-ID.")
+        if not isinstance(origin, str):
+            raise UserError("Zugfolge-Weltserver braucht eine kanonische HTTPS-Origin.")
+        try:
+            parsed = urlsplit(origin)
+            canonical_origin = "https://" + (parsed.hostname or "") + (":%s" % parsed.port if parsed.port not in (None, 443) else "")
+        except ValueError as error:
+            raise UserError("Zugfolge-Weltserver besitzt keine gueltige HTTPS-Origin.") from error
+        if (parsed.scheme != "https" or not parsed.hostname or parsed.username or parsed.password
+                or parsed.path or parsed.query or parsed.fragment or origin != canonical_origin
+                or parsed.hostname.endswith(".") or origin in origins):
+            raise UserError("Jede Zugfolge-Hauptwelt braucht eine eigene kanonische HTTPS-Origin ohne Pfad.")
+        origins.add(origin)
+    return worlds
+
+
+def game_world_origin(env, world_id):
+    worlds = _game_world_origins(env)
+    if world_id not in worlds:
+        raise UserError("Fuer die Zielwelt ist kein eigener Game-Server registriert.")
+    return worlds[world_id]
+
+
+def game_command_targets(env, command):
+    worlds = _game_world_origins(env)
+    if not isinstance(command, dict):
+        raise UserError("Zugfolge-Kommando ist ungueltig.")
+    if command.get("kind") == "entitlement.change":
+        # Kontoweite Komfort-/Produktrechte werden explizit auf alle registrierten
+        # Hauptweltserver projiziert; ein Retry behaelt dieselbe fachliche Event-ID.
+        selected = sorted(worlds)
+    else:
+        world_id = command.get("worldId")
+        if world_id not in worlds:
+            raise UserError("Fuer die Zielwelt ist kein eigener Game-Server registriert.")
+        selected = [world_id]
+    return [worlds[world_id] + "/api/integrations/odoo/webhooks" for world_id in selected]
+
+
 def dispatch_signed_game_command(env, correlation_id, actor_reference, command):
     """Only called after Odoo-native approval. Game validates again independently."""
-    url = _parameter(env, "zugfolge_admin.game_webhook_url")
+    targets = game_command_targets(env, command)
     tenant_id = _parameter(env, "zugfolge_admin.tenant_id")
     key_id = _parameter(env, "zugfolge_admin.webhook_key_id")
     secret = _parameter(env, "zugfolge_admin.webhook_secret")
@@ -78,19 +128,20 @@ def dispatch_signed_game_command(env, correlation_id, actor_reference, command):
         "actorReference": actor_reference,
         "command": command,
     }
-    response = requests.post(url, json=payload, headers={
-        "X-Zugfolge-Odoo-Key-Id": key_id,
-        "X-Zugfolge-Odoo-Timestamp": timestamp,
-        "X-Zugfolge-Odoo-Signature": signature(secret, timestamp, payload),
-    }, timeout=10)
-    if response.status_code not in (200, 202):
-        raise UserError("Game hat den Antrag nicht angenommen (%s)." % response.status_code)
-    try:
-        result = response.json()
-    except ValueError as error:
-        raise UserError("Game hat keine pruefbare Annahme bestaetigt.") from error
-    if not isinstance(result, dict) or result.get("accepted") is not True:
-        raise UserError("Game hat den Antrag fachlich abgelehnt (%s)." % (result.get("code", "invalid_response") if isinstance(result, dict) else "invalid_response"))
+    for url in targets:
+        response = requests.post(url, json=payload, headers={
+            "X-Zugfolge-Odoo-Key-Id": key_id,
+            "X-Zugfolge-Odoo-Timestamp": timestamp,
+            "X-Zugfolge-Odoo-Signature": signature(secret, timestamp, payload),
+        }, timeout=10, allow_redirects=False)
+        if response.status_code not in (200, 202):
+            raise UserError("Game hat den Antrag nicht angenommen (%s)." % response.status_code)
+        try:
+            result = response.json()
+        except ValueError as error:
+            raise UserError("Game hat keine pruefbare Annahme bestaetigt.") from error
+        if not isinstance(result, dict) or result.get("accepted") is not True:
+            raise UserError("Game hat den Antrag fachlich abgelehnt (%s)." % (result.get("code", "invalid_response") if isinstance(result, dict) else "invalid_response"))
 
 
 def infra_upload_signature(secret, timestamp, method, pathname, content_bytes, content_sha256):
@@ -110,6 +161,10 @@ def _infra_headers(env, method, url, content_bytes, content_sha256):
     timestamp = datetime.now(timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z")
     key_id, secret = _infra_credentials(env)
     pathname = urlsplit(url).path
+    # Der oeffentliche Proxy entfernt ausschliesslich /api; HMAC bindet den
+    # danach am Game verifizierten Integrationspfad.
+    if pathname.startswith("/api/integrations/odoo/infra-package-imports/"):
+        pathname = pathname[4:]
     return {
         "X-Zugfolge-Infra-Key-Id": key_id,
         "X-Zugfolge-Infra-Timestamp": timestamp,
@@ -263,14 +318,13 @@ def _infra_response(response, operation):
     return result
 
 
-def stage_infra_package(env, import_id, manifest, parts, finalization_nonce):
+def stage_infra_package(env, import_id, manifest, parts, finalization_nonce, world_id=None):
     """Stream an das lokale Game-Staging; weder Odoo noch dieser Client aktiviert einen Release."""
     if not isinstance(finalization_nonce, str) or not FINALIZATION_NONCE.fullmatch(finalization_nonce):
         raise UserError("Zugfolge-Infra-Finalisierungsnonce ist ungueltig.")
-    base_url = env["ir.config_parameter"].sudo().get_param("zugfolge_admin.infra_upload_base_url") or os.environ.get("ZUGFOLGE_INFRA_UPLOAD_BASE_URL")
-    if not base_url:
-        raise UserError("Zugfolge-Infra-Uploadziel ist nicht konfiguriert.")
-    base_url = base_url.rstrip("/")
+    world_id = world_id or _parameter(env, "zugfolge_admin.infra_upload_world_id")
+    webhook_url = game_command_targets(env, {"kind": "admin.world_deploy", "worldId": world_id})[0]
+    base_url = webhook_url.removesuffix("/webhooks") + "/infra-package-imports"
     import_url = "%s/%s" % (base_url, quote(import_id, safe=""))
     begin_body = {
         "manifestBytes": manifest["bytes"],
@@ -281,7 +335,7 @@ def stage_infra_package(env, import_id, manifest, parts, finalization_nonce):
         import_url,
         data=begin_bytes,
         headers={"Content-Type": "application/json", **_infra_headers(env, "POST", import_url, len(begin_bytes), hashlib.sha256(begin_bytes).hexdigest())},
-        timeout=(10, 60),
+        timeout=(10, 60), allow_redirects=False,
     )
     begin_result = _infra_response(response, "Start")
     begin_status = begin_result.get("status")
@@ -297,7 +351,7 @@ def stage_infra_package(env, import_id, manifest, parts, finalization_nonce):
                 manifest_url,
                 data=source,
                 headers={"Content-Type": "application/octet-stream", **_infra_headers(env, "PUT", manifest_url, manifest["bytes"], manifest["sha256"])},
-                timeout=(10, 600),
+                timeout=(10, 600), allow_redirects=False,
             )
         accepted_manifest = _infra_response(response, "Manifestupload")
         server_parts = accepted_manifest.get("parts")
@@ -317,7 +371,7 @@ def stage_infra_package(env, import_id, manifest, parts, finalization_nonce):
                     part_url,
                     data=source,
                     headers={"Content-Type": "application/octet-stream", **_infra_headers(env, "PUT", part_url, part["bytes"], part["sha256"])},
-                    timeout=(10, 1800),
+                    timeout=(10, 1800), allow_redirects=False,
                 )
             _infra_response(response, "Paketteilupload")
 
@@ -332,7 +386,7 @@ def stage_infra_package(env, import_id, manifest, parts, finalization_nonce):
         finalize_url,
         data=finalize_bytes,
         headers={"Content-Type": "application/json", **_infra_headers(env, "POST", finalize_url, len(finalize_bytes), hashlib.sha256(finalize_bytes).hexdigest())},
-        timeout=(10, 3600),
+        timeout=(10, 3600), allow_redirects=False,
     )
     result = _infra_response(response, "Abschluss")
     return result

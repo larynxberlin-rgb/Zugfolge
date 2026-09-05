@@ -115,7 +115,7 @@ class ZugfolgeWorldProjection(models.Model):
     projection_age_seconds = fields.Integer(readonly=True)
     drill_down = fields.Json(readonly=True)
     telemetry = fields.Json(readonly=True)
-    authoritative_event_url = fields.Char(readonly=True)
+    authoritative_event_url = fields.Char(string="API-Beleg (Zugriffstoken erforderlich)", readonly=True)
     payload_hash = fields.Char(required=True, readonly=True)
 
     @api.model

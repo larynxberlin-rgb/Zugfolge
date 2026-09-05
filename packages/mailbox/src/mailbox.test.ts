@@ -11,6 +11,8 @@ import {
   listInbox,
   MAILBOX_DUE_SOON_MILLISECONDS,
   MessageNotFoundError,
+  MessageReplayConflictError,
+  purgeExpiredMailboxMessages,
   RecipientNotFoundError,
   sendMessage,
 } from "./mailbox.js";
@@ -44,6 +46,31 @@ afterEach(async () => {
 });
 
 describe("sendMessage / listInbox", () => {
+  it("vergleicht unveraenderlichen Inhalt auch bei parallelem Retry und kanonisiert JSON", async () => {
+    const own = await requestWorldAccess(db, { worldId: WORLD_LHE, keycloakSubject: "kc-retry", displayName: "Retry" });
+    const input = { worldId: WORLD_LHE, recipientAccountId: own.id, idempotencyKey: "effect-1", messageType: "original", payload: { a: 1, b: 2 }, deadlineAt: new Date("2026-02-01Z"), sentAt: new Date("2026-01-01Z") };
+    const [a, b] = await Promise.all([sendMessage(db, input), sendMessage(db, { ...input, payload: { b: 2, a: 1 }, sentAt: new Date("2026-01-03Z") })]);
+    expect(a.id).toBe(b.id);
+    expect(a.sentAt).toEqual(b.sentAt);
+    for (const changed of [{ messageType: "changed" }, { payload: { a: 2, b: 2 } }, { deadlineAt: new Date("2026-03-01Z") }]) await expect(sendMessage(db, { ...input, ...changed })).rejects.toBeInstanceOf(MessageReplayConflictError);
+  });
+
+  it("raeumt an der 365-Tage-Grenze in Batches und verhindert Wiederzustellung", async () => {
+    const own = await requestWorldAccess(db, { worldId: WORLD_LHE, keycloakSubject: "kc-retention", displayName: "Retention" });
+    const input = { worldId: WORLD_LHE, recipientAccountId: own.id, idempotencyKey: "retention-effect", messageType: "original", payload: { privateText: "geheim" }, sentAt: new Date("2025-01-01Z") };
+    const original = await sendMessage(db, input);
+    const acknowledged = await sendMessage(db, { ...input, idempotencyKey: "acknowledged" });
+    await acknowledgeMessage(db, { worldId: WORLD_LHE, messageId: acknowledged.id, actingKeycloakSubject: "kc-retention", acknowledgedAt: AS_OF });
+    await sendMessage(db, { ...input, idempotencyKey: "future-deadline", deadlineAt: new Date("2027-01-01Z") });
+    expect((await purgeExpiredMailboxMessages(db, { worldId: WORLD_LHE, asOf: new Date("2025-12-31T23:59:59.999Z") })).purgedMessageIds).toEqual([]);
+    const first = await purgeExpiredMailboxMessages(db, { worldId: WORLD_LHE, asOf: new Date("2026-01-01Z"), batchSize: 1 });
+    expect(first.purgedMessageIds).toHaveLength(1); expect(first.hasMore).toBe(true);
+    expect((await purgeExpiredMailboxMessages(db, { worldId: WORLD_LHE, asOf: AS_OF })).purgedMessageIds).toHaveLength(1);
+    expect((await purgeExpiredMailboxMessages(db, { worldId: WORLD_LHE, asOf: AS_OF })).purgedMessageIds).toEqual([]);
+    expect(await sendMessage(db, input)).toMatchObject({ id: original.id, payload: {}, purgedAt: expect.any(Date) });
+    await expect(sendMessage(db, { ...input, payload: { changed: true } })).rejects.toBeInstanceOf(MessageReplayConflictError);
+    expect(await listInbox(db, { worldId: WORLD_LHE, requestingKeycloakSubject: "kc-retention", asOf: AS_OF })).toMatchObject([{ idempotencyKey: "future-deadline" }]);
+  });
   it("stellt eine Nachricht dem richtigen Postfach zu", async () => {
     const anna = await requestWorldAccess(db, { worldId: WORLD_LHE, keycloakSubject: "kc-anna", displayName: "Anna" });
     await requestWorldAccess(db, { worldId: WORLD_LHE, keycloakSubject: "kc-ben", displayName: "Ben" });

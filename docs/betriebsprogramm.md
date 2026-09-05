@@ -108,9 +108,8 @@ Erzeugungsendpunkt nutzt dieselbe Projektion für gezielte Nachberechnungen.
 ## 5. Operations Center
 
 `apps/operations-center` ist ein eigenständiges Vite-Frontend. Der normale
-Produktpfad verlangt `?world=<uuid>&operator=<uuid>` und das Token
-`sessionStorage["zugfolge.accessToken"]`; er besitzt keinen impliziten
-Demo-Fallback.
+Produktpfad verlangt `?world=<uuid>&operator=<uuid>` und den gemeinsamen
+Browser-OIDC-Client `operations-center`; er besitzt keinen impliziten Demo-Fallback.
 
 Die Oberfläche ist durchgehend dunkel, hochkontrastreich und für große
 Informationsdichte gebaut. Regeln lassen sich per Ziehen mit Maus oder Touch,
@@ -119,6 +118,29 @@ Funktionen bleiben mit Tastatur erreichbar; Fokus ist sichtbar, Live-Status
 und Fehler besitzen semantische Rollen, reduzierte Bewegung wird respektiert.
 Bedingungsbaum, Programm- und Regelstatus, Priorität, Trigger, Maßnahme,
 Vorlagen, Speichern, Aktivieren und Rücktest liegen im selben Arbeitskontext.
+
+Der editierbare Entwurf, die unveränderliche gespeicherte Version samt
+Server-Hash und die aktive Version sind getrennte Zustände. Nach einer Änderung
+wird die nächste freie Versionsnummer verwendet. Unverändertes Speichern und
+ein verlorenes Speicher-Ack werden anhand des erneut gelesenen kanonischen
+Inhalts erkannt. Ein fremder Versionskonflikt erhält den lokalen Entwurf.
+Aktivierung und Rücktest sind nur für den exakt angezeigten gespeicherten
+Inhalt freigegeben. Während des Speicherns bleibt der Editor gesperrt.
+
+Live-Aktualisierungen werden gebündelt und ändern nur das Lesemodell. Editor
+und Override-Dialog behalten ihre DOM-Elemente, Rohtexte, Auswahl und Fokus;
+ein veralteter Snapshot darf keinen neueren ersetzen. Vor einem Override wird
+die adressierte Entscheidung erneut geladen. Fehlt sie oder hat sie sich
+geändert, bleibt die Begründung sichtbar erhalten.
+
+**Operational-v2-Anbindungsgrenze (#517):** Die getrennte M7-Abnahme verbindet
+den Rust-Regelerzeuger ausdrücklich mit dem Aktivierungskommando. Dieser
+Consumer ist im produktiven Operational-v2-Server noch nicht vorhanden.
+Ohne einen tatsächlich angeschlossenen Consumer lehnen Aktivierung, Override
+und Rücktest daher mit `503 / dispatch_consumer_unavailable` ab und verändern
+weder Programmstatus noch Warteschlange. Speichern und Lesen bleiben möglich.
+Ein API-202 oder die isolierte M7-Abnahme dürfen keine operative Wirksamkeit
+in Operational-v2 behaupten.
 
 Die Betriebszentrale priorisiert Großereignisse und zeigt daneben Ausfälle,
 manuelle Eingriffe und alle übrigen erklärbaren Entscheidungen. Der

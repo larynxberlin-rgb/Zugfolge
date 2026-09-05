@@ -4,6 +4,7 @@ import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
 import { serializeMapReleaseBuildEvidence } from "../tiles/map-release-build-evidence.mjs";
+import { databaseAuthoritativeCatalog } from "./database-cutover-schema-contract.mjs";
 import {
   databaseEndpointSha256,
   inspectDatabaseRollbackEndpoint,
@@ -14,7 +15,6 @@ const GAME_BACKUP_OPERATION_SCHEMA = "zugfolge-game-backup-operation/v1";
 const GAME_RESTORE_SCHEMA = "zugfolge-game-restore/v2";
 const DATABASE_BACKUP_MANIFEST_SCHEMA = "zugfolge-database-backup-manifest/v1";
 const DATABASE_RESTORE_PROOF_SCHEMA = "zugfolge-database-restore-proof/v1";
-const EXPECTED_SCHEMA_MIGRATIONS = 33;
 const MAX_JSON_ARTIFACT_BYTES = 4 * 1_024 * 1_024;
 const STREAM_BUFFER_BYTES = 1 * 1_024 * 1_024;
 const SHA256 = /^[a-f0-9]{64}$/u;
@@ -311,9 +311,16 @@ export async function createDatabaseBackupRestoreEvidenceArtifacts({
     gameManifest,
     restoredDatabaseUrl,
   );
-  invariant(gameManifest.migrationCount === EXPECTED_SCHEMA_MIGRATIONS, `Game-Backup-Manifest bindet nicht den Schema-${EXPECTED_SCHEMA_MIGRATIONS}-Stand.`);
-  invariant(sourceInspection.snapshot.migrationLedger.length === EXPECTED_SCHEMA_MIGRATIONS, `Quelldatenbank besitzt nicht das Schema-${EXPECTED_SCHEMA_MIGRATIONS}-Migrationsledger.`);
-  invariant(restoredInspection.snapshot.migrationLedger.length === EXPECTED_SCHEMA_MIGRATIONS, `Restore-Datenbank besitzt nicht das Schema-${EXPECTED_SCHEMA_MIGRATIONS}-Migrationsledger.`);
+  const migrationCount = gameManifest.migrationCount;
+  const catalog = databaseAuthoritativeCatalog(migrationCount);
+  for (const [label, inspection] of [["Quelldatenbank", sourceInspection], ["Restore-Datenbank", restoredInspection]]) {
+    invariant(inspection.snapshot.migrationLedger.length === migrationCount, `${label} besitzt nicht das im Game-Backup-Manifest gebundene Schema-${migrationCount}-Migrationsledger.`);
+    invariant(
+      inspection.snapshot.authoritativeHead.tableCount === catalog.tables.length
+        && inspection.snapshot.authoritativeHead.tableSetSha256 === catalog.tableSetSha256,
+      `${label} bindet nicht den exakten autoritativen Schema-${migrationCount}-Tabellensatz.`,
+    );
+  }
 
   const backupManifest = Object.freeze({
     schema: DATABASE_BACKUP_MANIFEST_SCHEMA,

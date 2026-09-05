@@ -1,6 +1,9 @@
 world.zugfolge.de {
 	encode zstd gzip
 
+	@internalMetrics path /api/metrics /api/metrics/* /metrics /metrics/*
+	respond @internalMetrics 404
+
 	handle_path /operations/* {
 		reverse_proxy zugfolge-world-operations-center:4175
 	}
@@ -10,7 +13,9 @@ world.zugfolge.de {
 	}
 
 	handle_path /api/* {
-		reverse_proxy zugfolge-game-api:3000
+		reverse_proxy zugfolge-game-api:3000 {
+			header_up Host {http.request.host}
+		}
 	}
 
 	handle {

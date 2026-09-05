@@ -26,10 +26,12 @@ für Gesamtdeutschland, **eine** Welt:
   Sperrzeitenprüfung in der innersten Schleife. Hier entscheidet reine
   Rechenleistung, und zwar um Größenordnungen.
 
-Mehrere Welten multiplizieren beides **linear** und sind vollständig isoliert.
-Das ist eine Frage von Prozessen und Betriebskosten, nicht von Architektur —
-vorausgesetzt, `world_id`-Partitionierung und regionale Single-Writer stimmen von
-Anfang an.
+Jede regulaere Spielwelt besitzt einen eigenen Server, eigene Datenhaltung und
+eine feste HTTPS-Subdomain (E32). Nur die an diese Welt gebundenen persoenlichen
+Tutorialinstanzen laufen mit. Weitere Welten skalieren ueber weitere Server;
+`world_id`-Partitionierung und regionale Single-Writer bleiben verbindlich.
+Die Start-, HTTP- und Odoo-Grenzen beschreibt
+[ADR-0033](adr/0033-eine-spielwelt-pro-server.md).
 
 ## 2. Systemarchitektur (E5)
 

@@ -171,7 +171,7 @@ Innerhalb einer Funktion ist die Sprache frei; sie verlässt die Datei nicht.
 
 | Schicht | Werkzeug | Sperrdatei |
 |---------|----------|------------|
-| Rust | Cargo-Workspace, `rust-toolchain.toml` (Kanal `stable`) | `Cargo.lock` |
+| Rust | Cargo-Workspace, `rust-toolchain.toml` (Patchversion `1.94.1`) | `Cargo.lock` |
 | TypeScript | pnpm-Workspace, pnpm 11, Node.js 24 LTS („Krypton") | `pnpm-lock.yaml` |
 | Tests | `cargo test`, Vitest | — |
 | Lizenzen | cargo-deny (`deny.toml`), `pnpm licenses list` | — |

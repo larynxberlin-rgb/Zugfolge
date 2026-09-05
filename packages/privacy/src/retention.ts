@@ -1,8 +1,9 @@
 /**
  * Aufbewahrungsfristen (M2.6): je Datenkategorie, wie lange sie nach dem
  * auslösenden Ereignis aufbewahrt wird. `purgeExpiredAccountData` setzt die
- * Kontofrist technisch um; der Produktionsserver plant diesen idempotenten
- * Lauf täglich ein. `retentionDeadline` macht jede Frist zusätzlich
+ * Kontofrist technisch um; `purgeExpiredMailboxMessages` raeumt Postfachinhalte.
+ * Der Produktionsserver plant beide idempotenten Laeufe taeglich ein.
+ * `retentionDeadline` macht jede Frist zusätzlich
  * nachrechenbar und testbar.
  */
 
@@ -31,8 +32,8 @@ export const RETENTION_POLICIES: readonly RetentionPolicy[] = [
     category: "account",
     retentionDays: 90,
     reason:
-      "Übergangsfrist nach einer Löschanfrage (M2.6): 90 Tage, damit eine versehentliche oder erschlichene " +
-      "Löschung rückgängig gemacht werden kann, bevor sie endgültig wirkt.",
+      "Uebergangsfrist nach der ersten Loeschanfrage (M2.6): 90 Tage bis zur endgueltigen Entkopplung. " +
+      "Retries verschieben die Frist nicht; ein Ruecknahme- oder Reaktivierungspfad ist nicht implementiert.",
   },
   {
     category: "worldAccess",
@@ -42,7 +43,7 @@ export const RETENTION_POLICIES: readonly RetentionPolicy[] = [
   {
     category: "mailboxMessage",
     retentionDays: 365,
-    reason: "ein Jahr nach Versand oder Quittierung; danach ohne Betriebsrelevanz für Fristen oder Nachweise.",
+    reason: "365 Tage ab Versand, unabhaengig von der Quittierung. Eine noch laufende fachliche Frist haelt den Inhalt bis zu ihrem Ende fest; danach bleibt ausschliesslich der Deduplizierungsbeleg.",
   },
   {
     category: "domainEvent",

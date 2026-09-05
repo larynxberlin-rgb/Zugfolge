@@ -205,7 +205,7 @@ function worldContracts(state: JourneyViewState): string {
   }).join("");
   const joined = state.hasActiveOperator === true;
   const eyebrow = joined ? "Weltstatus" : "Vor dem Eintritt";
-  const title = joined ? "Aktive Welt" : "Öffentliche Welten vergleichen";
+  const title = joined ? "Aktive Welt" : contracts.length === 1 ? "Weltvertrag prüfen" : "Öffentliche Welten vergleichen";
   const introduction = joined
     ? "Der bestätigte Weltvertrag und seine unveränderlichen Release-Stände bleiben jederzeit nachvollziehbar."
     : "Kosten, Laufzeit und Release-Stände bleiben getrennt sichtbar; es gibt bewusst keinen Gesamtscore.";

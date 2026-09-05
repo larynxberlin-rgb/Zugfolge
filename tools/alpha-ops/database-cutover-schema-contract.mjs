@@ -109,6 +109,18 @@ export const DATABASE_AUTHORITATIVE_TABLES = Object.freeze([
 
 export const DATABASE_AUTHORITATIVE_TABLE_SET_SHA256 = definitionSha256(DATABASE_AUTHORITATIVE_TABLES);
 
+// Der Schema-33-Vertrag bleibt unveraendert fuer bereits signierte v3-Belege.
+export const DATABASE_AUTHORITATIVE_TABLES_SCHEMA_34 = Object.freeze([
+  ...DATABASE_AUTHORITATIVE_TABLES, "odoo_projection_quarantine",
+].sort((left, right) => left.localeCompare(right, "en")));
+export const DATABASE_AUTHORITATIVE_TABLE_SET_SHA256_SCHEMA_34 = definitionSha256(DATABASE_AUTHORITATIVE_TABLES_SCHEMA_34);
+
+export function databaseAuthoritativeCatalog(migrationCount) {
+  if (migrationCount === 33) return Object.freeze({ tables: DATABASE_AUTHORITATIVE_TABLES, tableSetSha256: DATABASE_AUTHORITATIVE_TABLE_SET_SHA256 });
+  if (migrationCount === 34) return Object.freeze({ tables: DATABASE_AUTHORITATIVE_TABLES_SCHEMA_34, tableSetSha256: DATABASE_AUTHORITATIVE_TABLE_SET_SHA256_SCHEMA_34 });
+  throw new Error(`Schema ${migrationCount} besitzt keinen qualifizierten autoritativen Tabellenvertrag.`);
+}
+
 export const DATABASE_WORLD_HISTORY_BINDINGS = Object.freeze([
   ["abuse_observations", ["world_id"]],
   ["abuse_sanctions", ["world_id"]],

@@ -1,8 +1,10 @@
 #!/usr/bin/env node
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
-import { readFile } from "node:fs/promises";
+import { copyFile, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
 
@@ -93,16 +95,25 @@ async function withTemporaryDatabase(run) {
   const targetUrl = new URL(databaseUrl);
   targetUrl.pathname = `/${databaseName}`;
   const admin = postgres(adminUrl.toString(), { max: 1 });
+  // Der gemeinsame signierte Odoo-Vertrag ist explizit Schema 33, nicht HEAD.
+  const contractMigrations = await mkdtemp(join(tmpdir(), "zugfolge-cross-contract-schema33-"));
   let target;
   try {
+    const journal = JSON.parse(await readFile(join(migrationsFolder, "meta", "_journal.json"), "utf8"));
+    const entries = journal.entries.slice(0, 33);
+    assert.equal(entries.length, 33);
+    await mkdir(join(contractMigrations, "meta"));
+    await writeFile(join(contractMigrations, "meta", "_journal.json"), JSON.stringify({ ...journal, entries }));
+    await Promise.all(entries.map(({ tag }) => copyFile(join(migrationsFolder, `${tag}.sql`), join(contractMigrations, `${tag}.sql`))));
     await admin.unsafe(`create database "${databaseName}"`);
     target = postgres(targetUrl.toString(), { max: 1 });
-    await migrate(drizzle(target), { migrationsFolder });
+    await migrate(drizzle(target), { migrationsFolder: contractMigrations });
     await run(target, targetUrl.toString());
   } finally {
     if (target !== undefined) await target.end({ timeout: 5 });
     await admin.unsafe(`drop database if exists "${databaseName}" with (force)`);
     await admin.end({ timeout: 5 });
+    await rm(contractMigrations, { recursive: true, force: true });
   }
 }
 

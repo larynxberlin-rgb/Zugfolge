@@ -41,8 +41,8 @@ export function performOperatingTransition(input: { readonly incumbentOperatorId
   return Object.freeze({ operatorId: input.winnerOperatorId, seamless: false, penaltyCents: 0n, prequalificationDamage: 0 });
 }
 
-export interface ServiceContract { readonly id: string; readonly worldId: string; readonly lotId: string; readonly operatorId: string; readonly startsAt: number; readonly endsAt: number; readonly orderingFeeCentsPerTrainKm: bigint; readonly bonusCentsPerPeriod: bigint; readonly penaltyRates: Readonly<Record<PenaltyFocus, bigint>>; readonly evidenceRequired: readonly string[]; readonly mandatoryVehicleCostCentsPerTrainKm?: bigint }
-export interface PerformanceEvidence { readonly trainKm: bigint; readonly punctualityBasisPoints: number; readonly cancellations: number; readonly missingSeats: number; readonly missedConnections: number; readonly evidence: readonly string[] }
+export interface ServiceContract { readonly qualityPromises?: Readonly<{ schemaVersion: "zugfolge-quality-promises/v2"; extraSeats: number; punctualityBasisPoints: number; additionalStops: number; minimumSeats: number }>; readonly id: string; readonly worldId: string; readonly lotId: string; readonly operatorId: string; readonly startsAt: number; readonly endsAt: number; readonly orderingFeeCentsPerTrainKm: bigint; readonly bonusCentsPerPeriod: bigint; readonly penaltyRates: Readonly<Record<PenaltyFocus, bigint>>; readonly evidenceRequired: readonly string[]; readonly mandatoryVehicleCostCentsPerTrainKm?: bigint }
+export interface PerformanceEvidence { readonly trainKm: bigint; readonly minimumSeatsProvided?: number; readonly punctualityBasisPoints: number; readonly cancellations: number; readonly missingSeats: number; readonly missedConnections: number; readonly evidence: readonly string[] }
 export interface ContractSettlement { readonly orderingFeeCents: bigint; readonly bonusCents: bigint; readonly penaltyCents: bigint; readonly netCents: bigint; readonly explanation: readonly string[] }
 export function settleContract(contract: ServiceContract, performance: PerformanceEvidence): ContractSettlement {
   if (
@@ -72,11 +72,16 @@ export function settleContract(contract: ServiceContract, performance: Performan
   for (const rate of Object.values(contract.penaltyRates)) assertNonnegativeI64(rate, "Poenalesatz");
   for (const required of contract.evidenceRequired) if (!performance.evidence.includes(required)) throw new Error(`Vertragsnachweis fehlt: ${required}`);
   const orderingFee = multiplyNonnegativeI64(performance.trainKm, contract.orderingFeeCentsPerTrainKm, "Bestellerentgelt");
-  const bonus = performance.punctualityBasisPoints >= 9_500 && performance.cancellations === 0 ? contract.bonusCentsPerPeriod : 0n;
+  const promises = contract.qualityPromises;
+  if (promises !== undefined && promises.extraSeats > 0 && (!Number.isSafeInteger(performance.minimumSeatsProvided) || performance.minimumSeatsProvided! < 0)) throw new Error("Vertragsnachweis der zugesagten Sitzplatzkapazitaet fehlt.");
+  const missingPromisedSeats = promises === undefined ? 0 : Math.max(0, promises.minimumSeats - (performance.minimumSeatsProvided ?? promises.minimumSeats));
+  const missingSeats = Math.max(performance.missingSeats, missingPromisedSeats);
+  const targetPunctuality = promises?.punctualityBasisPoints ?? 9_000;
+  const bonus = performance.punctualityBasisPoints >= Math.max(9_500, targetPunctuality) && performance.cancellations === 0 && missingSeats === 0 ? contract.bonusCentsPerPeriod : 0n;
   const penaltyParts = [
-    multiplyNonnegativeI64(BigInt(Math.max(0, 9_000 - performance.punctualityBasisPoints)), contract.penaltyRates.punctuality, "Puenktlichkeitspoenale"),
+    multiplyNonnegativeI64(BigInt(Math.max(0, targetPunctuality - performance.punctualityBasisPoints)), contract.penaltyRates.punctuality, "Puenktlichkeitspoenale"),
     multiplyNonnegativeI64(BigInt(performance.cancellations), contract.penaltyRates.cancellation, "Ausfallpoenale"),
-    multiplyNonnegativeI64(BigInt(performance.missingSeats), contract.penaltyRates.seats, "Sitzplatzpoenale"),
+    multiplyNonnegativeI64(BigInt(missingSeats), contract.penaltyRates.seats, "Sitzplatzpoenale"),
     multiplyNonnegativeI64(BigInt(performance.missedConnections), contract.penaltyRates.connections, "Anschlusspoenale"),
   ];
   const penalties = penaltyParts.reduce((sum, amount) => addI64(sum, amount, "Gesamtpoenale"), 0n);

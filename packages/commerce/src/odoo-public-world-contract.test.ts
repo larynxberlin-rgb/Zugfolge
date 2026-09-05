@@ -38,8 +38,9 @@ describe("Odoo-Website-, Portal- und Payment-Vertrag", () => {
     expect(javascript).toContain("/zugfolge/public/worlds");
     expect(javascript).not.toMatch(/GAME_|webhook_secret|projection_keys|DATABASE_URL|\/zugfolge\/projection/);
     expect(javascript).not.toContain("innerHTML");
-    expect(website).toContain("parsed.scheme or parsed.netloc");
-    expect(website).toContain('parsed.path.startswith("//")');
+    expect(website).toContain("game_world_origin(request.env, participation.world_id)");
+    expect(website).toContain('request.redirect(origin + "/?world=" + participation.world_id, local=False)');
+    expect(website).not.toContain("participation.offer_id.game_url_template");
   });
 
   it("verwendet signierte Commands und niemals eine direkte Game-Datenbank", async () => {

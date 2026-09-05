@@ -1352,6 +1352,13 @@ export class GameTutorialWorldFactory implements TutorialWorldFactory {
     let operatingCostCents: bigint | undefined;
     let periodResultCents: bigint | undefined;
     if (!economy.settledPeriods.has(`tutorial-tender:${TUTORIAL_SETTLEMENT_PERIOD}`)) {
+      const fleet = await loadFleetProducerCheckpoint(this.db as never, session.tutorialWorldId);
+      const formation = fleet?.snapshot.formations.find((entry) => entry.id === "tutorial-formation"
+        && entry.operatorId === session.tutorialOperatorId
+        && entry.vehicleIds.includes(textValue(stateValue["selectedVehicleId"], "Geleastes Fahrzeug")));
+      if (fleet === undefined || formation === undefined) {
+        throw new AlphaConflictError("Autoritativer Sitzplatznachweis der Tutorialformation fehlt.", "tutorial_fleet_unavailable");
+      }
       const settled = settleContractPeriod(economy, {
         commandId: `${session.reference}:settlement`,
         contractId: "tutorial-tender",
@@ -1359,11 +1366,13 @@ export class GameTutorialWorldFactory implements TutorialWorldFactory {
         at: TUTORIAL_TIMELINE.settlementAtS,
         performance: {
           trainKm: 840n,
+          minimumSeatsProvided: formation.characteristics.seats,
           punctualityBasisPoints: selected.punctuality,
           cancellations: selected.cancelledStops > 0 ? 1 : 0,
           missingSeats: 0,
           missedConnections: authoritativeAction === "short_turn" ? 1 : 0,
-          evidence: [...TUTORIAL_CONTRACT_EVIDENCE, "tutorial-run-1", decisionId, String(decisionSequence)],
+          evidence: [...TUTORIAL_CONTRACT_EVIDENCE, "tutorial-run-1", decisionId, String(decisionSequence),
+            `fleet:${fleet.snapshot.revision}:${fleet.snapshotHash}:${formation.id}`],
         },
         costs: [
           { amountCents: BigInt(textValue(stateValue["pathCostCents"], "Trassenkosten")), costType: "track", costCentreId: "tutorial-lot", reference: textValue(stateValue["selectedPathReceiptId"], "Trassenbeleg") },
@@ -1541,7 +1550,11 @@ export class GameTutorialWorldFactory implements TutorialWorldFactory {
       disruptionCostCents: disruptionCost.toString(),
       resultCents: result.toString(),
       punctualityBasisPoints: punctuality,
-      qualityTargetsMet: punctuality >= template.result.punctualityTargetBasisPoints ? ["Pünktlichkeit", "Kapazität", "Barrierefreiheit"] : ["Kapazität", "Barrierefreiheit"],
+      qualityTargetsMet: [
+        ...(punctuality >= integer(bid["punctualityBasisPoints"], "Pünktlichkeitsversprechen") ? ["Pünktlichkeit"] : []),
+        ...(integer(selectedLease["seats"], "Sitzplätze") >= SPECIFICATION.requirements.minimumSeats + integer(bid["extraSeats"], "Zusätzliche Sitzplätze") ? ["Kapazität"] : []),
+        "Barrierefreiheit",
+      ],
       comparison: {
         bidOrderingFeeCentsPerTrainKm: textValue(bid["orderingFeeCentsPerTrainKm"], "Bestellerentgelt"),
         bidPunctualityBasisPoints: integer(bid["punctualityBasisPoints"], "Pünktlichkeitsversprechen"),

@@ -25,7 +25,10 @@ describe("Game API observability", () => {
 
   it("does not reflect malformed correlation ids and exposes bounded-cardinality metrics", async () => {
     const app = Fastify({ logger: false, genReqId: requestCorrelationId });
-    new ApiObservability().register(app);
+    const internal = Fastify({ logger: false });
+    const observability = new ApiObservability();
+    observability.register(app);
+    observability.registerMetrics(internal);
     app.get("/worlds/:worldId/probe", async () => ({ ok: true }));
 
     const response = await app.inject({
@@ -35,12 +38,14 @@ describe("Game API observability", () => {
     });
     expect(response.headers["x-correlation-id"]).toMatch(/^[a-f0-9-]{36}$/);
 
-    const metrics = await app.inject({ method: "GET", url: "/metrics" });
+    expect((await app.inject({ method: "GET", url: "/metrics" })).statusCode).toBe(404);
+    const metrics = await internal.inject({ method: "GET", url: "/metrics" });
     expect(metrics.statusCode).toBe(200);
     expect(metrics.body).toContain('route="/worlds/:worldId/probe"');
     expect(metrics.body).not.toContain("00000000-0000-4000-8000-000000000001");
     expect(metrics.body).toContain("zugfolge_http_request_duration_milliseconds_bucket");
     await app.close();
+    await internal.close();
   });
 
   it("exports healthy, degraded and down as explicit non-colour-only states", () => {
@@ -62,13 +67,15 @@ describe("Game API observability", () => {
       freshness: { eventAgeSeconds: 4, projectionAgeSeconds: 7 },
       workers: { planningQueueDepth: 2, economyOutboxDepth: 3, odooCommandQueue: { pending: 1 } },
       bridges: { odooProjection: { pending: 5, failed: 1 } },
-      market: { listings: { open: 8 }, transfers: { sale: 2 }, contracts: { "traction:active": 3 } },
+      market: { projectionClass: "derived-metric", listings: { open: 8 }, transfers: { sale: 2 }, contracts: { "traction:active": 3 } },
     } as never);
     const metrics = alpha.renderPrometheus().join("\n");
     expect(metrics).toContain('zugfolge_alpha_queue_depth{world_id="world-alpha",queue="odoo_command_pending"} 1');
     expect(metrics).toContain('zugfolge_alpha_odoo_projection_pending{world_id="world-alpha"} 5');
     expect(metrics).toContain('zugfolge_alpha_market_items{world_id="world-alpha",kind="listings",state="open"} 8');
     expect(metrics).not.toContain("participant");
+    expect(metrics).not.toContain('kind="projectionClass"');
+    for (const line of metrics.split("\n").filter((line) => !line.startsWith("#"))) expect(line).toMatch(/\s\d+(?:\.\d+)?$/);
   });
 
   it("distinguishes an empty market from missing telemetry", () => {

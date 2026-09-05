@@ -52,14 +52,28 @@ describe("regionaler Server-Startupvertrag", () => {
 
   it("validiert statische Archivpfade und entfernt sie vor jeder aktiven Runtime-Registrierung", async () => {
     const serverSource = await readFile(new URL("./server.ts", import.meta.url), "utf8");
-    const resolution = serverSource.indexOf("await resolveAlphaWorldStartupDeployments(");
-    const archivedRelease = serverSource.indexOf("for (const worldId of archivedWorldIds) deploymentRuntime.releaseWorld(worldId)");
-    const activeRegistration = serverSource.indexOf("for (const persisted of persistedActiveDeployments) deploymentRuntime.register(");
-    const fleetGate = serverSource.indexOf("deploymentRuntime.assertVehicleCatalogDeploymentBindings(");
+    // Dieser Guard prueft ausschliesslich die Startupreihenfolge. Die Semantik
+    // der Weltgrenze wird mit echten Datenbank-/HTTP-Regressionen geprueft.
+    // Argumentnamen, Formatierung und die Implementierung der Grenze gehoeren
+    // nicht zum Ordnungsvertrag.
+    const position = (pattern: RegExp, after = 0): number => {
+      const match = pattern.exec(serverSource.slice(Math.max(0, after)));
+      return match === null ? -1 : Math.max(0, after) + match.index;
+    };
+    const resolution = position(/\bawait\s+resolveAlphaWorldStartupDeployments\s*\(/u);
+    const archivedLoop = position(/\bfor\s*\([^)]*\bof\s+archivedWorldIds\s*\)/u, resolution);
+    const archivedRelease = position(/\bdeploymentRuntime\s*\.\s*releaseWorld\s*\(/u, archivedLoop);
+    const activeLoop = position(/\bfor\s*\([^)]*\bof\s+persistedActiveDeployments\s*\)/u, archivedRelease);
+    const serverWorldGate = position(/\bassertServerWorldDeployment\s*\(/u, activeLoop);
+    const activeRegistration = position(/\bdeploymentRuntime\s*\.\s*register\s*\(/u, activeLoop);
+    const fleetGate = position(/\bdeploymentRuntime\s*\.\s*assertVehicleCatalogDeploymentBindings\s*\(/u, activeRegistration);
 
     expect(resolution).toBeGreaterThan(-1);
-    expect(archivedRelease).toBeGreaterThan(resolution);
-    expect(activeRegistration).toBeGreaterThan(archivedRelease);
+    expect(archivedLoop).toBeGreaterThan(resolution);
+    expect(archivedRelease).toBeGreaterThan(archivedLoop);
+    expect(activeLoop).toBeGreaterThan(archivedRelease);
+    expect(serverWorldGate).toBeGreaterThan(activeLoop);
+    expect(activeRegistration).toBeGreaterThan(serverWorldGate);
     expect(fleetGate).toBeGreaterThan(activeRegistration);
 
     const startSource = await readFile(new URL("./alpha-world-start.ts", import.meta.url), "utf8");

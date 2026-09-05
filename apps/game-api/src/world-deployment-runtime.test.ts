@@ -25,6 +25,7 @@ import {
   type SignedAlphaWorldDeployment,
 } from "./alpha-world-start.js";
 import { operationalSimulationInitializationHash } from "./operational-initialization-hash.js";
+import { ManualDisruptionCommandCatalog } from "./manual-disruption-catalog.js";
 import { TUTORIAL_OPERATIONAL_INFRASTRUCTURE_DESCRIPTOR } from "./tutorial-operational-infrastructure.js";
 import {
   ActiveWorldDeploymentRuntime,
@@ -295,6 +296,20 @@ function nativeRecurringSigned(): SignedAlphaWorldDeployment {
 }
 
 describe("aktive World-Deployment-Runtime", () => {
+  it("bewahrt materialize vor Fortsetzung und dispatch auch im manuellen Schedulerkatalog", () => {
+    const base = deploymentRuntime();
+    base.register(signed(), EPOCH);
+    const forbidden = () => { throw new Error("Lesender Katalog darf keinen Betriebs- oder DB-Aufruf ausloesen."); };
+    const catalog = new ManualDisruptionCommandCatalog({ base, db: new Proxy({}, { get: forbidden }) as never,
+      runtime: { restore: forbidden, apply: forbidden }, regions: () => base.realtimeRegions() });
+    expect(base.at(WORLD_ID, "mitteldeutschland-b", 0).map(({ command }) => command.type)).toEqual([
+      "materialize", "queue-movement-continuation", "dispatch",
+    ]);
+    expect(catalog.at(WORLD_ID, "mitteldeutschland-b", 0)).toEqual(base.at(WORLD_ID, "mitteldeutschland-b", 0));
+    expect([...catalog.dueBoundaries(WORLD_ID, "mitteldeutschland-b", 0, 86_400_000)])
+      .toEqual([...base.dueBoundaries(WORLD_ID, "mitteldeutschland-b", 0, 86_400_000)]);
+  });
+
   it("registriert ein Live-Deployment sofort in Fleet, Planning und Scheduler-Welten", () => {
     const runtime = deploymentRuntime();
 
@@ -547,6 +562,31 @@ describe("aktive World-Deployment-Runtime", () => {
     runtime.prepareOperationalProgram(deployment);
     runtime.register(deployment, EPOCH);
     expect(preflightCalls).toBe(2);
+  });
+
+  it("instanziiert signierte Abschlussbindungen ueber Tagesgrenzen ohne die Basisfahrt umzubenennen", () => {
+    const base = signed();
+    const original = base.deployment.regionalSimulation.trains[0]!;
+    const deployment = {
+      ...base,
+      deployment: { ...base.deployment, regionalSimulation: {
+        ...base.deployment.regionalSimulation,
+        serviceOutcomePolicy: { schemaVersion: "zugfolge-operational-service-outcome-policy/v1" as const, serviceIds: [original.id], vehicleCapacities: [] },
+        trains: [{ ...original, serviceOutcome: {
+          schemaVersion: "zugfolge-operational-service-outcome-binding/v1" as const,
+          serviceId: original.id, serviceRunId: `${original.id}:service-day:2026-09-05`, lotId: "lot:1", serviceDay: "2026-09-05",
+          scheduledArrivalMs: 90_000_000, requiredSeats: null, connectionAssessment: "unavailable" as const,
+        } }],
+      } },
+    };
+    const runtime = deploymentRuntime();
+    runtime.register(deployment, EPOCH);
+    const commands = runtime.at(WORLD_ID, "mitteldeutschland-b", 0);
+    const queued = commands.find((entry) => entry.command.type === "queue-movement-continuation");
+    expect(queued?.command).toMatchObject({ type: "queue-movement-continuation", continuation: { successor: { serviceOutcome: {
+      serviceId: original.id, serviceRunId: `${original.id}:service-day:2026-09-06`, serviceDay: "2026-09-06",
+      scheduledArrivalMs: 176_400_000, requiredSeats: null, connectionAssessment: "unavailable",
+    } } } });
   });
 
   it("uebergibt eine Formation zwischen mehreren Tagesfahrten und ueber Mitternacht exakt", () => {

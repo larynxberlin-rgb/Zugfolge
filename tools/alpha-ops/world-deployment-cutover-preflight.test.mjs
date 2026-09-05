@@ -9,6 +9,7 @@ import test from "node:test";
 import {
   OPERATIONAL_INITIALIZATION_HASH_SCHEMA_V2,
   WORLD_DEPLOYMENT_CUTOVER_ERROR_CODES,
+  assertProductionServerWorldEnvironment,
   alphaHash,
   inspectSignedOperationalV2Candidate,
   parseWorldDeploymentCutoverAuthorization,
@@ -84,6 +85,7 @@ test("Welt-Cutover verweigert ein fehlendes Scope-Mapping vor Kandidat, Karte un
         ALPHA_WORLD_RELEASE_PATHS_JSON: "[\"/unused/deployment.json\"]",
         INFRA_RELEASE_TRUSTED_KEYS_JSON: JSON.stringify(TRUSTED_KEYS),
         ALPHA_PUBLIC_WORLD_ID: V2_WORLD_ID,
+        ZUGFOLGE_WORLD_ID: V2_WORLD_ID,
         LIVEMAP_READ_MODEL_PATH: "/unused/read-model.sqlite",
       },
       loadCandidate: async () => {
@@ -102,6 +104,25 @@ test("Welt-Cutover verweigert ein fehlendes Scope-Mapping vor Kandidat, Karte un
     /RELEASE_TRUSTED_KEY_SCOPES_JSON' fehlt/u,
   );
   assert.equal(externalReadStarted, false);
+});
+
+test("Server-/UI-Weltabweichung und fehlende Bindung stoppen vor jedem externen Vorabzugriff", async () => {
+  assert.equal(assertProductionServerWorldEnvironment({ ZUGFOLGE_WORLD_ID: V2_WORLD_ID, ALPHA_PUBLIC_WORLD_ID: V2_WORLD_ID }), V2_WORLD_ID);
+  for (const environment of [
+    { ZUGFOLGE_WORLD_ID: LEGACY_WORLD_ID, ALPHA_PUBLIC_WORLD_ID: V2_WORLD_ID },
+    { ALPHA_PUBLIC_WORLD_ID: V2_WORLD_ID },
+    { ZUGFOLGE_WORLD_ID: V2_WORLD_ID },
+    { ZUGFOLGE_WORLD_ID: "invalid", ALPHA_PUBLIC_WORLD_ID: "invalid" },
+  ]) {
+    let reads = 0;
+    await assert.rejects(runWorldDeploymentCutoverPreflight({
+      environment,
+      loadCandidate: async () => { reads += 1; },
+      inspectDatabase: async () => { reads += 1; },
+      inspectMap: async () => { reads += 1; },
+    }), /ZUGFOLGE_WORLD_ID|ALPHA_PUBLIC_WORLD_ID/u);
+    assert.equal(reads, 0);
+  }
 });
 
 function v2Deployment(worldId = V2_WORLD_ID) {

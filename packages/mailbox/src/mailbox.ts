@@ -7,9 +7,24 @@
  * das Gerüst, keinen einzigen konkreten Nachrichtentyp.
  */
 
+import { createHash } from "node:crypto";
 import { accounts, mailboxMessages, type MailboxMessage } from "@zugfolge/db";
 import { AuthorizationError, getAccount, type IdentityDatabase } from "@zugfolge/identity";
-import { and, desc, eq, isNull } from "drizzle-orm";
+import { and, asc, desc, eq, isNull, lte, or } from "drizzle-orm";
+
+function canonical(value: unknown): string {
+  if (value === null || typeof value !== "object") return JSON.stringify(value);
+  if (Array.isArray(value)) return `[${value.map(canonical).join(",")}]`;
+  return `{${Object.entries(value).sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0).map(([key, item]) => `${JSON.stringify(key)}:${canonical(item)}`).join(",")}}`;
+}
+
+function messageHash(input: { readonly messageType: string; readonly payload: unknown; readonly deadlineAt?: Date | null }): string {
+  return createHash("sha256").update(canonical({ messageType: input.messageType, payload: input.payload, deadlineAt: input.deadlineAt?.toISOString() ?? null })).digest("hex");
+}
+
+export class MessageReplayConflictError extends Error {
+  constructor() { super("Postfach-Idempotenzschluessel gehoert zu anderem Inhalt oder einer anderen Frist."); this.name = "MessageReplayConflictError"; }
+}
 
 export type MailboxPriority = "overdue" | "due-soon" | "action-required" | "information" | "acknowledged";
 export type InboxMessage = MailboxMessage & { readonly priority: MailboxPriority; readonly overdue: boolean };
@@ -72,6 +87,7 @@ export async function sendMessage(
     deadlineAt: input.deadlineAt,
     sentAt: input.sentAt,
     idempotencyKey: input.idempotencyKey,
+    contentHash: messageHash(input),
   };
   const [created] = input.idempotencyKey === undefined
     ? await db.insert(mailboxMessages).values(values).returning()
@@ -95,6 +111,7 @@ export async function sendMessage(
       )
       .limit(1);
     if (existing === undefined) throw new Error("Nachricht konnte nicht zugestellt werden.");
+    if ((existing.contentHash ?? messageHash(existing)) !== values.contentHash) throw new MessageReplayConflictError();
     return existing;
   }
   return created;
@@ -115,7 +132,7 @@ export async function listInbox(
   const messages = await db
     .select()
     .from(mailboxMessages)
-    .where(and(eq(mailboxMessages.worldId, input.worldId), eq(mailboxMessages.recipientAccountId, account.id)))
+    .where(and(eq(mailboxMessages.worldId, input.worldId), eq(mailboxMessages.recipientAccountId, account.id), isNull(mailboxMessages.purgedAt)))
     .orderBy(desc(mailboxMessages.sentAt));
   return messages
     .map((message) => projectInboxMessage(message, input.asOf))
@@ -168,7 +185,7 @@ export async function acknowledgeMessage(
   const [message] = await db
     .select()
     .from(mailboxMessages)
-    .where(and(eq(mailboxMessages.worldId, input.worldId), eq(mailboxMessages.id, input.messageId)))
+    .where(and(eq(mailboxMessages.worldId, input.worldId), eq(mailboxMessages.id, input.messageId), isNull(mailboxMessages.purgedAt)))
     .limit(1);
   if (message === undefined) {
     throw new MessageNotFoundError(input.messageId, input.worldId);
@@ -212,4 +229,22 @@ export async function acknowledgeMessage(
 /** Ob eine Nachricht zu einem gegebenen Zeitpunkt überfällig ist: Frist verstrichen, noch nicht quittiert. */
 export function isOverdue(message: Pick<MailboxMessage, "deadlineAt" | "acknowledgedAt">, asOf: Date): boolean {
   return message.deadlineAt !== null && message.acknowledgedAt === null && message.deadlineAt.getTime() < asOf.getTime();
+}
+
+/** 365 Tage ab Versand; eine noch laufende fachliche Frist haelt den Inhalt fest. */
+export async function purgeExpiredMailboxMessages(db: IdentityDatabase, input: { readonly worldId: string; readonly asOf: Date; readonly batchSize?: number }): Promise<{ readonly purgedMessageIds: readonly string[]; readonly hasMore: boolean }> {
+  const batchSize = input.batchSize ?? 500;
+  if (!Number.isSafeInteger(batchSize) || batchSize < 1 || batchSize > 5_000 || !Number.isFinite(input.asOf.getTime())) throw new Error("Postfach-Raeumlaufparameter sind ungueltig.");
+  const eligible = and(eq(mailboxMessages.worldId, input.worldId), isNull(mailboxMessages.purgedAt),
+    lte(mailboxMessages.sentAt, new Date(input.asOf.getTime() - 365 * 24 * 60 * 60 * 1_000)),
+    or(isNull(mailboxMessages.deadlineAt), lte(mailboxMessages.deadlineAt, input.asOf)));
+  const candidates = await db.select().from(mailboxMessages).where(eligible).orderBy(asc(mailboxMessages.sentAt), asc(mailboxMessages.id)).limit(batchSize + 1);
+  const purgedMessageIds: string[] = [];
+  for (const candidate of candidates.slice(0, batchSize)) {
+    const [purged] = await db.update(mailboxMessages).set({
+      payload: {}, messageType: "system.retention-purged", contentHash: candidate.contentHash ?? messageHash(candidate), purgedAt: input.asOf,
+    }).where(and(eligible, eq(mailboxMessages.id, candidate.id))).returning({ id: mailboxMessages.id });
+    if (purged !== undefined) purgedMessageIds.push(purged.id);
+  }
+  return { purgedMessageIds, hasMore: candidates.length > batchSize };
 }

@@ -35,9 +35,9 @@ beforeEach(async () => {
 afterEach(async () => client.close());
 
 describe("PR 198/199 Odoo-Game-Produktionsgrenze", () => {
-  it("verifiziert Signatur und Vier-Augen-Antrag, persistiert die Queue und ruft nur den M8-Single-Writer auf", async () => {
-    const apply = vi.fn(async () => undefined);
-    const handler = createManualDisruptionAdminHandler({ worker: { apply }, worldEpoch: () => EPOCH });
+  it("verifiziert Signatur und Vier-Augen-Antrag und uebergibt beide Zeitgrenzen an den M8-Scheduler", async () => {
+    const schedule = vi.fn(async () => ({ state: "completed" as const, gameAuditEventId: "manual-plan-1", result: { manualDisruptionStatus: "scheduled" } }));
+    const handler = createManualDisruptionAdminHandler({ schedule });
     const envelope: OdooWebhookEnvelope = {
       schemaVersion: "zugfolge-odoo/v1",
       eventId: "odoo-manual-disruption-e2e-0001",
@@ -62,7 +62,7 @@ describe("PR 198/199 Odoo-Game-Produktionsgrenze", () => {
           affectedResourceIds: ["track:4"],
           declaredEffect: {
             schemaVersion: "zugfolge-manual-disruption-effect/v1",
-            kind: "traffic-hold",
+            kind: "closure",
             causeCode: 26,
             fineCauseId: "switch.drive",
             targets: [{
@@ -82,16 +82,11 @@ describe("PR 198/199 Odoo-Game-Produktionsgrenze", () => {
     expect(receipt).toEqual({ accepted: true, duplicate: false });
     await expect(processNextOdooCommand(db, NOW, { adminHandlers: { manual_disruption_create: handler } })).resolves.toMatchObject({ outcome: "accepted" });
 
-    expect(apply).toHaveBeenCalledTimes(1);
-    expect(apply).toHaveBeenCalledWith(expect.objectContaining({
-      worldId: WORLD,
-      regionId: "mitteldeutschland-b:leipzig",
-      command: {
-        type: "activate-disruption",
-        disruptionId: expect.stringContaining("admin:"),
-        effect: { "resource-closed": { resourceId: "track:4" } },
-      },
-    }), NOW);
+    expect(schedule).toHaveBeenCalledTimes(1);
+    expect(schedule).toHaveBeenCalledWith(expect.objectContaining({
+      startsAt: new Date("2026-08-11T11:55:00.000Z"), endsAt: new Date("2026-08-11T13:00:00.000Z"),
+      targets: [{ regionId: "mitteldeutschland-b:leipzig", effect: { "resource-closed": { resourceId: "track:4" } } }],
+    }));
     const [queue] = await db.select().from(odooCommandQueue).where(eq(odooCommandQueue.eventId, envelope.eventId));
     expect(queue).toMatchObject({ status: "completed" });
     const [request] = await db.select().from(gameAdminRequests).where(eq(gameAdminRequests.commandId, queue!.id));
@@ -99,7 +94,7 @@ describe("PR 198/199 Odoo-Game-Produktionsgrenze", () => {
     const [audit] = await db.select().from(domainEvents).where(eq(domainEvents.id, request!.gameAuditEventId!));
     expect(audit).toMatchObject({ eventType: "admin.action-audited", payload: { outcome: "completed", actionType: "manual_disruption_create" } });
     const [projection] = await db.select().from(odooProjectionOutbox).where(eq(odooProjectionOutbox.correlationId, envelope.correlationId));
-    expect(projection?.payload).toMatchObject({ outcome: "accepted", authoritative: true, gameAuditEventId: request!.gameAuditEventId });
+    expect(projection?.payload).toMatchObject({ outcome: "accepted", authoritative: true, gameAuditEventId: request!.gameAuditEventId, manualDisruptionStatus: "scheduled" });
   });
 
   it("entzieht einen Weltzugang ausschliesslich ueber signierten Odoo-Antrag und verknuepft den Game-Auditbeleg", async () => {

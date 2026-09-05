@@ -671,6 +671,54 @@ export async function streamTimetableRouteBindings(path, proof, requiredPlayable
   return Object.freeze(new Map([...found].sort(([left], [right]) => left.localeCompare(right, "en"))));
 }
 
+/** Reale Startfakten; GTFS enthaelt keine bestellte Kapazitaet oder Anschlussgarantie. */
+export function passengerOutcomeBinding({ trainRunId, lotId, epoch, scheduledDepartureMs, departureS, arrivalS }) {
+  nonEmptyString(trainRunId, "Fahrtenabschluss.trainRunId");
+  nonEmptyString(lotId, "Fahrtenabschluss.lotId");
+  const epochMs = Date.parse(epoch);
+  invariant(Number.isSafeInteger(epochMs) && epochMs % 86_400_000 === 0, "Fahrtenabschluss braucht die explizite Mitternachts-Weltepoche.");
+  invariant(
+    [scheduledDepartureMs, departureS, arrivalS].every((value) => Number.isSafeInteger(value) && value >= 0)
+      && arrivalS >= departureS
+      && scheduledDepartureMs === departureS % NORMALIZED_SCHEDULE_REPEAT_EVERY_S * 1_000,
+    "Fahrtenabschluss besitzt keine konsistente GTFS-Sollzeit.",
+  );
+  const scheduledArrivalMs = scheduledDepartureMs + (arrivalS - departureS) * 1_000;
+  invariant(Number.isSafeInteger(scheduledArrivalMs), "Fahrtenabschluss-Sollankunft liegt ausserhalb des sicheren Bereichs.");
+  return Object.freeze({
+    schemaVersion: "zugfolge-operational-service-outcome-binding/v1",
+    serviceId: trainRunId,
+    serviceRunId: `${trainRunId}:service-day:${new Date(epochMs).toISOString().slice(0, 10)}`,
+    lotId,
+    serviceDay: new Date(epochMs).toISOString().slice(0, 10),
+    scheduledArrivalMs,
+    requiredSeats: null,
+    connectionAssessment: "unavailable",
+  });
+}
+
+/** Kapazitaet stammt aus denselben signierten Fahrzeugassets wie die physische Formation. */
+export function serviceOutcomePolicy({ vehicles, authorityAssets, authorityReleaseHash, serviceIds }) {
+  invariant(SHA256.test(authorityReleaseHash), "Fahrtenabschluss besitzt keinen Fleet-Authority-Hash.");
+  invariant(Array.isArray(serviceIds) && serviceIds.length > 0 && new Set(serviceIds).size === serviceIds.length
+    && serviceIds.every((id) => typeof id === "string" && id.trim() !== ""), "Fahrtenabschluss braucht eindeutige signierte Basisfahrten.");
+  const assetsById = new Map(authorityAssets.map((asset) => [asset.id, asset]));
+  invariant(assetsById.size === authorityAssets.length, "Fahrtenabschluss-Fahrzeugquelle enthaelt doppelte Kennungen.");
+  const vehicleIds = new Set();
+  const vehicleCapacities = vehicles.map((vehicle) => {
+    const asset = assetsById.get(vehicle.id);
+    invariant(!vehicleIds.has(vehicle.id) && asset !== undefined, "Fahrtenabschluss besitzt keine eindeutige Fahrzeugquellenbindung.");
+    vehicleIds.add(vehicle.id);
+    invariant(Number.isSafeInteger(asset.passenger?.seats) && asset.passenger.seats >= 0, "Fahrtenabschluss besitzt keinen realen Sitzplatznachweis.");
+    return Object.freeze({
+      vehicleId: vehicle.id,
+      seats: asset.passenger.seats,
+      sourceReference: `fleet-authority:${authorityReleaseHash}:vehicle:${vehicle.id}`,
+    });
+  }).sort((left, right) => left.vehicleId < right.vehicleId ? -1 : left.vehicleId > right.vehicleId ? 1 : 0);
+  return Object.freeze({ schemaVersion: "zugfolge-operational-service-outcome-policy/v1", serviceIds: Object.freeze([...serviceIds].sort()), vehicleCapacities: Object.freeze(vehicleCapacities) });
+}
+
 export async function buildAlphaWorld(argv = process.argv.slice(2)) {
 const [
   buildConfigurationPath,
@@ -1240,6 +1288,14 @@ for (const [lotIndex, lot] of lotRecords.entries()) {
           context: `Fahrt '${trainRunId}' (${assignedAsset.classDesignation})`,
         }),
         scheduledDepartureMs: scheduledDepartureS * 1_000,
+        serviceOutcome: passengerOutcomeBinding({
+          trainRunId,
+          lotId: lot.lotId,
+          epoch: publicDeployConfiguration.worldDefinition.epoch,
+          scheduledDepartureMs: scheduledDepartureS * 1_000,
+          departureS: leg.stops[0].departureS,
+          arrivalS: leg.stops.at(-1).arrivalS,
+        }),
       });
       lotTrainRunIds.push(trainRunId);
     }
@@ -1335,7 +1391,12 @@ const operationalFleet = Object.freeze({
     vehicleIds: Object.freeze([...formation.vehicleIds]),
   }))),
 });
-const operationalProgramTrains = movementAllocation.programTrains;
+const passengerOutcomes = new Map(regionalTrains.map((train) => [train.trainRunId, train.serviceOutcome]));
+const operationalProgramTrains = movementAllocation.programTrains.map((train) => Object.freeze({
+  ...train,
+  ...(train.publicPassengerStop ? { serviceOutcome: passengerOutcomes.get(train.id) } : {}),
+}));
+invariant(operationalProgramTrains.every((train) => !train.publicPassengerStop || train.serviceOutcome !== undefined), "Fahrtenabschluss bildet nicht jede Personenfahrt ab.");
 const operationalSimulation = Object.freeze({
   schemaVersion: "zugfolge-operational-simulation-initialize/v2",
   worldId: WORLD_ID,
@@ -1349,6 +1410,12 @@ const operationalSimulation = Object.freeze({
   formations: operationalFleet.formations,
   trains: Object.freeze(operationalProgramTrains),
   movementContinuations: movementAllocation.movementContinuations,
+  serviceOutcomePolicy: serviceOutcomePolicy({
+    vehicles: operationalFleet.vehicles,
+    authorityAssets: fleet.authorityRelease.assets,
+    authorityReleaseHash: fleetEvidence.authorityReleaseHash,
+    serviceIds: regionalTrains.map((train) => train.serviceOutcome.serviceId),
+  }),
 });
 
 const economyRelease = buildEconomyRelease({
@@ -1451,6 +1518,7 @@ function assertOperationalV2Initialization(value, receipt) {
     || !Array.isArray(value.trains)
     || value.trains.length !== expectedTrains.size
     || alphaCanonicalJson(value.movementContinuations) !== alphaCanonicalJson(movementAllocation.movementContinuations)
+    || alphaCanonicalJson(value.serviceOutcomePolicy) !== alphaCanonicalJson(operationalSimulation.serviceOutcomePolicy)
   ) throw new Error("Operatives v2-Initialisierungsartefakt ist unvollstaendig oder nicht releasegebunden.");
   assertOperationalInfrastructureV2ReleaseBinding({
     initialization: value,
@@ -1475,6 +1543,7 @@ function assertOperationalV2Initialization(value, receipt) {
       || train.headRouteMm !== expected.headRouteMm
       || train.publicPassengerStop !== expected.publicPassengerStop
       || alphaCanonicalJson(train.protectionModeSelectionRuns) !== alphaCanonicalJson(expected.protectionModeSelectionRuns)
+      || alphaCanonicalJson(train.serviceOutcome ?? null) !== alphaCanonicalJson(expected.serviceOutcome ?? null)
     ) throw new Error("Operatives v2-Artefakt verletzt Fahrt-, Betreiber- oder Laufwegbindung.");
     seen.add(train.id);
   }

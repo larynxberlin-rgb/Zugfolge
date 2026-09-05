@@ -3,6 +3,19 @@
 use napi::{Env, Task, bindgen_prelude::AsyncTask};
 use napi_derive::napi;
 
+/// Releasegebundener deterministischer Tagesmodell-Adapter.
+#[napi(js_name = "generateOperationalDailyRestrictions")]
+pub fn generate_operational_daily_restrictions(
+    input_json: String,
+    infrastructure_path: String,
+) -> napi::Result<String> {
+    zugfolge_sim_runtime::daily_restrictions::generate_operational_daily_restrictions(
+        &input_json,
+        &infrastructure_path,
+    )
+    .map_err(napi::Error::from_reason)
+}
+
 /// Hasht einen typisierten operativen Payload in exakt derselben Kanonform
 /// wie das native Idempotenzreceipt.
 #[napi(js_name = "hashOperationalSimulationCommand")]

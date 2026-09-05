@@ -13,13 +13,15 @@ import {
   type OdooCommandQueueRow,
   type OdooProjectionOutboxRow,
 } from "@zugfolge/db";
-import { and, desc, eq, isNull, lt, lte, or, sql } from "drizzle-orm";
+import { and, desc, eq, isNull, lte, or, sql } from "drizzle-orm";
 import type { PgDatabase, PgQueryResultHKT } from "drizzle-orm/pg-core";
 
 import { entitlementChangeToStatus } from "./entitlements.js";
+import { canonicalJson } from "./canonical-json.js";
 import {
   AUTHORITATIVE_WORLD_START_PROJECTION,
   ODOO_CONTRACT_VERSION,
+  validateEntitlementChange,
   validateWorldParticipationChange,
   type AdminActionType,
   type AdminCommandPayload,
@@ -30,7 +32,7 @@ import {
   type WorldParticipationChangePayload,
 } from "./contracts.js";
 import { validateAdminCommand } from "./admin-workflow.js";
-import type { OdooWebhookReceiptStore } from "./receiver.js";
+import { WebhookValidationError, type OdooWebhookReceiptStore } from "./receiver.js";
 import { validatePublicWorldSnapshot, type PublicWorldSnapshotV1 } from "./public-world-snapshot.js";
 
 /** Gemeinsamer Drizzle-Typ fuer Postgres und PGlite-Integrationstests. */
@@ -70,7 +72,16 @@ export function createOdooWebhookReceiptStore(db: CommerceDatabase): OdooWebhook
           })
           .onConflictDoNothing()
           .returning({ eventId: odooWebhookReceipts.eventId });
-        if (receipt.length === 0) return false;
+        if (receipt.length === 0) {
+          // Derselbe Event darf bei Retry keine andere kaufmaennische Wirkung tragen.
+          // guards:allow world-id — Globale Receipt-ID bindet den bereits persistierten Queue-Command.
+          const [previous] = await tx.select().from(odooCommandQueue).where(eq(odooCommandQueue.eventId, envelope.eventId)).limit(1);
+          if (previous === undefined || previous.actorReference !== envelope.actorReference
+            || previous.correlationId !== envelope.correlationId || canonicalJson(previous.payload) !== canonicalJson(envelope.command)) {
+            throw new WebhookValidationError("command");
+          }
+          return false;
+        }
         const worldId = commandWorldId(envelope.command);
         if (envelope.command.kind !== "entitlement.change" && envelope.command.kind !== "admin.world_deploy") {
           const [world] = await tx.select({ id: worlds.id }).from(worlds).where(eq(worlds.id, envelope.command.worldId)).limit(1);
@@ -275,6 +286,7 @@ function asEntitlementPayload(value: unknown): EntitlementChangePayload {
   if (payload["kind"] !== "entitlement.change" || typeof payload["subject"] !== "string" || typeof payload["productKind"] !== "string" || typeof payload["change"] !== "string" || typeof payload["validFrom"] !== "string" || typeof payload["quantity"] !== "number" || typeof payload["sourceReference"] !== "string") {
     throw new Error("Persistierter Entitlement-Befehl ist ungueltig.");
   }
+  validateEntitlementChange(payload as unknown as EntitlementChangePayload);
   return payload as unknown as EntitlementChangePayload;
 }
 
@@ -412,6 +424,8 @@ export type WorldParticipationCommandHandler = (
 ) => Promise<WorldParticipationCommandResult> | WorldParticipationCommandResult;
 
 export interface OdooCommandProcessingOptions {
+  /** Erneute Scope-Pruefung erfasst auch historische Queue-Eintraege vor der Wirkung. */
+  readonly assertWorldScope?: (worldId: string) => void;
   /** Keine Standard-Handler: ein noch nicht implementierter Milestone bleibt vorbereitet, aber wirkungslos. */
   readonly adminHandlers?: Readonly<Partial<Record<AdminActionType, GameAdminCommandHandler>>>;
   /** Autoritativer, weltgebundener Game-Handler fuer kommerzielle Teilnahmen. */
@@ -557,6 +571,21 @@ export async function processNextOdooCommand(
     return claimed;
   });
   if (command === undefined) return undefined;
+  if (command.commandType !== "entitlement.change") {
+    const payload = command.payload as { readonly worldId?: unknown };
+    try {
+      if (typeof payload.worldId !== "string" || command.worldId !== payload.worldId) throw new Error("Ungueltige Zielwelt.");
+      options.assertWorldScope?.(payload.worldId);
+    } catch {
+      // Eine historische fehlgeroutete Queue darf weder einen Fachhandler
+      // aufrufen noch Ergebnis-/Eventdaten in einer fremden Welt schreiben.
+      const rejected = await db.update(odooCommandQueue).set({ status: "rejected", processedAt: now,
+        claimToken: null, claimExpiresAt: null, failureCode: "world_scope" })
+        .where(claimScope(command, claimToken)).returning({ id: odooCommandQueue.id });
+      if (rejected.length !== 1) throw new OdooCommandClaimLostError(command.id);
+      return { id: command.id, outcome: "rejected" };
+    }
+  }
   let adminRequestId: string | undefined;
   let adminRequestPersisted = false;
   let adminPayload: AdminCommandPayload | undefined;
@@ -571,7 +600,23 @@ export async function processNextOdooCommand(
       await db.transaction(async (tx) => {
         const [owned] = await tx.select({ id: odooCommandQueue.id }).from(odooCommandQueue).where(claimScope(command, claimToken)).limit(1).for("update");
         if (owned === undefined) throw new OdooCommandClaimLostError(command.id);
-        await tx.insert(commerceEntitlements).values({
+        const sourceKey = JSON.stringify([payload.subject, payload.productKind, payload.sourceReference]);
+        // guards:allow world-id — Ein kaufmaennischer Beleg-Lifecycle ist global; der Advisory-Lock serialisiert Erstbelege wie Folgerevisionen.
+        await tx.execute(sql`select pg_advisory_xact_lock(('x' || substr(md5(${sourceKey}), 1, 16))::bit(64)::bigint)`);
+        // guards:allow world-id — Subject, Produkt und Ursprungsbeleg bilden die globale Entitlement-Quelle.
+        const previous = await tx.select().from(commerceEntitlements).where(and(
+          eq(commerceEntitlements.keycloakSubject, payload.subject), eq(commerceEntitlements.productKind, payload.productKind), eq(commerceEntitlements.sourceReference, payload.sourceReference),
+        ));
+        for (const entry of previous) {
+          const metadata = entry.metadata as { readonly sourceRevision?: number; readonly command?: unknown };
+          if (metadata.sourceRevision !== undefined && payload.sourceRevision === undefined) throw new Error("Versionierter Entitlement-Beleg braucht eine Quellenrevision.");
+          if (payload.sourceRevision !== undefined && metadata.sourceRevision === payload.sourceRevision && canonicalJson(metadata.command) !== canonicalJson(payload)) {
+            throw new Error("Entitlement-Quellenrevision wurde mit anderem Inhalt wiederverwendet.");
+          }
+        }
+        const duplicateRevision = payload.sourceRevision !== undefined && previous.some((entry) =>
+          (entry.metadata as { readonly sourceRevision?: number }).sourceRevision === payload.sourceRevision);
+        if (!duplicateRevision) await tx.insert(commerceEntitlements).values({
           externalEventId: command.eventId,
           keycloakSubject: payload.subject,
           productKind: payload.productKind,
@@ -581,7 +626,7 @@ export async function processNextOdooCommand(
           quantity: String(payload.quantity),
           correlationId: command.correlationId,
           sourceReference: payload.sourceReference,
-          metadata: {},
+          metadata: { ...(payload.sourceRevision === undefined ? {} : { sourceRevision: payload.sourceRevision }), command: payload },
           changedAt: now,
         }).onConflictDoNothing();
         const completed = await tx.update(odooCommandQueue).set({
@@ -1152,7 +1197,18 @@ export async function processNextOdooCommand(
 
 export async function activeEntitlementsForSubject(db: CommerceDatabase, subject: string, at = new Date()): Promise<readonly CommerceEntitlement[]> {
   // guards:allow world-id — Entitlements sind globale kaufmaennische Subject-Vertraege; Weltbezug entsteht erst im separaten Claim.
-  return db.select().from(commerceEntitlements).where(and(eq(commerceEntitlements.keycloakSubject, subject), eq(commerceEntitlements.status, "active"), lt(commerceEntitlements.validFrom, at)));
+  const events = await db.select().from(commerceEntitlements).where(and(eq(commerceEntitlements.keycloakSubject, subject), lte(commerceEntitlements.validFrom, at)));
+  const latest = new Map<string, CommerceEntitlement>();
+  const revision = (entry: CommerceEntitlement) => (entry.metadata as { readonly sourceRevision?: number }).sourceRevision ?? 0;
+  const priority = (entry: CommerceEntitlement) => entry.status === "active" ? 0 : 1;
+  for (const event of events) {
+    const source = JSON.stringify([event.productKind, event.sourceReference]);
+    const previous = latest.get(source);
+    if (previous === undefined || revision(event) > revision(previous)
+      || (revision(event) === revision(previous) && (event.validFrom > previous.validFrom
+        || (event.validFrom.getTime() === previous.validFrom.getTime() && priority(event) > priority(previous))))) latest.set(source, event);
+  }
+  return [...latest.values()].filter((entry) => entry.status === "active" && (entry.validUntil === null || entry.validUntil > at));
 }
 
 export async function listPendingOdooProjections(db: CommerceDatabase, worldId: string, limit = 50): Promise<readonly OdooProjectionOutboxRow[]> {

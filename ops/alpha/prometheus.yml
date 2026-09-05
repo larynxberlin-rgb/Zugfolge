@@ -9,7 +9,7 @@ scrape_configs:
   - job_name: zugfolge-game-api
     metrics_path: /metrics
     static_configs:
-      - targets: ["game-api:3000"]
+      - targets: ["game-api:9464"]
   - job_name: zugfolge-odoo
     metrics_path: /zugfolge/metrics
     static_configs:

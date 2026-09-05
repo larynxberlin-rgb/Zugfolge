@@ -3,10 +3,11 @@ import type { ActionName, ComparisonName, Condition, FactName, OperatingProgram,
 import { mountGlossaryLayer } from "@zugfolge/glossary";
 import "@zugfolge/glossary/styles.css";
 
-import { OperationsApi, type DailyReportRow, type ProgramVersion } from "./api.js";
+import { OperationsApi, type DailyReportRow } from "./api.js";
 import { loadOperationsRuntimeConfiguration, operationsAccessToken } from "./auth.js";
 import { addRule, moveRule, removeCondition, removeRule, reorderRules, updateCondition, updateRule } from "./model.js";
 import { renderApp, type ViewState } from "./view.js";
+import { captureEditorFocus, nextProgramVersion, restoreEditorFocus, sameProgramContent, savedProgramMatches } from "./editor.js";
 import "./styles.css";
 import "./workspace.css";
 
@@ -41,6 +42,12 @@ let state: ViewState = {
 };
 let dragRuleId = "";
 let streamController: AbortController | undefined;
+let refreshPromise: Promise<void> | undefined;
+let refreshPending = false;
+let dataRevision = 0;
+let overrideDraft = { open: false, decisionId: "", fingerprint: "", action: "request_reroute", reason: "" };
+let reportDay = "";
+let renderedProgram: OperatingProgram | undefined;
 
 function setState(patch: Partial<ViewState>, rerender = true): void {
   state = { ...state, ...patch };
@@ -48,8 +55,59 @@ function setState(patch: Partial<ViewState>, rerender = true): void {
 }
 
 function render(): void {
+  // Live-Lesemodelle beruehren weder Editor noch modalen Entwurf. Damit bleiben
+  // auch IME-Komposition und noch nicht durch change uebernommene Werte erhalten.
+  if (state.program !== undefined && state.program === renderedProgram && root.querySelector(".shell") !== null) {
+    reportDay = root.querySelector<HTMLInputElement>("#report-day")?.value ?? reportDay;
+    const template = document.createElement("template");
+    template.innerHTML = renderApp(state);
+    for (const selector of [".topbar", ".sidebar-note", ".metrics-strip", "#operations", "#reports"]) {
+      const previous = root.querySelector(selector);
+      const next = template.content.querySelector(selector);
+      if (previous !== null && next !== null) previous.replaceWith(next);
+    }
+    root.querySelector(".message")?.remove();
+    const message = template.content.querySelector(".message");
+    if (message !== null) root.querySelector(".operations-workspace")?.prepend(message);
+    root.querySelector(".execution-status")?.remove();
+    const executionStatus = template.content.querySelector(".execution-status");
+    if (executionStatus !== null) root.querySelector(".operations-workspace")?.prepend(executionStatus);
+    const overrideButton = root.querySelector<HTMLButtonElement>("#submit-override");
+    if (overrideButton !== null) overrideButton.disabled = state.operations?.consumerAvailable === false;
+    const day = root.querySelector<HTMLInputElement>("#report-day");
+    if (day !== null) day.value = reportDay;
+    root.querySelectorAll<HTMLInputElement | HTMLSelectElement>("#program input, #program select").forEach((input) => { input.disabled = state.saving; });
+    root.querySelectorAll<HTMLButtonElement>("#program .rule-list button, #add-rule").forEach((button) => { button.disabled = state.saving; });
+    const saveButton = root.querySelector<HTMLButtonElement>("#save-program");
+    if (saveButton !== null) { saveButton.disabled = state.saving; saveButton.textContent = state.saving ? "Speichert …" : "Neue Version speichern"; }
+    for (const id of ["#activate-program", "#run-backtest"]) {
+      const button = root.querySelector<HTMLButtonElement>(id);
+      if (button !== null) button.disabled = state.operations?.consumerAvailable === false || state.saving || !savedProgramMatches(state.program, state.savedProgram);
+    }
+    bindLive();
+    return;
+  }
+  const focus = captureEditorFocus(root);
+  const previousDialog = root.querySelector<HTMLDialogElement>("#override-dialog");
+  if (previousDialog?.open) {
+    overrideDraft = { ...overrideDraft, open: true, action: root.querySelector<HTMLSelectElement>("#override-action")!.value, reason: root.querySelector<HTMLTextAreaElement>("#override-reason")!.value };
+  }
+  reportDay = root.querySelector<HTMLInputElement>("#report-day")?.value ?? reportDay;
+  const scroll = root.querySelector<HTMLElement>("[data-scroll-region]")?.scrollTop ?? 0;
   root.innerHTML = renderApp(state);
+  renderedProgram = state.program;
   bind();
+  const day = root.querySelector<HTMLInputElement>("#report-day");
+  if (day !== null) day.value = reportDay;
+  if (overrideDraft.open) {
+    root.querySelector<HTMLInputElement>("#override-decision")!.value = overrideDraft.decisionId;
+    root.querySelector<HTMLSelectElement>("#override-action")!.value = overrideDraft.action;
+    root.querySelector<HTMLTextAreaElement>("#override-reason")!.value = overrideDraft.reason;
+    root.querySelector<HTMLDialogElement>("#override-dialog")!.showModal();
+  }
+  const workspace = root.querySelector<HTMLElement>("[data-scroll-region]");
+  if (workspace !== null) workspace.scrollTop = scroll;
+  restoreEditorFocus(root, focus);
 }
 
 function currentProgram(): OperatingProgram {
@@ -58,7 +116,9 @@ function currentProgram(): OperatingProgram {
 }
 
 function replaceProgram(program: OperatingProgram): void {
-  setState({ program, message: "Ungespeicherte Änderung", messageTone: "status" });
+  const saved = state.savedProgram;
+  const unchanged = saved !== undefined && sameProgramContent(program, saved.canonicalProgram);
+  setState({ program: { ...program, version: unchanged ? saved.version : nextProgramVersion(state.versions) }, message: unchanged ? `Gespeicherte Version ${saved.version}` : "Ungespeicherte Änderung", messageTone: "status" });
 }
 
 function bindRuleEditor(): void {
@@ -105,7 +165,7 @@ function bindRuleEditor(): void {
 }
 
 function bind(): void {
-  root.querySelector<HTMLButtonElement>("#refresh")?.addEventListener("click", () => void refresh());
+  bindLive();
   root.querySelector<HTMLInputElement>("#program-enabled")?.addEventListener("change", (event) => replaceProgram({ ...currentProgram(), enabled: (event.currentTarget as HTMLInputElement).checked }));
   root.querySelector<HTMLSelectElement>("#template")?.addEventListener("change", (event) => {
     const template = state.templates.find((entry) => entry.id === (event.currentTarget as HTMLSelectElement).value);
@@ -115,6 +175,14 @@ function bind(): void {
   root.querySelector<HTMLButtonElement>("#save-program")?.addEventListener("click", () => void save());
   root.querySelector<HTMLButtonElement>("#activate-program")?.addEventListener("click", () => void activate());
   root.querySelector<HTMLButtonElement>("#run-backtest")?.addEventListener("click", () => void backtest());
+  root.querySelector<HTMLDialogElement>("#override-dialog")?.addEventListener("close", () => { overrideDraft.open = false; });
+  root.querySelector<HTMLDialogElement>("#override-dialog")?.addEventListener("cancel", () => { overrideDraft.open = false; });
+  root.querySelector<HTMLButtonElement>("#submit-override")?.addEventListener("click", (event) => { event.preventDefault(); void submitOverride(); });
+  bindRuleEditor();
+}
+
+function bindLive(): void {
+  root.querySelector<HTMLButtonElement>("#refresh")?.addEventListener("click", () => void refresh());
   root.querySelector<HTMLButtonElement>("#generate-report")?.addEventListener("click", () => void generateReport());
   root.querySelectorAll<HTMLElement>("[data-decision-id]").forEach((node) => node.addEventListener("focus", () => setState({ selectedDecisionId: node.dataset.decisionId ?? "" }, false)));
   root.querySelectorAll<HTMLButtonElement>("[data-open-override]").forEach((button) => button.addEventListener("click", () => {
@@ -123,40 +191,78 @@ function bind(): void {
     const dialog = root.querySelector<HTMLDialogElement>("#override-dialog");
     const input = root.querySelector<HTMLInputElement>("#override-decision");
     if (input !== null) input.value = selectedDecisionId;
+    const decision = state.operations?.decisions.find((entry) => entry.decisionId === selectedDecisionId);
+    overrideDraft = { open: true, decisionId: selectedDecisionId, fingerprint: JSON.stringify(decision), action: "request_reroute", reason: "" };
+    root.querySelector<HTMLSelectElement>("#override-action")!.value = overrideDraft.action;
+    root.querySelector<HTMLTextAreaElement>("#override-reason")!.value = "";
     dialog?.showModal();
     root.querySelector<HTMLSelectElement>("#override-action")?.focus();
   }));
-  root.querySelector<HTMLButtonElement>("#submit-override")?.addEventListener("click", (event) => { event.preventDefault(); void submitOverride(); });
-  bindRuleEditor();
 }
 
 async function refresh(): Promise<void> {
   if (api === undefined) return;
-  try {
-    const [versions, operations, reports, operatorContext] = await Promise.all([api.versions(), api.operations(), api.reports(), api.context()]);
-    setState({ versions, operations, reports, operatorContext, message: "Betriebslage aktualisiert.", messageTone: "status" });
-  } catch (error) { setState({ message: error instanceof Error ? error.message : "Aktualisierung fehlgeschlagen.", messageTone: "error" }); }
+  refreshPending = true;
+  if (refreshPromise !== undefined) return refreshPromise;
+  const client = api;
+  refreshPromise = (async () => {
+    while (refreshPending) {
+      refreshPending = false;
+      const revision = dataRevision;
+      try {
+        const [versions, operations, reports, operatorContext] = await Promise.all([client.versions(), client.operations(), client.reports(), client.context()]);
+        if (revision !== dataRevision) { refreshPending = true; continue; }
+        if (operations.throughSequence < (state.operations?.throughSequence ?? 0)) continue;
+        setState({ versions, operations, reports, operatorContext });
+      } catch (error) { setState({ message: error instanceof Error ? error.message : "Aktualisierung fehlgeschlagen.", messageTone: "error" }); }
+    }
+  })().finally(() => { refreshPromise = undefined; });
+  return refreshPromise;
 }
 
 async function save(): Promise<void> {
-  if (api === undefined) return;
+  if (api === undefined || state.saving) return;
+  const draft = currentProgram();
   setState({ saving: true, message: "Programm wird kanonisch geprüft und gespeichert.", messageTone: "status" });
   try {
-    const saved = await api.save(currentProgram());
-    const versions = await api.versions();
-    setState({ saving: false, versions, message: `Version ${saved.version} gespeichert · ${saved.checksum.slice(0, 12)}…`, messageTone: "status" });
+    let versions = await api.versions();
+    // Auch ein verlorenes POST-Ack ist damit wiederholbar, ohne einen lokalen Entwurf zu ersetzen.
+    let saved = [...versions].reverse().find((entry) => sameProgramContent(draft, entry.canonicalProgram));
+    if (saved === undefined) {
+      const attempt = { ...draft, version: nextProgramVersion(versions) };
+      try { saved = await api.save(attempt); }
+      catch (error) {
+        versions = await api.versions();
+        saved = versions.find((entry) => entry.version === attempt.version && sameProgramContent(attempt, entry.canonicalProgram));
+        if (saved === undefined) {
+          ++dataRevision;
+          setState({ versions, program: { ...currentProgram(), version: nextProgramVersion(versions) } }, false);
+          throw error;
+        }
+      }
+    }
+    versions = [...versions.filter((entry) => entry.version !== saved.version), saved];
+    const program = sameProgramContent(currentProgram(), draft) ? saved.canonicalProgram : { ...currentProgram(), version: nextProgramVersion(versions) };
+    ++dataRevision;
+    setState({ saving: false, versions, savedProgram: saved, program, message: `Version ${saved.version} gespeichert · ${saved.checksum.slice(0, 12)}…`, messageTone: "status" });
   } catch (error) { setState({ saving: false, message: error instanceof Error ? error.message : "Speichern fehlgeschlagen.", messageTone: "error" }); }
 }
 
 async function activate(): Promise<void> {
   if (api === undefined) return;
-  try { await api.activate(currentProgram().version); await refresh(); setState({ message: `Aktivierung von Version ${currentProgram().version} wurde dem Single Writer übergeben.`, messageTone: "status" }); }
+  if (state.operations?.consumerAvailable === false) return;
+  if (!savedProgramMatches(state.program, state.savedProgram) || state.saving) { setState({ message: "Bitte den sichtbaren Entwurf zuerst speichern.", messageTone: "error" }); return; }
+  const saved = state.savedProgram!;
+  try { await api.activate(saved.version); await refresh(); setState({ message: `Aktivierung von Version ${saved.version} · ${saved.checksum.slice(0, 12)}… wurde dem Single Writer übergeben.`, messageTone: "status" }); }
   catch (error) { setState({ message: error instanceof Error ? error.message : "Aktivierung fehlgeschlagen.", messageTone: "error" }); }
 }
 
 async function backtest(): Promise<void> {
   if (api === undefined) return;
-  try { await api.backtest(currentProgram().version, state.operations?.throughSequence ?? 1); setState({ message: "Rücktest wurde auf der unveränderten Ereignishistorie eingereiht.", messageTone: "status" }); }
+  if (state.operations?.consumerAvailable === false) return;
+  if (!savedProgramMatches(state.program, state.savedProgram) || state.saving) { setState({ message: "Bitte den sichtbaren Entwurf zuerst speichern.", messageTone: "error" }); return; }
+  const saved = state.savedProgram!;
+  try { await api.backtest(saved.version, state.operations?.throughSequence ?? 1); setState({ message: `Rücktest für Version ${saved.version} · ${saved.checksum.slice(0, 12)}… wurde eingereiht.`, messageTone: "status" }); }
   catch (error) { setState({ message: error instanceof Error ? error.message : "Rücktest fehlgeschlagen.", messageTone: "error" }); }
 }
 
@@ -165,7 +271,16 @@ async function submitOverride(): Promise<void> {
   const decisionId = root.querySelector<HTMLInputElement>("#override-decision")?.value ?? "";
   const action = root.querySelector<HTMLSelectElement>("#override-action")?.value ?? "";
   const reason = root.querySelector<HTMLTextAreaElement>("#override-reason")?.value ?? "";
-  try { await api.override(decisionId, action, reason); root.querySelector<HTMLDialogElement>("#override-dialog")?.close(); setState({ message: "Einzelfall wurde protokolliert und zur vollständigen Grenzprüfung eingereiht.", messageTone: "status" }); }
+  try {
+    const latest = await api.operations();
+    if (latest.consumerAvailable === false) throw new Error("Die Ausführung von Betriebsprogrammen ist auf diesem Weltserver noch nicht verfügbar. Der Entwurf bleibt erhalten.");
+    const current = latest.decisions.find((entry) => entry.decisionId === decisionId);
+    if (current === undefined || JSON.stringify(current) !== overrideDraft.fingerprint) throw new Error("Die Entscheidung hat sich geändert oder ist nicht mehr verfügbar. Der Entwurf bleibt erhalten; bitte die aktuelle Betriebslage prüfen.");
+    await api.override(decisionId, action, reason);
+    overrideDraft.open = false;
+    root.querySelector<HTMLDialogElement>("#override-dialog")?.close();
+    setState({ message: "Einzelfall wurde protokolliert und zur vollständigen Grenzprüfung eingereiht.", messageTone: "status" });
+  }
   catch (error) { setState({ message: error instanceof Error ? error.message : "Override fehlgeschlagen.", messageTone: "error" }); }
 }
 
@@ -186,7 +301,7 @@ function startStream(): void {
     signal,
     state.operations?.throughSequence ?? 0,
     () => { void refresh(); },
-    (operations) => setState({ operations, message: "Betriebslage nach einer Stream-Luecke neu geladen.", messageTone: "status" }),
+    () => { void refresh(); },
   ).catch((error: unknown) => {
     if (!signal.aborted) setState({ message: error instanceof Error ? error.message : "Live-Verbindung unterbrochen.", messageTone: "error" });
   });
@@ -205,9 +320,9 @@ async function boot(): Promise<void> {
     const [templates, versions, operations, reports, operatorContext] = await Promise.all([api.templates(), api.versions(), api.operations(), api.reports(), api.context()]);
     const source: OperatingProgram | undefined = versions.find((version) => version.status === "active")?.canonicalProgram ?? versions[0]?.canonicalProgram ?? templates[0]?.program;
     if (source === undefined) throw new Error("Server lieferte weder Betriebsprogramm noch Vorlage.");
-    const nextVersion = Math.max(0, ...versions.map((version: ProgramVersion) => version.version)) + 1;
+    const savedProgram = versions.find((version) => version.status === "active") ?? versions[0];
     if (!operatorContext.operators.some((operator) => operator.id === operatorId)) throw new Error("EVU-Kontext stimmt nicht mit der geöffneten Betriebszentrale überein.");
-    state = { ...state, templates, versions, operations, reports, operatorContext, program: { ...source, version: nextVersion }, loading: false };
+    state = { ...state, templates, versions, operations, reports, operatorContext, program: source, ...(savedProgram === undefined ? {} : { savedProgram }), loading: false };
     render();
     startStream();
   } catch (error) { setState({ loading: false, message: error instanceof Error ? error.message : "Betriebszentrale konnte nicht geladen werden.", messageTone: "error" }); }

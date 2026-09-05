@@ -21,6 +21,8 @@ export const mailboxMessages = pgTable(
     recipientAccountId: uuid("recipient_account_id").notNull(),
     /** Fachlicher Schlüssel eines externen Effekts; `null` für interaktive Nachrichten. */
     idempotencyKey: text("idempotency_key"),
+    contentHash: text("content_hash"),
+    purgedAt: timestamp("purged_at", { withTimezone: true }),
     messageType: text("message_type").notNull(),
     payload: jsonb("payload").notNull(),
     sentAt: timestamp("sent_at", { withTimezone: true }).notNull().defaultNow(),

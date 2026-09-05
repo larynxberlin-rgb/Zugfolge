@@ -147,7 +147,8 @@ export async function getAccount(
 /**
  * Interner Verwaltungszugriff auf ein historisches Konto. Darf niemals als
  * Autorisierungsprüfung verwendet werden; er ist ausschließlich für
- * Datenschutz-Purge und ausdrücklich administrative Historienpflege gedacht.
+ * authentifizierte Datenschutz-Selbstauskunft, Datenschutz-Purge und
+ * ausdruecklich administrative Historienpflege gedacht.
  */
 export async function getAccountIncludingRevoked(
   db: IdentityDatabase,
@@ -259,6 +260,7 @@ export async function revokeWorldAccess(
       and(
         eq(worldAccesses.worldId, input.worldId),
         eq(worldAccesses.keycloakSubject, input.targetKeycloakSubject),
+        eq(worldAccesses.status, "active"),
       ),
     );
 }

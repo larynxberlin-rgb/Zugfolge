@@ -61,11 +61,15 @@ test("Alpha-Compose erzwingt Map- und Welt-Cutover-Gates, Migration, signierten 
     compose.indexOf("  world-deployment-cutover-preflight:"),
   );
   const gameApiService = compose.slice(compose.indexOf("  game-api:"), compose.indexOf("  game-web:"));
+  assert.match(gameApiService, /ZUGFOLGE_WORLD_ID: "\$\{ZUGFOLGE_WORLD_ID:\?[^}]+\}"/u);
+  assert.match(gameApiService, /PUBLIC_GAME_URL: "\$\{PUBLIC_GAME_URL:\?[^}]+\}"/u);
   const gameBootstrapService = compose.slice(compose.indexOf("  game-bootstrap:"), compose.indexOf("  game-api:"));
   const worldDeploymentPreflightService = compose.slice(
     compose.indexOf("  world-deployment-cutover-preflight:"),
     compose.indexOf("  game-migrate:"),
   );
+  assert.match(worldDeploymentPreflightService, /ZUGFOLGE_WORLD_ID: "\$\{ZUGFOLGE_WORLD_ID:\?[^}]+\}"/u);
+  assert.match(gameBootstrapService, /ZUGFOLGE_WORLD_ID: "\$\{ZUGFOLGE_WORLD_ID:\?[^}]+\}"/u);
   const livemapService = compose.slice(compose.indexOf("  livemap:"), compose.indexOf("  operations-center:"));
   const keycloakMigrationService = compose.slice(compose.indexOf("  keycloak-schema-migrate:"), compose.indexOf("  keycloak-schema-backup:"));
   const keycloakRestoreService = compose.slice(compose.indexOf("  keycloak-schema-restore:"), compose.indexOf("  keycloak-schema-preflight:"));
@@ -147,14 +151,14 @@ test("Alpha-Compose erzwingt Map- und Welt-Cutover-Gates, Migration, signierten 
   assert.match(compose, /production-recovery-cold-qualify:[\s\S]*PRODUCTION_SCHEMA31_RECEIPT_PATH:[^\n]+schema31-prepared\.json/u);
   assert.match(compose, /game-schema33-migrate:[\s\S]*PRODUCTION_SCHEMA31_RECEIPT_PATH:[^\n]+schema31-prepared\.json/u);
   assert.match(compose, /game-schema33-migrate:[\s\S]*production-cold-backup\.mjs, preflight, node, packages\/db\/dist\/migrate\.js/u);
-  assert.match(composeWrapper, /--schema33-after-cold[\s\S]*game-schema33-migrate[\s\S]*select count\(\*\) from drizzle\.__drizzle_migrations"\)" = 33/u);
+  assert.match(composeWrapper, /--schema33-after-cold[\s\S]*game-schema33-migrate[\s\S]*select count\(\*\) from drizzle\.__drizzle_migrations"\)" = 34/u);
   assert.match(
     composeWrapper,
-    /if \(\(keycloak_after_schema33 == 1\)\); then[\s\S]*select count\(\*\) from drizzle\.__drizzle_migrations"\)" = 33[\s\S]*keycloak-schema-backup[\s\S]*keycloak-schema-restore[\s\S]*bind-backup[\s\S]*plan-up[\s\S]*keycloak_schema_command up[\s\S]*keycloak_schema_command recover[\s\S]*keycloak_schema_command preflight-up/u,
+    /if \(\(keycloak_after_schema33 == 1\)\); then[\s\S]*select count\(\*\) from drizzle\.__drizzle_migrations"\)" = 34[\s\S]*keycloak-schema-backup[\s\S]*keycloak-schema-restore[\s\S]*bind-backup[\s\S]*plan-up[\s\S]*keycloak_schema_command up[\s\S]*keycloak_schema_command recover[\s\S]*keycloak_schema_command preflight-up/u,
   );
   assert.match(
     composeWrapper,
-    /if \(\(prepare_v2_hot == 1\)\); then[\s\S]*select count\(\*\) from drizzle\.__drizzle_migrations"\)" = 33[\s\S]*keycloak_schema_command preflight-up[\s\S]*backup-game\.sh/u,
+    /if \(\(prepare_v2_hot == 1\)\); then[\s\S]*select count\(\*\) from drizzle\.__drizzle_migrations"\)" = 34[\s\S]*keycloak_schema_command preflight-up[\s\S]*backup-game\.sh/u,
   );
   assert.match(
     composeWrapper,
@@ -501,6 +505,8 @@ test("Produktions-Bootstrap ist auf genau eine signierte öffentliche Welt begre
   assert.match(bootstrap, /deploymentPaths\.length !== 1/);
   assert.match(bootstrap, /definition\.kind !== "public" \|\| definition\.rankingStatus !== "ranked"/);
   assert.match(bootstrap, /applyWorldDeploymentCutover/);
+  assert.match(bootstrap, /const uiWorldId = assertProductionServerWorldEnvironment\(process.env\);/u);
+  assert.ok(bootstrap.indexOf("const uiWorldId = assertProductionServerWorldEnvironment") < bootstrap.indexOf("const client = postgres("));
   assert.match(apply, /on conflict \(id\) do nothing/);
   assert.match(apply, /widerspricht dem signierten Vertrag/);
   assert.match(bootstrap, /ensureSignedPlanningAuthority/);

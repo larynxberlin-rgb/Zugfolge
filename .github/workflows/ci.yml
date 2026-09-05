@@ -153,8 +153,10 @@ jobs:
         run: |
           pnpm --filter @zugfolge/game-api... build
           pnpm --filter @zugfolge/game-web... build
+          pnpm --filter @zugfolge/operations-center... build
           # Echte NAPI-Registries und PGlite-Welten nicht zwischen Vitest-Worker-Isolates parallelisieren.
-          pnpm --filter @zugfolge/game-api exec vitest run --no-file-parallelism src/world-deployment-runtime.test.ts src/fleet-configuration.native.integration.test.ts src/economy-native.integration.test.ts src/tutorial-world-factory.native.integration.test.ts src/tutorial-browser.e2e.test.ts
+          pnpm --filter @zugfolge/game-api exec vitest run --no-file-parallelism src/world-deployment-runtime.test.ts src/fleet-configuration.native.integration.test.ts src/economy-native.integration.test.ts src/tutorial-world-factory.native.integration.test.ts src/disruption-policy-admin.test.ts src/manual-disruption-admin.test.ts src/manual-disruption-catalog.native.integration.test.ts src/odoo-manual-disruption.e2e.test.ts src/tutorial-browser.e2e.test.ts
+          pnpm --filter @zugfolge/game-api exec vitest run src/operations-browser.e2e.test.ts
           # Echter Alpha-Builder -> serialisierter Compact-v2-Vertrag -> Serverstart-Registry.
           node --test tools/region-import/build-alpha-world-runtime.integration.test.mjs
 
@@ -1018,6 +1020,47 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - name: Bekannte Schwachstellen ab moderate ablehnen
         run: pnpm audit --audit-level=moderate
+
+  production-image:
+    name: Produktionsimage (Herkunft, URI-Abhaengigkeiten, NAPI)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - name: Vollstaendiges kanonisches Image aus dem CI-Commit bauen
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker build --file ops/alpha/container/Dockerfile \
+            --build-arg "ZUGFOLGE_SOURCE_SHA=${GITHUB_SHA}" \
+            --build-arg ZUGFOLGE_DEPLOY_PATCH_SHA=none \
+            --tag "zugfolge-api-ci:${GITHUB_SHA}" .
+      - name: Herkunftslabels und finalen Runtime-Benutzer pruefen
+        shell: bash
+        run: |
+          set -euo pipefail
+          image="zugfolge-api-ci:${GITHUB_SHA}"
+          test "$(docker image inspect --format '{{ index .Config.Labels "org.opencontainers.image.source" }}' "$image")" = 'https://github.com/larynxberlin-rgb/Zugfolge'
+          test "$(docker image inspect --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}' "$image")" = "$GITHUB_SHA"
+          test "$(docker image inspect --format '{{ index .Config.Labels "de.zugfolge.deploy-patch" }}' "$image")" = 'none'
+          test "$(docker image inspect --format '{{ .Config.User }}' "$image")" = 'node'
+      - name: Beide fast-uri-Zweige im ausgelieferten API-Graph pruefen
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker run --rm --network none --entrypoint node "zugfolge-api-ci:${GITHUB_SHA}" \
+            tools/alpha-ops/production-image-dependencies.mjs
+      - name: Beide ausgelieferten nativen Addons im finalen Image ausfuehren
+        shell: bash
+        run: |
+          set -euo pipefail
+          image="zugfolge-api-ci:${GITHUB_SHA}"
+          docker run --rm --network none \
+            --env ZUGFOLGE_RUNTIME_NATIVE_PATH=/app/native/zugfolge-runtime.node \
+            --entrypoint node "$image" packages/runtime-native/smoke/native-smoke.mjs
+          docker run --rm --network none \
+            --env ZUGFOLGE_PLANNING_RUNTIME_NATIVE_PATH=/app/native/zugfolge-planning-runtime.node \
+            --entrypoint node "$image" packages/planning-runtime-native/smoke/native-planning-smoke.mjs
 
   guards:
     # ASCII-only: GitHub branch protection compares this check name byte-for-byte.

@@ -1,0 +1,151 @@
+{
+  "schemaVersion": "operational-shared-world-diagnostic-evidence/v1",
+  "date": "2026-09-05",
+  "classification": "developer-host-diagnostic-not-M9-acceptance",
+  "environment": {
+    "cpu": "Intel Core i5-1135G7 @ 2.40GHz",
+    "cores": 4,
+    "logicalProcessors": 8,
+    "physicalMemoryBytes": 8393850880,
+    "os": "Windows 11 Home Insider Preview 10.0.26220",
+    "rust": "1.94.1",
+    "target": "x86_64-pc-windows-gnu",
+    "linker": "LLVM-mingw 20260826 UCRT",
+    "profile": "release",
+    "benchmarkThreads": 1
+  },
+  "fixture": {
+    "schemaVersion": "operational-shared-world-benchmark/v1",
+    "source": "crates/zugfolge-sim/examples/operational_shared_load.rs",
+    "sourceSha256": "11c77a0b41a3f3fa1baa542da3c262fd9a0ce5a4fb5a9ae79cb09bf5176fd147",
+    "simulatedMs": 75000,
+    "formationLengthMm": 120000,
+    "routeLengthMm": 1000000,
+    "speedLimitMmps": 20000,
+    "competingRequestsPercent": 10
+  },
+  "baseline": {
+    "description": "PR-Arbeitsstand vor inkrementeller Ressourcenpflege und optimierter Vollinvariante, mit derselben Bewegungsregel",
+    "binarySha256": "f20b73680715f04dd10132a7212c6cf8edee2b350925b2ea8669b3e67df0e9a2",
+    "measurements": [
+      {
+        "activeTrains": 250,
+        "catchUpRatioMilli": 39729,
+        "eventfulRevisionP95Ns": 180126500,
+        "eventfulRevisionP99Ns": 180126500,
+        "events": 1500,
+        "eventsPerSecond": 3609,
+        "fullInvariantNs": 1336505500,
+        "movementNs": 415585000,
+        "schemaVersion": "operational-shared-world-benchmark/v1",
+        "serializedDynamicBytes": 350904,
+        "setupMs": 88,
+        "simulatedMs": 75000,
+        "stateCommitNs": 135657800,
+        "stateHash": "f5f53ea23dfe06d8a58cd1d1646e4fa9e14f67b80a63c091b8bdbac0fa7fbf47",
+        "waitingCompetitors": 25,
+        "peakWorkingSetBytes": 9539584
+      },
+      {
+        "activeTrains": 1000,
+        "catchUpRatioMilli": 2151,
+        "eventfulRevisionP95Ns": 5030101200,
+        "eventfulRevisionP99Ns": 5030101200,
+        "events": 6000,
+        "eventsPerSecond": 618,
+        "fullInvariantNs": 24535243500,
+        "movementNs": 9694549600,
+        "schemaVersion": "operational-shared-world-benchmark/v1",
+        "serializedDynamicBytes": 1407281,
+        "setupMs": 1556,
+        "simulatedMs": 75000,
+        "stateCommitNs": 633123300,
+        "stateHash": "9c7ab9e14c989c0f974d8ba03d20ea14c1454c3a533b41f68a37db3e8d0ac535",
+        "waitingCompetitors": 100,
+        "peakWorkingSetBytes": 21639168
+      }
+    ],
+    "incomplete5000": {
+      "schemaVersion": "operational-shared-world-benchmark-timeout/v1",
+      "activeTrains": 5000,
+      "wallElapsedSeconds": 1072.1244495,
+      "cpuSeconds": 966.421875,
+      "peakWorkingSetBytes": 82067456,
+      "status": "terminated-after-parent-time-budget",
+      "stateHash": null
+    }
+  },
+  "optimized": {
+    "description": "Inkrementelle betroffene Ressourcenpflege und ressourcenindizierte Vollinvariante",
+    "binarySha256": "1d941df1762af1ccb0f857b6d19fe527de6818b65c647a580f9ae641ace5aebf",
+    "timeoutSecondsPerSize": 180,
+    "measurements": [
+      {
+        "activeTrains": 250,
+        "catchUpRatioMilli": 203968,
+        "eventfulRevisionP95Ns": 154089900,
+        "eventfulRevisionP99Ns": 154089900,
+        "events": 1500,
+        "eventsPerSecond": 7474,
+        "fullInvariantNs": 59711700,
+        "movementNs": 200672100,
+        "schemaVersion": "operational-shared-world-benchmark/v1",
+        "serializedDynamicBytes": 350904,
+        "setupMs": 89,
+        "simulatedMs": 75000,
+        "stateCommitNs": 107319200,
+        "stateHash": "f5f53ea23dfe06d8a58cd1d1646e4fa9e14f67b80a63c091b8bdbac0fa7fbf47",
+        "waitingCompetitors": 25,
+        "peakWorkingSetBytes": 9715712
+      },
+      {
+        "activeTrains": 1000,
+        "catchUpRatioMilli": 19244,
+        "eventfulRevisionP95Ns": 2937920400,
+        "eventfulRevisionP99Ns": 2937920400,
+        "events": 6000,
+        "eventsPerSecond": 1893,
+        "fullInvariantNs": 268729000,
+        "movementNs": 3168397900,
+        "schemaVersion": "operational-shared-world-benchmark/v1",
+        "serializedDynamicBytes": 1407281,
+        "setupMs": 1377,
+        "simulatedMs": 75000,
+        "stateCommitNs": 460174600,
+        "stateHash": "9c7ab9e14c989c0f974d8ba03d20ea14c1454c3a533b41f68a37db3e8d0ac535",
+        "waitingCompetitors": 100,
+        "peakWorkingSetBytes": 21438464
+      },
+      {
+        "activeTrains": 5000,
+        "catchUpRatioMilli": 702,
+        "eventfulRevisionP95Ns": 99080520800,
+        "eventfulRevisionP99Ns": 99080520800,
+        "events": 30000,
+        "eventsPerSecond": 293,
+        "fullInvariantNs": 1691445000,
+        "movementNs": 102317619300,
+        "schemaVersion": "operational-shared-world-benchmark/v1",
+        "serializedDynamicBytes": 7104481,
+        "setupMs": 49909,
+        "simulatedMs": 75000,
+        "stateCommitNs": 2735025000,
+        "stateHash": "697fc98c840a198fcdf66a7e7ce27c37fa49795043fb07636f732b284e78dee6",
+        "waitingCompetitors": 500,
+        "peakWorkingSetBytes": 87289856
+      }
+    ]
+  },
+  "limits": [
+    "Baseline lief teilweise parallel zu Rust-Builds; Zeitverhaeltnisse sind keine kontrollierte Speedup-Abnahme.",
+    "Optimierter Lauf ohne parallele Cargo-Builds; allgemeine Desktop-/OS-Last nicht isoliert.",
+    "PeakWorkingSet ist der im 200ms-Messraster gelesene Windows-Prozesszaehler, keine Linux-cgroup-RSS-Abnahme.",
+    "p95/p99 betreffen eventhaltige advance_to-Revisionen, keine einzelne Queue-/DB-/Clientlatenz.",
+    "Kollisionspruefung und Lock-/Signalpflege sind noch gemeinsam in movementNs enthalten.",
+    "Keine PostgreSQL-Persistenz, kein Stream, keine Netzwerkclients und kein zehnminuetiger Zielhardwarelauf."
+  ],
+  "matchedStateHashSizes": [
+    250,
+    1000
+  ]
+}

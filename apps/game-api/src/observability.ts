@@ -96,6 +96,10 @@ export class ApiObservability {
       this.#requests.delete(request);
     });
 
+  }
+
+  /** Ausschliesslich auf dem separaten, intern erreichbaren Monitoring-Listener. */
+  registerMetrics(app: FastifyInstance): void {
     app.get("/metrics", async (_request, reply) => reply
       .type("text/plain; version=0.0.4; charset=utf-8")
       .send(this.renderPrometheus()));
@@ -177,6 +181,7 @@ export class AlphaOperationsMetrics implements PrometheusMetricSource {
       lines.push(`zugfolge_alpha_odoo_projection_pending{${world}} ${snapshot.bridges.odooProjection.pending}`);
       lines.push(`zugfolge_alpha_odoo_projection_failed{${world}} ${snapshot.bridges.odooProjection.failed}`);
       for (const [kind, values] of Object.entries(snapshot.market).sort(([left], [right]) => left.localeCompare(right))) {
+        if (typeof values !== "object" || values === null) continue;
         const entries = Object.entries(values).sort(([left], [right]) => left.localeCompare(right));
         if (entries.length === 0) lines.push(`zugfolge_alpha_market_items{${world},kind="${escapeLabel(kind)}",state="none"} 0`);
         for (const [state, count] of entries) {

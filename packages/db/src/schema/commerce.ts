@@ -215,6 +215,17 @@ export const odooReconciliationTasks = pgTable(
 );
 
 export type CommerceEntitlement = typeof commerceEntitlements.$inferSelect;
+/** Restore-Befunde ohne bestaetigte Game-Welt/Outbox-Zuordnung; niemals Autoritaet. */
+export const odooProjectionQuarantine = pgTable("odoo_projection_quarantine", {
+  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  worldId: text("world_id").notNull(),
+  messageId: text("message_id").notNull(),
+  correlationId: text("correlation_id").notNull(),
+  observedHash: text("observed_hash"),
+  issueKind: text("issue_kind").notNull().default("unknown"),
+  status: text("status", { enum: ["open", "resolved"] }).notNull().default("open"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [uniqueIndex("odoo_projection_quarantine_world_message_issue_idx").on(table.worldId, table.messageId, table.issueKind)]);
 export type OdooProjectionOutboxRow = typeof odooProjectionOutbox.$inferSelect;
 export type OdooCommandQueueRow = typeof odooCommandQueue.$inferSelect;
 export type GameAdminRequest = typeof gameAdminRequests.$inferSelect;

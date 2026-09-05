@@ -354,7 +354,7 @@ async function appendEvents(
       .map(({ id }) => id)
       .sort(compareUtf8)
     : [];
-  const adapted = adaptOperationalDomainEvents(events, contexts, operatorIds, regionId);
+  const adapted = adaptOperationalDomainEvents(events, contexts, operatorIds, regionId, worldId);
   const rows = events.map((event, index) => ({
     worldId,
     sequence: firstSequence + index,
