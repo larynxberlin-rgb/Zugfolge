@@ -27,7 +27,7 @@ const nativeIt = process.env["ZUGFOLGE_RUNTIME_NATIVE_PATH"] !== undefined
 const infrastructure: PlanningInfrastructureRelease = {
   schemaVersion: "planning.infrastructure-release/v1", worldId: WORLD, releaseId: "native-spfv-infra",
   sourceId: "explicit-integration-fixture", corridorId: "a-c", corridorName: "Testkorridor",
-  stations: ["a", "b", "c"].map((id, index) => ({ numericId: index + 1, id, code: id.toUpperCase(), name: `Bahnhof ${id}`,
+  stations: ["a", "b", "c"].map((id, index) => ({ numericId: index + 1, id, code: `T${id.toUpperCase()}`, name: `Bahnhof ${id}`,
     distanceMm: index * 1_000_000, latitudeE7: 510_000_000, longitudeE7: 120_000_000,
     stationTrackNumericId: index + 10, stationTrackLengthMm: 150_000, stationMaximumSpeedKph: 80 })),
   segments: [["a", "b"], ["b", "c"]].map(([from, to], index) => ({ edgeNumericId: index + 1, trackNumericId: index + 1,
