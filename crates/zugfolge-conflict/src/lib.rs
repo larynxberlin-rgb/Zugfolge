@@ -79,14 +79,16 @@ pub use error::ConflictError;
 pub use framework::{FrameworkAgreement, FrameworkAgreementId, FrameworkCapacityLedger};
 pub use infrastructure::{Infrastructure, InfrastructureBuilder, ResourceSpan};
 pub use itinerary::{CheckedLeg, Itinerary, ItineraryLeg};
-pub use profile::{OccupationProfile, derive_occupation_profile, resources_of};
+pub use profile::{
+    OccupationProfile, RelativeStationCall, derive_occupation_profile, resources_of,
+};
 pub use reservation::{
     CapacityConflict, CapacityLedger, ResourceReservation, ResourceReservationId,
 };
 pub use resource::{ConflictResource, ResourceExclusions};
 pub use service::{
-    OperatingDays, RunReference, SECONDS_PER_DAY, ServicePattern, TrainCategory, TrainNumber,
-    TrainRun, Weekday,
+    OperatingDays, RunReference, SECONDS_PER_DAY, ServicePattern, ServiceWindow, TrainCategory,
+    TrainNumber, TrainRun, Weekday,
 };
 pub use signalling::{InterlockingKind, SignallingModel, SignallingParameters};
 pub use timetable::{DEFAULT_HORIZON_DAYS, NetworkTimetable, TimetableCommand};

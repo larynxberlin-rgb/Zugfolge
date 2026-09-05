@@ -13,8 +13,9 @@ use std::fmt::Write as _;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use zugfolge_conflict::{
-    ConflictResource, Infrastructure, OccupationLedger, OperatingDays, TrainCategory, TrainNumber,
-    TrainRun, derive_occupation_profile,
+    BlockingTime, ConflictResource, Infrastructure, OccupationLedger, OperatingDays,
+    SECONDS_PER_DAY, ServiceWindow, TrainCategory, TrainNumber, TrainRun,
+    derive_occupation_profile,
 };
 use zugfolge_determinism::{SimTime, WorldSeed};
 use zugfolge_infra::{
@@ -22,7 +23,7 @@ use zugfolge_infra::{
     OperatingGraph, OperatingPoint, OperatingPointCode, OperatingPointId, OperatingPointKind,
     Platform, PlatformId, ProtectionSystem, Provenance, Signal, SourceId, Speed, SpeedCategory,
     SpeedLimit, Track, TrackDirection, TrackEdge, TrackEdgeId, TrackId, TrackKind, TrackOwner,
-    TractionType, TrainCharacteristics, TrainCharacteristicsId, TrainProtection,
+    TractionType, TrainCharacteristics, TrainCharacteristicsId, TrainProtection, TravelDirection,
     derive_block_sections,
 };
 use zugfolge_planner::{
@@ -203,6 +204,9 @@ pub struct CoordinateRequestInput {
     pub destination_station_id: String,
     /// Beantragte Abfahrt seit Weltepoche.
     pub desired_departure_s: i64,
+    /// Optionales absolutes Abfahrtsfenster; ohne Feld gilt der historische Tagesvertrag.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub service_window: Option<CoordinateServiceWindowInput>,
     /// Verkehrstage: daily, workdays oder weekend.
     pub operating_days: String,
     /// Beantragte Zwischenhalte.
@@ -222,6 +226,28 @@ pub struct CoordinateRequestInput {
     /// Vom Game-Server aus dem gepinnten Release aufgeloeste Grenzfenster.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub boundary_windows: Vec<CoordinateBoundaryWindowInput>,
+}
+
+/// Absolute Abfahrtsgültigkeit in Weltsekunden, halboffen.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct CoordinateServiceWindowInput {
+    /// Erste zulässige Abfahrt einschließlich.
+    pub valid_from_s: i64,
+    /// Betriebsende ausschließlich.
+    pub valid_until_s: i64,
+}
+
+impl CoordinateServiceWindowInput {
+    fn window(&self) -> Result<ServiceWindow, PlanningRuntimeError> {
+        safe_non_negative(self.valid_from_s, "serviceWindow.validFromS")?;
+        safe_non_negative(self.valid_until_s, "serviceWindow.validUntilS")?;
+        ServiceWindow::new(
+            SimTime::from_seconds(self.valid_from_s),
+            SimTime::from_seconds(self.valid_until_s),
+        )
+        .map_err(map_domain)
+    }
 }
 
 /// Ein unveraenderliches Ein- oder Ausfahrfenster eines BoundaryPortal.
@@ -270,6 +296,15 @@ pub struct PlanningCoordinateInput {
     pub segments: Vec<CoordinateSegmentInput>,
     /// Gemeinsamer Antragsbestand des Fensters.
     pub requests: Vec<CoordinateRequestInput>,
+    /// Ausschließlich vom Worker geladener vorheriger Commit; kein Spielereingang.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub previous_state: Option<PlanningRuntimeState>,
+    /// Serverseitig autorisierte, noch nicht begonnene Fahrten einer Linienänderung.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub replace_train_ids: Vec<String>,
+    /// Explizite autoritative Weltzeit der Linienänderung.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub effective_from_s: Option<i64>,
 }
 
 /// Das von `game-api` eingereihte, ausschliesslich serverabgeleitete Kommando.
@@ -418,6 +453,29 @@ struct StoredAlternative {
     replacement_train: TrainProjection,
     replacement_occupations: Vec<OccupationProjection>,
     resolved_conflict_ids: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    reservation: Option<StoredReservation>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct StoredReservation {
+    number: u32,
+    train: TrainProjection,
+    occupations: Vec<OccupationProjection>,
+    operating_days: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    service_window: Option<CoordinateServiceWindowInput>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    passenger_stops: Vec<PassengerStopProjection>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct PassengerStopProjection {
+    station_id: String,
+    arrival_s: i64,
+    departure_s: i64,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -437,6 +495,10 @@ pub struct PlanningRuntimeState {
     projection: PlanningProjection,
     alternatives: BTreeMap<String, StoredAlternative>,
     processed_commands: BTreeMap<String, ProcessedCommand>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    infrastructure_hash: Option<String>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    reservations: BTreeMap<String, StoredReservation>,
 }
 
 impl PlanningRuntimeState {
@@ -630,9 +692,14 @@ fn materialize(input: &PlanningCoordinateInput) -> Result<MaterializedRun, Plann
     if input.stations.len() < 2 {
         return Err(invalid("mindestens zwei Betriebsstellen sind erforderlich"));
     }
-    if input.segments.is_empty() || input.requests.len() < 2 {
+    let minimum = if input.schema_version == COORDINATE_SCHEMA_V1 {
+        2
+    } else {
+        1
+    };
+    if input.segments.is_empty() || input.requests.len() < minimum || input.requests.len() > 256 {
         return Err(invalid(
-            "ein PlanningRun braucht mindestens ein Segment und zwei konkurrierende Antraege",
+            "ein PlanningRun braucht ein Segment und 1 bis 256 Anträge (Legacy-v1 mindestens zwei)",
         ));
     }
 
@@ -867,7 +934,7 @@ fn materialize(input: &PlanningCoordinateInput) -> Result<MaterializedRun, Plann
     let mut request_ids = BTreeSet::new();
     let mut train_ids = BTreeSet::new();
     let mut train_numbers = BTreeSet::new();
-    let mut train_characteristic_ids = BTreeSet::new();
+    let mut train_characteristic_ids = BTreeMap::new();
     let mut requests = Vec::with_capacity(input.requests.len());
     let mut sorted_requests = input.requests.clone();
     sorted_requests.sort_by_key(|request| request.request_numeric_id);
@@ -876,10 +943,18 @@ fn materialize(input: &PlanningCoordinateInput) -> Result<MaterializedRun, Plann
         safe_non_negative(request.desired_departure_s, "requests[].desiredDepartureS")?;
         if !request_ids.insert(request.request_numeric_id)
             || !train_ids.insert(request.train_id.clone())
-            || !train_characteristic_ids.insert(request.train.numeric_id)
         {
             return Err(invalid(
                 "Antrags-, Zuglauf- oder Zugcharakteristikkennung ist doppelt",
+            ));
+        }
+        let characteristics_hash = sha256_json(&request.train)?;
+        if train_characteristic_ids
+            .insert(request.train.numeric_id, characteristics_hash.clone())
+            .is_some_and(|previous| previous != characteristics_hash)
+        {
+            return Err(invalid(
+                "Zugcharakteristikkennung ist mit widersprüchlichen Fakten belegt",
             ));
         }
         let category = category(&request.train_category)?;
@@ -963,7 +1038,7 @@ fn materialize(input: &PlanningCoordinateInput) -> Result<MaterializedRun, Plann
                 .map_err(map_domain)
             })
             .collect::<Result<Vec<_>, _>>()?;
-        let path_request = PathRequest::new(
+        let mut path_request = PathRequest::new(
             PathRequestId::new(request.request_numeric_id),
             number,
             train,
@@ -984,6 +1059,14 @@ fn materialize(input: &PlanningCoordinateInput) -> Result<MaterializedRun, Plann
         .map_err(map_domain)?
         .with_boundary_windows(boundary_windows)
         .map_err(map_domain)?;
+        if let Some(window) = &request.service_window {
+            if input.schema_version != COORDINATE_SCHEMA {
+                return Err(invalid("serviceWindow verlangt planning-coordinate/v2"));
+            }
+            path_request = path_request
+                .with_service_window(window.window()?)
+                .map_err(map_domain)?;
+        }
         requests.push(MaterializedRequest {
             input: request,
             request: path_request,
@@ -1128,6 +1211,54 @@ fn project_train(
     })
 }
 
+fn passenger_stops(
+    input: &CoordinateRequestInput,
+    candidate: &zugfolge_planner::PathCandidate,
+    materialized: &MaterializedRun,
+) -> Result<Vec<PassengerStopProjection>, PlanningRuntimeError> {
+    candidate
+        .profile()
+        .station_calls()
+        .iter()
+        .filter_map(|call| {
+            let Some(station_id) = materialized.station_external_by_numeric.get(&call.station)
+            else {
+                return Some(Err(invalid(
+                    "Verkehrshalt verweist auf unbekannte Betriebsstelle",
+                )));
+            };
+            if station_id != &input.origin_station_id
+                && station_id != &input.destination_station_id
+                && !input
+                    .stops
+                    .iter()
+                    .any(|stop| &stop.station_id == station_id)
+            {
+                return None;
+            }
+            Some((|| {
+                let arrival_s = candidate
+                    .first_departure()
+                    .seconds()
+                    .checked_add(call.arrival_s)
+                    .ok_or_else(|| invalid("Überlauf bei Verkehrshaltankunft"))?;
+                let departure_s = candidate
+                    .first_departure()
+                    .seconds()
+                    .checked_add(call.departure_s)
+                    .ok_or_else(|| invalid("Überlauf bei Verkehrshaltabfahrt"))?;
+                safe_non_negative(arrival_s, "passengerStops[].arrivalS")?;
+                safe_non_negative(departure_s, "passengerStops[].departureS")?;
+                Ok(PassengerStopProjection {
+                    station_id: station_id.clone(),
+                    arrival_s,
+                    departure_s,
+                })
+            })())
+        })
+        .collect()
+}
+
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct AlternativeIdentity<'a> {
@@ -1205,17 +1336,50 @@ fn build_projection(
     let mut occupations = Vec::new();
     let mut desired_runs = BTreeMap::new();
     let mut train_id_by_number = BTreeMap::new();
+    if let Some(previous) = &input.previous_state {
+        for reservation in previous.reservations.values() {
+            let number = TrainNumber::new(
+                TrainCategory::of_number(reservation.number)
+                    .ok_or_else(|| invalid("Reservierung enthält ungültige Zugnummer"))?,
+                reservation.number,
+            )
+            .map_err(map_domain)?;
+            train_id_by_number.insert(number, reservation.train.id.clone());
+            trains.push(reservation.train.clone());
+            occupations.extend(reservation.occupations.clone());
+        }
+    }
     for request in &materialized.requests {
         let run = desired_run(&materialized.infrastructure, &request.request, options)?;
+        let projected_run = if input.schema_version == COORDINATE_SCHEMA {
+            match outcome.outcome(request.request.id()) {
+                Some(RequestOutcome::Planned(planned))
+                    if planned.decision() == PathDecision::Granted =>
+                {
+                    let candidate = planned
+                        .candidates()
+                        .first()
+                        .ok_or_else(|| invalid("Zuteilung ohne Kandidat"))?;
+                    TrainRun::new(
+                        request.request.number(),
+                        candidate.first_departure(),
+                        candidate.profile(),
+                    )
+                }
+                _ => run.clone(),
+            }
+        } else {
+            run.clone()
+        };
         trains.push(project_train(
             &request.input,
             &request.request,
-            &run,
+            &projected_run,
             materialized,
         )?);
         occupations.extend(project_occupations(
             &request.input.train_id,
-            &run,
+            &projected_run,
             materialized,
         )?);
         train_id_by_number.insert(request.request.number(), request.input.train_id.clone());
@@ -1309,6 +1473,7 @@ fn build_projection(
             )?;
             let replacement_occupations =
                 project_occupations(&request.input.train_id, &replacement_run, materialized)?;
+            let replacement_stops = passenger_stops(&request.input, candidate, materialized)?;
             let explanation = format!(
                 "PlanningRun {} bietet die gepruefte Zeitlage an: {}",
                 input.run_id,
@@ -1331,6 +1496,16 @@ fn build_projection(
                     conflict_id: first_conflict_id.clone(),
                     train_id: request.input.train_id.clone(),
                     departure_shift_s: candidate.deviation().shift_s(),
+                    reservation: (input.schema_version == COORDINATE_SCHEMA).then(|| {
+                        StoredReservation {
+                            number: request.request.number().value(),
+                            train: replacement_train.clone(),
+                            occupations: replacement_occupations.clone(),
+                            operating_days: request.input.operating_days.clone(),
+                            service_window: request.input.service_window.clone(),
+                            passenger_stops: replacement_stops,
+                        }
+                    }),
                     replacement_train,
                     replacement_occupations,
                     resolved_conflict_ids: projected_ids,
@@ -1381,10 +1556,310 @@ fn result(
     })
 }
 
+fn infrastructure_hash(input: &PlanningCoordinateInput) -> Result<String, PlanningRuntimeError> {
+    let mut stations = input.stations.clone();
+    stations.sort_by(|left, right| left.id.cmp(&right.id));
+    let mut segments = input.segments.clone();
+    segments.sort_by(|left, right| left.id.cmp(&right.id));
+    sha256_json(&(&input.source_id, &input.corridor_id, stations, segments))
+}
+
+const RESERVATION_PHASES: [&str; 6] = [
+    "route-setting",
+    "signal-sighting",
+    "approach",
+    "running",
+    "clearing",
+    "route-release",
+];
+
+/// Reconstitutes exact native intervals, never an estimate of the reserved route.
+fn reservation_steps(
+    reservation: &StoredReservation,
+    materialized: &MaterializedRun,
+    shift_s: i64,
+) -> Result<Vec<BlockingTime>, PlanningRuntimeError> {
+    let direction = match reservation.train.direction.as_str() {
+        "with-chainage" => TravelDirection::WithChainage,
+        "against-chainage" => TravelDirection::AgainstChainage,
+        _ => return Err(invalid("Reservierte Fahrtrichtung ist ungültig")),
+    };
+    let mut groups: BTreeMap<(&str, &str), [Vec<&OccupationProjection>; 6]> = BTreeMap::new();
+    for occupation in &reservation.occupations {
+        if occupation.train_id != reservation.train.id {
+            return Err(invalid("Reservierung enthält fremde Belegung"));
+        }
+        let phase = RESERVATION_PHASES
+            .iter()
+            .position(|phase| *phase == occupation.phase)
+            .ok_or_else(|| invalid("Reservierung enthält unbekannte Sperrzeitphase"))?;
+        safe_non_negative(occupation.start_s, "reservation.startS")?;
+        safe_non_negative(occupation.end_s, "reservation.endS")?;
+        if occupation.end_s < occupation.start_s {
+            return Err(invalid("Reservierung enthält rückläufige Belegung"));
+        }
+        groups
+            .entry((&occupation.resource.id, &occupation.governing_station_id))
+            .or_default()[phase]
+            .push(occupation);
+    }
+    let mut steps = Vec::new();
+    for ((resource_id, station_id), mut phases) in groups {
+        let count = phases[0].len();
+        if count == 0 || phases.iter().any(|items| items.len() != count) {
+            return Err(invalid(
+                "Reservierung enthält kein vollständiges Sechsphasenprofil",
+            ));
+        }
+        for items in &mut phases {
+            items.sort_by_key(|occupation| (occupation.start_s, occupation.end_s));
+        }
+        let resource = materialized
+            .resource_locations
+            .iter()
+            .find(|(_, location)| location.projection.id == resource_id)
+            .map(|(resource, _)| *resource)
+            .ok_or_else(|| {
+                invalid("Reservierte Ressource fehlt im gebundenen Infrastrukturrelease")
+            })?;
+        let point = materialized
+            .station_by_external
+            .get(station_id)
+            .ok_or_else(|| invalid("Reservierte Betriebsstelle fehlt im Release"))?;
+        for (index, first_phase) in phases[0].iter().enumerate() {
+            for phase in 1..6 {
+                if phases[phase - 1][index].end_s != phases[phase][index].start_s {
+                    return Err(invalid("Reservierte Sperrzeitphasen sind nicht lückenlos"));
+                }
+            }
+            let start = first_phase
+                .start_s
+                .checked_add(shift_s)
+                .ok_or_else(|| invalid("Reservierungszeit läuft über"))?;
+            let end = phases[5][index]
+                .end_s
+                .checked_add(shift_s)
+                .ok_or_else(|| invalid("Reservierungszeit läuft über"))?;
+            if start == end {
+                continue;
+            }
+            let step = BlockingTime::reserved_interval(
+                resource,
+                direction,
+                OperatingPointId::new(point.numeric_id),
+                SimTime::from_seconds(start),
+                SimTime::from_seconds(end),
+            )
+            .ok_or_else(|| invalid("Reserviertes Intervall ist ungültig"))?;
+            steps.push(step);
+        }
+    }
+    if steps.is_empty() {
+        return Err(invalid("Reservierte Fahrt besitzt keine Belegungen"));
+    }
+    Ok(steps)
+}
+
+fn restore_baseline(
+    input: &PlanningCoordinateInput,
+    materialized: &MaterializedRun,
+    infrastructure_hash: &str,
+) -> Result<OccupationLedger, PlanningRuntimeError> {
+    let mut ledger = OccupationLedger::new(materialized.infrastructure.exclusions().clone());
+    let Some(previous) = &input.previous_state else {
+        return Ok(ledger);
+    };
+    if input.schema_version != COORDINATE_SCHEMA
+        || previous.schema_version != STATE_SCHEMA
+        || previous.world_id != input.world_id
+        || previous.projection.world_id != input.world_id
+        || Some(previous.projection_revision) != input.expected_projection_revision
+        || previous.projection.projection_revision != previous.projection_revision
+    {
+        return Err(invalid(
+            "Ausgangszustand gehört nicht zur Welt, Revision oder zum Koordinierungsvertrag",
+        ));
+    }
+    if previous.infrastructure_hash.as_deref() != Some(infrastructure_hash) {
+        return Err(invalid(
+            "Ausgangszustand besitzt keinen exakt gebundenen Infrastrukturbeleg; vollständige Neukoodinierung erforderlich",
+        ));
+    }
+    let earliest = input
+        .requests
+        .iter()
+        .map(|request| {
+            request
+                .desired_departure_s
+                .saturating_sub(request.earlier_s)
+        })
+        .min()
+        .unwrap_or(0);
+    let latest = input
+        .requests
+        .iter()
+        .map(|request| request.desired_departure_s.saturating_add(request.later_s))
+        .max()
+        .unwrap_or(0);
+    if latest.saturating_sub(earliest) > 56 * SECONDS_PER_DAY {
+        return Err(invalid(
+            "Ein Planungsbatch darf höchstens acht Wochen umfassen",
+        ));
+    }
+    let last_day = latest
+        .div_euclid(SECONDS_PER_DAY)
+        .saturating_add(PlannerOptions::default().horizon_days());
+    let mut numbers = BTreeSet::new();
+    for (train_id, reservation) in &previous.reservations {
+        if train_id != &reservation.train.id
+            || input.requests.iter().any(|request| {
+                request.train_id == *train_id || request.train_number == reservation.number
+            })
+            || !numbers.insert(reservation.number)
+        {
+            return Err(invalid(
+                "Ein neuer Antrag ersetzt oder dupliziert eine bestehende Reservierung",
+            ));
+        }
+        if !previous.projection.trains.contains(&reservation.train)
+            || previous
+                .projection
+                .occupations
+                .iter()
+                .filter(|occupation| occupation.train_id == *train_id)
+                .cloned()
+                .collect::<Vec<_>>()
+                != reservation.occupations
+        {
+            return Err(invalid(
+                "Reservierung und bestätigte Projektion widersprechen sich",
+            ));
+        }
+        let days = days(&reservation.operating_days)?;
+        let window = reservation
+            .service_window
+            .as_ref()
+            .map(CoordinateServiceWindowInput::window)
+            .transpose()?;
+        let departure = reservation
+            .train
+            .calls
+            .first()
+            .ok_or_else(|| invalid("Reservierte Abfahrt fehlt"))?
+            .time_s;
+        safe_non_negative(departure, "reservation.departureS")?;
+        if window.is_some_and(|window| !window.contains(SimTime::from_seconds(departure))) {
+            return Err(invalid(
+                "Reservierte Abfahrt liegt außerhalb ihrer Gültigkeit",
+            ));
+        }
+        let number = TrainNumber::new(
+            TrainCategory::of_number(reservation.number)
+                .ok_or_else(|| invalid("Reservierte Zugnummer ist ungültig"))?,
+            reservation.number,
+        )
+        .map_err(map_domain)?;
+        let longest = reservation
+            .occupations
+            .iter()
+            .map(|occupation| occupation.end_s.saturating_sub(departure))
+            .max()
+            .unwrap_or(0);
+        let first_day = earliest
+            .saturating_sub(longest)
+            .div_euclid(SECONDS_PER_DAY)
+            .max(0);
+        for day in first_day..=last_day {
+            let at_s = day
+                .checked_mul(SECONDS_PER_DAY)
+                .and_then(|seconds| seconds.checked_add(departure.rem_euclid(SECONDS_PER_DAY)))
+                .ok_or_else(|| invalid("Reservierte Abfahrt läuft über"))?;
+            let at = SimTime::from_seconds(at_s);
+            if !days.contains_day(day) || window.is_some_and(|window| !window.contains(at)) {
+                continue;
+            }
+            let run = TrainRun::from_blocking_times(
+                number,
+                at,
+                reservation_steps(reservation, materialized, at_s - departure)?,
+            );
+            ledger
+                .try_insert(&run)
+                .map_err(|_| invalid("Bestehende Reservierungen kollidieren im Ausgangszustand"))?;
+        }
+    }
+    Ok(ledger)
+}
+
+fn replace_future_reservations(
+    input: &mut PlanningCoordinateInput,
+) -> Result<(), PlanningRuntimeError> {
+    if input.replace_train_ids.is_empty() {
+        if input.effective_from_s.is_some() {
+            return Err(invalid("Änderungszeit ohne betroffene Fahrten"));
+        }
+        return Ok(());
+    }
+    if input.schema_version != COORDINATE_SCHEMA || input.replace_train_ids.len() > 256 {
+        return Err(invalid(
+            "Linienänderung verlangt v2 und höchstens 256 Fahrten",
+        ));
+    }
+    let effective_from = input
+        .effective_from_s
+        .ok_or_else(|| invalid("Autoritative Änderungszeit fehlt"))?;
+    safe_non_negative(effective_from, "effectiveFromS")?;
+    let ids: BTreeSet<_> = input.replace_train_ids.iter().cloned().collect();
+    if ids.len() != input.replace_train_ids.len() {
+        return Err(invalid("Linienänderung nennt eine Fahrt doppelt"));
+    }
+    let previous = input
+        .previous_state
+        .as_mut()
+        .ok_or_else(|| invalid("Linienänderung besitzt keinen Ausgangszustand"))?;
+    if previous.world_id != input.world_id
+        || Some(previous.projection_revision) != input.expected_projection_revision
+    {
+        return Err(invalid(
+            "Linienänderung verletzt Welt- oder Revisionsbindung",
+        ));
+    }
+    for id in &ids {
+        let reservation = previous.reservations.get(id).ok_or_else(|| {
+            invalid("Die zu ändernde Fahrt besitzt keine bestehende Reservierung")
+        })?;
+        let window = reservation.service_window.as_ref().ok_or_else(|| invalid("Unbefristete Altangebote lassen sich nicht als zukünftige Einzelfahrt ersetzen"))?.window()?;
+        if window.valid_from().seconds() <= effective_from {
+            return Err(invalid(
+                "Die zu ändernde Fahrt hat ihr Gültigkeitsfenster bereits begonnen",
+            ));
+        }
+    }
+    previous.reservations.retain(|id, _| !ids.contains(id));
+    previous
+        .projection
+        .trains
+        .retain(|train| !ids.contains(&train.id));
+    previous
+        .projection
+        .occupations
+        .retain(|occupation| !ids.contains(&occupation.train_id));
+    previous
+        .projection
+        .conflicts
+        .retain(|conflict| !conflict.train_ids.iter().any(|id| ids.contains(id)));
+    previous
+        .alternatives
+        .retain(|_, alternative| !ids.contains(&alternative.train_id));
+    Ok(())
+}
+
 fn coordinate(
-    input: PlanningCoordinateInput,
+    mut input: PlanningCoordinateInput,
 ) -> Result<PlanningRuntimeResult, PlanningRuntimeError> {
+    replace_future_reservations(&mut input)?;
     let materialized = materialize(&input)?;
+    let infrastructure_hash = infrastructure_hash(&input)?;
     let seed_world = input
         .seed_world
         .parse::<u64>()
@@ -1395,7 +1870,7 @@ fn coordinate(
         .map(|request| request.request.clone())
         .collect::<Vec<_>>();
     let planner = TrainPathPlanner::new(&materialized.infrastructure);
-    let baseline = OccupationLedger::new(materialized.infrastructure.exclusions().clone());
+    let baseline = restore_baseline(&input, &materialized, &infrastructure_hash)?;
     let mut run = PlanningRun::new(
         planner,
         WorldSeed::new(seed_world, input.seed_period),
@@ -1405,6 +1880,11 @@ fn coordinate(
     .map_err(map_domain)?;
     run.coordinate().map_err(map_domain)?;
     let outcome = run.finalize().map_err(map_domain)?;
+    if !input.replace_train_ids.is_empty() && materialized.requests.iter().any(|request| {
+        !matches!(outcome.outcome(request.request.id()), Some(RequestOutcome::Planned(planned)) if planned.decision() == PathDecision::Granted)
+    }) {
+        return Err(PlanningRuntimeError::new("replacement_conflict", "Linienänderung ist nicht vollständig zuteilbar; bisherige Reservierungen bleiben erhalten"));
+    }
     let revision = input
         .expected_projection_revision
         .map_or(1, |current| current.saturating_add(1));
@@ -1415,6 +1895,49 @@ fn coordinate(
     }
     let (mut projection, alternatives) =
         build_projection(&input, &materialized, outcome, revision)?;
+    let mut reservations = input
+        .previous_state
+        .as_ref()
+        .map_or_else(BTreeMap::new, |previous| previous.reservations.clone());
+    if input.schema_version == COORDINATE_SCHEMA {
+        for request in &materialized.requests {
+            if let Some(RequestOutcome::Planned(planned)) = outcome.outcome(request.request.id()) {
+                if planned.decision() == PathDecision::Granted {
+                    let candidate = planned
+                        .candidates()
+                        .first()
+                        .ok_or_else(|| invalid("Zuteilung ohne Kandidat"))?;
+                    let train = projection
+                        .trains
+                        .iter()
+                        .find(|train| train.id == request.input.train_id)
+                        .ok_or_else(|| invalid("Zuteilung fehlt in Projektion"))?
+                        .clone();
+                    let occupations = projection
+                        .occupations
+                        .iter()
+                        .filter(|occupation| occupation.train_id == train.id)
+                        .cloned()
+                        .collect();
+                    reservations.insert(
+                        train.id.clone(),
+                        StoredReservation {
+                            number: request.request.number().value(),
+                            train,
+                            occupations,
+                            operating_days: request.input.operating_days.clone(),
+                            service_window: request.input.service_window.clone(),
+                            passenger_stops: passenger_stops(
+                                &request.input,
+                                candidate,
+                                &materialized,
+                            )?,
+                        },
+                    );
+                }
+            }
+        }
+    }
     projection
         .stations
         .sort_by_key(|station| (station.distance_mm, station.id.clone()));
@@ -1426,6 +1949,9 @@ fn coordinate(
             projection,
             alternatives,
             processed_commands: BTreeMap::new(),
+            infrastructure_hash: (input.schema_version == COORDINATE_SCHEMA)
+                .then_some(infrastructure_hash),
+            reservations,
         },
         false,
     )
@@ -1493,6 +2019,11 @@ fn apply(
         .find(|train| train.id == offered.train_id)
         .ok_or_else(|| PlanningRuntimeError::new("state_corrupt", "angebotener Zug fehlt"))?;
     *train = offered.replacement_train;
+    if let Some(reservation) = offered.reservation {
+        state
+            .reservations
+            .insert(reservation.train.id.clone(), reservation);
+    }
     state
         .projection
         .occupations
@@ -1515,6 +2046,15 @@ fn apply(
                 right.phase.as_str(),
             ))
     });
+    if let Some(reservation) = state.reservations.get_mut(&offered.train_id) {
+        reservation.occupations = state
+            .projection
+            .occupations
+            .iter()
+            .filter(|occupation| occupation.train_id == offered.train_id)
+            .cloned()
+            .collect();
+    }
     let resolved = offered
         .resolved_conflict_ids
         .iter()
@@ -1777,6 +2317,308 @@ mod tests {
                 .expect("echter PlanningRun gelingt"),
         )
         .expect("gueltiges Ergebnis")
+    }
+
+    fn single_absolute_input(departure: i64, id: &str, number: u32) -> Value {
+        let mut input = coordinate_input_v2();
+        input["requests"].as_array_mut().unwrap().truncate(1);
+        input["requests"][0]["trainId"] = json!(id);
+        input["requests"][0]["trainNumber"] = json!(number);
+        input["requests"][0]["desiredDepartureS"] = json!(departure);
+        input["requests"][0]["serviceWindow"] =
+            json!({"validFromS": departure, "validUntilS": departure + 1});
+        input
+    }
+
+    #[test]
+    fn verkehrshalte_nutzen_native_ankunft_und_haltezeit_ohne_durchfahrten() {
+        let mut input = single_absolute_input(28_800, "with-stop", 26802);
+        let mut middle = input["stations"][0].clone();
+        middle["id"] = json!("middle");
+        middle["numericId"] = json!(3);
+        middle["code"] = json!("LMI");
+        middle["name"] = json!("Mitte");
+        middle["stationTrackNumericId"] = json!(301);
+        middle["distanceMm"] = json!(2_500_000);
+        input["stations"].as_array_mut().unwrap().push(middle);
+        let mut first_segment = input["segments"][0].clone();
+        first_segment["id"] = json!("west-middle");
+        first_segment["toStationId"] = json!("middle");
+        first_segment["lengthMm"] = json!(2_500_000);
+        first_segment["mainSignalPositionsMm"] = json!([1_000_000, 2_000_000]);
+        let mut second_segment = first_segment.clone();
+        second_segment["id"] = json!("middle-east");
+        second_segment["edgeNumericId"] = json!(2);
+        second_segment["trackNumericId"] = json!(1002);
+        second_segment["fromStationId"] = json!("middle");
+        second_segment["toStationId"] = json!("east");
+        input["segments"] = json!([first_segment, second_segment]);
+        let direct = evaluate_json(&input);
+        assert_eq!(
+            direct["state"]["reservations"]["with-stop"]["passengerStops"]
+                .as_array()
+                .unwrap()
+                .len(),
+            2
+        );
+        input["requests"][0]["stops"] = json!([{"stationId":"middle", "minimumDwellS":60}]);
+        let stopping = evaluate_json(&input);
+        let calls = stopping["state"]["reservations"]["with-stop"]["passengerStops"]
+            .as_array()
+            .unwrap();
+        assert_eq!(
+            calls
+                .iter()
+                .map(|call| call["stationId"].as_str().unwrap())
+                .collect::<Vec<_>>(),
+            ["west", "middle", "east"]
+        );
+        assert_eq!(calls[0]["arrivalS"], 28_800);
+        assert_eq!(calls[0]["departureS"], 28_800);
+        assert_eq!(
+            calls[1]["departureS"].as_i64().unwrap() - calls[1]["arrivalS"].as_i64().unwrap(),
+            60
+        );
+        assert!(calls[1]["arrivalS"].as_i64().unwrap() > 28_800);
+        assert!(calls[2]["arrivalS"].as_i64().unwrap() > calls[1]["departureS"].as_i64().unwrap());
+        assert_eq!(
+            calls[2]["arrivalS"],
+            stopping["projection"]["trains"][0]["calls"][1]["timeS"]
+        );
+    }
+
+    fn evaluate_json(input: &Value) -> Value {
+        serde_json::from_str(
+            &coordinate_planning_run(&input.to_string()).expect("nativer PlanningRun"),
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn einzelantrag_und_selbe_formation_in_mehreren_absoluten_fahrten_sind_zulaessig() {
+        let mut input = single_absolute_input(7 * 86_400 + 28_800, "one", 26802);
+        let first = evaluate_json(&input);
+        assert_eq!(first["state"]["reservations"].as_object().unwrap().len(), 1);
+        assert_eq!(
+            first["projection"]["trains"][0]["calls"][0]["timeS"],
+            7 * 86_400 + 28_800
+        );
+        let second =
+            single_absolute_input(8 * 86_400 + 28_800, "two", 26804)["requests"][0].clone();
+        input["requests"].as_array_mut().unwrap().push(second);
+        input["requests"][1]["requestNumericId"] = json!(2);
+        let result = evaluate_json(&input);
+        assert_eq!(
+            result["state"]["reservations"].as_object().unwrap().len(),
+            2
+        );
+        assert!(
+            result["projection"]["conflicts"]
+                .as_array()
+                .unwrap()
+                .is_empty()
+        );
+        input["requests"].as_array_mut().unwrap().reverse();
+        assert_eq!(evaluate_json(&input)["stateHash"], result["stateHash"]);
+    }
+
+    #[test]
+    fn spaetere_tagesfahrt_konkurriert_nicht_mit_abgelaufener_einzelfahrt() {
+        let initial = evaluate_json(&single_absolute_input(28_800, "reserved", 26802));
+        let mut next = single_absolute_input(86_400 + 28_800, "next-day", 26804);
+        next["expectedProjectionRevision"] = json!(1);
+        next["previousState"] = initial["state"].clone();
+        let result = evaluate_json(&next);
+        assert_eq!(
+            result["state"]["reservations"].as_object().unwrap().len(),
+            2
+        );
+        assert!(
+            result["projection"]["conflicts"]
+                .as_array()
+                .unwrap()
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn bestehende_exakte_reservierung_blockiert_neuen_antrag_ohne_ihre_belegung_zu_verlieren() {
+        let initial = evaluate_json(&single_absolute_input(28_800, "reserved", 26802));
+        let mut next = single_absolute_input(28_800, "competitor", 26804);
+        next["expectedProjectionRevision"] = json!(1);
+        next["previousState"] = initial["state"].clone();
+        let result = evaluate_json(&next);
+        assert_eq!(
+            result["state"]["reservations"],
+            initial["state"]["reservations"]
+        );
+        assert!(
+            !result["projection"]["conflicts"]
+                .as_array()
+                .unwrap()
+                .is_empty()
+        );
+        assert!(
+            result["state"]["alternatives"]
+                .as_object()
+                .unwrap()
+                .is_empty(),
+            "alternative außerhalb des einsekündigen Fensters ist unzulässig"
+        );
+        let kept: Vec<_> = result["projection"]["occupations"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|occupation| occupation["trainId"] == "reserved")
+            .cloned()
+            .collect();
+        assert_eq!(json!(kept), initial["projection"]["occupations"]);
+        assert_eq!(
+            evaluate_json(&next)["stateHash"],
+            result["stateHash"],
+            "Restore wiederholt bitgleich"
+        );
+    }
+
+    #[test]
+    fn baseline_welt_revision_infrastruktur_und_zeitfenster_werden_fail_closed_geprueft() {
+        let initial = evaluate_json(&single_absolute_input(28_800, "reserved", 26802));
+        let mut next = single_absolute_input(32_400, "next", 26804);
+        next["expectedProjectionRevision"] = json!(1);
+        next["previousState"] = initial["state"].clone();
+        for (field, value) in [
+            ("worldId", json!("foreign")),
+            ("projectionRevision", json!(2)),
+            ("infrastructureHash", json!("incorrect")),
+        ] {
+            let mut broken = next.clone();
+            broken["previousState"][field] = value;
+            assert!(coordinate_planning_run(&broken.to_string()).is_err());
+        }
+        let mut broken = next.clone();
+        broken["requests"][0]["serviceWindow"]["validUntilS"] = json!(32_400);
+        assert!(coordinate_planning_run(&broken.to_string()).is_err());
+        next["segments"][0]["maximumSpeedKph"] = json!(90);
+        assert!(coordinate_planning_run(&next.to_string()).is_err());
+    }
+
+    #[test]
+    fn nur_zukuenftige_bestehende_einzelfahrten_duerfen_ersetzt_werden() {
+        let initial = evaluate_json(&single_absolute_input(28_800, "old", 26802));
+        let mut next = single_absolute_input(28_800, "replacement", 26804);
+        next["expectedProjectionRevision"] = json!(1);
+        next["previousState"] = initial["state"].clone();
+        next["replaceTrainIds"] = json!(["old"]);
+        next["effectiveFromS"] = json!(600);
+        let result = evaluate_json(&next);
+        assert_eq!(
+            result["state"]["reservations"]
+                .as_object()
+                .unwrap()
+                .keys()
+                .cloned()
+                .collect::<Vec<_>>(),
+            vec!["replacement".to_owned()]
+        );
+        assert_eq!(result["projection"]["trains"].as_array().unwrap().len(), 1);
+        assert!(
+            result["projection"]["conflicts"]
+                .as_array()
+                .unwrap()
+                .is_empty()
+        );
+        let mut started = next.clone();
+        started["effectiveFromS"] = json!(28_800);
+        assert!(coordinate_planning_run(&started.to_string()).is_err());
+        let mut unknown = next.clone();
+        unknown["replaceTrainIds"] = json!(["foreign"]);
+        assert!(coordinate_planning_run(&unknown.to_string()).is_err());
+        let mut foreign = next;
+        foreign["previousState"]["worldId"] = json!("other-world");
+        assert!(coordinate_planning_run(&foreign.to_string()).is_err());
+    }
+
+    #[test]
+    fn angenommene_alternative_bleibt_nach_restore_eine_exakte_reservierung() {
+        let initial = evaluate_json(&coordinate_input_v2());
+        let conflict = initial["projection"]["conflicts"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|conflict| conflict["alternative"].is_object())
+            .unwrap();
+        let alternative = &conflict["alternative"];
+        let command = json!({"schemaVersion": "planning-apply-alternative/v1", "projectionRevision": 1, "alternativeId": alternative["alternativeId"], "conflictId": conflict["id"], "trainId": alternative["trainId"], "departureShiftS": alternative["departureShiftS"]});
+        let applied: Value = serde_json::from_str(
+            &apply_planning_alternative(
+                &initial["state"].to_string(),
+                "accept-for-baseline",
+                &command.to_string(),
+            )
+            .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(
+            applied["state"]["reservations"].as_object().unwrap().len(),
+            2
+        );
+        let departure = applied["projection"]["trains"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|train| train["id"] == alternative["trainId"])
+            .unwrap()["calls"][0]["timeS"]
+            .as_i64()
+            .unwrap();
+        let mut next = single_absolute_input(departure, "new-competitor", 26806);
+        next["previousState"] = applied["state"].clone();
+        next["expectedProjectionRevision"] = json!(2);
+        let result = evaluate_json(&next);
+        assert_eq!(
+            result["state"]["reservations"],
+            applied["state"]["reservations"]
+        );
+        assert!(
+            !result["projection"]["conflicts"]
+                .as_array()
+                .unwrap()
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn abgelehnte_linienaenderung_liefert_keinen_zustand_mit_geloeschten_altfahrten() {
+        let initial = evaluate_json(&single_absolute_input(28_800, "old", 26802));
+        let mut replacement = single_absolute_input(28_800, "replacement-one", 26804);
+        let mut conflicting = replacement["requests"][0].clone();
+        conflicting["trainId"] = json!("replacement-two");
+        conflicting["trainNumber"] = json!(26806);
+        conflicting["requestNumericId"] = json!(2);
+        replacement["requests"].as_array_mut().unwrap().push(conflicting);
+        replacement["previousState"] = initial["state"].clone();
+        replacement["expectedProjectionRevision"] = json!(1);
+        replacement["replaceTrainIds"] = json!(["old"]);
+        replacement["effectiveFromS"] = json!(600);
+        assert!(coordinate_planning_run(&replacement.to_string()).unwrap_err().to_string().starts_with("replacement_conflict:"));
+    }
+
+    #[test]
+    fn batchgrenze_nimmt_256_fahrten_an_und_weist_die_257te_ab() {
+        let mut input = single_absolute_input(28_800, "batch-0", 26802);
+        let template = input["requests"][0].clone();
+        input["requests"] = json!((0..256).map(|index| {
+            let mut request = template.clone();
+            let departure = 28_800 + index * 3_600;
+            request["trainId"] = json!(format!("batch-{index}"));
+            request["requestNumericId"] = json!(index + 1);
+            request["trainNumber"] = json!(26_802 + index * 2);
+            request["desiredDepartureS"] = json!(departure);
+            request["serviceWindow"] = json!({"validFromS":departure,"validUntilS":departure+1});
+            request
+        }).collect::<Vec<_>>());
+        assert_eq!(evaluate_json(&input)["state"]["reservations"].as_object().unwrap().len(), 256);
+        input["requests"].as_array_mut().unwrap().push(template);
+        assert!(coordinate_planning_run(&input.to_string()).is_err());
     }
 
     #[test]

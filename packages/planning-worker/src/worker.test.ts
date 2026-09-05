@@ -22,6 +22,7 @@ import * as schema from "@zugfolge/db/schema";
 
 import {
   PLANNING_COORDINATE_AUTHORITY_SCHEMA,
+  PLANNING_COORDINATE_BATCH_AUTHORITY_SCHEMA,
   PLANNING_INFRASTRUCTURE_RELEASE_SCHEMA,
   PLANNING_PATH_REQUEST_SCHEMA,
   PLANNING_PATH_REQUEST_SCHEMA_V3,
@@ -213,7 +214,157 @@ async function queueTwoPathRequests() {
   return [first, second] as const;
 }
 
+async function persistBaseline(modern = true, oldDepartureS = 300) {
+  const baseline = {
+    ...state(1, false),
+    ...(modern ? { infrastructureHash: "c".repeat(64), reservations: {
+      "old-train": { serviceWindow: { validFromS: oldDepartureS, validUntilS: oldDepartureS + 1 } },
+    } } : {}),
+  };
+  await db.insert(domainEvents).values([
+    { worldId: WORLD, sequence: 1, eventType: "planning.runtime-state", occurredAt: new Date(1_000), payload: {
+      schemaVersion: "planning-runtime-state-event/v1", worldId: WORLD, projectionRevision: 1,
+      stateHash: "a".repeat(64), state: baseline,
+    } },
+    { worldId: WORLD, sequence: 2, eventType: "planning.diagram", occurredAt: new Date(1_000), payload: baseline.projection },
+  ]);
+  return baseline;
+}
+
+async function queueSingleBatch(input: { runId: string; departureS?: number; replacement?: boolean; effectiveFromS?: number; revision?: number }) {
+  const departureS = input.departureS ?? 200;
+  const request = await queuePlanningPathRequest(db, { worldId: WORLD, requestingAccountId: ACCOUNT_A,
+    body: { ...requestBody({ requestId: input.runId, trainId: `${input.runId}-train`, trainNumber: 26_900 }),
+      desiredDepartureS: departureS, serviceWindow: { validFromS: departureS, validUntilS: departureS + 1 } },
+    submittedAt: new Date(2_000) });
+  return queuePlanningCoordinate(db, { worldId: WORLD, authorityAccountId: AUTHORITY,
+    body: { ...coordinateBody([request.id, request.id]), schemaVersion: PLANNING_COORDINATE_BATCH_AUTHORITY_SCHEMA,
+      runId: input.runId, requestCommandIds: [request.id], expectedProjectionRevision: input.revision ?? null,
+      ...(input.replacement ? { replaceTrainIds: ["old-train"], effectiveFromS: input.effectiveFromS ?? 2 } : {}) },
+    submittedAt: new Date(3_000) });
+}
+
 describe("planning worker transaction", () => {
+  it.each([100, 101])("fails a delayed batch at world second %i before calling Rust", async (processingTimeS) => {
+    const epoch = new Date("2026-01-01T00:00:00Z");
+    await db.update(worlds).set({ epoch }).where(eq(worlds.id, WORLD));
+    const batch = await queueSingleBatch({ runId: "late", departureS: 100 });
+    await expect(consumePendingPlanningCommands(db, runtime, infrastructureReleases, WORLD, {
+      committedAt: () => new Date(epoch.getTime() + processingTimeS * 1_000),
+    })).rejects.toThrow(/bereits begonnene Abfahrt/);
+    expect(capturedCoordinate).toBeUndefined();
+    expect(await db.select().from(domainEvents)).toEqual([]);
+    const [failed] = await db.select().from(simulationCommands).where(eq(simulationCommands.id, batch.id));
+    expect(failed).toMatchObject({ status: "failed", failureCode: "planning_worker_conflict", resultEventSequence: null });
+  });
+
+  it("keeps an old reservation when queue delay has passed its departure", async () => {
+    const baseline = await persistBaseline(true, 100);
+    const batch = await queueSingleBatch({ runId: "expired-replacement", replacement: true, revision: 1 });
+    await expect(consumePendingPlanningCommands(db, runtime, infrastructureReleases, WORLD, {
+      committedAt: () => new Date(101_000),
+    })).rejects.toThrow(/Gültigkeitsfenster bereits begonnen/);
+    expect(capturedCoordinate).toBeUndefined();
+    const events = await db.select().from(domainEvents).orderBy(asc(domainEvents.sequence));
+    expect(events).toHaveLength(2);
+    expect(events[0]?.payload).toMatchObject({ state: baseline });
+    expect((await db.select().from(simulationCommands).where(eq(simulationCommands.id, batch.id)))[0]?.status).toBe("failed");
+  });
+
+  it.each([2, 150])("pins replacement time against both processing time and submitted bound %i", async (effectiveFromS) => {
+    const baseline = await persistBaseline();
+    const batch = await queueSingleBatch({ runId: "future-replacement", replacement: true, revision: 1, effectiveFromS });
+    const succeeding: PlanningRuntime = { ...runtime, coordinate(input) { capturedCoordinate = input; return result(2, false, "b"); } };
+    await processPlanningCommand(db, succeeding, infrastructureReleases, WORLD, batch.id, new Date(101_000));
+    expect(capturedCoordinate).toMatchObject({ effectiveFromS: Math.max(101, effectiveFromS), previousState: baseline });
+    const [persisted] = await db.select().from(simulationCommands).where(eq(simulationCommands.id, batch.id));
+    expect(persisted?.payload).toMatchObject({ effectiveFromS });
+  });
+
+  it("fails a native replacement rejection and lets a later batch progress without losing the baseline", async () => {
+    const baseline = await persistBaseline();
+    const rejected = await queueSingleBatch({ runId: "rejected-replacement", replacement: true, revision: 1 });
+    const refusing: PlanningRuntime = { ...runtime, coordinate() {
+      throw new Error("replacement_conflict: bisherige Reservierungen bleiben erhalten");
+    } };
+    await expect(consumePendingPlanningCommands(db, refusing, infrastructureReleases, WORLD, {
+      committedAt: () => new Date(10_000),
+    })).rejects.toThrow(/replacement_conflict/);
+    const [failed] = await db.select().from(simulationCommands).where(eq(simulationCommands.id, rejected.id));
+    expect(failed).toMatchObject({ status: "failed", failureCode: "planning_worker_conflict", resultEventSequence: null });
+    const events = await db.select().from(domainEvents).orderBy(asc(domainEvents.sequence));
+    expect(events).toHaveLength(2);
+    expect(events[0]?.payload).toMatchObject({ state: baseline });
+    expect(await db.select().from(simulationCommands).where(and(eq(simulationCommands.status, "pending"),
+      inArray(simulationCommands.commandType, ["planning.coordinate", "planning.apply-alternative"])))).toEqual([]);
+    const next = await queueSingleBatch({ runId: "following", revision: 1 });
+    const succeeding: PlanningRuntime = { ...runtime, coordinate(input) { capturedCoordinate = input; return result(2, false, "b"); } };
+    expect(await consumePendingPlanningCommands(db, succeeding, infrastructureReleases, WORLD, {
+      committedAt: () => new Date(11_000),
+    })).toEqual([expect.objectContaining({ commandId: next.id, projectionRevision: 2 })]);
+    expect(capturedCoordinate?.previousState).toEqual(baseline);
+  });
+
+  it("leaves a native technical error retryable", async () => {
+    const batch = await queueSingleBatch({ runId: "technical-retry" });
+    const failure = new Error("serialization_failed: temporary native failure");
+    const broken: PlanningRuntime = { ...runtime, coordinate() { throw failure; } };
+    await expect(consumePendingPlanningCommands(db, broken, infrastructureReleases, WORLD, {
+      committedAt: () => new Date(10_000),
+    })).rejects.toBe(failure);
+    expect((await db.select().from(simulationCommands).where(eq(simulationCommands.id, batch.id)))[0])
+      .toMatchObject({ status: "pending", failureCode: null, resultEventSequence: null });
+    expect(await db.select().from(domainEvents)).toEqual([]);
+  });
+
+  it.each([true, false])("keeps modern reservations in authority v1 while preserving hashless legacy behavior (modern=%s)", async (modern) => {
+    const baseline = await persistBaseline(modern);
+    const [first, second] = await queueTwoPathRequests();
+    const batch = await queuePlanningCoordinate(db, { worldId: WORLD, authorityAccountId: AUTHORITY,
+      body: { ...coordinateBody([first.id, second.id]), expectedProjectionRevision: 1 }, submittedAt: new Date(2_000) });
+    const succeeding: PlanningRuntime = { ...runtime, coordinate(input) { capturedCoordinate = input; return result(2, false, "b"); } };
+    await processPlanningCommand(db, succeeding, infrastructureReleases, WORLD, batch.id, new Date(3_000));
+    expect(capturedCoordinate?.previousState).toEqual(modern ? baseline : undefined);
+    expect(capturedCoordinate?.requests).toHaveLength(2);
+  });
+
+  it("consumes a bounded same-account batch and passes only the committed baseline to its successor", async () => {
+    const ids: string[] = [];
+    for (let index = 0; index < 3; index += 1) {
+      const request = await queuePlanningPathRequest(db, { worldId: WORLD, requestingAccountId: ACCOUNT_A,
+        body: { ...requestBody({ requestId: `batch-${index}`, trainId: `batch-train-${index}`, trainNumber: 26000 + index }),
+          serviceWindow: { validFromS: 100, validUntilS: 101 } }, submittedAt: new Date(1000) });
+      ids.push(request.id);
+    }
+    const batch = await queuePlanningCoordinate(db, { worldId: WORLD, authorityAccountId: AUTHORITY,
+      body: { ...coordinateBody([ids[0]!, ids[1]!]), schemaVersion: PLANNING_COORDINATE_BATCH_AUTHORITY_SCHEMA, requestCommandIds: ids }, submittedAt: new Date(2000) });
+    await processPlanningCommand(db, runtime, infrastructureReleases, WORLD, batch.id, new Date(3000));
+    expect(capturedCoordinate?.requests).toHaveLength(3);
+    expect(capturedCoordinate?.requests.every((request) => request.serviceWindow?.validUntilS === 101)).toBe(true);
+    expect(capturedCoordinate).not.toHaveProperty("previousState");
+    const next = await queuePlanningPathRequest(db, { worldId: WORLD, requestingAccountId: ACCOUNT_A,
+      body: requestBody({ requestId: "next", trainId: "next-train", trainNumber: 26004 }), submittedAt: new Date(4000) });
+    const successor = await queuePlanningCoordinate(db, { worldId: WORLD, authorityAccountId: AUTHORITY,
+      body: { ...coordinateBody([next.id, next.id]), schemaVersion: PLANNING_COORDINATE_BATCH_AUTHORITY_SCHEMA,
+        runId: "next-run", expectedProjectionRevision: 1, requestCommandIds: [next.id] }, submittedAt: new Date(5000) });
+    const nextRuntime: PlanningRuntime = { ...runtime, coordinate(input) { capturedCoordinate = input; return result(2, false, "b"); } };
+    await processPlanningCommand(db, nextRuntime, infrastructureReleases, WORLD, successor.id, new Date(6000));
+    expect(capturedCoordinate?.previousState).toEqual(result(1, true, "a").state);
+    expect((await db.select().from(simulationCommands)).every((command) => command.status === "processed")).toBe(true);
+    expect((await processPlanningCommand(db, nextRuntime, infrastructureReleases, WORLD, successor.id, new Date(7000))).idempotentReplay).toBe(true);
+  });
+
+  it("rejects empty, duplicate and oversized batches and departure windows outside their departure", async () => {
+    for (const ids of [[], ["same", "same"], Array.from({ length: 257 }, (_, index) => `id-${index}`)]) {
+      await expect(queuePlanningCoordinate(db, { worldId: WORLD, authorityAccountId: AUTHORITY,
+        body: { ...coordinateBody(["a", "b"]), schemaVersion: PLANNING_COORDINATE_BATCH_AUTHORITY_SCHEMA, requestCommandIds: ids }, submittedAt: new Date(1000) })).rejects.toThrow();
+    }
+    await expect(queuePlanningPathRequest(db, { worldId: WORLD, requestingAccountId: ACCOUNT_A,
+      body: { ...requestBody({ requestId: "outside", trainId: "outside", trainNumber: 26000 }), serviceWindow: { validFromS: 0, validUntilS: 100 } },
+      submittedAt: new Date(1000) })).rejects.toThrow(/serviceWindow/);
+    expect(await db.select().from(simulationCommands)).toHaveLength(0);
+  });
+
   it("requires an exact positive mm/s speed in every new v4 request", async () => {
     const body = requestBody({ requestId: "request-mmps", trainId: "train-mmps", trainNumber: 26_802 });
     const { maximumSpeedMmps: _speed, ...trainWithoutSpeed } = body.train;

@@ -66,6 +66,8 @@ interface PlanningCoordinateRequestBase<TTrain extends PlanningCoordinateTrainBa
   readonly destinationStationId: string;
   readonly desiredDepartureS: number;
   readonly operatingDays: "daily" | "workdays" | "weekend";
+  /** Absolute, half-open validity for a bounded service; omitted on legacy daily patterns. */
+  readonly serviceWindow?: { readonly validFromS: number; readonly validUntilS: number };
   readonly stops: readonly {
     readonly stationId: string;
     readonly minimumDwellS: number;
@@ -110,6 +112,10 @@ interface PlanningCoordinateCommandBase<
   readonly stations: readonly PlanningCoordinateStation[];
   readonly segments: readonly PlanningCoordinateSegment[];
   readonly requests: readonly TRequest[];
+  /** Committed native state only, never supplied by a player. */
+  readonly previousState?: PlanningRuntimeState;
+  readonly replaceTrainIds?: readonly string[];
+  readonly effectiveFromS?: number;
 }
 
 /** Persistierter Legacy-Eingang; KPH wird ausschließlich in diesem Pfad aufgerundet. */
@@ -144,6 +150,8 @@ export interface PlanningRuntimeState {
   readonly projection: PlanningProjectionV1;
   readonly alternatives: Readonly<Record<string, unknown>>;
   readonly processedCommands: Readonly<Record<string, unknown>>;
+  readonly infrastructureHash?: string;
+  readonly reservations?: Readonly<Record<string, unknown>>;
 }
 
 export interface PlanningRuntimeResult {
@@ -227,7 +235,7 @@ function validateCoordinateRequest(
     "extraRunningTimeS",
     "maxOperationalStops",
     "train",
-  ], ["boundaryWindows"], name);
+  ], ["boundaryWindows", "serviceWindow"], name);
   safeInteger(value["requestNumericId"], `${name}.requestNumericId`);
   for (const key of ["trainId", "originStationId", "destinationStationId"] as const) {
     nonEmptyString(value[key], `${name}.${key}`);
@@ -243,6 +251,15 @@ function validateCoordinateRequest(
     safeInteger(value[key], `${name}.${key}`);
   }
   positiveSafeInteger(value["stepS"], `${name}.stepS`);
+  if (Object.hasOwn(value, "serviceWindow")) {
+    record(value["serviceWindow"], `${name}.serviceWindow`);
+    const window = value["serviceWindow"];
+    exactKeys(window, ["validFromS", "validUntilS"], [], `${name}.serviceWindow`);
+    safeInteger(window["validFromS"], `${name}.serviceWindow.validFromS`);
+    positiveSafeInteger(window["validUntilS"], `${name}.serviceWindow.validUntilS`);
+    invariant(window["validFromS"] <= (value["desiredDepartureS"] as number)
+      && (value["desiredDepartureS"] as number) < window["validUntilS"], `${name}.serviceWindow enthaelt die Abfahrt nicht.`);
+  }
   invariant(Array.isArray(value["stops"]), `${name}.stops ist keine Liste.`);
   if (Object.hasOwn(value, "boundaryWindows")) {
     invariant(Array.isArray(value["boundaryWindows"]), `${name}.boundaryWindows ist keine Liste.`);
@@ -295,7 +312,7 @@ function validateCoordinateInput(input: PlanningCoordinateCommand): void {
     "stations",
     "segments",
     "requests",
-  ], [], "PlanningRun-Eingang");
+  ], ["previousState", "replaceTrainIds", "effectiveFromS"], "PlanningRun-Eingang");
   for (const key of ["worldId", "runId", "sourceId", "corridorId", "corridorName"] as const) {
     nonEmptyString(input[key], `PlanningRun-Eingang.${key}`);
   }
@@ -307,6 +324,21 @@ function validateCoordinateInput(input: PlanningCoordinateCommand): void {
   invariant(Array.isArray(input.stations), "PlanningRun-Eingang.stations ist keine Liste.");
   invariant(Array.isArray(input.segments), "PlanningRun-Eingang.segments ist keine Liste.");
   invariant(Array.isArray(input.requests), "PlanningRun-Eingang.requests ist keine Liste.");
+  invariant(input.requests.length >= 1 && input.requests.length <= 256, "PlanningRun braucht 1 bis 256 Antraege.");
+  if (input.previousState !== undefined) {
+    record(input.previousState, "PlanningRun-Ausgangszustand");
+    invariant(input.previousState.worldId === input.worldId
+      && input.previousState.projectionRevision === input.expectedProjectionRevision,
+    "PlanningRun-Ausgangszustand verletzt Welt- oder Revisionsbindung.");
+  }
+  if (input.replaceTrainIds !== undefined || input.effectiveFromS !== undefined) {
+    invariant(input.previousState !== undefined && Array.isArray(input.replaceTrainIds)
+      && input.replaceTrainIds.length >= 1 && input.replaceTrainIds.length <= 256,
+    "PlanningRun-Ersetzung braucht Ausgangszustand und 1 bis 256 Zug-IDs.");
+    input.replaceTrainIds.forEach((id) => nonEmptyString(id, "PlanningRun-Ersetzung.Zug-ID"));
+    invariant(new Set(input.replaceTrainIds).size === input.replaceTrainIds.length, "PlanningRun-Ersetzung hat doppelte Zug-IDs.");
+    safeInteger(input.effectiveFromS, "PlanningRun-Ersetzung.effectiveFromS");
+  }
   input.requests.forEach((request, index) => {
     validateCoordinateRequest(request, input.schemaVersion, `PlanningRun-Eingang.requests[${index}]`);
   });
