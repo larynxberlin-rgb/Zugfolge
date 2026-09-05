@@ -157,8 +157,6 @@ unzulässig. Das Add-on sendet an `/api/integrations/odoo/webhooks` dieser
 Origin und folgt keinen Weiterleitungen. Damit erreicht der HTTP-Host genau
 die an `ZUGFOLGE_WORLD_ID` und `PUBLIC_GAME_URL` gebundene Serverinstanz.
 Die bisherige globale `game_webhook_url` wird nicht als Fallback verwendet.
-Tutorialwelten besitzen keinen kaufmännischen Eintrag und erhalten weder
-Teilnahme- noch Verwaltungsbefehle über diesen Kanal.
 
 „Spiel öffnen“ im Portal verwendet ebenfalls dieses geprüfte Register. Nach
 Prüfung der eigenen aktiven Teilnahme führt der Link zur HTTPS-Subdomain der
@@ -265,9 +263,8 @@ Abnahmenachweis ausführbar.
   Transport. Das Game prüft Ed25519, alle Hashes, Weltbindung, Release-Pins und
   identische Policy erneut und startet allein autoritativ. Nach Einreichen sind
   Definition, Policy und Deployment in Odoo unveränderlich; die anschließende
-  Game-Projektion von Profil, Policy und Hashes ist read-only. Tutorial und
-  öffentliche Welt verwenden getrennte Deployments, und ein Startpaket darf
-  nur einer Tutorial-Einladung zugeordnet werden. → [ADR-0028](adr/0028-getrennter-tutorial-und-wettbewerbsstart.md)
+  Game-Projektion von Profil, Policy und Hashes ist read-only. Jede Welt
+  benötigt einen eigenen Server und eine eigene Subdomain.
 - **M9.4:** `zugfolge.admin.request` nutzt native Odoo-Gruppen, Mail-Thread
   und Aktivitäten. Hochrisikoaktionen verlangen eine andere `res.users`-
   Freigabe. Nur `action_dispatch` sendet einen typisierten HMAC-Befehl; kein
@@ -358,8 +355,7 @@ das Entitlement → Odoo erhält den autoritativen Auditverweis über die Outbox
 Ein Hochrisikoantrag folgt analog: Entwurf → zweite Odoo-Freigabe →
 `queue_job`/signierter Befehl → Game-Vorabprüfung → Auditprojektion.
 
-Für `world_deploy` umfasst dieser Beleg zusätzlich zwei getrennte Anträge für
-Tutorial und öffentliche Welt: Odoo-Konfiguration → externer Ed25519-Signer →
+Für `world_deploy` umfasst dieser Beleg einen eigenen Antrag je Weltserver: Odoo-Konfiguration → externer Ed25519-Signer →
 angehängtes signiertes Deployment → zweite Freigabe → HMAC-Webhook →
 Game-Neuprüfung und Start → unveränderliche Odoo-Projektion. Ein negativer Lauf
 mit abweichender Policy oder Deployment-Hash muss ohne Weltstart enden.
@@ -378,3 +374,10 @@ Bridge-Retry, nächtliche Reconciliation sowie Adminantrag mit Selbstfreigabe-
 Ablehnung und Game-Ablehnung. Ohne diesen realen Dienst bleiben M13.1–M13.3 und
 die Odoo-seitigen M9-Teile **offen**, auch wenn die lokalen Game-Tests grün
 sind.
+
+
+Beim Upgrade auf Modulversion 19.0.2.0.7 entfernt die Migration alte Lernweltprojektionen
+samt Verwaltungsbelegen, Jobs und Anhängen. Reguläre Weltserverzuordnungen,
+Kontakte und kaufmännische Belege bleiben bestehen. Alle Queue-Worker für das
+Upgrade stoppen; unvorhergesehene externe Fremdschlüssel verhindern die Löschung
+und rollen die Migration zurück.

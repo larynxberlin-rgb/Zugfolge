@@ -2,10 +2,9 @@ import { PGlite } from "@electric-sql/pglite";
 import { validateWorldBlueprint, type AlphaWorldBlueprint } from "@zugfolge/alpha";
 import {
   accounts,
+  operators,
   alphaWorldProfiles,
   MIGRATIONS_FOLDER,
-  operators,
-  tutorialSessions,
   worldAccesses,
   worlds,
 } from "@zugfolge/db";
@@ -19,12 +18,10 @@ import type { FastifyInstance } from "fastify";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { buildApp } from "./app.js";
-import { serverWorldScope } from "./server-world-scope.js";
 
 const publicWorldId = "11111111-1111-4111-8111-111111111111";
 const incompletePublicWorldId = "11111111-1111-4111-8111-111111111112";
 const privateWorldId = "22222222-2222-4222-8222-222222222222";
-const tutorialWorldId = "33333333-3333-4333-8333-333333333333";
 const archivedWorldId = "44444444-4444-4444-8444-444444444444";
 const unknownWorldId = "99999999-9999-4999-8999-999999999999";
 
@@ -64,7 +61,6 @@ describe("Weltzugang und zentraler Lebenszyklus-Schreibschutz", () => {
   let db: ReturnType<typeof drizzle<typeof schema>>;
   let app: FastifyInstance;
   let privateOwner: AccountRecord;
-  let tutorialOwner: AccountRecord;
 
   beforeEach(async () => {
     client = new PGlite();
@@ -74,36 +70,19 @@ describe("Weltzugang und zentraler Lebenszyklus-Schreibschutz", () => {
       { id: publicWorldId, name: "Oeffentliche Welt", schedulePeriodWeeks: 4, epoch: new Date(0) },
       { id: incompletePublicWorldId, name: "Unvollstaendige oeffentliche Welt", schedulePeriodWeeks: 4, epoch: new Date(0) },
       { id: privateWorldId, name: "Private Welt", schedulePeriodWeeks: 4, epoch: new Date(0), worldKind: "private", rankingStatus: "unranked" },
-      { id: tutorialWorldId, name: "Tutorialwelt", schedulePeriodWeeks: 4, epoch: new Date(0), worldKind: "private", rankingStatus: "unranked" },
       { id: archivedWorldId, name: "Archiv", schedulePeriodWeeks: 4, epoch: new Date(0) },
     ]);
 
-    const publicOwner = await requestWorldAccess(db, {
-      worldId: publicWorldId,
-      keycloakSubject: "tutorial-owner",
-      displayName: "Tutorial Owner",
-    });
     privateOwner = await requestWorldAccess(db, {
       worldId: privateWorldId,
       keycloakSubject: "private-owner",
       displayName: "Private Owner",
-    });
-    tutorialOwner = await requestWorldAccess(db, {
-      worldId: tutorialWorldId,
-      keycloakSubject: "tutorial-owner",
-      displayName: "Tutorial Owner",
     });
     await requestWorldAccess(db, {
       worldId: archivedWorldId,
       keycloakSubject: "archive-member",
       displayName: "Archive Member",
     });
-    const [tutorialOperator] = await db.insert(operators).values({
-      worldId: tutorialWorldId,
-      foundingAccountId: tutorialOwner.id,
-      name: "Tutorial-EVU",
-    }).returning();
-    if (tutorialOperator === undefined) throw new Error("Tutorial-EVU fehlt.");
     await db.insert(alphaWorldProfiles).values({
       worldId: publicWorldId,
       profileKind: "public",
@@ -119,42 +98,6 @@ describe("Weltzugang und zentraler Lebenszyklus-Schreibschutz", () => {
       blueprintHash: PUBLIC_CONTRACT_HASH,
       periodCount: null,
       state: "running",
-    });
-    await db.insert(alphaWorldProfiles).values({
-      worldId: tutorialWorldId,
-      profileKind: "tutorial",
-      regionId: "lhe-tutorial",
-      regionVariant: "tutorial-minimal",
-      worldSeed: 1n,
-      accelerationFactor: 20,
-      infraReleaseHash: "a".repeat(64),
-      timetableReleaseHash: "b".repeat(64),
-      fleetReleaseHash: "c".repeat(64),
-      economyReleaseHash: "d".repeat(64),
-      blueprint: { schemaVersion: "test/v1" },
-      blueprintHash: "e".repeat(64),
-      periodCount: 1,
-      state: "running",
-    });
-    const now = new Date("2026-08-13T12:00:00.000Z");
-    await db.insert(tutorialSessions).values({
-      reference: "tut_aaaaaaaaaaaaaaaaaaaa",
-      publicWorldId,
-      publicAccountId: publicOwner.id,
-      tutorialWorldId,
-      tutorialAccountId: tutorialOwner.id,
-      tutorialOperatorId: tutorialOperator.id,
-      templateVersion: "test-v1",
-      templateHash: "f".repeat(64),
-      lifecycle: "running",
-      provisioningStep: "ready",
-      scenarioState: {},
-      correctionAttempts: {},
-      hintsUsed: {},
-      startedAt: now,
-      lastActivityAt: now,
-      idleExpiresAt: new Date("2026-08-13T12:15:00.000Z"),
-      maximumExpiresAt: new Date("2026-08-13T12:15:00.000Z"),
     });
     await db.update(worlds)
       .set({ lifecycleStatus: "archived" })
@@ -201,39 +144,6 @@ describe("Weltzugang und zentraler Lebenszyklus-Schreibschutz", () => {
     expect(existing.statusCode).toBe(403);
     expect(existing.json()).toMatchObject({ code: "private_world_access_managed" });
     expect(await db.select().from(accounts).where(eq(accounts.id, privateOwner.id))).toHaveLength(1);
-  });
-
-  it("bindet Tutorialzugang ausschliesslich an die serverseitige Sitzung", async () => {
-    const owner = await requestAccess(tutorialWorldId, "tutorial-owner");
-    const foreign = await requestAccess(tutorialWorldId, "attacker");
-    expect(owner.statusCode).toBe(403);
-    expect(owner.json()).toMatchObject({ code: "tutorial_session_required" });
-    expect(foreign.statusCode).toBe(403);
-    expect(foreign.json()).toMatchObject({ code: "tutorial_session_required" });
-    expect(tutorialOwner.worldId).toBe(tutorialWorldId);
-  });
-
-  it("erlaubt unter der kanonischen Hauptwelt-Subdomain nur die eigene Tutorialinstanz", async () => {
-    await app.close();
-    app = buildApp({
-      db,
-      verifyToken: async (token) => ({ keycloakSubject: token, displayName: token }),
-      worldScope: serverWorldScope(publicWorldId, "https://world.zugfolge.de"),
-      logger: false,
-    });
-    const headers = { host: "world.zugfolge.de", authorization: "Bearer tutorial-owner" };
-    const tutorial = await app.inject({ method: "GET", url: `/worlds/${tutorialWorldId}/operators`, headers });
-    expect(tutorial.statusCode).toBe(200);
-    const foreign = await app.inject({ method: "GET", url: `/worlds/${privateWorldId}/operators`, headers });
-    expect(foreign.statusCode).toBe(404);
-    expect(foreign.json()).toMatchObject({ code: "world_not_found" });
-    const foreignHost = await app.inject({ method: "GET", url: `/worlds/${tutorialWorldId}/operators`, headers: { ...headers, host: "other.zugfolge.de", "x-forwarded-host": "world.zugfolge.de" } });
-    expect(foreignHost.statusCode).toBe(421);
-    const otherPublicAccount = await requestWorldAccess(db, { worldId: incompletePublicWorldId, keycloakSubject: "tutorial-owner", displayName: "Tutorial Owner" });
-    await db.update(tutorialSessions).set({ publicWorldId: incompletePublicWorldId, publicAccountId: otherPublicAccount.id }).where(eq(tutorialSessions.tutorialWorldId, tutorialWorldId));
-    const unbound = await app.inject({ method: "GET", url: `/worlds/${tutorialWorldId}/operators`, headers });
-    expect(unbound.statusCode).toBe(404);
-    expect(unbound.json()).toMatchObject({ code: "world_not_found" });
   });
 
   it("verlangt den exakten, gueltigen Weltvertrag vor oeffentlichem Markteintritt", async () => {

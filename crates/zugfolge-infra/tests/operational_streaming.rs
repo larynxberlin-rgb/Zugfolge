@@ -708,47 +708,6 @@ fn streaming_validator_prueft_shunting_gegen_jede_geteilte_laufwegversion() {
 }
 
 #[test]
-fn eingechecktes_tutorial_artefakt_ist_kanonisch_und_descriptorgebunden() {
-    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../../apps/game-api/tutorial-infrastructure/tutorial-minimal-2026.1");
-    let artifact = root.join("operational-infrastructure-v2.json");
-    let descriptor: Value = serde_json::from_slice(
-        &fs::read(root.join("descriptor.json")).expect("Tutorialdescriptor lesen"),
-    )
-    .expect("Tutorialdescriptor ist JSON");
-    let binding = &descriptor["binding"];
-    let release_id = binding["infraReleaseId"]
-        .as_str()
-        .expect("Tutorialdescriptor besitzt InfraRelease-ID");
-    let evidence = validate_operational_infrastructure_v2_file(&artifact, release_id, None)
-        .expect("eingechecktes Tutorialartefakt ist nativ operational-v2-gueltig");
-
-    assert_eq!(
-        descriptor["schemaVersion"],
-        "zugfolge-tutorial-operational-infrastructure-descriptor/v1"
-    );
-    assert_eq!(descriptor["templateVersion"], "tutorial-minimal-2026.1");
-    assert_eq!(binding["file"], "operational-infrastructure-v2.json");
-    assert_eq!(evidence["sourceBytes"], binding["bytes"]);
-    assert_eq!(evidence["sourceSha256"], binding["sha256"]);
-    assert_eq!(evidence["stateHash"], binding["stateHash"]);
-    assert_eq!(evidence["bytes"], binding["bytes"]);
-    assert_eq!(evidence["sha256"], binding["sha256"]);
-    open_operational_infrastructure_v2_store(
-        &artifact
-            .canonicalize()
-            .expect("absoluter Tutorialartefaktpfad"),
-        release_id,
-        binding["bytes"].as_u64().expect("Tutorial-Bytebindung"),
-        binding["sha256"].as_str().expect("Tutorial-SHA-Bindung"),
-        binding["stateHash"]
-            .as_str()
-            .expect("Tutorial-Zustandshashbindung"),
-    )
-    .expect("Runtime-Store akzeptiert exakt den eingecheckten Tutorialdescriptor");
-}
-
-#[test]
 fn streaming_validator_verwirft_einen_einzelnen_unbegrenzt_grossen_laufweg() {
     const RAW_ROUTE_BYTES: usize = 10 * 1024 * 1024;
     let root = TestDirectory::create();

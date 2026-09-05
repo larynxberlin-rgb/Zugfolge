@@ -1,4 +1,6 @@
 import type { Density } from "@zugfolge/design-system";
+import { mountGameHints } from "@zugfolge/design-system";
+import { GAME_HINTS } from "./game-hints.js";
 import "@zugfolge/design-system/styles.css";
 import { mountGlossaryLayer } from "@zugfolge/glossary";
 import "@zugfolge/glossary/styles.css";
@@ -15,8 +17,6 @@ import {
   type OperatorSummary,
   type PublicWorldContractView,
   type PublicTenderView,
-  type TutorialAction,
-  type TutorialSessionView,
   type VehicleAssetView,
   type VehicleHistoryEventView,
   type VehicleMarketListingView,
@@ -47,13 +47,13 @@ import {
 } from "./navigation.js";
 import { classifyJourneyFailure } from "./recovery.js";
 import { renderLoadState, renderProjection } from "./view.js";
-import { parseTutorialBidInput } from "./tutorial-input.js";
 import "./styles.css";
 import "./player-shell.css";
 
 const root = document.querySelector<HTMLDivElement>("#root");
 if (root === null) throw new Error("App-Wurzel fehlt");
 const app = root;
+mountGameHints(app, GAME_HINTS);
 let unmountGlossaryLayer: (() => void) | undefined;
 
 function mountGlossaryForCurrentView(): void {
@@ -81,7 +81,6 @@ const journeyMode = !demoMode && requestedView !== "diagram";
 const initialCooperationPageViews = cooperationPageViews(parameters);
 const activeJourneySection = resolveJourneySection(parameters, window.location.hash);
 let { worldId, publicWorldId } = resolveWorldContext(parameters, runtimeConfiguration.publicWorldId);
-const tutorialReference = parameters.get("tutorial");
 let livemapUrl = runtimeConfiguration.livemapUrl === "" ? "" : (() => {
   const value = new URL(runtimeConfiguration.livemapUrl, window.location.href);
   value.searchParams.set("world", worldId);
@@ -111,12 +110,8 @@ let messageTone: "status" | "error" = "status";
 let bootRecovery: "authenticate" | "configure" | "retry" | undefined;
 let applyingAlternativeId = "";
 let demoApply: ((current: PlanningProjectionV1, alternativeId: string) => PlanningProjectionV1) | undefined;
-let tutorialSession: TutorialSessionView | undefined;
-type JourneyBusyScope = "initial" | "tutorial" | "cooperation" | "mailbox";
+type JourneyBusyScope = "initial" | "cooperation" | "mailbox";
 const journeyBusyScopes = new Set<JourneyBusyScope>(journeyMode && !demoMode ? ["initial"] : []);
-let coachDismissed = false;
-let whyOpen = false;
-let tutorialPoll: ReturnType<typeof setTimeout> | undefined;
 let worldOperators: readonly OperatorSummary[] = [];
 let playerOperatorContext: PlayerOperatorContextV1 | undefined;
 let ownOperatorIds: readonly string[] = [];
@@ -251,17 +246,13 @@ function render(): void {
   if (journeyMode) {
     captureJourneyDrafts();
     const busyScope = journeyBusyScopes.has("initial") ? "initial"
-      : journeyBusyScopes.has("tutorial") ? "tutorial"
         : journeyBusyScopes.has("cooperation") ? "cooperation"
           : journeyBusyScopes.has("mailbox") ? "mailbox" : undefined;
     app.innerHTML = renderJourney({
       publicWorldId,
-      tutorial: tutorialSession,
       busy: journeyBusyScopes.size > 0,
       ...(busyScope === undefined ? {} : { busyScope }),
       message,
-      coachDismissed,
-      whyOpen,
       messageTone,
       livemapUrl,
       operationsCenterUrl,
@@ -274,7 +265,6 @@ function render(): void {
       activeSection: activeJourneySection,
       confirmation: pendingConfirmation === undefined ? undefined : { title: pendingConfirmation.title, detail: pendingConfirmation.detail },
       bootRecovery,
-      tutorialStartAvailable: api !== undefined && publicWorldId !== "",
     });
     bindJourney();
     restoreJourneyDrafts();
@@ -327,38 +317,6 @@ function bindJourney(): void {
     messageTone = "status";
     void boot();
   });
-  app.querySelector("#tutorial-start")?.addEventListener("click", () => void startTutorial());
-  app.querySelector("#tutorial-restart")?.addEventListener("click", () => {
-    if (window.confirm("Die bisherige Tutorialwelt wird archiviert. Möchten Sie wirklich neu beginnen?")) void restartTutorial();
-  });
-  app.querySelector("#tutorial-summary-confirm")?.addEventListener("click", () => void confirmTutorialSummary());
-  app.querySelector("#tutorial-hint")?.addEventListener("click", () => void openTutorialHint());
-  app.querySelector("#tutorial-dismiss")?.addEventListener("click", () => void dismissTutorialDialogue());
-  app.querySelector("#tutorial-coach-reopen")?.addEventListener("click", () => { coachDismissed = false; render(); focusCoach(); });
-  app.querySelector("#tutorial-why")?.addEventListener("click", () => { whyOpen = !whyOpen; render(); app.querySelector<HTMLButtonElement>("#tutorial-why")?.focus(); });
-  const focusButton = app.querySelector<HTMLButtonElement>("#tutorial-focus-target");
-  focusButton?.addEventListener("click", () => focusTarget(focusButton.dataset.target));
-  app.querySelector<HTMLFormElement>("#tutorial-tender-form")?.addEventListener("submit", (event) => {
-    event.preventDefault();
-    const data = new FormData(event.currentTarget as HTMLFormElement);
-    try {
-      if (tutorialSession === undefined) throw new Error("Der Tutorialvertrag ist nicht geladen.");
-      void applyTutorialAction(parseTutorialBidInput({
-        orderingFeeEuro: String(data.get("orderingFeeEuro") ?? ""),
-        punctualityPercent: String(data.get("punctualityPercent") ?? ""),
-        extraSeats: String(data.get("extraSeats") ?? ""),
-      }, tutorialSession.presentation.tender.limits));
-    } catch (error) { void reportFormError(error); }
-  });
-  app.querySelector<HTMLFormElement>("#tutorial-program-form")?.addEventListener("submit", (event) => {
-    event.preventDefault();
-    const data = new FormData(event.currentTarget as HTMLFormElement);
-    const thresholdText = String(data.get("thresholdMinutes") ?? "").replace(",", ".");
-    void applyTutorialAction({ type: "activate-program", templateId: String(data.get("templateId")) as "connections" | "punctuality", changedRule: String(data.get("changedRule")) as "hold-connections" | "prioritize-punctuality" | "activate-reserve", thresholdSeconds: Math.round(Number(thresholdText) * 60) });
-  });
-  app.querySelectorAll<HTMLButtonElement>("[data-tutorial-offer]").forEach((button) => button.addEventListener("click", () => void applyTutorialAction({ type: "accept-lease", offerId: button.dataset.tutorialOffer ?? "" })));
-  app.querySelectorAll<HTMLButtonElement>("[data-tutorial-path]").forEach((button) => button.addEventListener("click", () => void applyTutorialAction({ type: "confirm-path", alternativeId: button.dataset.tutorialPath ?? "" })));
-  app.querySelectorAll<HTMLButtonElement>("[data-tutorial-dispatch]").forEach((button) => button.addEventListener("click", () => void applyTutorialAction({ type: "dispatch", action: button.dataset.tutorialDispatch as "short_turn" | "request_reroute" | "trigger_rail_replacement" })));
   app.querySelectorAll<HTMLButtonElement>("[data-mailbox-ack]").forEach((button) => {
     button.addEventListener("click", () => void acknowledgeMailbox(button.dataset.mailboxAck ?? ""));
   });
@@ -593,58 +551,7 @@ function reportFormError(error: unknown): Promise<void> {
   return Promise.resolve();
 }
 
-function focusTarget(target: string | undefined): void {
-  if (target === undefined || target === "") return;
-  const element = app.querySelector<HTMLElement>(`#${CSS.escape(target)}`);
-  element?.scrollIntoView({ behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth", block: "center" });
-  element?.focus({ preventScroll: true });
-}
-
-function focusCoach(): void {
-  app.querySelector<HTMLElement>("#lutz-name")?.focus({ preventScroll: true });
-}
-
-function setTutorialSession(next: TutorialSessionView, updateUrl = true): void {
-  const previousDialogue = tutorialSession?.dialogue.id;
-  tutorialSession = next;
-  if (previousDialogue !== next.dialogue.id) {
-    coachDismissed = false;
-    whyOpen = false;
-  }
-  if (updateUrl) {
-    const nextUrl = new URL(window.location.href);
-    nextUrl.searchParams.set("world", next.tutorialWorldId);
-    nextUrl.searchParams.set("publicWorld", next.publicWorldId);
-    nextUrl.searchParams.set("tutorial", next.reference);
-    history.replaceState({ tutorial: next.reference }, "", nextUrl);
-  }
-  scheduleTutorialPoll();
-}
-
-function scheduleTutorialPoll(): void {
-  if (tutorialPoll !== undefined) clearTimeout(tutorialPoll);
-  if (tutorialSession?.lifecycle !== "running" && tutorialSession?.lifecycle !== "summary") return;
-  tutorialPoll = setTimeout(() => void silentRefreshTutorial(), 2_000);
-}
-
-async function silentRefreshTutorial(): Promise<void> {
-  const client = api;
-  const session = tutorialSession;
-  if (client === undefined || session === undefined || journeyBusyScopes.has("tutorial") || journeyBusyScopes.has("initial")) { scheduleTutorialPoll(); return; }
-  try {
-    const next = await client.loadTutorial(session.tutorialWorldId);
-    // Ein älterer GET darf weder eine inzwischen bestätigte Aktion noch den
-    // Wechsel in eine neu gestartete Tutorialwelt zurückschreiben.
-    if (tutorialSession === session && !journeyBusyScopes.has("tutorial") && !journeyBusyScopes.has("initial")) {
-      const changed = next.currentChapter !== session.currentChapter || next.lifecycle !== session.lifecycle || next.dialogue.id !== session.dialogue.id;
-      setTutorialSession(next);
-      if (changed) { render(); focusCoach(); }
-    }
-  } catch { /* Die sichtbare Aktion liefert weiterhin erklaerbare Fehler; Polling bleibt still. */ }
-  scheduleTutorialPoll();
-}
-
-async function journeyAction(action: () => Promise<void>, success: string | (() => string), scope: JourneyBusyScope = "tutorial"): Promise<void> {
+async function journeyAction(action: () => Promise<void>, success: string | (() => string), scope: JourneyBusyScope = "cooperation"): Promise<void> {
   if (journeyBusyScopes.has(scope) || journeyBusyScopes.has("initial")) return;
   journeyBusyScopes.add(scope);
   message = "Der bestätigte Weltzustand wird aktualisiert …";
@@ -663,7 +570,6 @@ async function journeyAction(action: () => Promise<void>, success: string | (() 
     journeyBusyScopes.delete(scope);
     render();
     if (messageTone === "error") app.querySelector<HTMLElement>(".journey-message--error")?.focus();
-    else if (tutorialSession !== undefined) focusCoach();
   }
 }
 
@@ -838,17 +744,10 @@ function acknowledgeMailbox(messageId: string): Promise<void> {
 function enterPublicWorld(worldId: string, displayName: string, contractHash: string): Promise<void> {
   return journeyAction(async () => {
     const client = api;
-    if (client === undefined || worldId === "" || contractHash === "" || displayName.trim() === "") {
+    if (client === undefined || worldId !== publicWorldId || worldId === "" || contractHash === "" || displayName.trim() === "") {
       throw new Error("Weltvertrag und Anzeigename müssen vollständig bestätigt werden.");
     }
     await client.enterPublicWorld(worldId, displayName.trim(), contractHash);
-    if (worldId !== publicWorldId) {
-      const next = new URL(window.location.href);
-      next.searchParams.set("world", worldId);
-      next.searchParams.delete("publicWorld");
-      window.location.assign(next);
-      return;
-    }
     await refreshCooperation(activeOperatorId);
   }, "Weltvertrag bestätigt. Der öffentliche Betrieb ist geöffnet.", "initial");
 }
@@ -1017,55 +916,6 @@ function loadVehicleHistory(vehicleId: string): Promise<void> {
   }, "Der unveränderliche Fahrzeuglebenslauf wurde geladen.");
 }
 
-async function startTutorial(): Promise<void> {
-  const client = api;
-  if (client === undefined || publicWorldId === "") return;
-  return journeyAction(async () => setTutorialSession(await client.startTutorial(publicWorldId)), "Ihre private Tutorialwelt ist bereit.");
-}
-
-async function restartTutorial(): Promise<void> {
-  const client = api;
-  const session = tutorialSession;
-  if (client === undefined || session === undefined) return;
-  return journeyAction(async () => setTutorialSession(await client.restartTutorial(session.tutorialWorldId)), "Die alte Welt wurde archiviert; eine neue Tutorialwelt ist bereit.");
-}
-
-async function applyTutorialAction(action: TutorialAction): Promise<void> {
-  const client = api;
-  const session = tutorialSession;
-  if (client === undefined || session === undefined) return;
-  return journeyAction(async () => setTutorialSession(await client.tutorialAction(session.tutorialWorldId, action)), "Entscheidung bestätigt. Das nächste Kapitel ist bereit.");
-}
-
-async function openTutorialHint(): Promise<void> {
-  const client = api;
-  const session = tutorialSession;
-  if (client === undefined || session === undefined) return;
-  return journeyAction(async () => setTutorialSession(await client.openTutorialHint(session.tutorialWorldId)), "Lutz hat einen zusätzlichen Hinweis eingeblendet.");
-}
-
-async function dismissTutorialDialogue(): Promise<void> {
-  const client = api;
-  const session = tutorialSession;
-  if (client === undefined || session === undefined) return;
-  try {
-    setTutorialSession(await client.dismissTutorialDialogue(session.tutorialWorldId, session.dialogue.id));
-    coachDismissed = true;
-    render();
-  } catch (error) {
-    message = error instanceof Error ? error.message : "Hinweis konnte nicht ausgeblendet werden.";
-    messageTone = "error";
-    render();
-  }
-}
-
-async function confirmTutorialSummary(): Promise<void> {
-  const client = api;
-  const session = tutorialSession;
-  if (client === undefined || session === undefined) return;
-  return journeyAction(async () => setTutorialSession(await client.confirmTutorialSummary(session.tutorialWorldId)), "Die Tutorialwelt wurde geschlossen. Ihre öffentliche Welt blieb unverändert.");
-}
-
 function bind(): void {
   app.querySelector("#density")?.addEventListener("click", () => {
     density = density === "control" ? "document" : "control";
@@ -1201,21 +1051,8 @@ async function boot(): Promise<void> {
     journeyBusyScopes.add("initial");
     render();
     try {
-      publicWorldContracts = await api.loadPublicWorldContracts();
-      const requestedTutorialWorld = tutorialReference === null ? undefined : worldId;
-      const tutorial = await (requestedTutorialWorld === undefined ? api.loadActiveTutorial(publicWorldId) : api.loadTutorial(requestedTutorialWorld));
-      if (tutorial !== undefined) {
-        setTutorialSession(tutorial);
-      } else {
-        try {
-          await refreshCooperation();
-        } catch (error) {
-          const failure = classifyJourneyFailure(error, "Kooperation und Fahrzeugmarkt konnten nicht geladen werden.");
-          message = failure.message;
-          messageTone = "error";
-          bootRecovery = failure.recovery;
-        }
-      }
+      publicWorldContracts = (await api.loadPublicWorldContracts()).filter((contract) => contract.worldId === publicWorldId);
+      await refreshCooperation();
     } catch (error) {
       const failure = classifyJourneyFailure(error, "Spielerreise konnte nicht geladen werden.");
       message = failure.message;

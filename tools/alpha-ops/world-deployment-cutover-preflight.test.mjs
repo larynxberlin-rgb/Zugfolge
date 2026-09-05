@@ -30,7 +30,6 @@ import {
 
 const LEGACY_WORLD_ID = "00000000-0000-4000-8000-000000000014";
 const V2_WORLD_ID = "00000000-0000-4000-8000-000000000315";
-const TUTORIAL_WORLD_ID = "00000000-0000-4000-8000-000000000083";
 const KEY_ID = "world-cutover-test";
 const INFRA_RELEASE_ID = "infra-deutschland-2026.4";
 const DATABASE_ID = "00000000-0000-4000-8000-000000000031";
@@ -82,7 +81,7 @@ test("Welt-Cutover verweigert ein fehlendes Scope-Mapping vor Kandidat, Karte un
     runWorldDeploymentCutoverPreflight({
       environment: {
         DATABASE_URL: "postgres://unused.invalid/zugfolge",
-        ALPHA_WORLD_RELEASE_PATHS_JSON: "[\"/unused/deployment.json\"]",
+        ALPHA_WORLD_RELEASE_PATH: "/unused/deployment.json",
         INFRA_RELEASE_TRUSTED_KEYS_JSON: JSON.stringify(TRUSTED_KEYS),
         ALPHA_PUBLIC_WORLD_ID: V2_WORLD_ID,
         ZUGFOLGE_WORLD_ID: V2_WORLD_ID,
@@ -210,7 +209,6 @@ function candidate() {
 function database(overrides = {}) {
   return {
     worlds: [],
-    activeTutorialSessions: [],
     candidateRegionalStates: [],
     initializationHashColumnPresent: false,
     ...overrides,
@@ -404,27 +402,7 @@ test("archiviertes signiertes V1 plus eine wirklich neue V2-Welt besteht", () =>
   });
 });
 
-test("alte aktive Tutorial-Session und wiederverwendete Welt-ID werden getrennt blockiert", () => {
-  expectCode(
-    () => validate(candidate(), database({
-      activeTutorialSessions: [{ session_id: "tutorial-1", world_id: TUTORIAL_WORLD_ID, lifecycle: "running" }],
-    })),
-    WORLD_DEPLOYMENT_CUTOVER_ERROR_CODES.activeTutorialRequiresArchive,
-  );
-  expectCode(
-    () => validate(candidate(), database({
-      worlds: [{
-        world_id: TUTORIAL_WORLD_ID,
-        lifecycle_status: "active",
-        profile_kind: "tutorial",
-        profile_state: "running",
-        deployment_hash: null,
-        signed_deployment: null,
-      }],
-    })),
-    WORLD_DEPLOYMENT_CUTOVER_ERROR_CODES.activeTutorialRequiresArchive,
-  );
-
+test("eine archivierte Welt-ID wird nicht wiederverwendet", () => {
   expectCode(
     () => validate(candidate(), database({
       worlds: [{
@@ -585,7 +563,6 @@ function cutoverTransactionFixture({
       }
       if (query.includes("select to_regclass")) return [{ present: true }];
       if (query.includes("from information_schema.columns")) return [{ present: true }];
-      if (query.includes("from tutorial_sessions")) return [];
       if (query.startsWith("select count(*)::int as unfenced")) return [{ unfenced: 0 }];
       if (query.includes("from world_cutover_receipts as receipt")) {
         return [{

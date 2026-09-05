@@ -1,0 +1,14 @@
+import type { GameHint } from "@zugfolge/design-system";
+
+export const GAME_HINTS: readonly GameHint[] = [
+  { id: "entry-contract", selector: "#world-contract-title", title: "Ihr Spiel beginnt hier", text: "Prüfen Sie Laufzeit und Startkapital dieser Welt. Mit Ihrer Bestätigung erhalten Sie Zugang; anschließend können Sie Ihr eigenes Eisenbahnunternehmen gründen." },
+  { id: "found-company", selector: "#evu-gruenden h2", title: "Ein Unternehmen gründen", text: "Wählen Sie den Namen Ihres EVU. Die Gründung verwendet das Startkapital aus dem Weltvertrag. Fahrzeuge und Verkehrsverträge erwerben Sie anschließend über die Märkte." },
+  { id: "tender-offer", selector: "#tender-bid-submit", title: "Ein Angebot kalkulieren", text: "Vergleichen Sie Leistungsumfang, Fristen und Vergabekriterien. Ihr Gebot muss Fahrzeug-, Personal- und Trassenkosten tragen. Prüfen Sie die Angaben vor der verbindlichen Abgabe." },
+  { id: "vehicle-offers", selector: "#vehicle-market h2", title: "Fahrzeuge vergleichen", text: "Achten Sie auf Preis, verfügbare Kapazität und technische Eignung für die geplante Strecke. Eine Reservierung und die verbindliche Übernahme sind getrennte Schritte." },
+  { id: "cooperation-contracts", selector: "#cooperation-contracts h2", title: "Mit anderen EVU zusammenarbeiten", text: "Über einen Vertrag können Sie Leistungen oder Fahrzeuge anderer Unternehmen nutzen. Vergleichen Sie Preis, Gültigkeitszeitraum und Kündigungsfrist, bevor Sie zustimmen." },
+  { id: "path-request", selector: "[data-path-request] button[type=submit]", title: "Eine Fahrt planen", text: "Wählen Sie Laufweg, Fahrzeug und Zeitlage. Der Server prüft Kapazität und Konflikte. Ein übermittelter Wunsch ist noch keine bestätigte Trasse." },
+  { id: "planning-diagram", selector: "#steps", title: "Den Fahrplan lesen", text: "Der Bildfahrplan stellt Ort und Zeit gegenüber. Blenden Sie die Sperrzeiten ein, um belegte Abschnitte zu erkennen. Wählen Sie einen Konflikt, um dessen Ursache und eine angebotene Alternative zu prüfen." },
+  { id: "planning-alternative", selector: "[data-apply-alternative]", title: "Eine Alternative übernehmen", text: "Prüfen Sie die geänderte Zeitlage und die Erklärung des Konflikts. Erst Ihre Bestätigung übermittelt die gewählte Alternative an den Server." },
+  { id: "company-finances", selector: ".company-balance", title: "Mit verfügbarem Geld planen", text: "Der verfügbare Betrag berücksichtigt bereits vorgemerkte Belastungen. Nutzen Sie ihn für Ihre nächsten Entscheidungen; der Kontostand allein berücksichtigt noch nicht jede vorgemerkte Belastung." },
+  { id: "mailbox-deadlines", selector: "#attention-title", title: "Fristen im Blick behalten", text: "Öffnen Sie eine Meldung, um zur zugehörigen Entscheidung zu gelangen. Quittieren markiert die Nachricht als gelesen; einen Vertrag oder eine Trasse bestätigt das noch nicht." },
+];

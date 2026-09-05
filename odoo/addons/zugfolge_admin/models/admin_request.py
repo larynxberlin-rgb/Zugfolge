@@ -78,7 +78,7 @@ class ZugfolgeAdminRequest(models.Model):
     world_id = fields.Char(index=True, tracking=True)
     world_name = fields.Char(tracking=True)
     world_kind = fields.Selection(
-        [("public", "Oeffentlich"), ("tutorial", "Tutorial"), ("private", "Privat"), ("test", "Test")],
+        [("public", "Oeffentlich"), ("private", "Privat"), ("test", "Test")],
         default="public",
         tracking=True,
     )
@@ -360,7 +360,7 @@ class ZugfolgeAdminRequest(models.Model):
                     raise ValidationError(_("Ein Welt-Deployment ist immer hochriskant."))
                 if not WORLD_ID_RE.fullmatch(record.world_id or ""):
                     raise ValidationError(_("Welt-Deployment braucht eine gueltige Welt-ID."))
-                if not (record.world_name or "").strip() or record.world_kind not in ("public", "tutorial", "private", "test"):
+                if not (record.world_name or "").strip() or record.world_kind not in ("public", "private", "test"):
                     raise ValidationError(_("Welt-Deployment braucht Name und Weltprofil."))
                 if record.ranking_status not in ("ranked", "unranked") or ((record.world_kind == "public") != (record.ranking_status == "ranked")):
                     raise ValidationError(_("Nur oeffentliche Welten sind gewertet; alle anderen Weltprofile sind ungewertet."))

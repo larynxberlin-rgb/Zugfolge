@@ -11,7 +11,7 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { buildApp } from "./app.js";
 import { createDailyRestrictionPolicyLoader, DailyRestrictionCommandCatalog, type DailyRestrictionWorldSource } from "./daily-restriction-catalog.js";
 import { createDisruptionPolicyAdminHandler } from "./disruption-policy-admin.js";
-import { TUTORIAL_OPERATIONAL_INFRASTRUCTURE_DESCRIPTOR } from "./tutorial-operational-infrastructure.js";
+import { TEST_INFRASTRUCTURE_BINDING } from "./operational-infrastructure.fixture.js";
 
 const WORLD = "11111111-1111-4111-8111-111111111111";
 const ACCOUNT = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
@@ -20,8 +20,8 @@ const NOW = new Date("2026-08-11T12:00:00.000Z");
 const BOUNDARY = 28 * 86_400_000;
 const KEY = { id: "policy-test", secret: "policy-test-secret", activeFrom: new Date(0) };
 const source: DailyRestrictionWorldSource = {
-  worldId: WORLD, regionId: "region-a", seed: "77", infraRelease: TUTORIAL_OPERATIONAL_INFRASTRUCTURE_DESCRIPTOR.binding,
-  routeVersionIds: ["tutorial-minimal-2026.1:route:v1"],
+  worldId: WORLD, regionId: "region-a", seed: "77", infraRelease: TEST_INFRASTRUCTURE_BINDING,
+  routeVersionIds: ["test-route"],
 };
 const profile = {
   id: "explicit-policy-integration/v1", eventsPerPeriod: 6, minimumSeverityBasisPoints: 1_000, maximumSeverityBasisPoints: 8_000,
@@ -46,7 +46,7 @@ function generated(input: OperationalDailyRestrictionsRequest): OperationalDaily
   return { schemaVersion: "zugfolge-operational-daily-restrictions-generated/v1", worldId: input.worldId,
     regionId: input.regionId, dayStartMs: input.dayStartMs, policyVersion: input.policy.version,
     restrictions: [{ disruptionId: "la-1", startsAtMs: input.dayStartMs, endsAtMs: input.dayStartMs + 1_000,
-      effect: { "speed-restriction": { edgeId: "tut-segment-1", maximumSpeedMmps: 5_555 } }, provenance: {} }],
+      effect: { "speed-restriction": { edgeId: "test-edge-west", maximumSpeedMmps: 5_555 } }, provenance: {} }],
     unsupportedRestrictions: [{ reason: "operational-scope-not-supported", scope: { traffic: "passenger" } }],
   };
 }
@@ -66,7 +66,7 @@ afterEach(async () => { vi.unstubAllEnvs(); await client.close(); });
 
 async function completeFlow(native: boolean) {
   if (native) vi.stubEnv(OPERATIONAL_INFRASTRUCTURE_ROOTS_ENV, JSON.stringify({
-    [source.infraRelease.infraReleaseId]: fileURLToPath(new URL("../tutorial-infrastructure/tutorial-minimal-2026.1/", import.meta.url)),
+    [source.infraRelease.infraReleaseId]: fileURLToPath(new URL("../test-infrastructure/operations-v1/", import.meta.url)),
   }));
   const generate = vi.fn(native ? loadOperationalSimulationRuntime().dailyRestrictions! : generated);
   const catalog = new DailyRestrictionCommandCatalog({ base: { at: () => [], *dueBoundaries() {} }, generate, loadPolicies: createDailyRestrictionPolicyLoader(db) });

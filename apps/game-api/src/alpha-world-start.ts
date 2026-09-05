@@ -129,7 +129,7 @@ export class ActiveWorldDeploymentCutoverError extends Error {
 
 export interface AlphaDeploymentWorldDefinition {
   readonly name: string;
-  readonly kind: "public" | "tutorial" | "private" | "test";
+  readonly kind: "public" | "private" | "test";
   readonly rankingStatus: "ranked" | "unranked";
   readonly schedulePeriodWeeks: number;
   readonly epoch: string;
@@ -544,7 +544,7 @@ export function validateDeploymentWorldDefinition(
     || typeof definition["name"] !== "string"
     || definition["name"].trim() === ""
     || definition["kind"] !== profileKind
-    || !["public", "tutorial", "private", "test"].includes(definition["kind"] as string)
+    || !["public", "private", "test"].includes(definition["kind"] as string)
     || !["ranked", "unranked"].includes(definition["rankingStatus"] as string)
     || (definition["kind"] === "public") !== (definition["rankingStatus"] === "ranked")
     || !Number.isSafeInteger(definition["schedulePeriodWeeks"])
@@ -868,9 +868,7 @@ export async function loadActiveAlphaWorldProjectionProfiles(db: AlphaDatabase) 
  * Startup-Gate fuer die oeffentliche 1:1-Runtime. Eine aktive, laufende
  * Public-Welt darf weder ohne erneut verifiziertes persistiertes Deployment
  * sichtbar werden noch darf ein verifiziertes Public-Deployment ohne sein
- * laufendes Profil in Scheduler und Livemap gelangen. Kurzlebige
- * Tutorialwelten besitzen absichtlich kein solches Deployment und werden
- * durch den expliziten Profilfilter nicht erfasst.
+ * laufendes Profil in Scheduler und Livemap gelangen.
  */
 export async function assertActivePublicWorldDeploymentCoverage(
   db: AlphaDatabase,

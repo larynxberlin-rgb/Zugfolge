@@ -1,5 +1,7 @@
 import "@zugfolge/design-system/styles.css";
 import { mountGlossaryLayer } from "@zugfolge/glossary";
+import { mountGameHints } from "@zugfolge/design-system";
+import { MAP_HINTS } from "./game-hints.js";
 import "@zugfolge/glossary/styles.css";
 import {
   addProtocol,
@@ -156,7 +158,7 @@ root.innerHTML = `
 
 const parameters = new URLSearchParams(window.location.search);
 const runtime = loadRuntimeConfiguration();
-const worldId = parameters.get("world")?.trim() || runtime.publicWorldId;
+const worldId = runtime.publicWorldId;
 const navigation = livemapNavigationDestinations(runtime.gameWebUrl, window.location.href, worldId, runtime.operationsCenterUrl);
 document.querySelector<HTMLAnchorElement>("#live-link")!.href = navigation.live;
 document.querySelector<HTMLAnchorElement>("#journey-link")!.href = navigation.journey;
@@ -165,6 +167,7 @@ document.querySelector<HTMLAnchorElement>("#planner-link")!.href = navigation.pl
 document.querySelector<HTMLAnchorElement>("#operations-link")!.href = navigation.operations;
 document.querySelector<HTMLAnchorElement>("#mailbox-link")!.href = navigation.mailbox;
 mountGlossaryLayer(document.body);
+mountGameHints(document.querySelector<HTMLElement>("#root")!, MAP_HINTS);
 document.querySelector<HTMLElement>("#glossary-slot")!
   .append(document.querySelector<HTMLElement>("[data-zugfolge-glossary]")!);
 const details = document.querySelector<HTMLElement>("#details")!;

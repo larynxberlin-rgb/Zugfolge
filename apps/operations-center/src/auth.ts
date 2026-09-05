@@ -1,6 +1,7 @@
 import { ensureBrowserAccessToken } from "@zugfolge/browser-identity";
 
 export interface OperationsRuntimeConfiguration {
+  readonly publicWorldId: string;
   readonly gameApiUrl: string;
   readonly gameWebUrl: string;
   readonly livemapUrl: string;
@@ -12,6 +13,7 @@ export interface OperationsRuntimeConfiguration {
 export function loadOperationsRuntimeConfiguration(): OperationsRuntimeConfiguration {
   const configured = globalThis.__ZUGFOLGE_RUNTIME_CONFIG__ ?? {};
   return {
+    publicWorldId: configured.publicWorldId ?? "",
     gameApiUrl: configured.gameApiUrl ?? document.querySelector<HTMLMetaElement>('meta[name="game-api-url"]')?.content ?? "",
     gameWebUrl: configured.gameWebUrl ?? "",
     livemapUrl: configured.livemapUrl ?? "",

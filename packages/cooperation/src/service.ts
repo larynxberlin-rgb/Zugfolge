@@ -436,7 +436,7 @@ const CASH_LEDGER_ACCOUNT_NAMES = ["Economy:Kasse", "Bank"] as const;
 /**
  * Loest das bereits provisionierte Cash-Konto fail-closed auf. Der
  * versionierte Economy-Standard gewinnt deterministisch; `Bank` bleibt nur
- * fuer bestehende Tutorial- und Legacy-Welten lesbar. Cash wird hier niemals
+ * fuer bestehende Spielwelten lesbar. Cash wird hier niemals
  * materialisiert, weil das sonst beim Kauf Geld ausserhalb des Economy-Writers
  * erzeugen koennte.
  */

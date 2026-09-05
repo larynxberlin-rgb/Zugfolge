@@ -161,7 +161,7 @@ class AlphaInvitation(models.Model):
             if "@" not in record.email:
                 raise ValidationError(_("Eine gueltige E-Mail-Adresse ist Pflicht."))
             if record.world_projection_id.profile_kind != "public":
-                raise ValidationError(_("Alpha-Einladungen waehlen die oeffentliche Zielwelt; die getrennte Tutorialwelt wird autoritativ durch Game bereitgestellt."))
+                raise ValidationError(_("Alpha-Einladungen müssen eine öffentliche Zielwelt auf deren eigenem Server wählen."))
             record._command("create")
             record._write_controlled({"state": "sent"})
 

@@ -16,7 +16,7 @@ import {
   operationalMovementContinuationsEvidence,
   operationalProtectionModeSelectionEvidence,
 } from "../../packages/runtime-native/dist/index.js";
-import { assertEmbeddedWorldIds, assertNoStarterIdentifiers } from "./alpha-world-variants.mjs";
+import { assertEmbeddedWorldIds } from "./world-binding.mjs";
 import {
   DAILY_CIRCULATION_PLAN_SCHEMA,
   dailyMovementContinuities,
@@ -1750,7 +1750,6 @@ const deployment = {
   },
 };
 assertEmbeddedWorldIds(deployment, WORLD_ID);
-assertNoStarterIdentifiers(deployment);
 
 await writeFile(stagedOutputPath, `${JSON.stringify({ deployment: encodeEconomyValue(deployment) }, null, 2)}\n`, { encoding: "utf8", flag: "wx" });
 return Object.freeze({

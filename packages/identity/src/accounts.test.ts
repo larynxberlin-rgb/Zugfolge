@@ -11,7 +11,6 @@ import {
   AuthorizationError,
   getAccount,
   grantRole,
-  listAccountsForSubject,
   listAccountsInWorld,
   requestWorldAccess,
   revokeWorldAccess,
@@ -248,39 +247,5 @@ describe("grantRole", () => {
         actingKeycloakSubject: "kc-anna",
       }),
     ).rejects.toBeInstanceOf(AccountNotFoundError);
-  });
-});
-
-describe("listAccountsForSubject", () => {
-  it("findet die Konten eines Subjects über mehrere Welten hinweg", async () => {
-    const anna = await requestWorldAccess(db, { worldId: WORLD_LHE, keycloakSubject: "kc-anna", displayName: "Anna" });
-    await grantRole(db, { worldId: WORLD_LHE, targetAccountId: anna.id, role: "world_admin", actingKeycloakSubject: "kc-anna" });
-    const beforeSingle = queryCount;
-    await listAccountsForSubject(db, "kc-anna");
-    const singleAccountQueries = queryCount - beforeSingle;
-    await requestWorldAccess(db, {
-      worldId: WORLD_MIDDLE_GERMANY,
-      keycloakSubject: "kc-anna",
-      displayName: "Anna (Mitteldeutschland)",
-    });
-
-    const beforeMemberships = queryCount;
-    const memberships = await listAccountsForSubject(db, "kc-anna");
-
-    expect(queryCount - beforeMemberships).toBe(singleAccountQueries);
-    expect(memberships.map((account) => account.worldId).sort()).toEqual([WORLD_LHE, WORLD_MIDDLE_GERMANY].sort());
-    expect(memberships.find((account) => account.worldId === WORLD_LHE)?.roles).toEqual(expect.arrayContaining(["player", "world_admin"]));
-    expect(memberships.find((account) => account.worldId === WORLD_MIDDLE_GERMANY)?.roles).toEqual(["player"]);
-  });
-
-  it("blendet einen widerrufenen Weltzugang aus", async () => {
-    await requestWorldAccess(db, { worldId: WORLD_LHE, keycloakSubject: "kc-anna", displayName: "Anna" });
-    await revokeWorldAccess(db, {
-      worldId: WORLD_LHE,
-      targetKeycloakSubject: "kc-anna",
-      actingKeycloakSubject: "kc-anna",
-    });
-
-    await expect(listAccountsForSubject(db, "kc-anna")).resolves.toEqual([]);
   });
 });

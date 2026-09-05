@@ -224,6 +224,7 @@
       "status": { "core": "in_progress", "integration": "in_progress", "operations": "blocked", "acceptance": "blocked" },
       "evidence": [
         { "label": "Erweiterter Alpha-Abnahmebericht", "url": "docs/alpha-abnahme-2026-08-11.md" },
+        { "label": "M9.1: Abgenommene Spielhinweise", "url": "docs/spielhinweise.md#abnahme" },
         { "label": "Alpha-Betrieb und Wiederherstellung", "url": "docs/alpha-betrieb.md" },
         { "label": "E24 und Alpha-Schnitt", "url": "docs/adr/0024-erweiterter-alpha-schnitt.md" },
         { "label": "E25 Fahrtketten und Außenläufe", "url": "docs/adr/0025-gebietsueberschreitende-fahrtketten.md" }

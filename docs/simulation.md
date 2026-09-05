@@ -83,9 +83,8 @@ Cleanup verhindern unbegrenztes Wachstum und verwaiste Abonnenten.
 Die Game-API authentifiziert Snapshot und Fetch-SSE, prüft Weltzugang und
 liefert bei unbekannter oder nicht aus Rust restaurierter Welt bewusst `503`.
 Beim Start restauriert sie vor dem Listener ausschließlich Regionen aus
-verifizierten, signierten 1:1-Deployments. Kurzlebige Tutorialregionen besitzen
-keinen globalen Echtzeittakt und werden beim Abschluss aus Worker und Livemap
-entfernt. Der 1:1-Scheduler berechnet die Weltsekunde aus der gepinnten
+dem verifizierten, signierten Deployment der fest konfigurierten Welt.
+Der 1:1-Scheduler berechnet die Weltsekunde aus der gepinnten
 Weltepoche und gibt sie explizit an Rust. Ein Cursor einer anderen Generation oder eine Lücke
 erzwingt gezielt einen neuen Snapshot. `apps/livemap` interpoliert höchstens
 zehn Sekunden voraus, ohne den autoritativen Fachzustand zu verändern, und

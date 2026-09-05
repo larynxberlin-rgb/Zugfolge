@@ -9,7 +9,7 @@ import { migrate } from "drizzle-orm/pglite/migrator";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { activeEntitlementsForSubject } from "./store.js";
 
-import { ADMIN_ACTION_TYPES, AdminWorkflowError, assertPublicWorldSlot, canonicalJson, COMMAND_TYPES, createHttpOdooProjectionClient, createHttpOdooReconciliationClient, createOdooWebhookReceiptStore, deriveReconciliationTasks, dispatchOdooProjectionOutbox, enqueueAlphaFeedbackProjection, enqueueAuthoritativeWorldStartProjection, enqueueGameAdminCapabilityProjection, enqueueWorldProjection, entitlementFeatures, listPendingOdooProjectionWorldIds, ODOO_PROJECTION_ENVELOPE_HASH_SCHEMA, OdooCommandWorkerInterruptedError, processNextOdooCommand, projectionEnvelope, projectionEnvelopeHash, receiveOdooWebhook, reconcileOdooProjectionSnapshot, signPayload, type AdminCommandPayload, type OdooProjectionEnvelope, type OdooWebhookEnvelope, type SigningKey, validateAdminCommand, WebhookSignatureError, WebhookValidationError } from "./index.js";
+import { ADMIN_ACTION_TYPES, AdminWorkflowError, canonicalJson, COMMAND_TYPES, createHttpOdooProjectionClient, createHttpOdooReconciliationClient, createOdooWebhookReceiptStore, deriveReconciliationTasks, dispatchOdooProjectionOutbox, enqueueAlphaFeedbackProjection, enqueueAuthoritativeWorldStartProjection, enqueueGameAdminCapabilityProjection, enqueueWorldProjection, entitlementFeatures, listPendingOdooProjectionWorldIds, ODOO_PROJECTION_ENVELOPE_HASH_SCHEMA, OdooCommandWorkerInterruptedError, processNextOdooCommand, projectionEnvelope, projectionEnvelopeHash, receiveOdooWebhook, reconcileOdooProjectionSnapshot, signPayload, type AdminCommandPayload, type OdooProjectionEnvelope, type OdooWebhookEnvelope, type SigningKey, validateAdminCommand, WebhookSignatureError, WebhookValidationError } from "./index.js";
 
 const NOW = new Date("2026-08-11T12:00:00.000Z");
 const WORLD = "11111111-1111-4111-8111-111111111111";
@@ -174,7 +174,7 @@ describe("signierter Odoo-Receiver", () => {
     expect(await activeEntitlementsForSubject(db, "legacy-subject", NOW)).toHaveLength(1);
     expect(await activeEntitlementsForSubject(db, "legacy-subject", new Date(NOW.getTime() + 1_000))).toHaveLength(0);
   });
-  it("weist fremde Hauptwelten und Tutorials vor Queue-Commit sowie im Altbestand vor Wirkung ab", async () => {
+  it("weist fremde Weltbindungen vor Queue-Commit sowie im Altbestand vor Wirkung ab", async () => {
     const assertWorldScope = (worldId: string) => { if (worldId !== WORLD) throw new Error("foreign_world"); };
     const options = { tenantId: "zugfolge-production", keys: [KEY], authorizedActors: { "commerce-service": ["admin.world_deploy"] }, assertWorldScope };
     const payload = { ...entitlementEnvelope("scope-rejected-foreign"), command: worldDeployCommand(undefined, OTHER_WORLD) };
@@ -226,14 +226,13 @@ describe("signierter Odoo-Receiver", () => {
 });
 
 describe("Entitlement-Schutzgrenze", () => {
-  it("liefert nur Weltplatz-, Kosmetik- und Privatweltrechte, nie Simulations- oder Plannerwerte", () => {
+  it("liefert lokale Kosmetikrechte ohne Simulations- oder Plannerwerte", () => {
     const features = entitlementFeatures([
       { subject: "kc-anna", productKind: "zugfolge_plus", status: "active", validFrom: new Date("2026-01-01T00:00:00Z"), quantity: 1 },
       { subject: "kc-anna", productKind: "cosmetic", status: "active", validFrom: new Date("2026-01-01T00:00:00Z"), quantity: 1 },
     ], NOW);
-    expect(features).toEqual({ activePublicWorldLimit: 3, cosmetics: true, mayCreatePrivateUnrankedWorld: false });
+    expect(features).toEqual({ cosmetics: true });
     expect(Object.keys(features)).not.toContain("plannerPriority");
-    expect(() => assertPublicWorldSlot([], 1, NOW)).toThrow();
   });
 });
 
@@ -386,11 +385,9 @@ describe("Bridge", () => {
 });
 
 describe("Vier-Augen-Validierung", () => {
-  it("haelt nur den signierten Weltstart im Admin-Katalog und keinen direkten Tutorial-Reset", () => {
+  it("fuehrt den signierten Weltstart im Admin-Katalog", () => {
     expect(COMMAND_TYPES).toContain("admin.world_deploy");
     expect(ADMIN_ACTION_TYPES).toContain("world_deploy");
-    expect(COMMAND_TYPES).not.toContain("admin.tutorial_account_reset" as never);
-    expect(ADMIN_ACTION_TYPES).not.toContain("tutorial_account_reset" as never);
   });
 
   it("akzeptiert endliches und unbegrenztes Startkapital nur als signierte, weltgebundene Policy", () => {
@@ -466,7 +463,7 @@ describe("Vier-Augen-Validierung", () => {
       ...divergent,
       signedDeployment: {
         ...divergent.signedDeployment,
-        deployment: { ...divergent.signedDeployment.deployment, worldId: WORLD, blueprint: { profileKind: "tutorial", startingCapitalPolicy: divergent.startingCapitalPolicy } },
+        deployment: { ...divergent.signedDeployment.deployment, worldId: WORLD, blueprint: { profileKind: "invalid", startingCapitalPolicy: divergent.startingCapitalPolicy } },
       },
     })).toThrow(/Profilbindung/);
   });

@@ -239,6 +239,13 @@
       "when": 1788600000000,
       "tag": "0034_platform_audit_boundaries",
       "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1788634800000,
+      "tag": "0035_remove_tutorial_worlds",
+      "breakpoints": true
     }
   ]
 }

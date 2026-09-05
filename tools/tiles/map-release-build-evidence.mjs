@@ -88,7 +88,7 @@ import {
 import {
   databaseAuthoritativeCatalog,
   DATABASE_CUTOVER_CONSTRAINTS,
-  DATABASE_CUTOVER_GUARDS,
+  databaseCutoverGuards,
 } from "../alpha-ops/database-cutover-schema-contract.mjs";
 import { validateKeycloakIdentityHead } from "../alpha-ops/keycloak-public-to-schema.mjs";
 
@@ -122,6 +122,7 @@ const RUNTIME_ROLLBACK_ATTESTATION_SCHEMA = "zugfolge-map-rollback-attestation/v
 const RUNTIME_ROLLBACK_TUPLE_SCHEMA = "zugfolge-runtime-rollback-tuple/v3";
 const DATABASE_ROLLBACK_PROOF_SCHEMA = "zugfolge-database-rollback-proof/v3";
 const DATABASE_ROLLBACK_PROOF_SCHEMA_34 = "zugfolge-database-rollback-proof/v4";
+const DATABASE_ROLLBACK_PROOF_SCHEMA_35 = "zugfolge-database-rollback-proof/v5";
 const DATABASE_AUTHORITATIVE_HEAD_SCHEMA = "zugfolge-database-authoritative-head/v1";
 const DATABASE_BACKUP_MANIFEST_SCHEMA = "zugfolge-database-backup-manifest/v1";
 const DATABASE_RESTORE_PROOF_SCHEMA = "zugfolge-database-restore-proof/v1";
@@ -129,7 +130,6 @@ const DATABASE_RESTORE_SEPARATION_SCHEMA = "zugfolge-database-restore-separation
 const DATABASE_ROLLBACK_WINDOW = "pre-activation-only";
 const DATABASE_ROLLBACK_SCHEMA_MIGRATIONS = 33;
 const REQUIRED_DATABASE_CONSTRAINTS = new Map(DATABASE_CUTOVER_CONSTRAINTS.map((entry) => [entry.name, entry.definitionSha256]));
-const REQUIRED_DATABASE_GUARDS = new Map(DATABASE_CUTOVER_GUARDS.map((entry) => [entry.name, entry.definitionSha256]));
 const RESTORE_MARKER = ".zugfolge-empty-restore-root.json";
 const INSTALLED_PACKAGE_MANIFEST = ".zugfolge-map-package.json";
 const SHA256 = /^[a-f0-9]{64}$/;
@@ -589,7 +589,8 @@ function validateDatabaseConstraints(value, label) {
   return value;
 }
 
-function validateDatabaseGuards(value, label) {
+function validateDatabaseGuards(value, label, migrationCount) {
+  const requiredGuards = new Map(databaseCutoverGuards(migrationCount).map((entry) => [entry.name, entry.definitionSha256]));
   invariant(Array.isArray(value) && value.length > 0, `${label} besitzt keinen Unveraenderlichkeitsbeleg.`);
   const names = new Set();
   for (const [index, guard] of value.entries()) {
@@ -599,14 +600,14 @@ function validateDatabaseGuards(value, label) {
     invariant(guard.enabled === true, `${label}.${name} ist nicht aktiviert.`);
     invariant(
       SHA256.test(guard.definitionSha256)
-        && guard.definitionSha256 === REQUIRED_DATABASE_GUARDS.get(name),
+        && guard.definitionSha256 === requiredGuards.get(name),
       `${label}.${name} weicht vom eingecheckten Guard-Sollvertrag ab.`,
     );
     names.add(name);
   }
   invariant(
-    names.size === REQUIRED_DATABASE_GUARDS.size
-      && [...REQUIRED_DATABASE_GUARDS.keys()].every((name) => names.has(name)),
+    names.size === requiredGuards.size
+      && [...requiredGuards.keys()].every((name) => names.has(name)),
     `${label} bindet nicht den exakten Unveraenderlichkeitsvertrag.`,
   );
   return value;
@@ -632,7 +633,7 @@ function validateDatabaseRollbackSnapshot(value, label, migrationCount = DATABAS
   invariant(UUID_V4.test(value.databaseIdentity), `${label}.databaseIdentity ist keine persistierte UUIDv4.`);
   validateDatabaseMigrationLedger(value.migrationLedger, `${label}.migrationLedger`, migrationCount);
   validateDatabaseConstraints(value.constraints, `${label}.constraints`);
-  validateDatabaseGuards(value.guards, `${label}.guards`);
+  validateDatabaseGuards(value.guards, `${label}.guards`, migrationCount);
   validateDatabaseHeadCounts(value.heads, `${label}.heads`);
   exactObjectKeys(value.authoritativeHead, ["schema", "tableCount", "tableSetSha256", "worldCount", "regionalStateCount", "domainEventCount", "stateHash"], `${label}.authoritativeHead`);
   invariant(value.authoritativeHead.schema === DATABASE_AUTHORITATIVE_HEAD_SCHEMA, `${label}.authoritativeHead besitzt ein unbekanntes Schema.`);
@@ -754,8 +755,8 @@ export function validateDatabaseRollbackProof(proof, expected = {}) {
     "restoreProofSha256",
     "proofHash",
   ], "Datenbank-Rollbackbeleg");
-  invariant([DATABASE_ROLLBACK_PROOF_SCHEMA, DATABASE_ROLLBACK_PROOF_SCHEMA_34].includes(proof.schema), "Datenbank-Rollbackbeleg besitzt ein unbekanntes Schema.");
-  const migrationCount = proof.schema === DATABASE_ROLLBACK_PROOF_SCHEMA_34 ? 34 : 33;
+  invariant([DATABASE_ROLLBACK_PROOF_SCHEMA, DATABASE_ROLLBACK_PROOF_SCHEMA_34, DATABASE_ROLLBACK_PROOF_SCHEMA_35].includes(proof.schema), "Datenbank-Rollbackbeleg besitzt ein unbekanntes Schema.");
+  const migrationCount = proof.schema === DATABASE_ROLLBACK_PROOF_SCHEMA_35 ? 35 : proof.schema === DATABASE_ROLLBACK_PROOF_SCHEMA_34 ? 34 : 33;
   parseReleasePair(proof.releaseId, proof.previousReleaseId);
   if (expected.releaseId !== undefined) invariant(proof.releaseId === expected.releaseId, "Datenbank-Rollbackbeleg gehoert nicht zum Kandidatenrelease.");
   if (expected.previousReleaseId !== undefined) invariant(proof.previousReleaseId === expected.previousReleaseId, "Datenbank-Rollbackbeleg gehoert nicht zum Vorgaengerrelease.");
@@ -822,7 +823,7 @@ export function createDatabaseRollbackProof({
   rollbackWindow,
 }) {
   const candidate = {
-    schema: source?.migrationLedger?.length === 34 ? DATABASE_ROLLBACK_PROOF_SCHEMA_34 : DATABASE_ROLLBACK_PROOF_SCHEMA,
+    schema: source?.migrationLedger?.length === 35 ? DATABASE_ROLLBACK_PROOF_SCHEMA_35 : source?.migrationLedger?.length === 34 ? DATABASE_ROLLBACK_PROOF_SCHEMA_34 : DATABASE_ROLLBACK_PROOF_SCHEMA,
     releaseId,
     previousReleaseId,
     rollbackWindow,
@@ -3525,7 +3526,7 @@ function validateDatabaseRollbackBinding(binding, previousReleaseId) {
     "sourceHeads",
     "sourceKeycloakIdentityHead",
   ], "Rollback-Runtime-Tuple.databaseRollback");
-  invariant([DATABASE_ROLLBACK_PROOF_SCHEMA, DATABASE_ROLLBACK_PROOF_SCHEMA_34].includes(binding.schema), "Rollback-Runtime-Tuple bindet kein bekanntes Datenbankbeweis-Schema.");
+  invariant([DATABASE_ROLLBACK_PROOF_SCHEMA, DATABASE_ROLLBACK_PROOF_SCHEMA_34, DATABASE_ROLLBACK_PROOF_SCHEMA_35].includes(binding.schema), "Rollback-Runtime-Tuple bindet kein bekanntes Datenbankbeweis-Schema.");
   parseReleasePair(binding.releaseId, binding.previousReleaseId);
   invariant(binding.previousReleaseId === previousReleaseId, "Rollback-Runtime-Tuple bindet den Datenbankbeleg an einen anderen Vorgaenger.");
   invariant(Number.isSafeInteger(binding.bytes) && binding.bytes > 0 && SHA256.test(binding.sha256), "Rollback-Runtime-Tuple bindet den Datenbankbeleg nicht bytegenau.");
@@ -3539,7 +3540,7 @@ function validateDatabaseRollbackBinding(binding, previousReleaseId) {
   invariant(UUID_V4.test(binding.databaseIdentity), "Rollback-Runtime-Tuple bindet keine persistente Datenbankinstanz.");
   exactObjectKeys(binding.sourceAuthoritativeHead, ["schema", "tableCount", "tableSetSha256", "worldCount", "regionalStateCount", "domainEventCount", "stateHash"], "Rollback-Runtime-Tuple.databaseRollback.sourceAuthoritativeHead");
   invariant(binding.sourceAuthoritativeHead.schema === DATABASE_AUTHORITATIVE_HEAD_SCHEMA && SHA256.test(binding.sourceAuthoritativeHead.stateHash), "Rollback-Runtime-Tuple bindet keinen exakten autoritativen Datenbankkopf.");
-  const catalog = databaseAuthoritativeCatalog(binding.schema === DATABASE_ROLLBACK_PROOF_SCHEMA_34 ? 34 : 33);
+  const catalog = databaseAuthoritativeCatalog(binding.schema === DATABASE_ROLLBACK_PROOF_SCHEMA_35 ? 35 : binding.schema === DATABASE_ROLLBACK_PROOF_SCHEMA_34 ? 34 : 33);
   invariant(binding.sourceAuthoritativeHead.tableCount === catalog.tables.length && binding.sourceAuthoritativeHead.tableSetSha256 === catalog.tableSetSha256, "Rollback-Runtime-Tuple bindet einen fremden Schema-Tabellensatz.");
   validateDatabaseHeadCounts(binding.sourceHeads, "Rollback-Runtime-Tuple.databaseRollback.sourceHeads");
   validateKeycloakIdentityHead(binding.sourceKeycloakIdentityHead);

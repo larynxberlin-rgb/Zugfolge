@@ -1,7 +1,7 @@
 {
     "name": "Zugfolge Administration",
     "summary": "Signierte Game-Projektionen, Freigaben und Monitoring fuer Zugfolge",
-    "version": "19.0.2.0.6",
+    "version": "19.0.2.0.7",
     "category": "Administration",
     "license": "Other proprietary",
     "author": "Zugfolge",

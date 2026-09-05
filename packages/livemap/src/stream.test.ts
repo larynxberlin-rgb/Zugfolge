@@ -854,7 +854,7 @@ describe("LivemapRegistry", () => {
   it("wertet nur registrierte, bereits gestartete Echtzeitwelten als freshness-pflichtig", async () => {
     let now = 1_000;
     const registry = new LivemapRegistry({ now: () => now });
-    registry.markPublicOperation("tutorial", ["tutorial-run"], 0);
+    registry.markPublicOperation("released-world", ["released-world-run"], 0);
     registry.forWorld("epoch-less");
     registry.forWorld("future");
     registry.forWorld("running").publish({ at: 1, changed: [train], removed: [] });

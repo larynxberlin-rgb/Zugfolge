@@ -531,7 +531,7 @@ describe("M12.1 EVU-zu-EVU-Verträge", () => {
     expect(await cashBalance(buyerCashAccountId)).toBe(200_000n);
   });
 
-  it("bucht entgeltliche Legacy- und Tutorialverträge weiter auf provisioniertes Bank-Cash", async () => {
+  it("bucht entgeltliche Bestandsverträge weiter auf provisioniertes Bank-Cash", async () => {
     const service = cooperationService();
     const buyerCashAccountId = await fundOperator(buyerOperatorId, 200_000n, "legacy-contract", "Bank");
     const sellerCashAccountId = await ensureCashAccount(sellerOperatorId, "Bank");

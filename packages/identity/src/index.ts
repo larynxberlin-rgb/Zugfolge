@@ -6,7 +6,6 @@ export {
   getAccount,
   getAccountIncludingRevoked,
   grantRole,
-  listAccountsForSubject,
   listAccountsInWorld,
   requestWorldAccess,
   revokeWorldAccess,

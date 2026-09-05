@@ -35,18 +35,11 @@ import {
   operatingProgramVersions,
   operators,
   simulationCommands,
-  tutorialSessions,
   worldEventLog,
   worlds,
-  worldAccesses,
   worldParticipations,
 } from "@zugfolge/db";
 import {
-  assertPrivateWorldEntitlement,
-  assertPublicWorldSlot,
-  activeEntitlementsForSubject,
-  PrivateWorldEntitlementError,
-  PublicWorldSlotError,
   receiveOdooWebhook,
   WebhookSignatureError,
   WebhookValidationError,
@@ -134,7 +127,6 @@ import {
   getAccount,
   grantRole,
   isRole,
-  listAccountsForSubject,
   listAccountsInWorld,
   requestWorldAccess,
   WorldContractAcceptanceConflictError,
@@ -218,7 +210,7 @@ import {
 } from "./regional-simulation-worker.js";
 import { projectSimulationEventBatch } from "./simulation-event-projection.js";
 import { registerWorldLifecycleGate } from "./world-lifecycle-gate.js";
-import { registerServerWorldScope, serverWorldIds, type ServerWorldScope } from "./server-world-scope.js";
+import { registerServerWorldScope, type ServerWorldScope } from "./server-world-scope.js";
 
 export interface AppDependencies {
   /** Produktion setzt genau eine Spielwelt mit fester Subdomain. */
@@ -1011,8 +1003,6 @@ function sendError(reply: FastifyReply, error: unknown): FastifyReply {
     error instanceof AuthorizationError ||
     error instanceof NoAccountInWorldError ||
     error instanceof ForeignLedgerAccountError
-    || error instanceof PublicWorldSlotError
-    || error instanceof PrivateWorldEntitlementError
   ) {
     return reply.code(403).send({ error: error.message });
   }
@@ -1205,13 +1195,6 @@ function supportedPublicEntryPolicy(policy: StartingCapitalPolicy | null): boole
   return policy !== null;
 }
 
-/**
- * Fester Namespace fuer den weltuebergreifenden Identitaets-Lock. Der zweite
- * Advisory-Lock-Schluessel ist der Postgres-Hash des Keycloak-Subjects. Eine
- * Hash-Kollision kann damit hoechstens zwei Beitritte kurz serialisieren, aber
- * weder einen fremden Zugang freigeben noch ein Slot-Limit umgehen.
- */
-const PUBLIC_WORLD_SLOT_LOCK_NAMESPACE = 1_515_674_707;
 const LIVEMAP_HEARTBEAT_INTERVAL_MS = 5_000;
 
 async function requestPublicWorldAccessAtomically(
@@ -1224,13 +1207,6 @@ async function requestPublicWorldAccessAtomically(
   },
 ): Promise<Awaited<ReturnType<typeof requestWorldAccess>>> {
   return db.transaction(async (tx) => {
-    // guards:allow world-id — Der Lock ist absichtlich subject-global: Er
-    // serialisiert die weltuebergreifende Slot-Entscheidung, waehrend alle
-    // gelesenen und geschriebenen Fachzeilen weiterhin world_id tragen.
-    await tx.execute(sql`select pg_advisory_xact_lock(
-      ${PUBLIC_WORLD_SLOT_LOCK_NAMESPACE}, hashtext(${input.keycloakSubject})
-    )`);
-
     // Weltabschluss und Markteintritt duerfen sich nicht ueberholen. Der
     // Writer fuer den Weltlebenszyklus verwendet dieselbe Weltzeile als Lock.
     await tx.execute(sql`select ${worlds.id} from ${worlds}
@@ -1277,7 +1253,6 @@ async function requestPublicWorldAccessAtomically(
       );
     }
 
-    let commerciallyReleased = false;
     if (contract.blueprint.schemaVersion === ALPHA_WORLD_BLUEPRINT_SCHEMA
       && contract.blueprint.admission !== undefined) {
       const [participation] = await tx.select({ id: worldParticipations.id })
@@ -1293,32 +1268,6 @@ async function requestPublicWorldAccessAtomically(
           "Oeffentliche Weltteilnahmen werden erst nach kommerzieller Odoo-Freigabe provisioniert.",
         );
       }
-      commerciallyReleased = true;
-    }
-
-    const memberships = await tx
-      .select({ worldId: worldAccesses.worldId })
-      .from(worldAccesses)
-      .innerJoin(worlds, eq(worldAccesses.worldId, worlds.id))
-      .where(and(
-        eq(worldAccesses.keycloakSubject, input.keycloakSubject),
-        eq(worldAccesses.status, "active"),
-        eq(worlds.worldKind, "public"),
-        eq(worlds.lifecycleStatus, "active"),
-      ));
-    if (!commerciallyReleased && !memberships.some((membership) => membership.worldId === input.worldId)) {
-      const entitlements = await activeEntitlementsForSubject(tx, input.keycloakSubject);
-      assertPublicWorldSlot(
-        entitlements.map((record) => ({
-          subject: record.keycloakSubject,
-          productKind: record.productKind,
-          status: record.status,
-          validFrom: record.validFrom,
-          validUntil: record.validUntil ?? undefined,
-          quantity: Number(record.quantity),
-        })),
-        memberships.length,
-      );
     }
 
     return requestWorldAccess(tx, {
@@ -1489,7 +1438,7 @@ export function buildApp(deps: AppDependencies): FastifyInstance {
   observability.register(app);
   if (deps.metricsApp !== undefined) observability.registerMetrics(deps.metricsApp);
   const authenticate = createAuthenticator(deps.verifyToken);
-  if (deps.worldScope !== undefined) registerServerWorldScope(app, deps.db, deps.worldScope);
+  if (deps.worldScope !== undefined) registerServerWorldScope(app, deps.worldScope);
   registerWorldLifecycleGate(app, deps.db);
   const operations = deps.operations ?? new OperationsRegistry();
   const assertDirectAdminAllowed = () => {
@@ -2496,7 +2445,7 @@ export function buildApp(deps: AppDependencies): FastifyInstance {
         if (account === undefined) throw new AuthorizationError("Kein aktiver Zugang zu dieser Welt.");
         const after = request.query.after ?? 0;
         const ownedOperatorIds = new Set(
-          (await listOperatorsForAccount(deps.db, identity.keycloakSubject))
+          (await listOperatorsForAccount(deps.db, identity.keycloakSubject, request.params.worldId))
             .filter((operator) =>
               operator.worldId === request.params.worldId
               && operator.foundingAccountId === account.id)
@@ -3090,11 +3039,9 @@ export function buildApp(deps: AppDependencies): FastifyInstance {
             worldKind: worlds.worldKind,
             lifecycleStatus: worlds.lifecycleStatus,
             profile: alphaWorldProfiles,
-            tutorialSessionId: tutorialSessions.id,
           })
           .from(worlds)
           .leftJoin(alphaWorldProfiles, eq(alphaWorldProfiles.worldId, worlds.id))
-          .leftJoin(tutorialSessions, eq(tutorialSessions.tutorialWorldId, worlds.id))
           .where(eq(worlds.id, request.params.worldId))
           .limit(1);
         if (targetWorld === undefined) {
@@ -3104,12 +3051,6 @@ export function buildApp(deps: AppDependencies): FastifyInstance {
           return reply.code(409).send({ code: "world_not_active", error: "Archivierte Welten sind schreibgeschuetzt." });
         }
         if (targetWorld.worldKind === "private") {
-          if (targetWorld.profile?.profileKind === "tutorial" || targetWorld.tutorialSessionId !== null) {
-            return reply.code(403).send({
-              code: "tutorial_session_required",
-              error: "Tutorialwelten sind ausschliesslich ueber ihre gebundene Tutorialsitzung erreichbar.",
-            });
-          }
           return reply.code(403).send({
             code: "private_world_access_managed",
             error: "Zugang zu privaten Welten wird ausschliesslich serverseitig provisioniert.",
@@ -3179,34 +3120,6 @@ export function buildApp(deps: AppDependencies): FastifyInstance {
     },
   );
 
-  app.post<{ Body: { name: string; schedulePeriodWeeks: number; epoch: string } }>(
-    "/private-worlds",
-    {
-      preHandler: authenticate,
-      schema: {
-        body: {
-          type: "object", additionalProperties: false, required: ["name", "schedulePeriodWeeks", "epoch"],
-          properties: { name: { type: "string", minLength: 1, maxLength: 80 }, schedulePeriodWeeks: { type: "integer", minimum: 3, maximum: 8 }, epoch: { type: "string", format: "date-time" } },
-        },
-      },
-    },
-    async (request, reply) => {
-      const identity = request.identity;
-      if (identity === undefined) return reply.code(401).send({ error: "Keine Identität." });
-      if (deps.worldScope !== undefined) return reply.code(409).send({ code: "dedicated_world_server_required", error: "Eine weitere Spielwelt braucht einen eigenen Server und eine eigene Subdomain." });
-      try {
-        const entitlements = await activeEntitlementsForSubject(deps.db, identity.keycloakSubject);
-        assertPrivateWorldEntitlement(entitlements.map((record) => ({ subject: record.keycloakSubject, productKind: record.productKind, status: record.status, validFrom: record.validFrom, validUntil: record.validUntil ?? undefined, quantity: Number(record.quantity) })));
-        const [world] = await deps.db.insert(worlds).values({ name: request.body.name, schedulePeriodWeeks: request.body.schedulePeriodWeeks, epoch: new Date(request.body.epoch), worldKind: "private", rankingStatus: "unranked" }).returning();
-        if (world === undefined) throw new Error("Private Welt konnte nicht angelegt werden.");
-        await requestWorldAccess(deps.db, { worldId: world.id, keycloakSubject: identity.keycloakSubject, displayName: identity.displayName });
-        return reply.code(201).send(world);
-      } catch (error) {
-        return sendError(reply, error);
-      }
-    },
-  );
-
   app.get<{ Params: { worldId: string } }>(
     "/worlds/:worldId/accounts",
     { preHandler: authenticate, schema: { params: worldIdParam } },
@@ -3266,16 +3179,6 @@ export function buildApp(deps: AppDependencies): FastifyInstance {
     },
   );
 
-  app.get("/me/worlds", { preHandler: authenticate }, async (request, reply) => {
-    const identity = request.identity;
-    if (identity === undefined) {
-      return reply.code(401).send({ error: "Keine Identität." });
-    }
-    const memberships = await listAccountsForSubject(deps.db, identity.keycloakSubject);
-    const allowed = deps.worldScope === undefined ? undefined : await serverWorldIds(deps.db, deps.worldScope);
-    return reply.send(allowed === undefined ? memberships : memberships.filter((row) => allowed.has(row.worldId)));
-  });
-
   // ---------------------------------------------------------------------
   // M2.3 — EVU: Gründung, Liste
   // ---------------------------------------------------------------------
@@ -3323,7 +3226,7 @@ export function buildApp(deps: AppDependencies): FastifyInstance {
         if (account === undefined) throw new NoAccountInWorldError(request.params.worldId);
 
         const policy = await startingCapitalPolicyForWorld(deps.db, request.params.worldId);
-        const ownOperators = (await listOperatorsForAccount(deps.db, identity.keycloakSubject))
+        const ownOperators = (await listOperatorsForAccount(deps.db, identity.keycloakSubject, request.params.worldId))
           .filter((operator) => operator.worldId === request.params.worldId)
           .sort((left, right) => left.id.localeCompare(right.id));
         const projectedOperators = policy.mode === "unlimited"
@@ -3431,14 +3334,13 @@ export function buildApp(deps: AppDependencies): FastifyInstance {
     },
   );
 
-  app.get("/me/operators", { preHandler: authenticate }, async (request, reply) => {
+  app.get<{ Params: { worldId: string } }>("/worlds/:worldId/me/operators", { preHandler: authenticate, schema: { params: worldIdParam } }, async (request, reply) => {
     const identity = request.identity;
     if (identity === undefined) {
       return reply.code(401).send({ error: "Keine Identität." });
     }
-    const eigene = await listOperatorsForAccount(deps.db, identity.keycloakSubject);
-    const allowed = deps.worldScope === undefined ? undefined : await serverWorldIds(deps.db, deps.worldScope);
-    return reply.send(allowed === undefined ? eigene : eigene.filter((row) => allowed.has(row.worldId)));
+    const eigene = await listOperatorsForAccount(deps.db, identity.keycloakSubject, request.params.worldId);
+    return reply.send(eigene);
   });
 
   // ---------------------------------------------------------------------

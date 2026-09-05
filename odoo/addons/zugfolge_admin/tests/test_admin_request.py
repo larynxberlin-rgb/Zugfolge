@@ -220,7 +220,7 @@ class TestZugfolgeAdminRequest(TransactionCase):
         with self.assertRaises(ValidationError):
             self.env["zugfolge.admin.request"].create(values)
         profile_values = self._world_deploy_values()
-        profile_values.update({"world_kind": "tutorial", "ranking_status": "unranked"})
+        profile_values.update({"world_kind": "private", "ranking_status": "unranked"})
         with self.assertRaises(ValidationError):
             self.env["zugfolge.admin.request"].create(profile_values)
 
@@ -248,13 +248,13 @@ class TestZugfolgeAdminRequest(TransactionCase):
     def test_upgrade_backfills_legacy_world_binding_idempotently_without_touching_deploy_draft(self):
         legacy_projection = self.env["zugfolge.world.projection"].with_context(zugfolge_game_projection=True).create({
             "world_id": "33333333-3333-4333-8333-333333333333",
-            "world_name": "Legacy-Tutorial",
+            "world_name": "Bestandswelt",
             "projection_revision": "legacy-1",
             "observed_at": "2026-01-01 00:00:00",
             "freshness": "delayed",
             "simulation_time": "2026-01-01 00:01:40",
             "payload_hash": "b" * 64,
-            "profile_kind": "tutorial",
+            "profile_kind": "private",
             "telemetry": {"world": {"schedulePeriodWeeks": 6, "simulationTimeS": 100}},
         })
         legacy_request = self.env["zugfolge.admin.request"].create({
@@ -296,7 +296,7 @@ class TestZugfolgeAdminRequest(TransactionCase):
         deploy_request = self.env["zugfolge.admin.request"].browse(deploy_request.id)
         self.assertEqual(legacy_request.world_id, legacy_projection.world_id)
         self.assertEqual(legacy_request.world_name, legacy_projection.world_name)
-        self.assertEqual(legacy_request.world_kind, "tutorial")
+        self.assertEqual(legacy_request.world_kind, "private")
         self.assertEqual(legacy_request.ranking_status, "unranked")
         self.assertEqual(legacy_request.schedule_period_weeks, 6)
         self.assertEqual(str(legacy_request.world_epoch), "2026-01-01 00:00:00")

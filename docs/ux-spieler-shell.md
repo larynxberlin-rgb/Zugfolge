@@ -20,7 +20,7 @@ offen. M9 ist der gegenwärtige Alpha-Schnitt.
 |---|---|---|
 | geschlossen | M0–M7 | Diese Funktionen sind reale Arbeitsbereiche, keine Zukunftsattrappen. |
 | fachlich vollständig, formal offen | M8 | Störungen, Baustellen, Ersatzkonzepte und Vertragsfolgen gehören in den Betrieb; der Rest ist Betriebsfreigabe. |
-| in Arbeit/blockiert | M9 | Tutorial, Onboarding, Schutz, Telemetrie, Weltende und Infrastrukturupdate brauchen klare Systemzustände. |
+| in Arbeit/blockiert | M9 | Spielhinweise, Onboarding, Schutz, Telemetrie, Weltende und Infrastrukturupdate brauchen klare Systemzustände. |
 | offen | M10 | Nachfrage, Zugwahl, Tarife, Kapazität, Manifeste und SPFV-Linienplanung. |
 | offen | M11 | Güterströme, Wagen, Verladerverträge, Wagenumläufe und Gefahrgut. |
 | teilweise vorgezogen | M12 | EVU-Verträge und Fahrzeugmarkt existieren; Vermieter, Bietergemeinschaften und Rankings folgen. |
@@ -81,7 +81,7 @@ Die Desktop-Navigation besitzt höchstens fünf Primärziele:
 
 Postfach und Fristen sind kein gleichgewichtiger Fachbereich. Sie liegen als
 globaler Aufgabenknopf in der Kopfzeile; die vollständige Liste bleibt als
-eigene fokussierte Ansicht erreichbar. Weltvertrag, Tutorial und EVU-Gründung
+eigene fokussierte Ansicht erreichbar. Weltvertrag und EVU-Gründung
 sind Einstiegszustände und verschwinden nach Abschluss aus dem täglichen
 Arbeitsfluss.
 

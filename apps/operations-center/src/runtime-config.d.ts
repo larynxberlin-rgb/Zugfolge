@@ -1,4 +1,5 @@
 interface ZugfolgeOperationsRuntimeConfiguration {
+  readonly publicWorldId?: string;
   readonly gameApiUrl?: string;
   readonly gameWebUrl?: string;
   readonly livemapUrl?: string;

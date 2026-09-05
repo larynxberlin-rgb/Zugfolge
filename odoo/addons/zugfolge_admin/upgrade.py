@@ -14,7 +14,7 @@ LEGACY_ADMIN_REQUEST_WORLD_BACKFILL_SQL = """
            ),
            ranking_status = CASE
                WHEN projection.profile_kind = 'public' THEN 'ranked'
-               WHEN projection.profile_kind IN ('tutorial', 'private', 'test') THEN 'unranked'
+               WHEN projection.profile_kind IN ('private', 'test') THEN 'unranked'
                ELSE request.ranking_status
            END,
            schedule_period_weeks = CASE
@@ -104,3 +104,62 @@ def backfill_legacy_deployment_audit(cr):
     updated = cr.rowcount
     cr.execute(LEGACY_DEPLOYMENT_AUDIT_BACKFILL_SQL)
     return updated + cr.rowcount
+
+
+def remove_retired_learning_worlds(env):
+    """Remove obsolete learning-world mirrors, including their administrative records.
+
+    This runs once during the stopped-stack upgrade. Ordinary worlds, partners,
+    invoices and the central server register are retained.
+    """
+    env.flush_all()
+    env.cr.execute("""
+        SELECT world_id FROM zugfolge_world_projection WHERE profile_kind = 'tutorial'
+        UNION SELECT request.world_id FROM zugfolge_admin_request request
+        WHERE request.world_kind = 'tutorial'
+          AND NOT EXISTS (
+              SELECT 1 FROM zugfolge_world_projection projection
+              WHERE projection.world_id = request.world_id
+                AND projection.profile_kind IS DISTINCT FROM 'tutorial'
+          )
+    """)
+    world_ids = [row[0] for row in env.cr.fetchall() if row[0]]
+    projections = env["zugfolge.world.projection"].sudo().search([("world_id", "in", world_ids)])
+    requests = env["zugfolge.admin.request"].sudo().search([
+        "|", "|", ("world_id", "in", world_ids),
+        ("world_projection_id", "in", projections.ids), ("world_kind", "=", "tutorial"),
+    ])
+    targets = [
+        ("zugfolge.alpha.invitation", ["|", ("world_projection_id", "in", projections.ids), ("revocation_request_id", "in", requests.ids)]),
+        ("zugfolge.infra.release.import", ["|", ("world_projection_id", "in", projections.ids), ("adoption_request_id", "in", requests.ids)]),
+        ("zugfolge.feedback", [("world_projection_id", "in", projections.ids)]),
+        ("zugfolge.world.participation", [("world_id", "in", world_ids)]),
+        ("zugfolge.world.offer", [("projection_id", "in", projections.ids)]),
+        ("zugfolge.world.deployment.audit", [("world_id", "in", world_ids)]),
+        ("zugfolge.projection.receipt", [("world_id", "in", world_ids)]),
+        ("zugfolge.admin.capability", [("world_id", "in", world_ids)]),
+        ("zugfolge.admin.request", [("id", "in", requests.ids)]),
+        ("zugfolge.world.projection", [("id", "in", projections.ids)]),
+    ]
+    removed = 0
+    for model_name, domain in targets:
+        records = env[model_name].sudo().search(domain)
+        if not records:
+            continue
+        jobs = env["queue.job"].sudo().search([("model_name", "=", model_name)])
+        selected_ids = set(records.ids)
+        jobs = jobs.filtered(lambda job: bool(set(job.records.ids) & selected_ids))
+        if any(set(job.records.ids) - selected_ids for job in jobs):
+            raise ValueError("A queued job combines retired and regular world records.")
+        jobs.unlink()
+        env["mail.activity"].sudo().search([("res_model", "=", model_name), ("res_id", "in", records.ids)]).unlink()
+        env["mail.message"].sudo().search([("model", "=", model_name), ("res_id", "in", records.ids)]).unlink()
+        env["mail.followers"].sudo().search([("res_model", "=", model_name), ("res_id", "in", records.ids)]).unlink()
+        env["ir.attachment"].sudo().search([("res_model", "=", model_name), ("res_id", "in", records.ids)]).unlink()
+        env["ir.model.data"].sudo().search([("model", "=", model_name), ("res_id", "in", records.ids)]).unlink()
+        # Only these fixed module tables bypass their ordinary immutable-audit guard.
+        # Database foreign keys still protect any unexpected external dependency.
+        env.cr.execute('DELETE FROM "' + records._table + '" WHERE id = ANY(%s)', [records.ids])
+        removed += env.cr.rowcount
+    env.invalidate_all()
+    return removed

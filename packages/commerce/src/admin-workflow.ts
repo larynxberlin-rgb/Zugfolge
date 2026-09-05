@@ -78,7 +78,7 @@ function validateWorldDefinition(value: unknown): asserts value is WorldDefiniti
     || !["name", "kind", "rankingStatus", "schedulePeriodWeeks", "epoch"].every((key) => Object.hasOwn(definition, key))
     || typeof definition["name"] !== "string"
     || definition["name"].trim() === ""
-    || !(["public", "tutorial", "private", "test"] as const).includes(definition["kind"] as never)
+    || !(["public", "private", "test"] as const).includes(definition["kind"] as never)
     || !(["ranked", "unranked"] as const).includes(definition["rankingStatus"] as never)
     || !Number.isSafeInteger(definition["schedulePeriodWeeks"])
     || (definition["schedulePeriodWeeks"] as number) < 3

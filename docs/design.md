@@ -118,22 +118,13 @@ Die Palette ist am dichten Bildfahrplan aus M3.10 geprüft und als CSS-Tokens in
 Die Zustandsfarben stehen nie allein: Konflikte tragen Schraffur und Warnsymbol,
 Alternativen Text und Richtungspfeil, ausgewählte Zugläufe zusätzliche Linienstärke.
 
-### 2.8 Lutz-Coach im Tutorial
+### 2.8 Spielhinweise
 
-Das Coach-Panel liegt auf `#11141B`, reserviert die Avatargröße mit expliziten
-`width`/`height`-Attributen und zeigt
-`/assets/tutorial/lutz-avatar-comic-v2.png` bei 96–160 Pixeln. Lutz ist eine
-fiktive Figur ohne Unternehmensbezug, Logo oder Bildtext. Der Dialogkatalog
-lebt versioniert beim Tutorialtemplate, nicht verstreut in Komponenten.
-
-Normale Hinweise sind nichtmodal und stehen neben der einzigen Hauptaufgabe;
-auf kleinen Bildschirmen folgen sie als kompakte untere Karte nach der Aufgabe.
-Einleitung und Ergebnis dürfen hervorgehoben sein. Zielbereiche erhalten Fokus
-und eine zusätzliche Kontur, ohne dass das Panel die Hauptaktion überdeckt.
-Neue Texte werden mit `aria-live="polite"` angekündigt. Avatar-Alttext,
-Fortschrittswörter, Tastaturfokus, „Warum?“, Ausblenden und manuelles
-Wiederöffnen sind Pflicht. `prefers-reduced-motion: reduce` unterbindet
-Animation und weiches Scrollen.
+Ein beschriftetes Fragezeichen öffnet einen kurzen Tooltip am zugehörigen
+Bedienelement. Er verwendet die vorhandenen dunklen Flächen und Fokusmarkierungen.
+Escape oder ein Klick außerhalb schließt den Text; es gibt keine Fokusfalle.
+Der Hinweis bleibt im sichtbaren Fenster. Er verändert weder Spielzustand noch
+Navigation. Inhalt und Bedienvertrag: [Spielhinweise](spielhinweise.md).
 
 ### 2.9 Anrede und sichtbare Fachsprache
 

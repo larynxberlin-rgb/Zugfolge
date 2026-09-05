@@ -20,7 +20,7 @@ import { validateActivityPolicy, type ActivityPolicyV1, type WorldActivityPolicy
 import { alphaHash } from "./hash.js";
 
 export type AlphaDatabase = PgDatabase<PgQueryResultHKT, Record<string, unknown>, any>;
-export type AlphaWorldKind = "public" | "tutorial" | "private" | "test";
+export type AlphaWorldKind = "public" | "private" | "test";
 export const ALPHA_WORLD_BLUEPRINT_SCHEMA = "zugfolge-alpha-world-blueprint/v2" as const;
 export { PUBLIC_ENTRY_FACILITY_SCHEMA, type PublicEntryFacilityPolicy } from "@zugfolge/economy";
 
@@ -169,17 +169,17 @@ export function validateWorldBlueprint(blueprint: AlphaWorldBlueprint): string {
     && blueprint.schemaVersion !== ALPHA_WORLD_BLUEPRINT_SCHEMA) {
     throw new AlphaValidationError("Unbekanntes Weltentwurf-Schema.");
   }
+  if (!["public", "private", "test"].includes(blueprint.profileKind)) {
+    throw new AlphaValidationError("Unbekannte Art der Spielwelt.");
+  }
   if (blueprint.regionId !== "mitteldeutschland-b" || blueprint.regionVariant !== "B") {
     throw new AlphaValidationError("Alpha-Welt liegt nicht in der freigegebenen Variante B.");
   }
   if (blueprint.profileKind === "public" && blueprint.accelerationFactor !== 1) {
     throw new AlphaValidationError("Beschleunigte Zeit ist in oeffentlichen Welten verboten.");
   }
-  if (blueprint.profileKind === "tutorial" && blueprint.accelerationFactor <= 1) {
-    throw new AlphaValidationError("Tutorial-Welten muessen gegenueber Echtzeit beschleunigt sein.");
-  }
-  if (!["tutorial", "private", "test"].includes(blueprint.profileKind) && blueprint.accelerationFactor !== 1) {
-    throw new AlphaValidationError("Beschleunigung ist nur in Tutorial-, privaten oder markierten Testwelten erlaubt.");
+  if (!["private", "test"].includes(blueprint.profileKind) && blueprint.accelerationFactor !== 1) {
+    throw new AlphaValidationError("Beschleunigung ist nur in privaten oder markierten Testwelten erlaubt.");
   }
   if (!Number.isSafeInteger(blueprint.accelerationFactor) || blueprint.accelerationFactor < 1 || blueprint.accelerationFactor > 3_600) {
     throw new AlphaValidationError("Beschleunigungsfaktor liegt ausserhalb 1..3600.");
@@ -299,11 +299,8 @@ export class AlphaWorldService {
     if (blueprint.profileKind === "public" && (world.worldKind !== "public" || world.rankingStatus !== "ranked")) {
       throw new AlphaValidationError("Oeffentlicher Alpha-Weltentwurf passt nicht zum Weltprofil.");
     }
-    if (blueprint.profileKind === "tutorial" && (world.worldKind !== "private" || world.rankingStatus !== "unranked")) {
-      throw new AlphaValidationError("Tutorial-Weltentwurf braucht eine private, ungewertete Welt.");
-    }
     if (blueprint.profileKind !== "public" && world.worldKind === "public") {
-      throw new AlphaValidationError("Tutorial-, Privat- und Testprofil darf keine oeffentliche Welt markieren.");
+      throw new AlphaValidationError("Privat- und Testprofil darf keine oeffentliche Welt markieren.");
     }
 
     let verifyRunningDeploymentBinding = false;

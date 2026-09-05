@@ -198,24 +198,6 @@ describe("AlphaWorldService", () => {
     expect(() => validateWorldBlueprint(invalid)).toThrow(AlphaValidationError);
   });
 
-  it("weist ein unbeschleunigtes oder nicht privat-unranked gebundenes Tutorial vor dem Start zurueck", async () => {
-    const realtimeTutorial = {
-      ...blueprint(),
-      profileKind: "tutorial",
-      accelerationFactor: 1,
-      entryFacilityPolicy: {
-        schemaVersion: PUBLIC_ENTRY_FACILITY_SCHEMA,
-        mode: "disabled",
-      },
-    } as const satisfies AlphaWorldBlueprint;
-    expect(() => validateWorldBlueprint(realtimeTutorial)).toThrow(/beschleunigt/);
-
-    const acceleratedTutorial = { ...realtimeTutorial, accelerationFactor: 60 } as const satisfies AlphaWorldBlueprint;
-    expect(() => validateWorldBlueprint(acceleratedTutorial)).not.toThrow();
-    await expect(new AlphaWorldService(db, readyPort()).start(WORLD_ID, acceleratedTutorial, 0))
-      .rejects.toThrow(/private, ungewertete Welt/);
-  });
-
   it("laesst die gebundene Startkapital-Policy nach dem Start nicht austauschen", async () => {
     const service = new AlphaWorldService(db, readyPort());
     await service.start(WORLD_ID, blueprint(), 0);

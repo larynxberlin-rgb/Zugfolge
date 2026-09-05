@@ -16,7 +16,6 @@ import {
   AlphaFeedbackService,
   AlphaMonitoringService,
   InfraUpdateService,
-  TutorialSessionService,
   WorldEndService,
   alphaHash,
   effectiveStartingCapitalPolicy,
@@ -163,7 +162,6 @@ import {
   PublicWorldSnapshotUnavailableError,
   buildPublicWorldSnapshot,
 } from "./public-world-snapshot.js";
-import { GameTutorialWorldFactory, loadTutorialEconomyPlatformAdapters } from "./tutorial-world-factory.js";
 import { ActiveWorldDeploymentRuntime } from "./world-deployment-runtime.js";
 import { assertServerWorldDatabase, assertServerWorldDeployment, serverWorldScope } from "./server-world-scope.js";
 
@@ -178,19 +176,6 @@ function requireEnv(name: string): string {
 function optionalEnv(name: string): string | undefined {
   const value = process.env[name];
   return value === undefined || value.length === 0 ? undefined : value;
-}
-
-function alphaWorldReleasePaths(): readonly string[] {
-  const many = optionalEnv("ALPHA_WORLD_RELEASE_PATHS_JSON");
-  const legacy = optionalEnv("ALPHA_WORLD_RELEASE_PATH");
-  if (many === undefined) return legacy === undefined ? [] : [legacy];
-  const parsed: unknown = JSON.parse(many);
-  if (!Array.isArray(parsed) || parsed.length === 0 || parsed.some((path) => typeof path !== "string" || path.trim() === "")) {
-    throw new Error("ALPHA_WORLD_RELEASE_PATHS_JSON muss eine nichtleere Liste von Deploymentpfaden sein.");
-  }
-  if (legacy !== undefined) throw new Error("Einzel- und Mehrfachkonfiguration fuer Alpha-Deployments duerfen nicht kombiniert werden.");
-  if (new Set(parsed).size !== parsed.length) throw new Error("Alpha-Deploymentpfade muessen eindeutig sein.");
-  return parsed as readonly string[];
 }
 
 function parseSigningKeys(value: string): readonly SigningKey[] {
@@ -344,11 +329,6 @@ const regionalSimulation = new RegionalSimulationWorker(
   livemap,
   operations,
 );
-const tutorialSessions = new TutorialSessionService(
-  db,
-  new GameTutorialWorldFactory(db, operatingRuntime, planningRuntime, regionalSimulation),
-  { publicWorldId: worldScope.worldId },
-);
 const consumeProviderSnapshot = createProviderDisruptionConsumer(db, regionalSimulation);
 const worldRows = await db
   .select({
@@ -364,10 +344,7 @@ const worldRows = await db
   .orderBy(asc(worlds.id));
 const activeWorldRows = worldRows.filter((world) => world.lifecycleStatus === "active");
 const deploymentRuntime = new ActiveWorldDeploymentRuntime({
-  // Nur verifizierte signierte Deployments gehoeren in die prozesslokale
-  // Produktionsruntime. Dynamische Tutorialwelten besitzen bewusst weder
-  // statische Planning-Authority noch einen globalen Echtzeittakt.
-  activeWorlds: [],
+  worldId: worldScope.worldId,
   operationalProgramPreflight: (initialization) =>
     operationalSimulationRuntime.initialize(initialization).validationReceipt,
   fleetAuthorityConfigurations: configuredFleetAuthorityConfigurations,
@@ -382,7 +359,7 @@ for (const world of worldRows) {
   if (world.lifecycleStatus === "archived") deploymentRuntime.releaseWorld(world.worldId);
 }
 const configuredSignedDeployments = await Promise.all(
-  alphaWorldReleasePaths().map((path) => loadSignedAlphaWorldDeployment(path, alphaWorldTrustedKeys)),
+  (optionalEnv("ALPHA_WORLD_RELEASE_PATH") === undefined ? [] : [requireEnv("ALPHA_WORLD_RELEASE_PATH")]).map((path) => loadSignedAlphaWorldDeployment(path, alphaWorldTrustedKeys)),
 );
 for (const signed of configuredSignedDeployments) {
   assertServerWorldDeployment(worldScope, signed.deployment);
@@ -505,15 +482,7 @@ const configuredEconomyAdapters = createEconomyPlatformAdapters({
   accountsByOperator: JSON.parse(optionalEnv("ECONOMY_LEDGER_ACCOUNTS_JSON") ?? "{}") as Readonly<Record<string, JournalAccounts>>,
 });
 const economyAdapters = {
-  sendNotice: configuredEconomyAdapters.sendNotice,
-  async postJournal(entry: Parameters<typeof configuredEconomyAdapters.postJournal>[0]) {
-    // Kurzlebige Tutorial-EVUs stehen bewusst nicht in der statischen
-    // Produktionskonfiguration. Ihr versionierter Kontenplan wird fuer den
-    // weltgebundenen Retry aus dem Ledger rekonstruiert; so wird jede Altzeile
-    // vor der dauerhaften Archivierungs-Fence sicher quittiert.
-    const tutorialAdapters = await loadTutorialEconomyPlatformAdapters(db, entry.worldId, entry.operatorId);
-    await (tutorialAdapters ?? configuredEconomyAdapters).postJournal(entry);
-  },
+  ...configuredEconomyAdapters,
   operatingRuntime,
   async publishRuntimeEvents(events: readonly OperatingRuntimeEvent[]) {
     events.forEach((event) => projectLivemapOperationEvent(livemap, event));
@@ -691,7 +660,6 @@ const app = buildApp({
   fleetAuthorityConfigurations,
   adminControl: "odoo",
   alpha: {
-    tutorialSessions,
     feedback: alphaFeedback,
     monitoring: alphaMonitoring,
     worldEnd,
@@ -791,7 +759,7 @@ const runAlphaProjection = () => {
   alphaProjectionCycle = (async () => {
     // guards:allow world-id — Der Betriebszyklus enumeriert Welt-IDs; jede Folgeverarbeitung ist wieder weltgebunden.
     const profiles = (await loadActiveAlphaWorldProjectionProfiles(db))
-      .filter((profile) => profile.profileKind !== "tutorial");
+      .filter((profile) => profile.worldId === worldScope.worldId);
     for (const profile of profiles) {
       const snapshot = await alphaMonitoring.snapshot(profile.worldId, observedAt);
       alphaOperationsMetrics.observe(snapshot);
@@ -860,24 +828,6 @@ alphaProjectionInterval.unref();
 app.addHook("onClose", async () => {
   clearInterval(alphaProjectionInterval);
   await alphaProjectionCycle;
-});
-
-let tutorialReaperCycle: Promise<void> | undefined;
-const runTutorialReaper = () => {
-  if (tutorialReaperCycle !== undefined) return;
-  tutorialReaperCycle = tutorialSessions.reap(new Date())
-    .then((references) => {
-      if (references.length > 0) app.log.info({ tutorialSessionCount: references.length }, "Abgelaufene Tutorialwelten geschlossen");
-    })
-    .catch((error: unknown) => app.log.error({ err: error }, "Tutorial-Reaper fehlgeschlagen"))
-    .finally(() => { tutorialReaperCycle = undefined; });
-};
-runTutorialReaper();
-const tutorialReaperInterval = setInterval(runTutorialReaper, 30_000);
-tutorialReaperInterval.unref();
-app.addHook("onClose", async () => {
-  clearInterval(tutorialReaperInterval);
-  await tutorialReaperCycle;
 });
 
 let alphaPeriodCycle: Promise<void> | undefined;

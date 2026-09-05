@@ -5,7 +5,7 @@
  * Weltverlauf, keine natürliche Person (`retention.ts`).
  */
 
-import { operators, worldAccesses, mailboxMessages, tutorialSessions, tutorialTelemetryEvents, tutorialProgress, commerceEntitlements, commerceWorldClaims, worldParticipations, type MailboxMessage, type Operator, type WorldAccess } from "@zugfolge/db";
+import { operators, worldAccesses, mailboxMessages, commerceEntitlements, commerceWorldClaims, worldParticipations, type MailboxMessage, type Operator, type WorldAccess } from "@zugfolge/db";
 import { getAccountIncludingRevoked, type AccountRecord, type IdentityDatabase } from "@zugfolge/identity";
 import { and, eq, isNull } from "drizzle-orm";
 
@@ -18,14 +18,11 @@ export class PersonalDataNotFoundError extends Error {
 }
 
 export interface PersonalDataExport {
-  readonly schemaVersion: "zugfolge-personal-data-export/v2";
+  readonly schemaVersion: "zugfolge-personal-data-export/v3";
   readonly worldId: string;
   readonly account: AccountRecord;
   readonly worldAccessStatus: "active" | "revoked" | "none";
   readonly worldAccess: WorldAccess | null;
-  readonly tutorialSessions: readonly (typeof tutorialSessions.$inferSelect)[];
-  readonly tutorialTelemetry: readonly (typeof tutorialTelemetryEvents.$inferSelect)[];
-  readonly tutorialProgress: readonly (typeof tutorialProgress.$inferSelect)[];
   readonly commerceEntitlements: readonly (typeof commerceEntitlements.$inferSelect)[];
   readonly commerceWorldClaims: readonly (typeof commerceWorldClaims.$inferSelect)[];
   readonly worldParticipations: readonly (typeof worldParticipations.$inferSelect)[];
@@ -59,13 +56,6 @@ export async function exportAccountData(
   const messages = await db.select().from(mailboxMessages).where(and(
     eq(mailboxMessages.worldId, input.worldId), eq(mailboxMessages.recipientAccountId, account.id), isNull(mailboxMessages.purgedAt),
   ));
-  const sessions = await db.select().from(tutorialSessions).where(and(
-    eq(tutorialSessions.publicWorldId, input.worldId), eq(tutorialSessions.publicAccountId, account.id),
-  ));
-  const telemetry = (await Promise.all(sessions.map((session) => db.select().from(tutorialTelemetryEvents).where(and(
-    eq(tutorialTelemetryEvents.worldId, session.tutorialWorldId), eq(tutorialTelemetryEvents.sessionId, session.id),
-  ))))).flat();
-  const progress = await db.select().from(tutorialProgress).where(and(eq(tutorialProgress.worldId, input.worldId), eq(tutorialProgress.accountId, account.id)));
   // guards:allow world-id — Eigene kaufmaennische Berechtigungen sind global und ausschliesslich an das authentifizierte Subject gebunden.
   const entitlements = await db.select().from(commerceEntitlements).where(eq(commerceEntitlements.keycloakSubject, input.keycloakSubject));
   const claims = (await Promise.all(entitlements.map((entitlement) => db.select().from(commerceWorldClaims).where(and(
@@ -74,14 +64,11 @@ export async function exportAccountData(
   const participations = await db.select().from(worldParticipations).where(and(eq(worldParticipations.worldId, input.worldId), eq(worldParticipations.keycloakSubject, input.keycloakSubject)));
 
   return {
-    schemaVersion: "zugfolge-personal-data-export/v2",
+    schemaVersion: "zugfolge-personal-data-export/v3",
     worldId: input.worldId,
     account,
     worldAccessStatus: access?.status ?? "none",
     worldAccess: access ?? null,
-    tutorialSessions: sessions,
-    tutorialTelemetry: telemetry,
-    tutorialProgress: progress,
     commerceEntitlements: entitlements,
     commerceWorldClaims: claims,
     worldParticipations: participations,

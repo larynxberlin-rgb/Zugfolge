@@ -23,8 +23,7 @@ import { buildApp } from "./app.js";
 
 const databaseUrl = process.env["TEST_DATABASE_URL"];
 const WORLD_A = "8a55a001-0000-4000-8000-000000000001";
-const WORLD_B = "8a55a001-0000-4000-8000-000000000002";
-const SUBJECT = "postgres-parallel-public-slot";
+const SUBJECT = "postgres-parallel-access";
 
 const BLUEPRINT: AlphaWorldBlueprint = {
   schemaVersion: "zugfolge-alpha-world-blueprint/v1",
@@ -42,21 +41,21 @@ const BLUEPRINT: AlphaWorldBlueprint = {
     economy: "d".repeat(64),
   },
   lots: [{
-    lotId: "slot-race-lot",
+    lotId: "access-race-lot",
     contractEndsAtPeriod: 2,
-    trainRunIds: ["slot-race-train"],
-    pathReceiptIds: ["slot-race-path"],
-    vehicleIds: ["slot-race-vehicle"],
-    personnelDutyIds: ["slot-race-duty"],
-    circulationIds: ["slot-race-circulation"],
-    operatingProgramIds: ["slot-race-program"],
+    trainRunIds: ["access-race-train"],
+    pathReceiptIds: ["access-race-path"],
+    vehicleIds: ["access-race-vehicle"],
+    personnelDutyIds: ["access-race-duty"],
+    circulationIds: ["access-race-circulation"],
+    operatingProgramIds: ["access-race-program"],
   }],
   conflictCheckHash: "e".repeat(64),
   tenderCalendarHash: "f".repeat(64),
 };
 const CONTRACT_HASH = validateWorldBlueprint(BLUEPRINT);
 
-describe.skipIf(databaseUrl === undefined)("oeffentlicher Weltplatz auf echtem PostgreSQL", () => {
+describe.skipIf(databaseUrl === undefined)("idempotenter Weltzugang auf echtem PostgreSQL", () => {
   const client = postgres(databaseUrl ?? "postgres://invalid", { max: 4 });
   const db = drizzle(client, { schema });
   let app: FastifyInstance;
@@ -67,11 +66,11 @@ describe.skipIf(databaseUrl === undefined)("oeffentlicher Weltplatz auf echtem P
       // verhindern. Nur diese abgeschlossene Testtransaktion darf ihre
       // fest benannten Fixtures deshalb ohne Triggerwirkung entfernen.
       await tx.execute(sql`set local session_replication_role = replica`);
-      await tx.delete(accountRoles).where(inArray(accountRoles.worldId, [WORLD_A, WORLD_B]));
-      await tx.delete(accounts).where(inArray(accounts.worldId, [WORLD_A, WORLD_B]));
-      await tx.delete(worldAccesses).where(inArray(worldAccesses.worldId, [WORLD_A, WORLD_B]));
-      await tx.delete(alphaWorldProfiles).where(inArray(alphaWorldProfiles.worldId, [WORLD_A, WORLD_B]));
-      await tx.delete(worlds).where(inArray(worlds.id, [WORLD_A, WORLD_B]));
+      await tx.delete(accountRoles).where(inArray(accountRoles.worldId, [WORLD_A]));
+      await tx.delete(accounts).where(inArray(accounts.worldId, [WORLD_A]));
+      await tx.delete(worldAccesses).where(inArray(worldAccesses.worldId, [WORLD_A]));
+      await tx.delete(alphaWorldProfiles).where(inArray(alphaWorldProfiles.worldId, [WORLD_A]));
+      await tx.delete(worlds).where(inArray(worlds.id, [WORLD_A]));
     });
   }
 
@@ -81,18 +80,12 @@ describe.skipIf(databaseUrl === undefined)("oeffentlicher Weltplatz auf echtem P
     await db.insert(worlds).values([
       {
         id: WORLD_A,
-        name: "Slot-Race A",
-        schedulePeriodWeeks: 4,
-        epoch: new Date("2026-01-01T00:00:00Z"),
-      },
-      {
-        id: WORLD_B,
-        name: "Slot-Race B",
+        name: "Zugangstest",
         schedulePeriodWeeks: 4,
         epoch: new Date("2026-01-01T00:00:00Z"),
       },
     ]);
-    await db.insert(alphaWorldProfiles).values([WORLD_A, WORLD_B].map((worldId) => ({
+    await db.insert(alphaWorldProfiles).values([WORLD_A].map((worldId) => ({
       worldId,
       profileKind: "public" as const,
       regionId: "mitteldeutschland-b",
@@ -110,12 +103,11 @@ describe.skipIf(databaseUrl === undefined)("oeffentlicher Weltplatz auf echtem P
       startedAtS: 0,
     })));
 
-    // Ohne die subject-weite Transaktion sehen beide Requests vor diesem
-    // absichtlichen Insert-Fenster den Zaehler 0 und legen je einen Zugang an.
-    await client.unsafe("drop trigger if exists zugfolge_test_delay_parallel_slot on world_accesses");
-    await client.unsafe("drop function if exists zugfolge_test_delay_parallel_slot()");
+    // Das Insert-Fenster provoziert konkurrierende Wiederholungen derselben Anmeldung.
+    await client.unsafe("drop trigger if exists zugfolge_test_delay_parallel_access on world_accesses");
+    await client.unsafe("drop function if exists zugfolge_test_delay_parallel_access()");
     await client.unsafe(`
-      create or replace function zugfolge_test_delay_parallel_slot()
+      create or replace function zugfolge_test_delay_parallel_access()
       returns trigger language plpgsql as $$
       begin
         if new.keycloak_subject = '${SUBJECT}' then
@@ -126,16 +118,16 @@ describe.skipIf(databaseUrl === undefined)("oeffentlicher Weltplatz auf echtem P
       $$
     `);
     await client.unsafe(`
-      create trigger zugfolge_test_delay_parallel_slot
+      create trigger zugfolge_test_delay_parallel_access
       before insert on world_accesses
-      for each row execute function zugfolge_test_delay_parallel_slot()
+      for each row execute function zugfolge_test_delay_parallel_access()
     `);
 
     app = buildApp({
       db,
       verifyToken: async (token) => ({
         keycloakSubject: token,
-        displayName: "Postgres Slot Race",
+        displayName: "Postgres Zugang",
       }),
       logger: false,
     });
@@ -144,26 +136,26 @@ describe.skipIf(databaseUrl === undefined)("oeffentlicher Weltplatz auf echtem P
 
   afterAll(async () => {
     if (app !== undefined) await app.close();
-    await client.unsafe("drop trigger if exists zugfolge_test_delay_parallel_slot on world_accesses");
-    await client.unsafe("drop function if exists zugfolge_test_delay_parallel_slot()");
+    await client.unsafe("drop trigger if exists zugfolge_test_delay_parallel_access on world_accesses");
+    await client.unsafe("drop function if exists zugfolge_test_delay_parallel_access()");
     await cleanFixture();
     await client.end();
   });
 
-  it("laesst bei Limit 1 von zwei parallelen Welten exakt eine atomar gewinnen", async () => {
+  it("legt bei parallelen Wiederholungen genau einen Zugang an", async () => {
     const enter = (worldId: string) => app.inject({
       method: "POST",
       url: `/worlds/${worldId}/access`,
       headers: { authorization: `Bearer ${SUBJECT}` },
       payload: {
-        displayName: "Postgres Slot Race",
+        displayName: "Postgres Zugang",
         acceptedWorldContractHash: CONTRACT_HASH,
       },
     });
 
-    const [first, second] = await Promise.all([enter(WORLD_A), enter(WORLD_B)]);
+    const [first, second] = await Promise.all([enter(WORLD_A), enter(WORLD_A)]);
 
-    expect([first.statusCode, second.statusCode].sort()).toEqual([201, 403]);
+    expect([first.statusCode, second.statusCode].sort()).toEqual([201, 201]);
     const accesses = await db
       .select({ worldId: worldAccesses.worldId })
       .from(worldAccesses)

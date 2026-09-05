@@ -33,7 +33,6 @@ export const WORLD_DEPLOYMENT_CUTOVER_ERROR_CODES = Object.freeze({
   candidateSignatureInvalid: "world_deployment_candidate_signature_invalid",
   activeWorldRequiresV2Cutover: "active_world_requires_operational_v2_cutover",
   activeWorldConflictsCandidate: "active_world_conflicts_v2_candidate",
-  activeTutorialRequiresArchive: "active_tutorial_requires_v2_cutover_archive",
   candidateWorldIdReused: "v2_candidate_world_id_reused",
   initializationHashMismatch: "operational_initialization_hash_mismatch",
   uiWorldBindingMismatch: "ui_world_binding_mismatch",
@@ -48,7 +47,6 @@ export const WORLD_DEPLOYMENT_CUTOVER_AUTHORIZATION_SCHEMA =
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/u;
 const SHA256 = /^[0-9a-f]{64}$/u;
-const ACTIVE_TUTORIAL_LIFECYCLES = new Set(["provisioning", "running", "summary", "closing"]);
 const OPERATIONAL_PROTECTION_SYSTEMS = new Set([
   "etcs-level1",
   "etcs-level2",
@@ -289,7 +287,7 @@ async function relationExists(sql, qualifiedName) {
 
 const tableExists = (sql, name) => relationExists(sql, `public.${name}`);
 
-async function inspectExistingWorldCutoverDatabase(sql, candidateWorldId) {
+async function inspectExistingWorldCutoverDatabase(sql, candidateWorldId, beforeMigration = false) {
   const worlds = await sql.unsafe(`
     select
       world.id::text as world_id,
@@ -303,16 +301,6 @@ async function inspectExistingWorldCutoverDatabase(sql, candidateWorldId) {
     left join alpha_world_deployments as deployment on deployment.world_id = world.id
     order by world.id
   `);
-
-  let activeTutorialSessions = [];
-  if (await tableExists(sql, "tutorial_sessions")) {
-    activeTutorialSessions = await sql.unsafe(`
-      select id::text as session_id, world_id::text as world_id, lifecycle
-      from tutorial_sessions
-      where lifecycle in ('provisioning', 'running', 'summary', 'closing')
-      order by world_id, id
-    `);
-  }
 
   let candidateRegionalStates = [];
   let initializationHashColumnPresent = false;
@@ -342,8 +330,8 @@ async function inspectExistingWorldCutoverDatabase(sql, candidateWorldId) {
   }
 
   return Object.freeze({
-    worlds,
-    activeTutorialSessions,
+    // Vor Schema 35 werden stillgelegte Lernwelten erst durch die anschliessende Migration entfernt.
+    worlds: beforeMigration ? worlds.filter((row) => row.profile_kind !== "tutorial") : worlds,
     candidateRegionalStates,
     initializationHashColumnPresent,
   });
@@ -359,14 +347,13 @@ export async function inspectLockedWorldCutoverDatabase(sql, candidateWorldId) {
     "worlds",
     "alpha_world_profiles",
     "alpha_world_deployments",
-    "tutorial_sessions",
     "regional_simulation_states",
   ];
   const present = await Promise.all(requiredTables.map((name) => tableExists(sql, name)));
   invariant(
     present.every(Boolean),
     WORLD_DEPLOYMENT_CUTOVER_ERROR_CODES.databaseContractMissing,
-    "Die atomare Cutover-Transaktion besitzt nicht alle erforderlichen Welt-, Tutorial- und Operational-Tabellen.",
+    "Die atomare Cutover-Transaktion besitzt nicht alle erforderlichen Welt- und Operational-Tabellen.",
   );
   return inspectExistingWorldCutoverDatabase(sql, candidateWorldId);
 }
@@ -386,7 +373,6 @@ export async function inspectWorldCutoverDatabase(databaseUrl, candidateWorldId)
         "accounts",
         "domain_events",
         "regional_simulation_states",
-        "tutorial_sessions",
       ].map((name) => tableExists(sql, name)))).some(Boolean);
       if (
         present.every((value) => value === false)
@@ -395,14 +381,13 @@ export async function inspectWorldCutoverDatabase(databaseUrl, candidateWorldId)
       ) {
         return Object.freeze({
           worlds: [],
-          activeTutorialSessions: [],
           candidateRegionalStates: [],
           initializationHashColumnPresent: false,
         });
       }
       invariant(present.every(Boolean), WORLD_DEPLOYMENT_CUTOVER_ERROR_CODES.databaseContractMissing, "Die Alpha-Welt-/Deploymenttabellen fehlen im Vor-Migrationsstand.");
 
-      return inspectExistingWorldCutoverDatabase(sql, candidateWorldId);
+      return inspectExistingWorldCutoverDatabase(sql, candidateWorldId, true);
     });
   } finally {
     await client.end({ timeout: 5 });
@@ -413,12 +398,6 @@ function requireEnvironment(environment, name) {
   const value = environment[name];
   invariant(typeof value === "string" && value.trim() !== "", WORLD_DEPLOYMENT_CUTOVER_ERROR_CODES.candidateInvalid, `Umgebungsvariable '${name}' fehlt.`);
   return value;
-}
-
-function activeProfileIsTutorial(row) {
-  return row.lifecycle_status === "active"
-    && row.profile_kind === "tutorial"
-    && row.profile_state !== "archived";
 }
 
 export function validateWorldDeploymentCutover({
@@ -441,12 +420,6 @@ export function validateWorldDeploymentCutover({
     WORLD_DEPLOYMENT_CUTOVER_ERROR_CODES.mapScheduleBindingMismatch,
     "Livemap und V2-Kandidat besitzen verschiedene Schedule-Zeitachsen.",
   );
-
-  const activeTutorials = [
-    ...database.activeTutorialSessions.filter((session) => ACTIVE_TUTORIAL_LIFECYCLES.has(session.lifecycle)),
-    ...database.worlds.filter(activeProfileIsTutorial),
-  ];
-  invariant(activeTutorials.length === 0, WORLD_DEPLOYMENT_CUTOVER_ERROR_CODES.activeTutorialRequiresArchive, "Vor dem V2-Cutover muessen alle alten Tutorial-Sessions geschlossen und archiviert sein.");
 
   // Archivierte V1-Huellen bleiben unveraenderte Audit-Historie. Der neue
   // Runtimepfad interpretiert oder verifiziert sie nicht; nur aktive Welten
@@ -529,8 +502,7 @@ export async function runWorldDeploymentCutoverPreflight({
 } = {}) {
   const uiWorldId = assertProductionServerWorldEnvironment(environment);
   const databaseUrl = requireEnvironment(environment, "DATABASE_URL");
-  const deploymentPaths = JSON.parse(requireEnvironment(environment, "ALPHA_WORLD_RELEASE_PATHS_JSON"));
-  invariant(Array.isArray(deploymentPaths) && deploymentPaths.length === 1 && typeof deploymentPaths[0] === "string", WORLD_DEPLOYMENT_CUTOVER_ERROR_CODES.candidateInvalid, "Der V2-Cutover braucht genau ein signiertes Weltdeployment.");
+  const deploymentPath = requireEnvironment(environment, "ALPHA_WORLD_RELEASE_PATH");
   const trustedReleaseKeys = parseTrustedReleaseKeys(
     requireEnvironment(environment, "INFRA_RELEASE_TRUSTED_KEYS_JSON"),
   );
@@ -541,7 +513,7 @@ export async function runWorldDeploymentCutoverPreflight({
   const readModelPath = requireEnvironment(environment, "LIVEMAP_READ_MODEL_PATH");
   const mapInspector = inspectMap ?? (await import("../tiles/livemap-read-model.mjs")).inspectPublicReadModel;
 
-  const candidate = await loadCandidate(deploymentPaths[0], trustedKeys, parseRuntimeCandidate);
+  const candidate = await loadCandidate(deploymentPath, trustedKeys, parseRuntimeCandidate);
   const cutoverAuthorization = parseWorldDeploymentCutoverAuthorization(
     environment["ALPHA_WORLD_V2_CUTOVER_AUTHORIZATION_JSON"],
     candidate,

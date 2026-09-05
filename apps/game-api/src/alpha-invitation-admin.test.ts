@@ -1,6 +1,6 @@
 import { PGlite } from "@electric-sql/pglite";
 import type { GameAdminCommandHandler } from "@zugfolge/commerce";
-import { accounts, alphaWorldProfiles, MIGRATIONS_FOLDER, tutorialSessions, worldAccesses, worlds } from "@zugfolge/db";
+import { accounts, alphaWorldProfiles, MIGRATIONS_FOLDER, worldAccesses, worlds } from "@zugfolge/db";
 import * as schema from "@zugfolge/db/schema";
 import type { KeycloakAdminClient } from "@zugfolge/identity";
 import { eq } from "drizzle-orm";
@@ -19,7 +19,7 @@ type WorldFixtureOptions = {
   readonly worldKind?: "public" | "private";
   readonly rankingStatus?: "ranked" | "unranked";
   readonly includeProfile?: boolean;
-  readonly profileKind?: "public" | "tutorial" | "private" | "test";
+  readonly profileKind?: "public" | "private" | "test";
   readonly profileState?: "draft" | "running" | "closing" | "archived";
 };
 
@@ -53,7 +53,7 @@ function command(actionType: "alpha_invitation_create" | "alpha_invitation_resen
   };
 }
 
-describe("Odoo-Alpha-Einladung ohne statische Tutorialwelt", () => {
+describe("Odoo-Alpha-Einladung in die Serverwelt", () => {
   let client: PGlite;
   let db: ReturnType<typeof drizzle<typeof schema>>;
   let keycloak: KeycloakAdminClient;
@@ -113,10 +113,8 @@ describe("Odoo-Alpha-Einladung ohne statische Tutorialwelt", () => {
     const result = await handlers.alpha_invitation_create(command("alpha_invitation_create"));
     expect(result.state).toBe("completed");
     expect(result.result).toHaveProperty("gameAccountReference");
-    expect(result.result).not.toHaveProperty("tutorialAccountReference");
     expect(await db.select().from(accounts)).toHaveLength(1);
     expect(await db.select().from(worldAccesses)).toEqual([expect.objectContaining({ worldId: WORLD_ID, keycloakSubject: "kc-external", status: "active" })]);
-    expect(await db.select().from(tutorialSessions)).toHaveLength(0);
     expect(await db.select().from(worlds)).toHaveLength(1);
   });
 
@@ -140,7 +138,6 @@ describe("Odoo-Alpha-Einladung ohne statische Tutorialwelt", () => {
       expect(keycloak.invite).not.toHaveBeenCalled();
       expect(await db.select().from(accounts)).toHaveLength(0);
       expect(await db.select().from(worldAccesses)).toHaveLength(0);
-      expect(await db.select().from(tutorialSessions)).toHaveLength(0);
     },
   );
 

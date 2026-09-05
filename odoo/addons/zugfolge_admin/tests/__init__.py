@@ -6,3 +6,4 @@ from . import test_payment_participation
 from . import test_projection_ingress
 from . import test_website
 from . import test_world_server_routing
+from . import test_retired_world_upgrade

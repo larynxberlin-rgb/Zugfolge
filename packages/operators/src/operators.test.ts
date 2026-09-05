@@ -93,7 +93,7 @@ describe("foundOperator", () => {
       foundOperator(db, { worldId: WORLD_LHE, foundingKeycloakSubject: "kc-anna", name: "Saalebahn Cargo" }),
     ).rejects.toBeInstanceOf(PublicWorldOperatorLimitError);
 
-    const eigene = await listOperatorsForAccount(db, "kc-anna");
+    const eigene = await listOperatorsForAccount(db, "kc-anna", WORLD_LHE);
     expect(eigene.map((operator) => operator.name).sort()).toEqual(["Elbtalbahn"]);
   });
 
@@ -111,7 +111,7 @@ describe("foundOperator", () => {
     expect(replay.operator.id).toBe(first.operator.id);
     expect([first.idempotentReplay, replay.idempotentReplay]).toEqual([false, true]);
     expect(calls).toEqual([false, true]);
-    expect(await listOperatorsForAccount(db, "kc-anna")).toHaveLength(1);
+    expect(await listOperatorsForAccount(db, "kc-anna", WORLD_LHE)).toHaveLength(1);
   });
 
   it.each(["provisioning", "archived"] as const)(
@@ -128,7 +128,7 @@ describe("foundOperator", () => {
       }, initialize)).rejects.toBeInstanceOf(OperatorFoundationWorldInactiveError);
 
       expect(initialize).not.toHaveBeenCalled();
-      expect(await listOperatorsForAccount(db, "kc-anna")).toHaveLength(0);
+      expect(await listOperatorsForAccount(db, "kc-anna", WORLD_LHE)).toHaveLength(0);
     },
   );
 
@@ -138,7 +138,7 @@ describe("foundOperator", () => {
     await foundOperator(db, { worldId: WORLD_LHE, foundingKeycloakSubject: "kc-anna", name: "Elbtalbahn" });
     await foundOperator(db, { worldId: WORLD_LHE, foundingKeycloakSubject: "kc-anna", name: "Saalebahn Cargo" });
 
-    const eigene = await listOperatorsForAccount(db, "kc-anna");
+    const eigene = await listOperatorsForAccount(db, "kc-anna", WORLD_LHE);
     expect(eigene.map((operator) => operator.name).sort()).toEqual(["Elbtalbahn", "Saalebahn Cargo"]);
   });
 });

@@ -853,16 +853,14 @@ Gebietsüberschreitende GTFS-Fahrten folgen
 den qualifizierten Innenabschnitt gegen sichtbare Release-Grenzfenster; der
 deterministische Außenlauf bleibt dieselbe Zugfahrt.
 
-Nach [E28/ADR-0028](adr/0028-getrennter-tutorial-und-wettbewerbsstart.md)
-werden für die Alpha zwei getrennte Weltverträge qualifiziert: ein signiertes,
-beschleunigtes Tutorial-Deployment mit didaktischem Startpaket und ein
-signiertes öffentliches Deployment ohne Startpaket. Die öffentliche
-`StartingCapitalPolicy` ist Blueprint- und Hashbestandteil, wird bei jeder
-EVU-Gründung idempotent angewandt und nach Weltstart nicht geändert.
+Nach [E28/ADR-0028](adr/0028-spielhinweise-im-spiel.md) erfolgt die Einführung durch neue Tooltipps
+direkt im laufenden Spiel. Jede Welt besitzt einen eigenen Server und eine
+feste Subdomain. Die öffentliche `StartingCapitalPolicy` bleibt Blueprint-
+und Hashbestandteil und wird bei der ersten EVU-Gründung idempotent angewandt.
 
 | # | Teilabschnitt | Größe | Status |
 |---|---------------|-------|--------|
-| 9.1 | Spielergebundene, kurzlebige Tutorialwelt aus Minimaltemplate; fünf geführte Kapitel, Lutz und reale Dauertelemetrie | L | in Arbeit |
+| 9.1 | Neue Tooltipps an den echten Bedienelementen; per Tastatur und Touch erreichbar, lokal abschaltbar | M | erledigt |
 | 9.2 | **Weltstart mit Eigenbetrieb**: das gesamte SPNV-Netz der Region fährt ab Sekunde eins | M | erledigt |
 | 9.2a | **Administrativer Weltstartbestand**: optionaler, versionierter und auditierter Pool konkreter Gebrauchtfahrzeuge einschließlich Zustandsprofil und Lebenslauf; Zuweisung an Eigenbetrieb und servereigene Vermieter ohne Fahrzeugduplikate | M | offen |
 | 9.3 | Onboarding in der öffentlichen Welt: tatsächliche `StartingCapitalPolicy`, Kapazitäts-Heatmap, Glossar-Layer und Betriebsassistent; keine automatische Startausstattung | M | in Arbeit |
@@ -874,21 +872,17 @@ EVU-Gründung idempotent angewandt und nach Weltstart nicht geändert.
 | 9.9 | Geschlossene Alpha mit 20–50 externen Spielern in der freigegebenen Mitteldeutschland-Region, einschließlich M12.1/M12.2 | M | offen |
 | 9.10 | **Jährliche Infrastrukturaktualisierung** (E22): `InfraRelease`-Neubau aus den jährlich gepinnten, rechtlich freigegebenen OSM-, DB-InfraGO-Open-Data-, GTFS-, Copernicus-DEM- und OpenStation-Ständen; Übernahmeverfahren für eine laufende Welt zum nächsten Periodenwechsel, ohne Invariante 1 zu verletzen | L | in Arbeit |
 
-M9.1 ist repositoryseitig als persönliche, beim Spielerstart erzeugte Welt
-implementiert: versioniertes Minimaltemplate, echte Economy-/Fleet-/Planning-/
-Operating-/Disruption-Pfade, persistenter Lebenszyklus, Reaper, reale
-Tutorialtelemetrie und der versionierte Lutz-Dialogkatalog. Odoo-Einladungen
-erzeugen ausschließlich Zugang und Konto der öffentlichen Zielwelt; einzelne
-Tutorialinstanzen werden niemals nach Odoo projiziert. M9.1 bleibt **in
-Arbeit**, bis externe Testspieler den realen Browserlauf gegen frisch erzeugte
-Sitzungen absolvieren und der Nachweis Median ≈ 12 Minuten, mindestens 90
-Prozent unter 15 Minuten sowie erste Entscheidung unter 90 Sekunden erfüllt
-ist. Automatisierte PGlite-/Native-/Web-Tests sind Vorabbeweise, keine externe
-Produktabnahme. Der automatisierte Vorabbeweis
-`apps/game-api/src/tutorial-browser.e2e.test.ts` fährt den Game-Web-
-Produktionsbuild in Chrome/Chromium über die echten Session-HTTP-APIs und die
-Linux-NAPI-Pfade durch alle fünf Kapitel bis zur Archivierung; auch dieser Lauf
-ersetzt weder externe Teilnehmer noch die Zeitmessung.
+M9.1 ist nach ausdrücklicher Produktabnahme durch den Projektverantwortlichen
+am 2026-09-05 abgeschlossen. Die 20 vollständig neu erstellten Spielhinweise
+benötigen keine Backendzustände. Browser- und Integrationstests belegen
+Tastatur- und Touchbedienung, Abschalten, Wiederaufnahme sowie ausbleibende
+Netzwerk- und Spielaktionen. Die Abnahme umfasst auch die Entfernung des
+alten Tutorials und seiner Welten sowie einen festen Weltserver je Subdomain
+bei erhaltener Odoo-Verwaltung. Umfang und erfolgreiche CI-Läufe sind unter
+[Spielhinweise — Abnahme](spielhinweise.md#abnahme) dokumentiert; die Umsetzung
+liegt in [PR #530](https://github.com/larynxberlin-rgb/Zugfolge/pull/530),
+der Abschluss in [#159](https://github.com/larynxberlin-rgb/Zugfolge/issues/159).
+Die externe Alpha-Abnahme wird unter M9.9 geführt.
 
 M9.3 vergibt keine öffentliche Startausstattung. Sein Geldpfad verwendet die
 signierte und bei der Zugangsbestätigung unveränderlich gebundene
@@ -896,7 +890,7 @@ signierte und bei der Zugangsbestätigung unveränderlich gebundene
 EVU-Gründung atomar genau einmal ausgeglichen gebucht; der explizite Modus
 `unlimited` bleibt nichtnumerisch und erzeugt keine Startbuchung. Beide Modi
 sind rangneutral. Heatmap, Glossar und Assistent bleiben M9.3-Folgearbeit und
-werden nicht durch die fertige Kapitalintegration oder das Tutorial als
+werden nicht durch die fertige Kapitalintegration oder die Tooltipps als
 abgeschlossen ausgegeben.
 
 Phase 3 schließt die noch fehlende ausführbare Betriebsschicht für M9.4,

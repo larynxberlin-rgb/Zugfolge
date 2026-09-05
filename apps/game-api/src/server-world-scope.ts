@@ -1,6 +1,5 @@
-import { alphaWorldProfiles, tutorialSessions, worlds } from "@zugfolge/db";
+import { worlds } from "@zugfolge/db";
 import type { IdentityDatabase } from "@zugfolge/identity";
-import { and, eq } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
 
 export interface ServerWorldScope {
@@ -8,7 +7,7 @@ export interface ServerWorldScope {
   readonly publicOrigin: string;
 }
 
-/** Ein Server besitzt eine Spielwelt; Tutorialinstanzen bleiben an diese gebunden. */
+/** Ein Server besitzt genau eine Spielwelt. */
 export function serverWorldScope(worldId: string, publicGameUrl: string): ServerWorldScope {
   if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(worldId)) {
     throw new Error("ZUGFOLGE_WORLD_ID muss die UUID der einzigen Spielwelt dieses Servers sein.");
@@ -26,30 +25,18 @@ export function serverWorldScope(worldId: string, publicGameUrl: string): Server
 export function assertServerWorldInventory(scope: ServerWorldScope, rows: readonly {
   readonly worldId: string;
   readonly lifecycleStatus: string;
-  readonly profileKind: string | null;
-  readonly publicWorldId: string | null;
 }[]): void {
   for (const row of rows) {
     // Versiegelte Vorgeschichte bleibt erhalten; Startup/Registry laden sie nicht als laufende Welt.
     if (row.lifecycleStatus === "archived") continue;
-    if (row.worldId === scope.worldId && row.profileKind !== "tutorial") continue;
-    if (row.worldId !== scope.worldId && row.profileKind === "tutorial" && row.publicWorldId === scope.worldId) continue;
-    throw new Error(`Welt '${row.worldId}' verletzt die Serverbindung an '${scope.worldId}'; nur deren Tutorialinstanzen sind zusaetzlich erlaubt.`);
+    if (row.worldId === scope.worldId) continue;
+    throw new Error(`Welt '${row.worldId}' verletzt die Serverbindung an '${scope.worldId}'.`);
   }
-}
-
-export async function serverWorldIds(db: IdentityDatabase, scope: ServerWorldScope): Promise<ReadonlySet<string>> {
-  const tutorials = await db.select({ worldId: tutorialSessions.tutorialWorldId }).from(tutorialSessions)
-    .innerJoin(alphaWorldProfiles, eq(alphaWorldProfiles.worldId, tutorialSessions.tutorialWorldId))
-    .where(and(eq(tutorialSessions.publicWorldId, scope.worldId), eq(alphaWorldProfiles.profileKind, "tutorial")));
-  return new Set([scope.worldId, ...tutorials.map((row) => row.worldId)]);
 }
 
 export async function assertServerWorldDatabase(db: IdentityDatabase, scope: ServerWorldScope): Promise<void> {
   // guards:allow world-id — Der Prozessstart prueft das gesamte Serverinventar auf fremde Welten.
-  const rows = await db.select({ worldId: worlds.id, lifecycleStatus: worlds.lifecycleStatus, profileKind: alphaWorldProfiles.profileKind, publicWorldId: tutorialSessions.publicWorldId })
-    .from(worlds).leftJoin(alphaWorldProfiles, eq(alphaWorldProfiles.worldId, worlds.id))
-    .leftJoin(tutorialSessions, eq(tutorialSessions.tutorialWorldId, worlds.id));
+  const rows = await db.select({ worldId: worlds.id, lifecycleStatus: worlds.lifecycleStatus }).from(worlds);
   assertServerWorldInventory(scope, rows);
 }
 
@@ -57,12 +44,12 @@ export function assertServerWorldDeployment(scope: ServerWorldScope, deployment:
   readonly worldId: string;
   readonly blueprint: { readonly profileKind: string };
 }): void {
-  if (deployment.worldId !== scope.worldId || deployment.blueprint.profileKind === "tutorial") {
-    throw new Error("Signiertes Deployment verletzt die Serverhauptweltbindung; Tutorialprofile sind keine Hauptwelt.");
+  if (deployment.worldId !== scope.worldId || !["public", "private", "test"].includes(deployment.blueprint.profileKind)) {
+    throw new Error("Signiertes Deployment verletzt die Serverhauptweltbindung.");
   }
 }
 
-export function registerServerWorldScope(app: FastifyInstance, db: IdentityDatabase, scope: ServerWorldScope): void {
+export function registerServerWorldScope(app: FastifyInstance, scope: ServerWorldScope): void {
   const host = new URL(scope.publicOrigin).host;
   app.addHook("onRequest", async (request, reply) => {
     // Interne Liveness/Readiness muss auch ueber die Loopback-Adresse funktionieren.
@@ -75,11 +62,6 @@ export function registerServerWorldScope(app: FastifyInstance, db: IdentityDatab
   app.addHook("preValidation", async (request, reply) => {
     const worldId = (request.params as Record<string, unknown>)["worldId"];
     if (typeof worldId !== "string" || worldId === scope.worldId) return;
-    if (request.method === "POST" && request.routeOptions.url === "/worlds/:worldId/tutorial-sessions") {
-      return reply.code(403).send({ code: "tutorial_parent_world_invalid", error: "Ein Tutorial kann nur aus der oeffentlichen Hauptwelt gestartet werden." });
-    }
-    if (!(await serverWorldIds(db, scope)).has(worldId)) {
-      return reply.code(404).send({ code: "world_not_found", error: "Diese Welt wird von diesem Server nicht angeboten." });
-    }
+    return reply.code(404).send({ code: "world_not_found", error: "Diese Welt wird von diesem Server nicht angeboten." });
   });
 }

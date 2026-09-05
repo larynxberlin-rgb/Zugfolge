@@ -1,6 +1,8 @@
 import "@zugfolge/design-system/styles.css";
 import type { ActionName, ComparisonName, Condition, FactName, OperatingProgram, TriggerName } from "@zugfolge/dispatch";
 import { mountGlossaryLayer } from "@zugfolge/glossary";
+import { mountGameHints } from "@zugfolge/design-system";
+import { OPERATIONS_HINTS } from "./game-hints.js";
 import "@zugfolge/glossary/styles.css";
 
 import { OperationsApi, type DailyReportRow } from "./api.js";
@@ -15,13 +17,14 @@ const rootElement = document.querySelector<HTMLDivElement>("#root");
 if (rootElement === null) throw new Error("App-Wurzel fehlt.");
 const root: HTMLDivElement = rootElement;
 mountGlossaryLayer(document.body);
+mountGameHints(root, OPERATIONS_HINTS);
 
 const parameters = new URLSearchParams(location.search);
-const worldId = parameters.get("world") ?? "";
+const runtime = loadOperationsRuntimeConfiguration();
+const worldId = runtime.publicWorldId;
 const operatorId = parameters.get("operator") ?? "";
 const requestedPanel = parameters.get("panel");
 const activePanel = requestedPanel === "program" || requestedPanel === "reports" ? requestedPanel : "operations";
-const runtime = loadOperationsRuntimeConfiguration();
 let api: OperationsApi | undefined;
 
 let state: ViewState = {

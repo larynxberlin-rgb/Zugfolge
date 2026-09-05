@@ -26,7 +26,7 @@ import {
 } from "./alpha-world-start.js";
 import { operationalSimulationInitializationHash } from "./operational-initialization-hash.js";
 import { ManualDisruptionCommandCatalog } from "./manual-disruption-catalog.js";
-import { TUTORIAL_OPERATIONAL_INFRASTRUCTURE_DESCRIPTOR } from "./tutorial-operational-infrastructure.js";
+import { TEST_INFRASTRUCTURE_BINDING } from "./operational-infrastructure.fixture.js";
 import {
   ActiveWorldDeploymentRuntime,
   type ActiveWorldRuntimeSeed,
@@ -35,10 +35,10 @@ import {
 const WORLD_ID = "70000000-0000-4000-8000-000000000001";
 const AUTHORITY_ID = "70000000-0000-4000-8000-000000000099";
 const EPOCH = new Date("2026-12-13T00:00:00.000Z");
-const ROUTE_VERSION_ID = "tutorial-minimal-2026.1:route:v1";
-const INTERLOCKING_ROUTE_ID = "tutorial-minimal-2026.1:interlocking:v1";
+const ROUTE_VERSION_ID = "test-route";
+const INTERLOCKING_ROUTE_ID = "test-interlocking-west";
 const NATIVE_RECURRING_INFRASTRUCTURE_ROOT = fileURLToPath(new URL(
-  "../tutorial-infrastructure/native-recurring-v1/",
+  "../test-infrastructure/native-recurring-v1/",
   import.meta.url,
 ));
 const NATIVE_RECURRING_ROUTE_A = "native-recurring-v1:route:a";
@@ -95,7 +95,7 @@ function nativeProgramReceipt(
 }
 
 function deploymentRuntime(
-  seed: Omit<ActiveWorldRuntimeSeed, "operationalProgramPreflight"> = { activeWorlds: [] },
+  seed: Omit<ActiveWorldRuntimeSeed, "operationalProgramPreflight"> = { worldId: WORLD_ID },
   operationalProgramPreflight: ActiveWorldRuntimeSeed["operationalProgramPreflight"] = nativeProgramReceipt,
 ): ActiveWorldDeploymentRuntime {
   return new ActiveWorldDeploymentRuntime({ ...seed, operationalProgramPreflight });
@@ -158,7 +158,7 @@ function signed(): SignedAlphaWorldDeployment {
         nowMs: 0,
         repeatEveryMs: 86_400_000,
         protectionModeSelectionPolicy: OPERATIONAL_PROTECTION_MODE_SELECTION_POLICY,
-        infraRelease: TUTORIAL_OPERATIONAL_INFRASTRUCTURE_DESCRIPTOR.binding,
+        infraRelease: TEST_INFRASTRUCTURE_BINDING,
         vehicleTypes: [{
           vehicleType: {
             id: "vehicle-type:1",
@@ -296,6 +296,29 @@ function nativeRecurringSigned(): SignedAlphaWorldDeployment {
 }
 
 describe("aktive World-Deployment-Runtime", () => {
+  it("weist fremde Startkonfigurationen und Deployments vor jedem Runtimeaufruf zurück", () => {
+    const foreignId = "70000000-0000-4000-8000-000000000002";
+    const preflight = vi.fn(nativeProgramReceipt);
+    const runtime = deploymentRuntime({ worldId: WORLD_ID }, preflight);
+    const own = signed();
+    const foreign = { ...own, deployment: { ...own.deployment, worldId: foreignId } };
+    expect(() => runtime.prepareOperationalProgram(foreign)).toThrow(/Serverbindung/u);
+    expect(() => runtime.register(foreign, EPOCH)).toThrow(/Serverbindung/u);
+    expect(preflight).not.toHaveBeenCalled();
+    expectUnregistered(runtime);
+    expect(() => deploymentRuntime({ worldId: WORLD_ID, planningAuthorityAccountIds: { [foreignId]: AUTHORITY_ID } }))
+      .toThrow(/Serverbindung/u);
+    expect(() => deploymentRuntime({ worldId: WORLD_ID, fleetAuthorityReleases: { [foreignId]: own.deployment.fleet.authorityRelease } }))
+      .toThrow(/Serverbindung/u);
+    runtime.register(own, EPOCH);
+    expect(runtime.worldIds()).toEqual([WORLD_ID]);
+    expect(() => runtime.register(foreign, EPOCH)).toThrow(/Serverbindung/u);
+    expect(runtime.worldIds()).toEqual([WORLD_ID]);
+    runtime.releaseWorld(foreignId);
+    expect(runtime.worldIds()).toEqual([WORLD_ID]);
+    expect(runtime.realtimeRegions()).toHaveLength(1);
+  });
+
   it("bewahrt materialize vor Fortsetzung und dispatch auch im manuellen Schedulerkatalog", () => {
     const base = deploymentRuntime();
     base.register(signed(), EPOCH);
@@ -445,7 +468,7 @@ describe("aktive World-Deployment-Runtime", () => {
   it("revalidiert beim Prozessneustart nur den identischen signierten Operational-v2-Kopf als No-op", () => {
     const deployment = signed();
     const preflight = vi.fn(nativeProgramReceipt);
-    const restarted = deploymentRuntime({ activeWorlds: [] }, preflight);
+    const restarted = deploymentRuntime({ worldId: WORLD_ID }, preflight);
     restarted.register(structuredClone(deployment), EPOCH);
     const original = deployment.deployment.regionalSimulation.infraRelease;
     const planningBefore = structuredClone(
@@ -470,7 +493,7 @@ describe("aktive World-Deployment-Runtime", () => {
   it("sperrt einen geaenderten Operational-v2-Kopf vor Preflight und verlangt Planning-/Livemap-Cutover", () => {
     const deployment = signed();
     const preflight = vi.fn(nativeProgramReceipt);
-    const runtime = deploymentRuntime({ activeWorlds: [] }, preflight);
+    const runtime = deploymentRuntime({ worldId: WORLD_ID }, preflight);
     runtime.register(deployment, EPOCH);
     const original = deployment.deployment.regionalSimulation.infraRelease;
     const target = Object.freeze({
@@ -497,7 +520,7 @@ describe("aktive World-Deployment-Runtime", () => {
 
   it("entfernt eine dauerhaft abgeschlossene Welt idempotent aus allen Scheduler- und Authority-Projektionen", () => {
     const deployment = signed();
-    const runtime = deploymentRuntime({ activeWorlds: [] });
+    const runtime = deploymentRuntime({ worldId: WORLD_ID });
     runtime.register(deployment, EPOCH);
 
     expect(runtime.worldIds()).toEqual([WORLD_ID]);
@@ -530,7 +553,7 @@ describe("aktive World-Deployment-Runtime", () => {
   it("stellt den Schedulervertrag vor dem Weltstart pruefbar bereit und rollt nur eine eigene Vorbereitung zurueck", () => {
     const deployment = signed();
     let preflightCalls = 0;
-    const runtime = deploymentRuntime({ activeWorlds: [] }, (initialization) => {
+    const runtime = deploymentRuntime({ worldId: WORLD_ID }, (initialization) => {
       preflightCalls += 1;
       return nativeProgramReceipt(initialization);
     });
@@ -1086,7 +1109,7 @@ describe("aktive World-Deployment-Runtime", () => {
 
   it("registriert Authority-v2 nicht ohne signierten Fahrzeugkatalog-Beweis produktiv", () => {
     const runtime = deploymentRuntime({
-      activeWorlds: [],
+      worldId: WORLD_ID,
       fleetAuthorityConfigurations: {
         [WORLD_ID]: {
           producedAt: 100,
@@ -1106,10 +1129,7 @@ describe("aktive World-Deployment-Runtime", () => {
     const first = deploymentRuntime();
     first.register(signed(), EPOCH);
     const restarted = deploymentRuntime({
-      activeWorlds: [{
-        worldId: "70000000-0000-4000-8000-000000000002",
-        epoch: EPOCH,
-      }],
+      worldId: WORLD_ID,
     });
 
     restarted.register(signed(), EPOCH);
@@ -1120,7 +1140,7 @@ describe("aktive World-Deployment-Runtime", () => {
       .toEqual([...first.dueBoundaries(WORLD_ID, "mitteldeutschland-b", 0, 172_800_000)]);
     expect(restarted.planningAuthorityAccountIds).toEqual(first.planningAuthorityAccountIds);
     expect(restarted.fleetAuthorityReleases).toEqual(first.fleetAuthorityReleases);
-    expect(restarted.worldIds()).toContain("70000000-0000-4000-8000-000000000002");
+    expect(restarted.worldIds()).toEqual([WORLD_ID]);
     expect(restarted.realtimeWorldIds()).toEqual([WORLD_ID]);
     expect(restarted.realtimeRegions()).not.toContainEqual({
       worldId: "70000000-0000-4000-8000-000000000002",
@@ -1169,7 +1189,7 @@ describe("aktive World-Deployment-Runtime", () => {
       },
     };
     const reorderedRuntime = deploymentRuntime(
-      { activeWorlds: [] },
+      { worldId: WORLD_ID },
       () => reorderedReceipt,
     );
     expect(() => reorderedRuntime.register(deployment, EPOCH)).not.toThrow();
@@ -1235,7 +1255,7 @@ describe("aktive World-Deployment-Runtime", () => {
 
     for (const receipt of invalidReceipts) {
       const runtime = deploymentRuntime(
-        { activeWorlds: [] },
+        { worldId: WORLD_ID },
         () => receipt,
       );
       expect(() => runtime.register(deployment, EPOCH)).toThrow(/nativen Streaming-Pruefbeleg/u);
@@ -1243,7 +1263,7 @@ describe("aktive World-Deployment-Runtime", () => {
     }
 
     const missingExternalArtifact = deploymentRuntime(
-      { activeWorlds: [] },
+      { worldId: WORLD_ID },
       () => { throw new Error("Operational-v2-Runtimeartefakt fehlt."); },
     );
     expect(() => missingExternalArtifact.register(deployment, EPOCH)).toThrow(/Runtimeartefakt fehlt/u);
@@ -1281,7 +1301,7 @@ describe("aktive World-Deployment-Runtime", () => {
           NATIVE_RECURRING_INFRASTRUCTURE_BINDING.infraReleaseId,
           NATIVE_RECURRING_INFRASTRUCTURE_ROOT,
         );
-        const registered = deploymentRuntime({ activeWorlds: [] }, preflight);
+        const registered = deploymentRuntime({ worldId: WORLD_ID }, preflight);
         registered.register(deployment, EPOCH);
         expect(registered.at(WORLD_ID, "mitteldeutschland-b", 0)).toEqual([
           expect.objectContaining({ command: expect.objectContaining({ type: "materialize" }) }),
@@ -1306,7 +1326,7 @@ describe("aktive World-Deployment-Runtime", () => {
 
         const missingRoot = await temporaryRoot();
         setRoot(NATIVE_RECURRING_INFRASTRUCTURE_BINDING.infraReleaseId, missingRoot);
-        const missing = deploymentRuntime({ activeWorlds: [] }, preflight);
+        const missing = deploymentRuntime({ worldId: WORLD_ID }, preflight);
         expect(() => missing.register(structuredClone(nativeRecurringSigned()), EPOCH)).toThrow();
         expectUnregistered(missing);
 
@@ -1324,7 +1344,7 @@ describe("aktive World-Deployment-Runtime", () => {
         tamperedBytes[0] = tamperedBytes[0] === 0x7b ? 0x5b : 0x7b;
         await writeFile(tamperedPath, tamperedBytes);
         setRoot(NATIVE_RECURRING_INFRASTRUCTURE_BINDING.infraReleaseId, tamperedRoot);
-        const tampered = deploymentRuntime({ activeWorlds: [] }, preflight);
+        const tampered = deploymentRuntime({ worldId: WORLD_ID }, preflight);
         expect(() => tampered.register(structuredClone(nativeRecurringSigned()), EPOCH)).toThrow();
         expectUnregistered(tampered);
 
@@ -1341,7 +1361,7 @@ describe("aktive World-Deployment-Runtime", () => {
         };
         foreign.deployment.regionalSimulation.infraRelease.infraReleaseId = foreignReleaseId;
         setRoot(foreignReleaseId, foreignRoot);
-        const wrongRelease = deploymentRuntime({ activeWorlds: [] }, preflight);
+        const wrongRelease = deploymentRuntime({ worldId: WORLD_ID }, preflight);
         expect(() => wrongRelease.register(
           foreign as unknown as SignedAlphaWorldDeployment,
           EPOCH,
@@ -1356,7 +1376,7 @@ describe("aktive World-Deployment-Runtime", () => {
           NATIVE_RECURRING_INFRASTRUCTURE_BINDING.infraReleaseId,
           NATIVE_RECURRING_INFRASTRUCTURE_ROOT,
         );
-        const wrongStateHash = deploymentRuntime({ activeWorlds: [] }, preflight);
+        const wrongStateHash = deploymentRuntime({ worldId: WORLD_ID }, preflight);
         expect(() => wrongStateHash.register(
           wrongStateHashDeployment as unknown as SignedAlphaWorldDeployment,
           EPOCH,

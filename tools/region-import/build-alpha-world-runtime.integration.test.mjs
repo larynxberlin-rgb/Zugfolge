@@ -194,7 +194,7 @@ describe("echter Alpha-Builder bis zur produktiven Scheduler-Registry", () => {
     try {
       const nativeRuntime = loadOperationalSimulationRuntime();
       const runtimeSeed = {
-        activeWorlds: [],
+        worldId: signed.deployment.worldId,
         operationalProgramPreflight: (initialization) =>
           nativeRuntime.initialize(initialization).validationReceipt,
       };
@@ -311,7 +311,7 @@ describe("echter Alpha-Builder bis zur produktiven Scheduler-Registry", () => {
     process.env[OPERATIONAL_INFRASTRUCTURE_ROOTS_ENV] = JSON.stringify({ [fixture.infraReleaseId]: fixture.infrastructureRoot });
     try {
       const native = loadOperationalSimulationRuntime();
-      const registry = new ActiveWorldDeploymentRuntime({ activeWorlds: [], operationalProgramPreflight: (input) => native.initialize(input).validationReceipt });
+      const registry = new ActiveWorldDeploymentRuntime({ worldId: signed.deployment.worldId, operationalProgramPreflight: (input) => native.initialize(input).validationReceipt });
       registry.prepareOperationalProgram(signed);
       registry.register(signed, new Date(MINIMAL_BUILDER_EPOCH));
       // A newly started server has no manual plans. The outer catalog must
@@ -399,7 +399,7 @@ describe("echter Alpha-Builder bis zur produktiven Scheduler-Registry", () => {
       assert.ok(generated.unsupportedRestrictions.length > 0);
       assert.equal(generated.restrictions.length + generated.unsupportedRestrictions.length, 400);
       const restriction = [...generated.restrictions].sort((left, right) => left.effect["speed-restriction"].maximumSpeedMmps - right.effect["speed-restriction"].maximumSpeedMmps)[0];
-      const registry = new ActiveWorldDeploymentRuntime({ activeWorlds: [], operationalProgramPreflight: (input) => native.initialize(input).validationReceipt });
+      const registry = new ActiveWorldDeploymentRuntime({ worldId: signed.deployment.worldId, operationalProgramPreflight: (input) => native.initialize(input).validationReceipt });
       registry.prepareOperationalProgram(signed);
       registry.register(signed, new Date(MINIMAL_BUILDER_EPOCH));
       const catalog = new DailyRestrictionCommandCatalog({ base: registry, loadPolicies: async () => [policy], generate: (input) => native.dailyRestrictions(input) });

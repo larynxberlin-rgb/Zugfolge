@@ -76,7 +76,7 @@ vorgeschlagen.
 | [0025](0025-gebietsueberschreitende-fahrtketten.md) | E25 | Gebietsüberschreitende Fahrten bleiben eine Fahrtkette mit deterministischem Außenlauf |
 | [0026](0026-karte-als-spielzentrum.md) | E26 | Die selbst gehostete Weltkarte ist das Spielzentrum; der Deutschland-Korpus ist vollständig sichtbar |
 | [0027](0027-geschaetzte-zugkartenposition-nur-visuell.md) | E27 | Geschätzte Zugkartenpositionen bleiben rein visuell und von der Betriebswahrheit getrennt |
-| [0028](0028-getrennter-tutorial-und-wettbewerbsstart.md) | E28 | Tutorialstart und öffentlicher Markteintritt sind getrennte Weltverträge |
+| [0028](0028-spielhinweise-im-spiel.md) | E28 | Spielhinweise direkt im laufenden Spiel |
 | [0029](0029-schaffnermodus-als-serverautoritative-betriebsvertiefung.md) | E29 | Der Schaffnermodus vertieft den serverautoritativen Betrieb |
 | [0030](0030-odoo-weltkatalog-und-kommerzielle-teilnahme.md) | – | Odoo-Weltkatalog und kommerzielle Teilnahme an Game-autoritativen Welten (vorgeschlagen) |
 | [0031](0031-spielerkarte-als-lebendige-welt.md) | E30 | Die Spielerkarte zeigt die lebendige gemeinsame Welt, nicht den Infrastruktur-Editor |

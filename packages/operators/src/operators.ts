@@ -187,15 +187,13 @@ export async function listOperatorsInWorld(
 }
 
 /**
- * Alle EVU, die ein Keycloak-Subject gegründet hat — weltübergreifend, über
- * jedes Konto hinweg, das dieses Subject je geführt hat. Spiegelt
- * `listAccountsForSubject` aus M2.1: nur die eigenen, keine fremden.
+ * Die eigenen EVU des authentifizierten Subjects in der Serverwelt.
  */
 export async function listOperatorsForAccount(
   db: IdentityDatabase,
   keycloakSubject: string,
+  worldId: string,
 ): Promise<readonly Operator[]> {
-  // guards:allow world-id — Die Identitaetsansicht listet nur eigene Betreiber des authentifizierten Subjects weltuebergreifend.
   return db
     .select({
       id: operators.id,
@@ -208,5 +206,5 @@ export async function listOperatorsForAccount(
     })
     .from(operators)
     .innerJoin(accounts, eq(accounts.id, operators.foundingAccountId))
-    .where(eq(accounts.keycloakSubject, keycloakSubject));
+    .where(and(eq(operators.worldId, worldId), eq(accounts.worldId, worldId), eq(accounts.keycloakSubject, keycloakSubject)));
 }

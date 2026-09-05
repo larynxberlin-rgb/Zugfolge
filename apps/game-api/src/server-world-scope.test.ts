@@ -4,32 +4,31 @@ import { assertServerWorldDeployment, assertServerWorldInventory, registerServer
 
 const WORLD = "11111111-1111-1111-1111-111111111111";
 const OTHER = "22222222-2222-2222-2222-222222222222";
-const TUTORIAL = "33333333-3333-3333-3333-333333333333";
 
 describe("Eine Spielwelt je Server und Subdomain", () => {
-  it("verhindert Tutorial-Enkelwelten vor Handler oder Datenbankzugriff", async () => {
+  it("weist fremde Welt- und Hostangaben vor jeder Handlerwirkung ab", async () => {
     const app = Fastify();
-    let starts = 0;
-    registerServerWorldScope(app, { select() { throw new Error("unerwarteter DB-Zugriff"); } } as never, serverWorldScope(WORLD, "https://elbe.zugfolge.test"));
-    app.post("/worlds/:worldId/tutorial-sessions", async () => { starts += 1; return { started: true }; });
+    let calls = 0;
+    registerServerWorldScope(app, serverWorldScope(WORLD, "https://elbe.zugfolge.test"));
+    app.post("/worlds/:worldId/action", async () => { calls += 1; return { accepted: true }; });
+    app.get("/health", async () => ({ healthy: true }));
     try {
-      for (const parent of [TUTORIAL, OTHER]) {
-        const response = await app.inject({ method: "POST", url: `/worlds/${parent}/tutorial-sessions`, headers: { host: "elbe.zugfolge.test" } });
-        expect(response.statusCode).toBe(403);
-        expect(response.json()).toMatchObject({ code: "tutorial_parent_world_invalid" });
-      }
-      expect(starts).toBe(0);
-      expect((await app.inject({ method: "POST", url: `/worlds/${WORLD}/tutorial-sessions`, headers: { host: "elbe.zugfolge.test" } })).statusCode).toBe(200);
-      expect(starts).toBe(1);
+      const headers = { host: "elbe.zugfolge.test" };
+      expect((await app.inject({ method: "POST", url: `/worlds/${OTHER}/action`, headers })).statusCode).toBe(404);
+      expect((await app.inject({ method: "POST", url: `/worlds/${WORLD}/action`, headers: { host: "spree.zugfolge.test", "x-forwarded-host": headers.host } })).statusCode).toBe(421);
+      expect(calls).toBe(0);
+      expect((await app.inject({ method: "POST", url: `/worlds/${WORLD}/action`, headers })).statusCode).toBe(200);
+      expect(calls).toBe(1);
+      expect((await app.inject({ url: "/health", headers: { host: "localhost" } })).statusCode).toBe(200);
     } finally { await app.close(); }
   });
-  it("wendet denselben Hauptweltvertrag auf signierte initiale und spaetere Deployments an", () => {
+  it("bindet jedes signierte Deployment an die konfigurierte Welt", () => {
     const scope = serverWorldScope(WORLD, "https://elbe.zugfolge.test");
     for (const profileKind of ["public", "private", "test"]) {
       expect(() => assertServerWorldDeployment(scope, { worldId: WORLD, blueprint: { profileKind } })).not.toThrow();
       expect(() => assertServerWorldDeployment(scope, { worldId: OTHER, blueprint: { profileKind } })).toThrow("Serverhauptweltbindung");
     }
-    expect(() => assertServerWorldDeployment(scope, { worldId: WORLD, blueprint: { profileKind: "tutorial" } })).toThrow("Serverhauptweltbindung");
+    expect(() => assertServerWorldDeployment(scope, { worldId: WORLD, blueprint: { profileKind: "unknown" } })).toThrow();
   });
   it("pinnt eine feste Origin und lehnt Pfad-, Wildcard- und Credential-Routing ab", () => {
     expect(serverWorldScope(WORLD, "https://elbe.zugfolge.test/")).toEqual({ worldId: WORLD, publicOrigin: "https://elbe.zugfolge.test" });
@@ -39,19 +38,14 @@ describe("Eine Spielwelt je Server und Subdomain", () => {
     }
     expect(() => serverWorldScope("weltname", "https://elbe.zugfolge.test")).toThrow("UUID");
   });
-  it("erlaubt nur die Hauptwelt und deren belegte Tutorialinstanzen, auch beim Wiederanlauf", () => {
+  it("startet nur mit einer aktiven Welt und erhaelt versiegelte Vorgeschichte", () => {
     const scope = serverWorldScope(WORLD, "https://elbe.zugfolge.test");
-    const primary = { worldId: WORLD, lifecycleStatus: "active", profileKind: "public", publicWorldId: null };
-    const tutorial = { worldId: TUTORIAL, lifecycleStatus: "active", profileKind: "tutorial", publicWorldId: WORLD };
-    expect(() => assertServerWorldInventory(scope, [primary, tutorial])).not.toThrow();
-    expect(() => assertServerWorldInventory(scope, [])).not.toThrow(); // vor dem ersten signierten Deployment
-    for (const invalid of [
-      { worldId: OTHER, lifecycleStatus: "active", profileKind: "public", publicWorldId: null },
-      { worldId: OTHER, lifecycleStatus: "active", profileKind: "private", publicWorldId: null },
-      { ...tutorial, publicWorldId: OTHER },
-      { ...tutorial, publicWorldId: null },
-      { ...primary, profileKind: "tutorial" },
-    ]) expect(() => assertServerWorldInventory(scope, [primary, invalid])).toThrow("Serverbindung");
-    expect(() => assertServerWorldInventory(scope, [primary, { ...primary, worldId: OTHER, lifecycleStatus: "archived" }])).not.toThrow();
+    const active = { worldId: WORLD, lifecycleStatus: "active" };
+    expect(() => assertServerWorldInventory(scope, [])).not.toThrow();
+    expect(() => assertServerWorldInventory(scope, [active])).not.toThrow();
+    expect(() => assertServerWorldInventory(scope, [active, { worldId: OTHER, lifecycleStatus: "archived" }])).not.toThrow();
+    for (const lifecycleStatus of ["active", "provisioning"]) {
+      expect(() => assertServerWorldInventory(scope, [active, { worldId: OTHER, lifecycleStatus }])).toThrow("Serverbindung");
+    }
   });
 });

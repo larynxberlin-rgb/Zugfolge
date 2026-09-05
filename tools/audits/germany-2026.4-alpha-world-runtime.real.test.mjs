@@ -553,7 +553,7 @@ async function coldWorkerCatchUp({
     const preflight = runtime.initialize(signed.deployment.regionalSimulation);
     assert.equal(preflight.validationReceipt.dynamicTrainCount, 0);
     const deploymentRuntime = new ActiveWorldDeploymentRuntime({
-      activeWorlds: [],
+      worldId: signed.deployment.worldId,
       operationalProgramPreflight: () => preflight.validationReceipt,
     });
     const livemap = new LivemapRegistry();

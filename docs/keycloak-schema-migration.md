@@ -146,12 +146,12 @@ One-shot-Container laufen ausdrücklich nicht als root; ein root-eigenes
 `0700`-Verzeichnis würde deshalb vor jeder Datenbankänderung fehlschlagen.
 
 Im initialen Produktions-Cutover werden diese Komponenten nicht einzeln
-aufgerufen. Nach dem erfolgreichen `--schema33-after-cold` führt ausschließlich
+aufgerufen. Nach dem erfolgreichen `--schema35-after-cold` führt ausschließlich
 der fail-closed Wrapper die ganze Reihenfolge aus:
 
 ```bash
 bash tools/alpha-ops/compose-with-map-release-env.sh \
-  --keycloak-after-schema33 -f /opt/zugfolge/compose.yml
+  --keycloak-after-schema35 -f /opt/zugfolge/compose.yml
 ```
 
 Der Modus stoppt alle Anwendungswriter, startet nur die Datenbank- und
@@ -206,7 +206,7 @@ alle 544 OIDs erneut:
 
 ```bash
 bash tools/alpha-ops/compose-with-map-release-env.sh \
-  --keycloak-recover-after-schema33 -f /opt/zugfolge/compose.yml
+  --keycloak-recover-after-schema35 -f /opt/zugfolge/compose.yml
 ```
 
 Ein gemischter/partieller Zustand ist kein Recover-Fall. Dann bleiben alle
