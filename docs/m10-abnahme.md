@@ -13,8 +13,8 @@ Reihenfolge: [Gestaltungsbasis #531](https://github.com/larynxberlin-rgb/Zugfolg
 Die drei M10-PRs bleiben bis zur fachlichen Abnahme Entwürfe.
 
 Der ergänzende [Abgleich aller acht Issue-Anforderungen mit Code und Tests](m10-issue-verknuepfung.md)
-unterscheidet die vollständig implementierten Fachumfänge #169–#172 von den
-konkreten offenen Abnahmekriterien in #210, #173, #361 und #379. Schließende
+unterscheidet die vollständig implementierten Fachumfänge #169–#172,
+#361 und #379 von den konkreten offenen Anforderungen in #210 und #173. Schließende
 Verknüpfungen werden am gesamten Stack über #534 geführt.
 
 ## Fachlicher Umfang
@@ -26,7 +26,7 @@ Verknüpfungen werden am gesamten Stack über #534 geführt.
 | #171 | Abschnittspreise, Vertriebsverfügbarkeit, Komfort-/Sonderplätze, durchgehende Reservierungen und Stehplätze; gemeinsame Kapazität über Generationfenster | Prognostizierte Erlöse lösen keine tatsächlichen Einnahmebuchungen aus |
 | #210 | Deterministische SPNV-Manifeste, versteckte Fahrberechtigungen, stabile Schlüssel; tatsächliche Haltbelege frieren bereits gereiste Abschnitte, Sitze und gebuchte Preise ein | Signierte Zwischenhaltbindungen, native Ankunfts-/Abfahrtsbelege und persistenter Nachfrageconsumer fehlen. Native Fahrtabschlussbelege existieren bereits. Die API kennzeichnet ihre aktuellen Ansichten als Prognose/Annahme |
 | #172 | Linien-/Halte-/Takt-/Preis-/Formationsvorschau; bestehende Flotten-/Zugnummernautorität; atomare Anträge und Batchkoordinierung; Ablaufgrenzen und sichere künftige Ersetzung; bestätigte Reservierungen fließen zurück in die Nachfrage | Aktivierung im Betriebsprogramm, Umlaufvollständigkeit und Ist-Erlöse brauchen die vorhandenen Betriebsproducer |
-| #361, #379 | Nachfrageoverlay und Listenalternative, Legende, Zeitraum, Herkunft, Abschnitte, gestufte Eigentümerdaten, SPFV-Planungsablauf, Filter-/Auswahlerhalt; Desktop-/Mobil-Browsernachweise | Deutschlandweite Last und externe Produktabnahme bleiben offen |
+| #361, #379 | Nachfrageoverlay, gestufte Details, Planung und Rücknavigation; echte MapLibre-/PMTiles-Karte mit 5.400 synthetischen Stationen, 5.000 Zügen, dichtem Knoten, Live-Deltas, Kartenklick und Listenalternative bei 1366/390/320 px | UI-/UX-Abnahme im dokumentierten synthetischen Lastumfang erfüllt. Produktiver Deutschland-Release und externe Produktabnahme bleiben eigenständige Nachweise |
 | #173 | Recherchierte freie Quellen, unveränderte Lizenz-/Hashbelege, echte AFZS-Trainings-/Holdout-Tage, nativer Vergleich und strenges Kalibrierungsgate | Eine bestandene gemeinsame SPNV-/SPFV-Abnahme wird nicht behauptet; SPFV- und Umstiegsholdouts fehlen |
 
 ## Betriebs- und Datenschutzgrenze
@@ -85,7 +85,9 @@ node .github/scripts/sync-milestones.mjs check
 ```
 
 Der reguläre Linux-NAPI-Job führt `demand-service.test.ts` mit dem echten
-Addon aus; `demand-browser.e2e.test.ts` läuft mit dem gebauten Browserclient.
+Addon aus; `spfv-native.integration.test.ts` verbindet zusätzlich echte Flotte,
+HTTP, Trassenkonkurrenz und Nachfrage-Restore. `demand-browser.e2e.test.ts`
+und `demand-map-browser.e2e.test.ts` laufen mit den gebauten Browserclients.
 Lokal wurde zusätzlich der echte Rust-JSON-CLI mit PGlite und API-Projektion
 komponiert (`ZUGFOLGE_DEMAND_TEST_BINARY`); das ist ein Testtransport und kein
 Produktionsfallback. Native Planung prüft bestehende Trassen, tägliche
@@ -94,6 +96,10 @@ Verkehrstage, absolute Gültigkeit, Zwischenhalte und atomare Ersetzungen.
 Browsernachweise verwenden explizite Beispieldaten bei Breiten von 1920,
 1366, 768, 390 und 320 Pixeln. Sie prüfen auch verlorene Bestätigungsantworten
 und verspätete Vorschauergebnisse. Sie ersetzen keine produktiven Fahrgastdaten.
+Die drei zusätzlichen [MapLibre-Lastfälle](m10-kartenabnahme.md) prüfen eine
+synthetische Deutschlandkarte und einen dichten Knoten mit tatsächlich
+gerenderten Tiles, Kartenklicks, Live-Deltas und kollisionsfreier Legende.
+Zusammen sind acht M10-Browserfälle vorhanden.
 
 ![Fernverkehrsplanung mit gekennzeichneten Beispieldaten](screenshots/m10/spfv-desktop.png)
 

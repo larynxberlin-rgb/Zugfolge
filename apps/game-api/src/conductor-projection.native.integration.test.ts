@@ -77,7 +77,7 @@ function confirmedInput(previous: DemandCheckpoint, nowMs: number, stops: readon
 }
 
 describe("M15.2: Autorisierung und datensparsame Fehler ohne Native-Abhängigkeit", () => {
-  it("weist fehlenden Zugang, Fremdzugriff und Archiv vor Journal- oder Kernzugriff ab", async () => {
+  it("weist fehlenden Zugang, Fremdzugriff, inaktive EVU und Archiv vor Journal- oder Kernzugriff ab", async () => {
     const client = new PGlite();
     const db = drizzle(client, { schema });
     const latest = vi.spyOn(DemandStore.prototype, "latest");
@@ -99,6 +99,11 @@ describe("M15.2: Autorisierung und datensparsame Fehler ohne Native-Abhängigkei
       await expect(service.project({ ...access, keycloakSubject: "no-access" }, interior)).rejects.toMatchObject({ statusCode: 403 });
       await expect(service.project({ ...access, keycloakSubject: "visitor" }, interior)).rejects.toMatchObject({ statusCode: 403 });
       await expect(service.project({ ...access, worldId: OTHER }, interior)).rejects.toMatchObject({ statusCode: 403 });
+      for (const lifecycle of ["exited", "deleted"] as const) {
+        await db.update(operators).set({ lifecycle }).where(and(eq(operators.worldId, WORLD), eq(operators.id, OPERATOR)));
+        await expect(service.project(access, interior)).rejects.toMatchObject({ statusCode: 403 });
+      }
+      await db.update(operators).set({ lifecycle: "active" }).where(and(eq(operators.worldId, WORLD), eq(operators.id, OPERATOR)));
       await db.update(worlds).set({ lifecycleStatus: "archived" }).where(eq(worlds.id, WORLD));
       await expect(service.project(access, interior)).rejects.toMatchObject({ statusCode: 409 });
       expect(latest).not.toHaveBeenCalled();

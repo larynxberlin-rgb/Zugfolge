@@ -18,11 +18,11 @@ allein durch diesen Bericht oder einen bestandenen Teiltest geschlossen.
 | [#169](https://github.com/larynxberlin-rgb/Zugfolge/issues/169) | Gemeinsame Quelle, alle Nachfragetreiber, versionierte Kohorten, Pilot-/Tagesgang-Golden und Summenerhaltung abgedeckt | #532, #534 | Abschluss über #534 vorgesehen |
 | [#170](https://github.com/larynxberlin-rgb/Zugfolge/issues/170) | Alle sechs lexikographischen Größen, Verkehrsmittel-/Verbindungs-/Zugwahl, Erklärungen und Angebotsänderungen abgedeckt | #532, #534 | Abschluss über #534 vorgesehen |
 | [#171](https://github.com/larynxberlin-rgb/Zugfolge/issues/171) | Tarif-/Vertriebsstörung, Kapazität, Reservierung, Komfort, freie Quellenbindung und unabhängiger Fahrberechtigungsstatus abgedeckt | #532, #534 | Abschluss über #534 vorgesehen |
-| [#172](https://github.com/larynxberlin-rgb/Zugfolge/issues/172) | Spielerplanung mit nativer Nachfrage, echter Trassenkonkurrenz und wirtschaftlicher Prognose verbunden; Gesamtnachweis im Native-HTTP-Test | #533, #534 | Abschluss über #534 nach grünem Native-Nachweis vorgesehen |
+| [#172](https://github.com/larynxberlin-rgb/Zugfolge/issues/172) | Spielerplanung mit nativer Nachfrage, echter Trassenkonkurrenz und wirtschaftlicher Prognose verbunden; Gesamtnachweis im Native-HTTP-Test | #533, #534 | Abschluss über #534 vorgesehen |
 | [#210](https://github.com/larynxberlin-rgb/Zugfolge/issues/210) | Manifest-/Fortschrittskern und geschützte Persistenz vorhanden; produktiver Haltbelegpfad fehlt | #532, #534 | Referenz, keine automatische Schließung |
 | [#173](https://github.com/larynxberlin-rgb/Zugfolge/issues/173) | Vergleichsverfahren, freie Quellen und echter SPNV-Holdout vorhanden; Toleranzen verfehlt, weitere Holdouts fehlen | #532, #534 | Referenz, keine automatische Schließung |
-| [#361](https://github.com/larynxberlin-rgb/Zugfolge/issues/361) | Planungsablauf, Datenzustände, Datenschutz und Rücknavigation implementiert; ausdrücklich verlangte Deutschland-/Knoten-Kartenprüfung fehlt | #534 | Referenz, keine automatische Schließung |
-| [#379](https://github.com/larynxberlin-rgb/Zugfolge/issues/379) | Gestaltung, Legenden, gestufte Details und mobile Listen nachgewiesen; vollständige Karten-/Datenabnahme an Deutschland und dichten Knoten fehlt | #534 | Referenz, keine automatische Schließung |
+| [#361](https://github.com/larynxberlin-rgb/Zugfolge/issues/361) | Planungsablauf, Datenzustände, Datenschutz, Rücknavigation und tatsächliche Deutschland-/Knoten-Kartenprüfung mit deklariertem Lastkorpus belegt | #534 | Abschluss über #534 vorgesehen |
+| [#379](https://github.com/larynxberlin-rgb/Zugfolge/issues/379) | Gestaltung, Legenden, gestufte Details, Kartenklick und mobile Listen unter Deutschland-/Knotenlast nachgewiesen | #534 | Abschluss über #534 vorgesehen |
 
 ## Gemeinsame tatsächliche Verkabelung
 
@@ -94,6 +94,9 @@ native Nachfrage, Queue, native Trassenvergabe, konkurrierende zweite Linie,
 Rückprojektion, Wiederholung und Restore mit PGlite. Die reguläre Linux-NAPI-CI
 führt den Test mit beiden echten Addons aus. Korpus und Infrastruktur sind
 explizite Testdaten; die drei fachlichen Laufzeiten werden nicht gemockt.
+Der [Linux-NAPI-Nachweis auf ef588a3](https://github.com/larynxberlin-rgb/Zugfolge/actions/runs/33997190861/job/101389702587)
+hat diese vollständige Kette bestanden. Er deckte zusätzlich die nun
+behobene zweite Datenbankverbindung innerhalb der SPFV-Transaktion auf.
 Der [Plattformvertrag](spfv-planung.md), native/Worker-Negativtests und
 Browsertests vervollständigen die Abschlusscheckliste. Tatsächliche
 Betriebsaktivierung und Ist-Erlösbuchung sind getrennte, offene Producer-Aufgaben.
@@ -117,6 +120,9 @@ Der vorhandene [Fahrtabschlussproducer](../crates/zugfolge-sim/src/operational/s
 erzeugt bereits `train-outcome`; dieser Terminalbeleg ersetzt keine
 Zwischenhalte. #518 ist benachbarte Abschluss-/Abrechnungsarbeit und keine
 zwingende externe Blockade für diese noch offene M10-Implementierung.
+Der [versionierte Haltbelegplan](m10-haltbelege.md) benennt die erforderlichen
+Verträge, Produzenten, kausale Reihenfolge und den vollständigen nativen
+Drei-Halt-Nachweis; er wird ausdrücklich nicht als fertige Implementierung gewertet.
 
 **#173:** [Kalibrierungsquellen](m10-kalibrierungsquellen.md) und
 [nativer Vergleich](../tools/demand-calibration/README.md) belegen freie
@@ -126,7 +132,9 @@ besteht nur 6/21 Stunden- und 31/105 Abschnittsvergleiche, WAPE 52,20 % bzw.
 als getrennte gemessene Holdouts. Die erforderlichen sechs Bereiche sind
 damit nicht innerhalb der Toleranzen nachgewiesen.
 
-**#361/#379:** Die
+## #361/#379 — UI-/UX-Abnahme mit echter Karte
+
+Die
 [Nachfrageansichten](../apps/livemap/src/demand.ts) und
 [SPFV-Planung](../apps/game-web/src/spfv.ts) bieten Legende, Zeitraum,
 Herkunft, gestufte Eigentümerdaten, Nullwertabgrenzung und Listenalternative.
@@ -134,7 +142,17 @@ Linienänderungen nennen vor der Bestätigung Zugnummern, Weltabfahrtszeiten
 und Strecken der gepinnten ersetzten Fahrten sowie Komfort-/Sonderplätze.
 Rücknavigation erhält Kartenkontext und Filter;
 der ausgewählte Zug ist Navigationskontext, keine ungeprüfte Modellreferenz.
-Die Browsernachweise zeigen responsive Seiten und Tabellen mit Beispieldaten.
-Sie messen noch keine echte Deutschland-MapLibre-Karte und keine belasteten
-Knoten mit den geforderten Datenmengen. Diese expliziten Abnahmecheckboxen
-bleiben offen; die 50er-Pagination allein beweist sie nicht.
+Der ergänzte [Kartenbericht](m10-kartenabnahme.md) und
+[Browserlasttest](../apps/game-api/src/demand-map-browser.e2e.test.ts) prüfen
+die tatsächlich gebaute LiveMap mit MapLibre, PMTiles-Rangezugriffen,
+5.400 synthetischen Stationsobjekten und 5.000 Zugprojektionen. Im dichten
+Knoten liegen 400 Stationen und Züge. Die 1366/390/320-Pixel-Fälle prüfen
+Legende ohne Werkzeugüberlappung, echten Kartenklick, gestufte Zugdetails,
+50er-Pagination, sichtbare Live-Deltas und den vollständigen Planungsrückweg.
+Start-, Nachfrage- und Framezeiten werden gegen vorab gesetzte UI-Budgets
+gemessen; späte Kartenfehler und externe Laufzeitrequests führen zum Fehler.
+
+Damit sind diese UI-/UX-Anforderungen im offengelegten Testumfang erfüllt.
+Das ist kein Nachweis des produktiven millionenfachen Deutschland-Korpus,
+keine reale Nachfragekalibrierung und keine Betriebsfreigabe. Diese anderen
+Fachabnahmen bleiben in #173/#210 sowie den bestehenden Release-/Betriebsissues.

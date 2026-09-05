@@ -141,8 +141,10 @@ describe("SPFV: persistente Vorschau und bestehende Trassenautorität", () => {
       expect(await demand.checkpoint(WORLD, tx)).toEqual(checkpoint);
       throw rollback;
     })).rejects.toBe(rollback);
-    expect(await demand.checkpoint(WORLD)).toEqual(initial);
-    const committed = await demand.store.commit({ ...initial.input, revision: 2, nowMs: 12_000 }, "transaction-pin", new Date(12_000));
+    expect(await new DemandStore(db, runtime).latest(WORLD, "transaction-pin")).toEqual(initial);
+    // Ein unabhängiger Writer belegt dieselbe Sequenz neu, ohne den Cache des
+    // Services zu leeren. Ein geleakter Rollbackstand müsste jetzt auffallen.
+    const committed = await new DemandStore(db, runtime).commit({ ...initial.input, revision: 2, nowMs: 12_000 }, "transaction-pin", new Date(12_000));
     expect(await db.transaction((tx) => demand.checkpoint(WORLD, tx))).toEqual(committed);
     expect(await demand.checkpoint(WORLD)).toEqual(committed);
   });

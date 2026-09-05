@@ -187,6 +187,13 @@ jobs:
           pnpm --filter @zugfolge/alpha exec vitest run src/world-end.postgres.integration.test.ts
           pnpm --filter @zugfolge/game-api exec vitest run src/world-access-postgres.integration.test.ts
 
+      - name: M10-MapLibre mit Deutschland- und Knotenlast
+        env:
+          ZUGFOLGE_BROWSER_E2E: "1"
+        run: |
+          pnpm --filter @zugfolge/livemap... build
+          pnpm --filter @zugfolge/game-api exec vitest run --no-file-parallelism src/demand-map-browser.e2e.test.ts
+
   guards:
     # ASCII-only: GitHub branch protection compares this check name byte-for-byte.
     # Keeping non-ASCII out prevents a required-check context such as `W?chter`

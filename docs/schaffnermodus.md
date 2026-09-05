@@ -26,6 +26,8 @@ Pflichtschleife.
 
 - Einstieg erfolgt aus der privaten Zugdetailansicht eines eigenen, aktiven
   SPNV-Zuges. Geleaste Fahrzeuge zählen als eigene Betriebsleistung.
+  Weltzugang und eigenes EVU müssen aktiv sein; ausgeschiedene oder gelöschte
+  Unternehmen erhalten auch über die interne Projektionsgrenze keinen Zugriff.
 - Die LiveMap bleibt der Ausgangspunkt der deutschlandweiten Spielwelt.
   Der spätere Modus öffnet den ausgewählten Zug und bietet einen klaren
   Rückweg zur Karte; eine zusätzliche regionale Welt oder ein sechster
