@@ -1,6 +1,6 @@
 # ADR-0017: Design — Domänensprache, achromatische Marke, durchgehend dunkel
 
-- **Status:** Angenommen — bindend (entspricht E17)
+- **Status:** Ersetzt durch [ADR-0035](0035-deutschlandweite-spieleroberflaeche.md) am 5. September 2026. Der folgende Text dokumentiert die historische Entscheidung.
 - **Bezug:** [../entscheidungen.md](../entscheidungen.md) · [../design.md](../design.md)
 - **Betrifft Milestones:** M3.9 (Gestaltungssystem), M4.8 (Normalzustand farblos)
 - **Verwandte ADRs:** [ADR-0006](0006-baureihen-faktisch-marken-eigen.md), [ADR-0009](0009-vollstaendige-transparenz-livemap.md)

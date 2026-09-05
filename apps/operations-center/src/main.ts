@@ -11,7 +11,9 @@ import { addRule, moveRule, removeCondition, removeRule, reorderRules, updateCon
 import { renderApp, type ViewState } from "./view.js";
 import { captureEditorFocus, nextProgramVersion, restoreEditorFocus, sameProgramContent, savedProgramMatches } from "./editor.js";
 import "./styles.css";
-import "./workspace.css";
+import "@zugfolge/design-system/railway.css";
+import "./railway-operations.css";
+
 
 const rootElement = document.querySelector<HTMLDivElement>("#root");
 if (rootElement === null) throw new Error("App-Wurzel fehlt.");
@@ -66,7 +68,7 @@ function render(): void {
     reportDay = root.querySelector<HTMLInputElement>("#report-day")?.value ?? reportDay;
     const template = document.createElement("template");
     template.innerHTML = renderApp(state);
-    for (const selector of [".topbar", ".sidebar-note", ".metrics-strip", "#operations", "#reports"]) {
+    for (const selector of [".topbar", ".operations-global-company", ".metrics-strip", "#operations", "#reports"]) {
       const previous = root.querySelector(selector);
       const next = template.content.querySelector(selector);
       if (previous !== null && next !== null) previous.replaceWith(next);
@@ -84,7 +86,7 @@ function render(): void {
     root.querySelectorAll<HTMLInputElement | HTMLSelectElement>("#program input, #program select").forEach((input) => { input.disabled = state.saving; });
     root.querySelectorAll<HTMLButtonElement>("#program .rule-list button, #add-rule").forEach((button) => { button.disabled = state.saving; });
     const saveButton = root.querySelector<HTMLButtonElement>("#save-program");
-    if (saveButton !== null) { saveButton.disabled = state.saving; saveButton.textContent = state.saving ? "Speichert …" : "Neue Version speichern"; }
+    if (saveButton !== null) { saveButton.disabled = state.saving; saveButton.textContent = state.saving ? "Speichert …" : "Entwurf speichern"; }
     for (const id of ["#activate-program", "#run-backtest"]) {
       const button = root.querySelector<HTMLButtonElement>(id);
       if (button !== null) button.disabled = state.operations?.consumerAvailable === false || state.saving || !savedProgramMatches(state.program, state.savedProgram);
@@ -320,7 +322,7 @@ function startStream(): void {
 async function boot(): Promise<void> {
   render();
   if (worldId === "" || operatorId === "") {
-    setState({ loading: false, message: "Weltkennung oder EVU-Kennung fehlt. Öffnen Sie die Betriebszentrale aus Ihrer Welt.", messageTone: "error" });
+    setState({ loading: false, message: "Öffne den Betrieb aus deiner LiveMap, damit wir dein Unternehmen zuordnen können.", messageTone: "error" });
     return;
   }
   try {
@@ -331,7 +333,7 @@ async function boot(): Promise<void> {
     const source: OperatingProgram | undefined = versions.find((version) => version.status === "active")?.canonicalProgram ?? versions[0]?.canonicalProgram ?? templates[0]?.program;
     if (source === undefined) throw new Error("Server lieferte weder Betriebsprogramm noch Vorlage.");
     const savedProgram = versions.find((version) => version.status === "active") ?? versions[0];
-    if (!operatorContext.operators.some((operator) => operator.id === operatorId)) throw new Error("EVU-Kontext stimmt nicht mit der geöffneten Betriebszentrale überein.");
+    if (!operatorContext.operators.some((operator) => operator.id === operatorId)) throw new Error("Diese Betriebszentrale gehört zu einem anderen Unternehmen.");
     state = { ...state, templates, versions, operations, reports, operatorContext, program: source, ...(savedProgram === undefined ? {} : { savedProgram }), loading: false };
     render();
     startStream();

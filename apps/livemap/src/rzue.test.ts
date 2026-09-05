@@ -72,12 +72,12 @@ describe("RZÜ-Projektion", () => {
   });
 
   it("schätzt ohne exakten Zustand keine Lage", () => {
-    expect(rzueMarkup([{ ...train, operational: undefined }], [frame], false)).toContain("keine schematische Position geschätzt");
+    expect(rzueMarkup([{ ...train, operational: undefined }], [frame], false)).toContain("wartet auf aktuelle Betriebsdaten");
     expect(rzueMarkup([train], [], false)).toContain("KEIN REGIONSFRAME");
   });
 
   it("zeigt keinen Zug unter einem fremden Regionscommit", () => {
     expect(rzueMarkup([train], [{ ...frame, commitSequence: 43 }], false))
-      .toContain("keine schematische Position geschätzt");
+      .toContain("wartet auf aktuelle Betriebsdaten");
   });
 });

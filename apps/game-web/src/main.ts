@@ -1,5 +1,5 @@
 import type { Density } from "@zugfolge/design-system";
-import { mountGameHints } from "@zugfolge/design-system";
+import { bindRailwayTabs, mountGameHints } from "@zugfolge/design-system";
 import { GAME_HINTS } from "./game-hints.js";
 import "@zugfolge/design-system/styles.css";
 import { mountGlossaryLayer } from "@zugfolge/glossary";
@@ -47,8 +47,10 @@ import {
 } from "./navigation.js";
 import { classifyJourneyFailure } from "./recovery.js";
 import { renderLoadState, renderProjection } from "./view.js";
+import { captureWorkspaceView } from "./workspace-view.js";
 import "./styles.css";
-import "./player-shell.css";
+import "@zugfolge/design-system/railway.css";
+import "./railway-game.css";
 
 const root = document.querySelector<HTMLDivElement>("#root");
 if (root === null) throw new Error("App-Wurzel fehlt");
@@ -126,6 +128,7 @@ let contractType: ContractType = "traction";
 let marketQuery = "";
 let cooperationAtS = 0;
 let economyRevision = 0;
+let worldEntryConfirmed = false;
 let publicTenders: readonly PublicTenderView[] = [];
 let tendersUnavailable = false;
 let mailboxMessages: readonly MailboxMessageView[] = [];
@@ -244,6 +247,7 @@ function render(): void {
   unmountGlossaryLayer = undefined;
   app.dataset.density = density;
   if (journeyMode) {
+    const restoreWorkspaceView = captureWorkspaceView(app);
     captureJourneyDrafts();
     const busyScope = journeyBusyScopes.has("initial") ? "initial"
         : journeyBusyScopes.has("cooperation") ? "cooperation"
@@ -260,6 +264,7 @@ function render(): void {
       mailbox: mailboxMessages,
       worldContracts: publicWorldContracts,
       hasActiveOperator: activeOperatorId !== "",
+      entryConfirmed: worldEntryConfirmed,
       activeOperatorId,
       operatorContext: playerOperatorContext,
       activeSection: activeJourneySection,
@@ -267,7 +272,9 @@ function render(): void {
       bootRecovery,
     });
     bindJourney();
+    bindRailwayTabs(app, window.location.hash);
     restoreJourneyDrafts();
+    restoreWorkspaceView();
     mountGlossaryForCurrentView();
     if (pendingCooperationDeepLink && focusCooperationDeepLink(
       app,
@@ -281,7 +288,7 @@ function render(): void {
   if (projection === undefined) {
     app.innerHTML = renderLoadState(
       loadError === "" ? "loading" : "error",
-      loadError === "" ? "Planner-Ergebnis wird geladen …" : loadError,
+      loadError === "" ? "Dein Fahrplan wird geladen …" : loadError,
       loadError === "" ? undefined : explicitDemoUrl(),
     );
     app.querySelector<HTMLButtonElement>("#planner-retry")?.addEventListener("click", () => {
@@ -300,6 +307,9 @@ function render(): void {
     messageTone,
     applyingAlternativeId: applyingAlternativeId === "" ? undefined : applyingAlternativeId,
     demoMode,
+    livemapUrl,
+    operationsCenterUrl,
+    activeOperatorId,
   });
   bind();
   mountGlossaryForCurrentView();
@@ -313,7 +323,7 @@ function bindJourney(): void {
       api = undefined;
     }
     bootRecovery = undefined;
-    message = "Spielerreise wird erneut verbunden …";
+    message = "Deine Spielwelt wird neu verbunden …";
     messageTone = "status";
     void boot();
   });
@@ -329,7 +339,7 @@ function bindJourney(): void {
   });
   app.querySelector<HTMLSelectElement>("#journey-operator")?.addEventListener("change", (event) => {
     const operatorId = (event.currentTarget as HTMLSelectElement).value;
-    if (operatorId !== "") void cooperationAction(async () => refreshCooperation(operatorId), "Handelndes EVU wurde gewechselt.");
+    if (operatorId !== "") void cooperationAction(async () => refreshCooperation(operatorId), "Dein Unternehmen wurde gewechselt.");
   });
   app.querySelector<HTMLDialogElement>("#journey-confirmation")?.addEventListener("close", (event) => {
     const dialog = event.currentTarget as HTMLDialogElement;
@@ -340,7 +350,7 @@ function bindJourney(): void {
     submitTenderBid,
     submitPathRequest,
     scheduleMaintenance,
-    changeOperator: (operatorId) => cooperationAction(async () => refreshCooperation(operatorId), "Handelndes EVU wurde gewechselt."),
+    changeOperator: (operatorId) => cooperationAction(async () => refreshCooperation(operatorId), "Dein Unternehmen wurde gewechselt."),
     changeContractType: (value) => {
       captureJourneyDrafts();
       const existing = journeyDrafts.get("m12-contract-form") ?? {};
@@ -353,7 +363,7 @@ function bindJourney(): void {
     changeListingPageView,
     loadMoreContracts,
     loadMoreListings,
-    refresh: () => cooperationAction(async () => refreshCooperation(activeOperatorId), "Kooperation und Fahrzeugmarkt sind aktuell."),
+    refresh: () => cooperationAction(async () => refreshCooperation(activeOperatorId), "Deine Angebote und Verträge sind aktuell."),
     offerContract: offerCooperationContract,
     respondToContract,
     endContract,
@@ -367,16 +377,16 @@ function bindJourney(): void {
 }
 
 function foundOperator(name: string): Promise<void> {
-  if (name.trim() === "") return reportFormError(new Error("Bitte wählen Sie einen Namen für Ihr EVU."));
+  if (name.trim() === "") return reportFormError(new Error("Gib deinem Unternehmen einen Namen."));
   return requestConfirmation(
-    "EVU verbindlich gründen?",
-    confirmationDetail({ parties: `Ihr Konto und ${name.trim()}`, object: "Gründung eines Eisenbahnverkehrsunternehmens", amount: "Startkapital gemäß Weltvertrag", deadline: "sofort", consequence: "Name, Gründerkonto und Startkapital werden serverseitig dauerhaft angelegt." }),
+    "Unternehmen gründen?",
+    confirmationDetail({ parties: `Dein Konto und ${name.trim()}`, object: "Gründung deiner eigenen Bahn", amount: "Das angezeigte Startkapital", deadline: "sofort", consequence: "Dein Unternehmen wird mit diesem Namen und dem angezeigten Startkapital gegründet." }),
     () => cooperationAction(async () => {
       if (api === undefined || publicWorldId === "") throw new Error("Welt oder Sitzung fehlt.");
       const operator = await api.createOperator(publicWorldId, name.trim());
       clearedJourneyDrafts.add("operator-foundation-form");
       await refreshCooperation(operator.id);
-    }, `EVU „${name.trim()}“ wurde gegründet.`),
+    }, `Dein Unternehmen „${name.trim()}“ ist gegründet. Gute Fahrt!`),
     "#operator-foundation-form input",
   );
 }
@@ -403,7 +413,7 @@ function submitTenderBid(fields: Readonly<Record<string, string>>): Promise<void
     "Angebot verbindlich abgeben?",
     confirmationDetail({ parties: operatorDisplayName(activeOperatorId), object: `Ausschreibung ${tenderId}`, amount: `${formatCents(orderingFeeCentsPerTrainKm)} je Zug-km`, deadline: simulationDeadline(publicTenders.find((tender) => tender.id === tenderId)?.closesAt), consequence: "Das versiegelte Angebot wird serverseitig gegen Flottenstand, Frist und Weltrevision geprüft." }),
     () => cooperationAction(async () => {
-      if (api === undefined || activeOperatorId === "") throw new Error("Handelndes EVU fehlt.");
+      if (api === undefined || activeOperatorId === "") throw new Error("Wähle zuerst dein Unternehmen.");
       const commandId = commandKey("tender-bid", `${tenderId}:${formationChoice}:${orderingFeeCentsPerTrainKm}:${punctuality}:${extraSeats}`);
       await api.submitTenderBid(publicWorldId, tenderId, activeOperatorId, {
         expectedRevision: economyRevision,
@@ -456,9 +466,9 @@ function submitPathRequest(kind: "schedule" | "empty-run", fields: Readonly<Reco
     let assignedTrainNumber: number | undefined;
     return requestConfirmation(
       `${label === "Fahrplan" ? "Fahrplan" : "Leerfahrt"} verbindlich anmelden?`,
-      confirmationDetail({ parties: operatorDisplayName(activeOperatorId), object: `${label} von ${originStationId} nach ${destinationStationId}; Zugnummer wird automatisch vergeben`, amount: "Trassen- und Betriebskosten laut Weltvertrag", deadline: `Abfahrt in ${departureInMinutes} Minuten`, consequence: "Der Planner prueft Formation, Eigentum, Fahrweg und Konflikte serverseitig; unzulaessige Anmeldungen werden abgelehnt." }),
+      confirmationDetail({ parties: operatorDisplayName(activeOperatorId), object: `${label} von ${originStationId} nach ${destinationStationId}; Zugnummer wird automatisch vergeben`, amount: "Die geltenden Strecken- und Betriebskosten", deadline: `Abfahrt in ${departureInMinutes} Minuten`, consequence: "Wir prüfen, ob dein Zug einsatzbereit ist und die Fahrt ins Netz passt." }),
       () => cooperationAction(async () => {
-        if (api === undefined || activeOperatorId === "") throw new Error("Welt, Sitzung oder EVU fehlt.");
+        if (api === undefined || activeOperatorId === "") throw new Error("Melde dich an und wähle dein Unternehmen.");
         const submission = await api.submitPlanningPathRequest(publicWorldId, {
           schemaVersion: "planning.player-path-request/v2",
           requestId,
@@ -496,14 +506,14 @@ function scheduleMaintenance(fields: Readonly<Record<string, string>>): Promise<
     const idempotencyKey = commandKey("fleet-maintenance", fingerprint);
     return requestConfirmation(
       "Formation in die Werkstatt schicken?",
-      confirmationDetail({ parties: operatorDisplayName(activeOperatorId), object: `Formation ${formationId}`, amount: "Werkstattkosten laut Weltvertrag", deadline: `${durationHours} Stunden Belegung`, consequence: "Die Formation steht waehrend der serverseitig reservierten Werkstattzeit nicht fuer Betrieb oder Ausschreibungsnachweise bereit." }),
+      confirmationDetail({ parties: operatorDisplayName(activeOperatorId), object: `Formation ${formationId}`, amount: "Die geltenden Werkstattkosten", deadline: `${durationHours} Stunden Belegung`, consequence: "Während des Werkstattaufenthalts steht dein Zug nicht für Fahrten oder neue Aufträge bereit." }),
       () => cooperationAction(async () => {
-        if (api === undefined || activeOperatorId === "") throw new Error("Welt, Sitzung oder EVU fehlt.");
+        if (api === undefined || activeOperatorId === "") throw new Error("Melde dich an und wähle dein Unternehmen.");
         await api.scheduleMaintenance(publicWorldId, activeOperatorId, { formationId, durationHours, idempotencyKey });
         completeCommand("fleet-maintenance", fingerprint);
         clearedJourneyDrafts.add("maintenance-form");
         await refreshCooperation(activeOperatorId);
-      }, "Werkstattauftrag wurde im autoritativen Flottenzustand gebucht."),
+      }, "Dein Werkstatttermin ist gebucht."),
       "#maintenance-form button",
     );
   } catch (error) {
@@ -554,7 +564,7 @@ function reportFormError(error: unknown): Promise<void> {
 async function journeyAction(action: () => Promise<void>, success: string | (() => string), scope: JourneyBusyScope = "cooperation"): Promise<void> {
   if (journeyBusyScopes.has(scope) || journeyBusyScopes.has("initial")) return;
   journeyBusyScopes.add(scope);
-  message = "Der bestätigte Weltzustand wird aktualisiert …";
+  message = "Deine Entscheidung wird geprüft …";
   messageTone = "status";
   render();
   try {
@@ -562,7 +572,7 @@ async function journeyAction(action: () => Promise<void>, success: string | (() 
     message = typeof success === "function" ? success() : success;
     messageTone = "status";
   } catch (error) {
-    const failure = classifyJourneyFailure(error, "Spielerreise konnte nicht aktualisiert werden.");
+    const failure = classifyJourneyFailure(error, "Deine Spielwelt konnte gerade nicht aktualisiert werden.");
     message = failure.message;
     messageTone = "error";
     bootRecovery = failure.recovery;
@@ -614,7 +624,7 @@ function confirmationDetail(input: {
   readonly deadline: string;
   readonly consequence: string;
 }): string {
-  return `Welt: ${cooperationState()?.worldName ?? publicWorldId}. Parteien: ${input.parties}. Objekt: ${input.object}. Betrag: ${input.amount}. Frist: ${input.deadline}. Folgen: ${input.consequence}`;
+  return `Welt: ${cooperationState()?.worldName ?? publicWorldId}. Für: ${input.parties}. Vorhaben: ${input.object}. Betrag: ${input.amount}. Frist: ${input.deadline}. Folgen: ${input.consequence}`;
 }
 
 function formSecond(fields: Readonly<Record<string, string>>, name: string): number {
@@ -745,11 +755,12 @@ function enterPublicWorld(worldId: string, displayName: string, contractHash: st
   return journeyAction(async () => {
     const client = api;
     if (client === undefined || worldId !== publicWorldId || worldId === "" || contractHash === "" || displayName.trim() === "") {
-      throw new Error("Weltvertrag und Anzeigename müssen vollständig bestätigt werden.");
+      throw new Error("Gib deinen Spielernamen ein und bestätige die Spielregeln.");
     }
     await client.enterPublicWorld(worldId, displayName.trim(), contractHash);
+    worldEntryConfirmed = true;
     await refreshCooperation(activeOperatorId);
-  }, "Weltvertrag bestätigt. Der öffentliche Betrieb ist geöffnet.", "initial");
+  }, "Willkommen an Bord. Jetzt kannst du dein Unternehmen gründen.", "initial");
 }
 
 function cooperationAction(action: () => Promise<void>, success: string | (() => string)): Promise<void> {
@@ -768,10 +779,10 @@ function offerCooperationContract(fields: Readonly<Record<string, string>>): Pro
   const idempotencyKey = commandKey("contract-offer", actionFingerprint);
   return requestConfirmation(
     "Kooperationsangebot senden?",
-    confirmationDetail({ parties: `${operatorDisplayName(activeOperatorId)} an ${offeree}`, object: `Kooperationsvertrag ${contractType}`, amount: formatCents(preview.priceCents), deadline: `Antwort bis ${simulationDeadline(preview.responseDeadlineS)}, Vertrag bis ${simulationDeadline(preview.validUntilS)}`, consequence: "Das Angebot wird verbindlich und im Postfach des empfangenden EVU zugestellt; alle Fristen werden serverseitig erneut geprüft." }),
+    confirmationDetail({ parties: `${operatorDisplayName(activeOperatorId)} an ${offeree}`, object: `Kooperationsvertrag ${contractType}`, amount: formatCents(preview.priceCents), deadline: `Antwort bis ${simulationDeadline(preview.responseDeadlineS)}, Vertrag bis ${simulationDeadline(preview.validUntilS)}`, consequence: "Dein Angebot wird verbindlich an das andere Unternehmen gesendet. Du erhältst die Antwort in deinem Postfach." }),
     () => cooperationAction(async () => {
       const client = api;
-      if (client === undefined || activeOperatorId === "") throw new Error("Handelndes EVU fehlt.");
+      if (client === undefined || activeOperatorId === "") throw new Error("Wähle zuerst dein Unternehmen.");
       const parsed = parseContractOfferFields(contractType, fields, cooperationAtS);
       await client.offerContract(publicWorldId, activeOperatorId, { ...parsed, contractType, idempotencyKey });
       await refreshCooperation(activeOperatorId);
@@ -791,7 +802,7 @@ function respondToContract(contractId: string, response: "accept" | "reject"): P
     confirmationDetail({ parties: contract === undefined ? "Vertragsparteien nicht geladen" : `${operatorDisplayName(contract.offerorOperatorId)} und ${operatorDisplayName(contract.offereeOperatorId)}`, object: contract === undefined ? `Vertrag ${contractId}` : `Kooperationsvertrag ${contract.contractType}`, amount: contract === undefined ? "unbekannt" : formatCents(contract.priceCents), deadline: contract === undefined ? "nicht geladen" : simulationDeadline(contract.responseDeadlineS), consequence: response === "accept" ? "Ledgerbuchung, Leistungspflichten und Vertragsfristen werden verbindlich wirksam." : "Das Angebot endet abgelehnt und beide Parteien werden benachrichtigt." }),
     () => cooperationAction(async () => {
       const client = api;
-      if (client === undefined || activeOperatorId === "") throw new Error("Handelndes EVU fehlt.");
+      if (client === undefined || activeOperatorId === "") throw new Error("Wähle zuerst dein Unternehmen.");
       await client.respondToContract(publicWorldId, activeOperatorId, contractId, response, idempotencyKey);
       await refreshCooperation(activeOperatorId);
       completeCommand("contract-response", actionFingerprint);
@@ -810,7 +821,7 @@ function endContract(contractId: string, nonPerformance: boolean, evidenceRefere
     confirmationDetail({ parties: contract === undefined ? operatorDisplayName(activeOperatorId) : `${operatorDisplayName(contract.offerorOperatorId)} und ${operatorDisplayName(contract.offereeOperatorId)}`, object: contract === undefined ? `Vertrag ${contractId}` : `Kooperationsvertrag ${contract.contractType}`, amount: contract === undefined ? "unbekannt" : formatCents(contract.priceCents), deadline: contract === undefined ? "serverseitige Vertragsfrist" : nonPerformance ? `Betriebsbeleg ${evidenceReference ?? "fehlt"}` : simulationDeadline(cooperationAtS + contract.terminationNoticeS), consequence: nonPerformance ? `Der Server prüft den Tagesbericht exakt gegen Welt, Vertrag, Gegenpartei und Leistungszeit; die Begründung „${reason}“ allein beendet nichts.` : "Die Leistungspflichten bleiben bis zum serverberechneten Ende der Kündigungsfrist vollständig aktiv." }),
     () => cooperationAction(async () => {
       const client = api;
-      if (client === undefined || activeOperatorId === "") throw new Error("Handelndes EVU fehlt.");
+      if (client === undefined || activeOperatorId === "") throw new Error("Wähle zuerst dein Unternehmen.");
       await client.endContract(publicWorldId, activeOperatorId, contractId, reason, nonPerformance, idempotencyKey, evidenceReference);
       await refreshCooperation(activeOperatorId);
       completeCommand("contract-end", actionFingerprint);
@@ -842,7 +853,7 @@ function createVehicleListing(fields: Readonly<Record<string, string>>): Promise
     confirmationDetail({ parties: `${operatorDisplayName(activeOperatorId)} und künftige Marktpartei`, object: `${vehicle?.classDesignation ?? "Fahrzeug"} als ${listingType === "sale" ? "Verkauf" : "Vermietung"}`, amount: formatCents(priceCents), deadline: simulationDeadline(expiresAtS), consequence: "Das Angebot wird verbindlich; Zustand, Schäden und Wartungsfristen werden offengelegt." }),
     () => cooperationAction(async () => {
       const client = api;
-      if (client === undefined || activeOperatorId === "") throw new Error("Handelndes EVU fehlt.");
+      if (client === undefined || activeOperatorId === "") throw new Error("Wähle zuerst dein Unternehmen.");
       const rentalValidUntilS = listingType === "rental" ? addWorldSeconds(cooperationAtS, formDuration(fields, "rentalDurationDays", 86_400), "Mietende") : undefined;
       await client.createVehicleListing(publicWorldId, activeOperatorId, vehicleId, { listingType, priceCents, ...(rentalValidUntilS === undefined ? {} : { rentalValidUntilS }), expiresAtS, idempotencyKey });
       await refreshCooperation(activeOperatorId);
@@ -857,9 +868,9 @@ function reserveListing(listingId: string, expectedRevision: number): Promise<vo
   const listing = marketListings.find((candidate) => candidate.id === listingId);
   const actionFingerprint = `${listingId}:${expectedRevision}`;
   const idempotencyKey = commandKey("vehicle-reserve", actionFingerprint);
-  return requestConfirmation("Fahrzeug reservieren?", confirmationDetail({ parties: `${operatorDisplayName(listing?.offeringOperatorId ?? "")} und ${operatorDisplayName(activeOperatorId)}`, object: String(listing?.disclosure["classDesignation"] ?? "Fahrzeug"), amount: listing === undefined ? "unbekannt" : formatCents(listing.priceCents), deadline: listing === undefined ? "zehn Simulationsminuten" : `Reservierung zehn Simulationsminuten, Angebot bis ${simulationDeadline(listing.expiresAtS)}`, consequence: "Das Angebot wird für andere EVU vorübergehend blockiert; Insolvenz- und Kaufsperren werden serverseitig geprüft." }), () => cooperationAction(async () => {
+  return requestConfirmation("Fahrzeug reservieren?", confirmationDetail({ parties: `${operatorDisplayName(listing?.offeringOperatorId ?? "")} und ${operatorDisplayName(activeOperatorId)}`, object: String(listing?.disclosure["classDesignation"] ?? "Fahrzeug"), amount: listing === undefined ? "unbekannt" : formatCents(listing.priceCents), deadline: listing === undefined ? "zehn Simulationsminuten" : `Reservierung zehn Simulationsminuten, Angebot bis ${simulationDeadline(listing.expiresAtS)}`, consequence: "Das Fahrzeug wird für dich reserviert. Währenddessen können andere Unternehmen es nicht übernehmen." }), () => cooperationAction(async () => {
     const client = api;
-    if (client === undefined || activeOperatorId === "") throw new Error("Handelndes EVU fehlt.");
+    if (client === undefined || activeOperatorId === "") throw new Error("Wähle zuerst dein Unternehmen.");
     await client.reserveVehicleListing(publicWorldId, listingId, activeOperatorId, expectedRevision, idempotencyKey);
     await refreshCooperation(activeOperatorId);
     completeCommand("vehicle-reserve", actionFingerprint);
@@ -872,7 +883,7 @@ function transferListing(listingId: string, expectedRevision: number): Promise<v
   const idempotencyKey = commandKey("vehicle-transfer", actionFingerprint);
   return requestConfirmation("Fahrzeugübergabe und Zahlung bestätigen?", confirmationDetail({ parties: `${operatorDisplayName(listing?.offeringOperatorId ?? "")} und ${operatorDisplayName(activeOperatorId)}`, object: String(listing?.disclosure["classDesignation"] ?? "Fahrzeug"), amount: listing === undefined ? "unbekannt" : formatCents(listing.priceCents), deadline: simulationDeadline(listing?.reservedUntilS), consequence: "Eigentum beziehungsweise Halterschaft, Zahlung und Fahrzeuglebenslauf werden atomar geändert." }), () => cooperationAction(async () => {
     const client = api;
-    if (client === undefined || activeOperatorId === "") throw new Error("Handelndes EVU fehlt.");
+    if (client === undefined || activeOperatorId === "") throw new Error("Wähle zuerst dein Unternehmen.");
     await client.transferVehicleListing(publicWorldId, listingId, activeOperatorId, expectedRevision, idempotencyKey);
     await refreshCooperation(activeOperatorId);
     completeCommand("vehicle-transfer", actionFingerprint);
@@ -886,7 +897,7 @@ function reverseListing(listingId: string, reasonCode: string): Promise<void> {
   const idempotencyKey = commandKey("vehicle-reversal", actionFingerprint);
   return requestConfirmation("Rückabwicklung mit Mangelbeleg beantragen?", confirmationDetail({ parties: `${operatorDisplayName(listing.offeringOperatorId)} und ${operatorDisplayName(activeOperatorId)}`, object: `${String(listing.disclosure["classDesignation"] ?? "Fahrzeug")}, Pflichtbegründung: ${reasonCode.trim()}`, amount: formatCents(listing.priceCents), deadline: "serverseitiges Rückabwicklungsfenster von sieben Tagen", consequence: "Eigentum und Zahlung ändern sich nur, wenn der serverseitige Mangelbeleg exakt zu Angebot, Übergabe und Begründung passt." }), () => cooperationAction(async () => {
     const client = api;
-    if (client === undefined || activeOperatorId === "") throw new Error("Handelndes EVU fehlt.");
+    if (client === undefined || activeOperatorId === "") throw new Error("Wähle zuerst dein Unternehmen.");
     await client.reverseVehicleTransfer(publicWorldId, listingId, activeOperatorId, reasonCode.trim(), idempotencyKey);
     await refreshCooperation(activeOperatorId);
     completeCommand("vehicle-reversal", actionFingerprint);
@@ -900,7 +911,7 @@ function cancelListing(listingId: string, expectedRevision: number): Promise<voi
   const idempotencyKey = commandKey("vehicle-cancel", actionFingerprint);
   return requestConfirmation("Fahrzeugangebot zurückziehen?", confirmationDetail({ parties: `${operatorDisplayName(activeOperatorId)} und Marktteilnehmer`, object: String(listing?.disclosure["classDesignation"] ?? "Fahrzeug"), amount: listing === undefined ? "unbekannt" : formatCents(listing.priceCents), deadline: simulationDeadline(listing?.expiresAtS), consequence: "Das offene Angebot wird dauerhaft zurückgezogen; eine aktive Reservierung verhindert die einseitige Ausführung." }), () => cooperationAction(async () => {
     const client = api;
-    if (client === undefined || activeOperatorId === "") throw new Error("Handelndes EVU fehlt.");
+    if (client === undefined || activeOperatorId === "") throw new Error("Wähle zuerst dein Unternehmen.");
     await client.cancelVehicleListing(publicWorldId, activeOperatorId, listingId, expectedRevision, idempotencyKey);
     await refreshCooperation(activeOperatorId);
     completeCommand("vehicle-cancel", actionFingerprint);
@@ -913,7 +924,7 @@ function loadVehicleHistory(vehicleId: string): Promise<void> {
     if (client === undefined) throw new Error("Game-API fehlt.");
     selectedVehicleHistory = await client.loadVehicleHistory(publicWorldId, vehicleId);
     selectedHistoryVehicleId = vehicleId;
-  }, "Der unveränderliche Fahrzeuglebenslauf wurde geladen.");
+  }, "Die Geschichte dieses Fahrzeugs ist jetzt geöffnet.");
 }
 
 function bind(): void {
@@ -1040,8 +1051,8 @@ async function boot(): Promise<void> {
     if (api === undefined || publicWorldId === "") {
       journeyBusyScopes.clear();
       message = api === undefined
-        ? "Angemeldete Sitzung fehlt. Produktivdaten werden nicht durch Beispieldaten ersetzt."
-        : "Die öffentliche Weltkennung fehlt in der Laufzeitkonfiguration.";
+        ? "Melde dich erneut an, um deine Bahn zu öffnen."
+        : "Deine Spielwelt ist gerade nicht erreichbar. Versuche es erneut.";
       messageTone = "error";
       bootRecovery = api === undefined ? "authenticate" : "configure";
       render();
@@ -1054,7 +1065,7 @@ async function boot(): Promise<void> {
       publicWorldContracts = (await api.loadPublicWorldContracts()).filter((contract) => contract.worldId === publicWorldId);
       await refreshCooperation();
     } catch (error) {
-      const failure = classifyJourneyFailure(error, "Spielerreise konnte nicht geladen werden.");
+      const failure = classifyJourneyFailure(error, "Deine Spielwelt konnte gerade nicht geladen werden.");
       message = failure.message;
       messageTone = "error";
       bootRecovery = failure.recovery;
@@ -1067,7 +1078,7 @@ async function boot(): Promise<void> {
   }
   if (worldId === "" || api === undefined) {
     loadError =
-      "Weltkennung oder angemeldete Sitzung fehlt. Im Produktivmodus werden keine Beispieldaten eingesetzt.";
+      "Melde dich erneut an und öffne den Fahrplan aus deiner Spielwelt.";
     render();
     return;
   }
@@ -1078,7 +1089,7 @@ async function boot(): Promise<void> {
     loadError =
       error instanceof Error
         ? error.message
-        : "Planner-Ergebnis konnte nicht geladen werden.";
+        : "Dein Fahrplan konnte gerade nicht geladen werden.";
   }
   render();
 }

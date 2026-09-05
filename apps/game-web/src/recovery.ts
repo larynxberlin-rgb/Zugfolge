@@ -11,7 +11,7 @@ export interface JourneyFailure {
 export function classifyJourneyFailure(error: unknown, fallback: string): JourneyFailure {
   if (error instanceof GameApiError && (error.status === 401 || error.status === 403)) {
     return {
-      message: "Anmeldung erforderlich. Ihre Sitzung ist abgelaufen oder für diese Welt nicht mehr gültig. Bitte melden Sie sich erneut an.",
+      message: "Deine Anmeldung ist abgelaufen. Melde dich erneut an, um weiterzuspielen.",
       recovery: "authenticate",
     };
   }

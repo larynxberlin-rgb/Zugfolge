@@ -1,0 +1,391 @@
+/* Zugfolge railway identity. Components shared by map, management and dispatch. */
+body:has(.railway-operations)>.zf-glossary,body:has(.planner-shell)>.zf-glossary {
+  position:fixed;
+  z-index:45;
+  right:116px;
+  bottom:7px;
+  padding:0;
+  background:none
+}
+body:has(.railway-operations)>.zf-glossary .zf-glossary__opener,body:has(.planner-shell)>.zf-glossary .zf-glossary__opener {
+  min-height:28px;
+  padding:4px 9px;
+  border-radius:5px;
+  font-size:10px
+}
+@media(max-width:760px) {
+  body:has(.railway-operations)>.zf-glossary,body:has(.planner-shell)>.zf-glossary {
+    bottom:calc(70px + env(safe-area-inset-bottom))
+  }
+}
+:root {
+  --zf-canvas:#101419;
+  --zf-surface-1:#181e25;
+  --zf-surface-2:#202830;
+  --zf-surface-3:#2a343e;
+  --zf-line:#303b46;
+  --zf-line-strong:#596979;
+  --zf-text:#f5f7fa;
+  --zf-text-muted:#b5c0cc;
+  --zf-text-faint:#93a2b1;
+  --zf-brand:#e5233d;
+  --zf-brand-hover:#f0354e;
+  --zf-brand-soft:#351c25;
+  --zf-attention:#f5bf65;
+  --zf-attention-soft:#342b20;
+  --zf-danger:#ff7d87;
+  --zf-danger-soft:#382128;
+  --zf-success:#7cddba;
+  --zf-success-soft:#1b342e;
+  --zf-focus:#c3daff;
+  --zf-radius:8px;
+  font-family:Inter,"Segoe UI",system-ui,sans-serif;
+  font-size:14px;
+  font-synthesis:none
+}
+[hidden] {
+  display:none!important
+}
+button,input,select,textarea {
+  font:inherit
+}
+button,a,input,select,textarea {
+  touch-action:manipulation
+}
+button {
+  cursor:pointer
+}
+button:disabled {
+  cursor:not-allowed;
+  opacity:.48
+}
+:where(a,button,input,select,textarea,summary,[tabindex]):focus-visible {
+  outline:2px solid var(--zf-focus);
+  outline-offset:3px
+}
+* {
+  scrollbar-width:thin;
+  scrollbar-color:var(--zf-line-strong) transparent
+}
+::selection {
+  background:#ab2039;
+  color:white
+}
+.zf-brand {
+  display:flex;
+  align-items:center;
+  gap:11px;
+  min-width:0;
+  color:var(--zf-text);
+  text-decoration:none;
+  font-size:18px;
+  font-weight:850;
+  letter-spacing:.1em;
+  white-space:nowrap
+}
+.zf-brand__mark {
+  display:grid;
+  place-items:center;
+  width:38px;
+  height:38px;
+  flex-shrink:0;
+  background:var(--zf-brand);
+  border-radius:8px;
+  box-shadow:0 3px 12px #e5233d20
+}
+.zf-brand__mark svg {
+  width:30px;
+  height:30px;
+  fill:none;
+  stroke:white;
+  stroke-width:2.5;
+  stroke-linecap:round;
+  stroke-linejoin:round
+}
+.zf-brand small {
+  display:block;
+  margin-top:3px;
+  color:var(--zf-text-faint);
+  font-size:7px;
+  letter-spacing:.16em;
+  font-weight:600
+}
+.rail-nav {
+  display:flex;
+  flex-direction:column;
+  min-height:0;
+  min-width:0;
+  gap:6px;
+  padding:27px 12px 12px;
+  border-right:1px solid var(--zf-line);
+  background:#12171d;
+  overflow:auto
+}
+.rail-nav__caption {
+  margin:0 12px 16px;
+  color:var(--zf-text-faint);
+  font-size:9px;
+  font-weight:700;
+  letter-spacing:.13em;
+  white-space:nowrap
+}
+.rail-nav__link {
+  position:relative;
+  display:flex;
+  align-items:center;
+  gap:12px;
+  min-height:48px;
+  padding:0 13px;
+  border:1px solid transparent;
+  border-radius:7px;
+  color:var(--zf-text-muted);
+  font-size:13px;
+  font-weight:550;
+  text-decoration:none;
+  white-space:nowrap
+}
+.rail-nav__link .zf-icon {
+  width:19px;
+  height:19px;
+  flex-shrink:0;
+  color:var(--zf-text-faint)
+}
+.rail-nav__link:hover {
+  background:var(--zf-surface-2);
+  color:var(--zf-text)
+}
+.rail-nav__link[aria-current=page] {
+  color:white;
+  background:var(--zf-brand-soft);
+  border-color:#642331
+}
+.rail-nav__link[aria-current=page]:before {
+  content:"";
+  position:absolute;
+  left:-13px;
+  top:11px;
+  bottom:11px;
+  width:3px;
+  border-radius:0 3px 3px 0;
+  background:var(--zf-brand)
+}
+.rail-nav__link[aria-current=page] .zf-icon {
+  color:#ff6c7e
+}
+.rail-nav__map-dot {
+  width:5px;
+  height:5px;
+  border-radius:50%;
+  background:var(--zf-success);
+  margin-left:auto
+}
+.rail-nav__tracks {
+  min-height:30px;
+  flex:1;
+  overflow:hidden;
+  display:flex;
+  align-items:flex-end;
+  justify-content:center;
+  opacity:.45;
+  pointer-events:none
+}
+.rail-nav__tracks svg {
+  width:120px;
+  max-height:240px;
+  fill:none;
+  stroke:#48525c;
+  stroke-width:1.4
+}
+.rail-nav__footer {
+  margin-top:20px;
+  padding:13px 8px 3px;
+  border-top:1px solid var(--zf-line);
+  color:var(--zf-text-faint);
+  font-size:11px;
+  display:flex;
+  justify-content:space-between;
+  gap:6px
+}
+.rail-nav__footer span {
+  font-size:8px;
+  letter-spacing:.1em
+}
+.rail-tabs {
+  display:flex;
+  gap:6px;
+  overflow:auto;
+  max-width:100%;
+  padding:4px;
+  border:1px solid var(--zf-line);
+  border-radius:9px;
+  background:#10151b
+}
+.rail-tabs button {
+  flex:1;
+  min-height:40px;
+  min-width:max-content;
+  padding:7px 18px;
+  border:0;
+  border-radius:6px;
+  background:transparent;
+  color:var(--zf-text-muted);
+  font-size:12px;
+  font-weight:650
+}
+.rail-tabs button[aria-selected=true] {
+  background:var(--zf-surface-3);
+  color:white;
+  box-shadow:0 2px 8px #0003
+}
+.rail-primary {
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  gap:10px;
+  min-height:42px;
+  padding:10px 17px;
+  background:var(--zf-brand);
+  border:1px solid var(--zf-brand);
+  border-radius:7px;
+  color:white;
+  font-weight:650;
+  text-decoration:none
+}
+.rail-primary:hover {
+  background:var(--zf-brand-hover)
+}
+.rail-live {
+  display:inline-flex;
+  align-items:center;
+  gap:7px;
+  color:var(--zf-success);
+  font-size:10px;
+  font-weight:650;
+  letter-spacing:.09em
+}
+.rail-live:before {
+  content:"";
+  height:6px;
+  width:6px;
+  background:currentColor;
+  border-radius:50%
+}
+.zf-game-hints-toggle {
+  bottom:8px;
+  right:12px;
+  min-height:28px;
+  padding:5px 9px;
+  background:#182028;
+  border-color:var(--zf-line);
+  font:11px "Segoe UI",sans-serif
+}
+.zf-game-hint-tooltip {
+  border-radius:10px;
+  box-shadow:0 15px 50px #0008;
+  border-color:var(--zf-line-strong)
+}
+button.zf-game-hint-trigger {
+  width:24px!important;
+  min-width:24px;
+  min-height:24px!important;
+  height:24px;
+  flex-basis:24px;
+  font-size:11px;
+  margin:2px 4px
+}
+@media(max-width:1100px) and (min-width:761px) {
+  .rail-nav {
+    padding-inline:8px
+  }
+  .rail-nav__caption,.rail-nav__tracks,.rail-nav__footer,.rail-nav__map-dot {
+    display:none
+  }
+  .rail-nav__link {
+    flex-direction:column;
+    justify-content:center;
+    gap:6px;
+    padding:8px 2px;
+    font-size:9px;
+    min-height:66px
+  }
+  .rail-nav__link[aria-current=page]:before {
+    left:-9px
+  }
+  .rail-nav__link .zf-icon {
+    width:21px;
+    height:21px
+  }
+}
+@media(max-width:760px) {
+  .zf-brand {
+    font-size:14px;
+    gap:7px
+  }
+  .zf-brand__mark {
+    width:30px;
+    height:30px;
+    border-radius:6px
+  }
+  .zf-brand__mark svg {
+    width:25px;
+    height:25px
+  }
+  .zf-brand small {
+    display:none
+  }
+  .rail-nav {
+    position:fixed;
+    z-index:50;
+    left:0;
+    right:0;
+    bottom:0;
+    height:calc(64px + env(safe-area-inset-bottom));
+    display:grid;
+    grid-auto-flow:column;
+    grid-auto-columns:1fr;
+    gap:1px;
+    padding:4px 3px env(safe-area-inset-bottom);
+    border:0;
+    border-top:1px solid var(--zf-line);
+    background:#141b22
+  }
+  .rail-nav__caption,.rail-nav__tracks,.rail-nav__footer,.rail-nav__map-dot {
+    display:none
+  }
+  .rail-nav__link {
+    min-height:54px;
+    padding:5px 1px;
+    border:0;
+    flex-direction:column;
+    justify-content:center;
+    gap:5px;
+    font-size:9px
+  }
+  .rail-nav__link[aria-current=page]:before {
+    top:-4px;
+    left:30%;
+    right:30%;
+    bottom:auto;
+    width:auto;
+    height:2px
+  }
+  .rail-nav__link .zf-icon {
+    width:18px;
+    height:18px
+  }
+  .zf-game-hints-toggle {
+    bottom:calc(70px + env(safe-area-inset-bottom));
+    font-size:10px
+  }
+  .rail-tabs button {
+    padding-inline:12px;
+    font-size:11px
+  }
+}
+@media(prefers-reduced-motion:reduce) {
+  *,*:before,*:after {
+    scroll-behavior:auto!important;
+    animation-duration:.01ms!important;
+    transition-duration:.01ms!important
+  }
+}

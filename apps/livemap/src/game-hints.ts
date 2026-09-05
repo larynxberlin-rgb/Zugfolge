@@ -1,8 +1,8 @@
 import type { GameHint } from "@zugfolge/design-system";
 
 export const MAP_HINTS: readonly GameHint[] = [
-  { id: "map-entry", selector: "#journey-link", title: "In dieser Welt anfangen", text: "Hier prüfen Sie den Weltvertrag und gründen Ihr EVU. Danach führen Planung, Betrieb und Märkte zu den Entscheidungen für Ihr Unternehmen." },
-  { id: "map-area", selector: "#fit-playable", title: "Das nutzbare Netz finden", text: "Diese Ansicht zeigt die spielbare Region. Klicken Sie auf einen Bahnhof, eine Strecke oder einen Zug, um die aktuellen Informationen zu öffnen." },
-  { id: "map-trains", selector: "#object-list-title", title: "Züge auch ohne Kartenklick auswählen", text: "In dieser Liste erreichen Sie die sichtbaren Zugfahrten mit der Tastatur. Die Details zeigen die bestätigte Betriebslage; eigene Züge bieten zusätzliche Unternehmensinformationen." },
-  { id: "map-rzue", selector: "#mode-rzue", title: "Belegungen nachvollziehen", text: "Die RZÜ stellt die betriebliche Lage schematisch dar. Nutzen Sie sie, um Zugpositionen, belegte Abschnitte und Fahrstraßen im Zusammenhang zu prüfen." },
+  {"id": "map-entry", "selector": "#journey-link", "title": "Deine Bahn startet hier", "text": "Hier findest du deine Spielwelt und gründest dein Unternehmen. Danach führen Fahrplan, Betrieb und Markt zu deinen nächsten Entscheidungen."},
+  {"id": "map-area", "selector": "#show-germany", "title": "Ein ganzes Land im Blick", "text": "Von Hamburg bis München: Die LiveMap zeigt dir das deutsche Schienennetz. Zoome näher heran und wähle einen Bahnhof oder Zug für Details."},
+  {"id": "map-trains", "selector": "#train-search", "title": "Finde deinen Zug", "text": "Suche nach Zugnummer, Unternehmen oder nächstem Halt. Die Zugübersicht lässt sich auch mit der Tastatur bedienen. Meine Züge zeigt nur dein Unternehmen."},
+  {"id": "map-rzue", "selector": "#mode-rzue", "title": "Ein Blick auf die Gleise", "text": "Das Gleisbild zeigt Zugpositionen, belegte Abschnitte und Fahrstraßen schematisch. So erkennst du leichter, wo Züge warten oder sich Wege kreuzen."},
 ];

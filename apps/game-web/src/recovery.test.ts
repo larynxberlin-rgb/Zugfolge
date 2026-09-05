@@ -7,7 +7,7 @@ describe("Spielerreise-Wiederherstellung", () => {
   it.each([401, 403])("beginnt bei HTTP %i eine neue Anmeldung", (status) => {
     expect(classifyJourneyFailure(new GameApiError("technische Meldung", false, status), "Fallback"))
       .toEqual({
-        message: "Anmeldung erforderlich. Ihre Sitzung ist abgelaufen oder für diese Welt nicht mehr gültig. Bitte melden Sie sich erneut an.",
+        message: "Deine Anmeldung ist abgelaufen. Melde dich erneut an, um weiterzuspielen.",
         recovery: "authenticate",
       });
   });

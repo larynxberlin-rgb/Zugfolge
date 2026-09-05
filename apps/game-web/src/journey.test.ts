@@ -65,14 +65,14 @@ describe("Spieloberfläche", () => {
         releases: { infra: "b".repeat(64), timetable: "c".repeat(64), fleet: "d".repeat(64), economy: "e".repeat(64) },
       }],
     });
-    expect(html).toContain("Weltvertrag prüfen");
+    expect(html).toContain("Dein Einstieg");
     expect(html).not.toContain("Öffentliche Welten vergleichen");
     expect(html).toContain("Leipzig–Halle–Erfurt");
-    expect(html).toContain("Dauerhaft, keine Wipes");
+    expect(html).toContain("Bleibt erhalten – keine Neustarts der Welt");
     expect(html).toContain("0,00 €");
     expect(html).toContain('name="confirmed" type="checkbox"');
-    expect(html).toContain("Weltvertrags-Hash");
-    expect(html).toContain("Eintrittsfenster");
+    expect(html).toContain("Spielstand-Kennung");
+    expect(html).toContain("Einstieg");
     expect(html).toContain("Europe/Berlin");
     expect(html).toContain('aria-label="Mitteldeutschland beitreten"');
   });
@@ -91,10 +91,10 @@ describe("Spieloberfläche", () => {
         releases: { infra: "b".repeat(64), timetable: "c".repeat(64), fleet: "d".repeat(64), economy: "e".repeat(64) },
       }],
     });
-    expect(html).toContain("Weltvertrag bestätigt");
-    expect(html).toContain("Ihr EVU ist in dieser Welt aktiv");
-    expect(html).toContain("Weltstatus");
-    expect(html).toContain('id="world-contract-title">Aktive Welt');
+    expect(html).toContain("Dein Unternehmen ist in dieser Welt aktiv");
+    expect(html).toContain("Dein Unternehmen ist in dieser Welt aktiv");
+    expect(html).toContain("DEINE SPIELWELT");
+    expect(html).toContain('id="world-contract-title">Deine Welt');
     expect(html).not.toContain("Vor dem Eintritt");
     expect(html).not.toContain("Öffentliche Welten vergleichen");
     expect(html).not.toContain("data-world-contract-form");
@@ -193,7 +193,7 @@ describe("Spieloberfläche", () => {
     expect(html).toContain('aria-modal="true"');
     expect(html).toContain('aria-labelledby="confirmation-title"');
     expect(html).toContain('id="confirmation-cancel" value="cancel" class="secondary" type="submit" autofocus');
-    expect(html).toContain("Verbindlich bestätigen");
+    expect(html).toContain("Bestätigen");
     expect(html).toContain("Abbrechen");
     expect(html).toContain("Welt public-world");
   });

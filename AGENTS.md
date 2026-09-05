@@ -2,8 +2,9 @@
 
 Persistentes, serverautoritäres Browsergame: Eisenbahn-Unternehmenssimulation
 mit hohem betrieblichem, infrastrukturellem und wirtschaftlichem Realismus.
-Öffentliche Welten laufen dauerhaft in 1:1-Echtzeit ohne Wipes. Erste
-Pilotregion: **Leipzig–Halle–Erfurt**, Stand 2026.
+Öffentliche Welten laufen dauerhaft in 1:1-Echtzeit ohne Wipes. Die Spieleroberfläche
+ist auf die **deutschlandweite Spielwelt** ausgerichtet; Leipzig–Halle–Erfurt
+ist der historische Pilotabschnitt, keine UX-Grenze.
 
 **Diese Datei wird in jeder Sitzung geladen. Sie enthält nur, was immer gilt.**
 Alles Weitere steht in `docs/` — vor inhaltlicher Arbeit die passende Datei
@@ -81,7 +82,7 @@ Begründungen: `docs/entscheidungen.md`. Änderungen dort eintragen und begründ
 | E14 | Netzabgrenzung: ausschließlich EBO, ohne Übergang zu BOStrab |
 | E15 | Baustellen sind ein eigenes Planungsverfahren, kein bloßer Schaden |
 | E16 | Lizenz PolyForm Shield 1.0.0 — Source Available, nicht Open Source |
-| E17 | Design: Domänensprache statt Markenzitat, achromatische Marke, durchgehend dunkel |
+| E17 | Design: dunkle Bahnatmosphäre mit roter eigener Marke, deutschlandweite LiveMap als Spielzentrum; ADR-0035 ersetzt die alten Gestaltungsgrenzen |
 | E18 | Weltlaufzeit 6–18 Monate oder unbefristet; Perioden- und Vertragslängen skalieren mit |
 | E19 | Realismus dient dem Spiel — Schritte ohne Entscheidung werden abstrahiert |
 | E20 | Fahrzeuge werden konfiguriert bestellt; Werkstätten bauen den Innenraum um |

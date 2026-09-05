@@ -115,7 +115,8 @@
         "tools/guards/**",
         "tools/load/**",
         "tools/m7-acceptance/**",
-        "tools/m7-e2e/**"
+        "tools/m7-e2e/**",
+        "tools/ui-preview/**"
       ],
       "rules": []
     },

@@ -109,11 +109,12 @@ const contract = {
     try {
       const start = requests.length;
       await page.goto(`${origin}/?view=journey&section=world&world=foreign&publicWorld=foreign`);
-      await page.locator('[data-game-hint="found-company"]').waitFor();
+      await page.locator('.world-contracts .world-contract-entry').waitFor();
       await page.locator('[data-game-hint="entry-contract"]').focus();
-      expect(await page.getByRole("tooltip").innerText()).toContain("Ihr Spiel beginnt hier");
-      expect(await page.locator(".world-contract-card").count()).toBe(1);
-      expect(await page.locator(".world-contract-card").innerText()).toContain("Testnetz");
+      expect(await page.getByRole("tooltip").innerText()).toContain("Willkommen an Bord.");
+      expect(await page.locator(".world-contracts").count()).toBe(1);
+      expect(await page.locator(".world-contracts").innerText()).toContain("Testnetz");
+      expect(await page.locator("#operator-foundation-form").count()).toBe(0);
       expect(requests.slice(start).filter(({ method }) => method !== "GET")).toEqual([]);
       expect(requests.slice(start).some(({ url }) => url.includes("/worlds/foreign/"))).toBe(false);
       expect(errors).toEqual([]);

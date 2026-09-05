@@ -111,8 +111,8 @@ describe("Bildfahrplan-Renderer", () => {
   it("rendert eine gueltige leere Projektion ohne Beispieldaten oder Zugriff auf Zug 0", () => {
     const empty = { ...projection(), stations: [], trains: [], occupations: [], conflicts: [] };
     const html = renderProjection(empty, { ...options, selectedTrainId: "", selectedConflictId: "" });
-    expect(html).toContain("Keine Planner-Daten");
-    expect(html).toContain("keine Beispieldaten");
+    expect(html).toContain("Dein Fahrplan wartet auf dich.");
+    expect(html).toContain("noch keine geplanten Fahrten");
     expect(html).not.toContain("R 1");
   });
 

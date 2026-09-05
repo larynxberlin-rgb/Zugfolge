@@ -20,8 +20,8 @@ umgeschrieben — ihre Historie ist der Wert.
   Kontext, Konsequenzen und Querverweisen. Ein ADR je Entscheidung.
 
 Bei Widerspruch gilt `../entscheidungen.md` für den Entscheidungswortlaut; die
-ADRs tragen die Herleitung. Die ADR-Nummer entspricht der E-Nummer
-(ADR-0001 = E1).
+ADRs tragen die Herleitung. Im ursprünglichen Bestand entspricht die ADR-Nummer
+der E-Nummer (ADR-0001 = E1). Bei späteren Ablösungen gilt die Zuordnung im Index.
 
 ## Format
 
@@ -65,7 +65,7 @@ vorgeschlagen.
 | [0014](0014-netzabgrenzung-nur-ebo.md) | E14 | Netzabgrenzung: ausschließlich EBO |
 | [0015](0015-baustellen-als-planungsverfahren.md) | E15 | Baustellen sind ein eigenes Planungsverfahren |
 | [0016](0016-lizenz-polyform-shield.md) | E16 | Lizenz PolyForm Shield 1.0.0 — Source Available |
-| [0017](0017-design-domaenensprache-achromatisch-dunkel.md) | E17 | Design: Domänensprache, achromatische Marke, dunkel |
+| [0035](0035-deutschlandweite-spieleroberflaeche.md) | E17 | Deutschlandweite Spieleroberfläche mit der LiveMap im Zentrum (ersetzt ADR-0017) |
 | [0018](0018-weltlaufzeit-und-skalierende-perioden.md) | E18 | Weltlaufzeit 6–18 Monate oder unbefristet |
 | [0019](0019-realismus-dient-dem-spiel.md) | E19 | Realismus dient dem Spiel |
 | [0020](0020-fahrzeuge-konfiguriert-bestellt.md) | E20 | Fahrzeuge werden konfiguriert bestellt |
@@ -79,6 +79,7 @@ vorgeschlagen.
 | [0028](0028-spielhinweise-im-spiel.md) | E28 | Spielhinweise direkt im laufenden Spiel |
 | [0029](0029-schaffnermodus-als-serverautoritative-betriebsvertiefung.md) | E29 | Der Schaffnermodus vertieft den serverautoritativen Betrieb |
 | [0030](0030-odoo-weltkatalog-und-kommerzielle-teilnahme.md) | – | Odoo-Weltkatalog und kommerzielle Teilnahme an Game-autoritativen Welten (vorgeschlagen) |
+| [0017](0017-design-domaenensprache-achromatisch-dunkel.md) | – | Historisches Design: durch ADR-0035 abgelöst |
 | [0031](0031-spielerkarte-als-lebendige-welt.md) | E30 | Die Spielerkarte zeigt die lebendige gemeinsame Welt, nicht den Infrastruktur-Editor |
 | [0032](0032-eine-autoritative-betriebswirklichkeit.md) | E31 | LiveMap, RZÜ und Betrieb bilden eine autoritative Wirklichkeit |
 | [0033](0033-eine-spielwelt-pro-server.md) | E32 | Eine Spielwelt pro Server und Subdomain |

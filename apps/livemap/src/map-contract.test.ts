@@ -223,7 +223,8 @@ describe("Live-Objekte", () => {
     };
     const marker = (overrides: Partial<typeof train> = {}, frozen = false) => trainFeatureCollection([{ ...train, ...overrides }], "infra", frozen).features[0]!;
     expect(marker().properties["markerLabel"]).toBe("RV 20001");
-    expect(marker({ delaySeconds: 61 }).properties["markerLabel"]).toBe("RV 20001 · +2 min");
+    expect(marker({ delaySeconds: 60 }).properties["markerLabel"]).toBe("RV 20001 · +1 min");
+    expect(marker({ delaySeconds: 61 }).properties["markerLabel"]).toBe("RV 20001 · +1 min");
     expect(marker({ status: "waiting", delaySeconds: 900 }).properties["markerLabel"]).toBe("RV 20001 · wartet · +15 min");
     expect(marker({ status: "cancelled", delaySeconds: 900 }).properties["markerLabel"]).toBe("RV 20001 · Ausfall");
     const frozen = marker({}, true);
