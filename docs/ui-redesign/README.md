@@ -4,6 +4,11 @@ Umsetzung auf Grundlage von PR #530. Die LiveMap wird zur deutschlandweiten
 Spielübersicht. Eine gemeinsame dunkle Oberfläche mit eigener roter Gleismarke
 verbindet Karte, Fahrplan, Betrieb, Markt und Unternehmen.
 
+Zur Weiterarbeit gehören [Design und Spielertexte](../design.md),
+[Navigation und Spielerwege](../ux-spieler-shell.md),
+[Zeichen und Symbole](../brand/README.md) sowie die
+[zugeordneten GitHub-Abnahmen](issue-abgleich.md).
+
 ## LiveMap
 
 ![LiveMap mit Deutschlandübersicht](screenshots/map.png)

@@ -1,5 +1,15 @@
 # Bilder des UI-Neuaufbaus
 
+## Gleiszeichen und UI-Symbole
+
+Die [Symbolübersicht](../brand/zugfolge-symbols.svg) und das
+[Gleiszeichen](../brand/zugfolge-rail-mark.svg) sind SVG-Exporte der tatsächlich
+verwendeten Vektorpfade aus `packages/design-system`. Sie werden durch
+`tools/ui-preview/export-design-assets.mjs` erzeugt und verwenden dieselben
+Farbtokens wie das Spiel. Diese Grafiken sind codebasiert und enthalten keine
+generierten Rasterbilder oder fremden Icons. Einsatz und historische
+Markenstudien sind in [Brand](../brand/README.md) dokumentiert.
+
 ## Dekorative Zugaufnahme
 
 - Modus: integrierte Bildgenerierung (`image_gen`), neue Aufnahme ohne Bildvorlage.

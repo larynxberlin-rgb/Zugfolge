@@ -5,6 +5,10 @@ ersetzt die bisherigen Einschränkungen von E17 / ADR-0017. Maßgeblich sind
 [ADR-0035](adr/0035-deutschlandweite-spieleroberflaeche.md) und die
 [bebilderte Umsetzung](ui-redesign/README.md).
 
+Das [Gleiszeichen und die Symbolübersicht](brand/README.md) dokumentieren
+die verwendeten Vektoren. Die [Issue-Zuordnung](ui-redesign/issue-abgleich.md)
+verbindet diese Gestaltung mit den noch offenen Spielerabnahmen.
+
 ## Spielwelt und Orientierung
 
 Zugfolge ist eine deutschlandweite Eisenbahn-Unternehmenssimulation. Die

@@ -1,65 +1,60 @@
-# Zugfolge-Wortmarke
+# Zugfolge: Gleiszeichen und Symbole
 
-Die Marke bleibt gemäß E17 achromatisch und rein typografisch. Die lange Form
-ist die primäre Wortmarke; `ZF` ist ausschließlich ihre Kurzform für kleine
-Darstellungen. Beide verwenden denselben Schriftsatz und keine eigene
-Bildsymbolik.
+Die aktuelle Identität verwendet ein weißes Gleiszeichen auf rotem Grund,
+den Schriftzug **ZUGFOLGE** und „Deine Bahn. Deine Welt.“. Sie gehört zur
+deutschlandweiten Oberfläche aus [ADR-0035](../adr/0035-deutschlandweite-spieleroberflaeche.md).
+Graphitflächen, Bahnrot und klare Wegeleitung vermitteln Bahnflair. Das Zeichen
+ist eine eigene abstrahierte Gleisverzweigung und verwendet kein DB-Logo.
 
-## Dateien
+![Aktuelle Zeichen und Symbole](zugfolge-symbols.svg)
 
-- `zugfolge-wordmark.svg` – primäre Wortmarke auf transparentem Grund
-- `zugfolge-monogram.svg` – Kurzform für Favicon und App-Icon
-- `zugfolge-wordmark-dark.png` – gerasterte Wortmarke auf dunklem Systemgrund
-- `zugfolge-monogram-dark.png` – gerasterte Kurzform auf dunklem Systemgrund
-- `zugfolge-logo-concept.png` – generierte Konzepttafel auf dunklem Grund
+## Aktuelle Dateien und Verwendung
 
-### V2 – kantige Farbvariante
+| Datei / Quelle | Verwendung |
+| --- | --- |
+| [Gleiszeichen als SVG](zugfolge-rail-mark.svg) | Eigenständiger Export für Dokumentation und Präsentationen |
+| [Symbolübersicht als SVG](zugfolge-symbols.svg) | Beschriftete Übersicht der gemeinsamen UI-Symbole |
+| [`railway.ts`](../../packages/design-system/src/railway.ts) | Verbindliche gerenderte Marke und Navigation der Anwendungen |
+| [`index.ts`](../../packages/design-system/src/index.ts) | Gemeinsame SVG-Icons über `icon(name, label?)` |
+| [`railway.css`](../../packages/design-system/src/railway.css) | Farb-, Schrift- und Größenwerte der aktuellen Oberfläche |
 
-- `zugfolge-wordmark-v2.svg` – kantige Wortmarke in Eisweiß und Ultramarin
-- `zugfolge-monogram-v2.svg` – dazugehörige Kurzform
-- `zugfolge-wordmark-v2-dark.png` – gerasterte Wortmarke auf dunklem Grund
-- `zugfolge-monogram-v2-dark.png` – gerasterte Kurzform auf dunklem Grund
-- `zugfolge-logo-concept-v2.png` – generierte Richtungsstudie
+Die Dokumentationsgrafiken werden aus den tatsächlichen Renderfunktionen und
+Farbtokens exportiert. Nach Änderungen am Design-System neu erzeugen:
 
-V2 ist zunächst eine Konzeptvariante. Ihr Ultramarin-Akzent weicht bewusst von
-der aktuell bindenden achromatischen Markenregel in E17 ab. Wird V2 als neue
-Markenrichtung angenommen, muss diese Regel anschließend explizit angepasst
-und die Abgrenzung zu betrieblichen Zustandsfarben dokumentiert werden.
+```sh
+pnpm --filter @zugfolge/design-system build
+node tools/ui-preview/export-design-assets.mjs
+```
 
-### V3 – Wortmarke mit abstrahiertem Netzplan
+Die Oberfläche bindet Marke und Icons über das Design-System ein. Kopierte
+Einzelpfade in Anwendungen würden bei späteren Änderungen auseinanderlaufen.
+Die Symbolübersicht zeigt vorhandene UI-Zeichen; sie ist kein Fahrzeug- oder
+Schaffner-Assetkorpus. Dessen noch offene Abnahme bleibt M15.3.
 
-- `zugfolge-wordmark-v3.svg` – V2 mit dünnen Netzlinien und quadratischen Knoten
-- `zugfolge-monogram-v3.svg` – Kurzform mit reduzierter Netzlinie
-- `zugfolge-wordmark-v3-dark.png` – gerasterte Wortmarke auf dunklem Grund
-- `zugfolge-monogram-v3-dark.png` – gerasterte Kurzform auf dunklem Grund
-- `zugfolge-logo-concept-v3.png` – generierte Richtungsstudie
-- `zugfolge-favicon-v3.svg` – vereinfachtes Favicon als Vektor
-- `zugfolge-favicon-v3.ico` – Browser-Favicon mit mehreren Auflösungen
-- `zugfolge-favicon-v3.png` – Favicon-Vorschau und App-Icon-Grundlage
-- `zugfolge-favicon-v3-16.png` – expliziter Export für 16 × 16 Pixel
-- `zugfolge-favicon-v3-32.png` – expliziter Export für 32 × 32 Pixel
-- `zugfolge-favicon-v3-48.png` – expliziter Export für 48 × 48 Pixel
-- `zugfolge-wordmark-v3-transparent.svg` – Wortmarke mit echtem transparentem Grund
-- `zugfolge-wordmark-v3-transparent.png` – transparente Rasterfassung
+## Gestaltung und Zugänglichkeit
 
-V3 übernimmt ausschließlich die generische Sprache eines schematischen
-Stellwerksplans: rechtwinklige Linien, 45-Grad-Abzweige und quadratische Knoten.
-Sie bildet weder ein fremdes Logo noch einen realen oder fremden Netzplan nach.
-Wie V2 bleibt sie bis zu einer bewussten Änderung von E17 eine Konzeptvariante.
+- Markenrot `#e5233d`, weiße Gleislinien, Graphithintergrund `#101419`.
+- Schriftstapel: `Inter`, `Segoe UI`, Systemschrift. Der Text im SVG nutzt
+  denselben Stapel; das Gleiszeichen selbst besteht ausschließlich aus Pfaden.
+- Die Marke führt im Spiel zur LiveMap. Der sichtbare Schriftzug bleibt bei
+  ausreichendem Platz erhalten; Mobilgrößen folgen dem gemeinsamen CSS.
+- Navigationssymbole stehen neben einer Beschriftung. Rein dekorative Icons
+  bleiben für Screenreader verborgen; alleinstehende Aktionen erhalten einen
+  zugänglichen Namen.
+- Betriebszustände haben eigene Text-/Minutenangaben. Markenrot ersetzt keine
+  Zustandsauskunft. Die vollständige Palette steht in [Design](../design.md).
 
-Das Favicon reduziert den Netzplan auf eine einzige abgeschlossene Verbindung,
-damit das Zeichen auch bei 16 × 16 Pixeln erkennbar bleibt. Die transparente
-Wortmarke besitzt einschließlich der Endknoten keine dunkel gefüllten
-Hintergrundflächen und ist für die Platzierung auf dunklen Medien vorgesehen.
+Die [Bildherkunft](../ui-redesign/images.md) dokumentiert die generierte
+Einstiegsaufnahme und den separat gekennzeichneten KI-Entwurf. Die
+[Galerie](../ui-redesign/README.md) zeigt echte Browserbilder mit Beispieldaten.
+Die gesonderte Behandlung der Marke bleibt in [Rechteschutz](../rechteschutz.md)
+beschrieben; diese Exporte ändern keine Lizenz.
 
-Die SVG-Dateien sind für die dunkle Zugfolge-Oberfläche gesetzt. Ihre
-Buchstaben sind als eigenständige Geometrie gezeichnet und benötigen deshalb
-keine lokal installierte Schrift. Für Begleittext gilt weiterhin der
-Schriftstapel des Design-Systems: Inter, IBM Plex Sans, System Sans.
+## Frühere Entwürfe
 
-## Gestaltungsvertrag
-
-- Wortmarke nie rot oder neben Bahnrot platzieren.
-- Keine Umrandung, begleitenden Linien oder Bahn-Piktogramme ergänzen.
-- Keine Schatten, Verläufe, Glows oder räumlichen Effekte verwenden.
-- Die Grauwerte `#F1F3F7` und `#A5ADBA` auf dem dunklen Systemgrund beibehalten.
+Die Dateien `zugfolge-wordmark*`, `zugfolge-monogram*`, `zugfolge-favicon-v3*`
+und `zugfolge-logo-concept*` bleiben als **historische Studien V1–V3** erhalten.
+V1 war achromatisch, V2 verwendete Ultramarin, V3 ergänzte ein Netzmotiv.
+Sie sind keine Vorgaben für neue Oberflächen. Die frühere Pflicht zur rein
+typografischen, farblosen Marke und das Verbot von Bahnrot wurden mit
+ADR-0035 aufgehoben.

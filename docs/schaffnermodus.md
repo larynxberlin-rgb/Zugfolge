@@ -9,6 +9,9 @@ Fahrgäste. Der Modus ist Teil des Hauptspiels und keine getrennte Spielwelt.
 Diese Datei ist der kanonische Fachvertrag für M15. Die Querschnittsdokumente
 verweisen hierher und wiederholen die Regeln nicht. Grundsatzentscheidung:
 [ADR-0029](adr/0029-schaffnermodus-als-serverautoritative-betriebsvertiefung.md).
+M15 bleibt geplanter Ausbau nach dem Alpha-Schnitt; der UI-Neuaufbau setzt
+diesen Modus noch nicht um. Für seine spätere Oberfläche gelten
+[Design](design.md) und [ADR-0035](adr/0035-deutschlandweite-spieleroberflaeche.md).
 
 ## 1. Produktziel und Grenzen
 
@@ -18,6 +21,10 @@ Pflichtschleife.
 
 - Einstieg erfolgt aus der privaten Zugdetailansicht eines eigenen, aktiven
   SPNV-Zuges. Geleaste Fahrzeuge zählen als eigene Betriebsleistung.
+- Die LiveMap bleibt der Ausgangspunkt der deutschlandweiten Spielwelt.
+  Der spätere Modus öffnet den ausgewählten Zug und bietet einen klaren
+  Rückweg zur Karte; eine zusätzliche regionale Welt oder ein sechster
+  Hauptnavigationsbereich ist dafür nicht nötig.
 - Fremdverkehre, Eigenbetrieb, Leerfahrten, Güterverkehr, SPFV und Außenläufe
   sind in M15 nicht betretbar.
 - Der Spieler fährt den Zug nicht, stellt keine Signale und kann ihn nicht
@@ -137,8 +144,9 @@ Minigames, ohne den Betrieb künstlich anzuhalten.
 
 - orthogonale Draufsicht mit 32 Pixeln pro Meter;
 - ganzzahlige Zoomstufen und Nearest-Neighbor-Skalierung;
-- dunkle, überwiegend achromatische Zugfolge-Palette;
-- Betriebsfarben ausschließlich für betriebliche Zustände;
+- dunkle Graphitflächen und eigene rote Bahnmarke gemäß dem gemeinsamen Design;
+- eigenständige Zug- und Innenraummotive mit gut lesbaren Konturen;
+- Betriebszustände zusätzlich durch Symbole, Text oder Muster erklären;
 - keine Übernahme fremder Figuren, Karten, Fahrzeuge, Gebäude, Logos oder
   Marken.
 
@@ -214,6 +222,12 @@ Umlaute und mehrzeilige Beschriftungen müssen vollständig lesbar bleiben.
 - Ein Gespräch umfasst normalerweise zwei bis drei Blasenwechsel.
 - Bei `prefers-reduced-motion` erscheint Text sofort. Screenreader erhalten
   denselben Dialog über Live-Region und reguläre Auswahlschaltflächen.
+
+Die geplante Ansicht nutzt den verfügbaren Bildschirm für Innenraum und
+Gespräch; längere Falldetails öffnen sich bei Bedarf. Rückweg, nächster Halt
+und laufende Betriebsabweichungen bleiben erreichbar. Spieleraktionen heißen
+beispielsweise „Fahrkarte prüfen“ oder „Kontrolle beenden“; Vertragskennungen
+und technische Revisionsdaten gehören nicht in die erste Dialogebene.
 
 ### 7.2 Verdeckter Sachverhalt
 

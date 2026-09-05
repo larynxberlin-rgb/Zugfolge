@@ -1,8 +1,9 @@
 # Monorepo: Aufbau, Domänengrenzen, Werkzeuge
 
-Ergebnis von **M0.2**, fortgeschrieben in **M0.3** und **M1.1**. Beschreibt, wo
-Code liegt, welche Grenzen zwischen Domänen gelten und wodurch sie durchgesetzt
-werden.
+Ausgehend von **M0.2** fortgeschriebene Übersicht: wo Code liegt, welche Grenzen
+zwischen Domänen gelten und wodurch sie durchgesetzt werden. Die gemeinsame
+Spieleroberfläche folgt [Design](design.md) und
+[ADR-0035](adr/0035-deutschlandweite-spieleroberflaeche.md).
 
 ---
 
@@ -32,7 +33,7 @@ packages/                   TypeScript — fachliche Bibliotheken (ab M2)
   mailbox/                  Postfach-Grundgerüst: Nachrichten, Fristen, Quittierung (M2.5)
   privacy/                  Datenschutz: Auskunft, Löschung, Aufbewahrungsfristen (M2.6)
   health/                   Health-Check-Vertrag und Aggregation für Status-/Monitoringdienste, Grundlage für M9.5
-  design-system/            Palette, Komponenten, Icons und Dichtestufen (M3.9)
+  design-system/            Graphit-Palette, Gleismarke, Icons, Navigation, Register und Spielhinweise
   planning-projection/      Strikter Clientvertrag für Bildfahrplan und Konflikterklärung (M3.10)
   planning-runtime-native/  Fail-closed Loader des Planning-Node-Addons
   planning-worker/          Weltgebundener Command-Consumer und atomare Planning-Projektion
@@ -44,9 +45,9 @@ packages/                   TypeScript — fachliche Bibliotheken (ab M2)
 odoo/addons/zugfolge_admin/ Eigenes Odoo-Administrationsmodul; keine Odoo-Instanz oder OCA-Quellkopie
 apps/                       TypeScript — Dienste und Frontend (ab M2 / M4)
   game-api/                 Fastify-Dienst: Authentifizierung, Weltzugang, EVU, Ledger, Postfach, Datenschutz (M2)
-  game-web/                 Bildfahrplan, Sperrzeitentreppe und Konflikterklärung (M3.10)
-  livemap/                  Vite-Frontend: öffentliche Zuglage, Zuglaufansicht und Delta-Interpolation (M4)
-  operations-center/        Vite-Frontend: Regel-Editor, Betriebszentrale und Tagesberichte (M7)
+  game-web/                 Einstieg, Unternehmen, Markt, Postfach, Fahrtenplanung und Bildfahrplan
+  livemap/                  Deutschlandweite Spielübersicht, öffentliche Zuglage, Details und Delta-Interpolation
+  operations-center/        Betriebslage, Automatik und Tagesberichte (M7)
 spikes/                     Wegwerf-Code mit Verfallsdatum — derzeit leer
 tools/                      Werkzeuge für CI und Entwicklung
   guards/                   die Wächter der harten Invarianten
@@ -54,9 +55,23 @@ tools/                      Werkzeuge für CI und Entwicklung
   m7-acceptance/            echter 48h-Rust-Ereigniserzeuger für die M7-Abnahme
   m7-e2e/                   Rust → Event-Log → Betriebszentrale → Tagesbericht
   tiles/                    reproduzierbare GeoJSON-→PMTiles-Pipeline und Layerspezifikation (M4.7)
+  ui-preview/               tatsächliche Frontends mit markierten Beispieldaten und Browser-Layoutprüfung
 docs/                       Spezifikation und Entscheidungen
 .github/workflows/          CI
 ```
+
+Die drei Frontends verwenden `packages/design-system/src/railway.ts` und
+`railway.css` für dieselbe Gleismarke und die Hauptziele **LiveMap, Fahrplan,
+Betrieb, Markt, Unternehmen**. Das Postfach bleibt im Kopf erreichbar. Die
+Anwendungen behalten ihre fachlichen APIs; gemeinsame Navigation und Register
+verlagern keine Entscheidungen in den Browser. Seiten teilen den verfügbaren
+Bildschirm in kompakte Arbeitsbereiche, deren lange Inhalte innen scrollen.
+Die responsive Navigation und die Spielhinweise sind ebenfalls gemeinsam.
+
+`tools/ui-preview` rendert diese Frontends lokal mit gekennzeichneten Fixtures.
+Die Produktionsanwendungen importieren keine Vorschau- oder Beispieldaten.
+Screenshots, Bildherkunft, Startbefehle und Grenzen der Browserprüfung stehen
+unter [`docs/ui-redesign/`](ui-redesign/README.md).
 
 `packages/` und `apps/` füllen sich seit **M2**: `packages/db` trägt das
 gemeinsame Drizzle-Schema — `worlds` als Wurzel der Mandantentrennung, das
@@ -232,7 +247,7 @@ Liste ist keine vollständige Karte des Repositoriums, sondern die Zuordnung
 | `infra-pipeline` | `crates/zugfolge-infra/**` | aktiv | **der einzige Ort mit Gleitkommarechnung** — sie endet in ganzzahligen Fahrzeittabellen |
 | `world-isolation` | `packages/db/**` | aktiv | Postgres-Zugriff der Game-Services; Wurzel der Weltisolation — `worlds`, das Event-Log und das weltgebundene Repository (M2.2) |
 | `release-tools` | `tools/audits/**`, `tools/reference-corpus/**`, `tools/reference-model/**`, `tools/region-import/**`, `tools/tiles/**` | aktiv | nicht autoritative Datei-I/O-, Import- und Kartenadapter; Freigabeentscheidungen bleiben in Rust |
-| `operations-tools` | `tools/alpha-ops/**`, `tools/guards/**`, `tools/load/**`, `tools/m7-acceptance/**`, `tools/m7-e2e/**` | aktiv | Betriebs-, Abnahme-, Last- und Governance-Werkzeuge ohne fachliche Laufzeitautorität |
+| `operations-tools` | `tools/alpha-ops/**`, `tools/guards/**`, `tools/load/**`, `tools/m7-acceptance/**`, `tools/m7-e2e/**`, `tools/ui-preview/**` | aktiv | Betriebs-, Abnahme-, Last-, UI-Vorschau- und Governance-Werkzeuge ohne fachliche Laufzeitautorität |
 | `platform-services` | explizit aufgezählte übrige `packages/*` und `apps/*` | aktiv | vollständige Zuordnung aller Produktionspakete; neue Pakete erzwingen vor dem ersten Commit eine bewusste Wächterentscheidung |
 
 **Status ist kein Kommentar, sondern eine Prüfung.** Eine `aktive` Domäne muss

@@ -1,5 +1,11 @@
 # Simulationskern und Livemap (M4)
 
+Dieses Dokument beschreibt technische Simulations- und Übertragungsgrenzen.
+Regionen teilen die serverseitige Verarbeitung auf; sie begrenzen nicht das
+deutschlandweite Produktziel oder den Startausschnitt der LiveMap. Gestaltung
+und Navigation folgen [Design](design.md) und
+[Spieleroberfläche](ux-spieler-shell.md).
+
 ## 1. Kernvertrag und Zeit
 
 `zugfolge-sim` ist ein regionaler Single-Writer. Der Konstruktor bindet Welt,
@@ -88,8 +94,15 @@ Der 1:1-Scheduler berechnet die Weltsekunde aus der gepinnten
 Weltepoche und gibt sie explizit an Rust. Ein Cursor einer anderen Generation oder eine Lücke
 erzwingt gezielt einen neuen Snapshot. `apps/livemap` interpoliert höchstens
 zehn Sekunden voraus, ohne den autoritativen Fachzustand zu verändern, und
-zeigt Zuglaufdetails. Der Normalzustand ist achromatisch; Gelb bezeichnet eine
-betriebliche Abweichung. Das Netz tritt gegenüber den Zügen zurück.
+zeigt Zuglaufdetails. Die dunkle Deutschlandübersicht verwendet die eigene rote
+Gleismarke und die Zustandsfarben aus [Design](design.md): Mint für bekannte
+normale Live-Positionen, Amber für wartende Züge oder Verspätungen ab einer
+Minute und Hellrot für Ausfälle oder Verspätungen über 15 Minuten.
+Text, Minutenwerte und Muster ergänzen Farbe. Fehlende
+Verspätungsdaten gelten nicht als Pünktlichkeit; bei unterbrochener Aktualisierung
+wird der letzte bestätigte Stand sichtbar. Das Netz tritt gegenüber den Zügen
+zurück. Suche, eigener Zugfilter und eine ausklappbare Zugübersicht greifen auf
+denselben empfangenen Datenstand zu und erfinden keine Betriebsbewegungen.
 `tools/tiles/build-pmtiles.mjs` baut aus genehmigten lokalen GeoJSON-Artefakten
 eigene PMTiles. Das ausgeschlossene Netz wird in einem separaten, blassen
 Kontextlayer geführt; kein öffentlicher Kacheldienst ist Laufzeitabhängigkeit.

@@ -1,5 +1,11 @@
 # M14.1 — Auswahl der Alpha-Region Mitteldeutschland
 
+> **Historischer regionaler Abnahmevertrag.** Die Auswahl unten dokumentiert
+> M14.1 und seinen konkreten Release. Seit [ADR-0035](adr/0035-deutschlandweite-spieleroberflaeche.md)
+> gilt die deutschlandweite Spieleroberfläche; dieses Dokument legt keine
+> heutige UX-Grenze fest. Weitere Deutschlandabdeckung benötigt die jeweiligen
+> Qualitäts- und Betriebsnachweise aus [M14.2/M14.3](milestones.md#m14--netzausweitung).
+
 **Status: M14.1 am 12.08.2026 technisch und fachlich abgenommen; Variante B
 und produktive Release-Verantwortung ausdrücklich freigegeben.** M14.2–M14.4
 und damit M14 insgesamt bleiben offen. Der reale Start der geschlossenen Alpha
@@ -13,7 +19,7 @@ die konkrete Variante wurde als Mitteldeutsches Metropol-Korridornetz gewählt.
 
 ## Verbindliche Auswahl
 
-Für die geschlossene Alpha gilt **Variante B — Mitteldeutsches
+Für den hier abgenommenen M14.1-Release gilt **Variante B — Mitteldeutsches
 Metropol-Korridornetz**. Die freigegebene äußere Grenze wird als versioniertes
 GeoJSON durch die Grenzbetriebsstellen Eisenach Hbf, Nordhausen, Magdeburg
 Hbf, Lutherstadt Wittenberg Hbf, Riesa, Chemnitz Hbf, Zwickau Hbf und Saalfeld

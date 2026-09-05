@@ -14,6 +14,16 @@ unverändert von den unabhängig qualifizierten Releases getrennt. Neue
 Auditbefunde und deren Korrektur-/Abnahmebelege werden zusätzlich in #491
 und seinen Einzelissues geführt.
 
+**Aktuelles UI-/UX-Zielbild:** [ADR-0035](adr/0035-deutschlandweite-spieleroberflaeche.md)
+und [Design](design.md) ersetzen die früheren Gestaltungsleitplanken.
+Die deutschlandweite LiveMap ist der Einstieg; Graphit, eine eigene rote
+Gleismarke, verständliche Spielertexte und kompakte Arbeitsbereiche verbinden
+die Anwendungen. [PR #531](https://github.com/larynxberlin-rgb/Zugfolge/pull/531)
+enthält den Neuaufbau auf Basis von #530; [Screenshots und Prüfgrenzen](ui-redesign/README.md)
+dokumentieren ihn. Frühere M3/M4- und regionale M14.1-Nachweise bleiben
+historische Abnahmen. Sie begrenzen weder die aktuelle Gestaltung noch das
+Deutschlandziel und belegen keine deutschlandweite Produktionsfreigabe.
+
 - **Alpha-Schnitt: M0 – M9.** Das ist die erste Version, die externe Spieler
   sinnvoll spielen können. Alles ab M10 ist Ausbau.
 - **Kritischer Pfad:** M0.3 → M1 → M3 → M4 → M7.
@@ -471,7 +481,7 @@ sich vollständig auskunfts- und löschbar behandeln. Siehe
 | 3.6 | Fahrplanperiode als Ablauf: Anmeldefenster, Koordinierung, Veröffentlichung, Betrieb | M | erledigt |
 | 3.7 | Ad-hoc-Trassen aus Restkapazität, Stornierung, Verfall bei Nichtnutzung | M | erledigt |
 | 3.8 | Rahmenverträge mit Kapazitätsdeckel | M | erledigt |
-| 3.9 | **Gestaltungssystem konkretisieren** (`design.md` 2.7): Farbwerte gegen reale Datendichte prüfen, Komponentenbibliothek, Icon-Set, beide Dichtestufen. Erste echte Oberfläche, deshalb hier und nicht früher | L | erledigt |
+| 3.9 | **Gestaltungssystem**: Palette, Komponentenbibliothek, Icons, responsive Arbeitsbereiche und Zugänglichkeit; aktueller Neuaufbau gemäß [Design](design.md) und ADR-0035, ursprüngliche Komponentenabnahme bleibt erhalten | L | erledigt |
 | 3.10 | Bildfahrplan-UI, Sperrzeitentreppe, Konflikterklärung im Client — Konvention vor Originalität | L | erledigt |
 
 > **Beweis:** Zwei Spieler beantragen konkurrierende Trassen. Das System
@@ -517,8 +527,10 @@ abgearbeitet:
 | **Offen:** die betrieblich richtige Auflösung ist ein eigenes Verfahren | der Betriebshalt des Planners (M3.4) — er kreuzt zur Wunschzeit, statt später zu fahren |
 
 **M3.9 und M3.10 tragen:** `packages/design-system` konkretisiert Palette,
-Form-, Tabellen-, Feedback- und Navigationsbausteine, Icons, Fokusvertrag und
-beide Dichtestufen. Zwei authentifizierte Konten stellen getrennte,
+Form-, Tabellen-, Feedback- und Navigationsbausteine, Icons und Fokusvertrag.
+Die ursprünglichen Dichtestufen sind Teil des damaligen Nachweises; heute
+bestimmen `railway.css`, `railway.ts` und die aufgabenbezogenen Register die
+Spieleroberfläche. Zwei authentifizierte Konten stellen getrennte,
 weltgebundene Trassenanträge. `packages/planning-worker` lädt sie mit dem
 serverseitig eingefrorenen Infrastruktur-Release, führt den echten Rust-
 `PlanningRun` über die fail-closed napi-rs-Grenze aus und schreibt Runtime-
@@ -547,7 +559,7 @@ PGlite komponierten Worker. Damit ist M3.10 reproduzierbar nachgewiesen.
 | 4.5 | Regionsübergabe mit Bestätigungsprotokoll | M | erledigt |
 | 4.6 | Delta-Streaming: Initialsnapshot, Sequenz-Deltas, Interpolation im Client | M | erledigt |
 | 4.7 | Eigene Dark-Vector-Tiles, Pipeline → PMTiles — Netz zurückhaltend, Verkehr dominant; ausgeschlossene Netze als blasse Kontextlinien | M | erledigt |
-| 4.8 | Livemap-Frontend inklusive Zuglaufansicht und Sichtbarkeitsregeln; Zustandsdarstellung nach `design.md` 2.4, **Normalzustand farblos** | L | erledigt |
+| 4.8 | LiveMap mit Zugdetails und Sichtbarkeitsregeln; deutschlandweite Übersicht und verständliche Zustandsdarstellung nach [Design](design.md): Mint für bestätigte normale Positionen, Abweichungen zusätzlich als Text, fehlende Daten ausdrücklich kenntlich | L | erledigt |
 | 4.9 | Event-Log, Replay, Determinismus-Test in CI | M | erledigt |
 | 4.10 | **Zeitumstellung**: Verhalten der Fahrplanperiode und laufender Zugfahrten beim Sommerzeitwechsel — Pflichtfall im 1:1-Echtzeitbetrieb | S | erledigt |
 | 4.11 | **Lastmessung gegen die Zielgrößen** aus `architektur.md` | M | erledigt |
@@ -838,15 +850,18 @@ Idempotenz sowie explizitem Entfernen geänderter oder entfallener Einträge.
 Der Alpha-Schnitt umfasst gemäß [E24/ADR-0024](adr/0024-erweiterter-alpha-schnitt.md)
 zusätzlich ausschließlich M12.1, M12.2 und M14.1. M12.3/M12.4 sowie
 M14.2–M14.4 bleiben Ausbau. M12 und M14 werden durch die Vorziehung nicht als
-Gesamtmilestones abgeschlossen. Die konkrete M14.1-Grenze wird vor dem großen
-Datenimport aus den [messbaren Mitteldeutschland-Varianten](mitteldeutschland-alpha.md)
-freigegeben.
+Gesamtmilestones abgeschlossen. Der vorgezogene regionale M14.1-Nachweis
+ist in den [Mitteldeutschland-Varianten](mitteldeutschland-alpha.md) dokumentiert.
+Die heutige Spieleroberfläche und die Alpha-Orientierung sind deutschlandweit;
+welche Strecken tatsächlich bespielbar sind, entscheidet das qualifizierte
+Release des Zielservers. Eine größere Maske benötigt ihre eigenen Qualitäts-,
+Last- und Freigabenachweise und erbt keine Freigabe aus dem regionalen Pilot.
 
 <!-- zugfolge-alpha-dag:start
 {"M12.1":["M2","M5","M6","M8"],"M12.2":["M2","M5","M6","M12.1"],"M14.1":["M1","M2","M4","M5","M6","M8","M9.2"],"M9.9":["M14.1"]}
 zugfolge-alpha-dag:end -->
 
-Die Auswahl ist erfolgt: M14.1 verwendet **Variante B — Mitteldeutsches
+Die historische Auswahl für M14.1 ist erfolgt: **Variante B — Mitteldeutsches
 Metropol-Korridornetz** aus `docs/mitteldeutschland-alpha.md`.
 Gebietsüberschreitende GTFS-Fahrten folgen
 [E25/ADR-0025](adr/0025-gebietsueberschreitende-fahrtketten.md): Spieler planen
@@ -869,7 +884,7 @@ und Hashbestandteil und wird bei der ersten EVU-Gründung idempotent angewandt.
 | 9.6 | Rate Limits, Anti-Bot-Prüfungen, Anomalieerkennung für Trassenfenster und Märkte | M | in Arbeit |
 | 9.7 | Telemetrie, Balancing-Dashboards, Feedbackkanal | M | in Arbeit |
 | 9.8 | **Weltende** (E18): letzte Periode ohne Ausschreibung, reguläres Vertragsende ohne Insolvenzfolge, Schlusswertung mit mehreren Ranglisten, Archiv und Replay-Export | M | in Arbeit |
-| 9.9 | Geschlossene Alpha mit 20–50 externen Spielern in der freigegebenen Mitteldeutschland-Region, einschließlich M12.1/M12.2 | M | offen |
+| 9.9 | Geschlossene Alpha mit 20–50 externen Spielern in der deutschlandweiten Spieleroberfläche und dem ausdrücklich freigegebenen Spielnetz, einschließlich M12.1/M12.2 | M | offen |
 | 9.10 | **Jährliche Infrastrukturaktualisierung** (E22): `InfraRelease`-Neubau aus den jährlich gepinnten, rechtlich freigegebenen OSM-, DB-InfraGO-Open-Data-, GTFS-, Copernicus-DEM- und OpenStation-Ständen; Übernahmeverfahren für eine laufende Welt zum nächsten Periodenwechsel, ohne Invariante 1 zu verletzen | L | in Arbeit |
 
 M9.1 verwendet ausschließlich neu erstellte Spielhinweise. Der Controller
@@ -903,7 +918,8 @@ Kalibrierungsbestand disjunkte technische Validierungssatz, die benannte
 Release-Verantwortung und die echte Signatur des Pilot-`InfraRelease` sind mit
 M14.1 nachgewiesen. Die übrige Betriebsreife aus M9.5 bleibt davon unberührt.
 
-> **Beweis:** 20–50 externe Spieler betreiben die Pilotregion über mehrere
+> **Beweis:** 20–50 externe Spieler finden sich von der Deutschlandübersicht
+> bis zur eigenen Zugfahrt zurecht und betreiben das freigegebene Spielnetz über mehrere
 > vollständige Fahrplanperioden ohne manuellen Eingriff, und ein realer
 > Fahrplanwechsel spiegelt sich in der laufenden Welt zum nächsten
 > Periodenwechsel wider, ohne dass ein Konflikt gegen Invariante 1 entsteht.
@@ -1010,6 +1026,11 @@ M1/M2/M4/M5/M6/M8 sowie den produktiven Eigenbetriebs-Weltstart M9.2
 abgenommen. M9.9 hängt umgekehrt von der spielbaren Region ab und ist deshalb
 keine Voraussetzung von M14.1. M14.2–M14.4 bleiben Ausbau; der Gesamtstatus
 von M14 bleibt offen.
+
+Der Titel bezeichnet den Ausbau von Datenabdeckung und Betriebsfähigkeit.
+Die Oberfläche zeigt Deutschland bereits als zusammenhängende Spielwelt.
+M14.1 ist der abgeschlossene regionale Vorläufer; M14.2 und M14.3 müssen
+die tatsächlich freigegebene Deutschlandabdeckung und deren Last belegen.
 
 | # | Teilabschnitt | Größe | Status |
 |---|---------------|-------|--------|

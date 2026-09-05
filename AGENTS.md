@@ -30,7 +30,8 @@ lesen, nicht raten.
 | `docs/wirtschaft.md` | Spielkreislauf, Geschäftsfelder, Nachfrage, Ausschreibung, Eigenbetrieb, Insolvenz, Kooperation | Verträge, Märkte, Geld, Ausschreibungen |
 | `docs/daten.md` | Datenlage OSM/ORM, Quellen, Rechte, Qualitätsklassen | Import-Pipeline, InfraRelease, Lizenzfragen zu Daten |
 | `docs/architektur.md` | Systemarchitektur, Lastgrößen, irreversible Entscheidungen, Determinismus, Sicherheit | Technischer Entwurf, Skalierung, Persistenz |
-| `docs/design.md` | Farbsystem, Barrierefreiheit, Dunkelmodus, Typografie, Dichte, Wortmarke | jede Oberflächenarbeit, jedes Diagramm, jede Zustandsdarstellung |
+| `docs/design.md` | Deutschlandweite LiveMap, rote Gleismarke, Graphitpalette, Spielertexte, kompakte Arbeitsbereiche und Zugänglichkeit | jede Oberflächenarbeit, jedes Diagramm, jede Zustandsdarstellung |
+| `docs/ui-redesign/README.md`, `docs/brand/README.md` | Echte UI-Screenshots mit Beispieldaten, Vorschauprüfung, aktuelle Zeichen und Bildherkunft | neue Oberflächen oder Bilder gestalten, den aktuellen UI-Stand prüfen |
 | `docs/geschaeft.md` | Odoo, Monetarisierung, Monetarisierungsgrenze, Lizenz, Marken | Bezahlfunktionen, Lizenz, Namensrechte |
 | `docs/milestones.md` | M0–M15 mit Teilabschnitten und Beweisen | Planung, Reihenfolge, „was als Nächstes“ |
 | `docs/risiken.md` | Risikoregister mit Gegenmaßnahmen | Risikoabwägung, Review |

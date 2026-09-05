@@ -49,8 +49,12 @@ Vorstufe zum Lizenz-Scan aus M0.2.
 
 Eine Eisenbahnsimulation ohne Infrastruktur-Release, ohne Balancing und ohne
 Marke ist kein Produkt, sondern ein Motor ohne Fahrzeug. Diese Trennung schützt
-zuverlässiger als jeder Lizenztext (E16). Deshalb liegt nur der **Code** offen;
-die wertschöpfenden Schichten liegen nicht im öffentlichen Repositorium.
+zuverlässiger als jeder Lizenztext (E16). Proprietäre Laufzeitdaten bleiben
+außerhalb des öffentlichen Repositoriums. Sichtbare UI-Zeichen und ausdrücklich
+veröffentlichte Designbeispiele liegen dagegen im Design-System, unter
+[`brand/`](brand/README.md) und [`ui-redesign/`](ui-redesign/README.md).
+Die generierte Einstiegsaufnahme liegt als UI-Asset in `apps/game-web/public/`.
+Das ändert weder die Projektlizenz noch die gesonderte Behandlung der Marke.
 
 | Schicht | Behandlung | Durchsetzung |
 |---------|------------|--------------|

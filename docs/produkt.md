@@ -6,6 +6,13 @@ Zugfolge ist ein persistentes, serverautoritäres Browsergame: eine
 Eisenbahn-Unternehmenssimulation mit hohem betrieblichem, infrastrukturellem und
 wirtschaftlichem Realismus.
 
+Die Spielwelt und ihre Oberfläche sind **deutschlandweit** ausgerichtet. Der
+historische Pilotabschnitt Leipzig–Halle–Erfurt bleibt als Daten- und
+Abnahmebezug erhalten, ist aber keine regionale Begrenzung des Produktziels.
+Dieses Dokument verbindet das Produktziel mit fachlichem Ausbau; den jeweils
+umgesetzten Umfang belegen [Spieleroberfläche](ux-spieler-shell.md),
+[Screenshots](ui-redesign/README.md) und [Milestone-Status](milestones.md).
+
 - Öffentliche Welten laufen in 1:1-Echtzeit und werden **niemals
   zurückgesetzt**. Sie laufen ihre von Beginn an angekündigte Laufzeit und enden
   mit einer Schlusswertung — oder laufen unbefristet weiter. Kein Wipe, aber ein
@@ -17,38 +24,47 @@ wirtschaftlichem Realismus.
   als Verkehr der Spielwelt.
 - Spieler bauen keine Gleise, Bahnhöfe oder Infrastruktur. Sie nutzen das
   vorhandene, versionierte Netz.
-- Spieler führen ihr EVU strategisch und operativ, fahren Züge aber nicht selbst
-  und stellen keine Signale.
-- Erste geschlossene Pilotregion ist **Leipzig–Halle–Erfurt** mit Infrastruktur-
-  und Wirtschaftsstand 2026.
+- Spieler führen ihr Unternehmen strategisch und operativ, fahren Züge aber
+  nicht selbst und stellen keine Signale.
+- Bestellbare und befahrbare Abschnitte folgen dem freigegebenen, versionierten
+  Netz der Welt. Die Deutschlandübersicht ersetzt keine technische Netzfreigabe.
+
 ## 2. Zentrale Benutzeroberflächen
 
-- **Live-Lage** — selbst gehostete, dunkle Weltkarte mit dem vollständigen
-  Deutschland-Infrastrukturrelease im Hintergrund und einem bewusst
-  reduzierten Spielerprofil aus fahrenden Zügen, A-/B-Strecken, gruppierten
-  Bahnhöfen, belegten Werkstätten, Verspätungen, Sperrungen und Belegungen.
-  **Hauptseite und räumliches Spielzentrum:** Hier wird sichtbar, dass die
-  gemeinsame Welt lebt und andere EVU gleichzeitig handeln.
-- **Fahrplan und Trassen** — Laufwegsuche, Bildfahrplan, Sperrzeitentreppe,
-  Konflikterklärung, Alternativangebote.
-- **Betriebszentrale** — laufende Zugfahrten, Anschlüsse, Umläufe, Störungen,
-  Dispositionsregeln.
-- **Märkte** — SPFV-Nachfrage, SGV-Aufträge, SPNV-Ausschreibungen.
-- **Fahrzeuge und Personal** — Flotte, Formationen, Kompatibilität, Wartung,
-  Versorgung, Abstellung, Qualifikationspools.
-- **Unternehmen und Finanzen** — Liquidität, Ledger, Kostenstellen, Kredite,
-  Verträge, Ergebnisrechnung.
-- **Postfach** — Trassenangebote, Fristen, Ausschreibungen, Störungen,
-  administrative Nachrichten.
-- **Schaffnermodus** — optionale begehbare Top-down-Ansicht eigener aktiver
-  SPNV-Züge mit Fahrgastkontrolle und echten Betriebsfolgen. Der Einstieg liegt
-  in der privaten Zugdetailansicht; der Fachvertrag steht in
-  [`schaffnermodus.md`](schaffnermodus.md).
+Die gemeinsame Navigation heißt **LiveMap, Fahrplan, Betrieb, Markt,
+Unternehmen**. Postfach und verfügbarer Geldbetrag stehen im Kopf; die eigene
+rote Gleismarke führt zurück zur LiveMap. Graphitfarbene Flächen, rote Akzente
+und klare Fahrgastanzeigen vermitteln deutsche Bahnatmosphäre. Die verbindliche
+Gestaltung steht in [Design](design.md) und [ADR-0035](adr/0035-deutschlandweite-spieleroberflaeche.md).
 
-Desktop erhält die vollständige Leitstellenansicht. Die PWA für Smartphone und
-Tablet unterstützt Livemap, Meldungen, Freigaben und begrenzte Disposition;
-komplexe Fahrplanarbeit bleibt desktop-first. Oberflächensprache ist zunächst
-ausschließlich Deutsch.
+| Bereich | Aktuelle Aufgaben |
+| --- | --- |
+| **LiveMap** | Deutschland überblicken; alle oder eigene Züge anzeigen; nach Zugnummer, Unternehmen und nächstem Halt suchen; auffällige Fahrten, Zugdetails und Postfachhinweise öffnen |
+| **Fahrplan** | Bildfahrplan, Sperrzeitentreppe, Konflikterklärungen und vorhandene Planungsdetails lesen |
+| **Betrieb** | Betriebslage beurteilen, Automatik bearbeiten und Tagesberichte lesen |
+| **Markt** | Zwischen Aufträgen, Fahrzeugen und Zusammenarbeit wechseln; Angebote bei Bedarf erstellen und vergleichen |
+| **Unternehmen** | Verfügbares Geld, vorgemerkte Ausgaben, Finanzen und Flotte ansehen; beim Einstieg ein Unternehmen gründen |
+| **Postfach** | Nachrichten, Fristen und Links zur jeweiligen Entscheidung öffnen; Nachrichten als gelesen markieren |
+
+Fahrtanmeldung, Leerfahrt und Werkstatt sind über „Fahrt planen“ beziehungsweise
+die Unternehmensaktionen erreichbar. Der Hauptpunkt „Betrieb“ führt zur
+Betriebszentrale. Die LiveMap bleibt das räumliche Spielzentrum und zeigt
+bestätigte Bewegungen aus dem gemeinsamen Weltzustand. Ihr Überblick verwendet
+die tatsächlich empfangenen Fahrten des aktiven Filters; fehlende oder veraltete
+Daten bleiben erkennbar.
+
+Der äußere Rahmen passt auf Desktop in den Bildschirm. Register und bei Bedarf
+geöffnete Formulare teilen große Seiten in überschaubare Aufgaben. Lange Listen
+und Details scrollen im Arbeitsbereich. Auf Smartphone und Tablet bleibt die
+Navigation erreichbar; auf schmalen Geräten steht sie unten. Komplexe
+Fahrplanarbeit profitiert weiter vom größeren Bildschirm. Die Oberfläche
+spricht den Spieler auf Deutsch mit **du** an und benennt verständliche
+Handlungen, etwa „Unternehmen gründen“ und „Regeln aktivieren“.
+
+Weitere Nachfrageansichten für Personen- und Güterverkehr, zusätzliche
+Finanzierungs- und Personalwerkzeuge sowie der optionale Schaffnermodus sind
+fachlicher Ausbau gemäß [Milestones](milestones.md). Die neue Navigation und
+die Beispielbilder behaupten diese Funktionen nicht als bereits umgesetzt.
 
 Die Welt bleibt überall navigierbar; der vollständige Deutschland-Korpus liegt
 releasegebunden dahinter. Das normale Spielerprofil ist jedoch kein
@@ -90,7 +106,12 @@ als KBS ausgegeben; eine KBS-Anzeige folgt erst mit einer versionierten,
 autoritativen Zuordnung. → [ADR-0026](adr/0026-karte-als-spielzentrum.md),
 [ADR-0031](adr/0031-spielerkarte-als-lebendige-welt.md)
 
-## 3. Onboarding
+## 3. Einstieg und Spielhinweise
+
+„Dein Einstieg“ erklärt Spielername, Startkapital sowie „Spielregeln & Laufzeit“.
+Nach „Spiel starten“ folgt **Unternehmen gründen**. Nach der Gründung führt die
+Oberfläche zur gemeinsamen LiveMap. Die Spielertexte nennen keine zusätzliche
+regionale Startwelt und verlangen keine Kenntnis interner Vertragsnamen.
 
 Neue Spieler erhalten kurze Tooltipps direkt an den Bedienelementen ihrer Welt.
 Fragezeichen öffnen Hinweise per Maus, Tastatur oder Berührung. Die globale
@@ -99,10 +120,11 @@ separate Spielphase und keinen vorgeschriebenen Ablauf. Der Verhaltensvertrag
 steht in [Spielhinweise](spielhinweise.md).
 
 Die Welt vergibt keine automatische Ausstattung mit Verträgen, Fahrzeugen,
-Trassen, Personal oder Betriebsprogrammen. Der signierte Weltvertrag bestimmt
-die `StartingCapitalPolicy`; die erste EVU-Gründung wendet sie atomar genau
-einmal an. Endliches Kapital wird ausgeglichen gebucht, `unlimited` bleibt ein
-nichtnumerischer Modus. Hinweise erläutern diese echten Entscheidungen.
+Trassen, Personal oder Betriebsprogrammen. Der intern so bezeichnete signierte
+Weltvertrag bestimmt die `StartingCapitalPolicy`; die erste Unternehmensgründung
+wendet sie atomar genau einmal an. Endliches Kapital wird ausgeglichen gebucht,
+`unlimited` bleibt ein nichtnumerischer Modus. Hinweise erläutern diese echten
+Entscheidungen.
 
 ## 4. Netzabgrenzung (E14)
 
@@ -136,9 +158,9 @@ Im Import ist der Stromschienenfall fast mechanisch erkennbar: allgemeines Netz
 `electrified=rail` bei 750 bzw. 1200 V. Für unscharfe Abschnitte entscheidet
 eine explizite Netzausschlussliste.
 
-**Für die Pilotregion:** Die S-Bahn Mitteldeutschland läuft vollständig auf dem
-allgemeinen Netz und ist vollwertiger SPNV — inklusive Leipziger City-Tunnel,
-einem der interessantesten Kapazitätsengpässe der Region.
+**Beispiel aus dem historischen Pilotabschnitt:** Die S-Bahn Mitteldeutschland
+läuft vollständig auf dem allgemeinen Netz und ist vollwertiger SPNV — inklusive
+Leipziger City-Tunnel, einem der interessantesten Kapazitätsengpässe der Region.
 
 **Zwei Dinge bleiben modelliert, ohne simuliert zu werden:**
 
@@ -336,8 +358,8 @@ wird Verwaltung, nicht Betrieb.
 
 ## 9. Optionale Betriebsvertiefung: Schaffnermodus (E29)
 
-Der Schaffnermodus ist eine vierte, **optionale Erlebnis- und Eingriffstiefe**,
-keine Voraussetzung für erfolgreichen Betrieb. Er verwendet denselben
+Der für M15 geplante Schaffnermodus ist eine vierte, **optionale Erlebnis- und
+Eingriffstiefe**, keine Voraussetzung für erfolgreichen Betrieb. Er verwendet denselben
 Weltzustand wie Livemap und Betriebszentrale: tatsächliche Zugfahrt,
 Auslastung, Fahrgäste, Halte, Signale und Verspätung. Wer ihn nicht spielt,
 erhält keinen Malus. Die kleine positive Kontrollprämie ist gedeckelt und kann

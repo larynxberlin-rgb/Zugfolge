@@ -3,6 +3,12 @@
 Die verbindliche Zuordnung zwischen deutschem Fachbegriff und Bezeichner im
 Code. Ergebnis von **M0.2**.
 
+Das Glossar definiert Fachmodelle und Codebezeichner, keine verbindlichen
+Schaltflächentexte. Die Spieleroberfläche verwendet die verständlichen
+Handlungen aus [Design — Sprache](design.md#sprache), etwa „Unternehmen
+gründen“ und „Zugverband“. Fachdetails bleiben bei Bedarf erklärbar; API- und
+Persistenzbezeichner werden durch eine Textänderung nicht umbenannt.
+
 **Warum es das gibt.** Die Spezifikation ist deutsch, der Code englisch. Ohne
 festgelegte Zuordnung entstehen innerhalb weniger Wochen drei Namen für
 dieselbe Sache — `Trasse`, `Slot` und `Path` — und danach weiß niemand mehr,
