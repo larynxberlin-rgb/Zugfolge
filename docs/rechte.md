@@ -18,6 +18,15 @@ Bei Widerspruch gilt das Register; dieses Dokument erklärt es.
 
 ## 1. Wie das Gate funktioniert
 
+Für den lokalen M10-Kartenbrowsertest ist zusätzlich
+`maplibre-demotiles-noto-browserfixture` freigegeben: unveränderte Noto Sans
+Regular PBF-Glyphen 0–255 aus MapLibre demotiles, unter SIL OFL 1.1 mit
+vollständigem Copyright-/Lizenztext und SHA-256-Belegen in
+`apps/game-api/src/fixtures/demand-map-font`. Die OFL erlaubt diese Weitergabe
+mit Lizenz und Copyright. Die am 06.09.2026 im ausdrücklichen Nutzerauftrag
+geprüfte Nutzung betrifft ausschließlich offline reproduzierbare Browsertests;
+sie verändert weder Schriftnamen noch Glyphen oder den produktiven Kartenrelease.
+
 Das Gate hat zwei Hälften, und der Wächter `rights-gate` prüft beide.
 
 **Erste Hälfte — das Register muss halten, was es verspricht.** Jede Quelle
