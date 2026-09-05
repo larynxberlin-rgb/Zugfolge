@@ -19,6 +19,7 @@ import type { FastifyInstance } from "fastify";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { buildApp } from "./app.js";
+import { serverWorldScope } from "./server-world-scope.js";
 
 const publicWorldId = "11111111-1111-4111-8111-111111111111";
 const incompletePublicWorldId = "11111111-1111-4111-8111-111111111112";
@@ -210,6 +211,29 @@ describe("Weltzugang und zentraler Lebenszyklus-Schreibschutz", () => {
     expect(foreign.statusCode).toBe(403);
     expect(foreign.json()).toMatchObject({ code: "tutorial_session_required" });
     expect(tutorialOwner.worldId).toBe(tutorialWorldId);
+  });
+
+  it("erlaubt unter der kanonischen Hauptwelt-Subdomain nur die eigene Tutorialinstanz", async () => {
+    await app.close();
+    app = buildApp({
+      db,
+      verifyToken: async (token) => ({ keycloakSubject: token, displayName: token }),
+      worldScope: serverWorldScope(publicWorldId, "https://world.zugfolge.de"),
+      logger: false,
+    });
+    const headers = { host: "world.zugfolge.de", authorization: "Bearer tutorial-owner" };
+    const tutorial = await app.inject({ method: "GET", url: `/worlds/${tutorialWorldId}/operators`, headers });
+    expect(tutorial.statusCode).toBe(200);
+    const foreign = await app.inject({ method: "GET", url: `/worlds/${privateWorldId}/operators`, headers });
+    expect(foreign.statusCode).toBe(404);
+    expect(foreign.json()).toMatchObject({ code: "world_not_found" });
+    const foreignHost = await app.inject({ method: "GET", url: `/worlds/${tutorialWorldId}/operators`, headers: { ...headers, host: "other.zugfolge.de", "x-forwarded-host": "world.zugfolge.de" } });
+    expect(foreignHost.statusCode).toBe(421);
+    const otherPublicAccount = await requestWorldAccess(db, { worldId: incompletePublicWorldId, keycloakSubject: "tutorial-owner", displayName: "Tutorial Owner" });
+    await db.update(tutorialSessions).set({ publicWorldId: incompletePublicWorldId, publicAccountId: otherPublicAccount.id }).where(eq(tutorialSessions.tutorialWorldId, tutorialWorldId));
+    const unbound = await app.inject({ method: "GET", url: `/worlds/${tutorialWorldId}/operators`, headers });
+    expect(unbound.statusCode).toBe(404);
+    expect(unbound.json()).toMatchObject({ code: "world_not_found" });
   });
 
   it("verlangt den exakten, gueltigen Weltvertrag vor oeffentlichem Markteintritt", async () => {

@@ -139,7 +139,7 @@ ODOO_PROJECTION_SECRET=<different-direction-secret>
 ODOO_RECONCILIATION_URL=https://odoo.example.invalid/zugfolge/reconciliation/snapshot
 ```
 
-Im Odoo-Systemparameter-Store stehen getrennt `zugfolge_admin.game_webhook_url`,
+Im Odoo-Systemparameter-Store stehen getrennt `zugfolge_admin.game_world_origins_json`,
 `zugfolge_admin.tenant_id`, `zugfolge_admin.webhook_key_id`,
 `zugfolge_admin.webhook_secret` und `zugfolge_admin.projection_keys_json` (JSON-Key-ID→Secret, während Rotation mit beiden aktiven IDs).
 `zugfolge_admin.actor_reference` muss genau den technischen Akteur des
@@ -148,6 +148,37 @@ Im Odoo-Systemparameter-Store stehen getrennt `zugfolge_admin.game_webhook_url`,
 Kommando erhalten. Je Richtung gelten verschiedene Schlüssel. Rotation bedeutet: neuen Schlüssel
 zuerst auf der empfangenden Seite zusätzlich aktivieren, Senden umstellen, das
 fünfminütige Zeitfenster abwarten und den alten Schlüssel erst danach entfernen.
+
+Das Weltserverregister ist ein JSON-Objekt von Hauptwelt-UUID zu kanonischer
+HTTPS-Origin, zum Beispiel
+`{"11111111-1111-4111-8111-111111111111":"https://welt-a.example.invalid"}`.
+Jede Origin darf genau einmal vorkommen; Pfad, Benutzerinfo und Query sind
+unzulässig. Das Add-on sendet an `/api/integrations/odoo/webhooks` dieser
+Origin und folgt keinen Weiterleitungen. Damit erreicht der HTTP-Host genau
+die an `ZUGFOLGE_WORLD_ID` und `PUBLIC_GAME_URL` gebundene Serverinstanz.
+Die bisherige globale `game_webhook_url` wird nicht als Fallback verwendet.
+Tutorialwelten besitzen keinen kaufmännischen Eintrag und erhalten weder
+Teilnahme- noch Verwaltungsbefehle über diesen Kanal.
+
+Ein zentrales Odoo darf mehrere eigenständige Weltserver verwalten. Odoo-
+Mandant und Accounting-Company bezeichnen kaufmännische Zuständigkeiten;
+sie sind keine Spielwelt und berechtigen keinen Server zum Betrieb weiterer
+Hauptwelten. Konkrete Weltangebote, Rechnungsableitung, Jobs und Rückmeldungen
+binden ihre Zielwelt. Kontoweite Entitlements wie Plus/Kosmetik behalten ihren
+weltunabhängigen Vertrag und werden mit identischer Event-ID ausdrücklich auf
+alle registrierten Hauptweltserver projiziert. Beim Hinzufügen eines Servers
+sind bestehende Entitlements vor Verkaufsfreigabe ebenfalls dorthin zu
+projizieren; ein automatischer historischer Nachlieferungslauf ist noch nicht
+implementiert.
+
+Der Receiver prüft die Zielwelt vor dem Queue-Commit. Der Worker prüft sie
+erneut vor jeder Wirkung, auch bei historischen Queue-Einträgen. Ein
+`world_deploy`-Kommando trägt die tatsächliche Zielwelt; der globale
+Capability-Scope ist dafür keine zulässige Ersatzwelt. Der Reconciliation-
+Aufruf trägt die Serverhauptwelt und vergleicht nur deren lokale Belege.
+Globale Capabilities/Abschlussquittungen gehören nur bei bekannter lokaler
+Message-ID zum Server; andere Welten eines zentralen Odoo werden nicht als
+fremde Restore-Belege quarantänisiert.
 
 ## Vertrag, Wiederholung und Reconciliation
 
@@ -166,7 +197,15 @@ signierten Controller in schreibgeschützte Projektionsmodelle.
 Der Nachtlauf fragt den nur dafür freigegebenen Odoo-Reconciliation-Snapshot ab,
 vergleicht stabile IDs, Korrelation und Hash und
 erzeugt bei fehlenden, doppelten oder divergierenden Einträgen eine auditierte
-Korrekturaufgabe. Er überschreibt weder Game- noch Odoo-Daten still. Der
+Korrekturaufgabe. Auch bekannte Outboxnachrichten ohne Empfangsbestaetigung
+werden verglichen: Ein verlorenes Ack ist kein unbekannter Beleg. Als fehlend
+gelten nur bereits vor Beginn der Snapshotanfrage bestaetigte Zustellungen;
+spaetere Acks erzeugen keinen falschen Fehlbestand. Beobachtungen ohne Game-ID
+kommen dedupliziert in `odoo_projection_quarantine`, auch wenn ihre Welt nach
+einem asynchronen Restore nicht mehr existiert. Diese Quarantaene ist ein
+administrativer Befund, keine Spielautoritaet. Die Aufloesung ist manuell zu
+auditieren; es gibt keine automatische Loeschung oder Uebernahme.
+Er überschreibt weder Game- noch Odoo-Daten still. Der
 Reconciler ist erst nach einem echten externen Odoo-Testdienst als
 Abnahmenachweis ausführbar.
 

@@ -6,6 +6,47 @@ Issue #48 noch die Freigabe zum realen Alpha-Start.
 
 ## Ziele und Zustände
 
+Ein Server und seine kanonische Subdomain betreiben genau eine Spielwelt.
+`ZUGFOLGE_WORLD_ID` bindet diese Hauptwelt und muss mit `ALPHA_PUBLIC_WORLD_ID`
+uebereinstimmen. `PUBLIC_GAME_URL` ist ihr einziger oeffentlicher Origin, etwa
+`https://world.zugfolge.de`; Web, LiveMap und Operations Center laufen darunter
+auf `/`, `/livemap/` und `/operations/`. Zusaetzlich sind nur die an diese
+Hauptwelt gebundenen kurzlebigen Tutorialinstanzen erlaubt. Ein zweites
+oeffentliches oder Sandbox-Deployment benoetigt einen eigenen Server und eine
+eigene Subdomain. Der Weltwechsel im attestierten Rollback bindet explizit
+`PRODUCTION_RECOVERY_PREVIOUS_WORLD_ID`, niemals gleichzeitig beide Welten.
+
+Caddy und der interne Static-Server-Proxy bewahren den urspruenglichen
+HTTP-Host. Die API prueft ihn gegen `PUBLIC_GAME_URL`; ein frei gesetzter
+`X-Forwarded-Host` oder das Umschreiben auf `game-api:3000` ersetzt diese Bindung
+nicht. Lokale Liveness-/Readiness-Proben behalten ihren internen Healthpfad.
+Die im Entwicklungsbeispiel getrennten UI-Ports sind Backendports; produktive
+Spieleraufrufe erfolgen ueber die eine kanonische Subdomain.
+
+Interne Prometheus-Daten liegen ausschliesslich auf `game-api:9464/metrics` im
+Compose-Netz. Port 9464 wird nicht als Hostport veroeffentlicht. Der normale
+Game-API-Listener auf Port 3000 hat keinen Metrikendpunkt; das oeffentliche
+Caddy-Beispiel weist `/api/metrics` zusaetzlich mit 404 ab. Dieselbe Trennung
+gilt fuer alternative Reverse-Proxys und Firewallregeln. HTTP- und
+Queue-/Weltmetriken sind keine oeffentliche Statusprojektion.
+
+Der taegliche Datenschutzlauf pseudonymisiert abgelaufene Weltkonten und raeumt
+Postfachinhalte in begrenzten Weltbatches. Erfolg, Fehler und verbleibender
+Rueckstand erscheinen im strukturierten Serverlog. Fristbeginn, Ausnahmen,
+Exportinventar und die erhaltenen Deduplizierungsbelege sind in
+[`datenschutz-inventar.md`](datenschutz-inventar.md) verbindlich beschrieben.
+
+Missbrauchsmassnahmen gelten pro Welt und pseudonymer Identitaet im halboffenen
+Zeitfenster `[startsAtS, endsAtS)`. Bei Ueberlagerung gewinnt die staerkste
+Reaktion: Beobachten, Verzoegern, Begrenzen, Sperren, manuelle Pruefung. Aktive
+Massnahmen ueberleben Fensterwechsel und Prozessneustart. Ein Einspruch gegen
+eine aktivierte Massnahme hebt ihre Wirkung nicht selbst auf; angefochtene,
+noch nicht aktivierte Vorschlaege bleiben unwirksam. Widerruf oder Ablauf
+beenden die Wirkung. Ein Datenbankfehler verhindert die Freigabe eines Requests.
+Client-Korrelation dient ausschliesslich dem Tracing. Jeder HTTP-Versuch bekommt
+eine eigene Beobachtung; echte fachliche Replays vergleichen einen gespeicherten
+Hash aller urspruenglichen Fakten.
+
 | Dienst | RPO | RTO | `degraded` | `down` |
 |---|---:|---:|---|---|
 | autoritatives Game-PostgreSQL | 5 min | 60 min | Replikat/Backup älter als 5 min | keine schreibfähige Primärinstanz |
@@ -37,6 +78,20 @@ Laufzeitdatenbereinigung braucht ein eigenes, auditiertes Retentionverfahren.
 Individuelle Referenzen/UUIDs bleiben aus Prometheus-Labels heraus.
 
 ## Backup und isolierter Restore
+
+Schema 34 ergaenzt den Plattform-Auditvertrag. Sein Tabellenkatalog und
+`zugfolge-database-rollback-proof/v4` sind von Schema 33 und dessen weiterhin
+gueltigen v3-Belegen getrennt. Ein Umbenennen der Belegversion oder ein Austausch
+des Tabellenhashs wird abgelehnt. Die normale Backup-Pruefung bindet auch
+unbekannte Odoo-Quarantaenebelege; deren unbestaetigte textuelle Weltreferenzen
+werden nicht als autoritative UUID-Weltgeschichte behandelt. Bereits signierte
+Schema-33-Belege und deren Tabellenhash bleiben unveraendert.
+
+Der gestufte neue Installationspfad endet nach dem kalten Schema-31-Nachweis mit
+`--schema34-after-cold`, `--keycloak-after-schema34` und `--prepare-v2-hot` auf
+exakt Schema 34. Die aelteren `schema33`-Flag-/Dienstnamen sind
+Kompatibilitaetsaliasnamen fuer diesen aktuellen Gatepfad. Der Wrapper prueft
+nach der Migration und vor Keycloak/Hot-Backup immer den tatsaechlichen Stand 34.
 
 `ops/alpha/backup-game.sh` erzeugt einen PostgreSQL-Custom-Dump samt SHA-256-
 Manifest, Dateigröße und der tatsächlich gesicherten Drizzle-Migrationszahl.

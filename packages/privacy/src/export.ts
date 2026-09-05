@@ -5,10 +5,9 @@
  * Weltverlauf, keine natürliche Person (`retention.ts`).
  */
 
-import { operators, worldAccesses, type MailboxMessage, type Operator } from "@zugfolge/db";
-import { getAccount, type AccountRecord, type IdentityDatabase } from "@zugfolge/identity";
-import { listInbox } from "@zugfolge/mailbox";
-import { and, eq } from "drizzle-orm";
+import { operators, worldAccesses, mailboxMessages, tutorialSessions, tutorialTelemetryEvents, tutorialProgress, commerceEntitlements, commerceWorldClaims, worldParticipations, type MailboxMessage, type Operator, type WorldAccess } from "@zugfolge/db";
+import { getAccountIncludingRevoked, type AccountRecord, type IdentityDatabase } from "@zugfolge/identity";
+import { and, eq, isNull } from "drizzle-orm";
 
 /** Für dieses Keycloak-Subject existiert kein Konto in der angefragten Welt. */
 export class PersonalDataNotFoundError extends Error {
@@ -19,9 +18,17 @@ export class PersonalDataNotFoundError extends Error {
 }
 
 export interface PersonalDataExport {
+  readonly schemaVersion: "zugfolge-personal-data-export/v2";
   readonly worldId: string;
   readonly account: AccountRecord;
   readonly worldAccessStatus: "active" | "revoked" | "none";
+  readonly worldAccess: WorldAccess | null;
+  readonly tutorialSessions: readonly (typeof tutorialSessions.$inferSelect)[];
+  readonly tutorialTelemetry: readonly (typeof tutorialTelemetryEvents.$inferSelect)[];
+  readonly tutorialProgress: readonly (typeof tutorialProgress.$inferSelect)[];
+  readonly commerceEntitlements: readonly (typeof commerceEntitlements.$inferSelect)[];
+  readonly commerceWorldClaims: readonly (typeof commerceWorldClaims.$inferSelect)[];
+  readonly worldParticipations: readonly (typeof worldParticipations.$inferSelect)[];
   readonly operators: readonly Operator[];
   readonly mailboxMessages: readonly MailboxMessage[];
   readonly exportedAt: Date;
@@ -32,13 +39,13 @@ export async function exportAccountData(
   db: IdentityDatabase,
   input: { readonly worldId: string; readonly keycloakSubject: string; readonly exportedAt: Date },
 ): Promise<PersonalDataExport> {
-  const account = await getAccount(db, { worldId: input.worldId, keycloakSubject: input.keycloakSubject });
+  const account = await getAccountIncludingRevoked(db, { worldId: input.worldId, keycloakSubject: input.keycloakSubject });
   if (account === undefined) {
     throw new PersonalDataNotFoundError(input.worldId, input.keycloakSubject);
   }
 
   const [access] = await db
-    .select({ status: worldAccesses.status })
+    .select()
     .from(worldAccesses)
     .where(and(eq(worldAccesses.worldId, input.worldId), eq(worldAccesses.keycloakSubject, input.keycloakSubject)))
     .limit(1);
@@ -48,18 +55,38 @@ export async function exportAccountData(
     .from(operators)
     .where(and(eq(operators.worldId, input.worldId), eq(operators.foundingAccountId, account.id)));
 
-  const mailboxMessages = await listInbox(db, {
-    worldId: input.worldId,
-    requestingKeycloakSubject: input.keycloakSubject,
-    asOf: input.exportedAt,
-  });
+  // Die authentifizierte Selbst-Auskunft bleibt vom Spielzugang unabhaengig.
+  const messages = await db.select().from(mailboxMessages).where(and(
+    eq(mailboxMessages.worldId, input.worldId), eq(mailboxMessages.recipientAccountId, account.id), isNull(mailboxMessages.purgedAt),
+  ));
+  const sessions = await db.select().from(tutorialSessions).where(and(
+    eq(tutorialSessions.publicWorldId, input.worldId), eq(tutorialSessions.publicAccountId, account.id),
+  ));
+  const telemetry = (await Promise.all(sessions.map((session) => db.select().from(tutorialTelemetryEvents).where(and(
+    eq(tutorialTelemetryEvents.worldId, session.tutorialWorldId), eq(tutorialTelemetryEvents.sessionId, session.id),
+  ))))).flat();
+  const progress = await db.select().from(tutorialProgress).where(and(eq(tutorialProgress.worldId, input.worldId), eq(tutorialProgress.accountId, account.id)));
+  // guards:allow world-id — Eigene kaufmaennische Berechtigungen sind global und ausschliesslich an das authentifizierte Subject gebunden.
+  const entitlements = await db.select().from(commerceEntitlements).where(eq(commerceEntitlements.keycloakSubject, input.keycloakSubject));
+  const claims = (await Promise.all(entitlements.map((entitlement) => db.select().from(commerceWorldClaims).where(and(
+    eq(commerceWorldClaims.worldId, input.worldId), eq(commerceWorldClaims.entitlementId, entitlement.id),
+  ))))).flat();
+  const participations = await db.select().from(worldParticipations).where(and(eq(worldParticipations.worldId, input.worldId), eq(worldParticipations.keycloakSubject, input.keycloakSubject)));
 
   return {
+    schemaVersion: "zugfolge-personal-data-export/v2",
     worldId: input.worldId,
     account,
     worldAccessStatus: access?.status ?? "none",
+    worldAccess: access ?? null,
+    tutorialSessions: sessions,
+    tutorialTelemetry: telemetry,
+    tutorialProgress: progress,
+    commerceEntitlements: entitlements,
+    commerceWorldClaims: claims,
+    worldParticipations: participations,
     operators: ownedOperators,
-    mailboxMessages,
+    mailboxMessages: messages,
     exportedAt: input.exportedAt,
   };
 }

@@ -17,6 +17,7 @@ test("fortschreitender Cold-Catch-up darf 230 Sekunden ueberschreiten und endet 
     const path = new URL(url).pathname;
     if (path === "/health") return jsonResponse(200, { status: "ok" });
     if (path === "/metrics") {
+      assert.equal(new URL(url).port, "9464");
       return new Response([
         "zugfolge_regional_simulation_scheduler_running 1",
         "zugfolge_regional_simulation_scheduler_progress_age_seconds 5",

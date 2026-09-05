@@ -138,7 +138,7 @@ where
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-struct InfrastructureBinding {
+pub(crate) struct InfrastructureBinding {
     schema_version: String,
     infra_release_id: String,
     file: String,
@@ -593,7 +593,7 @@ impl InfrastructureBinding {
     }
 }
 
-fn infrastructure_for_binding(
+pub(crate) fn infrastructure_for_binding(
     binding: &InfrastructureBinding,
     resolved_path: &str,
 ) -> Result<InfrastructureHandle, OperationalRuntimeError> {
@@ -3344,6 +3344,61 @@ mod tests {
             applied["rzue"]["activeDisruptions"]
         );
         assert_eq!(applied["liveMap"]["commitSequence"], 1);
+    }
+
+    #[test]
+    fn generated_daily_restriction_uses_bound_routes_and_reaches_the_committed_projection() {
+        let input = initialization();
+        let request = json!({
+            "schemaVersion":"zugfolge-operational-daily-restrictions/v1", "worldId":input.world_id,
+            "regionId":input.region_id, "seed":"77", "dayStartMs":0, "infraRelease":input.infra_release,
+            "routeVersionIds":["route:v1"], "policy":{
+                "version":1,"plannedWorksMode":"REALISTIC","operationalIncidentMode":"REALISTIC",
+                "providerSetId":"approved-provider","simulationProfile":zugfolge_disruption::SimulationProfile {
+                    daily_restrictions_per_day:400, ..zugfolge_disruption::SimulationProfile::pilot("la-integration/v1")
+                },"rulesetVersion":"disruption-rules/v1","validFromMs":0,"validUntilMs":null
+            }
+        });
+        let generated: Value = serde_json::from_str(
+            &crate::daily_restrictions::generate_operational_daily_restrictions(
+                &request.to_string(),
+                infrastructure_path(),
+            )
+            .unwrap(),
+        )
+        .unwrap();
+        let restriction = &generated["restrictions"][0];
+        assert_eq!(
+            restriction["effect"]["speed-restriction"]["edgeId"],
+            "edge:1"
+        );
+        let initialized: Value = serde_json::from_str(
+            &initialize_operational_simulation(&encode(&input).unwrap()).unwrap(),
+        )
+        .unwrap();
+        let applied = apply_value(
+            &initialized["state"],
+            "daily:activate",
+            json!({"type":"activate-disruption","disruptionId":restriction["disruptionId"],"effect":restriction["effect"]}),
+        );
+        assert_eq!(
+            applied["liveMap"]["activeDisruptions"][0]["effect"],
+            restriction["effect"]
+        );
+        assert_eq!(
+            applied["liveMap"]["activeDisruptions"],
+            applied["rzue"]["activeDisruptions"]
+        );
+        let mut foreign = request;
+        foreign["routeVersionIds"] = json!(["foreign-route"]);
+        assert!(
+            crate::daily_restrictions::generate_operational_daily_restrictions(
+                &foreign.to_string(),
+                infrastructure_path()
+            )
+            .unwrap_err()
+            .contains("unknown_daily_restriction_route")
+        );
     }
 
     #[test]

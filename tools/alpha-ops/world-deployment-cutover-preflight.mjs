@@ -527,6 +527,7 @@ export async function runWorldDeploymentCutoverPreflight({
   inspectMap,
   parseRuntimeCandidate,
 } = {}) {
+  const uiWorldId = assertProductionServerWorldEnvironment(environment);
   const databaseUrl = requireEnvironment(environment, "DATABASE_URL");
   const deploymentPaths = JSON.parse(requireEnvironment(environment, "ALPHA_WORLD_RELEASE_PATHS_JSON"));
   invariant(Array.isArray(deploymentPaths) && deploymentPaths.length === 1 && typeof deploymentPaths[0] === "string", WORLD_DEPLOYMENT_CUTOVER_ERROR_CODES.candidateInvalid, "Der V2-Cutover braucht genau ein signiertes Weltdeployment.");
@@ -537,7 +538,6 @@ export async function runWorldDeploymentCutoverPreflight({
     requireEnvironment(environment, "RELEASE_TRUSTED_KEY_SCOPES_JSON"),
     trustedReleaseKeys,
   ).alphaWorldDeployments;
-  const uiWorldId = requireEnvironment(environment, "ALPHA_PUBLIC_WORLD_ID");
   const readModelPath = requireEnvironment(environment, "LIVEMAP_READ_MODEL_PATH");
   const mapInspector = inspectMap ?? (await import("../tiles/livemap-read-model.mjs")).inspectPublicReadModel;
 
@@ -558,6 +558,16 @@ export async function runWorldDeploymentCutoverPreflight({
     trustedKeys,
     cutoverAuthorization,
   });
+}
+
+/** Stoppt vor Kandidaten-/Karten-I/O und insbesondere vor einer DB-Mutation. */
+export function assertProductionServerWorldEnvironment(environment) {
+  const worldId = requireEnvironment(environment, "ZUGFOLGE_WORLD_ID");
+  const uiWorldId = requireEnvironment(environment, "ALPHA_PUBLIC_WORLD_ID");
+  invariant(UUID.test(worldId) && worldId === uiWorldId,
+    WORLD_DEPLOYMENT_CUTOVER_ERROR_CODES.uiWorldBindingMismatch,
+    "ZUGFOLGE_WORLD_ID und ALPHA_PUBLIC_WORLD_ID muessen dieselbe kanonische Hauptwelt-UUID binden.");
+  return worldId;
 }
 
 const invokedPath = process.argv[1] === undefined ? undefined : pathToFileURL(resolve(process.argv[1])).href;

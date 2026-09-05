@@ -23,6 +23,17 @@ function state(phase: "open" | "awarded"): EconomyWorldState {
 }
 
 describe("player-facing economy projection", () => {
+  it("veroeffentlicht fremde Mobilisierungsnachweise weder vor noch nach Betriebsuebergang", () => {
+    const source = state("awarded");
+    const mobilization = { tenderId: "tender-1", winnerOperatorId: "operator-competitor", deadline: 100, completed: true,
+      proof: { source: "m5-release", verifiedBy: "zugfolge-fleet-mobilization/v1", fleetRevision: 7, snapshotHash: "a".repeat(64), formationIds: ["secret-formation"], personnelDutyIds: ["secret-duty"], pathReservationIds: ["secret-path"] },
+      reference: { formationIds: ["secret-reference"] } };
+    const full = { ...source, mobilizations: new Map([["tender-1", mobilization]]) } as unknown as EconomyWorldState;
+    const other = economyStateForPlayer(full, new Set(["operator-own"])) as { mobilizations: Map<string, unknown> };
+    expect(other.mobilizations.get("tender-1")).toEqual({ tenderId: "tender-1", winnerOperatorId: "operator-competitor", deadline: 100, completed: true });
+    const owner = economyStateForPlayer(full, new Set(["operator-competitor"])) as { mobilizations: Map<string, unknown> };
+    expect(owner.mobilizations.get("tender-1")).toEqual(mobilization);
+  });
   it("reveals only the player's own bid while a tender is open", () => {
     const projected = economyStateForPlayer(state("open"), new Set(["operator-own"])) as { tenders: Map<string, Record<string, unknown>> };
     expect(projected.tenders.get("tender-1")).toMatchObject({ bidCount: 2, ownBids: [{ id: "bid-own", orderingFeeCentsPerTrainKm: 1_100n }] });

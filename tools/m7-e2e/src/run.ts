@@ -83,6 +83,8 @@ const app = buildApp({
     return { keycloakSubject: subject, displayName: "M7 E2E" };
   },
   simulationIngestToken: simulationToken,
+  // Dieser Harnisch verbraucht die Aktivierung unten mit dem echten M7-Rust-Erzeuger.
+  dispatchConsumerReady: (requestedWorldId) => requestedWorldId === worldId,
   logger: false,
 });
 await app.ready();

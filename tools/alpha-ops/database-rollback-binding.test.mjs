@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-import { createDatabaseRollbackProof } from "../tiles/map-release-build-evidence.mjs";
+import { createDatabaseRollbackProof, validateDatabaseRollbackProof } from "../tiles/map-release-build-evidence.mjs";
 import {
   assertDatabaseRollbackProofMatchesLive,
   inspectMigratedKeycloakState,
@@ -13,6 +13,7 @@ import {
 } from "./database-rollback-binding.mjs";
 import {
   DATABASE_AUTHORITATIVE_TABLES,
+  DATABASE_AUTHORITATIVE_TABLES_SCHEMA_34,
   DATABASE_CUTOVER_CONSTRAINTS,
   DATABASE_CUTOVER_GUARDS,
   DATABASE_WORLD_WRITER_GUARD_MIGRATION_LOCK_SQL,
@@ -51,13 +52,14 @@ function sqlFixture(databaseIdentity = DATABASE_A, domainRowsSha256 = "d".repeat
   changedConstraint,
   changedGuard,
   extraAuthoritativeTable,
+  migrationCount = 33,
 } = {}) {
   return {
     async unsafe(source) {
       const query = source.replace(/\s+/gu, " ").trim().toLowerCase();
       if (query.includes("from zugfolge_database_identity")) return [{ database_id: databaseIdentity }];
       if (query.includes("from drizzle.__drizzle_migrations")) {
-        return Array.from({ length: 33 }, (_, index) => index + 1).map((id) => ({
+        return Array.from({ length: migrationCount }, (_, index) => index + 1).map((id) => ({
           id,
           hash: id.toString(16).padStart(64, "0"),
           created_at: String(1_787_000_000_000 + id),
@@ -85,7 +87,7 @@ function sqlFixture(databaseIdentity = DATABASE_A, domainRowsSha256 = "d".repeat
       }
       if (query.includes("select relation.relname as table_name")) {
         return [
-          ...DATABASE_AUTHORITATIVE_TABLES,
+          ...(migrationCount === 34 ? DATABASE_AUTHORITATIVE_TABLES_SCHEMA_34 : DATABASE_AUTHORITATIVE_TABLES),
           ...(extraAuthoritativeTable === undefined ? [] : [extraAuthoritativeTable]),
         ].sort().map((table_name) => ({ table_name }));
       }
@@ -158,6 +160,18 @@ test("gesperrter Live-Kopf stimmt nur mit exakt derselben persistenten DB-Instan
     () => assertDatabaseRollbackProofMatchesLive(rollbackProof, structurallyIdenticalDatabaseB),
     /anderen persistenten Datenbankinstanz/u,
   );
+});
+
+test("Schema34 verwendet einen getrennten v4-Beleg und akzeptiert keine umetikettierten33-Belege", async () => {
+  const source = await inspectLiveDatabaseRollbackSnapshot(sqlFixture(DATABASE_A, "d".repeat(64), { migrationCount: 34 }));
+  const current = proof(source);
+  assert.equal(current.schema, "zugfolge-database-rollback-proof/v4");
+  assert.equal(source.authoritativeHead.tableCount, DATABASE_AUTHORITATIVE_TABLES_SCHEMA_34.length);
+  assert.equal(assertDatabaseRollbackProofMatchesLive(current, source), current);
+  assert.throws(() => validateDatabaseRollbackProof({ ...current, schema: "zugfolge-database-rollback-proof/v3" }), /33 Eintraegen/u);
+  const legacy = proof(await inspectLiveDatabaseRollbackSnapshot(sqlFixture(DATABASE_A)));
+  assert.equal(legacy.schema, "zugfolge-database-rollback-proof/v3");
+  assert.throws(() => validateDatabaseRollbackProof({ ...legacy, schema: "zugfolge-database-rollback-proof/v4" }), /34 Eintraegen/u);
 });
 
 test("gesperrter Live-Vergleich verweigert auch einen abweichenden Event-/Runtime-Kopf", async () => {

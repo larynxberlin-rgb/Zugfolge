@@ -15,8 +15,8 @@ lesen, nicht raten.
 
 | Datei | Inhalt | Lesen wenn |
 |-------|--------|------------|
-| `docs/entscheidungen.md` | E1–E31 mit voller Begründung | eine Entscheidung infrage steht oder geändert werden soll |
-| `docs/adr/` | E1–E31 als Architecture Decision Records: Kontext, Konsequenzen, Querverweise | eine Grundsatzentscheidung ausführlich nachschlagen oder eine neue festhalten |
+| `docs/entscheidungen.md` | E1–E32 mit voller Begründung | eine Entscheidung infrage steht oder geändert werden soll |
+| `docs/adr/` | E1–E32 als Architecture Decision Records: Kontext, Konsequenzen, Querverweise | eine Grundsatzentscheidung ausführlich nachschlagen oder eine neue festhalten |
 | `docs/monorepo.md` | Verzeichnisaufbau, Domänengrenzen, Werkzeugkette, Durchsetzung der Invarianten | Code beitragen, neues Paket oder Crate anlegen, CI verstehen |
 | `docs/glossar.md` | Domänenglossar: deutscher Fachbegriff → Bezeichner im Code → Bedeutung → Quelle | jede Benennung im Code, jeder neue Fachbegriff |
 | `docs/produkt.md` | Produktdefinition, Oberflächen, Onboarding, Netzabgrenzung, Spielertypen, Anti-Monokultur | Produktfragen, UI, Zielgruppe, Was-gehört-dazu |
@@ -96,6 +96,7 @@ Begründungen: `docs/entscheidungen.md`. Änderungen dort eintragen und begründ
 | E29 | Der Schaffnermodus vertieft den serverautoritativen Betrieb |
 | E30 | Die Spielerkarte zeigt die lebendige gemeinsame Welt, nicht den Infrastruktur-Editor |
 | E31 | Bewegung, Belegung, Stellwerk, FDL, Rangieren, LiveMap und RZÜ bilden eine einzige autoritative Betriebswirklichkeit |
+| E32 | Jede regulaere Spielwelt besitzt einen eigenen Server und eine feste Subdomain; nur ihre Tutorialinstanzen laufen mit |
 
 ---
 
@@ -139,7 +140,7 @@ Lastgrößen: `docs/architektur.md`.
 
 ## Stand
 
-Konzeption abgeschlossen, E1–E31 entschieden, Milestones auf Reihenfolge und
+Konzeption abgeschlossen, E1–E32 entschieden, Milestones auf Reihenfolge und
 Vollständigkeit geprüft. **M0 bis M8 sind fachlich abgenommen und
 reproduzierbar nachgewiesen.** M1.13 akzeptiert die Trassenfinder-Kalibrierung
 innerhalb der definierten Toleranz und den getrennten GTFS-Fahrplan-Holdout als

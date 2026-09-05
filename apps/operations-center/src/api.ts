@@ -130,7 +130,8 @@ export class OperationsApi {
     this.#token = token;
     this.#worldId = worldId;
     this.#operatorId = operatorId;
-    this.#fetch = fetchImplementation;
+    // Browser-fetch verlangt Window als Empfaenger, nicht die OperationsApi-Instanz.
+    this.#fetch = fetchImplementation.bind(globalThis);
     this.#reconnectWait = reconnectWait;
   }
 

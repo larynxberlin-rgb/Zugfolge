@@ -55,6 +55,8 @@ export async function waitForGameReadiness({
   const poll = positiveInteger(pollIntervalMs, "Readiness-Pollintervall");
   const livenessGrace = positiveInteger(livenessGraceMs, "Liveness-Anlaufzeit");
   const origin = new URL(baseUrl);
+  const metricsOrigin = new URL(origin);
+  metricsOrigin.port = "9464";
   const startedAtMs = now();
   let firstLivenessFailureAtMs;
 
@@ -98,7 +100,7 @@ export async function waitForGameReadiness({
     }
 
     if (scheduler.code === "scheduler_catching_up") {
-      const metricsResponse = await fetchImpl(new URL("/metrics", origin));
+      const metricsResponse = await fetchImpl(new URL("/metrics", metricsOrigin));
       const metrics = metricsResponse.ok ? await metricsResponse.text() : "";
       const running = metricValue(metrics, "zugfolge_regional_simulation_scheduler_running");
       const progressAgeSeconds = metricValue(

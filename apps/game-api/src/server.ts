@@ -1,5 +1,8 @@
 /** Produktionseinstieg: echte Postgres-Verbindung, echter Keycloak-Realm. */
 
+import Fastify from "fastify";
+import { purgeExpiredMailboxMessages } from "@zugfolge/mailbox";
+
 import {
   createDatabase,
   createEconomyOutboxHealthCheck,
@@ -116,6 +119,7 @@ import {
   worldIdsForOdooProjectionDispatch,
 } from "./odoo-admin-handlers.js";
 import { createProviderDisruptionConsumer } from "./provider-disruption-consumer.js";
+import { DailyRestrictionCommandCatalog, createDailyRestrictionPolicyLoader } from "./daily-restriction-catalog.js";
 import { generateDailyOperationReports, previousBerlinServiceDay } from "./daily-reports.js";
 import {
   parsePlanningAuthorityAccountIdsJson,
@@ -158,6 +162,7 @@ import {
 } from "./public-world-snapshot.js";
 import { GameTutorialWorldFactory, loadTutorialEconomyPlatformAdapters } from "./tutorial-world-factory.js";
 import { ActiveWorldDeploymentRuntime } from "./world-deployment-runtime.js";
+import { assertServerWorldDatabase, serverWorldScope } from "./server-world-scope.js";
 
 function requireEnv(name: string): string {
   const value = process.env[name];
@@ -260,9 +265,16 @@ const trustedReleaseKeyScopes = parseTrustedReleaseKeyScopes(
 const alphaWorldTrustedKeys = trustedReleaseKeyScopes.alphaWorldDeployments;
 const mapInfraTrustedKeys = trustedReleaseKeyScopes.mapInfraDeliveries;
 const db = createDatabase(requireEnv("DATABASE_URL"));
+const worldScope = serverWorldScope(requireEnv("ZUGFOLGE_WORLD_ID"), requireEnv("PUBLIC_GAME_URL"));
+await assertServerWorldDatabase(db, worldScope);
 const infraPackageUpload = await loadOptionalInfraPackageStaging(mapInfraTrustedKeys);
 const infraReleaseAdoptionRuntimeCapability = infraReleaseAdoptionCapability(infraPackageUpload.staging !== undefined);
-const odooWebhookOptions = loadOptionalOdooWebhookOptions();
+const assertCommerceWorldScope = (worldId: string): void => {
+  if (worldId !== worldScope.worldId) throw new Error("Odoo-Befehl liegt ausserhalb der Serverhauptwelt.");
+};
+const configuredOdooWebhookOptions = loadOptionalOdooWebhookOptions();
+const odooWebhookOptions = configuredOdooWebhookOptions === undefined ? undefined
+  : { ...configuredOdooWebhookOptions, assertWorldScope: assertCommerceWorldScope };
 const odooWebhookStore = odooWebhookOptions === undefined ? undefined : createOdooWebhookReceiptStore(db);
 const odooProjectionUrl = optionalEnv("ODOO_PROJECTION_URL");
 const odooProjectionKey = odooProjectionUrl === undefined
@@ -368,6 +380,9 @@ for (const world of worldRows) {
 const configuredSignedDeployments = await Promise.all(
   alphaWorldReleasePaths().map((path) => loadSignedAlphaWorldDeployment(path, alphaWorldTrustedKeys)),
 );
+for (const signed of configuredSignedDeployments) {
+  if (signed.deployment.worldId !== worldScope.worldId) throw new Error("Signiertes Deployment gehoert nicht zur konfigurierten Serverwelt.");
+}
 const {
   archivedWorldIds,
   persistedActiveDeployments,
@@ -378,7 +393,10 @@ const {
   configuredSignedDeployments,
 );
 for (const worldId of archivedWorldIds) deploymentRuntime.releaseWorld(worldId);
-for (const persisted of persistedActiveDeployments) deploymentRuntime.register(persisted.signed, persisted.epoch);
+for (const persisted of persistedActiveDeployments) {
+  if (persisted.signed.deployment.worldId !== worldScope.worldId) throw new Error("Persistiertes Deployment gehoert nicht zur konfigurierten Serverwelt.");
+  deploymentRuntime.register(persisted.signed, persisted.epoch);
+}
 const activeWorldInfrastructureBaselines = (): readonly ActiveWorldInfrastructureBaseline[] =>
   deploymentRuntime.realtimeRegions().map((region) => {
     const signed = signedDeployments.get(region.worldId);
@@ -594,6 +612,7 @@ const worldDeployAdminHandler = createWorldDeployAdminHandler({
   operationalPrograms: deploymentRuntime,
   prepareWorldProgram: (signed) => deploymentRuntime.prepareOperationalProgram(signed),
   async validateSignedDeployment(signed) {
+    if (signed.deployment.worldId !== worldScope.worldId) throw new Error("Dieser Weltserver darf keine zweite Spielwelt deployen.");
     assertLivemapReadModelRuntimeScheduleBinding(livemapReadModel, {
       worldId: signed.deployment.worldId,
       worldEpoch: signed.deployment.worldDefinition.epoch,
@@ -627,7 +646,23 @@ const worldDeployAdminHandler = createWorldDeployAdminHandler({
   },
 });
 
+const metricsApp = Fastify({ logger: false });
+// Der signierte Deploymentwert ist unveraenderlich; 250-ms-Zyklen sollen
+// den Deutschland-Fahrplan nicht wiederholt scannen und sortieren.
+const dailyRestrictionSources = new WeakMap<object, import("./daily-restriction-catalog.js").DailyRestrictionWorldSource>();
+const dailyRestrictionCatalog = new DailyRestrictionCommandCatalog({
+  base: deploymentRuntime,
+  loadPolicies: createDailyRestrictionPolicyLoader(db),
+  generate(input) {
+    if (operationalSimulationRuntime.dailyRestrictions === undefined) {
+      throw new Error("Die native Operational-Runtime besitzt keinen La-Generatorvertrag.");
+    }
+    return operationalSimulationRuntime.dailyRestrictions(input);
+  },
+});
 const app = buildApp({
+  worldScope,
+  metricsApp,
   db,
   verifyToken,
   livemap,
@@ -635,6 +670,8 @@ const app = buildApp({
   operations,
   simulationIngestToken: requireEnv("SIMULATION_INGEST_TOKEN"),
   regionalSimulation,
+  dailyRestrictionDiagnostics: (worldId) => dailyRestrictionCatalog.diagnostics(worldId),
+  validateDailyRestrictionPolicy: (worldId, policy) => dailyRestrictionCatalog.validatePolicy(worldId, policy),
   planningAuthorityAccountIds,
   fleetIngestToken: requireEnv("FLEET_INGEST_TOKEN"),
   fleetRuntime: operatingRuntime,
@@ -735,7 +772,7 @@ if (odooProjectionClient !== undefined) {
 
 let alphaProjectionCycle: Promise<void> | undefined;
 const runAlphaProjection = () => {
-  if (alphaProjectionCycle !== undefined || odooProjectionClient === undefined) return;
+  if (alphaProjectionCycle !== undefined) return;
   const observedAt = new Date();
   alphaProjectionCycle = (async () => {
     // guards:allow world-id — Der Betriebszyklus enumeriert Welt-IDs; jede Folgeverarbeitung ist wieder weltgebunden.
@@ -744,11 +781,15 @@ const runAlphaProjection = () => {
     for (const profile of profiles) {
       const snapshot = await alphaMonitoring.snapshot(profile.worldId, observedAt);
       alphaOperationsMetrics.observe(snapshot);
+      if (odooProjectionClient === undefined) continue;
       const epoch = worldEpochs.get(profile.worldId);
       if (epoch === undefined) throw new Error(`Weltepoche fuer Alpha-Projektion '${profile.worldId}' fehlt.`);
-      const eventAge = snapshot.freshness.eventAgeSeconds;
-      const runtimeStatus = eventAge === null || eventAge > 300 ? "down: kein aktueller autoritativer Eventstand"
-        : eventAge > 60 ? `degraded: Eventstand ${eventAge}s alt` : "healthy: autoritativer Eventstand aktuell";
+      const regionAge = snapshot.freshness.regionAgeSeconds;
+      const runtimeStatus = !snapshot.world.authoritativeTimeAvailable || regionAge === null
+        ? "down: kein lesbarer autoritativer Regionsstand"
+        : regionAge * 1_000 > LIVEMAP_FRESHNESS_MAXIMUM_AGE_MS
+          ? `down: Regionscommit ${regionAge}s alt`
+          : "healthy: autoritativer Regionscommit aktuell";
       const failedProjections = snapshot.bridges.odooProjection.failed;
       const workerStatus = failedProjections > 0 ? `degraded: ${failedProjections} fehlgeschlagene Odoo-Projektionen`
         : "healthy: keine fehlgeschlagene Odoo-Projektion";
@@ -775,10 +816,11 @@ const runAlphaProjection = () => {
           runtimeStatus,
           workerStatus,
           telemetry: snapshot,
-          authoritativeEventUrl: `${optionalEnv("PUBLIC_GAME_URL") ?? ""}/worlds/${profile.worldId}/alpha-monitoring`,
+          authoritativeEventUrl: `${worldScope.publicOrigin}/worlds/${profile.worldId}/alpha-monitoring`,
         },
       });
       try {
+        if (!snapshot.world.authoritativeTimeAvailable) continue;
         const publicSnapshot = await buildPublicWorldSnapshot(db, {
           worldId: profile.worldId,
           authoritativeNowS: snapshot.world.simulationTimeS,
@@ -870,14 +912,27 @@ app.addHook("onClose", async () => {
 const regionalAdvanceCoordinator = new RegionalSimulationCycleCoordinator({
   monitor: regionalSimulationMonitor,
   logger: app.log,
-  run: ({ at, reportProgress }) => advanceRegionalSimulations(
-    regionalSimulation,
-    deploymentRuntime.realtimeRegions(),
-    worldEpochs,
-    at,
-    deploymentRuntime,
-    reportProgress,
-  ),
+  run: async ({ at, reportProgress }) => {
+    const regions = deploymentRuntime.realtimeRegions();
+    await dailyRestrictionCatalog.refresh(regions.map((region) => {
+      const signed = signedDeployments.get(region.worldId);
+      if (signed === undefined || signed.deployment.regionalSimulation.regionId !== region.regionId) {
+        throw new Error("La-Katalog besitzt keine eindeutige signierte Welt-/Regionsbindung.");
+      }
+      let source = dailyRestrictionSources.get(signed);
+      if (source !== undefined) return source;
+      source = {
+        worldId: region.worldId,
+        regionId: region.regionId,
+        seed: signed.deployment.blueprint.seed.toString(),
+        infraRelease: signed.deployment.regionalSimulation.infraRelease,
+        routeVersionIds: [...new Set(signed.deployment.regionalSimulation.trains.map((train) => train.routeVersionId))].sort(compareUtf8),
+      };
+      dailyRestrictionSources.set(signed, source);
+      return source;
+    }));
+    return advanceRegionalSimulations(regionalSimulation, regions, worldEpochs, at, dailyRestrictionCatalog, reportProgress);
+  },
 });
 const runRegionalAdvance = () => {
   void regionalAdvanceCoordinator.run(new Date()).then((result) => {
@@ -902,6 +957,7 @@ const runCommerce = () => {
   if (commerceCycle !== undefined) return;
   commerceCycle = (async () => {
     while (await processNextOdooCommand(db, new Date(), {
+      assertWorldScope: assertCommerceWorldScope,
       participationHandler: worldParticipationHandler,
       adminHandlers: {
         manual_disruption_create: manualDisruptionAdminHandler,
@@ -920,7 +976,7 @@ const runCommerce = () => {
       for (const worldId of worldIdsForOdooProjectionDispatch(
         deploymentRuntime.worldIds(),
         pendingOutboxWorldIds,
-      )) {
+      ).filter((id) => id === worldScope.worldId || id === WORLD_DEPLOY_CAPABILITY_SCOPE_ID)) {
         await dispatchOdooProjectionOutbox(db, worldId, odooProjectionClient, new Date());
       }
     }
@@ -939,8 +995,9 @@ app.addHook("onClose", async () => {
 let reconciliationCycle: Promise<void> | undefined;
 const runOdooReconciliation = () => {
   if (reconciliationCycle !== undefined || odooReconciliationClient === undefined) return;
-  reconciliationCycle = odooReconciliationClient.snapshot()
-    .then((snapshot) => reconcileOdooProjectionSnapshot(db, snapshot, new Date()))
+  const snapshotStartedAt = new Date();
+  reconciliationCycle = odooReconciliationClient.snapshot(worldScope.worldId)
+    .then((snapshot) => reconcileOdooProjectionSnapshot(db, snapshot, snapshotStartedAt, worldScope.worldId))
     .then(() => undefined)
     .catch((error: unknown) => {
       app.log.error({ err: error }, "Odoo-Nachtabgleich fehlgeschlagen");
@@ -1030,18 +1087,41 @@ app.addHook("onClose", async () => {
   await dailyReportCycle;
 });
 
+let purgeCycle: Promise<void> | undefined;
 const purge = () => {
-  void purgeExpiredAccountData(db, new Date()).catch((error: unknown) => {
+  if (purgeCycle !== undefined) return;
+  purgeCycle = (async () => {
+    const asOf = new Date();
+    const accountsResult = await purgeExpiredAccountData(db, asOf);
+    for (const failure of accountsResult.failures ?? []) app.log.error({ err: failure.error, worldId: failure.worldId, accountId: failure.accountId }, "Konto-Raeumlauf fehlgeschlagen");
+    // guards:allow world-id — Der taegliche Sweeper enumeriert Welten und raeumt je Welt in begrenzten Batches.
+    const retainedWorlds = await db.select({ id: worlds.id }).from(worlds);
+    let purgedMessages = 0;
+    let backlogWorlds = 0;
+    for (const world of retainedWorlds) {
+      try {
+      const result = await purgeExpiredMailboxMessages(db, { worldId: world.id, asOf });
+      purgedMessages += result.purgedMessageIds.length;
+      if (result.hasMore) backlogWorlds += 1;
+      } catch (error) {
+        backlogWorlds += 1;
+        app.log.error({ err: error, worldId: world.id }, "Postfach-Raeumlauf der Welt fehlgeschlagen");
+      }
+    }
+    app.log.info({ purgedAccounts: accountsResult.purgedAccountIds.length, purgedMessages, backlogWorlds }, "Datenschutz-Raeumlauf abgeschlossen");
+    if (backlogWorlds > 0) app.log.warn({ backlogWorlds }, "Postfach-Raeumlauf hat Rueckstand");
+  })().catch((error: unknown) => {
     app.log.error({ err: error }, "Datenschutz-Räumlauf fehlgeschlagen");
-  });
+  }).finally(() => { purgeCycle = undefined; });
 };
 purge();
 const purgeInterval = setInterval(purge, 24 * 60 * 60 * 1_000);
 purgeInterval.unref();
-app.addHook("onClose", async () => clearInterval(purgeInterval));
+app.addHook("onClose", async () => { clearInterval(purgeInterval); await purgeCycle; await metricsApp.close(); });
 
 const port = Number(process.env["PORT"] ?? "3000");
 await app.listen({ host: "0.0.0.0", port });
+await metricsApp.listen({ host: "0.0.0.0", port: 9464 });
 runRegionalAdvance();
 regionalAdvanceInterval = setInterval(
   runRegionalAdvance,

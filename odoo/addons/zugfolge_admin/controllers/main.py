@@ -214,7 +214,12 @@ class ZugfolgeProjectionController(http.Controller):
         headers = request.httprequest.headers
         if not isinstance(payload, dict) or payload.get("schemaVersion") != "zugfolge-odoo/v1" or not _valid_signature(payload, headers.get("X-Zugfolge-Odoo-Key-Id"), headers.get("X-Zugfolge-Odoo-Timestamp"), headers.get("X-Zugfolge-Odoo-Signature")):
             return {"accepted": False, "code": "invalid_signature"}
-        receipts = request.env["zugfolge.projection.receipt"].sudo().search_read([], [
+        world_id = payload.get("worldId")
+        if not isinstance(world_id, str) or not re.fullmatch(r"[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}", world_id):
+            return {"accepted": False, "code": "world_scope_required"}
+        receipts = request.env["zugfolge.projection.receipt"].sudo().search_read([
+            ("world_id", "in", [world_id, GLOBAL_ADMIN_PROJECTION_SCOPE_ID]),
+        ], [
             "message_id", "world_id", "correlation_id", "payload_hash",
             "envelope_hash_schema", "envelope_hash",
         ])

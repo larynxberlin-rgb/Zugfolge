@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { once } from "node:events";
+import { createServer, request as httpRequest } from "node:http";
 import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -9,6 +10,37 @@ import { LIVEMAP_READ_MODEL_USER_VERSION } from "../tiles/livemap-read-model.mjs
 
 const releaseId = "infra-deutschland-2026.2";
 const publicBasePath = `/artifacts/maps/${releaseId}`;
+
+test("API-Proxy bewahrt kanonischen und fremden Host fuer die autoritative Hostgrenze", async (t) => {
+  const upstream = createServer((request, response) => {
+    response.writeHead(request.headers.host === "world.zugfolge.de" ? 200 : 421, { "content-type": "application/json" });
+    response.end(JSON.stringify({ host: request.headers.host, url: request.url }));
+  });
+  upstream.listen(0, "127.0.0.1");
+  await once(upstream, "listening");
+  const proxy = createStaticServer({ rootDirectory: ".", environment: { GAME_API_INTERNAL_URL: `http://127.0.0.1:${upstream.address().port}` } });
+  proxy.listen(0, "127.0.0.1");
+  await once(proxy, "listening");
+  t.after(async () => {
+    await new Promise((resolve) => proxy.close(resolve));
+    await new Promise((resolve) => upstream.close(resolve));
+  });
+  async function read(host) {
+    return new Promise((resolve, reject) => {
+      const request = httpRequest(`http://127.0.0.1:${proxy.address().port}/api/worlds?status=active`, {
+        headers: { host, "x-forwarded-host": "world.zugfolge.de" },
+      }, (response) => {
+        let body = "";
+        response.setEncoding("utf8");
+        response.on("data", (chunk) => { body += chunk; });
+        response.on("end", () => resolve({ status: response.statusCode, body: JSON.parse(body) }));
+      });
+      request.on("error", reject); request.end();
+    });
+  }
+  assert.deepEqual(await read("world.zugfolge.de"), { status: 200, body: { host: "world.zugfolge.de", url: "/worlds?status=active" } });
+  assert.deepEqual(await read("other.zugfolge.de"), { status: 421, body: { host: "other.zugfolge.de", url: "/worlds?status=active" } });
+});
 
 function parseEnvironmentExample(source) {
   return Object.fromEntries(source

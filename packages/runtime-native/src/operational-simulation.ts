@@ -3,6 +3,13 @@ import { createHash } from "node:crypto";
 import { lstatSync, realpathSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, isAbsolute, resolve } from "node:path";
+import {
+  decodeOperationalDailyRestrictions,
+  type OperationalDailyRestrictionsGenerated,
+  type OperationalDailyRestrictionsRequest,
+} from "./operational-daily-restrictions.js";
+
+export * from "./operational-daily-restrictions.js";
 
 export const OPERATIONAL_SIMULATION_INITIALIZE_SCHEMA =
   "zugfolge-operational-simulation-initialize/v2" as const;
@@ -456,6 +463,7 @@ export interface OperationalSimulationBatchResult {
 }
 
 export interface OperationalSimulationNativeAddon {
+  readonly generateOperationalDailyRestrictions?: (inputJson: string, infrastructurePath: string) => string;
   readonly hashOperationalSimulationCommand?: (commandJson: string) => string;
   readonly initializeOperationalSimulation: (inputJson: string, infrastructurePath: string) => string;
   readonly restoreOperationalSimulation: (stateJson: string, infrastructurePath: string) => string;
@@ -482,6 +490,7 @@ export interface OperationalSimulationNativeAddon {
 }
 
 export interface OperationalSimulationRuntime {
+  readonly dailyRestrictions?: (input: OperationalDailyRestrictionsRequest) => OperationalDailyRestrictionsGenerated;
   readonly commandHash: (command: OperationalSimulationCommandPayload) => string;
   readonly initialize: (input: OperationalSimulationInitialization) => OperationalSimulationInitialized;
   readonly restore: (
@@ -1402,6 +1411,17 @@ export function operationalSimulationRuntimeFromAddon(
   addon: OperationalSimulationNativeAddon,
 ): OperationalSimulationRuntime {
   return Object.freeze({
+    dailyRestrictions(input: OperationalDailyRestrictionsRequest) {
+      invariant(typeof addon.generateOperationalDailyRestrictions === "function",
+        "napi-rs-Addon exportiert generateOperationalDailyRestrictions nicht.");
+      const inputJson = JSON.stringify(input);
+      invariant(Buffer.byteLength(inputJson, "utf8") <= OPERATIONAL_SIMULATION_INITIALIZATION_JSON_LIMIT_BYTES,
+        "Operativer La-Auftrag ueberschreitet das Transportbudget.");
+      return decodeOperationalDailyRestrictions(
+        addon.generateOperationalDailyRestrictions(inputJson, resolveInfrastructurePath(input.infraRelease)),
+        input,
+      );
+    },
     commandHash(command: OperationalSimulationCommandPayload) {
       invariant(
         typeof addon.hashOperationalSimulationCommand === "function",

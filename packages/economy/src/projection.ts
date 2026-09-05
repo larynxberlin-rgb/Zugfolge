@@ -1,4 +1,6 @@
-import type { EconomyWorldState, TenderLifecycle } from "./workflow.js";
+import type { EconomyWorldState, TenderLifecycle, Mobilization } from "./workflow.js";
+
+export type PublicMobilization = Pick<Mobilization, "tenderId" | "winnerOperatorId" | "deadline" | "completed">;
 
 type PublicTenderLifecycle = Omit<TenderLifecycle, "bids" | "winningBid"> & {
   readonly bidCount: number;
@@ -52,7 +54,12 @@ export function economyStateForPlayer(state: EconomyWorldState, operatorIds: Rea
     calendar: state.calendar,
     tenders,
     contracts: state.contracts,
-    mobilizations: state.mobilizations,
+    mobilizations: new Map([...state.mobilizations].map(([id, mobilization]) => [id,
+      operatorIds.has(mobilization.winnerOperatorId) ? mobilization : Object.freeze({
+        tenderId: mobilization.tenderId, winnerOperatorId: mobilization.winnerOperatorId,
+        deadline: mobilization.deadline, completed: mobilization.completed,
+      } satisfies PublicMobilization),
+    ])),
     publicOperations: state.publicOperations,
     revision: state.revision,
   });

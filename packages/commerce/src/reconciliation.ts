@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
+import { eq, or } from "drizzle-orm";
 
-import { odooProjectionOutbox, odooReconciliationTasks } from "@zugfolge/db";
-import { isNotNull } from "drizzle-orm";
+import { odooProjectionOutbox, odooReconciliationTasks, odooProjectionQuarantine } from "@zugfolge/db";
 
 import { canonicalJson } from "./canonical-json.js";
 import { signPayload, type SigningKey } from "./signing.js";
@@ -19,7 +19,7 @@ export interface OdooReconciliationObservation {
 }
 
 export interface OdooReconciliationClient {
-  snapshot(): Promise<readonly OdooReconciliationObservation[]>;
+  snapshot(worldId: string): Promise<readonly OdooReconciliationObservation[]>;
 }
 
 export function createHttpOdooReconciliationClient(
@@ -28,8 +28,9 @@ export function createHttpOdooReconciliationClient(
   fetchImplementation: (input: string, init: { readonly method: string; readonly headers: Readonly<Record<string, string>>; readonly body: string }) => Promise<{ readonly ok: boolean; readonly status: number; json(): Promise<unknown> }> = globalThis.fetch,
 ): OdooReconciliationClient {
   return {
-    async snapshot() {
-      const payload = { schemaVersion: "zugfolge-odoo/v1", requestedAt: new Date().toISOString() };
+    async snapshot(worldId) {
+      if (worldId.length === 0) throw new Error("Odoo-Reconciliation benoetigt eine Serverwelt.");
+      const payload = { schemaVersion: "zugfolge-odoo/v1", worldId, requestedAt: new Date().toISOString() };
       const signed = signPayload(payload, key);
       const response = await fetchImplementation(url, { method: "POST", headers: { "content-type": "application/json", "x-zugfolge-odoo-key-id": signed.keyId, "x-zugfolge-odoo-timestamp": signed.timestamp, "x-zugfolge-odoo-signature": signed.signature }, body: JSON.stringify(payload) });
       if (!response.ok) throw new Error(`Odoo-Reconciliation antwortete mit HTTP ${response.status}.`);
@@ -56,12 +57,13 @@ export interface ReconciliationTaskInput {
   readonly messageId: string;
   readonly worldId: string;
   readonly correlationId: string;
-  readonly issueKind: "missing" | "duplicate" | "divergent";
+  readonly issueKind: "missing" | "duplicate" | "divergent" | "unknown";
   readonly expectedHash: string;
   readonly observedHash?: string;
 }
 
 export interface OdooReconciliationExpectedProjection {
+  readonly deliveredAt?: Date | null;
   readonly id: string;
   readonly schemaVersion: string;
   readonly messageType: string;
@@ -105,7 +107,7 @@ export function deriveReconciliationTasks(
     const expectedHash = projectionEnvelopeHash(message);
     const matches = observedByMessage.get(message.id) ?? [];
     if (matches.length === 0) {
-      tasks.push({ messageId: message.id, worldId: message.worldId, correlationId: message.correlationId, issueKind: "missing", expectedHash });
+      if (message.deliveredAt !== null) tasks.push({ messageId: message.id, worldId: message.worldId, correlationId: message.correlationId, issueKind: "missing", expectedHash });
       continue;
     }
     if (matches.length > 1) {
@@ -119,6 +121,15 @@ export function deriveReconciliationTasks(
       tasks.push({ messageId: message.id, worldId: message.worldId, correlationId: message.correlationId, issueKind: "divergent", expectedHash, observedHash: first.envelopeHash ?? undefined });
     }
   }
+  const expectedIds = new Set(expected.map((message) => message.id));
+  const unknownIds = new Set<string>();
+  for (const observation of observed) {
+    const key = JSON.stringify([observation.worldId, observation.messageId]);
+    if (expectedIds.has(observation.messageId) || unknownIds.has(key)) continue;
+    unknownIds.add(key);
+    tasks.push({ messageId: observation.messageId, worldId: observation.worldId, correlationId: observation.correlationId,
+      issueKind: "unknown", expectedHash: "", observedHash: observation.envelopeHash ?? observation.payloadHash });
+  }
   return tasks;
 }
 
@@ -126,8 +137,9 @@ export async function reconcileOdooProjectionSnapshot(
   db: CommerceDatabase,
   observed: readonly OdooReconciliationObservation[],
   now = new Date(),
+  worldId?: string,
 ): Promise<readonly ReconciliationTaskInput[]> {
-  // guards:allow world-id — Der globale Abgleich enumeriert gelieferte Belege; erzeugte Aufgaben tragen deren Welt-ID.
+  // guards:allow world-id — Der globale Abgleich enumeriert auch bekannte Belege ohne Empfangsbestaetigung; jeder Befund behaelt seinen Scope.
   const expected = await db
     .select({
       id: odooProjectionOutbox.id,
@@ -137,12 +149,30 @@ export async function reconcileOdooProjectionSnapshot(
       correlationId: odooProjectionOutbox.correlationId,
       occurredAt: odooProjectionOutbox.occurredAt,
       payload: odooProjectionOutbox.payload,
+      deliveredAt: odooProjectionOutbox.deliveredAt,
     })
     .from(odooProjectionOutbox)
-    .where(isNotNull(odooProjectionOutbox.deliveredAt));
-  const tasks = deriveReconciliationTasks(expected, observed);
+    .where(worldId === undefined ? undefined : or(
+      eq(odooProjectionOutbox.worldId, worldId),
+      eq(odooProjectionOutbox.worldId, "00000000-0000-0000-0000-000000000000"),
+    ));
+  // Das zentrale Odoo darf weitere Server bedienen. Globale Capabilities
+  // gehoeren nur bei bekannter lokaler Message-ID zu diesem Server.
+  const localGlobalIds = new Set(expected.filter((message) => message.worldId === "00000000-0000-0000-0000-000000000000").map((message) => message.id));
+  const scopedObserved = worldId === undefined ? observed : observed.filter((message) =>
+    message.worldId === worldId || (message.worldId === "00000000-0000-0000-0000-000000000000" && localGlobalIds.has(message.messageId)));
+  // Nur vor Beginn des externen Snapshots bestaetigte Nachrichten koennen
+  // dort bereits fehlen. Spaetere Acks bleiben bekannte ausstehende Belege.
+  const tasks = deriveReconciliationTasks(expected.map((message) => ({ ...message,
+    deliveredAt: message.deliveredAt !== null && message.deliveredAt.getTime() <= now.getTime() ? message.deliveredAt : null,
+  })), scopedObserved);
   for (const task of tasks) {
-    await db.insert(odooReconciliationTasks).values({ ...task, status: "open", createdAt: now }).onConflictDoNothing();
+    if (task.issueKind === "unknown") {
+      await db.insert(odooProjectionQuarantine).values({ worldId: task.worldId, messageId: task.messageId, correlationId: task.correlationId,
+        observedHash: task.observedHash, issueKind: task.issueKind, status: "open", createdAt: now }).onConflictDoNothing();
+    } else {
+      await db.insert(odooReconciliationTasks).values({ ...task, issueKind: task.issueKind, status: "open", createdAt: now }).onConflictDoNothing();
+    }
   }
   return tasks;
 }

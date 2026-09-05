@@ -114,7 +114,10 @@ export function createStaticServer({
       const upstreamUrl = new URL(`${url.pathname.slice(4)}${url.search}`, internal.endsWith("/") ? internal : `${internal}/`);
       const upstream = httpRequest(upstreamUrl, {
         method: request.method,
-        headers: { ...request.headers, host: upstreamUrl.host },
+        // Der Game-API-Hostguard prueft den urspruenglichen Subdomain-Host.
+        // Ein interner oder fest erwarteter Ersatzhost wuerde diese Grenze
+        // entweder blockieren oder Requests fremder Hosts verschleiern.
+        headers: { ...request.headers },
       }, (upstreamResponse) => {
         response.writeHead(upstreamResponse.statusCode ?? 502, upstreamResponse.headers);
         upstreamResponse.pipe(response);

@@ -412,6 +412,8 @@ export type WorldParticipationCommandHandler = (
 ) => Promise<WorldParticipationCommandResult> | WorldParticipationCommandResult;
 
 export interface OdooCommandProcessingOptions {
+  /** Erneute Scope-Pruefung erfasst auch historische Queue-Eintraege vor der Wirkung. */
+  readonly assertWorldScope?: (worldId: string) => void;
   /** Keine Standard-Handler: ein noch nicht implementierter Milestone bleibt vorbereitet, aber wirkungslos. */
   readonly adminHandlers?: Readonly<Partial<Record<AdminActionType, GameAdminCommandHandler>>>;
   /** Autoritativer, weltgebundener Game-Handler fuer kommerzielle Teilnahmen. */
@@ -557,6 +559,21 @@ export async function processNextOdooCommand(
     return claimed;
   });
   if (command === undefined) return undefined;
+  if (command.commandType !== "entitlement.change") {
+    const payload = command.payload as { readonly worldId?: unknown };
+    try {
+      if (typeof payload.worldId !== "string" || command.worldId !== payload.worldId) throw new Error("Ungueltige Zielwelt.");
+      options.assertWorldScope?.(payload.worldId);
+    } catch {
+      // Eine historische fehlgeroutete Queue darf weder einen Fachhandler
+      // aufrufen noch Ergebnis-/Eventdaten in einer fremden Welt schreiben.
+      const rejected = await db.update(odooCommandQueue).set({ status: "rejected", processedAt: now,
+        claimToken: null, claimExpiresAt: null, failureCode: "world_scope" })
+        .where(claimScope(command, claimToken)).returning({ id: odooCommandQueue.id });
+      if (rejected.length !== 1) throw new OdooCommandClaimLostError(command.id);
+      return { id: command.id, outcome: "rejected" };
+    }
+  }
   let adminRequestId: string | undefined;
   let adminRequestPersisted = false;
   let adminPayload: AdminCommandPayload | undefined;

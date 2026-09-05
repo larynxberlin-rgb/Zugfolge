@@ -39,6 +39,7 @@ import {
   DATABASE_AUTHORITATIVE_TABLES_SCHEMA_28_TO_32,
   DATABASE_AUTHORITATIVE_TABLES_SCHEMA_28_TO_32_SET_SHA256,
   DATABASE_AUTHORITATIVE_TABLES_SCHEMA_33_ADDITIONS,
+  DATABASE_AUTHORITATIVE_TABLES_SCHEMA_34,
 } from "./database-cutover-schema-contract.mjs";
 
 const DATABASE_URL = "postgresql://operator:secret@postgres:5432/zugfolge";
@@ -438,6 +439,8 @@ test("Schema-31 bleibt ohne 0033-Ledger kompatibel und Schema-33 bindet Relation
 
   assert.equal(validateGameDatabaseCatalog(schema31Relations, schema31Routines, 31), "schema-31-to-33");
   assert.equal(validateGameDatabaseCatalog(schema33Relations, schema33Routines, 33), "schema-31-to-33");
+  assert.equal(validateGameDatabaseCatalog([...DATABASE_AUTHORITATIVE_TABLES_SCHEMA_34, "world_cutover_receipts", "zugfolge_database_identity"].sort(), schema33Routines, 34), "schema-34");
+  assert.throws(() => validateGameDatabaseCatalog(schema33Relations, schema33Routines, 34), /Relationssatz/u);
   assert.equal(DATABASE_AUTHORITATIVE_TABLES_SCHEMA_28_TO_32.length, 51);
   assert.equal(DATABASE_AUTHORITATIVE_TABLES_SCHEMA_28_TO_32_SET_SHA256, "9a16cf2644ff1e457b0b77e8f42451d202bee48a2ebcf61e966708fd5dd952b3");
   assert.deepEqual(DATABASE_AUTHORITATIVE_TABLES_SCHEMA_33_ADDITIONS, ["regional_simulation_command_receipts"]);

@@ -61,6 +61,8 @@ test("Alpha-Compose erzwingt Map- und Welt-Cutover-Gates, Migration, signierten 
     compose.indexOf("  world-deployment-cutover-preflight:"),
   );
   const gameApiService = compose.slice(compose.indexOf("  game-api:"), compose.indexOf("  game-web:"));
+  assert.match(gameApiService, /ZUGFOLGE_WORLD_ID: "\$\{ZUGFOLGE_WORLD_ID:\?[^}]+\}"/u);
+  assert.match(gameApiService, /PUBLIC_GAME_URL: "\$\{PUBLIC_GAME_URL:\?[^}]+\}"/u);
   const gameBootstrapService = compose.slice(compose.indexOf("  game-bootstrap:"), compose.indexOf("  game-api:"));
   const worldDeploymentPreflightService = compose.slice(
     compose.indexOf("  world-deployment-cutover-preflight:"),
@@ -147,14 +149,14 @@ test("Alpha-Compose erzwingt Map- und Welt-Cutover-Gates, Migration, signierten 
   assert.match(compose, /production-recovery-cold-qualify:[\s\S]*PRODUCTION_SCHEMA31_RECEIPT_PATH:[^\n]+schema31-prepared\.json/u);
   assert.match(compose, /game-schema33-migrate:[\s\S]*PRODUCTION_SCHEMA31_RECEIPT_PATH:[^\n]+schema31-prepared\.json/u);
   assert.match(compose, /game-schema33-migrate:[\s\S]*production-cold-backup\.mjs, preflight, node, packages\/db\/dist\/migrate\.js/u);
-  assert.match(composeWrapper, /--schema33-after-cold[\s\S]*game-schema33-migrate[\s\S]*select count\(\*\) from drizzle\.__drizzle_migrations"\)" = 33/u);
+  assert.match(composeWrapper, /--schema33-after-cold[\s\S]*game-schema33-migrate[\s\S]*select count\(\*\) from drizzle\.__drizzle_migrations"\)" = 34/u);
   assert.match(
     composeWrapper,
-    /if \(\(keycloak_after_schema33 == 1\)\); then[\s\S]*select count\(\*\) from drizzle\.__drizzle_migrations"\)" = 33[\s\S]*keycloak-schema-backup[\s\S]*keycloak-schema-restore[\s\S]*bind-backup[\s\S]*plan-up[\s\S]*keycloak_schema_command up[\s\S]*keycloak_schema_command recover[\s\S]*keycloak_schema_command preflight-up/u,
+    /if \(\(keycloak_after_schema33 == 1\)\); then[\s\S]*select count\(\*\) from drizzle\.__drizzle_migrations"\)" = 34[\s\S]*keycloak-schema-backup[\s\S]*keycloak-schema-restore[\s\S]*bind-backup[\s\S]*plan-up[\s\S]*keycloak_schema_command up[\s\S]*keycloak_schema_command recover[\s\S]*keycloak_schema_command preflight-up/u,
   );
   assert.match(
     composeWrapper,
-    /if \(\(prepare_v2_hot == 1\)\); then[\s\S]*select count\(\*\) from drizzle\.__drizzle_migrations"\)" = 33[\s\S]*keycloak_schema_command preflight-up[\s\S]*backup-game\.sh/u,
+    /if \(\(prepare_v2_hot == 1\)\); then[\s\S]*select count\(\*\) from drizzle\.__drizzle_migrations"\)" = 34[\s\S]*keycloak_schema_command preflight-up[\s\S]*backup-game\.sh/u,
   );
   assert.match(
     composeWrapper,

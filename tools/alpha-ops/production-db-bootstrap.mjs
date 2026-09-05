@@ -2,11 +2,14 @@ import { readFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 
 import {
+  assertProductionServerWorldEnvironment,
   inspectSignedOperationalV2Candidate,
   parseWorldDeploymentCutoverAuthorization,
 } from "./world-deployment-cutover-preflight.mjs";
 import { applyWorldDeploymentCutover } from "./world-deployment-cutover-apply.mjs";
 import { parseCanonicalDatabaseRollbackProof } from "../tiles/map-release-build-evidence.mjs";
+
+const uiWorldId = assertProductionServerWorldEnvironment(process.env);
 
 const databaseUrl = process.env.DATABASE_URL;
 if (!databaseUrl) throw new Error("DATABASE_URL fehlt.");
@@ -61,10 +64,6 @@ const databaseRollbackProof = parseCanonicalDatabaseRollbackProof(
 const client = postgres(databaseUrl, { max: 1 });
 const db = drizzle(client, { schema });
 try {
-  const uiWorldId = process.env.ALPHA_PUBLIC_WORLD_ID;
-  if (typeof uiWorldId !== "string" || uiWorldId.trim() === "") {
-    throw new Error("ALPHA_PUBLIC_WORLD_ID fehlt.");
-  }
   const livemapReadModelPath = process.env.LIVEMAP_READ_MODEL_PATH;
   if (typeof livemapReadModelPath !== "string" || livemapReadModelPath.trim() === "") {
     throw new Error("LIVEMAP_READ_MODEL_PATH fehlt.");

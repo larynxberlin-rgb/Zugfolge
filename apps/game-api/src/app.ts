@@ -217,8 +217,14 @@ import {
 } from "./regional-simulation-worker.js";
 import { projectSimulationEventBatch } from "./simulation-event-projection.js";
 import { registerWorldLifecycleGate } from "./world-lifecycle-gate.js";
+import { registerServerWorldScope, serverWorldIds, type ServerWorldScope } from "./server-world-scope.js";
 
 export interface AppDependencies {
+  /** Produktion setzt genau eine Spielwelt mit fester Subdomain. */
+  readonly worldScope?: ServerWorldScope;
+  readonly dailyRestrictionDiagnostics?: (worldId: string) => unknown;
+  readonly validateDailyRestrictionPolicy?: (worldId: string, policy: import("@zugfolge/runtime-native").OperationalDailyRestrictionPolicy) => void;
+  readonly metricsApp?: FastifyInstance;
   readonly db: IdentityDatabase;
   readonly verifyToken: TokenVerifier;
   /**
@@ -235,6 +241,8 @@ export interface AppDependencies {
   readonly livemapReadModel?: LivemapReadModel;
   /** Authentifizierter, je EVU getrennter Betriebsereignis-Fanout (M7.5/M7.6). */
   readonly operations?: OperationsRegistry;
+  /** Nur ein tatsaechlich angeschlossener M7-Consumer darf Kommandos annehmen. */
+  readonly dispatchConsumerReady?: (worldId: string) => boolean;
   /** Geteiltes Geheimnis des Simulations-Eventlog-Adapters. */
   readonly simulationIngestToken?: string;
   /** Persistenter, in-process angebundener regionaler Rust-Single-Writer (M4). */
@@ -1478,7 +1486,9 @@ export function buildApp(deps: AppDependencies): FastifyInstance {
   });
   const observability = new ApiObservability(deps.extraMetricSources);
   observability.register(app);
+  if (deps.metricsApp !== undefined) observability.registerMetrics(deps.metricsApp);
   const authenticate = createAuthenticator(deps.verifyToken);
+  if (deps.worldScope !== undefined) registerServerWorldScope(app, deps.db, deps.worldScope);
   registerWorldLifecycleGate(app, deps.db);
   const operations = deps.operations ?? new OperationsRegistry();
   const assertDirectAdminAllowed = () => {
@@ -1842,7 +1852,7 @@ export function buildApp(deps: AppDependencies): FastifyInstance {
     };
   }>(
     "/worlds/:worldId/economy/tenders/:tenderId/operators/:operatorId/bids",
-    { preHandler: authenticate, schema: { params: { type: "object", required: ["worldId", "tenderId", "operatorId"], properties: { worldId: { type: "string", format: "uuid" }, tenderId: { type: "string", minLength: 1 }, operatorId: { type: "string", format: "uuid" } } }, body: { type: "object", required: ["expectedRevision", "commandId", "bidId", "orderingFeeCentsPerTrainKm", "vehicleReference", "promises"], additionalProperties: false, properties: { expectedRevision: { type: "integer", minimum: 0 }, commandId: { type: "string", minLength: 1 }, bidId: { type: "string", minLength: 1 }, orderingFeeCentsPerTrainKm: { type: "string", pattern: "^[0-9]+$" }, vehicleReference: { type: "object", required: ["fleetRevision", "snapshotHash", "formationId"], additionalProperties: false, properties: { fleetRevision: { type: "integer", minimum: 0 }, snapshotHash: { type: "string", pattern: "^[a-f0-9]{64}$" }, formationId: { type: "string", minLength: 1 }, personnelDutyIds: { type: "array", minItems: 1, uniqueItems: true, items: { type: "string", minLength: 1 } }, pathReservationIds: { type: "array", minItems: 1, uniqueItems: true, items: { type: "string", minLength: 1 } }, entryFacility: { type: "object", required: ["schemaVersion", "providerOperatorId"], additionalProperties: false, properties: { schemaVersion: { const: PUBLIC_ENTRY_FACILITY_SCHEMA }, providerOperatorId: { const: "public" } } } } }, promises: { type: "object", required: ["extraSeats", "punctualityBasisPoints", "additionalStops"], additionalProperties: false, properties: { extraSeats: { type: "integer", minimum: 0 }, punctualityBasisPoints: { type: "integer", minimum: 0, maximum: 10000 }, additionalStops: { type: "integer", minimum: 0 } } } } } } },
+    { preHandler: authenticate, schema: { params: { type: "object", required: ["worldId", "tenderId", "operatorId"], properties: { worldId: { type: "string", format: "uuid" }, tenderId: { type: "string", minLength: 1 }, operatorId: { type: "string", format: "uuid" } } }, body: { type: "object", required: ["expectedRevision", "commandId", "bidId", "orderingFeeCentsPerTrainKm", "vehicleReference", "promises"], additionalProperties: false, properties: { expectedRevision: { type: "integer", minimum: 0 }, commandId: { type: "string", minLength: 1 }, bidId: { type: "string", minLength: 1 }, orderingFeeCentsPerTrainKm: { type: "string", pattern: "^[0-9]+$" }, vehicleReference: { type: "object", required: ["fleetRevision", "snapshotHash", "formationId"], additionalProperties: false, properties: { fleetRevision: { type: "integer", minimum: 0 }, snapshotHash: { type: "string", pattern: "^[a-f0-9]{64}$" }, formationId: { type: "string", minLength: 1 }, personnelDutyIds: { type: "array", minItems: 1, uniqueItems: true, items: { type: "string", minLength: 1 } }, pathReservationIds: { type: "array", minItems: 1, uniqueItems: true, items: { type: "string", minLength: 1 } }, entryFacility: { type: "object", required: ["schemaVersion", "providerOperatorId"], additionalProperties: false, properties: { schemaVersion: { const: PUBLIC_ENTRY_FACILITY_SCHEMA }, providerOperatorId: { const: "public" } } } } }, promises: { type: "object", required: ["extraSeats", "punctualityBasisPoints", "additionalStops"], additionalProperties: false, properties: { extraSeats: { type: "integer", minimum: 0, maximum: Number.MAX_SAFE_INTEGER }, punctualityBasisPoints: { type: "integer", minimum: 0, maximum: 10000 }, additionalStops: { type: "integer", minimum: 0, maximum: 0 } } } } } } },
     async (request, reply) => {
       const identity = request.identity;
       if (identity === undefined) return reply.code(401).send({ error: "Keine Identität." });
@@ -1989,6 +1999,7 @@ export function buildApp(deps: AppDependencies): FastifyInstance {
         let punctual = 0;
         let cancellations = 0;
         let missingSeats = 0;
+        let minimumSeatsProvided: number | undefined;
         let missedConnections = 0;
         let trainKm = 0n;
         let costCents = 0n;
@@ -2005,6 +2016,11 @@ export function buildApp(deps: AppDependencies): FastifyInstance {
           const dayPunctual = Number(trainRuns["punctual"] ?? 0);
           const dayCancellations = Number(trainRuns["cancelled"] ?? 0);
           const dayMissingSeats = Number(trainRuns["missingSeats"] ?? 0);
+          if (contract.qualityPromises !== undefined && contract.qualityPromises.extraSeats > 0) {
+            const daySeats = trainRuns["minimumSeatsProvided"];
+            if (typeof daySeats !== "number" || !Number.isSafeInteger(daySeats) || daySeats < 0) throw new Error("Serverseitiger Betriebsbericht besitzt keinen Nachweis der zugesagten Sitzplatzkapazitaet.");
+            minimumSeatsProvided = Math.min(minimumSeatsProvided ?? daySeats, daySeats);
+          }
           const dayMissedConnections = Number(trainRuns["missedConnections"] ?? 0);
           const dayTrainKm = BigInt(String(trainRuns["trainKm"] ?? "0"));
           const dayCosts = BigInt(String(settlements["costCents"] ?? "0"));
@@ -2035,7 +2051,7 @@ export function buildApp(deps: AppDependencies): FastifyInstance {
           ...(costCents === 0n ? [] : [{ amountCents: costCents, costType: "administration" as const, costCentreId: contract.lotId, reference }]),
           ...(contractPenaltyCents === 0n ? [] : [{ amountCents: contractPenaltyCents, costType: "penalty" as const, costCentreId: contract.lotId, reference }]),
         ];
-        const settled = settleContractPeriod(state, { commandId: request.body.commandId, contractId: request.params.contractId, period, at: periodEndS, performance: { trainKm, punctualityBasisPoints, cancellations, missingSeats, missedConnections, evidence: ["vehicles", "personnel", "paths", ...evidence] }, costs });
+        const settled = settleContractPeriod(state, { commandId: request.body.commandId, contractId: request.params.contractId, period, at: periodEndS, performance: { trainKm, minimumSeatsProvided, punctualityBasisPoints, cancellations, missingSeats, missedConnections, evidence: ["vehicles", "personnel", "paths", ...evidence] }, costs });
         await persistEconomyTransition(deps.db, { expectedRevision: state.revision, state: settled.state, effects: settled.effects, committedAt: new Date(epoch.getTime() + periodEndS * 1_000), enqueuedAt: economyQueueClock() });
         return reply.code(201).send(encodeEconomyValue(settled.result));
       } catch (error) {
@@ -3003,7 +3019,8 @@ export function buildApp(deps: AppDependencies): FastifyInstance {
     const rows = await deps.db.select({ world: worlds, profile: alphaWorldProfiles })
       .from(worlds)
       .innerJoin(alphaWorldProfiles, eq(alphaWorldProfiles.worldId, worlds.id))
-      .where(and(eq(worlds.worldKind, "public"), eq(worlds.lifecycleStatus, "active"), eq(alphaWorldProfiles.state, "running")))
+      .where(and(eq(worlds.worldKind, "public"), eq(worlds.lifecycleStatus, "active"), eq(alphaWorldProfiles.state, "running"),
+        deps.worldScope === undefined ? undefined : eq(worlds.id, deps.worldScope.worldId)))
       .orderBy(asc(worlds.name), asc(worlds.id));
     const now = deps.publicWorldClock?.() ?? new Date();
     if (Number.isNaN(now.getTime())) throw new RangeError("Weltvertragszeit ist ungueltig.");
@@ -3169,6 +3186,7 @@ export function buildApp(deps: AppDependencies): FastifyInstance {
     async (request, reply) => {
       const identity = request.identity;
       if (identity === undefined) return reply.code(401).send({ error: "Keine Identität." });
+      if (deps.worldScope !== undefined) return reply.code(409).send({ code: "dedicated_world_server_required", error: "Eine weitere Spielwelt braucht einen eigenen Server und eine eigene Subdomain." });
       try {
         const entitlements = await activeEntitlementsForSubject(deps.db, identity.keycloakSubject);
         assertPrivateWorldEntitlement(entitlements.map((record) => ({ subject: record.keycloakSubject, productKind: record.productKind, status: record.status, validFrom: record.validFrom, validUntil: record.validUntil ?? undefined, quantity: Number(record.quantity) })));
@@ -3247,7 +3265,8 @@ export function buildApp(deps: AppDependencies): FastifyInstance {
       return reply.code(401).send({ error: "Keine Identität." });
     }
     const memberships = await listAccountsForSubject(deps.db, identity.keycloakSubject);
-    return reply.send(memberships);
+    const allowed = deps.worldScope === undefined ? undefined : await serverWorldIds(deps.db, deps.worldScope);
+    return reply.send(allowed === undefined ? memberships : memberships.filter((row) => allowed.has(row.worldId)));
   });
 
   // ---------------------------------------------------------------------
@@ -3411,7 +3430,8 @@ export function buildApp(deps: AppDependencies): FastifyInstance {
       return reply.code(401).send({ error: "Keine Identität." });
     }
     const eigene = await listOperatorsForAccount(deps.db, identity.keycloakSubject);
-    return reply.send(eigene);
+    const allowed = deps.worldScope === undefined ? undefined : await serverWorldIds(deps.db, deps.worldScope);
+    return reply.send(allowed === undefined ? eigene : eigene.filter((row) => allowed.has(row.worldId)));
   });
 
   // ---------------------------------------------------------------------
@@ -3440,8 +3460,8 @@ export function buildApp(deps: AppDependencies): FastifyInstance {
           lte(disruptionPolicies.validFromS, request.query.atS ?? 0),
         )).orderBy(desc(disruptionPolicies.validFromS), desc(disruptionPolicies.version)).limit(1);
         return policy === undefined
-          ? reply.code(404).send({ error: "Für diese Welt ist keine wirksame Störungsrichtlinie veröffentlicht." })
-          : reply.send(policy);
+          ? reply.code(404).send({ error: "Für diese Welt ist keine wirksame Störungsrichtlinie veröffentlicht.", dailyRestrictions: deps.dailyRestrictionDiagnostics?.(request.params.worldId) })
+          : reply.send({ ...policy, dailyRestrictions: deps.dailyRestrictionDiagnostics?.(request.params.worldId) });
       } catch (error) {
         return sendError(reply, error);
       }
@@ -3518,6 +3538,18 @@ export function buildApp(deps: AppDependencies): FastifyInstance {
           .where(eq(disruptionPolicies.worldId, request.params.worldId))
           .orderBy(desc(disruptionPolicies.version)).limit(1);
         const version = (latest?.version ?? 0) + 1;
+        try { deps.validateDailyRestrictionPolicy?.(request.params.worldId, {
+          version,
+          plannedWorksMode: request.body.plannedWorksMode,
+          operationalIncidentMode: request.body.operationalIncidentMode,
+          providerSetId: request.body.providerSetId ?? null,
+          simulationProfile: request.body.simulationProfile,
+          rulesetVersion: request.body.rulesetVersion,
+          validFromMs: request.body.effectiveAtS * 1_000,
+          validUntilMs: null,
+        }); } catch {
+          return reply.code(400).send({ error: "Die Stoerungsrichtlinie besitzt keinen gueltigen nativen La-Generatorvertrag." });
+        }
         const [saved] = await deps.db.insert(disruptionPolicies).values({
           worldId: request.params.worldId,
           version,
@@ -3741,6 +3773,9 @@ export function buildApp(deps: AppDependencies): FastifyInstance {
         await requireOperatorOwner(deps.db, request.params.worldId, request.params.operatorId, identity.keycloakSubject);
         const account = await getAccount(deps.db, { worldId: request.params.worldId, keycloakSubject: identity.keycloakSubject });
         if (account === undefined) throw new AuthorizationError("Kein aktiver Zugang zu dieser Welt.");
+        if (deps.dispatchConsumerReady?.(request.params.worldId) !== true) {
+          return reply.code(503).send({ code: "dispatch_consumer_unavailable", error: "Der Betriebsprogramm-Verbraucher ist für diese Welt noch nicht angebunden. Der gespeicherte Entwurf bleibt unverändert." });
+        }
         const version = Number(request.params.version);
         const result = await deps.db.transaction(async (tx) => {
           const [target] = await tx.select().from(operatingProgramVersions).where(and(
@@ -3811,6 +3846,9 @@ export function buildApp(deps: AppDependencies): FastifyInstance {
         await requireOperatorOwner(deps.db, request.params.worldId, request.params.operatorId, identity.keycloakSubject);
         const account = await getAccount(deps.db, { worldId: request.params.worldId, keycloakSubject: identity.keycloakSubject });
         if (account === undefined) throw new AuthorizationError("Kein aktiver Zugang zu dieser Welt.");
+        if (deps.dispatchConsumerReady?.(request.params.worldId) !== true) {
+          return reply.code(503).send({ code: "dispatch_consumer_unavailable", error: "Der Betriebsprogramm-Verbraucher ist für diese Welt noch nicht angebunden. Der Override wurde nicht eingereiht." });
+        }
         const decisions = projectOperations(await worldEventLog(deps.db, request.params.worldId).list(), request.params.operatorId).decisions;
         if (!decisions.some((entry) => entry.decisionId === request.params.decisionId)) return reply.code(404).send({ error: "Entscheidung im EVU-Ereignisstrom nicht gefunden." });
         const submittedAt = await cooperationSimulationSecond(request.params.worldId);
@@ -3845,6 +3883,9 @@ export function buildApp(deps: AppDependencies): FastifyInstance {
       try {
         await requireOperatorOwner(deps.db, request.params.worldId, request.params.operatorId, identity.keycloakSubject);
         if (request.body.sourceAfter >= request.body.sourceThrough) return reply.code(400).send({ error: "Rücktest-Zeitraum ist leer." });
+        if (deps.dispatchConsumerReady?.(request.params.worldId) !== true) {
+          return reply.code(503).send({ code: "dispatch_consumer_unavailable", error: "Der Betriebsprogramm-Verbraucher ist für diese Welt noch nicht angebunden. Der Rücktest wurde nicht eingereiht." });
+        }
         const account = await getAccount(deps.db, { worldId: request.params.worldId, keycloakSubject: identity.keycloakSubject });
         if (account === undefined) throw new AuthorizationError("Kein aktiver Zugang zu dieser Welt.");
         const [version] = await deps.db.select().from(operatingProgramVersions).where(and(eq(operatingProgramVersions.worldId, request.params.worldId), eq(operatingProgramVersions.operatorId, request.params.operatorId), eq(operatingProgramVersions.version, request.body.programVersion))).limit(1);

@@ -4,9 +4,8 @@ import { validateDatabaseRollbackProof } from "../tiles/map-release-build-eviden
 import {
   DATABASE_CUTOVER_CONSTRAINTS,
   DATABASE_CUTOVER_GUARDS,
-  DATABASE_AUTHORITATIVE_TABLES,
-  DATABASE_AUTHORITATIVE_TABLE_SET_SHA256,
   DATABASE_WORLD_HISTORY_BINDINGS,
+  databaseAuthoritativeCatalog,
   normalizeDatabaseDefinition,
 } from "./database-cutover-schema-contract.mjs";
 import {
@@ -79,7 +78,8 @@ async function tableFingerprint(sql, table, filterColumns = [], parameters = [])
   return Object.freeze({ table, rowCount: String(row.row_count), rowsSha256: row.rows_sha256 });
 }
 
-async function inspectAuthoritativeDetails(sql) {
+async function inspectAuthoritativeDetails(sql, migrationCount) {
+  const catalog = databaseAuthoritativeCatalog(migrationCount);
   const tableRows = await sql.unsafe(`
     select relation.relname as table_name
     from pg_class as relation
@@ -97,12 +97,12 @@ async function inspectAuthoritativeDetails(sql) {
   `);
   const names = tableRows.map((row) => row.table_name);
   invariant(
-    JSON.stringify(names) === JSON.stringify(DATABASE_AUTHORITATIVE_TABLES),
-    "Der autoritative Tabellenkatalog weicht vom eingecheckten Schema-33-Sollvertrag ab.",
+    JSON.stringify(names) === JSON.stringify(catalog.tables),
+    `Der autoritative Tabellenkatalog weicht vom eingecheckten Schema-${migrationCount}-Sollvertrag ab.`,
   );
   const tableStates = [];
   for (const name of names) tableStates.push(await tableFingerprint(sql, name));
-  return Object.freeze({ tableStates });
+  return Object.freeze({ tableStates, migrationCount });
 }
 
 function rowCountFor(details, table) {
@@ -112,14 +112,15 @@ function rowCountFor(details, table) {
 }
 
 function authoritativeHead(details) {
+  const { tableStates, migrationCount } = details;
   return Object.freeze({
     schema: AUTHORITATIVE_HEAD_SCHEMA,
     tableCount: details.tableStates.length,
-    tableSetSha256: DATABASE_AUTHORITATIVE_TABLE_SET_SHA256,
+    tableSetSha256: databaseAuthoritativeCatalog(migrationCount).tableSetSha256,
     worldCount: nonnegativeSafeInteger(rowCountFor(details, "worlds"), "authoritativeHead.worldCount"),
     regionalStateCount: nonnegativeSafeInteger(rowCountFor(details, "regional_simulation_states"), "authoritativeHead.regionalStateCount"),
     domainEventCount: rowCountFor(details, "domain_events"),
-    stateHash: canonicalSha256({ schema: AUTHORITATIVE_HEAD_SCHEMA, ...details }),
+    stateHash: canonicalSha256({ schema: AUTHORITATIVE_HEAD_SCHEMA, tableStates }),
   });
 }
 
@@ -141,13 +142,14 @@ export async function inspectMigratedKeycloakState(sql, {
 }
 
 export async function inspectLiveDatabaseRollbackSnapshot(sql, { inspectKeycloakState = inspectMigratedKeycloakState } = {}) {
+  const migrationHeadRows = await sql.unsafe(`
+    select id::int as id, hash, created_at::text as created_at
+    from drizzle.__drizzle_migrations
+    order by id
+  `);
   const [identityRows, migrationRows, constraintRows, guardRows, details, regionalCountRows, keycloakState] = await Promise.all([
     sql.unsafe(`select database_id::text as database_id from zugfolge_database_identity where singleton = 1`),
-    sql.unsafe(`
-      select id::int as id, hash, created_at::text as created_at
-      from drizzle.__drizzle_migrations
-      order by id
-    `),
+    Promise.resolve(migrationHeadRows),
     sql.unsafe(`
       select
         con.conname as name,
@@ -211,7 +213,7 @@ export async function inspectLiveDatabaseRollbackSnapshot(sql, { inspectKeycloak
         )
       order by trigger.tgname
     `),
-    inspectAuthoritativeDetails(sql),
+    inspectAuthoritativeDetails(sql, migrationHeadRows.length),
     sql.unsafe(`
       select
         count(*)::int as total,

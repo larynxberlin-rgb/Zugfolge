@@ -53,7 +53,7 @@ import {
   type EconomyDatabase,
   type FleetMobilizationSnapshot,
 } from "@zugfolge/economy";
-import { verifyIdentityToken, type IdentityDatabase } from "@zugfolge/identity";
+import { requestWorldAccess, verifyIdentityToken, type IdentityDatabase } from "@zugfolge/identity";
 import {
   createGtfsPlanningEnvelope,
   GTFS_PLANNING_SCHEMA,
@@ -83,6 +83,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { FastifyInstance } from "fastify";
 
 import { buildApp } from "./app.js";
+import { assertServerWorldDatabase, serverWorldScope } from "./server-world-scope.js";
 import {
   createRegionalSimulationSchedulerHealthCheck,
   RegionalSimulationSchedulerMonitor,
@@ -368,6 +369,7 @@ beforeEach(async () => {
     verifyToken: verifyTokenForTest,
     livemap,
     simulationIngestToken: SIMULATION_INGEST_TOKEN,
+    dispatchConsumerReady: () => true,
     fleetIngestToken: FLEET_INGEST_TOKEN,
     cooperationSimulationSecond: async () => 100,
     odooWebhookStore: createOdooWebhookReceiptStore(db),
@@ -383,6 +385,27 @@ beforeEach(async () => {
 afterEach(async () => {
   await app.close();
   await client.close();
+});
+
+describe("Serverwelt und Subdomain", () => {
+  it("begrenzt echte Routen und Listen trotz fremder DB-Welt und gueltigem Token", async () => {
+    const scope = serverWorldScope(WORLD_LHE, "https://elbe.zugfolge.test");
+    await expect(assertServerWorldDatabase(db, scope)).rejects.toThrow("Serverbindung");
+    for (const worldId of [WORLD_LHE, WORLD_MIDDLE_GERMANY]) {
+      await requestWorldAccess(db, { worldId, keycloakSubject: "kc-server-scope", displayName: "Weltbindung" });
+    }
+    await app.close();
+    app = buildApp({ db, verifyToken: verifyTokenForTest, worldScope: scope, logger: false });
+    const headers = { host: "elbe.zugfolge.test", authorization: `Bearer ${await sign("kc-server-scope", "Weltbindung")}` };
+    expect((await app.inject({ url: `/worlds/${WORLD_LHE}/access`, headers })).statusCode).toBe(200);
+    expect((await app.inject({ url: `/worlds/${WORLD_MIDDLE_GERMANY}/access`, headers })).statusCode).toBe(404);
+    expect((await app.inject({ url: "/me/worlds", headers })).json<{ worldId: string }[]>().map((row) => row.worldId)).toEqual([WORLD_LHE]);
+    expect((await app.inject({ url: "/public-world-contracts", headers })).json<{ worldId: string }[]>().map((row) => row.worldId)).toEqual([WORLD_LHE]);
+    expect((await app.inject({ url: "/me/worlds", headers: { ...headers, host: "spree.zugfolge.test", "x-forwarded-host": "elbe.zugfolge.test" } })).statusCode).toBe(421);
+    expect((await app.inject({ method: "POST", url: "/private-worlds", headers, payload: { name: "Zweite Welt", schedulePeriodWeeks: 4, epoch: "2026-01-01T00:00:00Z" } })).json()).toMatchObject({ code: "dedicated_world_server_required" });
+    expect((await app.inject({ url: "/health", headers: { host: "127.0.0.1:3000" } })).statusCode).toBe(200);
+    expect(await db.select().from(worlds)).toHaveLength(2);
+  });
 });
 
 describe("M13 signierter Odoo-Receiver", () => {
@@ -637,6 +660,24 @@ describe("M7 Betriebsprogramm und Betriebszentrale", () => {
     expect(saved.statusCode).toBe(201);
     expect(saved.json()).toMatchObject({ worldId: WORLD_LHE, operatorId, version: 1, status: "draft" });
     expect(saved.json<{ checksum: string }>().checksum).toMatch(/^[a-f0-9]{64}$/);
+
+    const withoutConsumer = buildApp({ db, verifyToken: verifyTokenForTest });
+    try {
+      const blockedRequests = [
+        { url: `${base}/operating-programs/1/activate`, payload: {} },
+        { url: `${base}/operations/decisions/decision-1/override`, payload: { idempotencyKey: "unavailable-override", action: "request_reroute", reason: "Begründeter Eingriff ohne Consumer" } },
+        { url: `${base}/operating-programs/backtests`, payload: { idempotencyKey: "unavailable-backtest", programVersion: 1, sourceAfter: 0, sourceThrough: 3 } },
+      ];
+      for (const request of blockedRequests) {
+        const rejected = await withoutConsumer.inject({ method: "POST", ...request, headers: { authorization: `Bearer ${ownerToken}` } });
+        expect(rejected.statusCode).toBe(503);
+        expect(rejected.json()).toMatchObject({ code: "dispatch_consumer_unavailable" });
+      }
+      const unchanged = await withoutConsumer.inject({ method: "GET", url: `${base}/operating-programs`, headers: { authorization: `Bearer ${ownerToken}` } });
+      expect(unchanged.json()).toMatchObject([{ version: 1, status: "draft" }]);
+      const pending = await client.query<{ count: number }>("select count(*)::int as count from simulation_commands where world_id = $1", [WORLD_LHE]);
+      expect(pending.rows[0]?.count).toBe(0);
+    } finally { await withoutConsumer.close(); }
 
     const activated = await app.inject({ method: "POST", url: `${base}/operating-programs/1/activate`, headers: { authorization: `Bearer ${ownerToken}` } });
     expect(activated.statusCode).toBe(202);
@@ -2626,6 +2667,9 @@ describe("Datenschutz (M2.6)", () => {
     });
     expect(eraseResponse.statusCode).toBe(200);
     expect(eraseResponse.json<{ displayName: string }>().displayName).toBe("Gelöschtes Konto");
+    const afterErase = await app.inject({ method: "GET", url: `/worlds/${WORLD_LHE}/me/export`, headers: { authorization: `Bearer ${token}` } });
+    expect(afterErase.statusCode).toBe(200);
+    expect(afterErase.json()).toMatchObject({ schemaVersion: "zugfolge-personal-data-export/v2", worldAccessStatus: "revoked", worldAccess: { acceptedWorldContractHash: TEST_WORLD_CONTRACT_HASH }, account: { erasedAt: expect.any(String) } });
 
     const reaccessResponse = await app.inject({
       method: "POST",

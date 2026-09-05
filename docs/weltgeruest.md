@@ -270,7 +270,10 @@ den Rest der Rechte nach.
 **Auskunft.** `exportAccountData` bündelt Konto (samt Rollen), den Status des
 Weltzugangs, alle in dieser Welt gegründeten EVU und das vollständige
 Postfach zu einem `PersonalDataExport` — was das Spielsystem über ein Konto
-in einer Welt weiß, an einer Stelle, maschinenlesbar.
+in einer Welt weiß, an einer Stelle, maschinenlesbar. Der versionierte
+Export `zugfolge-personal-data-export/v2` enthält außerdem eigene
+Weltvertragsbestätigungen, Tutorial-Sitzungen und kaufmännische Berechtigungen.
+Die authentifizierte Selbst-Auskunft bleibt nach Entzug des Weltzugangs möglich.
 
 **Löschung.** `eraseAccountData` anonymisiert den Anzeigenamen
 (`"Gelöschtes Konto"`), setzt `accounts.erasedAt` und entzieht den
@@ -301,11 +304,13 @@ Datenkategorie eine Frist — oder ausdrücklich keine:
 | Event-Log | unbefristet | Audit- und Replay-Grundlage der Welt (`architektur.md` 2) |
 | Ledger | unbefristet | gesetzliche Aufbewahrungspflicht für Geschäftsunterlagen; ohnehin unveränderlich (M2.4) |
 
-Ein automatischer Räumlauf, der diese Fristen durchsetzt, ist nicht Teil
-dieses Milestones — dafür fehlt vor der Betriebsreife (M9.5) ein
-Scheduler. `retentionDeadline` macht die Frist trotzdem schon jetzt
-nachrechenbar und testbar (`packages/privacy/src/retention.test.ts`), statt
-sie nur als Prosa zu behaupten.
+Der Produktionsserver führt täglich den Kontopurge nach der 90-Tage-Frist
+und den Postfach-Räumlauf nach 365 Tagen aus. Wiederholte Löschanträge
+verschieben den ursprünglichen Zeitpunkt nicht. Abgelaufene Postfachinhalte
+werden entfernt; ein minimierter technischer Deduplizierungsbeleg verhindert,
+dass ein späterer Zustell-Retry den Inhalt wiederherstellt. Fristen und
+Räumlauf sind mit expliziter Prüfzeit testbar. Der tatsächliche Betrieb und
+die Überwachung dieses Jobs im Zielstack bleiben Teil der M9-Betriebsdrills.
 
 **Warum Ledger und Event-Log nicht Teil der Löschung sind.** Beide sind
 unveränderlich (M2.2, M2.4) und tragen keine natürliche Person — der Ledger

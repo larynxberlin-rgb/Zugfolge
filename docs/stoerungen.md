@@ -34,6 +34,52 @@ keine Doppelzählung mit dem Provider. Personalausfälle, Fahrzeugverfügbarkeit
 oder andere Ursachen, die bereits aus einem autoritativen Spielzustand
 entstehen, bleiben dessen Ereignisse und werden ebenfalls nicht dupliziert.
 
+### Operational-v2-Anschluss des Tagesmodells
+
+`zugfolge-operational-daily-restrictions/v1` bindet Welt, Region, den Seed aus
+dem unveränderten signierten Blueprint, die externe Infrastrukturbindung,
+die validierten Laufwegversionen und eine ausdrücklich veröffentlichte
+`DisruptionPolicy`. Die native Grenze erzeugt
+`zugfolge-operational-daily-restrictions-generated/v1`; TypeScript zieht keine
+Zufallswerte und entscheidet keine Generatorwirkung. Die Sekunden der
+Policy werden an der Plattformgrenze einmal exakt in Weltmillisekunden
+umgerechnet. Die Tagesgrenze ist ein ganzzahliges Vielfaches von 86.400.000 ms.
+
+Der produktive Scheduler verwendet für La und Zugprogramm denselben
+zeitlichen Katalog. Jede unterstützte La wird mit stabiler Kennung aktiviert
+und zum nativen Ablaufzeitpunkt aufgehoben. Bis zu zwei vorherige Modelltage
+werden für tagesübergreifende Abläufe erneut deterministisch abgeleitet;
+dadurch bleiben Stop/Start, Catch-up und Policywechsel nachvollziehbar.
+Die Tagesergebnisse werden nur begrenzt pro Region zwischengespeichert.
+Abgelaufene Folgepolicies aktivieren keine ältere Policy erneut.
+
+Es gibt keine implizite Initialpolicy für bereits signierte Welten. Der erste
+Policyantrag und jede Folgeversion durchlaufen die vorhandene Autorisierung,
+Veröffentlichung und Fahrplanstichtagsgrenze. Zusätzlich prüft die native
+Generierungsgrenze das vollständige Generatorprofil vor der Speicherung.
+`MANUAL` in beiden Kanälen erzeugt keine La. Eine fehlende wirksame Policy
+erscheint als `missing-policy` in der weltisolierten Diagnose von
+`GET /worlds/:worldId/disruptions/policy`; sie wird weder durch einen
+Default noch durch einen Provider-Fallback ersetzt.
+
+Der zunächst angeschlossene Operational-v2-Vertrag aktiviert ausschließlich
+numerische Langsamfahrstellen für beide Richtungen und alle Verkehrsarten
+ohne eingeschränkte Zugmenge. Nur diese Wirkung lässt sich gegen die
+vorhandenen physischen Kanten ohne zusätzliche Fachannahmen darstellen.
+Der deterministische Ressourcenbezug `sorted-operational-edges/v1` verwendet
+die Kanten der validierten Laufwege; mangels freigegebener Belastungswerte
+weist er `loadBasisPoints=0` ausdrücklich aus.
+
+Alle übrigen generierten Wirkungen oder Richtung-/Verkehrsartscopes bleiben
+in `unsupportedRestrictions` mit unverändertem Effekt, Scope, Herkunft und
+konkretem Ablehnungsgrund sichtbar. Sie werden nicht als globale Sperre
+oder als wirksame Langsamfahrstelle ausgegeben. Der Status
+`partially-supported` kennzeichnet diese Abnahmegrenze. Für vollständige
+Scope- und Wirkungsabdeckung bleibt Issue #516 offen. Jeder native
+Generierungsbeleg nennt Modell, Kalibrierung, Seed, Infrastruktur,
+Regelversion und Ursachencodes; die Diagnose ergänzt die committed
+La-Projektion, ersetzt sie aber nicht.
+
 ## 2. Entstehung und Wirkung
 
 Der Generator verwendet ausschließlich die benannten Seed-Substreams

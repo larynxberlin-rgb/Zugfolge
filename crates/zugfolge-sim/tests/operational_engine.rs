@@ -337,6 +337,350 @@ fn world() -> OperationalWorld {
     world_with_release(release())
 }
 
+fn speed_profile_release(first_limit: u32, second_limit: u32) -> OperationalInfraRelease {
+    let mut infra = release();
+    for route in infra.route_versions.values_mut() {
+        route.legs[0].speed_limit_mmps = first_limit;
+        route.legs[1].speed_limit_mmps = second_limit;
+        route.legs[1].edge_entry_mm = 600_000;
+        for leg in &mut route.legs {
+            leg.gradient_per_mille = 0;
+        }
+    }
+    infra.directed_edges.insert("edge:b".into(), 600_000);
+    infra.edge_geometries.get_mut("edge:b").unwrap()[1].edge_offset_mm = 600_000;
+    let lock = infra
+        .interlocking_routes
+        .get_mut("interlocking:train:b")
+        .unwrap();
+    lock.authority_end_route_mm = 660_000;
+    lock.release_after_tail_route_mm = 660_000;
+    infra
+}
+
+fn dispatched_profile_world(infra: OperationalInfraRelease) -> OperationalWorld {
+    let mut world = world_with_release(infra);
+    world
+        .materialize_train(
+            "t",
+            "RB 1",
+            "o",
+            MovementKind::Train,
+            "route:v1",
+            "formation:1",
+            0,
+            None,
+            false,
+        )
+        .unwrap();
+    world
+        .submit_dispatch_requests(&[DispatchRequest {
+            train_id: "t".into(),
+            interlocking_route_id: "interlocking:train".into(),
+            committed_rank: 0,
+            timetable_deviation_ms: 0,
+            passenger_impact: 0,
+            contractual_impact: 0,
+            network_impact: 0,
+            resource_consequence: 0,
+            recovery_rank: 0,
+            waiting_since_ms: 0,
+        }])
+        .unwrap();
+    world
+}
+
+#[test]
+fn newly_activated_lower_limit_on_an_upcoming_authorized_edge_stops_existing_motion() {
+    let mut world = dispatched_profile_world(speed_profile_release(20_000, 20_000));
+    world.advance_to(1_000).unwrap();
+    assert!(world.trains["t"].motion_segment.is_some());
+    assert!(
+        world.trains["t"]
+            .occupied_intervals
+            .iter()
+            .all(|interval| interval.edge_id != "edge:b")
+    );
+    let locks = world.route_locks.clone();
+    world
+        .activate_disruption(
+            "new-la",
+            OperationalDisruption::SpeedRestriction {
+                edge_id: "edge:b".into(),
+                maximum_speed_mmps: 1_000,
+            },
+        )
+        .unwrap();
+    assert!(world.trains["t"].motion_segment.is_none());
+    assert!(matches!(
+        world.trains["t"].motion_state,
+        MotionState::SafeStop { .. }
+    ));
+    assert_eq!(world.route_locks, locks);
+    world.verify_invariants().unwrap();
+}
+
+#[test]
+fn lower_vmax_is_reached_before_the_edge_in_both_directions() {
+    for reverse in [false, true] {
+        let mut infra = speed_profile_release(20_000, 1_000);
+        if reverse {
+            for route in infra.route_versions.values_mut() {
+                for leg in &mut route.legs {
+                    std::mem::swap(&mut leg.edge_entry_mm, &mut leg.edge_exit_mm);
+                    leg.direction = match leg.direction {
+                        Direction::Along => Direction::Against,
+                        Direction::Against => Direction::Along,
+                    };
+                }
+            }
+        }
+        let mut world = dispatched_profile_world(infra);
+        let mut replay = OperationalWorld::restore(&world.checkpoint()).unwrap();
+        let mut crossed = false;
+        for at in (0..=120_000).step_by(10) {
+            world.advance_to(at).unwrap();
+            let train = &world.trains["t"];
+            if let Some(segment) = &train.motion_segment {
+                let head = segment.position_at(at).unwrap();
+                if head >= 60_000 {
+                    crossed = true;
+                    assert!(
+                        segment.speed_at(at).unwrap() <= 1_000,
+                        "head={head}; segment={segment:?}"
+                    );
+                }
+            }
+        }
+        assert!(crossed);
+        replay.advance_to(120_000).unwrap();
+        assert_eq!(world.state_hash(), replay.state_hash());
+        world.verify_invariants().unwrap();
+    }
+}
+
+#[test]
+fn higher_vmax_waits_for_the_tail_and_existing_overspeed_brakes() {
+    let mut world = dispatched_profile_world(speed_profile_release(1_000, 20_000));
+    let mut accelerated = false;
+    for at in (0..=120_000).step_by(10) {
+        world.advance_to(at).unwrap();
+        if let Some(segment) = &world.trains["t"].motion_segment {
+            let head = segment.position_at(at).unwrap();
+            let speed = segment.speed_at(at).unwrap();
+            if head < 70_000 {
+                assert!(speed <= 1_000, "higher limit before tail: {segment:?}");
+            }
+            if head > 70_000 && speed > 1_000 {
+                accelerated = true;
+            }
+        }
+    }
+    assert!(accelerated);
+    let mut overspeed = dispatched_profile_world(speed_profile_release(1_000, 20_000));
+    overspeed.trains.get_mut("t").unwrap().speed_mmps = 5_000;
+    assert!(overspeed.plan_motion("t").unwrap().acceleration_mmps2 < 0);
+}
+
+#[test]
+fn gradient_changes_dynamics_with_direction_and_rejects_impossible_profiles() {
+    fn segment(gradient: i16, reverse: bool) -> zugfolge_sim::operational::MotionSegment {
+        let mut infra = release();
+        for route in infra.route_versions.values_mut() {
+            for leg in &mut route.legs {
+                leg.gradient_per_mille = gradient;
+            }
+            if reverse {
+                let leg = &mut route.legs[0];
+                std::mem::swap(&mut leg.edge_entry_mm, &mut leg.edge_exit_mm);
+                leg.direction = Direction::Against;
+            }
+        }
+        let mut world = world_with_release(infra);
+        world
+            .materialize_train(
+                "t",
+                "RB 1",
+                "o",
+                MovementKind::Train,
+                "route:v1",
+                "formation:1",
+                0,
+                None,
+                false,
+            )
+            .unwrap();
+        world.lock_route("t", "interlocking:train").unwrap();
+        world.plan_motion("t").unwrap()
+    }
+    let uphill = segment(40, false);
+    let level = segment(0, false);
+    let downhill = segment(-40, false);
+    assert!(uphill.acceleration_mmps2 < level.acceleration_mmps2);
+    assert!(level.acceleration_mmps2 < downhill.acceleration_mmps2);
+    assert_eq!(
+        uphill.acceleration_mmps2,
+        segment(-40, true).acceleration_mmps2
+    );
+    assert_ne!(uphill.valid_until_ms, downhill.valid_until_ms);
+    let mut invalid = release();
+    invalid.route_versions.get_mut("route:v1").unwrap().legs[0].gradient_per_mille = 101;
+    assert!(OperationalWorld::new("w", "r", 0, invalid).is_err());
+}
+
+#[test]
+fn shunting_has_its_own_limit_in_the_actual_motion_projection() {
+    for gradient in [0, 40, -40] {
+        let mut infra = speed_profile_release(20_000, 20_000);
+        for route in infra.route_versions.values_mut() {
+            for leg in &mut route.legs {
+                leg.gradient_per_mille = if leg.direction == Direction::Along {
+                    gradient
+                } else {
+                    -gradient
+                };
+            }
+        }
+        infra
+            .interlocking_routes
+            .get_mut("interlocking:shunting")
+            .unwrap()
+            .authority_end_route_mm = 660_000;
+        infra
+            .interlocking_routes
+            .get_mut("interlocking:shunting")
+            .unwrap()
+            .release_after_tail_route_mm = 660_000;
+        let mut world = world_with_release(infra);
+        world
+            .materialize_train(
+                "t",
+                "RB 1",
+                "o",
+                MovementKind::Shunting,
+                "route:v1",
+                "formation:1",
+                10_000,
+                None,
+                false,
+            )
+            .unwrap();
+        world.lock_route("t", "interlocking:shunting").unwrap();
+        world.plan_motion("t").unwrap();
+        let mut reached_limit = false;
+        for at in (0..=50_000).step_by(10) {
+            world.advance_to(at).unwrap();
+            if let Some(segment) = &world.trains["t"].motion_segment {
+                let speed = segment.speed_at(at).unwrap();
+                assert!(
+                    speed <= zugfolge_sim::operational::SHUNTING_MAXIMUM_SPEED_MMPS,
+                    "{segment:?}"
+                );
+                reached_limit |= speed == zugfolge_sim::operational::SHUNTING_MAXIMUM_SPEED_MMPS;
+            }
+        }
+        assert!(reached_limit);
+        world.verify_invariants().unwrap();
+    }
+}
+
+#[test]
+fn moving_handover_transfers_events_locks_vehicles_and_survives_retries_and_restore() {
+    let mut source = dispatched_profile_world(speed_profile_release(20_000, 20_000));
+    let mut target = OperationalWorld::new(
+        "world:1",
+        "region:b",
+        0,
+        speed_profile_release(20_000, 20_000),
+    )
+    .unwrap();
+    let mut handover = source
+        .begin_handover("h", "t", "region:b", set(&["boundary:west"]))
+        .unwrap();
+    source = OperationalWorld::restore(&source.checkpoint()).unwrap();
+    let before = source.state_hash();
+    assert!(source.advance_to(1).is_err());
+    assert!(source.safe_stop("t", "during-handover").is_err());
+    assert!(
+        source
+            .activate_disruption(
+                "during-handover",
+                OperationalDisruption::SpeedRestriction {
+                    edge_id: "edge:a".into(),
+                    maximum_speed_mmps: 1_000
+                }
+            )
+            .is_err()
+    );
+    assert_eq!(before, source.state_hash());
+    target.accept_handover(&mut handover).unwrap();
+    let accepted = target.state_hash();
+    target.accept_handover(&mut handover).unwrap();
+    assert_eq!(accepted, target.state_hash());
+    target = OperationalWorld::restore(&target.checkpoint()).unwrap();
+    source.finish_handover(&handover).unwrap();
+    let finished = source.state_hash();
+    source.finish_handover(&handover).unwrap();
+    assert_eq!(finished, source.state_hash());
+    assert!(!source.vehicles.contains_key("vehicle:1"));
+    assert!(source.route_locks.is_empty());
+    assert!(target.vehicles.contains_key("vehicle:1"));
+    target.advance_to(60_000).unwrap();
+    assert!(target.trains["t"].head_route_mm > 0);
+    assert!(target.trains["t"].occupied_blocks.contains("boundary:west"));
+    source.verify_invariants().unwrap();
+    target.verify_invariants().unwrap();
+    OperationalWorld::restore(&source.checkpoint()).unwrap();
+    OperationalWorld::restore(&target.checkpoint()).unwrap();
+}
+
+#[test]
+fn handover_rejects_foreign_world_release_time_route_and_inventory_atomically() {
+    let mut source = dispatched_profile_world(speed_profile_release(20_000, 20_000));
+    let original = source
+        .begin_handover("h", "t", "region:b", set(&["boundary:west"]))
+        .unwrap();
+    for case in 0..6 {
+        let mut infra = speed_profile_release(20_000, 20_000);
+        if case == 1 {
+            infra.id = "foreign-release".into();
+        }
+        if case == 3 {
+            infra.route_versions.get_mut("route:v1").unwrap().legs[0].speed_limit_mmps = 10_000;
+        }
+        let mut target = OperationalWorld::new(
+            if case == 0 {
+                "foreign-world"
+            } else {
+                "world:1"
+            },
+            "region:b",
+            if case == 2 { 1 } else { 0 },
+            infra,
+        )
+        .unwrap();
+        if case == 4 {
+            target
+                .register_vehicle_type(vehicle_type("type:short", 10_000), true)
+                .unwrap();
+            target
+                .register_vehicle(vehicle("vehicle:1", "type:short"))
+                .unwrap();
+        }
+        let mut handover = original.clone();
+        if case == 5 {
+            handover.source_event_sequence += 1;
+        }
+        let before = target.state_hash();
+        assert!(
+            target.accept_handover(&mut handover).is_err(),
+            "case={case}"
+        );
+        assert_eq!(before, target.state_hash());
+        assert!(!handover.acknowledged);
+    }
+}
+
 fn program_template(
     id: &str,
     movement_kind: MovementKind,
@@ -896,6 +1240,73 @@ fn advance_until(world: &mut OperationalWorld, train_id: &str, present: bool) {
         world.advance_to(next).unwrap();
     }
     panic!("erwarteter Zugzustand wurde nicht erreicht");
+}
+
+#[test]
+fn queued_chain_reuses_only_a_proven_ancestor_number_then_activates_atomically() {
+    let mut world = world_with_release(continuation_release(false));
+    world
+        .materialize_train(
+            "source",
+            "RB 101",
+            "operator:1",
+            MovementKind::Train,
+            "route:continuation:source",
+            "formation:1",
+            0,
+            None,
+            false,
+        )
+        .unwrap();
+    let first = continuation(
+        "first",
+        "source",
+        "successor",
+        "RB 102",
+        "route:continuation:successor",
+        "formation:1",
+        10_000,
+        "continuation:successor:exit",
+        0,
+        0,
+        MovementContinuity::SameDirection,
+    );
+    let second = continuation(
+        "second",
+        "successor",
+        "third",
+        "RB 101",
+        "route:continuation:third",
+        "formation:1",
+        10_000,
+        "continuation:third:exit",
+        0,
+        0,
+        MovementContinuity::SameDirection,
+    );
+    let before = world.state_hash();
+    assert_eq!(
+        world.queue_movement_continuation(second.clone()),
+        Err(OperationalError::MovementContinuationTargetOccupied(
+            "third".into()
+        ))
+    );
+    assert_eq!(world.state_hash(), before);
+    world.queue_movement_continuation(first).unwrap();
+    world.queue_movement_continuation(second.clone()).unwrap();
+    world.queue_movement_continuation(second).unwrap();
+    let mut replay = OperationalWorld::restore(&world.checkpoint()).unwrap();
+    for candidate in [&mut world, &mut replay] {
+        candidate
+            .submit_dispatch_requests(&[dispatch_request("source", "continuation:source", 0)])
+            .unwrap();
+        advance_until(candidate, "third", true);
+        assert!(!candidate.trains.contains_key("source"));
+        assert!(!candidate.trains.contains_key("successor"));
+        assert_eq!(candidate.trains["third"].train_number, "RB 101");
+        candidate.verify_invariants().unwrap();
+    }
+    assert_eq!(world.state_hash(), replay.state_hash());
 }
 
 #[test]

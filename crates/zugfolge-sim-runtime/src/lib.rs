@@ -8,5 +8,6 @@
     reason = "die versionierten JSON-Felder werden durch Vertragstests beschrieben"
 )]
 
+pub mod daily_restrictions;
 mod initialization_hash;
 pub mod operational_runtime;

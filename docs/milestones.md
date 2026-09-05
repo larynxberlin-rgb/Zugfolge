@@ -6,6 +6,14 @@ S / M / L / XL. Keine Kalenderdaten.
 Jeder Milestone endet mit einem **Beweis** — einem vorzeigbaren Zustand, meist
 einem Spielerlebnis, nicht einer technischen Eigenschaft.
 
+Diese Datei ist die kanonische Milestone-Statusquelle. M0–M8 sind fachlich
+abgenommen; M9 bleibt bis zu den jeweils genannten Zielstack-Protokollen in
+Arbeit. Release-Qualifizierung und Signatur aus #48 sind nachgewiesen und
+das Issue ist geschlossen. Historische `calibration-only`-Fixtures bleiben
+unverändert von den unabhängig qualifizierten Releases getrennt. Neue
+Auditbefunde und deren Korrektur-/Abnahmebelege werden zusätzlich in #491
+und seinen Einzelissues geführt.
+
 - **Alpha-Schnitt: M0 – M9.** Das ist die erste Version, die externe Spieler
   sinnvoll spielen können. Alles ab M10 ist Ausbau.
 - **Kritischer Pfad:** M0.3 → M1 → M3 → M4 → M7.
@@ -68,9 +76,9 @@ Ergebnis vorzeigbar ist. Bislang erledigt:
   1.263 gegenüber 1.260 Sekunden innerhalb der definierten Toleranz; der
   getrennte GTFS-Holdout macht Haltezeit und Fahrplanreserve sichtbar. Das ist
   als Plausibilitäts- und Milestone-Beweis abgenommen. Der reale Pilot bleibt
-  ehrlich `calibration-only` und `releaseQualified: false`; eine davon
-  unabhängige produktive Release-Qualifizierung und echte Signatur werden in
-  Issue #48 nachgelagert und blockieren M1 nicht. Siehe
+  als Fixture `calibration-only` und `releaseQualified: false`; die davon
+  unabhängige produktive Release-Qualifizierung und echte Signatur sind in
+  Issue #48 nachgewiesen (geschlossen). Siehe
   [`referenzkorpus.md`](referenzkorpus.md).
 
 - **M2.1** — Keycloak-Integration, Konten, Rollen, Weltzugänge, siehe
@@ -192,8 +200,9 @@ Alle drei sind mit M3.1 bis M3.4 abgearbeitet; die Zuordnung steht bei M3.
 > technische Wert auch zum Kalibrieren verwendet wurde, bleibt der konkrete
 > Report bewusst `calibration-only` und nicht produktiv signierbar. Eine
 > disjunkte technische Validierung auf freigegebenen Infrastruktur- und
-> Fahrzeugwerten sowie die echte Signatur sind eine nachgelagerte
-> Release-Härtung in Issue #48, nicht Teil des M1-Abnahmeschnitts.
+> Fahrzeugwerten sowie die echte Signatur sind als getrennte
+> Release-Härtung in Issue #48 nachgewiesen; die Fixture wird dadurch nicht
+> nachträglich zum produktiven Release.
 
 **M1.1 trägt:** `crates/zugfolge-infra` beschreibt Betriebsstellen, Kanten,
 Gleise, Bahnsteige, Elektrifizierung, Zugsicherung, Vmax-Bänder und Neigung,
@@ -341,10 +350,10 @@ nachträgliche Manipulation.
 Der Linux-Job von Run
 [`31482747553`](https://github.com/larynxberlin-rgb/Zugfolge/actions/runs/31482747553)
 hat diese technische Kette auf Commit `e289511` erfolgreich ausgeführt. Der
-reale Pilot bleibt dennoch `calibration-only`: unabhängig freigegebene
+Kalibrierungsbestand bleibt dennoch `calibration-only`. Unabhängig freigegebene
 Infrastruktur- und Fahrzeugwerte sowie die Signatur der benannten
-Release-Verantwortung fehlen weiterhin in Issue #48. Das begrenzt eine spätere
-produktive Release-Zertifizierung, nicht den abgenommenen M1-Beweis aus
+Release-Verantwortung sind mittlerweile in Issue #48 nachgewiesen. Der
+getrennte produktive Nachweis ändert nicht den abgenommenen M1-Beweis aus
 technischer Plausibilisierung und getrenntem Fahrplan-Holdout. Der
 Trassenfinder bleibt auf `entwicklung` (E10). Siehe `betriebsgraph.md`
 Abschnitt 18 und
@@ -902,7 +911,7 @@ echte Alert-Ausfälle. Die drei Teilabschnitte bleiben **offen**, bis dieser
 Drill gegen den laufenden Zielstack ein Protokoll mit Status `passed` erzeugt;
 Repositorytests allein sind kein Betriebsnachweis.
 
-Issue #48 gehört als produktiver Betriebsreife-Nachweis zu M9. Der vom
+Das geschlossene Issue #48 gehört als produktiver Betriebsreife-Nachweis zu M9. Der vom
 Kalibrierungsbestand disjunkte technische Validierungssatz, die benannte
 Release-Verantwortung und die echte Signatur des Pilot-`InfraRelease` sind mit
 M14.1 nachgewiesen. Die übrige Betriebsreife aus M9.5 bleibt davon unberührt.

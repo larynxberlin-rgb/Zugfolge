@@ -39,6 +39,8 @@ export function createTender(input: Omit<Tender, "rules" | "viabilityThresholdCe
 }
 
 export interface QualityPromises { readonly extraSeats: number; readonly punctualityBasisPoints: number; readonly additionalStops: number }
+/** Vier vergleichbare Dimensionen; neue Halte brauchen zuerst einen Planungsnachweis. */
+export const QUALITY_PROMISE_POLICY = Object.freeze({ schemaVersion: "zugfolge-quality-promises/v2", dimensionMaximumPoints: 2_500, maximumAdditionalStops: 0 } as const);
 export interface Bid { readonly id: string; readonly operatorId: string; readonly orderingFeeCentsPerTrainKm: bigint; readonly vehicle: VehicleConcept; readonly promises: QualityPromises; readonly submittedAt: number }
 export interface ScoreBreakdown { readonly pricePoints: number; readonly qualityPoints: number; readonly dimensions: Readonly<Record<string, number>> }
 
@@ -64,7 +66,9 @@ export function validateVehicle(requirements: VehicleRequirements, vehicle: Vehi
 export function scoreBid(tender: Tender, bid: Bid): ScoreBreakdown {
   const vehicleFailures = validateVehicle(tender.specification.requirements, bid.vehicle);
   if (vehicleFailures.length > 0 || bid.orderingFeeCentsPerTrainKm > tender.viabilityThresholdCentsPerTrainKm || bid.orderingFeeCentsPerTrainKm < 0n) throw new Error(`Ungültiges Angebot: ${vehicleFailures.join(",") || "Auskömmlichkeitsgrenze"}`);
-  if (bid.promises.extraSeats < 0 || bid.promises.additionalStops < 0 || bid.promises.punctualityBasisPoints < 0 || bid.promises.punctualityBasisPoints > 10_000) throw new Error("Qualitätszusagen sind außerhalb ihres Wertebereichs.");
+  if (Object.values(bid.promises).some((value) => !Number.isSafeInteger(value) || value < 0) || bid.promises.punctualityBasisPoints > 10_000) throw new Error("Qualitätszusagen sind außerhalb ihres Wertebereichs.");
+  if (!Number.isSafeInteger(bid.vehicle.minimumSeats) || bid.promises.extraSeats > bid.vehicle.minimumSeats - tender.specification.requirements.minimumSeats) throw new Error("Sitzplatzzusage ist durch die Formation nicht nachgewiesen.");
+  if (bid.promises.additionalStops > QUALITY_PROMISE_POLICY.maximumAdditionalStops) throw new Error("Zusatzhalte benoetigen einen serverseitigen Halte- und Trassennachweis; derzeit sind nur ausgeschriebene Halte zulaessig.");
   const condition = tender.profile.specialCondition;
   if (condition?.type === "additional-stop" && bid.promises.additionalStops < condition.minimumAdditionalStops) throw new Error("Sonderauflage Zusatzhalte nicht erfüllt.");
   if (condition?.type === "maximum-age" && bid.vehicle.vehicleAgeYears > condition.maximumAgeYears) throw new Error("Sonderauflage Fahrzeugalter nicht erfüllt.");
@@ -82,11 +86,16 @@ export function scoreBid(tender: Tender, bid: Bid): ScoreBreakdown {
         : bid.vehicle.accessible
           ? maximum
           : 0;
+  const boundedPoints = (quantity: number, rate: number): number => {
+    if (!Number.isSafeInteger(quantity) || !Number.isSafeInteger(rate) || quantity < 0 || rate < 0) throw new Error("Qualitaetswertung braucht sichere nichtnegative Ganzzahlen.");
+    const points = BigInt(quantity) * BigInt(rate);
+    return Number(points > BigInt(QUALITY_PROMISE_POLICY.dimensionMaximumPoints) ? BigInt(QUALITY_PROMISE_POLICY.dimensionMaximumPoints) : points);
+  };
   const dimensions = {
-    extraSeats: bid.promises.extraSeats * tender.rules.pointsPerExtraSeat,
-    punctuality: Math.max(0, bid.promises.punctualityBasisPoints - tender.rules.qualityBaselinePunctualityBasisPoints) * tender.rules.pointsPerPunctualityBasisPoint,
-    additionalStops: bid.promises.additionalStops * tender.rules.pointsPerAdditionalStop,
-    requirementFocus: Math.min(maximum, Math.max(0, uncappedFocusPoints)),
+    extraSeats: boundedPoints(bid.promises.extraSeats, tender.rules.pointsPerExtraSeat),
+    punctuality: boundedPoints(Math.max(0, bid.promises.punctualityBasisPoints - tender.rules.qualityBaselinePunctualityBasisPoints), tender.rules.pointsPerPunctualityBasisPoint),
+    additionalStops: boundedPoints(bid.promises.additionalStops, tender.rules.pointsPerAdditionalStop),
+    requirementFocus: Math.min(QUALITY_PROMISE_POLICY.dimensionMaximumPoints, maximum, Math.max(0, uncappedFocusPoints)),
   };
   const qualityRatio = dimensions.extraSeats + dimensions.punctuality + dimensions.additionalStops + dimensions.requirementFocus;
   return Object.freeze({ pricePoints: Math.floor(priceRatio * tender.profile.weights.price / 10_000), qualityPoints: Math.floor(qualityRatio * tender.profile.weights.quality / 10_000), dimensions: Object.freeze(dimensions) });

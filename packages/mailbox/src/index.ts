@@ -4,6 +4,8 @@ export {
   listInbox,
   MAILBOX_DUE_SOON_MILLISECONDS,
   MessageNotFoundError,
+  MessageReplayConflictError,
+  purgeExpiredMailboxMessages,
   projectInboxMessage,
   RecipientNotFoundError,
   sendMessage,
