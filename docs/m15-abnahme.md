@@ -90,7 +90,8 @@ Fallback bei fehlendem Produktionsaddon. Ein wegen fehlender nativer Runtime
 
 Der [CI-Lauf auf `363b120`](https://github.com/larynxberlin-rgb/Zugfolge/actions/runs/33997523580)
 bestand alle vier Jobs: Rust/Determinismus, TypeScript, Linux-NAPI und
-Repositorywächter. Danach wurde der additive M10-Stand `32dfcf3` übernommen;
+Repositorywächter. Danach wurde der additive M10-Stand `76f3ba2` einschließlich
+der Kartenabnahme aus `32dfcf3` übernommen;
 die CI führt sowohl den neuen M10-Kartenlasttest als auch die bestehende
 Conductor-Integration jeweils einmal aus. Der im M10-Anschlussaudit genannte
 Aktivitätscheck für Unternehmen ist ergänzt: `exited` und `deleted` werden
