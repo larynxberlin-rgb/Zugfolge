@@ -216,6 +216,23 @@ describe("Live-Objekte", () => {
     expect(parseFocusParameter("unknown:x")).toBeUndefined();
   });
 
+  it("beschriftet Abweichungen ohne Farbabhängigkeit und friert dieselbe Markeridentität ein", () => {
+    const train = {
+      ...baseTrain,
+      mapPosition: { infrastructureReleaseId: "infra", resourceId: "block", trackId: "track", offsetMm: 1_000, latitudeE7: 510_000_000, longitudeE7: 120_000_000 },
+    };
+    const marker = (overrides: Partial<typeof train> = {}, frozen = false) => trainFeatureCollection([{ ...train, ...overrides }], "infra", frozen).features[0]!;
+    expect(marker().properties["markerLabel"]).toBe("RV 20001");
+    expect(marker({ delaySeconds: 61 }).properties["markerLabel"]).toBe("RV 20001 · +2 min");
+    expect(marker({ status: "waiting", delaySeconds: 900 }).properties["markerLabel"]).toBe("RV 20001 · wartet · +15 min");
+    expect(marker({ status: "cancelled", delaySeconds: 900 }).properties["markerLabel"]).toBe("RV 20001 · Ausfall");
+    const frozen = marker({}, true);
+    expect(frozen.id).toBe(marker().id);
+    expect(frozen.geometry).toEqual(marker().geometry);
+    expect(frozen.properties).toMatchObject({ positionFrozen: true, markerLabel: "RV 20001 · Lage eingefroren" });
+    expect(trainFeatureCollection([{ ...train, positionFrozen: true }], "infra").features[0]?.properties["positionFrozen"]).toBe(true);
+  });
+
   it("übersetzt einen Streckenklick in eine verständliche amtliche Korridorwahl", () => {
     expect(selectionFromFeature({
       layer: { id: "rail-corridors-hit" },

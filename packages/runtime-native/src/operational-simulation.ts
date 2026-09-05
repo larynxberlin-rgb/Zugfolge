@@ -1043,8 +1043,15 @@ function projectedTrain(value: unknown, name: string): asserts value is Operatio
   invariant(Array.isArray(value["motionGeometry"]), `${name}.motionGeometry muss eine Liste sein.`);
   value["motionGeometry"].forEach((point, index) => geometryPoint(point, `${name}.motionGeometry[${index}]`));
   invariant(
-    value["motionGeometry"].every((point, index, points) => index === 0 || point.routeMm > points[index - 1]!.routeMm),
-    `${name}.motionGeometry ist nicht streng geordnet.`,
+    value["motionGeometry"].every((point, index, points) => {
+      const previous = points[index - 1];
+      if (previous === undefined) return true;
+      if (point.routeMm > previous.routeMm) return point.edgeId === previous.edgeId;
+      return point.routeMm === previous.routeMm && point.edgeId !== previous.edgeId
+        && point.latitudeE7 === previous.latitudeE7 && point.longitudeE7 === previous.longitudeE7
+        && points[index - 2]?.routeMm !== point.routeMm;
+    }),
+    `${name}.motionGeometry ist nicht lueckenlos gleisgebunden geordnet.`,
   );
   invariant(
     value["motionSegment"] === null

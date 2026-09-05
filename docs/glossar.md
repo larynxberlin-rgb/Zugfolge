@@ -226,6 +226,9 @@ nicht prüfen, ob ein Eintrag stimmt — dafür steht die Quelle daneben.
 | Zugfolgefall | `Headway` | Belegungskonflikt zweier Zugfahrten derselben Richtung auf demselben Abschnitt; die Mindestzugfolgezeit ist unterschritten | `infrastruktur.md` 8 |
 | Zuggattung | `TrainCategory` | Fernverkehr, S-Bahn, Regionalverkehr, Güterverkehr oder Dienstzug; bestimmt den Nummernbereich der Zugnummer | `infrastruktur.md` 7 |
 | Zugkartenprojektion | `PublicOperationalTrainState` | read-only Übersetzung der autoritativen Laufwegposition auf die exakte Releasegeometrie; LiveMap und RZÜ tragen denselben Commit und es gibt keinen Estimate-Pfad | `zugkartenprojektion.md` |
+| Gleisgebundene Bewegungsgeometrie | `isContinuousRouteGeometry` | prüft geordnete Geometriepunkte einschließlich beider exakt verbundener Gleisenden an einem Kantenwechsel | `zugkartenprojektion.md` |
+| Animationshorizont | `latestTrainRenderAt` | letzter noch autorisierter Bewegungszeitpunkt der dargestellten Züge, begrenzt durch Abschnittsende und Regionsgültigkeit | `zugkartenprojektion.md` |
+| Nächster Anzeige-Freeze | `nextTrainFreezeAt` | nächster Gültigkeitsablauf eines Zuges für eine einmalige Aktualisierung ohne kontinuierliche Animation | `zugkartenprojektion.md` |
 | Zugkilometer | `TrainKilometre` | Leistungseinheit der Verkehrsverträge und Bezugsgröße des Bestellerentgelts | `wirtschaft.md` 3.5 |
 | Zugkreuzung | `TrainCrossing` | Begegnung zweier Zugfahrten entgegengesetzter Richtung auf eingleisiger Strecke; nur in einer Betriebsstelle mit Kreuzungsmöglichkeit zulässig | `infrastruktur.md` 1 |
 | Zugnummer | `TrainNumber` | die Nummer einer Zugfahrt; nennt über ihren Bereich die Zuggattung und über ihre Parität die Richtung — gerade mit, ungerade gegen die Kilometrierung | `infrastruktur.md` 7 |

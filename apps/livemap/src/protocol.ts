@@ -10,6 +10,7 @@ import type {
   PublicOperationalVehicleRestriction,
   PublicRouteGeometryPoint,
 } from "@zugfolge/livemap-stream";
+import { isContinuousRouteGeometry } from "@zugfolge/livemap-stream";
 
 export type OperatingStatus =
   | "planned"
@@ -62,6 +63,8 @@ export interface PublicTrain {
   readonly mapPosition?: PublicMapPosition;
   readonly operationMarker?: PublicOperationMarker;
   readonly disruption?: PublicDisruptionMarker;
+  /** Nur Darstellungszustand; wird niemals aus dem Transport übernommen. */
+  readonly positionFrozen?: boolean;
 }
 
 export interface PublicExternalTrain {
@@ -420,8 +423,8 @@ function parseMotionSegment(value: unknown): NonNullable<PublicOperationalTrainS
       ...(bearing === undefined ? {} : { bearingMilliDegrees: bearing }),
     });
   });
-  if (geometry.length < 2 || geometry.some((point, index) => index > 0 && point.routeMm <= geometry[index - 1]!.routeMm)) {
-    throw new TypeError("Laufweggeometrie ist nicht streng geordnet.");
+  if (!isContinuousRouteGeometry(geometry)) {
+    throw new TypeError("Laufweggeometrie ist nicht lückenlos gleisgebunden geordnet.");
   }
   const startedAtMs = integerField(value, "startedAtMs", 0);
   const validUntilMs = integerField(value, "validUntilMs", 0);
@@ -431,6 +434,9 @@ function parseMotionSegment(value: unknown): NonNullable<PublicOperationalTrainS
   if (validUntilMs < startedAtMs) throw new TypeError("Bewegungsabschnitt endet vor seinem Beginn.");
   if (startRouteMm > segmentEndRouteMm || segmentEndRouteMm > authorityEndRouteMm) {
     throw new TypeError("Bewegungsabschnitt verletzt Abschnitts- oder Fahrberechtigungsende.");
+  }
+  if (geometry[0]!.routeMm > startRouteMm || geometry.at(-1)!.routeMm < segmentEndRouteMm) {
+    throw new TypeError("Laufweggeometrie deckt den Bewegungsabschnitt nicht vollständig ab.");
   }
   return Object.freeze({
     startedAtMs,
@@ -1018,10 +1024,18 @@ function operationalMapPosition(
   const segment = train.operational?.motionSegment;
   const infrastructureReleaseId = train.mapPosition?.infrastructureReleaseId;
   if (segment === undefined || infrastructureReleaseId === undefined) return train.mapPosition;
-  const after = segment.geometry.find((point) => point.routeMm >= routeMm) ?? segment.geometry.at(-1);
-  if (after === undefined) return train.mapPosition;
-  const afterIndex = segment.geometry.indexOf(after);
-  const before = segment.geometry[Math.max(0, afterIndex - 1)] ?? after;
+  // Obergrenze in O(log n); am Kantenwechsel gilt der neue Eintrittspunkt.
+  let low = 0;
+  let high = segment.geometry.length;
+  while (low < high) {
+    const middle = Math.floor((low + high) / 2);
+    if (segment.geometry[middle]!.routeMm <= routeMm) low = middle + 1;
+    else high = middle;
+  }
+  const before = segment.geometry[low - 1];
+  if (before === undefined) return train.mapPosition;
+  const after = segment.geometry[low] ?? before;
+  if (before.trackId !== after.trackId) return train.mapPosition;
   const duration = after.routeMm - before.routeMm;
   const elapsed = Math.max(0, routeMm - before.routeMm);
   const bearingMilliDegrees = interpolateBearing(
@@ -1033,7 +1047,7 @@ function operationalMapPosition(
   return Object.freeze({
     infrastructureReleaseId,
     resourceId: train.operational?.occupiedBlocks[0] ?? train.mapPosition?.resourceId ?? after.trackId,
-    trackId: duration === 0 ? after.trackId : before.trackId,
+    trackId: before.trackId,
     offsetMm: interpolateInteger(before.offsetMm, after.offsetMm, elapsed, duration || 1),
     latitudeE7: interpolateInteger(before.latitudeE7, after.latitudeE7, elapsed, duration || 1),
     longitudeE7: interpolateInteger(before.longitudeE7, after.longitudeE7, elapsed, duration || 1),
@@ -1041,13 +1055,41 @@ function operationalMapPosition(
   });
 }
 
-export function renderTrains(samples: RenderSamples, renderAt: number): readonly PublicTrain[] {
+/** Transporttoleranz verlängert keine bereits abgelaufene Zuganimation. */
+export function latestTrainRenderAt(state: LiveState): number {
+  let latest = state.at;
+  for (const train of state.trains.values()) {
+    const operational = train.operational;
+    const segment = operational?.motionSegment;
+    const frame = operational === undefined ? undefined : state.operationalRegions.get(operational.regionId);
+    if (segment === undefined || frame === undefined || train.mapPosition === undefined) continue;
+    latest = Math.max(latest, Math.min(segment.validUntilMs, frame.staleAfterMs) / 1_000);
+  }
+  return latest;
+}
+
+/** Einmaliges Aufwachen für Freeze-Zustände ohne kontinuierliche Animation. */
+export function nextTrainFreezeAt(state: LiveState, after: number): number | undefined {
+  let next: number | undefined;
+  for (const train of state.trains.values()) {
+    const operational = train.operational;
+    const frame = operational === undefined ? undefined : state.operationalRegions.get(operational.regionId);
+    if (operational === undefined || frame === undefined || train.mapPosition === undefined) continue;
+    const deadline = Math.min(frame.staleAfterMs, operational.motionSegment?.validUntilMs ?? frame.staleAfterMs) / 1_000;
+    if (deadline > after && (next === undefined || deadline < next)) next = deadline;
+  }
+  return next;
+}
+
+export function renderTrains(samples: RenderSamples, renderAt: number, freezeAt = renderAt): readonly PublicTrain[] {
   return [...samples.current.trains.values()].map((current) => {
     const operational = current.operational;
     if (operational !== undefined) {
       const frame = samples.current.operationalRegions.get(operational.regionId);
       if (frame === undefined) return current;
-      const renderAtMs = Math.min(Math.round(renderAt * 1_000), frame.staleAfterMs);
+      const renderAtMs = Math.min(Math.max(operational.simulationTimeMs, Math.round(renderAt * 1_000)), frame.staleAfterMs);
+      const positionFrozen = Math.round(freezeAt * 1_000) >= Math.min(frame.staleAfterMs, operational.motionSegment?.validUntilMs ?? frame.staleAfterMs);
+      if (operational.motionSegment === undefined && !positionFrozen) return current;
       const position = operationalPositionAt(operational, renderAtMs);
       const travelledMm = position.routeMm - operational.headRouteMm;
       const projectedOperational = Object.freeze({
@@ -1064,6 +1106,7 @@ export function renderTrains(samples: RenderSamples, renderAt: number): readonly
         ...current,
         positionMm: position.routeMm,
         speedMmPerSecond: position.speedMmPerSecond,
+        positionFrozen,
         operational: projectedOperational,
         ...(mapPosition === undefined ? {} : { mapPosition }),
       });

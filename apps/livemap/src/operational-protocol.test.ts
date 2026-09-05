@@ -5,6 +5,8 @@ import type { PublicOperationalRegionFrame } from "@zugfolge/livemap-stream";
 import {
   applyDelta,
   initialState,
+  latestTrainRenderAt,
+  nextTrainFreezeAt,
   parseDelta,
   parseSnapshot,
   renderTrains,
@@ -97,6 +99,87 @@ function state(at: number) {
 }
 
 describe("autorisierte Bewegungsabschnitte", () => {
+  it("wechselt am exakten Kantenende auf den neuen Gleisoffset und fährt gegen dessen Kilometrierung weiter", () => {
+    const train: PublicTrain = {
+      ...exactTrain,
+      operational: {
+        ...exactTrain.operational!,
+        motionSegment: {
+          ...exactTrain.operational!.motionSegment!,
+          geometry: [
+            { routeMm: 0, trackId: "track:1", offsetMm: 9_000, latitudeE7: 510_000_000, longitudeE7: 120_000_000 },
+            { routeMm: 1_000, trackId: "track:1", offsetMm: 10_000, latitudeE7: 510_001_000, longitudeE7: 120_001_000 },
+            { routeMm: 1_000, trackId: "track:2", offsetMm: 40_000, latitudeE7: 510_001_000, longitudeE7: 120_001_000 },
+            { routeMm: 2_000, trackId: "track:2", offsetMm: 39_000, latitudeE7: 510_002_000, longitudeE7: 120_002_000 },
+            { routeMm: 2_000, trackId: "track:3", offsetMm: 0, latitudeE7: 510_002_000, longitudeE7: 120_002_000 },
+          ],
+        },
+      },
+    };
+    const current = initialState(parseSnapshot({
+      worldId: "world:1", streamId: "stream-1", sequence: 7, at: 1,
+      trains: [train], operationalRegions: [frame()],
+    }));
+    const samples = { previous: current, current };
+    expect(renderTrains(samples, 1.5)[0]?.mapPosition).toMatchObject({ trackId: "track:1", offsetMm: 9_500 });
+    expect(renderTrains(samples, 2)[0]?.mapPosition).toMatchObject({ trackId: "track:2", offsetMm: 40_000 });
+    expect(renderTrains(samples, 2.5)[0]?.mapPosition).toMatchObject({ trackId: "track:2", offsetMm: 39_500 });
+    expect(renderTrains(samples, 30)[0]).toMatchObject({ positionFrozen: true, mapPosition: { trackId: "track:3", offsetMm: 0 } });
+  });
+
+  it("setzt Millisekundencommits beim sekundenbasierten Snapshot nicht zurück", () => {
+    const train: PublicTrain = {
+      ...exactTrain,
+      positionMm: 500,
+      operational: { ...exactTrain.operational!, simulationTimeMs: 1_500, headRouteMm: 500, tailRouteMm: -19_500 },
+    };
+    const current = initialState({
+      worldId: "world:1", streamId: "stream-1", sequence: 7, at: 1,
+      trains: [train], operationalRegions: [frame(7, 1_500, 3_000)],
+    });
+    expect(renderTrains({ previous: current, current }, 1)[0]).toMatchObject({
+      positionMm: 500, operational: { simulationTimeMs: 1_500, tailRouteMm: -19_500 },
+    });
+  });
+
+  it("beendet die Animation am Bewegungsende statt erst am Ende der Transporttoleranz", () => {
+    const current = initialState({
+      worldId: "world:1", streamId: "stream-1", sequence: 7, at: 1,
+      trains: [exactTrain], operationalRegions: [frame(7, 1_000, 76_000)],
+    });
+    expect(latestTrainRenderAt(current)).toBe(3);
+    expect(latestTrainRenderAt({ ...current, operationalRegions: new Map([["region:1", frame(7, 1_000, 2_000)]]) })).toBe(2);
+    expect(latestTrainRenderAt({ ...current, trains: new Map() })).toBe(1);
+    const { motionSegment: _segment, ...standing } = exactTrain.operational!;
+    const stationary = { ...current, trains: new Map([[exactTrain.id, { ...exactTrain, operational: standing }]]) };
+    expect(latestTrainRenderAt(stationary)).toBe(1);
+    expect(nextTrainFreezeAt(stationary, 1)).toBe(76);
+    expect(nextTrainFreezeAt(stationary, 76)).toBeUndefined();
+    expect(renderTrains({ previous: stationary, current: stationary }, 76)[0]?.positionFrozen).toBe(true);
+    expect(renderTrains({ previous: current, current }, 1, 76)[0]).toMatchObject({ positionMm: 0, positionFrozen: true });
+    expect(renderTrains({ previous: current, current }, 2)[0]?.positionFrozen).toBe(false);
+    expect(renderTrains({ previous: current, current }, 3)[0]?.positionFrozen).toBe(true);
+  });
+
+  it("verwirft Geometrielücken und ungültige Koordinaten vor der Darstellung", () => {
+    const first = exactTrain.operational!.motionSegment!.geometry[0]!;
+    const last = exactTrain.operational!.motionSegment!.geometry[1]!;
+    for (const geometry of [
+      [first, { ...last, trackId: "track:2" }],
+      [first, { ...first } , last],
+      [first, { ...first, trackId: "track:2", latitudeE7: first.latitudeE7 + 1 }, { ...last, trackId: "track:2" }],
+      [first, { ...last, longitudeE7: 1_800_000_001 }],
+      [first, { ...last, bearingMilliDegrees: 360_000 }],
+      [first, { ...last, routeMm: 1_000 }],
+    ]) {
+      expect(() => parseSnapshot({
+        worldId: "world:1", streamId: "stream-1", sequence: 7, at: 1,
+        trains: [{ ...exactTrain, operational: { ...exactTrain.operational, motionSegment: { ...exactTrain.operational!.motionSegment, geometry } } }],
+        operationalRegions: [frame()],
+      })).toThrow(/Laufweggeometrie/);
+    }
+  });
+
   it("interpoliert analytisch bis valid_until und friert danach exakt ein", () => {
     const current = state(1);
     const samples = { previous: current, current };
