@@ -12,6 +12,7 @@ Spieleroberfläche folgt [Design](design.md) und
 ```text
 crates/                     Rust — Simulationskern, Solver, Release-Pipeline
   zugfolge-determinism/     Determinismus-Testharnisch (M0.2)
+  zugfolge-conductor/       Reiner M15.2-Projektor: quittierte M10-Manifeste auf belegte Innenraumplätze; keine Nachfrage, Sitzung oder Betriebssteuerung
   zugfolge-infra/           Betriebsgraph und Infra-Release-Pipeline (M1)
   zugfolge-conflict/        Sperrzeiten, Belegungsprofile, Konfliktprüfung (M3.1–M3.3), Rahmenverträge (M3.8)
   zugfolge-planner/         Trassen-Planner (M3.4), PlanningRun, Fahrplanperiode, Ad-hoc-Trassen (M3.5–M3.7)
@@ -239,7 +240,7 @@ Liste ist keine vollständige Karte des Repositoriums, sondern die Zuordnung
 | Domäne | Pfade | Status | Was dort besonders gilt |
 |--------|-------|--------|-------------------------|
 | `determinism-core` | `crates/zugfolge-determinism/**` | aktiv | ganzzahlig, uhrfrei, geordnet — der Harnisch muss selbst halten, was er prüft |
-| `simulation-core` | `crates/zugfolge-sim/**`, `crates/zugfolge-sim-runtime/**`, `crates/zugfolge-runtime{,-napi}/**`, `crates/zugfolge-conflict/**`, `crates/zugfolge-fleet/**`, `crates/zugfolge-disruption/**`, `packages/runtime-native/**`, `spikes/**` | aktiv | vollständiger Kernvertrag: kein Bezahlstatus, keine Uhr, keine Datenbank |
+| `simulation-core` | `crates/zugfolge-sim/**`, `crates/zugfolge-sim-runtime/**`, `crates/zugfolge-runtime{,-napi}/**`, `crates/zugfolge-conflict/**`, `crates/zugfolge-fleet/**`, `crates/zugfolge-disruption/**`, `crates/zugfolge-conductor/**`, `packages/runtime-native/**`, `spikes/**` | aktiv | vollständiger Kernvertrag: kein Bezahlstatus, keine Uhr, keine Datenbank |
 | `path-allocation` | `crates/zugfolge-planner/**`, `crates/zugfolge-planning-runtime{,-napi}/**`, `packages/path-allocation/**`, `packages/planning-{projection,runtime-native,worker}/**` | aktiv | Reihenfolge und Bezahlstatus beeinflussen das Ergebnis nicht (E4, `infrastruktur.md` 2) |
 | `dispatch` | `crates/zugfolge-rules/**`, `packages/dispatch/**` | aktiv | das Betriebsprogramm wirkt offline und für alle gleich (E2, E13) |
 | `demand` | `packages/demand/**`, `crates/zugfolge-demand/**` | aktiv | Ganzzahlige, uhrfreie Nachfrage folgt dem Angebot, nie dem Vertrag des Spielers; kein Datenbankzugriff |
@@ -342,6 +343,14 @@ Baum. Bewusst veröffentlichte UI-Zeichen im Design-System und
 [Rechteschutz](rechteschutz.md) beschreibt die Abgrenzung.
 
 Vollständige Liste: `pnpm guards -- --list`.
+
+`decision-consistency` hält E1–E33, den ADR-Index und die Agenteneinstiege
+lückenlos und prüft die lokalen Markdown-Verweise der zugeordneten ADRs.
+Für M15 bleiben Aktionsautorität und Datenschutz im kanonischen
+[Schaffnervertrag](schaffnermodus.md). Der reine `zugfolge-conductor`-Projektor
+erhält ausschließlich geprüfte M10- und Innenraumfakten; der interne
+Game-API-Service setzt die Welt-/EVU-/Kontogrenze vor dem nativen Aufruf durch.
+Er erzeugt keine Ersatznachfrage, Haltquittungen oder Fahrzeuglayouts.
 
 ---
 

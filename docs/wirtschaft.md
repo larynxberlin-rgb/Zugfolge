@@ -71,19 +71,14 @@ Los- und Fahrzeugdaten nachweisen; sonst ist die Welt nicht startfähig.
 
 M10 ist das gemeinsame Personenverkehrsnachfragemodell für SPNV und SPFV. Es
 liefert Zugwahl, Ein- und Aussteiger, Auslastung und den objektiven
-Fahrberechtigungsstatus. Belastbare freigegebene Kontrollquoten werden als
-`observed`, ersatzweise Spielwerte ausdrücklich als `balanced` veröffentlicht.
-Der Schaffnermodus M15 projiziert diese Fahrgäste, erzeugt aber keine eigene
-Nachfrage und keinen eigenen Ticketstatus.
+Fahrberechtigungsstatus gemäß [Personenverkehr](personenverkehr.md). Der
+Schaffnermodus M15 verwendet diese Autorität ausschließlich als Projektion.
 
-Eine im Schaffnermodus ausgestellte EBE ist eine **offene Forderung**, kein
-sofortiger sicherer Erlös und kein Bußgeld. Zahlung, Reduzierung,
-Bearbeitungskosten und Abschreibung folgen deterministisch aus dem
-`EconomyRelease`. Die positive Kontrollprämie beträgt höchstens das Vierfache
-der positiven Netto-EBE; Netto-EBE und Prämie zusammen sind je Tag auf 0,5
-Prozent der relevanten SPNV-Vertragserlöse begrenzt. Kosten, Verspätungsfolgen
-und Pönalen werden nicht gedeckelt. Details:
-[`schaffnermodus.md`](schaffnermodus.md) 8 und 10.
+Kontrollforderungen sind keine garantierten Zahlungseingänge. Ihr vollständiger
+Forderungs-, Zahlungs-, Kosten- und Deckelvertrag steht ausschließlich in
+[`schaffnermodus.md`](schaffnermodus.md) 8 und 10. M6 führt die daraus
+entstehenden ausgeglichenen Ledgerbuchungen aus; weder ein M10-Manifest noch
+eine M15.2-Projektion ist ein Buchungsbeleg.
 
 ## 3. Vergabezyklus und Betriebsübergang (E18)
 

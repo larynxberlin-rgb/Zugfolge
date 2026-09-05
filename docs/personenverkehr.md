@@ -176,8 +176,19 @@ erzeugt keinen zweiten Reisenden. Je Zugabschnitt sind Personenkennungen eindeut
 `StopPassengerFlowV1` beweist je Halt `vorher + Einsteiger − Aussteiger = nachher`;
 die Abschnittsbelegung stimmt mit Manifest und Kapazitätszuteilung überein.
 Die öffentliche Projektion enthält ausschließlich aggregierte Auslastung,
-Ein-/Aussteiger und erklärbare Nachfragegründe. `fareFact` und individuelle
-Personenschlüssel werden ausschließlich serverseitig gespeichert.
+Ein-/Aussteiger und erklärbare Nachfragegründe. `fareFact` bleibt ausschließlich
+serverseitig. Individuelle Personenschlüssel bleiben außerhalb der
+autorisierten privaten Zugansicht serverseitig. Die eng begrenzte Weitergabe
+synthetischer Schlüssel an M15
+folgt [Schaffnermodus](schaffnermodus.md) 3.3 und 11.1.
+
+M15.2 übernimmt den vorhandenen Vertrag direkt. Eine `PassengerProjectionV1`
+ist eine abgeleitete Innenraumansicht eines tatsächlich quittierten Abschnitts;
+sie ist weder ein neues Manifest noch ein neuer Beleg über eingestiegene
+Personen. `forecast` und fehlende Haltquittungen bleiben ausdrücklich
+ungeeignet. Nachfragezustand, Betriebsquittung, Zug und Release müssen
+zusammenpassen. Revidierte M10-Fakten ändern ausschließlich die zugehörige
+Projektion; ein begonnener Kontrollfall behält seinen ursprünglichen Pin.
 
 ## 6. Kalibrierung und Abnahmegrenze
 

@@ -326,6 +326,11 @@ export const GENERATED_GLOSSARY_ENTRIES = Object.freeze([
     "definition": "revisionierte M10-Projektion der tatsächlich reisenden Fahrgäste eines Zuglaufabschnitts einschließlich Ein-/Ausstieg und verdecktem Fahrberechtigungsstatus"
   },
   {
+    "term": "Fahrgastprojektion",
+    "code": "PassengerProjectionV1",
+    "definition": "private 1:1-Innenraumprojektion eines quittierten M10-Zugabschnitts mit stabilen Plätzen und ausschließlich sichtbaren Merkmalen; erzeugt keine Nachfrage oder Fahrberechtigung"
+  },
+  {
     "term": "Fahrplanperiode",
     "code": "SchedulePeriod",
     "definition": "Saison aus Anmeldung, Koordinierung, Veröffentlichung und Betrieb; Länge ist Weltparameter, 3 bis 8 Wochen"
@@ -476,6 +481,11 @@ export const GENERATED_GLOSSARY_ENTRIES = Object.freeze([
     "definition": "unveränderliches, versioniertes Netz- und Betriebsartefakt mit Graph, gerichteten Kanten, Sicherungselementen, Laufwegvorlagen, RZÜ-Layout, Herkunft, Lizenz, Prüfsumme und Confidence"
   },
   {
+    "term": "Innenraumplatzinventar",
+    "code": "InteriorPassengerPlacesV1",
+    "definition": "gepinnte welt- und zuggebundene Liste belegter Sitz-, Steh- und Sonderplätze mit stabilen Kennungen und Millimeterpositionen; M15.2-Eingang aus dem M15.4-Layout"
+  },
+  {
     "term": "Insolvenz",
     "code": "Insolvency",
     "definition": "Stufe 5 der Eskalationsleiter; das EVU endet vollständig, der Account bleibt"
@@ -519,6 +529,11 @@ export const GENERATED_GLOSSARY_ENTRIES = Object.freeze([
     "term": "Kontrollbedingter Betriebshalt",
     "code": "FareControlHoldV1",
     "definition": "bindender zusätzlicher Aufenthalt am nächsten planmäßigen Fahrgasthalt nach Polizeianforderung; verlängert reale Ressourcenbelegungen und verlangt anschließend ein neues Abfahrtsrecht"
+  },
+  {
+    "term": "Kontrollhaltpolicy",
+    "code": "FareControlPolicyV1",
+    "definition": "welt- und periodenverbindliche Regeln für zulässige Polizeigründe, Zielhalt, Zuständigkeit, einmalige Anforderung und maximale zusätzliche Wartezeit"
   },
   {
     "term": "Kündigungsvormerkung",

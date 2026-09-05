@@ -1075,8 +1075,8 @@ Alpha-Schnitt. Vollständiger Fachvertrag:
 
 | # | Teilabschnitt | Größe | Status |
 |---|---------------|-------|--------|
-| 15.1 | **E29, ADR und versionierter Fachvertrag** einschließlich M10-/M8-Autoritätsgrenzen, Kontrolle, Dialog, Wirtschaft, Datenschutz und Abnahme | M | in Arbeit |
-| 15.2 | **M10-Fahrgastmanifeste und deterministische 1:1-Projektion**: jeder tatsächlich reisende Fahrgast wird logisch materialisiert, stabil platziert und kontrollierbar; Rendering darf nur optisch degradieren | L | offen |
+| 15.1 | **E29, ADR und versionierter Fachvertrag** einschließlich M10-/M8-Autoritätsgrenzen, Kontrolle, Dialog, Wirtschaft, Datenschutz und Abnahme | M | erledigt |
+| 15.2 | **M10-Fahrgastmanifeste und deterministische 1:1-Projektion**: jeder tatsächlich reisende Fahrgast wird logisch materialisiert, stabil platziert und kontrollierbar; Rendering darf nur optisch degradieren | L | in Arbeit |
 | 15.3 | **Eigene Pixelart-Designsprache und freigegebener Asset-Korpus**: finale erzeugte Figuren-, Innenraum-, Bahnhof- und Umgebungsassets mit `ArtAtlasManifestV1`, Herkunft, Hash und Rechtegates | **XL** | offen |
 | 15.4 | **Konfigurationsgetreue begehbare Fahrzeuginnenräume**: `InteriorLayoutV1` aus Formation und Fahrzeugkonfiguration, Begehbarkeits-, Kollisions- und Kapazitätsnachweis | **XL** | offen |
 | 15.5 | **Fließende Umgebung und modulare Bahnhofsszenen**: Umland/Vorstadt/Stadt, Tageszeit, tatsächliche Geschwindigkeit, Signal-/Bahnhofshalte, kleine/mittlere/große Stationen und dynamische Namen | **XL** | offen |
@@ -1093,6 +1093,14 @@ M15.3 und M15.6 können danach parallel beginnen. M15.4 folgt M15.3 und M5;
 M15.5 folgt M15.3 und M14.2; M15.7 folgt M15.1/M15.2; M15.8 folgt
 M15.3–M15.7; M15.9 folgt M15.7/M15.8 und M8; M15.10 folgt M15.6/M15.9;
 M15.11 folgt M15.10 und M6; M15.12 schließt alle Teile zusammen.
+
+**M15.1/M15.2-Stand:** Der versionierte Fachvertrag und seine
+Aktions-/Autoritätsmatrix sind vollständig dokumentiert. E28 ist mit #530
+auf `main` veröffentlicht. M15.2 liefert den Rust-Projektionskern und eine
+autorisierte interne Plattformgrenze. Produktive M10-Haltquittungen,
+freigegebene Innenraumlayouts und die spielbare Browserabnahme bleiben offen;
+M15.2 und M15 insgesamt werden dadurch nicht geschlossen. Reproduzierbare
+Prüfungen, Issue-/PR-Abgleich und Grenzen: [Teilabnahme](m15-abnahme.md).
 
 > **Beweis:** Ein eigener ausgelasteter SPNV-Zug wird mit den tatsächlichen
 > M10-Fahrgästen betreten. Der Spieler läuft durch den konfigurationsgetreuen
