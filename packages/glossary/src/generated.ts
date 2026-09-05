@@ -36,6 +36,11 @@ export const GENERATED_GLOSSARY_ENTRIES = Object.freeze([
     "definition": "unveränderliche ganzzahlige Bewegungsfunktion mit Startzeit/-position/-geschwindigkeit, Beschleunigung, Gültigkeitsende, Laufwegversion und Fahrberechtigungsende"
   },
   {
+    "term": "Animationshorizont",
+    "code": "latestTrainRenderAt",
+    "definition": "letzter noch autorisierter Bewegungszeitpunkt der dargestellten Züge, begrenzt durch Abschnittsende und Regionsgültigkeit"
+  },
+  {
     "term": "Anlage",
     "code": "Facility",
     "definition": "Werkstatt, Behandlungs- oder Waschanlage, Tankstelle, Entsorgungsanlage oder als Anlage geführtes Abstellgleis mit Kapazität, Öffnungszeit, Nutzlänge und Baureihenkompetenz"
@@ -416,6 +421,11 @@ export const GENERATED_GLOSSARY_ENTRIES = Object.freeze([
     "definition": "das, worauf gefahren wird; liegt auf einer Kante oder in einer Betriebsstelle und trägt Vmax, Neigung, Elektrifizierung und Zugsicherung"
   },
   {
+    "term": "Gleisgebundene Bewegungsgeometrie",
+    "code": "isContinuousRouteGeometry",
+    "definition": "prüft geordnete Geometriepunkte einschließlich beider exakt verbundener Gleisenden an einem Kantenwechsel"
+  },
+  {
     "term": "Grenzportal",
     "code": "BoundaryPortal",
     "definition": "benannte, versionierte Schnittstelle am Rand des spielbaren Netzes; trägt die serverseitigen Ein- oder Ausfahrfenster einer Fahrtkette"
@@ -554,6 +564,11 @@ export const GENERATED_GLOSSARY_ENTRIES = Object.freeze([
     "term": "Nachricht (Postfach)",
     "code": "MailboxMessage",
     "definition": "generischer Postfach-Eintrag mit messageType und payload; trägt später Trassenangebote, Ausschreibungen, Störungsmeldungen"
+  },
+  {
+    "term": "Nächster Anzeige-Freeze",
+    "code": "nextTrainFreezeAt",
+    "definition": "nächster Gültigkeitsablauf eines Zuges für eine einmalige Aktualisierung ohne kontinuierliche Animation"
   },
   {
     "term": "Netzfahrplan",
