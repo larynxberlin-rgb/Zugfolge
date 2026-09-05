@@ -107,6 +107,25 @@ impl CapacityLedger {
         if capacity == 0 {
             return Err(CapacityConflict::InvalidCapacity);
         }
+        let previous = self
+            .capacities
+            .get(&(world_id, resource))
+            .copied()
+            .unwrap_or(1);
+        if capacity < previous {
+            let intervals = self
+                .reservations(world_id)
+                .filter(|reservation| reservation.resource == resource)
+                .map(|reservation| (reservation.starts_at, reservation.ends_at));
+            if let Some((starts_at, ends_at)) = first_capacity_conflict(intervals, capacity) {
+                return Err(CapacityConflict::Exhausted {
+                    resource,
+                    starts_at,
+                    ends_at,
+                    capacity,
+                });
+            }
+        }
         self.capacities.insert((world_id, resource), capacity);
         Ok(())
     }
@@ -116,6 +135,9 @@ impl CapacityLedger {
         &mut self,
         reservation: ResourceReservation,
     ) -> Result<(), CapacityConflict> {
+        if reservation.ends_at <= reservation.starts_at {
+            return Err(CapacityConflict::InvalidInterval);
+        }
         let key = (reservation.world_id, reservation.id);
         if self.reservations.contains_key(&key) {
             return Err(CapacityConflict::DuplicateReservation);
@@ -128,23 +150,24 @@ impl CapacityLedger {
                 .get(&(reservation.world_id, resource))
                 .copied()
                 .unwrap_or(1);
-            let overlaps = self
-                .reservations
-                .values()
+            let intervals = self
+                .reservations(reservation.world_id)
                 .filter(|existing| {
-                    existing.world_id == reservation.world_id
-                        && existing.resource == resource
-                        && reservation.overlaps(**existing)
+                    existing.resource == resource && reservation.overlaps(**existing)
                 })
-                .count();
-            let capacity =
-                usize::try_from(capacity).map_err(|_| CapacityConflict::InvalidCapacity)?;
-            if overlaps >= capacity {
+                .map(|existing| {
+                    (
+                        existing.starts_at.max(reservation.starts_at),
+                        existing.ends_at.min(reservation.ends_at),
+                    )
+                })
+                .chain([(reservation.starts_at, reservation.ends_at)]);
+            if let Some((starts_at, ends_at)) = first_capacity_conflict(intervals, capacity) {
                 return Err(CapacityConflict::Exhausted {
                     resource,
-                    starts_at: reservation.starts_at,
-                    ends_at: reservation.ends_at,
-                    capacity: u32::try_from(capacity).unwrap_or(u32::MAX),
+                    starts_at,
+                    ends_at,
+                    capacity,
                 });
             }
         }
@@ -169,6 +192,28 @@ impl CapacityLedger {
             .range((world_id, 0)..=(world_id, u64::MAX))
             .map(|(_, value)| value)
     }
+}
+
+/// Prüft Gleichzeitigkeit statt der Gesamtzahl überlappender Termine. Enden
+/// stehen bei gleicher Zeit vor Anfängen: `[a,b)` und `[b,c)` teilen keinen Platz.
+fn first_capacity_conflict(
+    intervals: impl Iterator<Item = (SimTime, SimTime)>,
+    capacity: u32,
+) -> Option<(SimTime, SimTime)> {
+    let mut changes: Vec<_> = intervals
+        .flat_map(|(start, end)| [(start, 1_i64), (end, -1)])
+        .collect();
+    changes.sort_unstable();
+    let mut occupied = 0_i64;
+    for span in changes.windows(2) {
+        let (starts_at, change) = span[0];
+        let ends_at = span[1].0;
+        occupied += change;
+        if occupied > i64::from(capacity) && starts_at < ends_at {
+            return Some((starts_at, ends_at));
+        }
+    }
+    None
 }
 
 #[cfg(test)]
@@ -201,5 +246,48 @@ mod tests {
         ledger
             .try_reserve(ResourceReservation::new(2, 1, resource, at(5), at(6)).unwrap())
             .unwrap();
+    }
+
+    #[test]
+    fn aufeinanderfolgende_termine_belegen_nur_einen_parallelen_platz() {
+        let resource = ConflictResource::Facility(FacilityId::new(7));
+        let mut ledger = CapacityLedger::default();
+        ledger.set_capacity(1, resource, 2).unwrap();
+        for (id, start, end) in [(1, 0, 10), (2, 10, 20), (3, 0, 20)] {
+            ledger
+                .try_reserve(ResourceReservation::new(1, id, resource, at(start), at(end)).unwrap())
+                .unwrap();
+        }
+        assert_eq!(
+            ledger.try_reserve(ResourceReservation::new(1, 4, resource, at(5), at(15)).unwrap()),
+            Err(CapacityConflict::Exhausted {
+                resource,
+                starts_at: at(5),
+                ends_at: at(10),
+                capacity: 2
+            })
+        );
+        assert!(ledger.set_capacity(1, resource, 1).is_err());
+        assert_eq!(ledger.reservations(1).count(), 3);
+        ledger.release(1, 3).unwrap();
+        ledger.set_capacity(1, resource, 1).unwrap();
+    }
+
+    #[test]
+    fn direkt_erzeugte_ungueltige_intervalle_bleiben_atomare_ablehnungen() {
+        let mut ledger = CapacityLedger::default();
+        for end in [0, -1] {
+            assert_eq!(
+                ledger.try_reserve(ResourceReservation {
+                    world_id: 1,
+                    id: 1,
+                    resource: ConflictResource::Facility(FacilityId::new(7)),
+                    starts_at: at(0),
+                    ends_at: at(end),
+                }),
+                Err(CapacityConflict::InvalidInterval)
+            );
+        }
+        assert_eq!(ledger.reservations(1).count(), 0);
     }
 }

@@ -676,12 +676,26 @@ impl PersistentVehicleMarket {
                 } if lessee == operator_id => Some((*id, false)),
                 _ => None,
             })
-            .collect::<Vec<_>>();
-        for (vehicle_id, owned) in affected {
-            if owned {
-                let price = *used_market_prices
-                    .get(&vehicle_id)
-                    .ok_or(VehicleMarketError::MissingLiquidationPrice)?;
+            // Erst alle betroffenen Fahrzeuge prüfen: Ein fehlender Preis
+            // oder Zeitrücksprung darf keine halbe Liquidation hinterlassen.
+            .map(|(vehicle_id, owned)| {
+                let price = if owned {
+                    let price = *used_market_prices
+                        .get(&vehicle_id)
+                        .ok_or(VehicleMarketError::MissingLiquidationPrice)?;
+                    if price <= 0 {
+                        return Err(VehicleMarketError::InvalidUsedSale);
+                    }
+                    Some(price)
+                } else {
+                    None
+                };
+                ensure_history_time(&self.vehicle(vehicle_id)?.history, at)?;
+                Ok((vehicle_id, price))
+            })
+            .collect::<Result<Vec<_>, VehicleMarketError>>()?;
+        for (vehicle_id, price) in affected {
+            if let Some(price) = price {
                 self.list_owned_vehicle(at, vehicle_id, operator_id, price)?;
             } else {
                 self.return_lease(at, vehicle_id, reason)?;
@@ -1171,6 +1185,50 @@ mod tests {
             market.vehicle(1).expect("Asset").status(),
             VehicleMarketStatus::AvailableForLease { .. }
         ));
+    }
+
+    #[test]
+    fn fehlgeschlagene_betriebsaufgabe_veraendert_keines_der_fahrzeuge() {
+        let mut market = PersistentVehicleMarket::new(7, default_server_lessors()).unwrap();
+        for (id, at) in [(1, 0), (2, 5)] {
+            market
+                .introduce_new_vehicle(
+                    at,
+                    asset(id, ProcurementChannel::NewBuild),
+                    "evu-a",
+                    None,
+                    condition(),
+                )
+                .unwrap();
+        }
+        let before = market.state_hash();
+        for (at, prices, error) in [
+            (
+                10,
+                BTreeMap::from([(1, 100)]),
+                VehicleMarketError::MissingLiquidationPrice,
+            ),
+            (
+                10,
+                BTreeMap::from([(1, 100), (2, 0)]),
+                VehicleMarketError::InvalidUsedSale,
+            ),
+            (
+                4,
+                BTreeMap::from([(1, 100), (2, 100)]),
+                VehicleMarketError::HistoryTimeRegression,
+            ),
+        ] {
+            assert_eq!(market.exit_operator(at, "evu-a", true, &prices), Err(error));
+            assert_eq!(market.state_hash(), before);
+        }
+        market
+            .exit_operator(10, "evu-a", true, &BTreeMap::from([(1, 100), (2, 100)]))
+            .unwrap();
+        assert!(market.vehicles().all(|vehicle| matches!(
+            vehicle.status(),
+            VehicleMarketStatus::ListedForUsedSale { .. }
+        )));
     }
 
     #[test]

@@ -63,6 +63,11 @@ impl<'a> ProtoReader<'a> {
                 .get(self.position)
                 .ok_or(ImportError::Truncated)?;
             self.position += 1;
+            // Nach neun Bytes bleibt nur Bit 63. Weitere Nutzbits würden
+            // beim Schieben still verschwinden und eine andere Kennung ergeben.
+            if shift == 63 && byte > 1 {
+                return Err(ImportError::MalformedVarint);
+            }
             result |= u64::from(byte & 0x7f) << shift;
             if byte & 0x80 == 0 {
                 return Ok(result);
@@ -81,6 +86,11 @@ impl<'a> ProtoReader<'a> {
         let field = u32::try_from(tag >> 3).map_err(|_wert| ImportError::MalformedProtobuf {
             context: "Feldnummer überschreitet u32",
         })?;
+        if field == 0 || field > 0x1fff_ffff {
+            return Err(ImportError::MalformedProtobuf {
+                context: "Feldnummer liegt außerhalb 1 bis 2^29-1",
+            });
+        }
         Ok((field, wire_type))
     }
 
@@ -167,6 +177,33 @@ mod tests {
         let mut reader = ProtoReader::new(&[0xAC, 0x02]);
         assert_eq!(reader.read_varint().expect("gültiges Varint"), 300);
         assert!(!reader.has_remaining());
+    }
+
+    #[test]
+    fn varint_verwirft_nutzbits_oberhalb_der_64_bit_grenze() {
+        let mut bytes = [0xff; 10];
+        bytes[9] = 1;
+        assert_eq!(ProtoReader::new(&bytes).read_varint().unwrap(), u64::MAX);
+        for last in [2, 0x7f, 0x80, 0xff] {
+            bytes[9] = last;
+            assert!(matches!(
+                ProtoReader::new(&bytes).read_varint(),
+                Err(crate::import::error::ImportError::MalformedVarint)
+            ));
+        }
+    }
+
+    #[test]
+    fn feldnummern_muessen_in_den_protobuf_tag_passen() {
+        for bytes in [&[0x00][..], &[0x80, 0x80, 0x80, 0x80, 0x10][..]] {
+            assert!(ProtoReader::new(bytes).read_tag().is_err());
+        }
+        assert_eq!(
+            ProtoReader::new(&[0xf8, 0xff, 0xff, 0xff, 0x0f])
+                .read_tag()
+                .unwrap(),
+            (0x1fff_ffff, WireType::Varint)
+        );
     }
 
     #[test]
