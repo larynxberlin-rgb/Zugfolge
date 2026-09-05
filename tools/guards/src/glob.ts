@@ -52,7 +52,8 @@ export function globToRegExp(pattern: string): RegExp {
   return new RegExp(`^${quelle}$`);
 }
 
-/** Ob `path` mindestens eines der Muster trifft. */
-export function matchesAny(path: string, patterns: readonly string[]): boolean {
-  return patterns.some((pattern) => globToRegExp(pattern).test(path));
+/** Kompiliert eine Musterauswahl einmal für beliebig viele Pfadprüfungen. */
+export function compileGlobs(patterns: readonly string[]): (path: string) => boolean {
+  const muster = patterns.map(globToRegExp);
+  return (path) => muster.some((pattern) => pattern.test(path));
 }

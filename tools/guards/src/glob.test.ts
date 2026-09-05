@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { globToRegExp, matchesAny } from "./glob.js";
+import { compileGlobs, globToRegExp } from "./glob.js";
 
 describe("globToRegExp", () => {
   it("verankert das Muster an beiden Enden", () => {
@@ -37,10 +37,22 @@ describe("globToRegExp", () => {
   });
 });
 
-describe("matchesAny", () => {
+describe("compileGlobs", () => {
   it("prüft gegen mehrere Muster", () => {
-    expect(matchesAny("docs/glossar.md", ["src/**", "docs/*.md"])).toBe(true);
-    expect(matchesAny("docs/glossar.md", ["src/**"])).toBe(false);
-    expect(matchesAny("docs/glossar.md", [])).toBe(false);
+    const trifft = compileGlobs(["src/**", "docs/*.md"]);
+    expect(trifft("docs/glossar.md")).toBe(true);
+    expect(trifft("src/main.ts")).toBe(true);
+    expect(trifft("other/main.ts")).toBe(false);
+    expect(trifft("docs/glossar.md")).toBe(true);
+    expect(compileGlobs([])("docs/glossar.md")).toBe(false);
+  });
+
+  it("hält die Musterauswahl je Prüfung unabhängig", () => {
+    const muster = ["src/**"];
+    const ersterLauf = compileGlobs(muster);
+    muster.push("docs/**");
+    const zweiterLauf = compileGlobs(muster);
+    expect(ersterLauf("docs/glossar.md")).toBe(false);
+    expect(zweiterLauf("docs/glossar.md")).toBe(true);
   });
 });

@@ -1,10 +1,11 @@
 # Wächter — Domänenanleitung
 
-Gilt für `tools/guards`. Ergänzt die Wurzel-`CLAUDE.md`, hebt sie nie auf.
+Gilt für `tools/guards`. Ergänzt die kanonische Arbeitsgrundlage
+[`AGENTS.md`](../../AGENTS.md), hebt sie nie auf.
 
 ## Zweck
 
-Die harten Invarianten aus `CLAUDE.md` prüfen, **soweit kein Compiler sie
+Die harten Invarianten aus `AGENTS.md` prüfen, **soweit kein Compiler sie
 sieht**. Was Rust oder Clippy halten können, gehört nach `clippy.toml` und
 `Cargo.toml` — nicht hierher. Hier steht nur, was sprachübergreifend, über
 Manifeste hinweg oder gegen Dokumentation geprüft werden muss.
@@ -15,6 +16,8 @@ Manifeste hinweg oder gegen Dokumentation geprüft werden muss.
 |-------|--------|
 | `guards.config.json` | die Domänenkarte: welche Pfade, welcher Status, welche Regeln |
 | `quellenregister.json` | das Rechte-Gate-Register: Freigabestatus je Datenquelle (M0.4, `docs/rechte.md`) |
+| `src/repo.ts` | ein Arbeitsbaum-Leser für die explizite Textformat-Allowlist, einschließlich Python und JSX; ignorierte Verzeichnisse werden nicht betreten |
+| `src/glob.ts` | Glob-Muster einmal je Pfadauswahl kompilieren und innerhalb des Prüflaufs wiederverwenden |
 | `src/rules/pattern-rules.ts` | die Musterregeln — enthält die verbotenen Muster selbst |
 | `src/rules/world-id.ts` | Invariante 4 gegen SQL-Migrationen und Drizzle-Schemata |
 | `src/rules/rights-gate.ts` | Invariante 8: Register hält, was es verspricht, und kein Import zieht an einer nicht freigegebenen Quelle |
