@@ -267,11 +267,17 @@ function publicResult(candidate, targetRouteNumber) {
  * Kosten sind konservativ lexikographisch geordnet: zuerst der mit einem
  * Fremdstreckenaufschlag gewichtete Laufweg, danach Fremd- und Gesamtlänge.
  */
-export function createDeterministicTrackRouter(edges) {
+export function createDeterministicTrackRouter(edges, { allowedDirectionsByEdge = new Map() } = {}) {
   const normalizedEdges = normalizeEdges(edges);
   const edgeById = new Map(normalizedEdges.map((edge) => [edge.edgeId, edge]));
+  invariant(allowedDirectionsByEdge instanceof Map, "allowedDirectionsByEdge muss eine Map sein.");
+  for (const [edgeId, directions] of allowedDirectionsByEdge) {
+    invariant(edgeById.has(edgeId) && Array.isArray(directions) && directions.every((direction) => direction === "along" || direction === "against") && new Set(directions).size === directions.length, "Richtungsfreigabe verweist auf eine unbekannte Kante oder ungueltige Richtungen.");
+  }
+  const permitted = (leg) => leg === null || !allowedDirectionsByEdge.has(leg.edgeId) || allowedDirectionsByEdge.get(leg.edgeId).includes(leg.direction);
   const adjacency = new Map();
   const addTransition = (node, transition) => {
+    if (!permitted(transition.leg)) return;
     const existing = adjacency.get(node);
     if (existing === undefined) adjacency.set(node, [transition]);
     else existing.push(transition);
@@ -309,6 +315,7 @@ export function createDeterministicTrackRouter(edges) {
       for (const destination of normalizedDestinations) {
         if (origin.edgeId !== destination.edgeId) continue;
         const leg = makeLeg(origin.edge, origin.offsetMm, destination.offsetMm);
+        if (!permitted(leg)) continue;
         const lengthMm = Math.abs(destination.offsetMm - origin.offsetMm);
         const cost = segmentCost(origin.edge, lengthMm, targetKey);
         considerCandidate({ ...cost, origin, destination, terminalKey: `direct\u0000${legToken(leg)}`, legs: mergeLegs([leg]) });
@@ -316,6 +323,7 @@ export function createDeterministicTrackRouter(edges) {
     }
 
     const seed = (origin, nodeKeyValue, leg) => {
+      if (!permitted(leg)) return;
       const lengthMm = leg === null ? 0 : Math.abs(leg.edgeExitMm - leg.edgeEntryMm);
       const cost = segmentCost(origin.edge, lengthMm, targetKey);
       const state = {
@@ -340,6 +348,7 @@ export function createDeterministicTrackRouter(edges) {
 
     const destinationByNode = new Map();
     const addDestination = (destination, nodeKeyValue, leg) => {
+      if (!permitted(leg)) return;
       const lengthMm = leg === null ? 0 : Math.abs(leg.edgeExitMm - leg.edgeEntryMm);
       const suffix = { destination, leg, cost: segmentCost(destination.edge, lengthMm, targetKey), token: legToken(leg) };
       const existing = destinationByNode.get(nodeKeyValue);

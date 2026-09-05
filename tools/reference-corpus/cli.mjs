@@ -4,7 +4,7 @@
 import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 
-import { buildGtfsPlanningSnapshot, createGtfsPlanningEnvelope } from "@zugfolge/gtfs";
+import { buildGtfsPlanningSnapshot, buildGtfsReferenceReplaySnapshot, createGtfsPlanningEnvelope } from "@zugfolge/gtfs";
 
 import {
   buildReferenceCorpus,
@@ -100,7 +100,7 @@ async function main() {
     console.log(`${observations.length} vergleichbare Fahrplanläufe normalisiert.`);
     return;
   }
-  if (mode === "plan-gtfs") {
+  if (mode === "plan-gtfs" || mode === "plan-gtfs-reference-replay") {
     const [captureConfigFile, planningConfigFile, manifestFile, rawDirectory, outputFile] = args;
     if (!outputFile) throw new Error("Aufruf: plan-gtfs CAPTURE_CONFIG PLANNING_CONFIG MANIFEST ROHDATEN_ORDNER OUTPUT");
     const captureConfig = await readJson(captureConfigFile);
@@ -108,7 +108,8 @@ async function main() {
     const manifest = await readJson(manifestFile);
     const registry = await readJson(path.resolve("tools/guards/quellenregister.json"));
     verifyRegisteredSource(registry, captureConfig.source);
-    const snapshot = buildGtfsPlanningSnapshot({
+    const compile = mode === "plan-gtfs-reference-replay" ? buildGtfsReferenceReplaySnapshot : buildGtfsPlanningSnapshot;
+    const snapshot = compile({
       ...planningConfig,
       serviceDates: planningConfig.serviceDates ?? captureConfig.serviceDates,
       source: {
@@ -304,7 +305,7 @@ async function main() {
     console.log(canonicalJson(await readJson(file)));
     return;
   }
-  throw new Error("Modus: capture-gtfs | normalize-gtfs | plan-gtfs | build | build-corpus | compare | finalize-release | chain | sign | verify | verify-signature | hash | canonical");
+  throw new Error("Modus: capture-gtfs | normalize-gtfs | plan-gtfs | plan-gtfs-reference-replay | build | build-corpus | compare | finalize-release | chain | sign | verify | verify-signature | hash | canonical");
 }
 
 main().catch((error) => {

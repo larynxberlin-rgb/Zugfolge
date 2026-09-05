@@ -126,6 +126,17 @@ describe("GameApiClient", () => {
     }
   });
 
+  it("übernimmt reale Endbahnhöfe und Anpassungsgründe aus der Ausschreibungsprojektion", async () => {
+    const serviceLines = [{ designation: "RE 1", origin: "Bahnhof A", destination: "Bahnhof C",
+      adjustmentReasons: ["Die Linie wurde auf Bahnhöfe mit Wendemöglichkeit gekürzt."] }];
+    const fetchImplementation = vi.fn(async () => new Response(JSON.stringify({ revision: 0,
+      tenders: { $zugfolgeType: "map", entries: [["tender-1", { phase: "open", bidCount: 0,
+        tender: { lotId: "lot-1", closesAt: 1_000 }, serviceLines }]] },
+    }), { status: 200 }));
+    const client = new GameApiClient("https://api.test", "token", fetchImplementation as typeof fetch);
+    await expect(client.loadEconomyState("world/1")).resolves.toMatchObject({ revision: 0, tenders: [{ serviceLines }] });
+  });
+
   it("spricht den vollständigen M12-Vertrags- und Marktpfad mit weltgebundenen URLs an", async () => {
     const fetchImplementation = vi.fn(async (input: RequestInfo | URL, _init?: RequestInit) => new Response(
       JSON.stringify(String(input).endsWith("/simulation-time") ? { atS: 123 }

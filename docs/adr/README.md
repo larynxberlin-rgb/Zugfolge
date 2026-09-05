@@ -13,8 +13,8 @@ umgeschrieben — ihre Historie ist der Wert.
 
 ## Verhältnis zu den anderen Dokumenten
 
-- `AGENTS.md` — die bindende Kurztabelle E1–E32. Wird jede Sitzung geladen.
-- `../entscheidungen.md` — E1–E32 mit einzeiliger Begründung, die maßgebliche
+- `AGENTS.md` — die bindende Kurztabelle E1–E33. Wird jede Sitzung geladen.
+- `../entscheidungen.md` — E1–E33 mit einzeiliger Begründung, die maßgebliche
   Quelle für Wortlaut und Nummerierung.
 - **`docs/adr/`** (dieser Ordner) — dieselben Entscheidungen ausführlich: mit
   Kontext, Konsequenzen und Querverweisen. Ein ADR je Entscheidung.
@@ -42,7 +42,7 @@ Statuswerte: `Angenommen` (bindend), `Vorgeschlagen`, `Abgelöst durch ADR-XXXX`
 ## Index
 
 Die folgenden ADRs wurden aus den zuvor in der Konzeptionsphase getroffenen
-Grundsatzentscheidungen schriftlich festgehalten; E21 bis E32 kamen später als
+Grundsatzentscheidungen schriftlich festgehalten; E21 bis E33 kamen später als
 eigene Entscheidungen hinzu. Alle einer E-Nummer zugeordneten ADRs sind
 **angenommen und bindend**; der zusätzliche ADR-0030 ist ausdrücklich erst
 vorgeschlagen.
@@ -82,6 +82,7 @@ vorgeschlagen.
 | [0031](0031-spielerkarte-als-lebendige-welt.md) | E30 | Die Spielerkarte zeigt die lebendige gemeinsame Welt, nicht den Infrastruktur-Editor |
 | [0032](0032-eine-autoritative-betriebswirklichkeit.md) | E31 | LiveMap, RZÜ und Betrieb bilden eine autoritative Wirklichkeit |
 | [0033](0033-eine-spielwelt-pro-server.md) | E32 | Eine Spielwelt pro Server und Subdomain |
+| [0034](0034-spielgenerierte-fahrplaene-im-spielgebiet.md) | E33 | GTFS ist Referenz; eigene Fahrpläne bleiben vollständig im Spielgebiet |
 
 > **Teilablösung:** ADR-0027 ersetzt ausschließlich den Exact-only-Satz zur
 > sichtbaren Zugposition in ADR-0026. Der historische Wortlaut bleibt dort
@@ -108,3 +109,4 @@ vorgeschlagen.
 > stammt aus der Zeit vor E17–E20. Da diese vier heute gleichrangig bindend
 > sind und das Arbeitsprinzip ein ADR *für jede* Grundsatzentscheidung verlangt,
 > sind sie hier mit aufgenommen.
+`ADR-0034` dokumentiert E33: [Spielgenerierte Fahrpläne im Spielgebiet](0034-spielgenerierte-fahrplaene-im-spielgebiet.md); ersetzt E25 für neue Spielangebote.

@@ -259,6 +259,30 @@ describe("M12-Spieleroberfläche", () => {
     expect(html).not.toContain("Bald verfügbar");
   });
 
+  it("unterscheidet nicht ladbare Ausschreibungen vom leeren Markt und sperrt veraltete Gebote", () => {
+    const html = renderCooperationSurface(state({
+      tendersUnavailable: true,
+      tenders: [{ id: "alt", lotId: "S5", phase: "open", bidCount: 0, ownBidCount: 0, closesAt: 1_000 }],
+    }));
+    expect(html).toContain('role="alert"');
+    expect(html).toContain("Ausschreibungen konnten nicht geladen werden");
+    expect(html).not.toContain("Derzeit ist keine Ausschreibung");
+    expect(html).not.toContain("tender-bid-form");
+    expect(html).toContain("m12-refresh");
+    expect(renderCooperationSurface(state({ tenders: [] }))).toContain("Derzeit ist keine Ausschreibung");
+  });
+
+  it("erklärt den tatsächlichen Laufweg und die Kürzung auf geeignete Bahnhöfe", () => {
+    const html = renderCooperationSurface(state({ tenders: [{ id: "tender-1", lotId: "game-lot-hash", phase: "open",
+      bidCount: 0, ownBidCount: 0, closesAt: 1_000, serviceLines: [{ designation: "RE 1", origin: "Bahnhof A",
+        destination: "Bahnhof C", adjustmentReasons: ["Vorlage: Außenstadt – Außenberg. Gekürzt auf Bahnhöfe mit Wendemöglichkeit.", "Hinweis <Beleg>"] }] }] }));
+    expect(html).toContain("RE 1 · Bahnhof A – Bahnhof C");
+    expect(html).toContain("Vorlage: Außenstadt – Außenberg.");
+    expect(html).toContain("Gekürzt auf Bahnhöfe mit Wendemöglichkeit.");
+    expect(html).toContain("Hinweis &lt;Beleg&gt;");
+    expect(html).not.toContain("<Beleg>");
+  });
+
   it("bietet Nullstart-EVU den signierten öffentlichen Anschubvertrag losgebunden an", () => {
     const base = state();
     const html = renderCooperationSurface(state({

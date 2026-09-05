@@ -27,9 +27,13 @@ import {
   decodeEconomyValue,
   encodeEconomyValue,
   fleetSnapshotHash,
+  deriveTenderAuthorityBudgetCents,
+  lotsFromGtfsPlanning,
   startEconomyWorld,
+  TENDER_GENERATION_SCHEMA,
   type FleetMobilizationSnapshot,
 } from "@zugfolge/economy";
+import { buildRegionalServicePlanning, compileGameTimetable, canonicalPlanningJson, planningSha256 } from "@zugfolge/gtfs";
 import type { IdentityDatabase } from "@zugfolge/identity";
 import { LivemapRegistry } from "@zugfolge/livemap-stream";
 import { OperationsRegistry } from "@zugfolge/dispatch";
@@ -76,8 +80,32 @@ const KEY_ID = "world-deploy-test-2026";
 const FLEET_RELEASE_HASH = "c".repeat(64);
 const PLANNING_AUTHORITY_ACCOUNT_ID = "70000000-0000-4000-8000-000000000099";
 
-const lotId = (index: number) => `lot-test-${index + 1}`;
-const trainRunId = (index: number) => `train-test-${index + 1}`;
+const GAME_SPECIFICATION = { schemaVersion: "zugfolge-game-timetable-generation/v1" as const, version: "game-timetable/v1", departureGridSeconds: 1, minimumRunningSeconds: 1, requireEligibleTerminals: true };
+const generatedTimetable = compileGameTimetable({
+  worldId: WORLD_ID, regionId: REGION_ID, releaseId: "gtfs-test-20261214", serviceDate: "20261214", seed: "17", specification: GAME_SPECIFICATION,
+  trips: Array.from({ length: 8 }, (_, index) => ({
+    sourceTripId: `reference-trip-${index}`, serviceId: "reference-service", routeId: `reference-route-${index}`, routeShortName: `RE ${index + 1}`, headsign: "Halle (Saale) Hbf", directionId: "0",
+    stops: [
+      { stopId: "leipzig", stopName: "Leipzig Hbf", inRegion: true, stopSequence: 1, arrivalS: 0, departureS: 0, terminalEligibility: { kind: "station" as const, canTurn: true, evidenceId: "fixture-operating-point-leipzig" } },
+      { stopId: "halle", stopName: "Halle (Saale) Hbf", inRegion: true, stopSequence: 2, arrivalS: 1_800, departureS: 1_800, terminalEligibility: { kind: "station" as const, canTurn: true, evidenceId: "fixture-operating-point-halle" } },
+    ],
+  })),
+});
+const GAME_TIMETABLE_HASH = planningSha256(canonicalPlanningJson(generatedTimetable));
+const servicePlanning = buildRegionalServicePlanning({
+  worldId: WORLD_ID, revision: 1, producedAt: 0, serviceDate: "20261214", infrastructureVersion: "infra-test-v1", rulesVersion: "world-deploy-test-planning/v1", sourceTimetableHash: GAME_TIMETABLE_HASH, smallLotMaximumTrainKmPerDay: 1_000,
+  timetableGeneration: { seed: "17", specification: GAME_SPECIFICATION },
+  source: { sourceId: "fixture-reference", feedUrl: "https://example.test/reference.zip", archiveSha256: "a".repeat(64), capturedAt: "2026-12-13T00:00:00Z", timeZone: "Europe/Berlin", sourceLicense: "fixture", attribution: "Fixture" },
+  lines: generatedTimetable.chains.map((chain) => ({
+    peakVehicles: 1,
+    policy: { lineId: chain.lineId, energyWhPerTrainKm: 10_000, facilityMinutesPerVehicleDay: 60, minimumTurnaroundSeconds: 300, overnightBasisPoints: 10_000, requiredProtection: ["pzb"], requirements: { minimumSeats: 100, firstClassBasisPoints: 0, accessible: true, bicyclePlaces: 8, wheelchairPlaces: 2, requiredEquipment: [] } },
+    journeys: [{ id: chain.journeyChainId, directionId: chain.directionId, sourceRouteId: chain.sourceRouteIds[0]!, sourceTripIds: chain.sourceTripIds, routeLengthMm: 35_000_000, edgeIds: ["edge:leipzig-halle"], stops: chain.legs[0]!.kind === "playable" ? chain.legs[0]!.stops.map((stop) => ({ ...stop, name: stop.stopId === "leipzig" ? "Leipzig Hbf" : "Halle (Saale) Hbf" })) : [] }],
+  })),
+});
+const trainRunId = (index: number) => {
+  const lot = servicePlanning.snapshot.lots[index]!;
+  return servicePlanning.snapshot.patterns.find((pattern) => lot.patternIds.includes(pattern.id))!.journeys[0]!.id!;
+};
 
 const { publicKey, privateKey } = generateKeyPairSync("ed25519");
 const PUBLIC_KEY_PEM = publicKey.export({ type: "spki", format: "pem" }).toString();
@@ -132,11 +160,8 @@ const economyRelease = buildEconomyRelease({
   ],
 });
 
-const economyLots = Array.from({ length: 8 }, (_, index) => ({
-  id: lotId(index),
-  size: 100 - index,
-  attractiveness: 50 - index,
-}));
+const economyLots = lotsFromGtfsPlanning(servicePlanning, WORLD_ID);
+const tenderGeneration = { schemaVersion: TENDER_GENERATION_SCHEMA, authorityId: PLANNING_AUTHORITY_ACCOUNT_ID, failurePenaltyCents: 0n, authorityBudgetCentsPerPeriod: deriveTenderAuthorityBudgetCents(servicePlanning, WORLD_ID, economyRelease, 6) };
 
 const publicVehiclePoolByLot = Object.fromEntries(
   economyLots.map((lot) => [lot.id, ["vehicle-1"]] as const),
@@ -154,7 +179,8 @@ function blueprint(
     seed,
     durationMonths: 6,
     release: economyRelease,
-    lots: economyLots,
+    planning: servicePlanning,
+    tenderGeneration,
     authorityBudgets: [],
     accounts: [],
     publicVehiclePoolByLot,
@@ -176,7 +202,7 @@ function blueprint(
     },
     releases: {
       infra: "a".repeat(64),
-      timetable: "b".repeat(64),
+      timetable: GAME_TIMETABLE_HASH,
       fleet: FLEET_RELEASE_HASH,
       economy: economyRelease.checksum,
     },
@@ -305,6 +331,8 @@ function deployment(
         tenderProfiles: economyRelease.tenderProfiles,
       },
       lots: economyLots,
+      planning: servicePlanning,
+      tenderGeneration,
       authorityBudgets: [],
       accounts: [],
       publicVehiclePoolByLot,
@@ -404,7 +432,7 @@ function deployment(
         predecessorId: null,
         vehicleIds: [`regional-vehicle:${index}`],
       })),
-      trains: economyLots.map((_lot, index) => ({
+      trains: economyLots.map((lot, index) => ({
         id: trainRunId(index),
         trainNumber: `RE ${index + 1}`,
         operatorId: "public",
@@ -413,6 +441,16 @@ function deployment(
         formationVersionId: `regional-formation:${index}`,
         headRouteMm: 0,
         scheduledDepartureMs: 0,
+        serviceOutcome: {
+          schemaVersion: "zugfolge-operational-service-outcome-binding/v1",
+          serviceId: trainRunId(index),
+          serviceRunId: `${trainRunId(index)}:service-day:${WORLD_EPOCH.slice(0, 10)}`,
+          lotId: lot.id,
+          serviceDay: WORLD_EPOCH.slice(0, 10),
+          scheduledArrivalMs: 1_800_000,
+          requiredSeats: null,
+          connectionAssessment: "unavailable",
+        },
         publicPassengerStop: true,
         dispatchInterlockingRouteId: "interlocking:leipzig-halle",
         protectionModeSelectionRuns: [{
@@ -489,7 +527,7 @@ function deployment(
     provenance: {
       infraReleaseId: "infra-test-v1",
       operationalNetworkHash: "d".repeat(64),
-      gtfsSnapshotHash: "b".repeat(64),
+      gtfsSnapshotHash: GAME_TIMETABLE_HASH,
       fleetSourceSha256: "3".repeat(64),
       operationalSimulationSourceSha256: "5".repeat(64),
       generationScriptSha256: "4".repeat(64),
@@ -519,6 +557,11 @@ function deploymentForWorld(
   return {
     ...original,
     worldId,
+    economy: {
+      ...original.economy,
+      planning: { snapshot: { ...servicePlanning.snapshot, worldId }, snapshotHash: planningSha256(canonicalPlanningJson({ ...servicePlanning.snapshot, worldId })) },
+      tenderGeneration: { ...tenderGeneration, authorityId: planningAuthorityAccountId },
+    },
     worldDefinition: { ...original.worldDefinition, name },
     fleet: { ...original.fleet, worldId },
     regionalSimulation: { ...original.regionalSimulation, worldId },
@@ -920,7 +963,7 @@ describe("Game world_deploy: signierte Weltanlage", () => {
     const signed = signedDeployment(mutate(deployment()));
     const { run, fleet, registerStartedWorld } = handler();
 
-    await expect(run(context(commandFor(signed)))).rejects.toThrow(/Hashbindungen|InfraRelease-Hash/);
+    await expect(run(context(commandFor(signed)))).rejects.toThrow(/Hashbindungen|InfraRelease-Hash|Spielplanung verletzt/u);
 
     expect(await db.select().from(worlds)).toHaveLength(0);
     expect(await db.select().from(alphaWorldProfiles)).toHaveLength(0);

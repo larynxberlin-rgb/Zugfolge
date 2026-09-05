@@ -7,8 +7,8 @@ import { StringDecoder } from "node:string_decoder";
 import { pathToFileURL } from "node:url";
 
 import { alphaCanonicalJson, alphaHash } from "../../packages/alpha/dist/index.js";
-import { buildEconomyRelease, encodeEconomyValue, parseStartingCapitalPolicy, serializeStartingCapitalPolicy, startEconomyWorld } from "../../packages/economy/dist/index.js";
-import { canonicalPlanningJson } from "../../packages/gtfs/dist/index.js";
+import { buildEconomyRelease, deriveTenderAuthorityBudgetCents, encodeEconomyValue, lotsFromGtfsPlanning, parseStartingCapitalPolicy, serializeStartingCapitalPolicy, startEconomyWorld, TENDER_GENERATION_SCHEMA } from "../../packages/economy/dist/index.js";
+import { buildRegionalServicePlanning, canonicalPlanningJson } from "../../packages/gtfs/dist/index.js";
 import { allocatePublicRegionalTrainNumbers, publicRegionalTrainNumber } from "../../packages/livemap/dist/index.js";
 import {
   OPERATIONAL_PROTECTION_MODE_SELECTION_POLICY,
@@ -54,6 +54,108 @@ const MAX_TIMETABLE_ROUTE_RECORD_BYTES = 16 * 1024 * 1024;
 export const ALPHA_MINIMUM_TURNAROUND_S = 300;
 const CANONICAL_PROTECTION_SYSTEMS = Object.freeze(["etcs-level1", "etcs-level2", "lzb", "pzb"]);
 const CONSERVATIVE_PROTECTION_MODE_PRIORITY_V1 = Object.freeze(["pzb", "lzb", "etcs-level1", "etcs-level2"]);
+
+/** Ausschliesslich generierte Binnenfahrten duerfen einen neuen Weltvertrag bilden. */
+export function assertPlayableGameTimetable(snapshot, worldId) {
+  invariant(snapshot?.timetableGeneration?.schemaVersion === "zugfolge-game-timetable-generation/v1", "Neuer Weltstart braucht einen generierten Spiel-Fahrplan; den alten GTFS-Datenstand zuerst neu bauen.");
+  const networkReference = snapshot.timetableGeneration.networkReference;
+  invariant(snapshot.timetableGeneration.requireEligibleTerminals === true && networkReference?.schemaVersion === "zugfolge-game-timetable-network-reference/v1" && SHA256.test(networkReference.terminalCatalog?.sha256 ?? "") && Number.isSafeInteger(networkReference.terminalCatalog?.bytes) && networkReference.terminalCatalog.bytes > 0 && typeof networkReference.terminalCatalog?.sourceId === "string" && networkReference.terminalCatalog.sourceId.trim() !== "", "Neuer Weltstart braucht belegte Endbahnhoefe mit Wendemoeglichkeit aus einem gebundenen Terminalkatalog.");
+  invariant(Array.isArray(snapshot.journeyChains) && snapshot.journeyChains.length > 0, "Spiel-Fahrplan besitzt keine Fahrten.");
+  const stations = new Map((snapshot.stations ?? []).map((station) => [station.stopId, station]));
+  const lineById = new Map((snapshot.lines ?? []).map((line) => [line.lineId, line]));
+  for (const chain of snapshot.journeyChains) {
+    invariant(chain.generation === "game-timetable/v1" && chain.journeyChainId?.startsWith("game-trip-"), "Spiel-Fahrplan besitzt keine generierten Fahrtidentitaeten.");
+    invariant(chain.worldId === worldId && chain.orderable === true && chain.legs?.length === 1, "Spiel-Fahrplan besitzt eine fremde, nicht bestellbare oder gebietsueberschreitende Fahrt.");
+    const leg = chain.legs[0];
+    invariant(leg.kind === "playable" && leg.orderable === true && leg.qualityClass === "B" && leg.entryPortalId === null && leg.exitPortalId === null && leg.stops?.length >= 2, "Spiel-Fahrplan enthaelt einen Aussenlauf, ein Portal oder weniger als zwei Binnenhalte.");
+    invariant(leg.stops.every((stop) => stations.get(stop.stopId)?.inRegion === true), "Spiel-Fahrplan enthaelt einen Halt ausserhalb der spielbaren Karte.");
+    const line = lineById.get(chain.lineId);
+    invariant(line?.adjustment?.terminalEvidenceIds?.length === 2 && line.adjustment.terminalEvidenceIds.every((id) => typeof id === "string" && id.trim() !== ""), "Spiel-Fahrplan besitzt keinen Wendenachweis fuer beide Endbahnhoefe.");
+    invariant((leg.planningWindows ?? []).length === 0, "Spiel-Fahrplan enthaelt noch Aussenlauf-Planungsfenster.");
+  }
+}
+
+export function buildAlphaServicePlanning({ worldId, infraReleaseId, gtfsEnvelope, lotRecords, timetableRouteBindings, assets, circulations, rules }) {
+  const snapshot = gtfsEnvelope.snapshot;
+  assertPlayableGameTimetable(snapshot, worldId);
+  const stations = new Map(snapshot.stations.map((station) => [station.stopId, station]));
+  const lineById = new Map((snapshot.lines ?? []).map((line) => [line.lineId, line]));
+  const rulesVersion = `${rules.version}:${sha256(canonicalPlanningJson(rules))}`;
+  return buildRegionalServicePlanning({
+    worldId,
+    revision: 1,
+    producedAt: 0,
+    source: {
+      sourceId: "gtfs-de-regional-rail",
+      feedUrl: snapshot.source.feedUrl ?? `artifact:${snapshot.source.archive}`,
+      archiveSha256: snapshot.source.archiveSha256,
+      capturedAt: snapshot.source.capturedAt ?? "unknown",
+      timeZone: NORMALIZED_SCHEDULE_TIME_ZONE,
+      sourceLicense: snapshot.source.sourceLicense,
+      attribution: snapshot.source.attribution ?? snapshot.source.archive,
+    },
+    sourceTimetableHash: gtfsEnvelope.snapshotHash,
+    timetableGeneration: { seed: snapshot.generationSeed, specification: snapshot.timetableGeneration },
+    infrastructureVersion: infraReleaseId,
+    rulesVersion,
+    serviceDate: snapshot.serviceDate,
+    smallLotMaximumTrainKmPerDay: rules.smallLotMaximumTrainKmPerDay,
+    lines: lotRecords.map((lot) => {
+      const assigned = assets.filter((asset) => asset.approvedLineIds.includes(lot.serviceLineId));
+      invariant(assigned.length > 0, `Linie '${lot.serviceLineId}' besitzt keine signierte Fahrzeuggrundlage.`);
+      const minimum = (read) => Math.min(...assigned.map(read));
+      const peakVehicles = circulations.filter((circulation) => circulation.lotId === lot.lotId).length;
+      return {
+        peakVehicles,
+        policy: {
+          lineId: lot.serviceLineId,
+          energyWhPerTrainKm: rules.energyWhPerTrainKm,
+          facilityMinutesPerVehicleDay: rules.facilityMinutesPerVehicleDay,
+          minimumTurnaroundSeconds: rules.minimumTurnaroundSeconds,
+          overnightBasisPoints: rules.overnightBasisPoints,
+          requiredProtection: [...new Set(assigned.flatMap((asset) => asset.installedProtection))].sort(),
+          requirements: {
+            minimumSeats: minimum((asset) => asset.passenger.seats),
+            minimumMaximumSpeedKph: minimum((asset) => asset.technical.maximumSpeedKph),
+            firstClassBasisPoints: minimum((asset) => Math.floor(asset.passenger.firstClassSeats * 10_000 / Math.max(1, asset.passenger.seats))),
+            accessible: assigned.every((asset) => asset.passenger.accessible),
+            bicyclePlaces: minimum((asset) => asset.passenger.bicyclePlaces),
+            wheelchairPlaces: minimum((asset) => asset.passenger.wheelchairPlaces),
+            requiredEquipment: assigned[0].passenger.equipment.filter((equipment) => assigned.every((asset) => asset.passenger.equipment.includes(equipment))).sort(),
+          },
+        },
+        journeys: lot.chains.map((chain) => {
+          const leg = chain.legs[0];
+          const route = timetableRouteBindings.get(leg.legId);
+          const adjustment = lineById.get(chain.lineId)?.adjustment;
+          invariant(route !== undefined, `Spiel-Fahrt '${chain.journeyChainId}' besitzt keinen releasegebundenen Laufweg.`);
+          return {
+            id: chain.journeyChainId,
+            directionId: String(chain.directionId ?? ""),
+            sourceRouteId: chain.sourceRouteIds?.[0] ?? chain.routeId,
+            sourceRouteIds: chain.sourceRouteIds,
+            sourceTripIds: chain.sourceTripIds,
+            presentation: {
+              designation: chain.routeShortName,
+              origin: stations.get(leg.stops[0].stopId).name,
+              destination: stations.get(leg.stops.at(-1).stopId).name,
+              adjustmentReasons: adjustment?.reason === "adapted-to-operational-stations"
+                ? [`Vorlage: ${adjustment.referenceOriginName} – ${adjustment.referenceDestinationName}. Die Linie wurde an die Spielkarte angepasst und endet an Bahnhöfen mit nachgewiesener Wendemöglichkeit.`]
+                : [],
+            },
+            routeLengthMm: route.routeLengthMm,
+            edgeIds: route.edgeIds,
+            stops: leg.stops.map((stop) => {
+              const station = stations.get(stop.stopId);
+              invariant(station !== undefined, `Binnenhalt '${stop.stopId}' fehlt im regionalen Stationsbestand.`);
+              return { ...stop, name: station.name };
+            }),
+          };
+        }),
+      };
+    }),
+  });
+}
 
 function invariant(condition, message) {
   if (!condition) throw new Error(message);
@@ -611,6 +713,7 @@ function timetableRouteSummary(value, requiredPlayableLegIds, seen) {
     templateId: route.templateId,
     dispatchInterlockingRouteId,
     routeLengthMm,
+    edgeIds: Object.freeze([...new Set(route.legs.map((leg) => leg.edgeId))]),
     routeLegCount: route.legs.length,
     protectionContractRuns: Object.freeze(protectionContractRuns.map((run) => Object.freeze(run))),
   });
@@ -1005,6 +1108,7 @@ if (!vehicleCatalogV2) {
 const vehicleReceipt = vehicleReceiptBytes === undefined ? undefined : JSON.parse(vehicleReceiptBytes);
 const vehicleInventory = vehicleInventoryBytes === undefined ? undefined : JSON.parse(vehicleInventoryBytes);
 const gtfs = gtfsEnvelope.snapshot;
+if (gtfs?.generationSeed !== buildConfiguration.seed) throw new Error("Spiel-Fahrplan und Weltbuild besitzen unterschiedliche Weltseeds.");
 
 const serviceDate = gtfs?.serviceDate;
 const timetableYear = Number(serviceDate?.slice(0, 4));
@@ -1084,7 +1188,20 @@ const publicTrainNumbers = allocatePublicRegionalTrainNumbers(chains.flatMap((ch
 )));
 if (chains.length !== gtfs.metrics?.orderableJourneyChainCount || chains.length === 0) throw new Error("Bestellbarer Fahrplan und signierter GTFS-Zaehler laufen auseinander.");
 
-const lotRecords = alphaLotRecords(chains, gtfsReleaseBinding.releaseId);
+const sourceLotRecords = alphaLotRecords(chains, gtfsReleaseBinding.releaseId);
+const servicePlanningRules = JSON.parse(await readFile(new URL("./specifications/regional-service-planning-alpha-2026.1.json", import.meta.url), "utf8"));
+const servicePlanning = buildAlphaServicePlanning({
+  worldId: WORLD_ID,
+  infraReleaseId: infraRelease.releaseId,
+  gtfsEnvelope,
+  lotRecords: sourceLotRecords,
+  timetableRouteBindings,
+  assets: fleetCatalogEntry.authorityRelease.assets,
+  circulations: timetableTransferPlan.dailyPlan.circulations,
+  rules: servicePlanningRules,
+});
+const planningLotByLine = new Map(servicePlanning.snapshot.lots.flatMap((lot) => lot.lineIds.map((lineId) => [lineId, lot])));
+const lotRecords = sourceLotRecords.map((lot) => ({ ...lot, sourceLotId: lot.lotId, lotId: planningLotByLine.get(lot.serviceLineId).id }));
 if (lotRecords.length < 8) throw new Error("Der Vergabekalender braucht mindestens acht getrennte SPNV-Lose.");
 
 const catalogAssets = fleetCatalogEntry.authorityRelease.assets;
@@ -1143,7 +1260,7 @@ function routeForLeg(leg, timetableRoute) {
 }
 
 for (const [lotIndex, lot] of lotRecords.entries()) {
-  const circulations = circulationsByLot.get(lot.lotId) ?? [];
+  const circulations = circulationsByLot.get(lot.sourceLotId) ?? [];
   invariant(circulations.length > 0, `Los '${lot.lotId}' besitzt keinen Daily-Circulation-Slot.`);
   const lotRouteBindings = lot.chains.flatMap((chain) => playableLegs(chain).map((leg) => {
     const binding = timetableRouteBindings.get(leg.legId);
@@ -1424,17 +1541,20 @@ const economyRelease = buildEconomyRelease({
   rules: economySpecification.rules,
   tenderProfiles: economySpecification.tenderProfiles,
 });
-const economyLots = lotRecords.map((lot) => ({
-  id: lot.lotId,
-  size: lot.chains.length,
-  attractiveness: new Set(lot.chains.flatMap((chain) => playableLegs(chain).flatMap((leg) => leg.stops.map((stop) => stop.stopId)))).size,
-}));
+const economyLots = lotsFromGtfsPlanning(servicePlanning, WORLD_ID);
+const tenderGeneration = {
+  schemaVersion: TENDER_GENERATION_SCHEMA,
+  authorityId: PUBLIC_PLANNING_AUTHORITY_ACCOUNT_ID,
+  failurePenaltyCents: 0n,
+  authorityBudgetCentsPerPeriod: deriveTenderAuthorityBudgetCents(servicePlanning, WORLD_ID, economyRelease, 12),
+};
 const economyStarted = startEconomyWorld({
   worldId: WORLD_ID,
   seed: PUBLIC_WORLD_SEED,
   durationMonths: 12,
   release: economyRelease,
-  lots: economyLots,
+  planning: servicePlanning,
+  tenderGeneration,
   authorityBudgets: [],
   accounts: [],
   publicVehiclePoolByLot,
@@ -1606,6 +1726,8 @@ const deployment = {
     durationMonths: 12,
     release: { schema: economyRelease.schema, version: economyRelease.version, rates: economyRelease.rates, rules: economyRelease.rules, tenderProfiles: economyRelease.tenderProfiles },
     lots: economyLots,
+    planning: servicePlanning,
+    tenderGeneration,
     authorityBudgets: [],
     accounts: [],
     publicVehiclePoolByLot,

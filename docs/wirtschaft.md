@@ -92,11 +92,11 @@ Vertragslaufzeiten skalieren mit der Weltlaufzeit — Werte und Herleitung in
 `produkt.md` 6.1. Der **Ablauf** ist in jeder Welt derselbe.
 
 Die zugrunde liegenden Linien und sinnvollen Lose kommen nicht aus einem
-Spielerformular: Ein gehashter GTFS-Planungssnapshot bildet aktive Fahrten auf
-den internen Betriebsgraphen ab und erzeugt daraus Fahrtenbilder, verbundene
-Liniengruppen und das Mengengerüst der Leistungsbeschreibung. GTFS liefert das
-Angebot; Befahrbarkeit, Energie- und Fahrzeugregeln bleiben versionierte
-Zugfolge-Daten. Der genaue Vertrag einschließlich Pilotnachweis und Grenzen
+Spielerformular: Ein gehashter Spiel-Angebotsplan erzeugt aus GTFS-Referenzen
+eigene Fahrten innerhalb der Spielkarte und daraus Liniengruppen und das
+Mengengerüst der Leistungsbeschreibung. GTFS liefert Referenzzeiten, Takte und
+Bezeichnungen; verbindlich sind der erzeugte Fahrplan und die versionierten
+Befahrbarkeits-, Energie- und Fahrzeugregeln. Der genaue Vertrag mit Grenzen
 steht in [`gtfs-angebotsplanung.md`](gtfs-angebotsplanung.md).
 
 ### 3.1 Der Zyklus
@@ -151,8 +151,10 @@ Präqualifikationsfolge.
 
 ### 3.3 Erstvergabe beim Weltstart
 
-**Beim Weltstart hält der Eigenbetrieb sämtliche Lose, und es läuft keine
-einzige Ausschreibung.** Sie werden erst nach und nach freigegeben.
+**Beim Weltstart hält der Eigenbetrieb sämtliche Lose. Die erste
+Vergabegruppe ist sofort zur Angebotsabgabe geöffnet.** Weitere Lose werden
+gestaffelt freigegeben. Der Zuschlag und der Betriebsübergang bleiben regulär;
+eine EVU-Gründung teilt keinen Vertrag automatisch zu (E28).
 
 Der Grund: Startete alles gleichzeitig, wäre das Netz binnen einer Periode
 verteilt — und danach gäbe es wochenlang nichts zu bieten, weil die
@@ -167,7 +169,7 @@ Welt ohne Einstieg vor.
 3. Lose werden nach Größe und Attraktivität in Schichten geteilt.
 4. Innerhalb jeder Schicht werden sie den Fenstern zufällig zugeordnet
    — eine Permutation, keine Ziehung.
-5. Jedes Los wird mit Vorlauf angekündigt, bevor die Angebotsfrist öffnet.
+5. Die erste Gruppe öffnet bei Weltzeit null. Weitere Gruppen folgen dem Kalender.
 ```
 
 Drei Eigenschaften sind dabei nicht verhandelbar:
@@ -185,6 +187,14 @@ entscheidet die Welt.
 
 **Deterministisch aus dem Weltseed**, Substream `tender_release`. Der Kalender
 ist damit reproduzierbar und im Nachhinein prüfbar. Kein `Math.random()`.
+
+Der Start und jeder Schedulerlauf überführen fällige Kalendereinträge mit
+derselben idempotenten Funktion in vollständige Ausschreibungen. Ein Neustart
+erzeugt keine Doppelvergabe; verpasste Fristen werden mit ihren festgelegten
+Weltzeiten nachgeholt. Kleine Karten mit nur einem Los sind ebenfalls zulässig.
+Die signierte Wirtschaftskonfiguration bindet dafür den vollständigen
+Spiel-Angebotsplan und die versionierte Erzeugungsregel. Fehlt diese Grundlage,
+darf der öffentliche Start keinen dauerhaft leeren Markt vortäuschen.
 
 ### 3.4 Der Kalender ist öffentlich
 

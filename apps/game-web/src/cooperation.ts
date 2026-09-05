@@ -41,6 +41,7 @@ export interface CooperationSurfaceState {
   }[];
   readonly economyRevision?: number;
   readonly tenders?: readonly PublicTenderView[];
+  readonly tendersUnavailable?: boolean;
   readonly stationOptions?: readonly { readonly id: string; readonly label: string }[];
   /** Begrenzt die alte Sammelflaeche auf den aktiven Shell-Arbeitsraum. */
   readonly section?: "all" | "markets" | "operations";
@@ -419,18 +420,31 @@ function operationsSurface(state: CooperationSurfaceState): string {
   return `<section class="journey-card m12-card" id="betriebsplanung"><div class="journey-heading"><div><p class="eyebrow">BETRIEB</p><h2>Fahrten und Werkstatt</h2></div><span class="state-word">servergeprüft</span></div><datalist id="planning-stations">${stationOptions}</datalist><div class="m12-operating-grid">${pathForm("schedule", "Fahrplan planen", 30)}${pathForm("empty-run", "Spontane Leerfahrt", 5)}<form id="maintenance-form" class="m12-form compact-form" data-preserve-draft><h3>Formation in die Werkstatt</h3><label class="m12-field"><span>Formation</span><select name="formationId" required>${formationOptions}</select></label>${field("durationHours", "Werkstattdauer · Stunden", { type: "number", min: 1, value: "4" })}<p class="resource-note">Die öffentliche Werkstatt wird gegen den autoritativen Flottenzustand und bestehende Belegungen geprüft.</p><button type="submit"${formations.length === 0 ? " disabled" : ""}>Werkstattauftrag verbindlich erteilen</button></form></div></section>`;
 }
 
+function tenderLabel(tender: PublicTenderView): string {
+  return tender.serviceLines?.length
+    ? tender.serviceLines.map((line) => `${line.designation} · ${line.origin} – ${line.destination}`).join(" / ")
+    : `Los ${tender.lotId}`;
+}
+
+function tenderLineDetails(tender: PublicTenderView): string {
+  if (!tender.serviceLines?.length) return "";
+  return `<details class="resource-note"><summary>Linien und Laufwege: ${escapeHtml(tenderLabel(tender))}</summary>${tender.serviceLines.map((line) => `<p><strong>${escapeHtml(line.designation)} · ${escapeHtml(line.origin)} – ${escapeHtml(line.destination)}</strong>${line.adjustmentReasons.map((reason) => `<br>${escapeHtml(reason)}`).join("")}</p>`).join("")}</details>`;
+}
+
 export function renderCooperationSurface(state: CooperationSurfaceState): string {
   if (state.activeOperatorId === "") {
     return `<section class="journey-card m12-card" id="evu-gruenden" tabindex="-1"><p class="eyebrow">IHR UNTERNEHMEN</p><h2>EVU gründen</h2><p>Wählen Sie den sichtbaren Namen Ihres Eisenbahnverkehrsunternehmens. Die Gründung und das Startkapital werden serverseitig gemeinsam gebucht.</p><form id="operator-foundation-form" data-preserve-draft><label class="m12-field"><span>Name des EVU</span><input name="name" minlength="1" maxlength="64" required autocomplete="organization" placeholder="z. B. Elbe-Saale-Bahn"></label><button type="submit"${state.busy ? " disabled" : ""}>EVU verbindlich gründen</button></form></section>`;
   }
   const own = state.operators.filter((operator) => state.ownOperatorIds.includes(operator.id));
-  const openTenders = (state.tenders ?? []).filter((tender) => tender.phase === "open");
+  const openTenders = state.tendersUnavailable ? [] : (state.tenders ?? []).filter((tender) => tender.phase === "open");
   const ownFormationOptions = (state.resources?.formations ?? []).map((formation) => `<option value="own:${escapeHtml(formation.id)}" data-lot-id="">Eigene Formation · ${escapeHtml(formation.label)}</option>`).join("");
   const facilityOptions = (state.resources?.publicEntryFacilities ?? []).map((facility) => `<option value="public:${escapeHtml(facility.id)}" data-lot-id="${escapeHtml(facility.lotId)}">${escapeHtml(facility.label)}</option>`).join("");
   const resourcesReady = !state.busy && state.resources?.fleetRevision !== null && state.resources?.fleetRevision !== undefined && state.resources.fleetSnapshotHash !== null;
   const initialLotId = openTenders[0]?.lotId ?? "";
   const hasInitialTenderFormation = ownFormationOptions !== "" || (state.resources?.publicEntryFacilities ?? []).some((facility) => facility.lotId === initialLotId);
-  const tenderSurface = `<section class="journey-card m12-card" id="ausschreibungen"><div class="journey-heading"><div><p class="eyebrow">VERKEHRSVERTRÄGE</p><h2>An Ausschreibung teilnehmen</h2></div><span class="state-word">${openTenders.length} offen</span></div>${openTenders.length === 0 ? '<p class="m12-empty">Derzeit ist keine Ausschreibung zur Angebotsabgabe geöffnet.</p>' : `<form id="tender-bid-form" class="m12-form" data-preserve-draft><label class="m12-field"><span>Ausschreibung</span><select id="tender-bid-tender" name="tenderId">${openTenders.map((tender) => `<option value="${escapeHtml(tender.id)}" data-lot-id="${escapeHtml(tender.lotId)}">Los ${escapeHtml(tender.lotId)} · ${tender.bidCount} Angebot(e)</option>`).join("")}</select></label><label class="m12-field"><span>Betriebsbereitstellung</span><select id="tender-bid-formation" name="formationId">${ownFormationOptions}${facilityOptions}</select></label>${facilityOptions === "" ? "" : '<p class="resource-note">Der öffentliche Anschubvertrag ist ein zuschlagsgebundener Wet-Lease. Erst bei Zuschlag werden Formation, Personal und Trasse bereitgestellt; die Betriebskosten trägt Ihr EVU.</p>'}${field("orderingFeeEuros", "Bestellentgelt · Euro je Zug-km", { value: "10,00" })}${field("punctualityPercent", "Pünktlichkeitszusage · Prozent", { type: "number", min: 0, value: "95" })}${field("extraSeats", "Zusätzliche Sitzplätze", { type: "number", min: 0, value: "0" })}<button id="tender-bid-submit" type="submit" data-resources-ready="${resourcesReady}"${!resourcesReady || !hasInitialTenderFormation ? " disabled" : ""}>Angebot verbindlich abgeben</button></form>`}</section>`;
+  const tenderSurface = state.tendersUnavailable
+    ? '<section class="journey-card m12-card" id="ausschreibungen"><h2>Ausschreibungen</h2><p role="alert">Ausschreibungen konnten nicht geladen werden. Bitte den Arbeitsraum aktualisieren.</p></section>'
+    : `<section class="journey-card m12-card" id="ausschreibungen"><div class="journey-heading"><div><p class="eyebrow">VERKEHRSVERTRÄGE</p><h2>An Ausschreibung teilnehmen</h2></div><span class="state-word">${openTenders.length} offen</span></div>${openTenders.length === 0 ? '<p class="m12-empty">Derzeit ist keine Ausschreibung zur Angebotsabgabe geöffnet.</p>' : `${openTenders.map(tenderLineDetails).join("")}<form id="tender-bid-form" class="m12-form" data-preserve-draft><label class="m12-field"><span>Ausschreibung</span><select id="tender-bid-tender" name="tenderId">${openTenders.map((tender) => `<option value="${escapeHtml(tender.id)}" data-lot-id="${escapeHtml(tender.lotId)}">${escapeHtml(tenderLabel(tender))} · ${tender.bidCount} Angebot(e)</option>`).join("")}</select></label><label class="m12-field"><span>Betriebsbereitstellung</span><select id="tender-bid-formation" name="formationId">${ownFormationOptions}${facilityOptions}</select></label>${facilityOptions === "" ? "" : '<p class="resource-note">Der öffentliche Anschubvertrag ist ein zuschlagsgebundener Wet-Lease. Erst bei Zuschlag werden Formation, Personal und Trasse bereitgestellt; die Betriebskosten trägt Ihr EVU.</p>'}${field("orderingFeeEuros", "Bestellentgelt · Euro je Zug-km", { value: "10,00" })}${field("punctualityPercent", "Pünktlichkeitszusage · Prozent", { type: "number", min: 0, value: "95" })}${field("extraSeats", "Zusätzliche Sitzplätze", { type: "number", min: 0, value: "0" })}<button id="tender-bid-submit" type="submit" data-resources-ready="${resourcesReady}"${!resourcesReady || !hasInitialTenderFormation ? " disabled" : ""}>Angebot verbindlich abgeben</button></form>`}</section>`;
   const section = state.section ?? "all";
   const panels = section === "markets"
     ? `${tenderSurface}${contractSurface(state)}${marketSurface(state)}`

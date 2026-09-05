@@ -44,7 +44,8 @@ nicht prüfen, ob ein Eintrag stimmt — dafür steht die Quelle daneben.
 | Auskunft (Datenschutz) | `PersonalDataExport` | vollständiges, maschinenlesbares Bündel aller Personendaten, die das Spielsystem über ein Konto in einer Welt führt | `weltgeruest.md` 10 |
 | Ausschlussmenge | `exclusion_set` | Menge der Fahrstraßen, die nicht gleichzeitig mit einer gegebenen gestellt werden dürfen, weil sie ein Fahrwegelement oder eine Weiche teilen | `infrastruktur.md` 1 |
 | Ausschreibung | `Tender` | Vergabeverfahren über ein Los, mit Leistungsbeschreibung, Frist, Wertung und Zuschlag | `wirtschaft.md` 3 |
-| Außenlauf | `ExternalLeg` | Teil einer Fahrtkette außerhalb des freigegebenen Netzes, ohne erfundene Topologie und ohne Spieler-Disposition; bindet Fahrzeuge und Dienste bis Rückkehr oder Außenende | `infrastruktur.md` 10.4 |
+| Ausschreibungserzeugung | `TenderGenerationPolicy` | Versionierte Regel zur automatischen weltzeitgebundenen Erzeugung vollständiger Erst- und Wiedervergaben aus dem Spiel-Angebotsplan | `wirtschaft.md` 3.3 |
+| Außenlauf | `ExternalLeg` | Historischer Außenabschnitt einer Fahrtkette; nur für alte Nachweise und Replays, in neuen Spielangeboten nach E33 abgeschafft | `adr/0025-gebietsueberschreitende-fahrtketten.md` |
 | Bahnhofskategorie | `StationCategory` | Einstufung einer Betriebsstelle mit Fahrgastwechsel nach Größe und Ausstattungsniveau, Kategorie 1 bis 7; künftige Bemessungsgrundlage des Stationsentgelts | `betriebsgraph.md` 13 |
 | Bahnhofskopf | `StationHead` | der Weichenbereich einer Betriebsstelle; aus Weichenlage und Signalstandort werden hier Fahrstraßen und Durchrutschwege abgeleitet | `betriebsgraph.md` 12 |
 | Bahnhofstafel | `StationBoard` | weltzeitgebundene öffentliche Projektion geplanter und erwarteter Ankünfte/Abfahrten; die fallblattartige Ansicht ist nur ihre Darstellung | `adr/0026-karte-als-spielzentrum.md` |
@@ -165,7 +166,7 @@ nicht prüfen, ob ein Eintrag stimmt — dafür steht die Quelle daneben.
 | Referenzlauf | `ReferenceRun` | ein Fahrweg mit Zugcharakteristik und explizit benannter Vergleichsgröße — technische Laufzeit oder Fahrplanzeit dürfen nicht vermischt werden | `betriebsgraph.md` 18 |
 | Regelgrenze | `LimitKind` | konkrete betriebliche Zulässigkeitsprüfung einer Dispositionsmaßnahme, etwa Kapazität, Streckenkenntnis, Fahrzeug, Personal, Vertrag oder Kosten | `betriebsprogramm.md` 2 |
 | Regionsübergabe | `RegionHandover` | Übergang einer Zugfahrt zwischen zwei regionalen Single-Writer-Prozessen, mit Bestätigung | `architektur.md` 3 |
-| Reise- oder Fahrtkette | `JourneyChain` | ein durchgehender Zuglauf aus bestellbaren regionalen und nicht disponierbaren äußeren Abschnitten; Identität, Fahrzeug- und Personalbindung bleiben erhalten | `adr/0025-gebietsueberschreitende-fahrtketten.md` |
+| Reise- oder Fahrtkette | `JourneyChain` | Ein Zuglauf; neue Spielangebote enthalten genau einen zusammenhängenden Innenabschnitt, historische Replays können Außenabschnitte enthalten | `adr/0034-spielgenerierte-fahrplaene-im-spielgebiet.md` |
 | Reisezugwagen | `VehicleRole::Coach` | nicht angetriebenes Fahrzeug für Fahrgäste; kann Teil eines Wagenparks sein, aber keine eigene Zugfahrt bilden | `betrieb.md` 2.3 |
 | Rohgraph | `RawGraph` | Topologie, Geometrie und Tags eines OSM-PBF-Extracts, roh und ungefiltert; Ergebnis der Import-Pipeline, noch kein Betriebsgraph | `betriebsgraph.md` 7 |
 | Rohkante | `RawEdge` | Wegabschnitt des Rohgraphen zwischen zwei bedeutsamen Knoten, mit voller Geometrie und den Tags seines OSM-Wegs | `betriebsgraph.md` 7 |
@@ -182,6 +183,9 @@ nicht prüfen, ob ein Eintrag stimmt — dafür steht die Quelle daneben.
 | Sperrzeit | `BlockingTime` | Zeitspanne, in der eine Konfliktressource für eine Zugfahrt gesperrt ist — Fahrstraßenbildung, Annäherung, Fahrzeit, Räumung, Auflösung | `infrastruktur.md` 1 |
 | Sperrzeitentreppe | `BlockingTimeStaircase` | die treppenförmige Darstellung aufeinanderfolgender Sperrzeiten im Bildfahrplan | `milestones.md` M0.3 |
 | Sperrzeitparameter | `SignallingParameters` | Signalsichtzeit, Vorsignalabstand, Durchrutschweg und Stellwerksbauart einer Betriebsstelle — die Werte, aus denen die sechs Anteile der Sperrzeit entstehen | `infrastruktur.md` 6 |
+| Spielfahrplan-Erzeugung | `compileGameTimetable` | Deterministische Ableitung eigener Fahrten aus GTFS-Taktreferenzen und zusammenhängenden Innenabschnitten | `gtfs-angebotsplanung.md` |
+| Spielfahrplan-Regel | `GameTimetableSpecification` | Gepinnte Erzeugungsregel für Zeitraster und Mindestfahrzeit des Spielangebots | `gtfs-angebotsplanung.md` |
+| Spiellinie | `GameTimetableLine` | Eigene Linie mit tatsächlichem innerem Endhalt, Taktreferenz und Herkunftsbelegen | `gtfs-angebotsplanung.md` |
 | Spurweite | `TrackGauge` | Abstand der Schienen in Millimetern; das Spielnetz führt ausschließlich Regelspur (E14), der Netzfilter braucht die Angabe zum Aussortieren | `betriebsgraph.md` 2 |
 | Starting-Capital-Policy | `StartingCapitalPolicy` | im signierten Weltentwurf festgelegtes Startkapital einer öffentlichen Welt: endliche Integer-Cent, null oder explizit `unlimited`; niemals eine Startausstattung | `produkt.md` 3 |
 | Stationsanreicherung | `StationEnrichment` | je Betriebsstelle mit Fahrgastwechsel angereicherter Datensatz aus Bahnhofskategorie und Stationsausstattung, mit eigener Herkunft je Feld | `betriebsgraph.md` 13 |

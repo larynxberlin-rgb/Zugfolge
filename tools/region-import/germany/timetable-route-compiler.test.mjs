@@ -374,6 +374,29 @@ test("routet jede Zwischenstation deterministisch auf vorhandenen realen OSM-Kan
   }
 });
 
+test("waehlt am Zwischenhalt einen weiterfahrbaren Anker statt der guenstigeren gerichteten Sackgasse", async () => {
+  const root = await mkdtemp(join(tmpdir(), "zugfolge-gtfs-continuing-anchor-"));
+  try {
+    const { spec } = await materialize(root, { intermediate: true });
+    const tracks = [
+      track("edge-dead-end", 1, 4, [[13, 51], [13.05, 51]], 1_000_000, { "railway:pzb": "yes", oneway: "yes" }),
+      track("edge-west", 1, 2, [[13, 51], [13.05, 51.0001]], 4_000_000),
+      track("edge-east", 2, 3, [[13.05, 51.0001], [13.1, 51]], 4_000_000),
+    ];
+    await writeFile(join(root, "tracks.geojsonseq"), `${tracks.map(JSON.stringify).join("\n")}\n`);
+    const result = await analyzeGermanyTimetableRoutes(spec, root);
+    assert.equal(result.report.status, "qualified");
+    assert.equal(result.report.metrics.completeRouteCount, 1);
+    assert.equal(result.report.metrics.routedStopPairCount, 2);
+    assert.deepEqual(result.routes[0].legs.map((leg) => leg.edgeId), ["edge-west", "edge-east"]);
+    assert.deepEqual(result.routes[0].legs.map((leg) => leg.direction), ["along", "along"]);
+    assert.deepEqual((await analyzeGermanyTimetableRoutes(spec, root)).routes, result.routes);
+    assert.deepEqual(result.transfers.transferRoutes[0].legs.map((leg) => leg.edgeId), ["edge-east", "edge-west"]);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test("trennt einen nicht fahrbaren internen Portalwechsel und routet ihn am Tagesrand als echten Transfer", async () => {
   const root = await mkdtemp(join(tmpdir(), "zugfolge-gtfs-internal-transfer-"));
   try {

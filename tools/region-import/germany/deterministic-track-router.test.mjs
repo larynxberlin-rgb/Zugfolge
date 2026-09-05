@@ -11,6 +11,17 @@ function edge(edgeId, fromNodeId, toNodeId, lengthMm, routeNumber) {
   return { edgeId, fromNodeId, toNodeId, lengthMm, routeNumber };
 }
 
+test("beachtet Richtungsfreigaben auf direkten, ersten, mittleren und letzten Teilkanten", () => {
+  const graph = [edge("a", 1, 2, 1000, "r"), edge("b", 2, 3, 1000, "r"), edge("c", 3, 4, 1000, "r")];
+  const options = { allowedDirectionsByEdge: new Map(graph.map((track) => [track.edgeId, ["along"]])) };
+  const router = createDeterministicTrackRouter(graph, options);
+  assert.notEqual(router.route({ origins: [{ edgeId: "a", offsetMm: 500 }], destinations: [{ edgeId: "c", offsetMm: 500 }], targetRouteNumber: "r" }), null);
+  assert.equal(router.route({ origins: [{ edgeId: "c", offsetMm: 500 }], destinations: [{ edgeId: "a", offsetMm: 500 }], targetRouteNumber: "r" }), null);
+  assert.equal(router.route({ origins: [{ edgeId: "b", offsetMm: 900 }], destinations: [{ edgeId: "b", offsetMm: 100 }], targetRouteNumber: "r" }), null);
+  const middleClosed = createDeterministicTrackRouter(graph, { allowedDirectionsByEdge: new Map([["b", []]]) });
+  assert.equal(middleClosed.route({ origins: [{ edgeId: "a", offsetMm: 500 }], destinations: [{ edgeId: "c", offsetMm: 500 }], targetRouteNumber: "r" }), null);
+});
+
 test("findet einen lueckenlosen Mehrkantenpfad und darf eine reale Fremdstrecke benutzen", () => {
   const edges = new Map([
     ["a", edge("a", 1, 2, 1_000, "100")],

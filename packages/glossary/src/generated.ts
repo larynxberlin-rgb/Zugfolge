@@ -96,9 +96,14 @@ export const GENERATED_GLOSSARY_ENTRIES = Object.freeze([
     "definition": "Vergabeverfahren über ein Los, mit Leistungsbeschreibung, Frist, Wertung und Zuschlag"
   },
   {
+    "term": "Ausschreibungserzeugung",
+    "code": "TenderGenerationPolicy",
+    "definition": "Versionierte Regel zur automatischen weltzeitgebundenen Erzeugung vollständiger Erst- und Wiedervergaben aus dem Spiel-Angebotsplan"
+  },
+  {
     "term": "Außenlauf",
     "code": "ExternalLeg",
-    "definition": "Teil einer Fahrtkette außerhalb des freigegebenen Netzes, ohne erfundene Topologie und ohne Spieler-Disposition; bindet Fahrzeuge und Dienste bis Rückkehr oder Außenende"
+    "definition": "Historischer Außenabschnitt einer Fahrtkette; nur für alte Nachweise und Replays, in neuen Spielangeboten nach E33 abgeschafft"
   },
   {
     "term": "Bahnhofskategorie",
@@ -698,7 +703,7 @@ export const GENERATED_GLOSSARY_ENTRIES = Object.freeze([
   {
     "term": "Reise- oder Fahrtkette",
     "code": "JourneyChain",
-    "definition": "ein durchgehender Zuglauf aus bestellbaren regionalen und nicht disponierbaren äußeren Abschnitten; Identität, Fahrzeug- und Personalbindung bleiben erhalten"
+    "definition": "Ein Zuglauf; neue Spielangebote enthalten genau einen zusammenhängenden Innenabschnitt, historische Replays können Außenabschnitte enthalten"
   },
   {
     "term": "Reisezugwagen",
@@ -779,6 +784,21 @@ export const GENERATED_GLOSSARY_ENTRIES = Object.freeze([
     "term": "Sperrzeitparameter",
     "code": "SignallingParameters",
     "definition": "Signalsichtzeit, Vorsignalabstand, Durchrutschweg und Stellwerksbauart einer Betriebsstelle — die Werte, aus denen die sechs Anteile der Sperrzeit entstehen"
+  },
+  {
+    "term": "Spielfahrplan-Erzeugung",
+    "code": "compileGameTimetable",
+    "definition": "Deterministische Ableitung eigener Fahrten aus GTFS-Taktreferenzen und zusammenhängenden Innenabschnitten"
+  },
+  {
+    "term": "Spielfahrplan-Regel",
+    "code": "GameTimetableSpecification",
+    "definition": "Gepinnte Erzeugungsregel für Zeitraster und Mindestfahrzeit des Spielangebots"
+  },
+  {
+    "term": "Spiellinie",
+    "code": "GameTimetableLine",
+    "definition": "Eigene Linie mit tatsächlichem innerem Endhalt, Taktreferenz und Herkunftsbelegen"
   },
   {
     "term": "Spurweite",

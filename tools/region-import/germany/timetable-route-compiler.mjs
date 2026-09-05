@@ -5,11 +5,14 @@ import { once } from "node:events";
 import { dirname, resolve } from "node:path";
 
 import {
+  gameTimetableJourneyId,
+  gameTimetableLegId,
   gtfsBoundaryPlanningWindowId,
   gtfsExternalLegId,
   gtfsJourneyChainId,
   gtfsPlayableLegId,
 } from "../../../packages/gtfs/dist/index.js";
+import { validatePlayableArea } from "../playable-area.mjs";
 import { createDeterministicTrackRouter } from "./deterministic-track-router.mjs";
 import {
   buildGtfsTrackGraph,
@@ -237,10 +240,29 @@ export function validatePinnedGtfsSnapshot(envelopeValue, binding, selection) {
   const computedSnapshotHash = createHash("sha256").update(canonicalJson(snapshot)).digest("hex");
   invariant(envelopeHash === computedSnapshotHash, "GTFS-Snapshot-Datei.snapshotHash stimmt nicht mit dem kanonischen Snapshot ueberein.");
   invariant(envelopeHash === binding.expectedSnapshotHash, "GTFS-Snapshot-Datei besitzt nicht den erwarteten snapshotHash.");
+  const generated = snapshot.timetableGeneration !== undefined;
   exactKeys(snapshot, [
-    "schema", "regionId", "regionVariant", "serviceDate", "source", "metrics", "externalLegSpecification",
+    "schema", "regionId", "regionVariant", "serviceDate", "source", "metrics",
+    ...(generated ? ["playableArea", "generationSeed", "timetableGeneration", "lines"] : ["externalLegSpecification"]),
     "serviceScopeSpecification", "serviceScopeReport", "stations", "journeyChains", "boundaryPlanningWindows", "segments",
   ], "GTFS-Snapshot");
+  if (generated) {
+    invariant(validatePlayableArea(snapshot.playableArea) !== undefined, "Spiel-Fahrplan besitzt keine Spielgebietsgrenze.");
+    nonEmptyString(snapshot.generationSeed, "Spiel-Fahrplan.generationSeed");
+    nonEmptyString(snapshot.timetableGeneration.version, "Spiel-Fahrplan.timetableGeneration.version");
+    safeInteger(snapshot.timetableGeneration.departureGridSeconds, "Spiel-Fahrplan.departureGridSeconds", 1);
+    safeInteger(snapshot.timetableGeneration.minimumRunningSeconds, "Spiel-Fahrplan.minimumRunningSeconds", 1);
+    invariant(list(snapshot.boundaryPlanningWindows, "Spiel-Fahrplan.boundaryPlanningWindows").length === 0, "Spiel-Fahrplan darf keine Aussengrenzfenster enthalten.");
+    if (snapshot.timetableGeneration.networkReference !== undefined || snapshot.timetableGeneration.requireEligibleTerminals === true) {
+      const network = snapshot.timetableGeneration.networkReference;
+      invariant(snapshot.timetableGeneration.requireEligibleTerminals === true && network?.schemaVersion === "zugfolge-game-timetable-network-reference/v1", "Finaler Spiel-Fahrplan braucht die Netzbindung und geeignete Endbahnhoefe.");
+      sha256(network.terminalCatalog?.sha256, "Spiel-Fahrplan.Terminalkatalog.sha256");
+      safeInteger(network.terminalCatalog?.bytes, "Spiel-Fahrplan.Terminalkatalog.bytes", 1);
+      nonEmptyString(network.terminalCatalog?.sourceId, "Spiel-Fahrplan.Terminalkatalog.sourceId");
+    }
+  }
+  const generatedLines = new Map(generated ? list(snapshot.lines, "Spiel-Fahrplan.lines").map((line) => [nonEmptyString(line.lineId, "Spiel-Fahrplan.lineId"), line]) : []);
+  if (generated) invariant(generatedLines.size === snapshot.lines.length, "Spiel-Fahrplan enthaelt doppelte Linien.");
   invariant(snapshot.schema === binding.expectedSchema, "GTFS-Snapshot.schema weicht von der Bindung ab.");
   invariant(snapshot.regionId === binding.expectedRegionId, "GTFS-Snapshot.regionId weicht von der Bindung ab.");
   invariant(snapshot.regionVariant === binding.expectedRegionVariant, "GTFS-Snapshot.regionVariant weicht von der Bindung ab.");
@@ -259,7 +281,7 @@ export function validatePinnedGtfsSnapshot(envelopeValue, binding, selection) {
     exactKeys(station, ["stopId", "parentStationId", "name", "latitudeE7", "longitudeE7", "inRegion"], `GTFS-Snapshot.stations[${index}]`);
     const stopId = nonEmptyString(station.stopId, `GTFS-Snapshot.stations[${index}].stopId`);
     invariant(!stationById.has(stopId), `GTFS-Stop ${stopId} ist doppelt.`);
-    nonEmptyString(station.parentStationId, `${stopId}.parentStationId`);
+    if (station.parentStationId !== null) nonEmptyString(station.parentStationId, `${stopId}.parentStationId`);
     nonEmptyString(station.name, `${stopId}.name`);
     safeInteger(station.latitudeE7, `${stopId}.latitudeE7`, -900_000_000);
     safeInteger(station.longitudeE7, `${stopId}.longitudeE7`, -1_800_000_000);
@@ -287,11 +309,17 @@ export function validatePinnedGtfsSnapshot(envelopeValue, binding, selection) {
     const chainSourceTripId = nonEmptyString(chain.sourceTripId, `${chainId}.sourceTripId`);
     invariant(chainRegionId === snapshot.regionId, `${chainId} verletzt die Regionsbindung des GTFS-Snapshots.`);
     invariant(
-      chainId === gtfsJourneyChainId({
+      chainId === (generated ? gameTimetableJourneyId({
+        regionId: chainRegionId,
+        lineId: nonEmptyString(chain.lineId, `${chainId}.lineId`),
+        serviceDate: snapshot.serviceDate,
+        seed: snapshot.generationSeed,
+        index: safeInteger(chain.generationIndex, `${chainId}.generationIndex`, 0),
+      }) : gtfsJourneyChainId({
         regionId: chainRegionId,
         releaseId: chainReleaseId,
         sourceTripId: chainSourceTripId,
-      }),
+      })),
       `${chainId} verletzt den releasegebundenen weltneutralen Journey-v2-Identitaetsvertrag.`,
     );
     journeyWorldIds.add(chainWorldId);
@@ -300,6 +328,25 @@ export function validatePinnedGtfsSnapshot(envelopeValue, binding, selection) {
     boolean(chain.orderable, `${chainId}.orderable`);
     if (chain.orderable) orderableJourneyChainCount += 1;
     chainById.set(chainId, chain);
+    if (generated) {
+      const line = generatedLines.get(chain.lineId);
+      invariant(chain.generation === "game-timetable/v1" && line !== undefined, `${chainId} besitzt keine generierte Spiel-Linie.`);
+      invariant(chain.legs.length === 1 && chain.orderable === true, `${chainId} muss genau eine bestellbare Innenfahrt sein.`);
+      invariant(chain.headsign === line.headsign && chain.routeId === line.lineId, `${chainId} besitzt fremde Linien- oder Zielangaben.`);
+      invariant(canonicalJson(chain.legs[0].stops.map((stop) => stop.stopId)) === canonicalJson(line.stopIds), `${chainId} weicht vom inneren Linienlaufweg ab.`);
+      const lastStop = stationById.get(line.stopIds.at(-1));
+      invariant(lastStop !== undefined && chain.headsign === lastStop.name, `${chainId} zeigt nicht den tatsaechlichen inneren Endhalt.`);
+      if (snapshot.timetableGeneration.requireEligibleTerminals === true) {
+        const firstStop = stationById.get(line.stopIds[0]);
+        const adjustment = line.adjustment;
+        invariant(adjustment !== undefined && ["unchanged", "adapted-to-operational-stations"].includes(adjustment.reason)
+          && adjustment.originName === firstStop?.name && adjustment.destinationName === lastStop.name
+          && Array.isArray(adjustment.terminalEvidenceIds) && adjustment.terminalEvidenceIds.length === 2
+          && adjustment.terminalEvidenceIds.every((id) => typeof id === "string" && id.trim() !== ""), `${chainId} besitzt keine passenden betrieblichen Endpunktbelege oder Endpunktnamen.`);
+        nonEmptyString(adjustment.referenceOriginName, `${chainId}.referenceOriginName`);
+        nonEmptyString(adjustment.referenceDestinationName, `${chainId}.referenceDestinationName`);
+      }
+    }
     for (const [legIndex, value] of list(chain.legs, `${chainId}.legs`).entries()) {
       const leg = record(value, `${chainId}.legs[${legIndex}]`);
       const legId = nonEmptyString(leg.legId, `${chainId}.legs[${legIndex}].legId`);
@@ -309,7 +356,7 @@ export function validatePinnedGtfsSnapshot(envelopeValue, binding, selection) {
       invariant(leg.sequence === legIndex, `${legId}.sequence ist nicht lueckenlos.`);
       if (leg.kind === "playable") {
         invariant(
-          legId === gtfsPlayableLegId({ journeyChainId: chainId, sequence: leg.sequence }),
+          legId === (generated ? gameTimetableLegId(chainId) : gtfsPlayableLegId({ journeyChainId: chainId, sequence: leg.sequence })),
           `${legId} verletzt den PlayableLeg-v2-Identitaetsvertrag.`,
         );
         playableLegCount += 1;
@@ -317,6 +364,8 @@ export function validatePinnedGtfsSnapshot(envelopeValue, binding, selection) {
         invariant(leg.qualityClass === "B" || leg.qualityClass === "C", `${legId}.qualityClass ist unbekannt.`);
         invariant((leg.qualityClass === "B") === leg.orderable, `${legId} verletzt B genau dann orderable.`);
         const stops = validateStopSequence(leg.stops, `${legId}.stops`, stationById, 1);
+        if (generated) invariant(stops.length >= 2 && leg.entryPortalId === null && leg.exitPortalId === null && leg.planningWindows.length === 0,
+          `${legId} darf weder Aussenportale noch Grenzfenster enthalten.`);
         for (const [windowIndex, windowValue] of list(leg.planningWindows, `${legId}.planningWindows`).entries()) {
           const window = record(windowValue, `${legId}.planningWindows[${windowIndex}]`);
           const portalId = nonEmptyString(window.portalId, `${legId}.planningWindows[${windowIndex}].portalId`);
@@ -333,6 +382,7 @@ export function validatePinnedGtfsSnapshot(envelopeValue, binding, selection) {
         if (stops.length === 1) oneStopPlayableLegCount += 1;
         playableLegById.set(legId, Object.freeze({ chainId, chain, leg }));
       } else {
+        invariant(!generated, `${legId}: Aussenlaeufe sind in Spiel-Fahrplaenen abgeschafft.`);
         invariant(leg.kind === "external", `${legId}.kind ist unbekannt.`);
         invariant(
           legId === gtfsExternalLegId({ journeyChainId: chainId, sequence: leg.sequence }),
@@ -355,6 +405,7 @@ export function validatePinnedGtfsSnapshot(envelopeValue, binding, selection) {
     const segment = record(value, `GTFS-Snapshot.segments[${index}]`);
     exactKeys(segment, [
       "segmentId", "journeyChainId", "sourceTripId", "serviceId", "routeId", "routeShortName", "headsign", "directionId",
+      ...(generated ? ["lineId", "sourceTripIds", "sourceRouteIds"] : []),
       "qualityClass", "orderable", "entry", "exit", "planningWindows", "stops",
     ], `GTFS-Snapshot.segments[${index}]`);
     const segmentId = nonEmptyString(segment.segmentId, `GTFS-Snapshot.segments[${index}].segmentId`);
@@ -363,6 +414,8 @@ export function validatePinnedGtfsSnapshot(envelopeValue, binding, selection) {
     const chain = chainById.get(nonEmptyString(segment.journeyChainId, `${segmentId}.journeyChainId`));
     invariant(chain !== undefined, `${segmentId} verweist auf eine unbekannte JourneyChain.`);
     invariant(segment.sourceTripId === chain.sourceTripId, `${segmentId} verletzt die SourceTrip-Bindung seiner JourneyChain.`);
+    if (generated) invariant(segment.lineId === chain.lineId && segment.entry === null && segment.exit === null && segment.planningWindows.length === 0,
+      `${segmentId} besitzt keine reine innere Spiel-Linienbindung.`);
     const playable = playableLegById.get(segmentId);
     invariant(playable !== undefined && playable.chainId === segment.journeyChainId, `${segmentId} bindet kein gleichnamiges PlayableLeg seiner JourneyChain.`);
     boolean(segment.orderable, `${segmentId}.orderable`);
@@ -493,7 +546,7 @@ function anchorsByComponent(graph, stopId) {
   return result;
 }
 
-function selectSegmentComponent(graph, segment) {
+function segmentComponents(graph, segment) {
   const byStop = new Map();
   let common = null;
   for (const stop of segment.stops) {
@@ -501,7 +554,7 @@ function selectSegmentComponent(graph, segment) {
     const components = new Set(byStop.get(stop.stopId).keys());
     common = common === null ? components : new Set([...common].filter((componentId) => components.has(componentId)));
   }
-  if (common === null || common.size === 0) return null;
+  if (common === null || common.size === 0) return [];
   const choices = [...common].map((componentId) => {
     const distances = segment.stops.map((stop) => Math.min(...byStop.get(stop.stopId).get(componentId).map((anchor) => anchor.distanceMm)));
     return {
@@ -515,7 +568,7 @@ function selectSegmentComponent(graph, segment) {
     || left.anchorDistanceMm - right.anchorDistanceMm
     || right.edgeCount - left.edgeCount
     || left.componentId - right.componentId);
-  return Object.freeze({ componentId: choices[0].componentId, byStop });
+  return choices.map(({ componentId }) => Object.freeze({ componentId, byStop }));
 }
 
 function anchorSetKey(anchors) {
@@ -548,6 +601,24 @@ function anchorEvidence(anchors, selected) {
   return anchors.find((anchor) => sameAnchor(anchor, selected));
 }
 
+/** Jeder erhaltene Anker erreicht auch alle folgenden Halte in ihrer Reihenfolge. */
+function continuingAnchors(router, routeCache, component, stops) {
+  const anchors = stops.map((stop) => component.byStop.get(stop.stopId).get(component.componentId));
+  const viable = Array.from({ length: stops.length }, () => []);
+  viable[stops.length - 1] = anchors.at(-1);
+  for (let index = stops.length - 2; index >= 0; index -= 1) {
+    if (stops[index].stopId === stops[index + 1].stopId) {
+      viable[index] = viable[index + 1];
+    } else if (viable[index + 1].length > 0) {
+      viable[index] = anchors[index].filter((origin) => {
+        const route = routePair(router, routeCache, [origin], viable[index + 1]);
+        return route !== null && route.legs.length > 0;
+      });
+    }
+  }
+  return viable;
+}
+
 function deriveRoutes(graph, selectedSegments) {
   // Der allgemeine Router erhaelt weiterhin ausschliesslich seinen engen
   // Topologievertrag. Die streckenseitigen Zugsicherungsalternativen bleiben
@@ -559,10 +630,11 @@ function deriveRoutes(graph, selectedSegments) {
     lengthMm: edge.lengthMm,
     routeNumber: edge.routeNumber,
   })]));
-  const router = createDeterministicTrackRouter(routingEdges);
+  const router = createDeterministicTrackRouter(routingEdges, { allowedDirectionsByEdge: new Map([...graph.edges].map(([edgeId, edge]) => [edgeId, edge.allowedDirections ?? ["along", "against"]])) });
   const findings = new Map();
   const routes = [];
   const routeCache = new Map();
+  const continuationCache = new Map();
   let routedStopPairCount = 0;
   let reusedStopPairRouteCount = 0;
   let maximumAnchorDistanceMm = 0;
@@ -570,9 +642,24 @@ function deriveRoutes(graph, selectedSegments) {
   let zeroMovementStopTransitionCount = 0;
 
   for (const segment of selectedSegments) {
-    const component = selectSegmentComponent(graph, segment);
-    if (component === null) {
+    const components = segmentComponents(graph, segment);
+    if (components.length === 0) {
       addFinding(findings, "segment-stops-share-no-real-track-component", segment.segmentId);
+      continue;
+    }
+    let component;
+    let viable;
+    for (const candidate of components) {
+      const key = canonicalJson([candidate.componentId, segment.stops.map((stop) => stop.stopId)]);
+      if (!continuationCache.has(key)) continuationCache.set(key, continuingAnchors(router, routeCache, candidate, segment.stops));
+      const continuations = continuationCache.get(key);
+      if (continuations[0].length === 0) continue;
+      component = candidate;
+      viable = continuations;
+      break;
+    }
+    if (component === undefined) {
+      addFinding(findings, "gtfs-stop-pair-has-no-nonempty-real-track-path", segment.segmentId);
       continue;
     }
     const rawLegs = [];
@@ -585,8 +672,8 @@ function deriveRoutes(graph, selectedSegments) {
         zeroMovementStopTransitionCount += 1;
         continue;
       }
-      const componentOrigins = component.byStop.get(originStopId).get(component.componentId);
-      const destinations = component.byStop.get(destinationStopId).get(component.componentId);
+      const componentOrigins = viable[index - 1];
+      const destinations = viable[index];
       const origins = previousDestination === null ? componentOrigins : [previousDestination];
       const cacheKey = `${anchorSetKey(origins)}\u0000${anchorSetKey(destinations)}`;
       const cached = routeCache.has(cacheKey);
@@ -687,7 +774,7 @@ function deriveDailyTransferRoutes(graph, snapshot, snapshotHash, passengerRoute
   const orderableChains = snapshot.journeyChains.filter((chain) => chain.orderable === true);
   const releaseIds = new Set(orderableChains.map((chain) => chain.releaseId));
   invariant(releaseIds.size === 1, "Bestellbare JourneyChains mischen GTFS-Release-IDs.");
-  const router = createDeterministicTrackRouter(routingEdges(graph));
+  const router = createDeterministicTrackRouter(routingEdges(graph), { allowedDirectionsByEdge: new Map([...graph.edges].map(([edgeId, edge]) => [edgeId, edge.allowedDirections ?? ["along", "against"]])) });
   const routedPairs = new Map();
   const routeTransferPair = ({ sourceEndpoint, targetEndpoint }) => {
     const key = transferPairKey(sourceEndpoint.legId, targetEndpoint.legId);
@@ -808,6 +895,14 @@ async function resolveInputs(specification, root) {
   invariant(gtfsProof.bytes === specification.gtfsSnapshot.expectedBytes, `GTFS-Snapshot besitzt ${gtfsProof.bytes} statt ${specification.gtfsSnapshot.expectedBytes} Bytes.`);
   invariant(gtfsProof.sha256 === specification.gtfsSnapshot.expectedFileSha256, "GTFS-Snapshot besitzt nicht den erwarteten Datei-SHA-256.");
   const validatedSnapshot = validatePinnedGtfsSnapshot(envelope, specification.gtfsSnapshot, specification.selection);
+  const networkReference = validatedSnapshot.snapshot.timetableGeneration?.networkReference;
+  if (networkReference !== undefined) {
+    invariant(networkReference.schemaVersion === "zugfolge-game-timetable-network-reference/v1"
+      && networkReference.tracks?.sha256 === tracksProof.sha256 && networkReference.tracks?.bytes === tracksProof.bytes
+      && networkReference.corridors?.sha256 === corridorsProof.sha256 && networkReference.corridors?.bytes === corridorsProof.bytes
+      && canonicalJson(networkReference.permittedProtectionModes) === canonicalJson(specification.selection.permittedProtectionModes),
+    "Finaler Routecompiler muss exakt den fuer die Linienkuerzung gebundenen Binnen-Trackgraphen und seine Zugsicherungssysteme verwenden.");
+  }
   return Object.freeze({ paths, proofs: Object.freeze({ tracks: tracksProof, corridors: corridorsProof, gtfsSnapshot: gtfsProof }), validatedSnapshot });
 }
 

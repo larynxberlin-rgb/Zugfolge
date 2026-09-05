@@ -27,11 +27,15 @@ import {
   initializeFleetProducer,
   loadEconomyWorldState,
   loadFleetProducerCheckpoint,
+  lotsFromGtfsPlanning,
   persistEconomyTransition,
   startEconomyWorld,
   type AuthorityBudget,
   type EconomyRelease,
   type Lot,
+  type GtfsPlanningEnvelope,
+  type TenderGenerationPolicy,
+  type EconomyWorldState,
 } from "@zugfolge/economy";
 import {
   verifiedBaseTrainRunId,
@@ -159,6 +163,9 @@ export interface AlphaWorldDeployment {
     readonly durationMonths: 6 | 12 | 18 | "unlimited";
     readonly release: SerializedEconomyRelease;
     readonly lots: readonly Lot[];
+    /** Bei historischen Deployments lesbar; fuer jeden neuen Weltstart Pflicht. */
+    readonly planning?: GtfsPlanningEnvelope;
+    readonly tenderGeneration?: TenderGenerationPolicy;
     readonly authorityBudgets: readonly AuthorityBudget[];
     readonly accounts: readonly string[];
     readonly publicVehiclePoolByLot: Readonly<Record<string, readonly string[]>>;
@@ -199,6 +206,111 @@ export interface SignedAlphaWorldDeployment {
     readonly keyId: string;
     readonly valueBase64: string;
   };
+}
+
+/** Alte signierte Welten bleiben lesbar; neue Starts duerfen nicht ohne Ausschreibungen entstehen. */
+export function validateAlphaEconomyPlanningBinding(deployment: Pick<AlphaWorldDeployment, "worldId" | "economy" | "blueprint" | "provenance">, required = false): void {
+  const { planning, tenderGeneration } = deployment.economy;
+  if (planning === undefined && tenderGeneration === undefined && !required) return;
+  if (planning === undefined || tenderGeneration === undefined) {
+    throw new Error("Neuer Weltstart braucht eine signierte Spielplanung und Ausschreibungsgenerierung. Historisches Deployment mit dem Spiel-Fahrplan neu bauen und signieren.");
+  }
+  const lots = lotsFromGtfsPlanning(planning, deployment.worldId);
+  if (
+    planning.snapshot.infrastructureVersion !== deployment.provenance.infraReleaseId
+    || planning.snapshot.sourceTimetableHash !== deployment.provenance.gtfsSnapshotHash
+    || planning.snapshot.sourceTimetableHash !== deployment.blueprint.releases.timetable
+    || alphaHash("zugfolge-alpha-planning-lots/v1", lots) !== alphaHash("zugfolge-alpha-planning-lots/v1", deployment.economy.lots)
+    || lots.map((lot) => lot.id).sort().join("\u0000") !== deployment.blueprint.lots.map((lot) => lot.lotId).sort().join("\u0000")
+  ) throw new Error("Spielplanung verletzt die signierte Welt-, Infrastruktur-, Fahrplan- oder Losbindung.");
+}
+
+export function validateAlphaOperationalPlanningBinding(deployment: AlphaWorldDeployment): void {
+  const planning = deployment.economy.planning;
+  if (planning === undefined) return;
+  const generation = planning.snapshot.timetableGeneration;
+  const plannedTrainIds = planning.snapshot.patterns.flatMap((pattern) => pattern.journeys.map((journey) => journey.id));
+  const passengerTrains = deployment.regionalSimulation.trains.filter((train) => train.publicPassengerStop);
+  const initialization = deployment.regionalSimulation as unknown as Record<string, unknown>;
+  if (
+    generation?.specification.schemaVersion !== "zugfolge-game-timetable-generation/v1"
+    || generation.specification.requireEligibleTerminals !== true
+    || generation.seed !== deployment.blueprint.seed.toString()
+    || plannedTrainIds.some((id) => typeof id !== "string" || !id.startsWith("game-trip-"))
+    || new Set(plannedTrainIds).size !== plannedTrainIds.length
+    || plannedTrainIds.sort().join("\u0000") !== passengerTrains.map((train) => train.id).sort().join("\u0000")
+    || (Array.isArray(initialization["externalTrains"]) && initialization["externalTrains"].length > 0)
+  ) throw new Error("Neuer Weltstart braucht ausschliesslich generierte Binnenfahrten mit identischer operativer Fahrplanbindung.");
+  if (deployment.repeatEveryS !== 86_400) throw new Error("Spielplanung braucht eine taegliche operative Wiederholung.");
+  const patternById = new Map(planning.snapshot.patterns.map((pattern) => [pattern.id, pattern]));
+  const blueprintLotById = new Map(deployment.blueprint.lots.map((lot) => [lot.lotId, lot]));
+  const nativeById = new Map(passengerTrains.map((train) => [train.id, train]));
+  const serviceDay = new Date(deployment.worldDefinition.epoch).toISOString().slice(0, 10);
+  for (const lot of planning.snapshot.lots) {
+    const journeys = lot.patternIds.flatMap((patternId) => patternById.get(patternId)?.journeys ?? []);
+    const expectedIds = journeys.map((journey) => journey.id!).sort();
+    const assignedIds = [...(blueprintLotById.get(lot.id)?.trainRunIds ?? [])].sort();
+    if (expectedIds.join("\u0000") !== assignedIds.join("\u0000")) {
+      throw new Error("Spielplanung und Weltentwurf ordnen einem Los unterschiedliche Fahrten zu.");
+    }
+    for (const journey of journeys) {
+      const native = nativeById.get(journey.id!);
+      const outcome = native?.serviceOutcome;
+      const departureS = journey.departureServiceSeconds;
+      const arrivalS = journey.arrivalServiceSeconds;
+      const departureMs = departureS % deployment.repeatEveryS * 1_000;
+      const arrivalMs = departureMs + (arrivalS - departureS) * 1_000;
+      if (
+        outcome === undefined
+        || !Number.isSafeInteger(departureS) || departureS < 0
+        || !Number.isSafeInteger(arrivalS) || arrivalS <= departureS
+        || !Number.isSafeInteger(departureMs) || !Number.isSafeInteger(arrivalMs)
+        || native?.scheduledDepartureMs !== departureMs
+        || outcome.serviceId !== journey.id
+        || outcome.lotId !== lot.id
+        || outcome.scheduledArrivalMs !== arrivalMs
+        || outcome.serviceDay !== serviceDay
+        || outcome.serviceRunId !== `${journey.id}:service-day:${serviceDay}`
+      ) throw new Error("Spielplanung und Betriebsfahrplan besitzen unterschiedliche Los-, Abfahrts- oder Ankunftsbindungen.");
+    }
+  }
+}
+
+export function startAlphaDeploymentEconomy(deployment: AlphaWorldDeployment): ReturnType<typeof startEconomyWorld> {
+  validateAlphaEconomyPlanningBinding(deployment, true);
+  validateAlphaOperationalPlanningBinding(deployment);
+  const release = buildEconomyRelease({
+    version: deployment.economy.release.version,
+    rates: deployment.economy.release.rates,
+    rules: deployment.economy.release.rules,
+    tenderProfiles: deployment.economy.release.tenderProfiles,
+  });
+  if (release.checksum !== deployment.blueprint.releases.economy) throw new Error("EconomyRelease stimmt nicht mit dem Weltentwurf ueberein.");
+  const { lots: _lots, ...economy } = deployment.economy;
+  const started = startEconomyWorld({
+    worldId: deployment.worldId,
+    seed: deployment.blueprint.seed,
+    ...economy,
+    release,
+  });
+  if (alphaHash("zugfolge-alpha-tender-calendar/v1", started.state.calendar) !== deployment.blueprint.tenderCalendarHash) {
+    throw new Error("Vergabekalender stimmt nicht mit dem Weltentwurf ueberein.");
+  }
+  if (![...started.state.tenders.values()].some((tender) => tender.phase === "open")) {
+    throw new Error("Neuer Weltstart hat keine offene Startausschreibung erzeugt.");
+  }
+  return started;
+}
+
+export function validatePersistedAlphaEconomyPlanning(
+  deployment: Pick<AlphaWorldDeployment, "economy">,
+  state: Pick<EconomyWorldState, "planning" | "tenderGeneration">,
+): void {
+  if (deployment.economy.planning !== undefined && (
+    state.planning?.snapshotHash !== deployment.economy.planning.snapshotHash
+    || alphaHash("zugfolge-alpha-tender-generation-binding/v1", state.tenderGeneration ?? null)
+      !== alphaHash("zugfolge-alpha-tender-generation-binding/v1", deployment.economy.tenderGeneration ?? null)
+  )) throw new Error("Bestehende Wirtschaftswelt besitzt eine andere Spielplanung oder Ausschreibungsgenerierung als das signierte Deployment.");
 }
 
 export interface OperationalProgramRegistration {
@@ -469,7 +581,9 @@ export function parseSignedAlphaWorldDeployment(
   validateWorldBlueprint(deployment.blueprint);
   validateDeploymentWorldDefinition(deployment.worldDefinition, deployment.blueprint.profileKind);
   validatePlanningBinding(deployment);
+  validateAlphaEconomyPlanningBinding(deployment);
   validateOperationalSimulationBinding(deployment);
+  validateAlphaOperationalPlanningBinding(deployment);
   const economyRelease = buildEconomyRelease({
     version: deployment.economy.release.version,
     rates: deployment.economy.release.rates,
@@ -873,7 +987,7 @@ export class ProductionWorldStartPort implements WorldStartPort {
   }
 
   async verifyDurable(worldId: string, blueprint: AlphaWorldBlueprint): Promise<void> {
-    this.#deployment(worldId, blueprint);
+    const deployment = this.#deployment(worldId, blueprint);
     const correlationId = `alpha-world-start:${worldId}:${this.signed.deploymentHash}`;
     const [economy, fleet, operationsEvent, projection] = await Promise.all([
       loadEconomyWorldState(this.db, worldId),
@@ -887,6 +1001,7 @@ export class ProductionWorldStartPort implements WorldStartPort {
         eq(odooProjectionOutbox.correlationId, correlationId),
       )).limit(1),
     ]);
+    if (economy !== undefined) validatePersistedAlphaEconomyPlanning(deployment, economy);
     if (
       economy?.releasePin.releaseChecksum !== blueprint.releases.economy
       || fleet?.state.authorityReleaseHash !== blueprint.releases.fleet
@@ -900,27 +1015,10 @@ export class ProductionWorldStartPort implements WorldStartPort {
     const existing = await loadEconomyWorldState(this.db, worldId);
     if (existing !== undefined) {
       if (existing.releasePin.releaseChecksum !== blueprint.releases.economy) throw new Error("Bestehende Wirtschaftswelt besitzt einen fremden Release.");
+      validatePersistedAlphaEconomyPlanning(deployment, existing);
       return;
     }
-    const release = buildEconomyRelease({
-      version: deployment.economy.release.version,
-      rates: deployment.economy.release.rates,
-      rules: deployment.economy.release.rules,
-      tenderProfiles: deployment.economy.release.tenderProfiles,
-    });
-    if (release.checksum !== blueprint.releases.economy) throw new Error("EconomyRelease stimmt nicht mit dem Weltentwurf ueberein.");
-    const started = startEconomyWorld({
-      worldId,
-      seed: blueprint.seed,
-      durationMonths: deployment.economy.durationMonths,
-      release,
-      lots: deployment.economy.lots,
-      authorityBudgets: deployment.economy.authorityBudgets,
-      accounts: deployment.economy.accounts,
-      publicVehiclePoolByLot: deployment.economy.publicVehiclePoolByLot,
-    });
-    const calendarHash = alphaHash("zugfolge-alpha-tender-calendar/v1", started.state.calendar);
-    if (calendarHash !== blueprint.tenderCalendarHash) throw new Error("Vergabekalender stimmt nicht mit dem Weltentwurf ueberein.");
+    const started = startAlphaDeploymentEconomy(deployment);
     await persistEconomyTransition(this.db, { expectedRevision: null, ...started, committedAt: new Date(0), enqueuedAt: this.economyQueueClock() });
   }
 

@@ -3,7 +3,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
 import { alphaCanonicalJson } from "../../packages/alpha/dist/index.js";
-import { canonicalPlanningJson } from "../../packages/gtfs/dist/index.js";
+import { canonicalPlanningJson, compileGameTimetable } from "../../packages/gtfs/dist/index.js";
 import { deriveAlphaWorldBuildConfiguration } from "./build-alpha-world-configuration.mjs";
 import { buildAlphaWorld, germanyOperationalStableId } from "./build-alpha-world.mjs";
 import { deriveDailyCirculationPlan } from "./daily-circulation-v2.mjs";
@@ -48,6 +48,39 @@ const DIRECT_REVERSE_BASE_ROUTE_ID = "route:alpha-builder-fixture:reverse-base:v
 const DIRECT_REVERSE_BASE_TEMPLATE_ID = "template:alpha-builder-fixture:reverse-base:v1";
 const DIRECT_OUTBOUND_ROUTE_ID = "route:alpha-builder-fixture:direct-outbound:46560:v1";
 const DIRECT_OUTBOUND_TEMPLATE_ID = "template:alpha-builder-fixture:direct-outbound:46560:v1";
+const TIMETABLE_GENERATION = {
+  schemaVersion: "zugfolge-game-timetable-generation/v1", version: "game-timetable/v1", departureGridSeconds: 60, minimumRunningSeconds: 1, requireEligibleTerminals: true,
+  networkReference: {
+    schemaVersion: "zugfolge-game-timetable-network-reference/v1", rule: "directed-contiguous-playable-track-sections/v1",
+    tracks: { file: "fixture-tracks.json", bytes: 1, sha256: "a".repeat(64) },
+    corridors: { file: "fixture-corridors.json", bytes: 1, sha256: "b".repeat(64) },
+    terminalCatalog: { file: "fixture-terminals.json", bytes: 1, sha256: "c".repeat(64), sourceId: "fixture-terminal-catalog" },
+    permittedProtectionModes: ["pzb"],
+  },
+};
+let generatedTimetable;
+
+function fixtureGameTimetable() {
+  generatedTimetable ??= compileGameTimetable({
+    worldId: MINIMAL_BUILDER_WORLD_ID,
+    regionId: MINIMAL_BUILDER_REGION_ID,
+    releaseId: GTFS_RELEASE_ID,
+    serviceDate: "20260810",
+    seed: "42",
+    specification: TIMETABLE_GENERATION,
+    trips: Array.from({ length: ROUTE_COUNT }, (_, index) => {
+      const departureS = 3_600 + index * 600;
+      return {
+        sourceTripId: `reference-trip-${index}`, serviceId: "reference-service", routeId: `reference-route-${index}`, routeShortName: `RB ${index + 1}`, headsign: "Alpha Builder B", directionId: "0",
+        stops: [
+          { stopId: "alpha-builder-stop-a", stopName: "Alpha Builder A", inRegion: true, pathToNextInRegion: true, stopSequence: 1, arrivalS: departureS, departureS, terminalEligibility: { kind: "station", canTurn: true, evidenceId: "fixture-operating-point-a" } },
+          { stopId: "alpha-builder-stop-b", stopName: "Alpha Builder B", inRegion: true, stopSequence: 2, arrivalS: departureS + 300, departureS: departureS + 300, terminalEligibility: { kind: "station", canTurn: true, evidenceId: "fixture-operating-point-b" } },
+        ],
+      };
+    }),
+  });
+  return generatedTimetable;
+}
 
 function sha256(value) {
   return createHash("sha256").update(value).digest("hex");
@@ -59,7 +92,7 @@ function jsonBytes(value) {
 
 function routeIdentity(index) {
   const suffix = String(index + 1).padStart(2, "0");
-  const playableLegId = `alpha-builder-leg-${suffix}`;
+  const playableLegId = fixtureGameTimetable().chains[index].legs[0].legId;
   const routeVersionId = `route:gtfs:${playableLegId}:v1`;
   return Object.freeze({
     suffix,
@@ -405,35 +438,13 @@ function movementRouteTemplates(transferPlan, operationalStateHash) {
 }
 
 function gtfsEnvelope() {
-  const journeyChains = [];
-  const segments = [];
-  for (let index = 0; index < ROUTE_COUNT; index += 1) {
-    const identity = routeIdentity(index);
-    const departureS = 3_600 + index * 600;
-    journeyChains.push({
-      worldId: MINIMAL_BUILDER_WORLD_ID,
-      releaseId: GTFS_RELEASE_ID,
-      journeyChainId: `alpha-builder-run-${identity.suffix}`,
-      routeId: `alpha-builder-route-${identity.suffix}`,
-      routeShortName: `RB ${index + 1}`,
-      orderable: true,
-      legs: [{
-        kind: "playable",
-        legId: identity.playableLegId,
-        orderable: true,
-        qualityClass: "B",
-        entryPortalId: null,
-        exitPortalId: null,
-        stops: [
-          { stopId: "alpha-builder-stop-a", arrivalS: departureS, departureS },
-          { stopId: "alpha-builder-stop-b", arrivalS: departureS + 300, departureS: departureS + 300 },
-        ],
-      }],
-    });
-    segments.push({ id: `alpha-builder-segment-${identity.suffix}`, orderable: true, qualityClass: "B" });
-  }
+  const journeyChains = fixtureGameTimetable().chains;
+  const segments = journeyChains.flatMap((chain) => chain.legs.map((leg) => ({ ...leg, segmentId: leg.legId })));
   const snapshot = {
     serviceDate: "20260810",
+    timetableGeneration: TIMETABLE_GENERATION,
+    generationSeed: "42",
+    lines: fixtureGameTimetable().lines,
     source: {
       archive: "gtfs-alpha-builder-fixture.zip",
       archiveSha256: ARCHIVE_SHA256,
@@ -443,8 +454,8 @@ function gtfsEnvelope() {
     regionVariant: "B",
     metrics: { orderableJourneyChainCount: ROUTE_COUNT },
     stations: [
-      { stopId: "alpha-builder-stop-a", name: "Alpha Builder A", latitudeE7: 510_000_000, longitudeE7: 100_000_000 },
-      { stopId: "alpha-builder-stop-b", name: "Alpha Builder B", latitudeE7: 510_010_000, longitudeE7: 100_020_000 },
+      { stopId: "alpha-builder-stop-a", name: "Alpha Builder A", inRegion: true, latitudeE7: 510_000_000, longitudeE7: 100_000_000 },
+      { stopId: "alpha-builder-stop-b", name: "Alpha Builder B", inRegion: true, latitudeE7: 510_010_000, longitudeE7: 100_020_000 },
     ],
     segments,
     journeyChains,

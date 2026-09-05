@@ -282,6 +282,12 @@ export interface PublicTenderView {
   readonly closesAt: number;
   readonly bidCount: number;
   readonly ownBidCount: number;
+  readonly serviceLines?: readonly {
+    readonly designation: string;
+    readonly origin: string;
+    readonly destination: string;
+    readonly adjustmentReasons: readonly string[];
+  }[];
 }
 
 export interface EconomyPlayerStateView {
@@ -675,6 +681,20 @@ function parseEconomyPlayerState(value: unknown): EconomyPlayerStateView {
       closesAt: integerValue(tender, "closesAt", `Ausschreibungen[${index}].tender`, 0),
       bidCount: integerValue(lifecycle, "bidCount", `Ausschreibungen[${index}]`, 0),
       ownBidCount: Array.isArray(lifecycle["ownBids"]) ? lifecycle["ownBids"].length : 0,
+      serviceLines: lifecycle["serviceLines"] === undefined ? [] : (() => {
+        if (!Array.isArray(lifecycle["serviceLines"])) throw new GameApiError("Ausschreibungslinien besitzen kein unterstütztes Format.", false);
+        return lifecycle["serviceLines"].map((item, lineIndex) => {
+          const name = `Ausschreibungen[${index}].serviceLines[${lineIndex}]`;
+          const line = asRecord(item, name);
+          if (!Array.isArray(line["adjustmentReasons"]) || !line["adjustmentReasons"].every((reason) => typeof reason === "string")) throw new GameApiError(`${name} besitzt ungültige Anpassungsgründe.`, false);
+          return {
+            designation: stringValue(line, "designation", name)!,
+            origin: stringValue(line, "origin", name)!,
+            destination: stringValue(line, "destination", name)!,
+            adjustmentReasons: line["adjustmentReasons"] as string[],
+          };
+        });
+      })(),
     };
   });
   return { revision, tenders };

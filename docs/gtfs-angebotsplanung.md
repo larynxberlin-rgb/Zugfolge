@@ -1,18 +1,27 @@
-# GTFS-basierte Linien- und Angebotsplanung
+# Spielgenerierte Linien- und Angebotsplanung mit GTFS-Referenzen
 
-Die SPNV-Ausschreibungen werden nicht mehr aus frei eingegebenen Linien oder
-technischen Clientwerten aufgebaut. Ein versionierter, gehashter
-`GtfsPlanningSnapshot` leitet aus einem statischen GTFS-Capture die aktiven
-Fahrtenbilder ab, bindet sie an den internen Betriebsgraphen und erzeugt daraus
-reproduzierbare Linien, Lose und Mengengerüste. Der Client referenziert bei der
-Ausschreibung nur noch Planungsrevision, Snapshot-Hash und Los-ID.
+GTFS ist eine Referenz für Linie, Laufweg, Fahrzeiten, Frequenz und Bezeichnung.
+Das Spiel erzeugt eigene Fahrten innerhalb des gepinnten Spielgebiets (E33).
+Der versionierte, gehashte `GtfsPlanningSnapshot` hält die Herkunft des Angebots
+fest; verbindlich sind die erzeugten Spiel-Linien, -Fahrten und deren interne
+Infrastrukturbindung. Ausschreibungen, Fahrzeugbedarf und Leistungsmenge werden
+aus demselben erzeugten Fahrplan abgeleitet. Der Client referenziert nur
+Planungsrevision, Snapshot-Hash und Los-ID.
+
+Der regionale Produktionsweg ist `build-gtfs-region.mjs` → qualifizierter
+innerer Gleisgraph und Fahrtrouten → `build-alpha-world.mjs` → signiertes
+Deployment → Wirtschaft und Betrieb. Der Weltstart bindet den vollständigen
+Angebotsplan und die automatische Ausschreibungserzeugung. Ein nacktes Los mit
+einem GTFS-Dateihash ist keine ausreichende Angebotsgrundlage.
 
 ## Ableitungskette
 
 | Stufe | Eingabe | Ergebnis und harte Prüfung |
 |---|---|---|
 | Capture | statischer GTFS-Feed | Feed-URL, Lizenz, Attribution, Abrufzeit und SHA-256 von ZIP und Tabellen |
-| Verkehrstage | `calendar.txt`, `calendar_dates.txt`, optional `frequencies.txt` | exakt aktive Fahrten; GTFS-Zeiten über 24 Uhr bleiben demselben Verkehrstag zugeordnet |
+| Referenzangebot | `calendar.txt`, `calendar_dates.txt`, optional `frequencies.txt` | aktive Referenzfahrten mit Bedienungszeitraum, Frequenz und Abschnittszeiten; Zeiten über 24 Uhr bleiben beim Verkehrstag |
+| Spiel-Linie | Referenzhalte, Spielgebiet, reales Gleisnetz und belegte Endpunkte | zusammenhängende Innenabschnitte zwischen zwei geeigneten Bahnhöfen mit Wendemöglichkeit; tatsächlicher Endbahnhof als Ziel, keine Außenfahrt oder Grenzfenster |
+| Spiel-Fahrplan | Innenabschnitte, Taktreferenz, Seed und versionierte Erzeugungsregel | eigene reproduzierbare Fahrten mit ganzzahligen Fahr-/Haltezeiten und eigenen IDs |
 | Infrastrukturbindung | explizite Stop→Knoten- und Varianten→Kanten-Zuordnung | nur aktive, gerichtete, zusammenhängende Kanten; Halte müssen in korrekter Reihenfolge auf dem Pfad liegen |
 | Fahrtenbild | interne Linien-ID, Richtung, Halte- und Kantenfolge | stabile `ServicePattern`-ID, Fahrten, Taktmedian, Betriebszeit, Zugmeter, Halte, Fahrzeit und Energie |
 | Losbildung | Linien und gemeinsamer Betriebsgraph | deterministische Gruppen bis zur konfigurierten Maximalgröße; Linien ohne gemeinsamen Knoten bleiben getrennt |
@@ -27,9 +36,19 @@ stillschweigend in eine laufende Welt geschrieben.
 
 - Es werden nur die in der Planungsregel freigegebenen GTFS-`route_type`-Werte
   verarbeitet.
-- Eine Fahrt kann auf einen explizit konfigurierten Teilkorridor einer längeren
-  GTFS-Fahrt abgebildet werden. Mehrdeutige gleich spezifische Zuordnungen und
-  unvollständige Pfade werden abgewiesen.
+- Außenhalte entfallen durch Aufteilen und Kürzen, nicht durch Überspringen in
+  derselben Fahrt. Wiedereintritt erzeugt eine getrennte Linie. Der gesamte
+  Gleisweg muss intern bleiben; ein Außenweg zwischen zwei Innenhalten ist
+  ebenfalls unzulässig. Unvollständige Infrastrukturbelege werden abgewiesen.
+- Jeder Abschnitt wird auf das längste zusammenhängende Intervall zwischen
+  unterschiedlichen Bahnhöfen mit belegter Wendemöglichkeit gekürzt. Maßgeblich
+  ist die Zahl erhaltener Halteabschnitte, bei Gleichstand der frühere Beginn.
+  Haltepunkte bleiben Zwischenhalte. Unbekannte
+  Betriebspunktarten und unbelegte Wendemöglichkeiten eignen sich nicht als
+  Linienenden; ohne zwei unterschiedliche geeignete Bahnhöfe entfällt der
+  Abschnitt. Die Regel gilt auch für ursprüngliche GTFS-Endhalte innerhalb der
+  Karte. Im Markt erscheinen Linienname, tatsächliche Endbahnhöfe und die
+  Anpassung gegenüber dem Referenzlaufweg.
 - Losgröße ist die auf die Stichprobentage normierte Verkehrsleistung in
   Zug-km/Tag. Attraktivität wird aus Fahrtenzahl und erschlossenen internen
   Knoten abgeleitet; die Schwelle für kleine Lose ist versioniert.
@@ -46,7 +65,27 @@ stillschweigend in eine laufende Welt geschrieben.
   Fahrzeuganforderungen, Vertragsdauer, Losklasse und Altbetreiber werden auf
   dem Server ermittelt.
 
-## Pilot Leipzig–Halle
+## Produktionsaufbau
+
+Der endgültige regionale Snapshot benötigt die Netzbindung als sechstes
+CLI-Argument. Der Aufruf ohne Netzbindung liefert nur eine Referenzvorstufe,
+die nicht für einen neuen Weltstart ausreicht:
+
+```sh
+node tools/region-import/build-gtfs-region.mjs WORLD-IDENTITY.json \
+  GTFS-DIRECTORY YYYYMMDD ARCHIVE-SHA256 game-timetable.json NETWORK-BINDING.json
+```
+
+Die [Erzeugungsregel und Eingabeformate](../tools/region-import/specifications/game-timetable-v1.md)
+beschreiben Gleisdateien, gerichtete Freigaben und den Endpunktkatalog. Die
+Bahnhofseigenschaft und Wendemöglichkeit benötigen jeweils belastbare
+Betriebsbelege. GTFS-Namen und `location_type` genügen dafür nicht. Dieselben
+gehashten Netzdateien werden anschließend im Routecompiler verwendet.
+
+## Historischer Pilot Leipzig–Halle
+
+Die folgenden Werte und Hashes dokumentieren den früheren GTFS-Replay-Piloten.
+Sie sind kein Nachweis für einen mit E33 neu erzeugten Weltfahrplan.
 
 Der reale Pilot unter
 [`tools/reference-corpus/pilot/2026-08`](../tools/reference-corpus/pilot/2026-08)
@@ -73,11 +112,15 @@ bestätigt werden. GTFS liefert insbesondere keine belastbare
 Streckenkapazität, Elektrifizierung, Zugsicherung, Zulassung oder
 Instandhaltungsfreigabe.
 
-## Reproduktion und Aktualisierung
+## Historische Reproduktion und Aktualisierung
+
+Der frühere Pilotnachweis verwendet den expliziten Legacy-Replay-Compiler.
+Der aktuelle Standardcompiler erzeugt ein neues Spielangebot und folglich neue
+Fahrten, Mengen und Hashes. Alle Folgeartefakte sind gemeinsam neu zu bauen.
 
 ```bash
 pnpm --filter @zugfolge/gtfs build
-node tools/reference-corpus/cli.mjs plan-gtfs \
+node tools/reference-corpus/cli.mjs plan-gtfs-reference-replay \
   tools/reference-corpus/pilot/2026-08/config.json \
   tools/reference-corpus/pilot/2026-08/planning-config.json \
   tools/reference-corpus/pilot/2026-08/capture-manifest.json \
@@ -91,4 +134,3 @@ Pilotnachweis. Für eine neue Fahrplanperiode werden Feed und Tabellen neu
 erfasst, die Zuordnung bewusst geprüft, die Revision erhöht und der neue Hash
 in einer neuen Welt beziehungsweise an einem vorgesehenen Periodenübergang
 gepinnt.
-

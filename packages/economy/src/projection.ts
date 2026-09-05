@@ -1,4 +1,5 @@
 import type { EconomyWorldState, TenderLifecycle, Mobilization } from "./workflow.js";
+import type { GtfsServicePattern } from "@zugfolge/gtfs";
 
 export type PublicMobilization = Pick<Mobilization, "tenderId" | "winnerOperatorId" | "deadline" | "completed">;
 
@@ -6,6 +7,7 @@ type PublicTenderLifecycle = Omit<TenderLifecycle, "bids" | "winningBid"> & {
   readonly bidCount: number;
   readonly ownBids?: TenderLifecycle["bids"];
   readonly winningOperatorId?: string;
+  readonly serviceLines: readonly NonNullable<GtfsServicePattern["presentation"]>[];
 };
 
 /**
@@ -17,11 +19,16 @@ type PublicTenderLifecycle = Omit<TenderLifecycle, "bids" | "winningBid"> & {
 export function economyStateForPlayer(state: EconomyWorldState, operatorIds: ReadonlySet<string>): unknown {
   const tenders = new Map<string, PublicTenderLifecycle>();
   for (const [tenderId, lifecycle] of state.tenders) {
+    const lines = new Set(lifecycle.tender.specification.lines);
+    const serviceLines = [...new Map((state.planning?.snapshot.patterns ?? [])
+      .filter((pattern) => lines.has(pattern.lineId) && pattern.presentation !== undefined)
+      .map((pattern) => [JSON.stringify(pattern.presentation), pattern.presentation!])).values()];
     const ownBids = Object.freeze(lifecycle.bids.filter((bid) => operatorIds.has(bid.operatorId)));
     if (lifecycle.phase === "awarded") {
       tenders.set(tenderId, Object.freeze({
         phase: lifecycle.phase,
         tender: lifecycle.tender,
+        serviceLines,
         bidCount: lifecycle.bids.length,
         ...(ownBids.length === 0 ? {} : { ownBids }),
         winningOperatorId: lifecycle.winningBid.operatorId,
@@ -30,6 +37,7 @@ export function economyStateForPlayer(state: EconomyWorldState, operatorIds: Rea
       tenders.set(tenderId, Object.freeze({
         phase: lifecycle.phase,
         tender: lifecycle.tender,
+        serviceLines,
         publicOperation: lifecycle.publicOperation,
         bidCount: lifecycle.bids.length,
         ...(ownBids.length === 0 ? {} : { ownBids }),
@@ -38,6 +46,7 @@ export function economyStateForPlayer(state: EconomyWorldState, operatorIds: Rea
       tenders.set(tenderId, Object.freeze({
         phase: lifecycle.phase,
         tender: lifecycle.tender,
+        serviceLines,
         bidCount: lifecycle.bids.length,
         ...(ownBids.length === 0 ? {} : { ownBids }),
       }));

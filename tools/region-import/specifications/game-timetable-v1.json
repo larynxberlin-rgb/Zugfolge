@@ -1,0 +1,6 @@
+{
+  "schemaVersion": "zugfolge-game-timetable-generation/v1",
+  "version": "game-timetable/v1",
+  "departureGridSeconds": 60,
+  "minimumRunningSeconds": 1
+}

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   buildGtfsPlanningSnapshot,
+  buildGtfsReferenceReplaySnapshot,
   createGtfsPlanningEnvelope,
   gtfsServiceSeconds,
   parseGtfsCsv,
@@ -109,8 +110,8 @@ describe("gemeinsamer GTFS-Kern", () => {
     expect(snapshot.patterns).toHaveLength(3);
     expect(snapshot.patterns.find((pattern) => pattern.lineId === "S2")?.metrics).toMatchObject({ journeyCount: 2, medianHeadwaySeconds: 1_800 });
     expect(snapshot.patterns.find((pattern) => pattern.lineId === "S1" && pattern.directionId === "0")?.journeys[0]).toMatchObject({
-      departureServiceSeconds: 85_800,
-      arrivalServiceSeconds: 87_000,
+      departureServiceSeconds: 85_851,
+      arrivalServiceSeconds: 87_051,
     });
     expect(snapshot.lots).toHaveLength(1);
     expect(snapshot.lots[0]).toMatchObject({ lineIds: ["S1", "S2"], connectingNodeIds: ["n-b"], smallLot: true });
@@ -200,6 +201,55 @@ describe("gemeinsamer GTFS-Kern", () => {
       },
     });
     const journey = snapshot.patterns.find((pattern) => pattern.lineId === "S1" && pattern.directionId === "0")?.journeys[0];
-    expect(journey).toMatchObject({ departureServiceSeconds: 85_800, arrivalServiceSeconds: 87_000 });
+    expect(journey).toMatchObject({ departureServiceSeconds: 85_851, arrivalServiceSeconds: 87_051 });
+  });
+
+  it("behält echte Abfahrten ausschließlich im expliziten Archiv-Replay", () => {
+    const archived = buildGtfsReferenceReplaySnapshot(input());
+    expect(archived.timetableGeneration).toBeUndefined();
+    expect(archived.patterns.find((pattern) => pattern.lineId === "S1" && pattern.directionId === "0")?.journeys[0]).toMatchObject({ departureServiceSeconds: 85_800, arrivalServiceSeconds: 87_000 });
+  });
+
+  it("berechnet Ausschreibungsmengen aus den generierten Fahrten und ihren Referenzzeiten", () => {
+    const snapshot = buildGtfsPlanningSnapshot(input());
+    expect(snapshot.timetableGeneration?.specification.version).toBe("game-timetable/v1");
+    for (const pattern of snapshot.patterns) {
+      expect(pattern.journeys.every((journey) => journey.id?.startsWith("game-trip-"))).toBe(true);
+      expect(pattern.metrics.totalTrainMeters).toBe((BigInt(pattern.journeys.length) * BigInt(pattern.distanceMeters)).toString());
+      expect(pattern.metrics.totalServiceSeconds).toBe(pattern.journeys.reduce((total, journey) => total + BigInt(journey.arrivalServiceSeconds - journey.departureServiceSeconds), 0n).toString());
+    }
+    expect(snapshot.lots[0]!.specificationBasis.totalTrainMeters).toBe(snapshot.patterns.reduce((total, pattern) => total + BigInt(pattern.metrics.totalTrainMeters), 0n).toString());
+  });
+
+  it("verwirft den Außenpfad zwischen inneren Halten aus Infrastrukturzuordnungen", () => {
+    const original = input();
+    const snapshot = buildGtfsPlanningSnapshot({ ...original, infrastructure: { ...original.infrastructure, edges: original.infrastructure.edges.map((edge) => ({ ...edge, inRegion: edge.id !== "e-ab" })) } });
+    expect(snapshot.patterns.map((pattern) => pattern.lineId)).toEqual(["S2"]);
+    expect(snapshot.lots[0]!.specificationBasis.totalTrainMeters).toBe("30000");
+  });
+
+  it("kürzt eine vollständige Infrastrukturreferenz bei Wiedereintritt zu getrennten Losen", () => {
+    const original = input();
+    const stopIds = ["A", "B", "X", "C", "D"];
+    const snapshot = buildGtfsPlanningSnapshot({
+      ...original,
+      tables: { ...original.tables,
+        stops: stopIds.map((stopId) => row({ stop_id: stopId, stop_name: stopId })),
+        trips: [original.tables.trips[0]!],
+        frequencies: [],
+        stopTimes: stopIds.map((stopId, index) => row({ trip_id: "t1", stop_id: stopId, stop_sequence: String(index + 1), arrival_time: `06:${String(index * 10).padStart(2, "0")}:00`, departure_time: `06:${String(index * 10).padStart(2, "0")}:00` })),
+      },
+      infrastructure: { version: original.infrastructure.version,
+        nodes: stopIds.map((id) => ({ id, inRegion: id !== "X" })),
+        stopMappings: stopIds.map((id) => ({ gtfsStopId: id, nodeId: id })),
+        edges: stopIds.slice(1).map((id, index) => ({ id: `edge-${index}`, fromNodeId: stopIds[index]!, toNodeId: id, distanceMeters: 10_000, active: true, bidirectional: true, electrification: "ac" as const })),
+        patternMappings: [{ lineId: "S1", routeId: "r1", directionId: "0", stopIds, edgeIds: ["edge-0", "edge-1", "edge-2", "edge-3"] }],
+      },
+    });
+    expect(snapshot.patterns.map((pattern) => pattern.stopIds).sort()).toEqual([["A", "B"], ["C", "D"]]);
+    expect(snapshot.patterns.every((pattern) => pattern.lineId.startsWith("game-line-"))).toBe(true);
+    expect(snapshot.lots).toHaveLength(2);
+    expect(snapshot.lots.map((lot) => lot.specificationBasis.totalTrainMeters)).toEqual(["10000", "10000"]);
+    expect(snapshot.patterns.every((pattern) => !pattern.nodeIds.includes("X"))).toBe(true);
   });
 });
