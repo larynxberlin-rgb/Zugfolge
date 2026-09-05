@@ -74,6 +74,11 @@ Simulationskern gibt es kein `now()`, keine Gleitkommazahl im zustandsrelevanten
 Pfad und keinen Datenbankzugriff. Unbekannte Schemas, Felder, Referenzen und
 Releasebindungen werden abgelehnt.
 
+Eine reine Ableitung besitzt keinen eigenen Geschäftsübergang. Ihre
+`demandStateHash`-/`operationalReceiptId`-Bindung verweist auf den verursachenden
+M10-/Betriebsbeleg; sie erzeugt kein zusätzliches Domain-Event nur für einen
+Leseaufruf. Assetdefinitionen erhalten ihre Weltbindung erst beim Pin der Welt.
+
 ### 2.1 Nachvollziehbare Aktions- und Autoritätsgrenzen
 
 Die folgende Matrix definiert die erforderlichen Domainübergänge. Die
@@ -155,8 +160,10 @@ Manifestprojektion. Ein bereits begonnener Fall bleibt über den
 ### 3.2 FareCompliancePolicyV1
 
 Eine `FareCompliancePolicyV1` ist Teil des gepinnten `DemandRelease`. Sie legt
-die Verteilung der Fahrberechtigungszustände deterministisch nach Tarif- und
-Vertriebszugang fest. Belastbare, rechtlich freigegebene Daten werden als
+die Verteilung der Fahrberechtigungszustände deterministisch gemäß dem
+M10-Vertrag fest. Tarif- und Vertriebsfakten beeinflussen die Reise- und
+Erwerbslage, erzeugen aber keine zweite Kontrollverteilung.
+Belastbare, rechtlich freigegebene Daten werden als
 `observed` ausgewiesen; ersatzweise verwendete Spielwerte heißen sichtbar
 `balanced` und dürfen nicht als reale Schwarzfahrerstatistik bezeichnet
 werden. Erscheinungsbild, Alter, Geschlecht, Herkunft, Behinderung oder andere
@@ -227,6 +234,27 @@ Weiterfahrt wechselt atomar auf den folgenden Abschnitt und dessen
 Ein-/Aussteiger. Nach bestätigter Endankunft liefert der Projektor
 `train_completed`; der spätere Sitzungsdienst beendet die Sitzung kontrolliert.
 M15.2 behauptet keine zusätzliche Tür- oder Boardingquittung.
+
+Die V1-Grenze akzeptiert höchstens 128 MiB JSON, 100 Halte je Zug,
+300.000 Innenraumplätze und insgesamt eine Million Manifesteinträge.
+Die M10-Kapazitätsfelder sind jeweils auf 100.000 begrenzt; Sitz-, Steh-
+und Premiumplätze müssen dem Platzinventar exakt entsprechen. Jeder Platz
+besitzt ein bis vier eindeutige zugelassene Bedarfe. Diese technischen
+Obergrenzen sind keine Freigabe einer entsprechenden realen Formation.
+Der bestehende Plattform-Checkpoint behält seine engere 16-MiB-Grenze.
+Kennungen umfassen höchstens 128 UTF-8-Bytes ohne Steuerzeichen, Hashes
+64 kleingeschriebene Hexadezimalzeichen. Zeiten und nichtnegative
+Millimeterkoordinaten bleiben sichere JSON-Ganzzahlen bis 2^53−1.
+
+Der Layouthash ist SHA-256 über den vollständigen V1-Datensatz in der
+Feldreihenfolge seines Rust-Vertrags, mit leerem `layoutHash`, nach `placeId`
+sortierten Plätzen und sortierter Bedarfsliste. Der Projektionshash verwendet
+entsprechend den vollständigen Datensatz mit leerem `stateHash`; die Ausgabe
+sortiert Fahrgäste nach `passengerKey`. Die Darstellung zieht aus dem
+getrennten Teilstrom `conductor_appearance_v1` eine Variante von 0 bis 255.
+Diese Kennung bezeichnet noch kein freigegebenes Grafikasset. Platzwahl
+verwendet den eigenen Teilstrom `conductor_places_v1`. Identische Eingänge
+erzeugen identische Ergebnisse ohne Systemzeit oder Zufallsquelle.
 
 ## 4. Zug, Sitzung und Fahrgastprojektion
 
@@ -574,10 +602,28 @@ Kontrollprämie <= 4 * positive nettoEBE
 ```
 
 Der gesamte positive Tagesbeitrag aus Netto-EBE und Kontrollprämie ist auf
-0,5 Prozent der relevanten täglichen SPNV-Vertragserlöse begrenzt. Negative
+0,5 Prozent der relevanten täglichen SPNV-Vertragserlöse begrenzt.
 Bearbeitungskosten, Polizeihaltfolgen und Pönalen bleiben vollständig wirksam.
 Alle Werte liegen als Integer-Cent im `EconomyRelease`; es gibt keinen externen
 Dienst im heißen Pfad.
+
+Der Tagesdeckel gilt gemeinsam für alle Zugläufe, Spieler und Sitzungen eines
+EVU in derselben Welt. Bezugsgröße sind die belegten SPNV-Vertragserlöse des
+expliziten Welttages vor Kontrollfolgen; Forderungen, Nachfrageprognosen,
+Kontrollprämien und andere Geschäftsfelder erhöhen diese Grundlage nicht.
+Der Deckel in Cent ist `floor(max(0, VertragserlöseCent) * 50 / 10000)`;
+bei null Erlösen entsteht kein positiver Kontrollbeitrag. Fehlende
+Vertragsabrechnungsbelege erlauben keine vorgezogene Prämienfreigabe.
+Ganzzahlige Rechnung prüft Überläufe und rundet erst am Ergebnis ab.
+
+Der gepinnte M6-Abrechnungsvertrag weist offene Forderung, Zahlung, Reduzierung,
+Kosten, Abschreibung, Prämie und einen gegebenenfalls erforderlichen
+Deckelausgleich getrennt aus. Der Ausgleich begrenzt ausschließlich einen
+positiven Kontrollbeitrag; er erstattet keine negativen Folgen. Tagesabschluss
+und spätere Korrektur referenzieren Welt, EVU, Welttag, Fallbelege und
+Releaseversion. Wiederholung erzeugt keine zweite Prämie; Korrekturen erfolgen
+als zusätzliche ausgeglichene Ledgertransaktion, niemals durch Umschreiben
+eines früheren Belegs. Diese Ledgerwirkung bleibt M15.11-Abnahme.
 
 ## 11. Öffentliche Verträge und API
 

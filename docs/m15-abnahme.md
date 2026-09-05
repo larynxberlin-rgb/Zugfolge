@@ -71,7 +71,16 @@ node --test .github/scripts/sync-milestones.test.mjs
 node .github/scripts/sync-milestones.mjs check
 cargo test --locked -p zugfolge-conductor
 pnpm --filter @zugfolge/runtime-native test
-pnpm --filter @zugfolge/game-api exec vitest run src/conductor-projection.native.integration.test.ts
+```
+
+Den vollständigen API-/Restorebeweis unter Linux mit echtem NAPI ausführen:
+
+```sh
+pnpm --filter @zugfolge/game-api... build
+cargo build --release --locked -p zugfolge-runtime-napi --features node-addon
+cp target/release/libzugfolge_runtime_napi.so target/release/zugfolge_runtime_napi.node
+ZUGFOLGE_RUNTIME_NATIVE_PATH="$PWD/target/release/zugfolge_runtime_napi.node" \
+  pnpm --filter @zugfolge/game-api exec vitest run src/conductor-projection.native.integration.test.ts
 ```
 
 Der reguläre Linux-Job für die native Runtime verwendet das echte NAPI-Addon.
@@ -93,6 +102,16 @@ Der native API-/Datenbanknachweis hat drei grüne Tests einschließlich echtem
 Rust-Aufruf, voller Sechsplatz-Testbelegung über mehrere Halte und
 Wiederherstellung aus einem vollständig geschlossenen und neu geladenen
 PGlite-Datenbankabbild. Die feste kleine Testformation ist kein Lastnachweis.
+
+Zusätzlich bestanden 24 Rust-Tests (10 neue Conductor- und 14 M10-Tests),
+55 Tests des nativen TypeScript-Adapters, Workspace-Build und Typprüfung,
+Rust-Formatprüfung sowie Clippy mit `-D warnings`. Die Rust-Nachweise
+umfassen 48 Seeds mit echten M10-Auswertungen, Angebots-/Layoutpermutation,
+Haltwechsel, Störung und Restore; 256 Zuordnungs- und Fortschreibungsfälle
+werden mit einer unabhängigen vollständigen Suche verglichen. Ein
+synthetischer Zug mit 4.096 Fahrgästen, davon 1.024 stehend, beweist, dass
+auch bei hoher Belegung keine logischen Personen entfernt werden.
+Das ersetzt weder reale Fahrzeugkonfiguration noch Systemlastabnahme.
 
 ## Berücksichtigte Issues und offene PRs
 

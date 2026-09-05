@@ -400,6 +400,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "29666d0abbfad1e3dc4dcf6144730dd3a3ab225bbbdac83319345b1b44ccfc1b"
 
 [[package]]
+name = "zugfolge-conductor"
+version = "0.0.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "sha2",
+ "zugfolge-demand",
+]
+
+[[package]]
 name = "zugfolge-conflict"
 version = "0.0.0"
 dependencies = [
@@ -553,6 +563,7 @@ dependencies = [
  "napi-build",
  "napi-derive",
  "serde_json",
+ "zugfolge-conductor",
  "zugfolge-demand",
  "zugfolge-rules",
  "zugfolge-runtime",

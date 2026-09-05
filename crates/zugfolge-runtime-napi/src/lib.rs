@@ -11,6 +11,14 @@ pub fn evaluate_passenger_demand(input_json: String) -> napi::Result<String> {
         .map_err(|error| napi::Error::from_reason(error.to_string()))
 }
 
+/// Projiziert ausschließlich belegte M10-Fahrgäste in freigegebene Innenraumplätze.
+#[cfg(feature = "node-addon")]
+#[napi(js_name = "projectConductorPassengers")]
+pub fn project_conductor_passengers(input_json: String) -> napi::Result<String> {
+    zugfolge_conductor::project_conductor_passengers_json(&input_json)
+        .map_err(|error| napi::Error::from_reason(error.to_string()))
+}
+
 #[cfg(feature = "node-addon")]
 use napi_derive::napi;
 
