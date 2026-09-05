@@ -121,7 +121,6 @@ export interface GtfsServicePattern {
     readonly designation: string;
     readonly origin: string;
     readonly destination: string;
-    readonly adjustmentReasons: readonly string[];
   };
   readonly directionId: string;
   readonly sourceRouteIds: readonly string[];

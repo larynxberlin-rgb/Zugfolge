@@ -286,7 +286,6 @@ export interface PublicTenderView {
     readonly designation: string;
     readonly origin: string;
     readonly destination: string;
-    readonly adjustmentReasons: readonly string[];
   }[];
 }
 
@@ -686,12 +685,10 @@ function parseEconomyPlayerState(value: unknown): EconomyPlayerStateView {
         return lifecycle["serviceLines"].map((item, lineIndex) => {
           const name = `Ausschreibungen[${index}].serviceLines[${lineIndex}]`;
           const line = asRecord(item, name);
-          if (!Array.isArray(line["adjustmentReasons"]) || !line["adjustmentReasons"].every((reason) => typeof reason === "string")) throw new GameApiError(`${name} besitzt ungültige Anpassungsgründe.`, false);
           return {
             designation: stringValue(line, "designation", name)!,
             origin: stringValue(line, "origin", name)!,
             destination: stringValue(line, "destination", name)!,
-            adjustmentReasons: line["adjustmentReasons"] as string[],
           };
         });
       })(),

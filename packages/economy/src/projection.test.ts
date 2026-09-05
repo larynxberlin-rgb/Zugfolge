@@ -23,11 +23,11 @@ function state(phase: "open" | "awarded"): EconomyWorldState {
 }
 
 describe("player-facing economy projection", () => {
-  it("zeigt nur die tatsächlichen Linien und Anpassungsgründe des ausgeschriebenen Loses", () => {
-    const presentation = { designation: "RE 1", origin: "Bahnhof A", destination: "Bahnhof C",
-      adjustmentReasons: ["Vorlage: Außenstadt – Außenberg. Gekürzt auf Bahnhöfe mit Wendemöglichkeit."] };
+  it("zeigt das ausgeschriebene Angebot ohne interne Kürzungshinweise", () => {
+    const presentation = { designation: "RE 1", origin: "Bahnhof A", destination: "Bahnhof C" };
+    const internalPresentation = { ...presentation, adjustmentReasons: ["Vorlage: Außenstadt – Außenberg. Gekürzt auf Bahnhöfe mit Wendemöglichkeit."] };
     const source = { ...state("open"), planning: { snapshot: { patterns: [
-      { lineId: "game-line-1", presentation },
+      { lineId: "game-line-1", presentation: internalPresentation },
       { lineId: "game-line-1", presentation },
       { lineId: "anderes-los", presentation: { ...presentation, designation: "RE 99" } },
     ] } } } as unknown as EconomyWorldState;

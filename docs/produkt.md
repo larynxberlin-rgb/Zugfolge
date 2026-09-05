@@ -185,9 +185,11 @@ im freigegebenen Spielgebiet liegen. Außenabschnitte entfallen; innere Abschnit
 einer später wiederkehrenden Referenzlinie werden getrennt bedient. Eine Linie
 endet nur an Bahnhöfen mit belegter Wendemöglichkeit; Haltepunkte bleiben
 Zwischenhalte. Fehlt ein geeignetes Bahnhofspaar, entfällt der Abschnitt. Ziele
-nennen den tatsächlichen Endbahnhof, Ausschreibungen erklären die Anpassung
-gegenüber dem Referenzlaufweg. Wende, Fahrzeugbedarf und Verkehrsleistung beziehen
-sich auf den gekürzten Betrieb. Es gibt keine versteckten Außenfahrten oder
+nennen den tatsächlichen Endbahnhof. Ausschreibungen zeigen die Linienbezeichnung
+und tatsächlichen Endpunkte; die Linie gilt so, wie sie ausgeschrieben und bestellt
+wird. Die Spieleroberfläche enthält keine GTFS-Vorlagen oder Kürzungshinweise.
+Wende, Fahrzeugbedarf und Verkehrsleistung beziehen sich auf diesen Spielbetrieb.
+Es gibt keine versteckten Außenfahrten oder
 Fahrzeugbindungen außerhalb der Karte. Details:
 [ADR-0034](adr/0034-spielgenerierte-fahrplaene-im-spielgebiet.md).
 

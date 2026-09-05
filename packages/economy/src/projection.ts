@@ -22,7 +22,11 @@ export function economyStateForPlayer(state: EconomyWorldState, operatorIds: Rea
     const lines = new Set(lifecycle.tender.specification.lines);
     const serviceLines = [...new Map((state.planning?.snapshot.patterns ?? [])
       .filter((pattern) => lines.has(pattern.lineId) && pattern.presentation !== undefined)
-      .map((pattern) => [JSON.stringify(pattern.presentation), pattern.presentation!])).values()];
+      .map((pattern) => {
+        const { designation, origin, destination } = pattern.presentation!;
+        const presentation = { designation, origin, destination };
+        return [JSON.stringify(presentation), presentation] as const;
+      })).values()];
     const ownBids = Object.freeze(lifecycle.bids.filter((bid) => operatorIds.has(bid.operatorId)));
     if (lifecycle.phase === "awarded") {
       tenders.set(tenderId, Object.freeze({

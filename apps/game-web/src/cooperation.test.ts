@@ -272,15 +272,15 @@ describe("M12-Spieleroberfläche", () => {
     expect(renderCooperationSurface(state({ tenders: [] }))).toContain("Derzeit ist keine Ausschreibung");
   });
 
-  it("erklärt den tatsächlichen Laufweg und die Kürzung auf geeignete Bahnhöfe", () => {
+  it("zeigt die ausgeschriebene Linie mit ihren Endbahnhöfen ohne Kürzungserklärung", () => {
+    const line = { designation: "RE <1>", origin: "Bahnhof A", destination: "Bahnhof C",
+      adjustmentReasons: ["Vorlage: Außenstadt – Außenberg. Gekürzt auf Bahnhöfe mit Wendemöglichkeit."] };
     const html = renderCooperationSurface(state({ tenders: [{ id: "tender-1", lotId: "game-lot-hash", phase: "open",
-      bidCount: 0, ownBidCount: 0, closesAt: 1_000, serviceLines: [{ designation: "RE 1", origin: "Bahnhof A",
-        destination: "Bahnhof C", adjustmentReasons: ["Vorlage: Außenstadt – Außenberg. Gekürzt auf Bahnhöfe mit Wendemöglichkeit.", "Hinweis <Beleg>"] }] }] }));
-    expect(html).toContain("RE 1 · Bahnhof A – Bahnhof C");
-    expect(html).toContain("Vorlage: Außenstadt – Außenberg.");
-    expect(html).toContain("Gekürzt auf Bahnhöfe mit Wendemöglichkeit.");
-    expect(html).toContain("Hinweis &lt;Beleg&gt;");
-    expect(html).not.toContain("<Beleg>");
+      bidCount: 0, ownBidCount: 0, closesAt: 1_000, serviceLines: [line] }] }));
+    expect(html).toContain("RE &lt;1&gt; · Bahnhof A – Bahnhof C");
+    expect(html).not.toContain("Vorlage:");
+    expect(html).not.toContain("Gekürzt");
+    expect(html).not.toContain("Außenstadt");
   });
 
   it("bietet Nullstart-EVU den signierten öffentlichen Anschubvertrag losgebunden an", () => {

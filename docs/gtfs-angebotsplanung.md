@@ -47,8 +47,10 @@ stillschweigend in eine laufende Welt geschrieben.
   Betriebspunktarten und unbelegte Wendemöglichkeiten eignen sich nicht als
   Linienenden; ohne zwei unterschiedliche geeignete Bahnhöfe entfällt der
   Abschnitt. Die Regel gilt auch für ursprüngliche GTFS-Endhalte innerhalb der
-  Karte. Im Markt erscheinen Linienname, tatsächliche Endbahnhöfe und die
-  Anpassung gegenüber dem Referenzlaufweg.
+  Karte. Im Markt erscheinen Linienname und tatsächliche Endbahnhöfe des
+  ausgeschriebenen Spielangebots. Referenzlaufwege und Kürzungsgründe bleiben
+  in den internen Importberichten und Nachweisen; sie werden Spielern nicht
+  als Hinweise angezeigt.
 - Losgröße ist die auf die Stichprobentage normierte Verkehrsleistung in
   Zug-km/Tag. Attraktivität wird aus Fahrtenzahl und erschlossenen internen
   Knoten abgeleitet; die Schwelle für kleine Lose ist versioniert.

@@ -26,15 +26,17 @@ besitzen. Haltepunkte bleiben als Zwischenhalte zulässig. Fehlende oder unbekan
 Betriebspunkte sind keine zulässigen Enden; ohne geeignetes Paar entfällt der
 Abschnitt. Weder ein GTFS-Stationseintrag noch der Name „Hbf“ belegt die Eignung.
 Ein Wiedereintritt bildet eine getrennte Linie und keine unsichtbare Durchbindung.
-Das Ziel lautet auf den tatsächlichen inneren Endbahnhof. Ausschreibungen nennen
-die tatsächlichen Endpunkte und erklären die Anpassung gegenüber der Referenz.
+Das Ziel lautet auf den tatsächlichen inneren Endbahnhof. Ausschreibungen zeigen
+die Linienbezeichnung und tatsächlichen Endpunkte des bestellten Spielangebots.
+GTFS-Vorlagen und Kürzungshinweise gehören nicht in die Spieleroberfläche.
 Der Routengraph schließt Gleisgeometrien aus, die die Spielgebietsgrenze verlassen;
 innere Endpunkte allein reichen nicht. Ein nicht vollständig nachgewiesener Weg
 darf niemals als scheinbar befahrbarer Außenweg freigegeben werden.
 Die Netzprüfung erfolgt vor der endgültigen Fahrplangenerierung, auch ohne
 GTFS-Shapes. Gleisbestand, Richtungsfreigaben, Korridore und der geprüfte
 Endpunktkatalog sind mit dem Erzeugungsnachweis verbunden. Verworfene und
-gekürzte Abschnitte erhalten einen nachvollziehbaren Entscheidungsgrund.
+gekürzte Abschnitte erhalten in den internen Importberichten einen
+nachvollziehbaren Entscheidungsgrund.
 
 Aus den Referenzfahrten entstehen ein reproduzierbarer Takt und ganzzahlige
 Abschnittsfahr- und Haltezeiten. Seed und versionierte Erzeugungsregel sind im

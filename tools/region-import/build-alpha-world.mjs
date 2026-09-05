@@ -79,7 +79,6 @@ export function buildAlphaServicePlanning({ worldId, infraReleaseId, gtfsEnvelop
   const snapshot = gtfsEnvelope.snapshot;
   assertPlayableGameTimetable(snapshot, worldId);
   const stations = new Map(snapshot.stations.map((station) => [station.stopId, station]));
-  const lineById = new Map((snapshot.lines ?? []).map((line) => [line.lineId, line]));
   const rulesVersion = `${rules.version}:${sha256(canonicalPlanningJson(rules))}`;
   return buildRegionalServicePlanning({
     worldId,
@@ -127,7 +126,6 @@ export function buildAlphaServicePlanning({ worldId, infraReleaseId, gtfsEnvelop
         journeys: lot.chains.map((chain) => {
           const leg = chain.legs[0];
           const route = timetableRouteBindings.get(leg.legId);
-          const adjustment = lineById.get(chain.lineId)?.adjustment;
           invariant(route !== undefined, `Spiel-Fahrt '${chain.journeyChainId}' besitzt keinen releasegebundenen Laufweg.`);
           return {
             id: chain.journeyChainId,
@@ -139,9 +137,6 @@ export function buildAlphaServicePlanning({ worldId, infraReleaseId, gtfsEnvelop
               designation: chain.routeShortName,
               origin: stations.get(leg.stops[0].stopId).name,
               destination: stations.get(leg.stops.at(-1).stopId).name,
-              adjustmentReasons: adjustment?.reason === "adapted-to-operational-stations"
-                ? [`Vorlage: ${adjustment.referenceOriginName} – ${adjustment.referenceDestinationName}. Die Linie wurde an die Spielkarte angepasst und endet an Bahnhöfen mit nachgewiesener Wendemöglichkeit.`]
-                : [],
             },
             routeLengthMm: route.routeLengthMm,
             edgeIds: route.edgeIds,
