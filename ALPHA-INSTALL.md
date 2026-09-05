@@ -625,8 +625,10 @@ und die neue Browserhilfe einschließlich Tastatur, Touch und Weltbindung.
 Der manuelle erweiterte Workflow prüft zusätzlich den Odoo-19-Dienst und die
 Werkzeuge für Migration, Backup und Restore.
 
-Eine externe Prüfung der Verständlichkeit für neue Spieler bleibt Teil von
-M9.1. Repositorytests ersetzen diese Produktabnahme nicht.
+M9.1 ist mit der ausdrücklichen Produktabnahme durch den Projektverantwortlichen
+am 2026-09-05 abgeschlossen. Umfang und erfolgreiche technische Nachweise stehen
+unter [Spielhinweise — Abnahme](docs/spielhinweise.md#abnahme).
+Die externe Erprobung mit neuen Spielern gehört zur geschlossenen Alpha M9.9.
 
 Öffentliche Welten und ihre Backups bleiben vollständig persistent.
 Wiederherstellungs-, Alert- und Odoo-Drills stehen in

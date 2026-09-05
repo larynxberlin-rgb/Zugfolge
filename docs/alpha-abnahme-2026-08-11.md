@@ -10,6 +10,19 @@ NAPI-Startpfad. **Die erweiterte Alpha insgesamt ist trotzdem noch nicht
 startbereit.** Insbesondere Odoo 19, der gemischte 50-Konten-Soak und die reale
 Abnahme durch 20–50 externe Teilnehmende fehlen weiterhin.
 
+## Nachtrag 2026-09-05: M9.1 abgeschlossen
+
+Der Projektverantwortliche hat die vollständig neu aufgebauten Tooltipps im
+laufenden Spiel ausdrücklich abgenommen und M9.1 zum Abschluss freigegeben.
+[PR #530](https://github.com/larynxberlin-rgb/Zugfolge/pull/530) liefert die
+neuen Hinweise, entfernt das alte Tutorial samt Welten und bindet jeden
+Game-Server an genau eine Welt und Subdomain; Odoo verwaltet weiterhin die
+getrennten Server. Die reguläre und erweiterte CI für den Implementierungsstand
+sind vollständig erfolgreich. Der vollständige Nachweis steht unter
+[Spielhinweise — Abnahme](spielhinweise.md#abnahme), das Arbeitspaket ist
+[#159](https://github.com/larynxberlin-rgb/Zugfolge/issues/159).
+Die Nutzerbeobachtung mit externen Spielern bleibt Bestandteil von M9.9.
+
 ## Verbindlicher Ausgangspunkt
 
 - geprüfter Ausgangs-Head von `main`:
@@ -45,6 +58,7 @@ Release-Zeitwerte.
 
 | Punkt | Implementierung | Ausgeführter Nachweis | Fehlender Abnahmebeweis | Status |
 |---|---|---|---|---|
+| M9.1 | 20 vollständig neue Tooltipps im laufenden Spiel; alte Tutorialwelten entfernt; eine Welt je Server/Subdomain, zentrale Odoo-Verwaltung | reguläre und erweiterte CI aus PR #530 erfolgreich; ausdrückliche Produktabnahme am 2026-09-05, siehe Nachtrag | — | erledigt |
 | M9.2 | deterministischer Blueprint, Release-Pins, gestaffelte Lose und vollständiger Eigenbetrieb | echter PostgreSQL/PostGIS-/Linux-NAPI-Weltstart mit 49 Losen und 1.634 Zugfahrten; Livemap, Betriebszentrale und Odoo-Outbox vollständig; Wiederanlauf idempotent | — | erledigt |
 | M9.3 | öffentlicher Einstieg ohne Startpaket; tatsächliche `StartingCapitalPolicy`, Heatmap, Assistentenwarnungen und Glossar | Negativtests belegen fehlende Startpaketrouten und dass Odoo-Einladungen nur die öffentliche Zielwelt provisionieren | Integration der parallelen Startkapital-Policy sowie externer Browserlauf gegen signierten Weltbestand fehlen | in Arbeit |
 | M9.4 | typisierter Katalog, Begründung/Risiko/Vorschau, Vier-Augen-Trennung, signierter Webhook, Game-Queue, Reautorisierung, Ergebnisprojektion und Game-Audit; Kontenentzug deaktiviert Keycloak und entzieht den Weltzugang ausschließlich über den Hochrisikopfad; direkte Produktionseinstiege gesperrt | Commerce-/Game-API-Tests einschließlich Hochrisikoablehnung und Odoo/Game-E2E; Browser-Rendering | Odoo-19-Add-on-Testdienst und realer Webhook-/Queue-/Vier-Augen-Run des neuen `alpha:phase3`-Drills nicht ausgeführt | in Arbeit |

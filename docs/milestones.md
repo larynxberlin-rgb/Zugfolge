@@ -875,7 +875,7 @@ und Hashbestandteil und wird bei der ersten EVU-Gründung idempotent angewandt.
 
 | # | Teilabschnitt | Größe | Status |
 |---|---------------|-------|--------|
-| 9.1 | Neue Tooltipps an den echten Bedienelementen; per Tastatur und Touch erreichbar, lokal abschaltbar | M | in Arbeit |
+| 9.1 | Neue Tooltipps an den echten Bedienelementen; per Tastatur und Touch erreichbar, lokal abschaltbar | M | erledigt |
 | 9.2 | **Weltstart mit Eigenbetrieb**: das gesamte SPNV-Netz der Region fährt ab Sekunde eins | M | erledigt |
 | 9.2a | **Administrativer Weltstartbestand**: optionaler, versionierter und auditierter Pool konkreter Gebrauchtfahrzeuge einschließlich Zustandsprofil und Lebenslauf; Zuweisung an Eigenbetrieb und servereigene Vermieter ohne Fahrzeugduplikate | M | offen |
 | 9.3 | Onboarding in der öffentlichen Welt: tatsächliche `StartingCapitalPolicy`, Kapazitäts-Heatmap, Glossar-Layer und Betriebsassistent; keine automatische Startausstattung | M | in Arbeit |
@@ -887,10 +887,17 @@ und Hashbestandteil und wird bei der ersten EVU-Gründung idempotent angewandt.
 | 9.9 | Geschlossene Alpha mit 20–50 externen Spielern in der deutschlandweiten Spieleroberfläche und dem ausdrücklich freigegebenen Spielnetz, einschließlich M12.1/M12.2 | M | offen |
 | 9.10 | **Jährliche Infrastrukturaktualisierung** (E22): `InfraRelease`-Neubau aus den jährlich gepinnten, rechtlich freigegebenen OSM-, DB-InfraGO-Open-Data-, GTFS-, Copernicus-DEM- und OpenStation-Ständen; Übernahmeverfahren für eine laufende Welt zum nächsten Periodenwechsel, ohne Invariante 1 zu verletzen | L | in Arbeit |
 
-M9.1 verwendet ausschließlich neu erstellte Spielhinweise. Der Controller
-benötigt keine Backendzustände. Die technische Abnahme prüft Anzeige,
-Barrierefreiheit, Wiederaufnahme und fehlende Spielaktionen. Die Verständlichkeit
-für neue Spieler bleibt Teil der externen Alpha-Abnahme.
+M9.1 ist nach ausdrücklicher Produktabnahme durch den Projektverantwortlichen
+am 2026-09-05 abgeschlossen. Die 20 vollständig neu erstellten Spielhinweise
+benötigen keine Backendzustände. Browser- und Integrationstests belegen
+Tastatur- und Touchbedienung, Abschalten, Wiederaufnahme sowie ausbleibende
+Netzwerk- und Spielaktionen. Die Abnahme umfasst auch die Entfernung des
+alten Tutorials und seiner Welten sowie einen festen Weltserver je Subdomain
+bei erhaltener Odoo-Verwaltung. Umfang und erfolgreiche CI-Läufe sind unter
+[Spielhinweise — Abnahme](spielhinweise.md#abnahme) dokumentiert; die Umsetzung
+liegt in [PR #530](https://github.com/larynxberlin-rgb/Zugfolge/pull/530),
+der Abschluss in [#159](https://github.com/larynxberlin-rgb/Zugfolge/issues/159).
+Die externe Alpha-Abnahme wird unter M9.9 geführt.
 
 M9.3 vergibt keine öffentliche Startausstattung. Sein Geldpfad verwendet die
 signierte und bei der Zugangsbestätigung unveränderlich gebundene
