@@ -290,6 +290,10 @@ Herkunfts- oder Produktionsfreigabe. Die reale Lieferung muss für jedes Gate
 ihre eigenen Artefakte und Ergebnisse referenzieren. Reproduzierbare Befehle
 und tatsächlich gemessene Ergebnisse gehören in den Atlas-Prüfbericht.
 
+Der [Prüfnachweis des vorhandenen Kandidaten](art-atlas/README.md) verlinkt
+den vollständigen Korpus, Herkunftsbelege, die lokale Galerie und tatsächliche
+Browserbilder. Die expliziten Freigabegates bleiben darin sichtbar offen.
+
 M15.4 [#214](https://github.com/larynxberlin-rgb/Zugfolge/issues/214) bleibt
 für die aus Fahrzeugkonfigurationen abgeleitete begehbare Innenraumgeometrie
 zuständig. M15.5 [#215](https://github.com/larynxberlin-rgb/Zugfolge/issues/215)

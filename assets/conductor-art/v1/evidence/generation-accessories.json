@@ -1,0 +1,51 @@
+{
+  "schemaVersion": "conductor-art-generation-evidence/v1",
+  "source": "sources/accessories.png",
+  "sourceSha256": "398e103da7964b2aa8c0320cd93ec879ca4da4b1b5c71b9e3cffb7e0a11d71b9",
+  "tool": "image_gen.imagegen",
+  "prompt": "Use case: stylized-concept. Asset type: final original topdownpixelart accessory atlasforZugfolge. Exact1024x768PNGtransparentbackground. Fourcolumns bythreerows of256x256cells. Each cell64x64logicalpixels enlarged4x nearestneighbor, sharpgrid noantialiasing. Strict small flat pixel palette #101419 #181e25 #202830 #303b46 #f5f7fa #b5c0cc #93a2b1 #e5233d #7cddba #f5bf65 #e8b894 #be8060 #805342 #382c28. Row1wheelchair, row2bicycle, row3stroller. Columns facingnorth,east,south,west. Eachpieceorthogonaloverheadtopdown, exactconsistentdimensionsandanchoracrossrotations,noisometric. Wheelchair graphiteframe palegreywheels redcushion, bicycle charcoalframe redrearbag, strollergraphiteframe amberfabric withblackwheels. Do notdrawriders/people/babies; open emptyseatswithreadablecushions. Naturalrealisticcompactproportions, accessoryroughly24x32logicalpxfootprint inside64cell. Theseare actualrenderable mobility/luggageprops, notUIicons. Trulytransparentoutside eachisolatedsilhouette,no floor/noexternalshadow, no letters/logos/watermarks, all12 uniqueproperdirections.",
+  "metadata": {
+    "container": "PNG/caBX/JUMBF/c2pa.actions.v2",
+    "cborSha256": "593d1456d51672f78e73ecdabfac519dfd5a7dbb3be77f3e7808bbd95cf9a4bb",
+    "actions": {
+      "actions": [
+        {
+          "action": "c2pa.created",
+          "when": "2026-09-05T00:00:00Z",
+          "softwareAgent": {
+            "name": "gpt-image",
+            "version": "2.0"
+          },
+          "digitalSourceType": "http://cv.iptc.org/newscodes/digitalsourcetype/trainedAlgorithmicMedia"
+        },
+        {
+          "action": "c2pa.converted",
+          "when": "2026-09-05T00:00:00Z"
+        },
+        {
+          "action": "c2pa.watermarked.unbound",
+          "when": "2026-09-05T00:00:00Z"
+        }
+      ],
+      "allActionsIncluded": false
+    },
+    "softwareAgent": {
+      "name": "gpt-image",
+      "version": "2.0"
+    },
+    "interpretation": "Providerdeklarierte Modellangabe; keine Prüfung der C2PA-Signatur oder Aussage über interne Gewichte."
+  },
+  "technicalProcessing": {
+    "script": "tools/art-atlas/prepare.py",
+    "pillowVersion": "12.3.0",
+    "operations": [
+      "crop",
+      "edge-connected-neutral-checkerboard-removal",
+      "alpha-threshold-128",
+      "nearest-neighbor-resize",
+      "fixed-palette-no-dither",
+      "atlas-pack"
+    ],
+    "authorization": "Auftraggeber: Ja, technisch aufbereiten (06.09.2026)."
+  }
+}
