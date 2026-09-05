@@ -1,3 +1,4 @@
+import re
 from odoo import api, fields, models
 from odoo.exceptions import AccessError, ValidationError
 
@@ -50,8 +51,13 @@ class ZugfolgeAdminCapability(models.Model):
         states = dict(CAPABILITY_STATES)
         if not isinstance(body, dict) or not isinstance(payload.get("worldId"), str) or body.get("actionType") not in action_types or body.get("availability") not in states:
             raise ValidationError("Unvollstaendige Game-Verwaltungsfaehigkeit.")
+        world_id = payload["worldId"]
+        if body["actionType"] == "world_deploy" and world_id == GLOBAL_WORLD_DEPLOY_CAPABILITY_SCOPE_ID and body.get("targetWorldId") is not None:
+            world_id = body["targetWorldId"]
+            if not isinstance(world_id, str) or not re.fullmatch(r"[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}", world_id):
+                raise ValidationError("Weltbereitstellung braucht die exakte Hauptwelt des sendenden Servers.")
         values = {
-            "world_id": payload["worldId"],
+            "world_id": world_id,
             "action_type": body["actionType"],
             "availability": body["availability"],
             "detail": body.get("detail"),

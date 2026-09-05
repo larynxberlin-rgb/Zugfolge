@@ -1243,6 +1243,105 @@ fn advance_until(world: &mut OperationalWorld, train_id: &str, present: bool) {
 }
 
 #[test]
+fn handover_boundary_protection_survives_another_region_and_movement_continuation_until_retirement()
+{
+    let mut release = continuation_release(false);
+    release.region_boundaries.insert("boundary:second".into());
+    let mut source = world_with_release(release.clone());
+    source
+        .materialize_train(
+            "source",
+            "RB 101",
+            "operator:1",
+            MovementKind::Train,
+            "route:continuation:source",
+            "formation:1",
+            0,
+            None,
+            false,
+        )
+        .unwrap();
+    let mut target = OperationalWorld::new("world:1", "region:b", 0, release.clone()).unwrap();
+    let mut first = source
+        .begin_handover(
+            "first",
+            "source",
+            "region:b",
+            set(&["boundary:continuation"]),
+        )
+        .unwrap();
+    target.accept_handover(&mut first).unwrap();
+    source.finish_handover(&first).unwrap();
+    let mut final_region = OperationalWorld::new("world:1", "region:c", 0, release).unwrap();
+    let mut second = target
+        .begin_handover("second", "source", "region:c", set(&["boundary:second"]))
+        .unwrap();
+    assert_eq!(
+        second.protected_resources,
+        set(&["boundary:continuation", "boundary:second"])
+    );
+    assert_eq!(
+        target
+            .begin_handover("second", "source", "region:c", set(&["boundary:second"]))
+            .unwrap(),
+        second
+    );
+    final_region.accept_handover(&mut second).unwrap();
+    target.finish_handover(&second).unwrap();
+    final_region
+        .queue_movement_continuation(continuation(
+            "continue",
+            "source",
+            "successor",
+            "RB 102",
+            "route:continuation:successor",
+            "formation:1",
+            10_000,
+            "continuation:successor:exit",
+            0,
+            0,
+            MovementContinuity::SameDirection,
+        ))
+        .unwrap();
+    final_region
+        .submit_dispatch_requests(&[dispatch_request("source", "continuation:source", 0)])
+        .unwrap();
+    advance_until(&mut final_region, "successor", true);
+    assert!(
+        second
+            .protected_resources
+            .is_subset(&final_region.trains["successor"].occupied_blocks)
+    );
+    let mut restored = OperationalWorld::restore(&final_region.checkpoint()).unwrap();
+    let mut invalid = restored.clone();
+    invalid
+        .trains
+        .get_mut("successor")
+        .unwrap()
+        .occupied_blocks
+        .remove("boundary:continuation");
+    assert_eq!(
+        invalid.verify_invariants(),
+        Err(OperationalError::InvalidHandover)
+    );
+    restored.advance_to(120_000).unwrap();
+    assert!(
+        second
+            .protected_resources
+            .is_subset(&restored.trains["successor"].occupied_blocks)
+    );
+    restored.retire_train("successor").unwrap();
+    restored.verify_invariants().unwrap();
+    assert!(
+        second
+            .protected_resources
+            .iter()
+            .all(|resource| !restored.resource_lifecycle.contains_key(resource))
+    );
+    OperationalWorld::restore(&restored.checkpoint()).unwrap();
+}
+
+#[test]
 fn queued_chain_reuses_only_a_proven_ancestor_number_then_activates_atomically() {
     let mut world = world_with_release(continuation_release(false));
     world

@@ -122,7 +122,8 @@ const nativeAvailable = process.env["ZUGFOLGE_RUNTIME_NATIVE_PATH"] !== undefine
       programmeRuleLabel: "Anschlüsse abwarten",
       disruptionLabel: "Umleitung anfordern",
     });
-    expect(view.summary?.qualityTargetsMet).toContain("Pünktlichkeit");
+    expect(view.summary?.qualityTargetsMet).not.toContain("Pünktlichkeit"); // 9180 erreicht die zugesagten 9200 nicht.
+    expect(view.summary?.qualityTargetsMet).toContain("Kapazität");
 
     const [contracts, assets, programs, events, transactions, entries] = await Promise.all([
       db.select().from(operatorContracts).where(eq(operatorContracts.worldId, view.tutorialWorldId)),

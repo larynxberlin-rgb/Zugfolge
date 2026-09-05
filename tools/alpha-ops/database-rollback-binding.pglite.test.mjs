@@ -100,6 +100,38 @@ test("Schema34 bindet Quarantaene und Datenschutzspalten im eigenen v4-Restoreve
   } finally { await client.close(); await rm(schema34Folder, { recursive: true, force: true }); }
 });
 
+test("Schema34 bewahrt explizite historische33-Siegel mit echten Postfach-/Abusedaten", async () => {
+  const client = new PGlite();
+  const schema34Folder = await migrationsThrough(34);
+  const worldId = "11111111-1111-4111-8111-111111111133";
+  const accountId = "11111111-1111-4111-8111-111111111134";
+  const historical = { schemaVersion: "zugfolge-world-final-history-seal/v1" };
+  try {
+    await migrate(drizzle(client), { migrationsFolder });
+    await client.query("insert into worlds(id,name,schedule_period_weeks,epoch) values($1,'Archiv33',4,'2026-01-01Z')", [worldId]);
+    await client.query("insert into accounts(id,world_id,keycloak_subject,display_name) values($1,$2,'history-owner','Archiv')", [accountId, worldId]);
+    await client.query("insert into mailbox_messages(world_id,recipient_account_id,message_type,payload) values($1,$2,'history','{\"text\":\"unveraendert\"}')", [worldId, accountId]);
+    await client.query(`insert into abuse_observations(world_id,identity_hash,endpoint_class,action_class,bucket_start_s,request_count,distinct_target_count,replay_count,coordinated_identity_count,score_basis_points,rule_codes,response,correlation_id)
+      values($1,'identity','api','read',0,1,1,0,0,0,'[]','observe','history-trace')`, [worldId]);
+    await client.query("update worlds set lifecycle_status='archived' where id=$1", [worldId]);
+    const before = await worldFinalHistorySeal(adapter(client), worldId, historical);
+    await migrate(drizzle(client), { migrationsFolder: schema34Folder });
+    assert.equal(await worldFinalHistorySeal(adapter(client), worldId, historical), before);
+    assert.notEqual(await worldFinalHistorySeal(adapter(client), worldId), before);
+    assert.equal(await worldFinalHistorySeal(adapter(client), worldId, historical), before);
+    await assert.rejects(client.query("update mailbox_messages set content_hash='changed' where world_id=$1", [worldId]), /archiv|closed|writer/iu);
+
+    const activeWorld = "11111111-1111-4111-8111-111111111135";
+    await client.query("insert into worlds(id,name,schedule_period_weeks,epoch) values($1,'Aktiv34',4,'2026-01-01Z')", [activeWorld]);
+    await client.query(`insert into abuse_observations(world_id,identity_hash,endpoint_class,action_class,bucket_start_s,request_count,distinct_target_count,replay_count,coordinated_identity_count,score_basis_points,rule_codes,response,correlation_id,facts_hash)
+      values($1,'identity','api','read',0,1,1,0,0,0,'[]','observe','new-trace','new-facts')`, [activeWorld]);
+    await assert.rejects(worldFinalHistorySeal(adapter(client), activeWorld, historical), /Schema-34-Fakten/u);
+    const current = await worldFinalHistorySeal(adapter(client), activeWorld);
+    await client.query("update abuse_observations set facts_hash='changed-facts' where world_id=$1", [activeWorld]);
+    assert.notEqual(await worldFinalHistorySeal(adapter(client), activeWorld), current);
+  } finally { await client.close(); await rm(schema34Folder, { recursive: true, force: true }); }
+});
+
 test("0032 und 0033 rollen bei unvollstaendigem Alt-Receipt gemeinsam atomar auf Schema 31 zurueck", async () => {
   const database = new PGlite();
   const schema31Folder = await migrationsThrough(31);

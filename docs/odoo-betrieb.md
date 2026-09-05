@@ -168,17 +168,47 @@ binden ihre Zielwelt. Kontoweite Entitlements wie Plus/Kosmetik behalten ihren
 weltunabhängigen Vertrag und werden mit identischer Event-ID ausdrücklich auf
 alle registrierten Hauptweltserver projiziert. Beim Hinzufügen eines Servers
 sind bestehende Entitlements vor Verkaufsfreigabe ebenfalls dorthin zu
-projizieren; ein automatischer historischer Nachlieferungslauf ist noch nicht
-implementiert.
+projizieren: Die Buchhaltungsverwaltung markiert die betroffenen gebuchten
+Rechnungen und startet im Aktionsmenü „Zugfolge-Berechtigungen an Weltserver
+nachliefern“. Wiederanlaufbare Queue-Jobs senden die eingefrorenen Ereignisse
+mit ihren ursprünglichen Kennungen an alle registrierten Server. Historische
+Rechnungen ohne Ereignisjournal erhalten zunächst einen aus dem aktuellen
+nativen Zahlungs-/Erstattungszustand abgeleiteten Beleg.
 
 Der Receiver prüft die Zielwelt vor dem Queue-Commit. Der Worker prüft sie
 erneut vor jeder Wirkung, auch bei historischen Queue-Einträgen. Ein
 `world_deploy`-Kommando trägt die tatsächliche Zielwelt; der globale
-Capability-Scope ist dafür keine zulässige Ersatzwelt. Der Reconciliation-
+Capability-Scope ist dafür keine zulässige Ersatzwelt. Eine vor der
+Welterzeugung versandte Capability verwendet im Envelope weiterhin den
+eng begrenzten globalen Scope, bindet ihre `targetWorldId` aber an genau
+einen Server. Odoo bewertet Freigaben ausschließlich unter dieser Zielwelt;
+alte globale Belege ohne Zielwelt erzeugen keine Freigabe. Der Reconciliation-
 Aufruf trägt die Serverhauptwelt und vergleicht nur deren lokale Belege.
 Globale Capabilities/Abschlussquittungen gehören nur bei bekannter lokaler
 Message-ID zum Server; andere Welten eines zentralen Odoo werden nicht als
 fremde Restore-Belege quarantänisiert.
+
+Infra-Jahresimporte benutzen ebenfalls das Weltserverregister. Eine am Import
+ausgewählte Welt bestimmt das Ziel; vor dem ersten Weltstart bindet der
+explizite Systemparameter `zugfolge_admin.infra_upload_world_id` das Staging
+an die registrierte künftige Hauptwelt. Ein globaler Upload-URL-Fallback
+existiert nicht. Die HTTPS-URL enthält `/api`, die HMAC bindet den danach im
+Game ankommenden Integrationspfad ohne dieses Proxypräfix. Uploads folgen
+keinen Weiterleitungen und aktivieren weiterhin keinen Release.
+
+Ab Add-on `19.0.2.0.5` speichert die Ursprungrechnung jede echte
+Entitlementänderung mit monotoner `sourceRevision`, eingefrorenem Zeitpunkt,
+Payload und eigener Ereigniskennung. Grant und Erstattung/Revoke besitzen
+verschiedene Kennungen; technische Retries verändern keinen Beleg. Auch
+Gutschriften benennen die ursprüngliche Rechnungsnummer. Teilweise erstattete
+Produktmengen reduzieren die verbleibende ganzzahlige Berechtigung.
+Der Game-Leser reduziert sämtliche Auditereignisse pro Subject, Produkt und
+Ursprungsbeleg auf dessen letzte zum Abfragezeitpunkt gültige Revision.
+Revoke/Expiry entfernen damit alte Grants; verspätete ältere Zustellungen
+geben sie nicht erneut frei. Unversionierte historische Belege werden anhand
+ihres fachlichen Zeitpunkts reduziert, bis ein versionierter Quellenstand
+übernommen wurde. Die Originalereignisse bleiben unverändert für Auskünfte
+und Audit erhalten.
 
 ## Vertrag, Wiederholung und Reconciliation
 

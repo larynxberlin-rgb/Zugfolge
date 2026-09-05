@@ -3355,13 +3355,16 @@ impl OperationalWorld {
             &continuation.successor,
             &continuation.successor_dispatch.interlocking_route_id,
         )?;
-        let (_target_route, target_intervals, target_blocks, target_direction) = self
+        let (_target_route, target_intervals, mut target_blocks, target_direction) = self
             .validate_continuation_intervals(
                 &continuation,
                 &predecessor.route_version_id,
                 &predecessor.formation_version_id,
                 &predecessor.occupied_intervals,
             )?;
+        if let Some(protection) = self.handover_protection_by_train.get(&predecessor.id) {
+            target_blocks.extend(protection.iter().cloned());
+        }
         let successor_number =
             operational_train_number_numeric_part(&continuation.successor.train_number)
                 .ok_or_else(|| {
@@ -3424,6 +3427,10 @@ impl OperationalWorld {
         self.route_locks
             .retain(|lock_id, _| !predecessor_lock_ids.contains(lock_id));
         self.trains.remove(&predecessor.id);
+        if let Some(protection) = self.handover_protection_by_train.remove(&predecessor.id) {
+            self.handover_protection_by_train
+                .insert(continuation.successor.id.clone(), protection);
+        }
         self.scheduled_motion_ends
             .retain(|scheduled| scheduled.train_id != predecessor.id);
         self.pending_dispatch_requests.remove(&predecessor.id);
@@ -5100,10 +5107,16 @@ impl OperationalWorld {
         handover_id: impl Into<String>,
         train_id: &str,
         target_region_id: impl Into<String>,
-        protected_resources: BTreeSet<String>,
+        mut protected_resources: BTreeSet<String>,
     ) -> Result<RegionHandover, OperationalError> {
         let id = handover_id.into();
         let target_region_id = target_region_id.into();
+        if protected_resources.is_empty() {
+            return Err(OperationalError::UnprotectedHandover);
+        }
+        if let Some(previous_protection) = self.handover_protection_by_train.get(train_id) {
+            protected_resources.extend(previous_protection.iter().cloned());
+        }
         if let Some(existing) = self.prepared_handovers.get(&id) {
             if existing.train.id == train_id
                 && existing.target_region_id == target_region_id
@@ -5124,9 +5137,6 @@ impl OperationalWorld {
                 .any(|link| link.predecessor_train_id == train_id)
         {
             return Err(OperationalError::InvalidHandover);
-        }
-        if protected_resources.is_empty() {
-            return Err(OperationalError::UnprotectedHandover);
         }
         let train = self
             .trains
@@ -5460,6 +5470,16 @@ impl OperationalWorld {
                     .protected_resources
                     .iter()
                     .any(|resource| !self.resource_lifecycle.contains_key(resource))
+            {
+                return Err(OperationalError::InvalidHandover);
+            }
+        }
+        for (train_id, protection) in &self.handover_protection_by_train {
+            if protection.is_empty()
+                || self
+                    .trains
+                    .get(train_id)
+                    .is_none_or(|train| !protection.is_subset(&train.occupied_blocks))
             {
                 return Err(OperationalError::InvalidHandover);
             }

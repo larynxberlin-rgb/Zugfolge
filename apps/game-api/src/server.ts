@@ -162,7 +162,7 @@ import {
 } from "./public-world-snapshot.js";
 import { GameTutorialWorldFactory, loadTutorialEconomyPlatformAdapters } from "./tutorial-world-factory.js";
 import { ActiveWorldDeploymentRuntime } from "./world-deployment-runtime.js";
-import { assertServerWorldDatabase, serverWorldScope } from "./server-world-scope.js";
+import { assertServerWorldDatabase, assertServerWorldDeployment, serverWorldScope } from "./server-world-scope.js";
 
 function requireEnv(name: string): string {
   const value = process.env[name];
@@ -344,6 +344,7 @@ const regionalSimulation = new RegionalSimulationWorker(
 const tutorialSessions = new TutorialSessionService(
   db,
   new GameTutorialWorldFactory(db, operatingRuntime, planningRuntime, regionalSimulation),
+  { publicWorldId: worldScope.worldId },
 );
 const consumeProviderSnapshot = createProviderDisruptionConsumer(db, regionalSimulation);
 const worldRows = await db
@@ -381,7 +382,7 @@ const configuredSignedDeployments = await Promise.all(
   alphaWorldReleasePaths().map((path) => loadSignedAlphaWorldDeployment(path, alphaWorldTrustedKeys)),
 );
 for (const signed of configuredSignedDeployments) {
-  if (signed.deployment.worldId !== worldScope.worldId) throw new Error("Signiertes Deployment gehoert nicht zur konfigurierten Serverwelt.");
+  assertServerWorldDeployment(worldScope, signed.deployment);
 }
 const {
   archivedWorldIds,
@@ -394,7 +395,7 @@ const {
 );
 for (const worldId of archivedWorldIds) deploymentRuntime.releaseWorld(worldId);
 for (const persisted of persistedActiveDeployments) {
-  if (persisted.signed.deployment.worldId !== worldScope.worldId) throw new Error("Persistiertes Deployment gehoert nicht zur konfigurierten Serverwelt.");
+  assertServerWorldDeployment(worldScope, persisted.signed.deployment);
   deploymentRuntime.register(persisted.signed, persisted.epoch);
 }
 const activeWorldInfrastructureBaselines = (): readonly ActiveWorldInfrastructureBaseline[] =>
@@ -612,7 +613,7 @@ const worldDeployAdminHandler = createWorldDeployAdminHandler({
   operationalPrograms: deploymentRuntime,
   prepareWorldProgram: (signed) => deploymentRuntime.prepareOperationalProgram(signed),
   async validateSignedDeployment(signed) {
-    if (signed.deployment.worldId !== worldScope.worldId) throw new Error("Dieser Weltserver darf keine zweite Spielwelt deployen.");
+    assertServerWorldDeployment(worldScope, signed.deployment);
     assertLivemapReadModelRuntimeScheduleBinding(livemapReadModel, {
       worldId: signed.deployment.worldId,
       worldEpoch: signed.deployment.worldDefinition.epoch,
@@ -750,10 +751,11 @@ app.addHook("onClose", async () => {
 if (odooProjectionClient !== undefined) {
   await enqueueGameAdminCapabilityProjection(db, {
     worldId: WORLD_DEPLOY_CAPABILITY_SCOPE_ID,
-    correlationId: `startup:global:${WORLD_DEPLOY_CAPABILITY.actionType}`,
-    capability: WORLD_DEPLOY_CAPABILITY,
+    correlationId: `startup:${worldScope.worldId}:${WORLD_DEPLOY_CAPABILITY.actionType}`,
+    capability: { ...WORLD_DEPLOY_CAPABILITY, targetWorldId: worldScope.worldId },
   });
   for (const world of activeWorldRows) {
+    if (world.worldId !== worldScope.worldId) continue;
     for (const capability of [
       MANUAL_DISRUPTION_ADMIN_CAPABILITY,
       WORLD_ACCESS_REVOKE_CAPABILITY,

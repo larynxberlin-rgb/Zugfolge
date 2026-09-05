@@ -267,6 +267,7 @@ function worldSealSql(changedTable) {
   return {
     async unsafe(source) {
       const query = source.replace(/\s+/gu, " ").trim().toLowerCase();
+      if (query === "select count(*)::int as migration_count from drizzle.__drizzle_migrations") return [{ migration_count: 33 }];
       if (query.includes("from information_schema.columns as columns")) {
         return DATABASE_WORLD_HISTORY_BINDINGS
           .flatMap(({ table, columns }) => columns.map((column) => ({ table_name: table, column_name: column })))
@@ -324,4 +325,10 @@ test("Welt-Historienseal verweigert einen nicht eingecheckten world_id-Schemaver
     worldFinalHistorySeal(sql, "00000000-0000-4000-8000-000000000014"),
     /Welt-Historienvertrag.*Schema-33-Sollvertrag/u,
   );
+});
+
+test("Welt-Historienseal verlangt eine bekannte zum DB-Schema passende Version", async () => {
+  for (const schemaVersion of ["zugfolge-world-final-history-seal/v2", "foreign/v1"]) {
+    await assert.rejects(worldFinalHistorySeal(worldSealSql(), "00000000-0000-4000-8000-000000000014", { schemaVersion }), /Schema-\/Spaltenversion/u);
+  }
 });

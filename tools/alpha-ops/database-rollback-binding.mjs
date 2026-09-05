@@ -16,6 +16,11 @@ import {
 
 const AUTHORITATIVE_HEAD_SCHEMA = "zugfolge-database-authoritative-head/v1";
 const WORLD_HISTORY_SEAL_SCHEMA = "zugfolge-world-final-history-seal/v1";
+const WORLD_HISTORY_SEAL_SCHEMA_34 = "zugfolge-world-final-history-seal/v2";
+const HISTORY_COLUMNS_ADDED_IN_SCHEMA_34 = Object.freeze({
+  abuse_observations: Object.freeze(["observation_key", "facts_hash"]),
+  mailbox_messages: Object.freeze(["content_hash", "purged_at"]),
+});
 const CUTOVER_RECEIPT_SCHEMA = "zugfolge-world-cutover-receipt/v1";
 const SHA256 = /^[a-f0-9]{64}$/;
 const UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
@@ -58,23 +63,31 @@ function quotedTableName(value) {
   return `"${value}"`;
 }
 
-async function tableFingerprint(sql, table, filterColumns = [], parameters = []) {
+async function tableFingerprint(sql, table, filterColumns = [], parameters = [], omittedColumns = []) {
   const quoted = quotedTableName(table);
   invariant(Array.isArray(filterColumns) && filterColumns.every((column) => /^[a-z_][a-z0-9_]*$/.test(column)), "Der autoritative Tabellenfilter ist nicht fest verdrahtet.");
   const where = filterColumns.length === 0
     ? ""
     : ` where ${filterColumns.map((column) => `"${column}" = $1::uuid`).join(" or ")}`;
+  invariant(omittedColumns.every((column) => /^[a-z_][a-z0-9_]*$/.test(column)), "Die historische Spaltenprojektion ist nicht fest verdrahtet.");
+  const rowJson = omittedColumns.length === 0 ? "to_jsonb(source_row)"
+    : `(to_jsonb(source_row) - ARRAY[${omittedColumns.map((column) => `'${column}'`).join(",")}]::text[])`;
+  const omittedFacts = omittedColumns.length === 0 ? "false"
+    : omittedColumns.map((column) => `source_row."${column}" is not null`).join(" or ");
   const row = exactOne(await sql.unsafe(`
     select
       count(*)::text as row_count,
+      count(*) filter (where omitted_facts)::text as omitted_nonnull_rows,
       encode(sha256(convert_to(coalesce(string_agg(row_sha256, '' order by row_sha256), ''), 'UTF8')), 'hex') as rows_sha256
     from (
-      select encode(sha256(convert_to(to_jsonb(source_row)::text, 'UTF8')), 'hex') as row_sha256
+      select encode(sha256(convert_to(${rowJson}::text, 'UTF8')), 'hex') as row_sha256,
+        (${omittedFacts}) as omitted_facts
       from "public".${quoted} as source_row${where}
     ) as canonical_rows
   `, parameters), `Tabelle '${table}' besitzt keinen kanonischen Fingerprint.`);
   invariant(/^(?:0|[1-9][0-9]*)$/.test(String(row.row_count)), `Tabelle '${table}' besitzt keinen exakten Row-Count.`);
   invariant(SHA256.test(row.rows_sha256), `Tabelle '${table}' besitzt keinen SHA-256 ueber alle kanonischen Reihen.`);
+  invariant(omittedColumns.length === 0 || String(row.omitted_nonnull_rows) === "0", "Historischer v1-Seal darf keine nichtleeren Schema-34-Fakten ausblenden.");
   return Object.freeze({ table, rowCount: String(row.row_count), rowsSha256: row.rows_sha256 });
 }
 
@@ -307,7 +320,13 @@ export function assertDatabaseRollbackProofMatchesLive(proof, liveSnapshot, expe
   return proof;
 }
 
-export async function worldFinalHistorySeal(sql, worldId) {
+export async function worldFinalHistorySeal(sql, worldId, { schemaVersion } = {}) {
+  const [migrationHead] = await sql.unsafe("select count(*)::int as migration_count from drizzle.__drizzle_migrations");
+  const migrationCount = migrationHead?.migration_count;
+  databaseAuthoritativeCatalog(migrationCount);
+  const selectedSchema = schemaVersion ?? (migrationCount === 34 ? WORLD_HISTORY_SEAL_SCHEMA_34 : WORLD_HISTORY_SEAL_SCHEMA);
+  invariant([WORLD_HISTORY_SEAL_SCHEMA, WORLD_HISTORY_SEAL_SCHEMA_34].includes(selectedSchema)
+    && (selectedSchema !== WORLD_HISTORY_SEAL_SCHEMA_34 || migrationCount === 34), "Welt-Historienseal besitzt keine passende Schema-/Spaltenversion.");
   const worldBindingRows = await sql.unsafe(`
     select columns.table_name, columns.column_name
     from information_schema.columns as columns
@@ -327,16 +346,18 @@ export async function worldFinalHistorySeal(sql, worldId) {
     .sort((left, right) => left.table_name.localeCompare(right.table_name, "en") || left.column_name.localeCompare(right.column_name, "en"));
   invariant(
     JSON.stringify(worldBindingRows) === JSON.stringify(expectedBindings),
-    "Der Welt-Historienvertrag weicht vom eingecheckten Schema-33-Sollvertrag ab.",
+    `Der Welt-Historienvertrag weicht vom eingecheckten Schema-${migrationCount}-Sollvertrag ab.`,
   );
   const tableStates = [];
   for (const binding of DATABASE_WORLD_HISTORY_BINDINGS) {
-    tableStates.push(await tableFingerprint(sql, binding.table, binding.columns, [worldId]));
+    const omitted = selectedSchema === WORLD_HISTORY_SEAL_SCHEMA && migrationCount === 34
+      ? HISTORY_COLUMNS_ADDED_IN_SCHEMA_34[binding.table] ?? [] : [];
+    tableStates.push(await tableFingerprint(sql, binding.table, binding.columns, [worldId], omitted));
   }
   const worldsState = tableStates.find(({ table }) => table === "worlds");
   invariant(worldsState?.rowCount === "1", `Vorgaengerwelt '${worldId}' fehlt fuer die finale Historienversiegelung.`);
   return canonicalSha256({
-    schema: WORLD_HISTORY_SEAL_SCHEMA,
+    schema: selectedSchema,
     worldId,
     tableStates,
   });
@@ -411,5 +432,6 @@ export function validateStoredWorldCutoverReceipt(row, expected = {}) {
 export const DATABASE_ROLLBACK_BINDING_SCHEMAS = Object.freeze({
   authoritativeHead: AUTHORITATIVE_HEAD_SCHEMA,
   worldHistorySeal: WORLD_HISTORY_SEAL_SCHEMA,
+  worldHistorySealSchema34: WORLD_HISTORY_SEAL_SCHEMA_34,
   cutoverReceipt: CUTOVER_RECEIPT_SCHEMA,
 });

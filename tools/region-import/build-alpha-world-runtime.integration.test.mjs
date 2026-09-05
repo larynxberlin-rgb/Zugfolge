@@ -328,7 +328,9 @@ describe("echter Alpha-Builder bis zur produktiven Scheduler-Registry", () => {
       const baselineTrain = baseline.liveMap.trains.find((train) => train.trainId === firstTrain.id);
       const restrictedTrain = restricted.liveMap.trains.find((train) => train.trainId === firstTrain.id);
       assert.ok(baselineTrain && restrictedTrain);
-      assert.ok(restrictedTrain.headRouteMm < baselineTrain.headRouteMm);
+      // Die committed Segmentanker koennen identisch liegen; die native
+      // Bewegungsfreigabe muss die La bereits mit geringerer Fahrt abbilden.
+      assert.ok(restrictedTrain.speedMmps < baselineTrain.speedMmps);
       assert.ok(restrictedTrain.speedMmps <= restriction.effect["speed-restriction"].maximumSpeedMmps);
       assert.deepEqual(restricted.liveMap.activeDisruptions, restricted.rzue.activeDisruptions);
       assert.ok(restricted.liveMap.activeDisruptions.some((value) => value.disruptionId === restriction.disruptionId));

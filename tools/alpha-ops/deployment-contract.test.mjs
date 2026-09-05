@@ -68,6 +68,8 @@ test("Alpha-Compose erzwingt Map- und Welt-Cutover-Gates, Migration, signierten 
     compose.indexOf("  world-deployment-cutover-preflight:"),
     compose.indexOf("  game-migrate:"),
   );
+  assert.match(worldDeploymentPreflightService, /ZUGFOLGE_WORLD_ID: "\$\{ZUGFOLGE_WORLD_ID:\?[^}]+\}"/u);
+  assert.match(gameBootstrapService, /ZUGFOLGE_WORLD_ID: "\$\{ZUGFOLGE_WORLD_ID:\?[^}]+\}"/u);
   const livemapService = compose.slice(compose.indexOf("  livemap:"), compose.indexOf("  operations-center:"));
   const keycloakMigrationService = compose.slice(compose.indexOf("  keycloak-schema-migrate:"), compose.indexOf("  keycloak-schema-backup:"));
   const keycloakRestoreService = compose.slice(compose.indexOf("  keycloak-schema-restore:"), compose.indexOf("  keycloak-schema-preflight:"));
@@ -503,6 +505,8 @@ test("Produktions-Bootstrap ist auf genau eine signierte öffentliche Welt begre
   assert.match(bootstrap, /deploymentPaths\.length !== 1/);
   assert.match(bootstrap, /definition\.kind !== "public" \|\| definition\.rankingStatus !== "ranked"/);
   assert.match(bootstrap, /applyWorldDeploymentCutover/);
+  assert.match(bootstrap, /const uiWorldId = assertProductionServerWorldEnvironment\(process.env\);/u);
+  assert.ok(bootstrap.indexOf("const uiWorldId = assertProductionServerWorldEnvironment") < bootstrap.indexOf("const client = postgres("));
   assert.match(apply, /on conflict \(id\) do nothing/);
   assert.match(apply, /widerspricht dem signierten Vertrag/);
   assert.match(bootstrap, /ensureSignedPlanningAuthority/);

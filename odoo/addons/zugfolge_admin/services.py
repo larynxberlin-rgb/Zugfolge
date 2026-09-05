@@ -74,10 +74,14 @@ def game_command_targets(env, command):
             raise UserError("Zugfolge-Weltserverregister enthaelt keine gueltige Hauptwelt-ID.")
         if not isinstance(origin, str):
             raise UserError("Zugfolge-Weltserver braucht eine kanonische HTTPS-Origin.")
-        parsed = urlsplit(origin)
+        try:
+            parsed = urlsplit(origin)
+            canonical_origin = "https://" + (parsed.hostname or "") + (":%s" % parsed.port if parsed.port not in (None, 443) else "")
+        except ValueError as error:
+            raise UserError("Zugfolge-Weltserver besitzt keine gueltige HTTPS-Origin.") from error
         if (parsed.scheme != "https" or not parsed.hostname or parsed.username or parsed.password
-                or parsed.path or parsed.query or parsed.fragment or origin != "https://" + parsed.netloc
-                or parsed.hostname != parsed.hostname.lower() or origin in origins):
+                or parsed.path or parsed.query or parsed.fragment or origin != canonical_origin
+                or parsed.hostname.endswith(".") or origin in origins):
             raise UserError("Jede Zugfolge-Hauptwelt braucht eine eigene kanonische HTTPS-Origin ohne Pfad.")
         origins.add(origin)
     if not isinstance(command, dict):
@@ -145,6 +149,10 @@ def _infra_headers(env, method, url, content_bytes, content_sha256):
     timestamp = datetime.now(timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z")
     key_id, secret = _infra_credentials(env)
     pathname = urlsplit(url).path
+    # Der oeffentliche Proxy entfernt ausschliesslich /api; HMAC bindet den
+    # danach am Game verifizierten Integrationspfad.
+    if pathname.startswith("/api/integrations/odoo/infra-package-imports/"):
+        pathname = pathname[4:]
     return {
         "X-Zugfolge-Infra-Key-Id": key_id,
         "X-Zugfolge-Infra-Timestamp": timestamp,
@@ -298,14 +306,13 @@ def _infra_response(response, operation):
     return result
 
 
-def stage_infra_package(env, import_id, manifest, parts, finalization_nonce):
+def stage_infra_package(env, import_id, manifest, parts, finalization_nonce, world_id=None):
     """Stream an das lokale Game-Staging; weder Odoo noch dieser Client aktiviert einen Release."""
     if not isinstance(finalization_nonce, str) or not FINALIZATION_NONCE.fullmatch(finalization_nonce):
         raise UserError("Zugfolge-Infra-Finalisierungsnonce ist ungueltig.")
-    base_url = env["ir.config_parameter"].sudo().get_param("zugfolge_admin.infra_upload_base_url") or os.environ.get("ZUGFOLGE_INFRA_UPLOAD_BASE_URL")
-    if not base_url:
-        raise UserError("Zugfolge-Infra-Uploadziel ist nicht konfiguriert.")
-    base_url = base_url.rstrip("/")
+    world_id = world_id or _parameter(env, "zugfolge_admin.infra_upload_world_id")
+    webhook_url = game_command_targets(env, {"kind": "admin.world_deploy", "worldId": world_id})[0]
+    base_url = webhook_url.removesuffix("/webhooks") + "/infra-package-imports"
     import_url = "%s/%s" % (base_url, quote(import_id, safe=""))
     begin_body = {
         "manifestBytes": manifest["bytes"],
@@ -316,7 +323,7 @@ def stage_infra_package(env, import_id, manifest, parts, finalization_nonce):
         import_url,
         data=begin_bytes,
         headers={"Content-Type": "application/json", **_infra_headers(env, "POST", import_url, len(begin_bytes), hashlib.sha256(begin_bytes).hexdigest())},
-        timeout=(10, 60),
+        timeout=(10, 60), allow_redirects=False,
     )
     begin_result = _infra_response(response, "Start")
     begin_status = begin_result.get("status")
@@ -332,7 +339,7 @@ def stage_infra_package(env, import_id, manifest, parts, finalization_nonce):
                 manifest_url,
                 data=source,
                 headers={"Content-Type": "application/octet-stream", **_infra_headers(env, "PUT", manifest_url, manifest["bytes"], manifest["sha256"])},
-                timeout=(10, 600),
+                timeout=(10, 600), allow_redirects=False,
             )
         accepted_manifest = _infra_response(response, "Manifestupload")
         server_parts = accepted_manifest.get("parts")
@@ -352,7 +359,7 @@ def stage_infra_package(env, import_id, manifest, parts, finalization_nonce):
                     part_url,
                     data=source,
                     headers={"Content-Type": "application/octet-stream", **_infra_headers(env, "PUT", part_url, part["bytes"], part["sha256"])},
-                    timeout=(10, 1800),
+                    timeout=(10, 1800), allow_redirects=False,
                 )
             _infra_response(response, "Paketteilupload")
 
@@ -367,7 +374,7 @@ def stage_infra_package(env, import_id, manifest, parts, finalization_nonce):
         finalize_url,
         data=finalize_bytes,
         headers={"Content-Type": "application/json", **_infra_headers(env, "POST", finalize_url, len(finalize_bytes), hashlib.sha256(finalize_bytes).hexdigest())},
-        timeout=(10, 3600),
+        timeout=(10, 3600), allow_redirects=False,
     )
     result = _infra_response(response, "Abschluss")
     return result

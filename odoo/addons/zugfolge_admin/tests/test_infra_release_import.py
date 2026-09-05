@@ -1406,7 +1406,8 @@ class TestZugfolgeInfraReleaseImport(TransactionCase):
         record = self._verify(self._create_import())
         _parsed, manifest, parts = record._staging_payload()
         parameters = self.env["ir.config_parameter"].sudo()
-        parameters.set_param("zugfolge_admin.infra_upload_base_url", "http://game.test/imports")
+        parameters.set_param("zugfolge_admin.infra_upload_world_id", "11111111-1111-4111-8111-111111111111")
+        parameters.set_param("zugfolge_admin.game_world_origins_json", json.dumps({"11111111-1111-4111-8111-111111111111": "https://game.test"}))
         parameters.set_param("zugfolge_admin.infra_upload_key_id", "test-key")
         parameters.set_param("zugfolge_admin.infra_upload_secret", "s" * 32)
         expected_begin = json.dumps({
@@ -1416,6 +1417,11 @@ class TestZugfolgeInfraReleaseImport(TransactionCase):
         post_calls = []
 
         def post(_url, **kwargs):
+            self.assertTrue(_url.startswith("https://game.test/api/integrations/odoo/infra-package-imports/"))
+            self.assertFalse(kwargs["allow_redirects"])
+            headers = kwargs["headers"]
+            expected_signature = service_module.infra_upload_signature("s" * 32, headers["X-Zugfolge-Infra-Timestamp"], "POST", _url.removeprefix("https://game.test/api"), headers["X-Zugfolge-Infra-Content-Bytes"], headers["X-Zugfolge-Infra-Content-Sha256"])
+            self.assertEqual(headers["X-Zugfolge-Infra-Signature"], expected_signature)
             post_calls.append(kwargs)
             if len(post_calls) == 1:
                 self.assertEqual(kwargs.get("data"), expected_begin)
@@ -1456,7 +1462,8 @@ class TestZugfolgeInfraReleaseImport(TransactionCase):
         record = self._verify(self._create_import())
         _parsed, manifest, parts = record._staging_payload()
         parameters = self.env["ir.config_parameter"].sudo()
-        parameters.set_param("zugfolge_admin.infra_upload_base_url", "http://game.test/imports")
+        parameters.set_param("zugfolge_admin.infra_upload_world_id", "11111111-1111-4111-8111-111111111111")
+        parameters.set_param("zugfolge_admin.game_world_origins_json", json.dumps({"11111111-1111-4111-8111-111111111111": "https://game.test"}))
         parameters.set_param("zugfolge_admin.infra_upload_key_id", FINALIZATION_KEY_ID)
         parameters.set_param("zugfolge_admin.infra_upload_secret", FINALIZATION_TEST_KEY_MATERIAL)
         record._internal_write({"game_finalization_nonce": "f" * 64})
@@ -1475,7 +1482,8 @@ class TestZugfolgeInfraReleaseImport(TransactionCase):
         record = self._verify(self._create_import())
         _parsed, manifest, parts = record._staging_payload()
         parameters = self.env["ir.config_parameter"].sudo()
-        parameters.set_param("zugfolge_admin.infra_upload_base_url", "http://game.test/imports")
+        parameters.set_param("zugfolge_admin.infra_upload_world_id", "11111111-1111-4111-8111-111111111111")
+        parameters.set_param("zugfolge_admin.game_world_origins_json", json.dumps({"11111111-1111-4111-8111-111111111111": "https://game.test"}))
         parameters.set_param("zugfolge_admin.infra_upload_key_id", FINALIZATION_KEY_ID)
         parameters.set_param("zugfolge_admin.infra_upload_secret", FINALIZATION_TEST_KEY_MATERIAL)
         record._internal_write({"game_finalization_nonce": "f" * 64})

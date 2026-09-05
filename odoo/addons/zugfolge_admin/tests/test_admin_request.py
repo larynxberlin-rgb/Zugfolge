@@ -141,7 +141,7 @@ class TestZugfolgeAdminRequest(TransactionCase):
 
     def test_world_deploy_without_projection_serializes_finite_policy_and_world_definition(self):
         self.env["zugfolge.admin.capability"].with_context(zugfolge_game_projection=True).create({
-            "world_id": GLOBAL_WORLD_DEPLOY_CAPABILITY_SCOPE_ID,
+            "world_id": self._world_deploy_values()["world_id"],
             "action_type": "world_deploy",
             "availability": "available",
             "observed_at": "2026-01-01 00:00:00",
@@ -158,6 +158,17 @@ class TestZugfolgeAdminRequest(TransactionCase):
         self.assertEqual(payload["worldDefinition"]["kind"], "public")
         self.assertEqual(payload["signedDeployment"]["deploymentHash"], "d" * 64)
         self.assertEqual(payload["deploymentRevision"], 1)
+
+    def test_world_deploy_capability_of_another_server_or_legacy_global_scope_is_not_authority(self):
+        capabilities = self.env["zugfolge.admin.capability"].with_context(zugfolge_game_projection=True)
+        base = {"action_type": "world_deploy", "availability": "available", "observed_at": "2026-01-01 00:00:00", "payload_hash": "a" * 64}
+        capabilities.create({**base, "world_id": GLOBAL_WORLD_DEPLOY_CAPABILITY_SCOPE_ID})
+        capabilities.create({**base, "world_id": "99999999-9999-4999-8999-999999999999"})
+        request = self.env["zugfolge.admin.request"].create(self._world_deploy_values())
+        self.assertEqual(request.game_capability_state, "prepared")
+        capabilities.create({**base, "world_id": request.world_id})
+        request._compute_game_capability()
+        self.assertEqual(request.game_capability_state, "available")
 
     def test_world_deploy_draft_exports_configuration_before_external_signature(self):
         values = self._world_deploy_values()

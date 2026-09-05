@@ -53,6 +53,15 @@ export async function assertServerWorldDatabase(db: IdentityDatabase, scope: Ser
   assertServerWorldInventory(scope, rows);
 }
 
+export function assertServerWorldDeployment(scope: ServerWorldScope, deployment: {
+  readonly worldId: string;
+  readonly blueprint: { readonly profileKind: string };
+}): void {
+  if (deployment.worldId !== scope.worldId || deployment.blueprint.profileKind === "tutorial") {
+    throw new Error("Signiertes Deployment verletzt die Serverhauptweltbindung; Tutorialprofile sind keine Hauptwelt.");
+  }
+}
+
 export function registerServerWorldScope(app: FastifyInstance, db: IdentityDatabase, scope: ServerWorldScope): void {
   const host = new URL(scope.publicOrigin).host;
   app.addHook("onRequest", async (request, reply) => {
@@ -66,6 +75,9 @@ export function registerServerWorldScope(app: FastifyInstance, db: IdentityDatab
   app.addHook("preValidation", async (request, reply) => {
     const worldId = (request.params as Record<string, unknown>)["worldId"];
     if (typeof worldId !== "string" || worldId === scope.worldId) return;
+    if (request.method === "POST" && request.routeOptions.url === "/worlds/:worldId/tutorial-sessions") {
+      return reply.code(403).send({ code: "tutorial_parent_world_invalid", error: "Ein Tutorial kann nur aus der oeffentlichen Hauptwelt gestartet werden." });
+    }
     if (!(await serverWorldIds(db, scope)).has(worldId)) {
       return reply.code(404).send({ code: "world_not_found", error: "Diese Welt wird von diesem Server nicht angeboten." });
     }

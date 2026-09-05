@@ -121,30 +121,30 @@ export async function purgeExpiredAccountData(
     }
     const pseudonymousSubject = `erased:${candidate.id}`;
     try {
-    const purged = await db.transaction(async (tx) => {
-      await tx
-        .update(worldAccesses)
-        .set({ keycloakSubject: pseudonymousSubject })
-        .where(
-          and(
-            eq(worldAccesses.worldId, candidate.worldId),
-            eq(worldAccesses.keycloakSubject, candidate.keycloakSubject),
-          ),
-        );
-      const [updated] = await tx
-        .update(accounts)
-        .set({ keycloakSubject: pseudonymousSubject })
-        .where(and(eq(accounts.worldId, candidate.worldId), eq(accounts.id, candidate.id), eq(accounts.keycloakSubject, candidate.keycloakSubject)))
-        .returning({ id: accounts.id });
-      if (updated === undefined) return false;
-      await tx.update(worldParticipations).set({ keycloakSubject: pseudonymousSubject, displayName: ERASED_DISPLAY_NAME })
-        .where(and(eq(worldParticipations.worldId, candidate.worldId), eq(worldParticipations.keycloakSubject, candidate.keycloakSubject)));
-      await tx
-        .delete(accountRoles)
-        .where(and(eq(accountRoles.worldId, candidate.worldId), eq(accountRoles.accountId, candidate.id)));
-      return true;
-    });
-    if (purged) purgedAccountIds.push(candidate.id);
+      const purged = await db.transaction(async (tx) => {
+        await tx
+          .update(worldAccesses)
+          .set({ keycloakSubject: pseudonymousSubject })
+          .where(
+            and(
+              eq(worldAccesses.worldId, candidate.worldId),
+              eq(worldAccesses.keycloakSubject, candidate.keycloakSubject),
+            ),
+          );
+        const [updated] = await tx
+          .update(accounts)
+          .set({ keycloakSubject: pseudonymousSubject })
+          .where(and(eq(accounts.worldId, candidate.worldId), eq(accounts.id, candidate.id), eq(accounts.keycloakSubject, candidate.keycloakSubject)))
+          .returning({ id: accounts.id });
+        if (updated === undefined) return false;
+        await tx.update(worldParticipations).set({ keycloakSubject: pseudonymousSubject, displayName: ERASED_DISPLAY_NAME })
+          .where(and(eq(worldParticipations.worldId, candidate.worldId), eq(worldParticipations.keycloakSubject, candidate.keycloakSubject)));
+        await tx
+          .delete(accountRoles)
+          .where(and(eq(accountRoles.worldId, candidate.worldId), eq(accountRoles.accountId, candidate.id)));
+        return true;
+      });
+      if (purged) purgedAccountIds.push(candidate.id);
     } catch (error) {
       failures.push({ accountId: candidate.id, worldId: candidate.worldId, error });
     }

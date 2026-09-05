@@ -319,7 +319,11 @@ Receipts machen identische Wiederholungen wirkungslos. Ein noch anhängiger
 Grenzschutz wird im Ziel als zusätzliche reale Belegung bis zum Retirement
 erhalten, solange das Release keine genauere Schlussfreigabe dieser
 Grenzressource belegt. Er wird nicht bei einem bloßen Bewegungsereignis
-vergessen. Ein noch anhängiger
+vergessen. Bei einer erst im Ziel gebundenen Bewegungsfortsetzung geht diese
+Schutzmenge atomar auf den Nachfolger über; eine weitere Regionsübergabe
+übernimmt auch noch nicht freigegebene Schutzressourcen früherer Übergaben.
+Der Checkpoint verlangt für jede solche Schutzmenge einen vorhandenen Zug
+und deren vollständige Aufnahme in seine tatsächliche Belegung. Ein noch anhängiger
 Bewegungsfortsetzungsgraph wird vor Prepare abgewiesen und muss an der
 äußeren Betriebsgrenze zuerst vollständig aufgelöst werden. Eine
 Netzwerkautorisierung ersetzen diese Kernbindungen nicht: Beide Writer

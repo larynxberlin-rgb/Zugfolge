@@ -87,6 +87,16 @@ unbekannte Odoo-Quarantaenebelege; deren unbestaetigte textuelle Weltreferenzen
 werden nicht als autoritative UUID-Weltgeschichte behandelt. Bereits signierte
 Schema-33-Belege und deren Tabellenhash bleiben unveraendert.
 
+Neue Welt-Historiensiegel unter Schema 34 verwenden
+`zugfolge-world-final-history-seal/v2` und binden auch die neuen Postfach- und
+Abusefelder. Ein historischer Schema-33-Beleg bleibt explizit mit
+`worldFinalHistorySeal(sql, worldId, { schemaVersion: "zugfolge-world-final-history-seal/v1" })`
+reproduzierbar: ausschliesslich die vier mit Migration 0034 ergaenzten Felder
+werden aus der historischen JSON-Projektion genommen, und nur wenn sie fuer
+diese Welt durchgehend SQL-NULL sind. Nichtleere neue Fakten blockieren die
+historische Projektion. Es gibt keinen automatischen Hashvergleich mit
+ausgeblendeten Fakten und keine Aenderung archivierter Zeilen.
+
 Der gestufte neue Installationspfad endet nach dem kalten Schema-31-Nachweis mit
 `--schema34-after-cold`, `--keycloak-after-schema34` und `--prepare-v2-hot` auf
 exakt Schema 34. Die aelteren `schema33`-Flag-/Dienstnamen sind

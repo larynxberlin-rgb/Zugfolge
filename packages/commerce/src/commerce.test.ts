@@ -7,6 +7,7 @@ import { eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/pglite";
 import { migrate } from "drizzle-orm/pglite/migrator";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { activeEntitlementsForSubject } from "./store.js";
 
 import { ADMIN_ACTION_TYPES, AdminWorkflowError, assertPublicWorldSlot, canonicalJson, COMMAND_TYPES, createHttpOdooProjectionClient, createHttpOdooReconciliationClient, createOdooWebhookReceiptStore, deriveReconciliationTasks, dispatchOdooProjectionOutbox, enqueueAlphaFeedbackProjection, enqueueAuthoritativeWorldStartProjection, enqueueGameAdminCapabilityProjection, enqueueWorldProjection, entitlementFeatures, listPendingOdooProjectionWorldIds, ODOO_PROJECTION_ENVELOPE_HASH_SCHEMA, OdooCommandWorkerInterruptedError, processNextOdooCommand, projectionEnvelope, projectionEnvelopeHash, receiveOdooWebhook, reconcileOdooProjectionSnapshot, signPayload, type AdminCommandPayload, type OdooProjectionEnvelope, type OdooWebhookEnvelope, type SigningKey, validateAdminCommand, WebhookSignatureError, WebhookValidationError } from "./index.js";
 
@@ -122,6 +123,53 @@ beforeEach(async () => {
 afterEach(async () => client.close());
 
 describe("signierter Odoo-Receiver", () => {
+  it("reduziert Entitlement Grant, Revoke, Restore und verspätete Retries je Ursprungsbeleg", async () => {
+    const send = async (eventId: string, sourceRevision: number, change: "grant" | "revoke" | "restore", offset: number, sourceReference = "invoice-42", validUntil?: string) => {
+      const envelope = entitlementEnvelope(eventId);
+      if (envelope.command.kind !== "entitlement.change") throw new Error("fixture");
+      const payload = { ...envelope, command: { ...envelope.command, sourceRevision, change, sourceReference, validFrom: new Date(NOW.getTime() + offset).toISOString(), ...(validUntil === undefined ? {} : { validUntil }) } };
+      await createOdooWebhookReceiptStore(db).receive(payload, KEY.id, NOW);
+      expect(await processNextOdooCommand(db, NOW)).toMatchObject({ outcome: "accepted" });
+      return payload;
+    };
+    const grant = await send("lifecycle-grant-1", 1, "grant", 0);
+    await send("lifecycle-other-source", 1, "grant", 0, "invoice-99");
+    expect(await activeEntitlementsForSubject(db, "kc-anna", NOW)).toHaveLength(2);
+    await send("lifecycle-revoke-2", 2, "revoke", 1_000);
+    const restarted = drizzle(client, { schema });
+    expect((await activeEntitlementsForSubject(restarted, "kc-anna", new Date(NOW.getTime() + 1_000))).map((entry) => entry.sourceReference)).toEqual(["invoice-99"]);
+    expect(await createOdooWebhookReceiptStore(restarted).receive(grant, KEY.id, new Date(NOW.getTime() + 2_000))).toBe(false);
+    await send("lifecycle-late-grant-1", 1, "grant", 0);
+    expect(await activeEntitlementsForSubject(restarted, "kc-anna", new Date(NOW.getTime() + 2_000))).toHaveLength(1);
+    await send("lifecycle-restore-3", 3, "restore", 3_000, "invoice-42", new Date(NOW.getTime() + 4_000).toISOString());
+    expect(await activeEntitlementsForSubject(restarted, "kc-anna", new Date(NOW.getTime() + 3_000))).toHaveLength(2);
+    expect(await activeEntitlementsForSubject(restarted, "kc-anna", new Date(NOW.getTime() + 4_000))).toHaveLength(1);
+    expect(await activeEntitlementsForSubject(restarted, "other-subject", new Date(NOW.getTime() + 4_000))).toHaveLength(0);
+    expect(await db.select().from(commerceEntitlements)).toHaveLength(4);
+  });
+
+  it("weist widersprüchliche Entitlement-EventIDs und Quellenrevisionen ab", async () => {
+    const base = entitlementEnvelope("lifecycle-replay-001");
+    if (base.command.kind !== "entitlement.change") throw new Error("fixture");
+    const payload = { ...base, command: { ...base.command, sourceRevision: 1 } };
+    const store = createOdooWebhookReceiptStore(db);
+    await store.receive(payload, KEY.id, NOW);
+    await processNextOdooCommand(db, NOW);
+    await expect(store.receive({ ...payload, command: { ...payload.command, change: "revoke" } }, KEY.id, NOW)).rejects.toBeInstanceOf(WebhookValidationError);
+    await store.receive({ ...payload, eventId: "lifecycle-replay-002", command: { ...payload.command, quantity: 2 } }, KEY.id, NOW);
+    expect(await processNextOdooCommand(db, NOW)).toMatchObject({ outcome: "rejected" });
+    expect(await db.select().from(commerceEntitlements)).toHaveLength(1);
+  });
+
+  it("wertet historische v1-Revoke-Belege aus und laesst abgelaufene Erneuerungen nicht auf alte Grants zurueckfallen", async () => {
+    const base = { keycloakSubject: "legacy-subject", productKind: "cosmetic" as const, correlationId: "legacy-correlation", sourceReference: "legacy-invoice" };
+    await db.insert(commerceEntitlements).values([
+      { ...base, externalEventId: "legacy-grant", status: "active", validFrom: NOW },
+      { ...base, externalEventId: "legacy-revoke", status: "revoked", validFrom: new Date(NOW.getTime() + 1_000) },
+    ]);
+    expect(await activeEntitlementsForSubject(db, "legacy-subject", NOW)).toHaveLength(1);
+    expect(await activeEntitlementsForSubject(db, "legacy-subject", new Date(NOW.getTime() + 1_000))).toHaveLength(0);
+  });
   it("weist fremde Hauptwelten und Tutorials vor Queue-Commit sowie im Altbestand vor Wirkung ab", async () => {
     const assertWorldScope = (worldId: string) => { if (worldId !== WORLD) throw new Error("foreign_world"); };
     const options = { tenantId: "zugfolge-production", keys: [KEY], authorizedActors: { "commerce-service": ["admin.world_deploy"] }, assertWorldScope };
@@ -994,7 +1042,7 @@ describe("nächtliche Reconciliation", () => {
     const globalScope = "00000000-0000-0000-0000-000000000000";
     const base = { messageType: "world.projection", schemaVersion: "zugfolge-odoo/v1", correlationId: "server-scope", payload: {}, occurredAt: NOW, enqueuedAt: NOW, deliveredAt: NOW };
     const [own, foreign, global] = await db.insert(odooProjectionOutbox).values([
-      { ...base, worldId: WORLD }, { ...base, worldId: OTHER_WORLD }, { ...base, worldId: globalScope },
+      { ...base, worldId: WORLD }, { ...base, worldId: OTHER_WORLD }, { ...base, worldId: globalScope, messageType: "admin.capability.projection", payload: { actionType: "world_deploy", availability: "available" } },
     ]).returning();
     const observation = (worldId: string, messageId: string) => ({ worldId, messageId, correlationId: "server-scope", payloadHash: "a".repeat(64), envelopeHashSchema: ODOO_PROJECTION_ENVELOPE_HASH_SCHEMA, envelopeHash: "b".repeat(64) });
     const result = await reconcileOdooProjectionSnapshot(db, [observation(WORLD, "unknown-local"), observation(OTHER_WORLD, foreign!.id), observation(globalScope, "global-other-server")], NOW, WORLD);

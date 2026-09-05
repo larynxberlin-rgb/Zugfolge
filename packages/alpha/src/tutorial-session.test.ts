@@ -12,6 +12,7 @@ import {
 import * as schema from "@zugfolge/db/schema";
 import { drizzle } from "drizzle-orm/pglite";
 import { migrate } from "drizzle-orm/pglite/migrator";
+import { eq } from "drizzle-orm";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { AlphaConflictError } from "./errors.js";
@@ -116,6 +117,33 @@ describe("TutorialSessionService", () => {
   async function start(accountId = PUBLIC_ACCOUNT_1, subject = "kc-player-1") {
     return service.start({ publicWorldId: PUBLIC_WORLD, publicAccountId: accountId, keycloakSubject: subject, displayName: accountId === PUBLIC_ACCOUNT_1 ? "Spieler 1" : "Spieler 2" });
   }
+
+  it("verweigert eine Enkelwelt aus dem eigenen Tutorialkonto ohne weitere Persistenz", async () => {
+    await start();
+    const [session] = await db.select().from(tutorialSessions);
+    const beforeWorlds = await db.select().from(worlds);
+    const beforeSessions = await db.select().from(tutorialSessions);
+    await expect(service.start({ publicWorldId: session!.tutorialWorldId, publicAccountId: session!.tutorialAccountId, keycloakSubject: "kc-player-1", displayName: "Spieler 1" })).rejects.toThrow("aktive oeffentliche Hauptwelt");
+    expect(await db.select().from(worlds)).toEqual(beforeWorlds);
+    expect(await db.select().from(tutorialSessions)).toEqual(beforeSessions);
+    expect(factory.provisionCalls).toBe(1);
+  });
+
+  it.each(["private", "archived"] as const)("verweigert Tutorialstart aus %s Elternwelt vor Weltanlage", async (kind) => {
+    await db.update(worlds).set(kind === "private" ? { worldKind: "private", rankingStatus: "unranked" } : { lifecycleStatus: "archived" }).where(eq(worlds.id, PUBLIC_WORLD));
+    await expect(start()).rejects.toThrow("aktive oeffentliche Hauptwelt");
+    expect(await db.select().from(worlds)).toHaveLength(1);
+    expect(await db.select().from(tutorialSessions)).toHaveLength(0);
+    expect(factory.provisionCalls).toBe(0);
+  });
+
+  it("pinnt die konfigurierte Hauptwelt auch bei direktem Serviceaufruf", async () => {
+    const bound = new TutorialSessionService(db, factory, { publicWorldId: "00000000-0000-4000-8000-000000000999", clock: () => now });
+    await expect(bound.start({ publicWorldId: PUBLIC_WORLD, publicAccountId: PUBLIC_ACCOUNT_1, keycloakSubject: "kc-player-1", displayName: "Spieler 1" })).rejects.toThrow("ausserhalb der oeffentlichen Hauptwelt");
+    expect(await db.select().from(worlds)).toHaveLength(1);
+    expect(await db.select().from(tutorialSessions)).toHaveLength(0);
+    expect(factory.provisionCalls).toBe(0);
+  });
 
   it("erzeugt genau eine private Welt pro Weltkonto und setzt sie bei Doppelstart fort", async () => {
     const first = await start();

@@ -48,6 +48,8 @@ export interface GameAdminCapabilityProjection {
   readonly actionType: AdminActionType;
   readonly availability: GameAdminCapabilityAvailability;
   readonly detail?: string;
+  /** Pre-world world_deploy transportiert global, bindet aber genau einen Zielserver. */
+  readonly targetWorldId?: string;
 }
 
 export type RiskClass = "standard" | "high";
@@ -110,6 +112,20 @@ export interface EntitlementChangePayload {
   readonly quantity: number;
   /** Odoo-Belegreferenz, kein Zahlungsinstrument und keine Personaldaten. */
   readonly sourceReference: string;
+  /** Monotoner Zustand derselben Belegquelle; Transport-/Retryzeit hat keine Prioritaet. */
+  readonly sourceRevision?: number;
+}
+
+export function validateEntitlementChange(payload: EntitlementChangePayload): void {
+  if (!isProductKind(payload.productKind) || !["grant", "renew", "revoke", "restore", "expire"].includes(payload.change)
+    || typeof payload.subject !== "string" || payload.subject.length === 0
+    || typeof payload.sourceReference !== "string" || payload.sourceReference.length === 0
+    || !Number.isSafeInteger(payload.quantity) || payload.quantity < 1
+    || typeof payload.validFrom !== "string" || !Number.isFinite(new Date(payload.validFrom).getTime())
+    || (payload.validUntil !== undefined && (typeof payload.validUntil !== "string" || !Number.isFinite(new Date(payload.validUntil).getTime()) || new Date(payload.validUntil) <= new Date(payload.validFrom)))
+    || (payload.sourceRevision !== undefined && (!Number.isSafeInteger(payload.sourceRevision) || payload.sourceRevision < 1))) {
+    throw new Error("Ungueltiger Entitlement-Lifecycle-Befehl.");
+  }
 }
 
 export interface ManualDisruption {

@@ -27,6 +27,16 @@ class TestWorldServerRouting(TransactionCase):
         with self.assertRaises(UserError):
             game_command_targets(self.env, {"kind": "admin.world_deploy", "worldId": "33333333-3333-4333-8333-333333333333"})
 
+    def test_pre_world_capabilities_remain_bound_to_their_individual_target_server(self):
+        capabilities = self.env["zugfolge.admin.capability"].sudo().with_context(zugfolge_game_projection=True)
+        for world_id, availability in ((WORLD_A, "available"), (WORLD_B, "unavailable")):
+            capabilities.upsert_game_projection({
+                "worldId": "00000000-0000-0000-0000-000000000000", "occurredAt": "2026-09-05T10:00:00Z",
+                "payload": {"actionType": "world_deploy", "availability": availability, "targetWorldId": world_id},
+            })
+        self.assertEqual(capabilities.search([("world_id", "=", WORLD_A), ("action_type", "=", "world_deploy")]).availability, "available")
+        self.assertEqual(capabilities.search([("world_id", "=", WORLD_B), ("action_type", "=", "world_deploy")]).availability, "unavailable")
+
     def test_global_entitlements_fan_out_with_stable_event_and_no_redirect(self):
         for key, value in {"tenant_id": "commercial-tenant", "webhook_key_id": "key-2026", "webhook_secret": "test-secret"}.items():
             self.params.set_param("zugfolge_admin." + key, value)
@@ -45,6 +55,7 @@ class TestWorldServerRouting(TransactionCase):
     def test_absent_or_ambiguous_mapping_never_falls_back_to_global_url(self):
         self.params.set_param("zugfolge_admin.game_webhook_url", "https://wrong.example.test/api/integrations/odoo/webhooks")
         for mapping in ({}, {WORLD_A: "http://alpha.example.test"}, {WORLD_A: "https://alpha.example.test/path"},
+                        {WORLD_A: "https://ALPHA.example.test"}, {WORLD_A: "https://alpha.example.test:443"},
                         {WORLD_A: "https://user:secret@alpha.example.test"},
                         {WORLD_A: "https://alpha.example.test", WORLD_B: "https://alpha.example.test"}):
             self.params.set_param("zugfolge_admin.game_world_origins_json", json.dumps(mapping))

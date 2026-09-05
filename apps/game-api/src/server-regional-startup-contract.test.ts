@@ -54,12 +54,16 @@ describe("regionaler Server-Startupvertrag", () => {
     const serverSource = await readFile(new URL("./server.ts", import.meta.url), "utf8");
     const resolution = serverSource.indexOf("await resolveAlphaWorldStartupDeployments(");
     const archivedRelease = serverSource.indexOf("for (const worldId of archivedWorldIds) deploymentRuntime.releaseWorld(worldId)");
-    const activeRegistration = serverSource.indexOf("for (const persisted of persistedActiveDeployments) deploymentRuntime.register(");
+    const activeLoop = serverSource.indexOf("for (const persisted of persistedActiveDeployments) {");
+    const serverWorldGate = serverSource.indexOf("if (persisted.signed.deployment.worldId !== worldScope.worldId)", activeLoop);
+    const activeRegistration = serverSource.indexOf("deploymentRuntime.register(", activeLoop);
     const fleetGate = serverSource.indexOf("deploymentRuntime.assertVehicleCatalogDeploymentBindings(");
 
     expect(resolution).toBeGreaterThan(-1);
     expect(archivedRelease).toBeGreaterThan(resolution);
-    expect(activeRegistration).toBeGreaterThan(archivedRelease);
+    expect(activeLoop).toBeGreaterThan(archivedRelease);
+    expect(serverWorldGate).toBeGreaterThan(activeLoop);
+    expect(activeRegistration).toBeGreaterThan(serverWorldGate);
     expect(fleetGate).toBeGreaterThan(activeRegistration);
 
     const startSource = await readFile(new URL("./alpha-world-start.ts", import.meta.url), "utf8");

@@ -6,7 +6,6 @@ from odoo import _, api, fields, models
 from odoo.exceptions import AccessError, UserError, ValidationError
 
 from ..services import dispatch_signed_game_command
-from .admin_capability import GLOBAL_WORLD_DEPLOY_CAPABILITY_SCOPE_ID
 
 
 MAX_MONEY_CENTS = 9_223_372_036_854_775_807
@@ -150,11 +149,7 @@ class ZugfolgeAdminRequest(models.Model):
     def _compute_game_capability(self):
         capability_model = self.env["zugfolge.admin.capability"].sudo()
         for record in self:
-            world_id = (
-                GLOBAL_WORLD_DEPLOY_CAPABILITY_SCOPE_ID
-                if record.action_type == "world_deploy"
-                else record.world_projection_id.world_id or record.world_id
-            )
+            world_id = record.world_id if record.action_type == "world_deploy" else record.world_projection_id.world_id or record.world_id
             capability = capability_model.search([
                 ("world_id", "=", world_id),
                 ("action_type", "=", record.action_type),

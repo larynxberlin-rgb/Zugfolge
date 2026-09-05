@@ -25,8 +25,13 @@ Server darf sie nicht gemeinsam freischalten.
   Start. Archivierte Vorgaenger bleiben als versiegelte Geschichte erhalten,
   werden aber weder als Spielwelt geladen noch ueber Weltlisten angeboten.
 - Signierte initiale, persistierte und spaeter administrativ angeforderte
-  Deployments muessen dieselbe Welt-ID tragen. Der HTTP-Pfad zum spontanen
+  Deployments muessen dieselbe Welt-ID tragen und duerfen kein Tutorialprofil
+  als Hauptwelt einsetzen. Dieser Vertrag wird vor jeder Deploymentmutation
+  und beim Wiederanlauf identisch geprueft. Der HTTP-Pfad zum spontanen
   Erzeugen einer weiteren privaten Welt ist auf einem Weltserver gesperrt.
+- Ein Tutorialstart ist ausschliesslich aus der aktiven oeffentlichen
+  Hauptwelt zulaessig. HTTP-Grenze und Tutorialservice pruefen die Elternwelt
+  vor der ersten Anlage; eine Tutorialinstanz kann keine Enkelwelt erzeugen.
 - Proxy und API erhalten und pruefen den kanonischen Host. Eine Welt-ID im
   Pfad und ein `X-Forwarded-Host` koennen die Serverzuordnung nicht aendern.
   Lokale Liveness-/Readiness-Pruefungen bleiben erreichbar.
