@@ -142,7 +142,22 @@ function decision(sequence = 1) {
   it("erhält Dialog, Aktion, Begründung und Auswahl; verwirft geänderte Entscheidung ohne Textverlust", { timeout: 30_000 }, async () => {
     await open("operations");
     expect(await page.locator(".metrics-strip strong").first().textContent()).toBe("1");
-    await page.locator("[data-open-override]").click();
+    await page.locator("#event-1").focus();
+    await event();
+    expect(await page.locator("#event-1").evaluate((element) => element === document.activeElement)).toBe(true);
+    await page.locator("[data-open-override]").first().click();
+    const dialog = page.getByRole("dialog", { name: "Entscheidung übersteuern" });
+    await dialog.waitFor();
+    await page.locator("#override-reason").fill("kurz");
+    await page.locator("#submit-override").click();
+    expect(await page.locator("#override-reason").evaluate((element) => (element as HTMLTextAreaElement).validity.tooShort)).toBe(true);
+    expect(overrideRequests).toBe(0);
+    await dialog.getByRole("button", { name: "Abbrechen", exact: true }).click();
+    expect(await dialog.count()).toBe(0);
+    await page.locator("[data-open-override]").first().click();
+    await page.getByRole("button", { name: "Dialog schließen", exact: true }).click();
+    expect(await dialog.count()).toBe(0);
+    await page.locator("[data-open-override]").first().click();
     await page.locator("#override-action").selectOption("cancel_run");
     await page.locator("#override-reason").fill("Die vollständige Begründung bleibt erhalten.");
     await page.locator("#override-reason").evaluate((element) => (element as HTMLTextAreaElement).setSelectionRange(4, 16));

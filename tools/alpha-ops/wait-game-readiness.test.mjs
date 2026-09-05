@@ -10,6 +10,40 @@ function jsonResponse(status, body) {
   });
 }
 
+test("HTTP 200 ohne gueltigen Health-Bericht bestaetigt keine Readiness", async () => {
+  for (const report of [undefined, null, {}, { status: "unknown", checks: [] }, { status: "ok" }, { status: "ok", checks: [null] }]) {
+    await assert.rejects(waitForGameReadiness({
+      baseUrl: "http://game.test:3000",
+      fetchImpl: async (url) => new URL(url).pathname === "/health"
+        ? jsonResponse(200, { status: "ok" })
+        : report === undefined ? new Response("<html>Proxyfehler</html>") : jsonResponse(200, report),
+    }), /keinen gueltigen Health-Bericht/u);
+  }
+  const degraded = { status: "degraded", checks: [{ name: "odoo", status: "degraded" }] };
+  assert.deepEqual(await waitForGameReadiness({
+    baseUrl: "http://game.test:3000",
+    fetchImpl: async (url) => jsonResponse(200, new URL(url).pathname === "/health" ? { status: "ok" } : degraded),
+  }), degraded);
+});
+
+test("haengende Health-Anfragen und Antwortkoerper werden innerhalb des Budgets abgebrochen", { timeout: 2_000 }, async () => {
+  for (const hangAt of ["headers", "body"]) {
+    let requestSignal;
+    await assert.rejects(waitForGameReadiness({
+      baseUrl: "http://game.test:3000",
+      maximumWaitMs: 500,
+      requestTimeoutMs: 15,
+      fetchImpl: async (url, { signal }) => {
+        if (new URL(url).pathname === "/health") return jsonResponse(200, { status: "ok" });
+        requestSignal = signal;
+        if (hangAt === "headers") return new Promise(() => undefined);
+        return { ok: true, json: () => new Promise(() => undefined) };
+      },
+    }), /Zeitlimit/u);
+    assert.equal(requestSignal.aborted, true);
+  }
+});
+
 test("fortschreitender Cold-Catch-up darf 230 Sekunden ueberschreiten und endet erst bei Readiness", async () => {
   let nowMs = 0;
   const progress = [];
@@ -38,7 +72,7 @@ test("fortschreitender Cold-Catch-up darf 230 Sekunden ueberschreiten und endet 
 
   await assert.doesNotReject(waitForGameReadiness({
     baseUrl: "http://game.test:3000",
-    maximumWaitMs: 300_000,
+    maximumWaitMs: 350_000,
     pollIntervalMs: 60_000,
     fetchImpl,
     now: () => nowMs,

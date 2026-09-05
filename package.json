@@ -15,12 +15,14 @@
   "scripts": {
     "build": "pnpm -r --stream build",
     "typecheck": "pnpm -r --stream typecheck",
-    "test": "pnpm -r --stream test",
+    "test": "pnpm -r --filter \"./apps/*\" --filter \"./packages/*\" --filter @zugfolge/guards --no-sort --workspace-concurrency=1 --stream test",
     "guards": "pnpm --filter @zugfolge/guards run guards",
     "licenses": "pnpm --filter @zugfolge/guards run licenses",
     "alpha:build": "bash tools/alpha-ops/build-alpha-images.sh",
     "alpha:up": "bash tools/alpha-ops/phase1-smoke.sh",
     "alpha:phase3": "bash tools/alpha-ops/phase3-acceptance.sh",
-    "alpha:down": "bash tools/alpha-ops/compose-with-map-release-env.sh -f compose.alpha.yml down"
+    "alpha:down": "bash tools/alpha-ops/compose-with-map-release-env.sh -f compose.alpha.yml down",
+    "test:tools": "node tools/guards/run-tool-tests.mjs",
+    "test:full": "pnpm test && pnpm test:tools && pnpm --filter @zugfolge/m7-e2e test:e2e"
   }
 }

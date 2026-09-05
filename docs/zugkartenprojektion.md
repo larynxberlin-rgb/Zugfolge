@@ -42,6 +42,20 @@ er darf weder über `valid_until` noch über das Fahrberechtigungsende hinaus
 rechnen. Danach, bei Verbindungsabbruch oder Sequenzlücke friert er ein.
 `ExternalLeg` besitzt weiterhin keine erfundene Kartenposition.
 
+An einem Gleiswechsel enthält die Bewegungsgeometrie beide Endpunkte: zuerst
+den Austritt der alten Kante, dann den Eintritt der neuen Kante am selben
+Laufwegmillimeter und derselben E7-Koordinate. Die gleisbezogenen Offsets
+bleiben getrennt. Nur solche verbundenen Kantenwechsel dürfen denselben
+Laufwegmillimeter besitzen; zwischen verschiedenen Gleisen wird kein Offset
+interpoliert. Am Übergang gilt bereits der Eintrittspunkt der folgenden Kante.
+
+Die Kartendarstellung kennzeichnet einen eingefrorenen Marker zusätzlich mit
+„Lage eingefroren“, einen Ausfall mit „Ausfall“ und Verspätungen über einer
+Minute mit dem Minutenwert. Markerkennung und letzter bestätigter Kartenpunkt
+bleiben bei einem Verbindungsabbruch erhalten. Die kontinuierliche Animation
+endet mit dem letzten noch gültigen Bewegungsabschnitt; eine längere
+Transporttoleranz des Regionsframes erzeugt keine weiteren Animationsframes.
+
 ## Öffentliches Laufzeitartefakt
 
 Der Releasecompiler erzeugt den Kartenpfad neben Readmodel, Basemap und

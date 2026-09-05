@@ -17,7 +17,7 @@
  * eine Balancing-Tabelle, ein Fahrzeugkatalog — wird hier gefangen.
  */
 
-import { matchesAny } from "../glob.js";
+import { compileGlobs } from "../glob.js";
 import type { Finding, Rule, SourceFile } from "../types.js";
 
 /**
@@ -56,8 +56,9 @@ export const layerSeparationRule: Rule = {
   scope: "repository",
   check(files: readonly SourceFile[]): Finding[] {
     const findings: Finding[] = [];
+    const proprietaer = compileGlobs(PROPRIETAERE_PFADE);
     for (const datei of files) {
-      if (!matchesAny(datei.path, PROPRIETAERE_PFADE)) {
+      if (!proprietaer(datei.path)) {
         continue;
       }
       if (datei.text.includes(AUSNAHME)) {

@@ -24,10 +24,11 @@ const WORLD_MIDDLE_GERMANY = "22222222-2222-2222-2222-222222222222";
 
 let client: PGlite;
 let db: IdentityDatabase;
+let queryCount = 0;
 
 beforeEach(async () => {
   client = new PGlite();
-  const pgliteDb = drizzle(client, { schema });
+  const pgliteDb = drizzle(client, { schema, logger: { logQuery: () => { queryCount++; } } });
   await migrate(pgliteDb, { migrationsFolder: MIGRATIONS_FOLDER });
   db = pgliteDb;
 
@@ -137,13 +138,21 @@ describe("requestWorldAccess", () => {
 
 describe("Weltisolation der Kontoliste (Beweis von M2)", () => {
   it("zwei Konten derselben Welt sehen einander", async () => {
-    await requestWorldAccess(db, { worldId: WORLD_LHE, keycloakSubject: "kc-anna", displayName: "Anna" });
+    const anna = await requestWorldAccess(db, { worldId: WORLD_LHE, keycloakSubject: "kc-anna", displayName: "Anna" });
+    await grantRole(db, { worldId: WORLD_LHE, targetAccountId: anna.id, role: "world_admin", actingKeycloakSubject: "kc-anna" });
+    const beforeSingle = queryCount;
+    await listAccountsInWorld(db, { worldId: WORLD_LHE, requestingKeycloakSubject: "kc-anna" });
+    const singleAccountQueries = queryCount - beforeSingle;
     await requestWorldAccess(db, { worldId: WORLD_LHE, keycloakSubject: "kc-ben", displayName: "Ben" });
 
+    const beforeRoster = queryCount;
     const roster = await listAccountsInWorld(db, { worldId: WORLD_LHE, requestingKeycloakSubject: "kc-anna" });
 
+    expect(queryCount - beforeRoster).toBe(singleAccountQueries);
     expect(roster.map((account) => account.displayName).sort()).toEqual(["Anna", "Ben"]);
     expect(roster.every((account) => !("keycloakSubject" in account))).toBe(true);
+    expect(roster.find((account) => account.id === anna.id)?.roles).toEqual(expect.arrayContaining(["player", "world_admin"]));
+    expect(roster.find((account) => account.displayName === "Ben")?.roles).toEqual(["player"]);
   });
 
   it("ein Konto aus einer anderen Welt taucht in der Liste nicht auf", async () => {
@@ -169,6 +178,21 @@ describe("Weltisolation der Kontoliste (Beweis von M2)", () => {
 });
 
 describe("grantRole", () => {
+  it("vergibt bei parallelem Bootstrap nur einem Konto die erste Adminrolle", async () => {
+    const anna = await requestWorldAccess(db, { worldId: WORLD_LHE, keycloakSubject: "kc-anna", displayName: "Anna" });
+    const ben = await requestWorldAccess(db, { worldId: WORLD_LHE, keycloakSubject: "kc-ben", displayName: "Ben" });
+    const results = await Promise.allSettled([anna, ben].map((account) => grantRole(db, {
+      worldId: WORLD_LHE,
+      targetAccountId: account.id,
+      role: "world_admin",
+      actingKeycloakSubject: account.keycloakSubject,
+    })));
+    expect(results.filter((result) => result.status === "fulfilled")).toHaveLength(1);
+    expect(results.find((result) => result.status === "rejected")).toMatchObject({ reason: expect.any(AuthorizationError) });
+    const roster = await listAccountsInWorld(db, { worldId: WORLD_LHE, requestingKeycloakSubject: "kc-anna" });
+    expect(roster.filter((account) => account.roles.includes("world_admin"))).toHaveLength(1);
+  });
+
   it("erlaubt dem ersten Konto einer Welt, sich selbst zum Weltverwalter zu machen", async () => {
     const anna = await requestWorldAccess(db, { worldId: WORLD_LHE, keycloakSubject: "kc-anna", displayName: "Anna" });
 
@@ -229,16 +253,24 @@ describe("grantRole", () => {
 
 describe("listAccountsForSubject", () => {
   it("findet die Konten eines Subjects über mehrere Welten hinweg", async () => {
-    await requestWorldAccess(db, { worldId: WORLD_LHE, keycloakSubject: "kc-anna", displayName: "Anna" });
+    const anna = await requestWorldAccess(db, { worldId: WORLD_LHE, keycloakSubject: "kc-anna", displayName: "Anna" });
+    await grantRole(db, { worldId: WORLD_LHE, targetAccountId: anna.id, role: "world_admin", actingKeycloakSubject: "kc-anna" });
+    const beforeSingle = queryCount;
+    await listAccountsForSubject(db, "kc-anna");
+    const singleAccountQueries = queryCount - beforeSingle;
     await requestWorldAccess(db, {
       worldId: WORLD_MIDDLE_GERMANY,
       keycloakSubject: "kc-anna",
       displayName: "Anna (Mitteldeutschland)",
     });
 
+    const beforeMemberships = queryCount;
     const memberships = await listAccountsForSubject(db, "kc-anna");
 
+    expect(queryCount - beforeMemberships).toBe(singleAccountQueries);
     expect(memberships.map((account) => account.worldId).sort()).toEqual([WORLD_LHE, WORLD_MIDDLE_GERMANY].sort());
+    expect(memberships.find((account) => account.worldId === WORLD_LHE)?.roles).toEqual(expect.arrayContaining(["player", "world_admin"]));
+    expect(memberships.find((account) => account.worldId === WORLD_MIDDLE_GERMANY)?.roles).toEqual(["player"]);
   });
 
   it("blendet einen widerrufenen Weltzugang aus", async () => {

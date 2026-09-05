@@ -964,8 +964,9 @@ keinen reproduzierbaren Buildcache-Restore.
 
 ### Freigabegrenzen für `infra-deutschland-2026.5` auf STRATO
 
-Die privilegierte lokale Realabnahme ist als eigener manueller CI-Vertrag
-`run_germany_2026_5_real_acceptance=true` angelegt. Sie besteht aus zwei
+Die privilegierte lokale Realabnahme wird im manuellen Workflow
+[Infrastruktur-Realabnahme](../.github/workflows/infrastructure-acceptance.yml)
+mit `run_germany_2026_5_real_acceptance=true` gestartet. Sie besteht aus zwei
 getrennten Self-hosted-Grenzen: `germany-2026-5-builder` reproduziert unter
 Windows die Semantik-PMTiles ausschließlich mit dem vollständigen
 GDAL-Runtime-Manifest sowie Karten-Capture und Static Sources jeweils mit

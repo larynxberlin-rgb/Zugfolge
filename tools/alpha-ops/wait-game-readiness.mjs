@@ -6,6 +6,7 @@ import { pathToFileURL } from "node:url";
 const DEFAULT_MAXIMUM_WAIT_MS = 7_200_000;
 const DEFAULT_POLL_INTERVAL_MS = 5_000;
 const DEFAULT_LIVENESS_GRACE_MS = 30_000;
+const DEFAULT_REQUEST_TIMEOUT_MS = 10_000;
 
 function positiveInteger(value, label) {
   const parsed = Number(value);
@@ -45,6 +46,7 @@ export async function waitForGameReadiness({
   maximumWaitMs = DEFAULT_MAXIMUM_WAIT_MS,
   pollIntervalMs = DEFAULT_POLL_INTERVAL_MS,
   livenessGraceMs = DEFAULT_LIVENESS_GRACE_MS,
+  requestTimeoutMs = DEFAULT_REQUEST_TIMEOUT_MS,
   fetchImpl = globalThis.fetch,
   now = Date.now,
   sleep = (durationMs) => new Promise((resolveSleep) => setTimeout(resolveSleep, durationMs)),
@@ -54,40 +56,70 @@ export async function waitForGameReadiness({
   const maximum = positiveInteger(maximumWaitMs, "Maximale Readiness-Wartezeit");
   const poll = positiveInteger(pollIntervalMs, "Readiness-Pollintervall");
   const livenessGrace = positiveInteger(livenessGraceMs, "Liveness-Anlaufzeit");
+  const requestTimeout = positiveInteger(requestTimeoutMs, "Health-Anfragezeitlimit");
   const origin = new URL(baseUrl);
   const metricsOrigin = new URL(origin);
   metricsOrigin.port = "9464";
   const startedAtMs = now();
   let firstLivenessFailureAtMs;
 
+  async function readResponse(url, readBody) {
+    const remainingMs = maximum - (now() - startedAtMs);
+    if (remainingMs <= 0) throw new Error("Maximale Game-Readiness-Wartezeit ueberschritten.");
+    const controller = new AbortController();
+    let timer;
+    try {
+      return await Promise.race([
+        (async () => {
+          const response = await fetchImpl(url, { signal: controller.signal });
+          return { response, body: await readBody(response) };
+        })(),
+        new Promise((_resolve, reject) => {
+          timer = setTimeout(() => {
+            controller.abort();
+            reject(new Error(`Health-Anfrage ${url.pathname} hat ihr Zeitlimit ueberschritten.`));
+          }, Math.min(requestTimeout, remainingMs));
+        }),
+      ]);
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  const pause = () => sleep(Math.max(0, Math.min(poll, maximum - (now() - startedAtMs))));
+
   while (true) {
     const atMs = now();
-    if (atMs - startedAtMs > maximum) {
+    if (atMs - startedAtMs >= maximum) {
       throw new Error(`Game-Readiness wurde trotz Schedulerfortschritt nicht innerhalb von ${maximum} ms erreicht.`);
     }
 
     let liveness;
     try {
-      liveness = await fetchImpl(new URL("/health", origin));
+      liveness = await readResponse(new URL("/health", origin), responseJson);
     } catch {
       liveness = undefined;
     }
-    const livenessBody = liveness === undefined ? undefined : await responseJson(liveness);
-    if (liveness?.ok !== true || livenessBody?.status !== "ok") {
+    if (liveness?.response.ok !== true || liveness.body?.status !== "ok") {
       firstLivenessFailureAtMs ??= atMs;
       if (atMs - firstLivenessFailureAtMs > livenessGrace) {
         throw new Error("Game-Prozess-Liveness blieb waehrend des Readiness-Gates unerreichbar.");
       }
-      await sleep(poll);
+      await pause();
       continue;
     }
     firstLivenessFailureAtMs = undefined;
 
-    const readiness = await fetchImpl(new URL("/health/ready", origin));
-    const report = await responseJson(readiness);
-    if (readiness.ok && report?.status !== "down") return report;
+    const { response: readiness, body: report } = await readResponse(new URL("/health/ready", origin), responseJson);
+    if (!Array.isArray(report?.checks)
+      || !["ok", "degraded", "down"].includes(report.status)
+      || report.checks.some((check) => typeof check?.name !== "string"
+        || !["ok", "degraded", "down"].includes(check.status))) {
+      throw new Error("Game-Readiness lieferte keinen gueltigen Health-Bericht.");
+    }
 
     const blockers = downChecks(report);
+    if (readiness.ok && report.status !== "down" && blockers.length === 0) return report;
     const scheduler = blockers.find((check) => check?.name === "regional-simulation-scheduler");
     const unrelatedBlocker = blockers.find((check) => check !== scheduler);
     if (
@@ -100,8 +132,10 @@ export async function waitForGameReadiness({
     }
 
     if (scheduler.code === "scheduler_catching_up") {
-      const metricsResponse = await fetchImpl(new URL("/metrics", metricsOrigin));
-      const metrics = metricsResponse.ok ? await metricsResponse.text() : "";
+      const { response: metricsResponse, body: metricsBody } = await readResponse(
+        new URL("/metrics", metricsOrigin), (response) => response.text(),
+      );
+      const metrics = metricsResponse.ok ? metricsBody : "";
       const running = metricValue(metrics, "zugfolge_regional_simulation_scheduler_running");
       const progressAgeSeconds = metricValue(
         metrics,
@@ -113,7 +147,7 @@ export async function waitForGameReadiness({
       onProgress({ elapsedMs: atMs - startedAtMs, progressAgeSeconds });
     }
 
-    await sleep(poll);
+    await pause();
   }
 }
 

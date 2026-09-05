@@ -84,6 +84,24 @@ export interface PublicRouteGeometryPoint {
   readonly bearingMilliDegrees?: number;
 }
 
+/** Gleiswechsel behalten beide Offsets am selben, exakt verbundenen Punkt. */
+export function isContinuousRouteGeometry(geometry: readonly PublicRouteGeometryPoint[]): boolean {
+  return geometry.length >= 2 && geometry.every((point, index) => {
+    if (!Number.isSafeInteger(point.routeMm) || point.routeMm < 0
+      || !Number.isSafeInteger(point.offsetMm) || point.offsetMm < 0 || point.trackId.length === 0
+      || !Number.isSafeInteger(point.latitudeE7) || Math.abs(point.latitudeE7) > 900_000_000
+      || !Number.isSafeInteger(point.longitudeE7) || Math.abs(point.longitudeE7) > 1_800_000_000
+      || (point.bearingMilliDegrees !== undefined && (!Number.isSafeInteger(point.bearingMilliDegrees)
+        || point.bearingMilliDegrees < 0 || point.bearingMilliDegrees >= 360_000))) return false;
+    const previous = geometry[index - 1];
+    if (previous === undefined) return true;
+    if (point.routeMm > previous.routeMm) return point.trackId === previous.trackId;
+    return point.routeMm === previous.routeMm && point.trackId !== previous.trackId
+      && point.latitudeE7 === previous.latitudeE7 && point.longitudeE7 === previous.longitudeE7
+      && geometry[index - 2]?.routeMm !== point.routeMm;
+  });
+}
+
 /** Vom Server autorisierter, unveraenderlicher analytischer Bewegungsabschnitt. */
 export interface PublicMotionSegment {
   readonly startedAtMs: number;
@@ -338,12 +356,9 @@ function validateOperationalState(train: PublicTrain): void {
     segment.startRouteMm > segment.authorityEndRouteMm ||
     segment.startRouteMm > segment.segmentEndRouteMm ||
     segment.segmentEndRouteMm > segment.authorityEndRouteMm ||
-    segment.geometry.length < 2 ||
-    segment.geometry.some((point, index) =>
-      !integer(point.routeMm) || !integer(point.offsetMm) || point.trackId.length === 0 ||
-      !integer(point.latitudeE7) || !integer(point.longitudeE7) ||
-      (index > 0 && point.routeMm <= segment.geometry[index - 1]!.routeMm)
-    )
+    !isContinuousRouteGeometry(segment.geometry) ||
+    segment.geometry[0]!.routeMm > segment.startRouteMm ||
+    segment.geometry.at(-1)!.routeMm < segment.segmentEndRouteMm
   ) {
     throw new RangeError(`Zug '${train.id}' besitzt keinen gueltigen autorisierten Bewegungsabschnitt.`);
   }

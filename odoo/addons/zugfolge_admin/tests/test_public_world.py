@@ -3,7 +3,7 @@ from datetime import datetime, timedelta, timezone
 from odoo.exceptions import AccessDenied, AccessError, ValidationError
 from odoo.tests.common import TransactionCase
 
-from ..controllers.website import _rate_allowed, _BUCKETS
+from ..controllers.website import _rate_allowed, _BUCKETS, _MAX_RATE_BUCKETS
 from ..models.rfc3339 import rfc3339_utc
 from ..models.res_users import validate_keycloak_identity
 
@@ -199,7 +199,15 @@ class TestPublicWorld(TransactionCase):
 
     def test_public_refresh_rate_limit_is_bounded(self):
         _BUCKETS.clear()
+        self.addCleanup(_BUCKETS.clear)
         for _ in range(30):
             self.assertTrue(_rate_allowed("192.0.2.1", now=1.0))
         self.assertFalse(_rate_allowed("192.0.2.1", now=1.0))
         self.assertTrue(_rate_allowed("192.0.2.1", now=62.0))
+        for index in range(_MAX_RATE_BUCKETS - 1):
+            self.assertTrue(_rate_allowed("client-%s" % index, now=62.0))
+        self.assertFalse(_rate_allowed("overflow-client", now=62.0))
+        self.assertEqual(len(_BUCKETS), _MAX_RATE_BUCKETS)
+        self.assertTrue(_rate_allowed("192.0.2.1", now=62.0))
+        self.assertTrue(_rate_allowed("new-window-client", now=122.0))
+        self.assertEqual(len(_BUCKETS), 1)

@@ -102,14 +102,18 @@ pub(crate) fn read_blob<R: Read>(
     reader: &mut R,
     header: &BlobHeader,
 ) -> Result<Vec<u8>, ImportError> {
-    let mut blob_bytes = vec![
-        0_u8;
-        usize::try_from(header.datasize).map_err(|_wert| {
-            ImportError::MalformedProtobuf {
-                context: "Blob-Länge überschreitet die Adressbreite",
-            }
-        })?
-    ];
+    let length =
+        usize::try_from(header.datasize).map_err(|_wert| ImportError::MalformedProtobuf {
+            context: "Blob-Länge überschreitet die Adressbreite",
+        })?;
+    // Auch der serialisierte Block ist im OSM-Referenzleser auf 32 MiB
+    // begrenzt. Die Prüfung muss vor der Speicherreservierung stattfinden.
+    if length > MAX_UNCOMPRESSED_BLOB_SIZE {
+        return Err(ImportError::MalformedProtobuf {
+            context: "Blob-Länge überschreitet die zulässige Höchstgröße",
+        });
+    }
+    let mut blob_bytes = vec![0_u8; length];
     reader.read_exact(&mut blob_bytes)?;
     decode_blob(&blob_bytes)
 }
@@ -136,6 +140,11 @@ fn decode_blob(bytes: &[u8]) -> Result<Vec<u8>, ImportError> {
     }
 
     if let Some(raw) = raw {
+        if raw.len() > MAX_UNCOMPRESSED_BLOB_SIZE {
+            return Err(ImportError::MalformedProtobuf {
+                context: "Unkomprimierter Blob überschreitet die zulässige Höchstgröße",
+            });
+        }
         return Ok(raw.to_vec());
     }
     if let Some(zlib_data) = zlib_data {
@@ -152,14 +161,26 @@ fn decode_blob(bytes: &[u8]) -> Result<Vec<u8>, ImportError> {
         let mut begrenzt =
             decoder
                 .by_ref()
-                .take(u64::try_from(MAX_UNCOMPRESSED_BLOB_SIZE).map_err(|_wert| {
-                    ImportError::NumericOverflow {
-                        context: "Höchstgröße für entpackte Blobs",
-                    }
-                })?);
+                .take(
+                    u64::try_from(MAX_UNCOMPRESSED_BLOB_SIZE + 1).map_err(|_wert| {
+                        ImportError::NumericOverflow {
+                            context: "Höchstgröße für entpackte Blobs",
+                        }
+                    })?,
+                );
         begrenzt
             .read_to_end(&mut entpackt)
             .map_err(|_fehler| ImportError::Decompression)?;
+        if entpackt.len() > MAX_UNCOMPRESSED_BLOB_SIZE {
+            return Err(ImportError::MalformedProtobuf {
+                context: "Entpackter Blob überschreitet die zulässige Höchstgröße",
+            });
+        }
+        if raw_size.is_some_and(|expected| expected != entpackt.len() as u64) {
+            return Err(ImportError::MalformedProtobuf {
+                context: "Entpackte Blob-Länge weicht von raw_size ab",
+            });
+        }
         return Ok(entpackt);
     }
     Err(ImportError::UnsupportedCompression)
@@ -279,5 +300,40 @@ mod tests {
     fn ein_abgeschnittener_block_meldet_sich() {
         let mut cursor = std::io::Cursor::new(vec![0, 0, 0, 10]);
         assert!(read_blob_header(&mut cursor).is_err());
+    }
+
+    #[test]
+    fn ein_uebergrosser_dateiblock_wird_vor_dem_lesen_abgewiesen() {
+        let header = super::BlobHeader {
+            block_type: "OSMData".into(),
+            datasize: u32::MAX,
+        };
+        let error = read_blob(&mut std::io::empty(), &header).unwrap_err();
+        assert!(matches!(
+            error,
+            super::ImportError::MalformedProtobuf { .. }
+        ));
+    }
+
+    #[test]
+    fn raw_size_muss_der_tatsaechlichen_laenge_entsprechen() {
+        let mut blob = encode_zlib_blob(b"test");
+        blob[1] = 3;
+        assert!(super::decode_blob(&blob).is_err());
+    }
+
+    #[test]
+    fn die_entpackgrenze_darf_keinen_erfolgreichen_teilblock_liefern() {
+        let mut blob = encode_zlib_blob(&vec![0; super::MAX_UNCOMPRESSED_BLOB_SIZE + 1]);
+        // Der manipulierte Block verkleinert raw_size, um die Vorprüfung
+        // zu umgehen. Auch dann muss die Entpackung vollständig scheitern.
+        write_tag(&mut blob, 2, 0);
+        write_varint(&mut blob, 0);
+        assert!(matches!(
+            super::decode_blob(&blob),
+            Err(super::ImportError::MalformedProtobuf {
+                context: "Entpackter Blob überschreitet die zulässige Höchstgröße",
+            })
+        ));
     }
 }

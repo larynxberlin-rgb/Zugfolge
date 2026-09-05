@@ -8,6 +8,7 @@ import {
 import {
   conflictLabels,
   conflictsForTrain,
+  distanceExtentMm,
   formatDurationS,
   formatTimeS,
   pathPoints,
@@ -109,5 +110,19 @@ describe("Bildfahrplan-Projektionsadapter", () => {
   it("liefert fuer eine leere Projektion einen stabilen Darstellungsbereich", () => {
     const empty = { ...projection(), stations: [], trains: [], conflicts: [] };
     expect(timeExtentS(empty)).toEqual([0, 3_600]);
+  });
+
+  it("skaliert große bestätigte Projektionen ohne JavaScript-Argumentüberlauf und trennt Revisionen", () => {
+    const large = {
+      ...projection(),
+      trains: [{ ...projection().trains[0]!, calls: Array.from({ length: 150_000 }, (_, timeS) => ({ stationId: "station-0", timeS })) }],
+      stations: Array.from({ length: 150_000 }, (_, distanceMm) => ({ id: `station-${distanceMm}`, name: "Station", distanceMm })),
+    };
+    expect(timeExtentS(large)).toEqual([-300, 150_300]);
+    expect(distanceExtentMm(large)).toEqual([0, 149_999]);
+    const next = { ...large, projectionRevision: 2, trains: [], stations: [], conflicts: [] };
+    expect(timeExtentS(next)).toEqual([0, 3_600]);
+    expect(distanceExtentMm(next)).toEqual([0, 1]);
+    expect(timeExtentS(large)).toEqual([-300, 150_300]);
   });
 });

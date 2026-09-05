@@ -270,6 +270,58 @@ describe("GameApiClient", () => {
     expect(JSON.parse(String(fetchImplementation.mock.calls[1]![1]!.body))).toEqual({ displayName: "Anna", acceptedWorldContractHash: "a".repeat(64) });
   });
 
+  it.each([200, 503])("begrenzt auch einen nach den HTTP-%i-Headern hängenden JSON-Body", async (status) => {
+    vi.useFakeTimers();
+    try {
+      const request = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => new Response(new ReadableStream({
+        start(controller) {
+          init?.signal?.addEventListener("abort", () => controller.error(new DOMException("aborted", "AbortError")), { once: true });
+        },
+      }), { status }));
+      const client = new GameApiClient("", "token", request);
+      const pending = expect(client.loadOwnOperators()).rejects.toMatchObject({ retryable: true, message: expect.stringMatching(/antwortet nicht/) });
+      await vi.advanceTimersByTimeAsync(15_000);
+      await pending;
+      expect(vi.getTimerCount()).toBe(0);
+    } finally { vi.useRealTimers(); }
+  });
+
+  it("erneuert abgelehnte Tokens auch für Tutorialstatus, Planung und das unveränderte Alternativkommando", async () => {
+    for (const operation of ["tutorial", "projection", "alternative"] as const) {
+      const token = vi.fn(async (forceRefresh = false) => forceRefresh ? "neu" : "alt");
+      const request = vi.fn()
+        .mockResolvedValueOnce(new Response(null, { status: 401 }))
+        .mockResolvedValueOnce(operation === "tutorial" ? new Response(JSON.stringify(tutorialResponse()))
+          : operation === "projection" ? envelope(1) : new Response(null, { status: 202 }));
+      const client = new GameApiClient("", token, request);
+      if (operation === "tutorial") await client.loadActiveTutorial("public-id");
+      else if (operation === "projection") await client.loadProjection("world-1");
+      else await client.queueAlternative("world-1", {
+        schemaVersion: "planning-alternative-command/v1", projectionRevision: 7,
+        alternativeId: "offer", idempotencyKey: "alternative:7:offer",
+      });
+      expect(token.mock.calls).toEqual([[false], [true]]);
+      expect(new Headers(request.mock.calls[1]?.[1]?.headers).get("authorization")).toBe("Bearer neu");
+      expect(request.mock.calls[1]?.[1]?.body).toBe(request.mock.calls[0]?.[1]?.body);
+    }
+  });
+
+  it("entfernt Abort-Listener nach jedem erfolgreich beendeten Polling-Intervall", async () => {
+    vi.useFakeTimers();
+    try {
+      const controller = new AbortController();
+      const add = vi.spyOn(controller.signal, "addEventListener");
+      const remove = vi.spyOn(controller.signal, "removeEventListener");
+      const request = vi.fn().mockResolvedValueOnce(envelope(1)).mockResolvedValueOnce(envelope(1)).mockResolvedValueOnce(envelope(2));
+      const client = new GameApiClient("", "token", request);
+      const pending = client.waitForNewerProjection("world-1", 1, { signal: controller.signal, pollIntervalMs: 10 });
+      await vi.advanceTimersByTimeAsync(20);
+      await expect(pending).resolves.toMatchObject({ projectionRevision: 2 });
+      expect(add).toHaveBeenCalledTimes(2);
+      expect(remove.mock.calls).toEqual(add.mock.calls.map(([name, listener]) => [name, listener]));
+    } finally { vi.restoreAllMocks(); vi.useRealTimers(); }
+  });
+
   it("loest einen abgebrochenen Welteintritt ueber den idempotenten Zugangsstatus auf", async () => {
     const account = { id: "account-1", worldId: "world", displayName: "Anna" };
     const fetchImplementation = vi.fn()

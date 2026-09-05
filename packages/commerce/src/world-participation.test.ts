@@ -34,14 +34,6 @@ function envelope(eventId: string, idempotencyKey = "payment-42:provision"): Odo
   };
 }
 
-beforeEach(async () => {
-  client = new PGlite();
-  db = drizzle(client, { schema });
-  await migrate(db, { migrationsFolder: MIGRATIONS_FOLDER });
-  await db.insert(worlds).values({ id: WORLD, name: "LHE", schedulePeriodWeeks: 4, epoch: NOW });
-}, 30_000);
-afterEach(async () => client.close());
-
 describe("Weltteilnahmevertrag", () => {
   it("enthaelt Welt-, Identitaets-, Bestell-, Zahlungs-, Zeit- und Idempotenzbindung", () => {
     expect(() => validateWorldParticipationChange(envelope("odoo-participation-1").command as never)).not.toThrow();
@@ -51,6 +43,16 @@ describe("Weltteilnahmevertrag", () => {
     const command = { ...envelope("odoo-participation-2").command, worldId: "../other-world" };
     expect(() => validateWorldParticipationChange(command as never)).toThrow(/world_id/);
   });
+});
+
+describe("Weltteilnahmeverarbeitung", () => {
+  beforeEach(async () => {
+    client = new PGlite();
+    db = drizzle(client, { schema });
+    await migrate(db, { migrationsFolder: MIGRATIONS_FOLDER });
+    await db.insert(worlds).values({ id: WORLD, name: "LHE", schedulePeriodWeeks: 4, epoch: NOW });
+  }, 30_000);
+  afterEach(async () => client.close());
 
   it("dedupliziert neue Event-IDs zusaetzlich ueber den fachlichen Payment-Key", async () => {
     const options = { tenantId: "zugfolge", keys: [KEY], authorizedActors: { "commerce-service": ["world.participation.change"] } } as const;

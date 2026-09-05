@@ -158,7 +158,7 @@ export class OperationsApi {
   versions(): Promise<readonly ProgramVersion[]> { return this.#request("/operating-programs"); }
   save(program: OperatingProgram): Promise<ProgramVersion> { return this.#request("/operating-programs", { method: "POST", body: JSON.stringify({ program }) }); }
   activate(version: number): Promise<unknown> { return this.#request(`/operating-programs/${version}/activate`, { method: "POST", body: "{}" }); }
-  operations(): Promise<OperationsProjection> { return this.#request("/operations"); }
+  operations(signal?: AbortSignal): Promise<OperationsProjection> { return this.#request("/operations", { signal }); }
   backtest(programVersion: number, sourceThrough: number): Promise<unknown> { return this.#request("/operating-programs/backtests", { method: "POST", body: JSON.stringify({ idempotencyKey: crypto.randomUUID(), programVersion, sourceAfter: 0, sourceThrough: Math.max(1, sourceThrough) }) }); }
   override(decisionId: string, action: string, reason: string): Promise<unknown> { return this.#request(`/operations/decisions/${encodeURIComponent(decisionId)}/override`, { method: "POST", body: JSON.stringify({ idempotencyKey: crypto.randomUUID(), action, reason, at: Math.floor(Date.now() / 1_000) }) }); }
   reports(): Promise<readonly DailyReportRow[]> { return this.#request("/operations/reports"); }
@@ -207,15 +207,18 @@ export class OperationsApi {
         }
         if (response.body === null) throw new Error("Live-Betrieb lieferte keinen Ereignisstrom.");
         const reader = response.body.pipeThrough(new TextDecoderStream()).getReader();
+        const abort = () => { void reader.cancel().catch(() => undefined); };
+        signal.addEventListener("abort", abort, { once: true });
+        if (signal.aborted) abort();
         let buffer = "";
         let receivedEvent = false;
         try {
           while (!signal.aborted) {
             const { done, value } = await reader.read();
-            if (done) break;
+            if (done || signal.aborted) break;
             buffer = `${buffer}${value}`.replace(/\r\n/gu, "\n");
             let boundary = buffer.indexOf("\n\n");
-            while (boundary >= 0) {
+            while (boundary >= 0 && !signal.aborted) {
               const frame = buffer.slice(0, boundary);
               buffer = buffer.slice(boundary + 2);
               const lines = frame.split("\n");
@@ -223,7 +226,8 @@ export class OperationsApi {
               const data = lines.find((line) => line.startsWith("data: "))?.slice(6);
               if (event === "reset") {
                 if (data !== "{}") throw new OperationsStreamProtocolError("Live-Betrieb lieferte einen ungueltigen Reset.");
-                const projection = await this.operations();
+                const projection = await this.operations(signal);
+                if (signal.aborted) return;
                 if (!Number.isSafeInteger(projection.throughSequence) || projection.throughSequence < 0) {
                   throw new OperationsStreamProtocolError("Live-Betrieb lieferte keine gueltige Snapshot-Sequenz.");
                 }
@@ -242,6 +246,8 @@ export class OperationsApi {
             }
           }
         } finally {
+          signal.removeEventListener("abort", abort);
+          await reader.cancel().catch(() => undefined);
           reader.releaseLock();
         }
         reconnectAttempts = receivedEvent ? 1 : reconnectAttempts + 1;

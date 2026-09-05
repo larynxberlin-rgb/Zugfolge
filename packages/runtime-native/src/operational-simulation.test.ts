@@ -653,6 +653,37 @@ describe("operative native v2-Grenze", () => {
       .liveMap.activeDisruptions).toEqual(liveMap.activeDisruptions);
   });
 
+  it("akzeptiert native Kantenwechsel nur als verbundenes Austritts- und Eintrittspaar", () => {
+    const headGeometry = { routeMm: 0, edgeId: "edge:1", edgeOffsetMm: 0, latitudeE7: 510_000_000, longitudeE7: 120_000_000, bearingMilliDegrees: null };
+    const exit = { ...headGeometry, routeMm: 1_000, edgeOffsetMm: 1_000, latitudeE7: 510_001_000 };
+    const entry = { ...exit, edgeId: "edge:2", edgeOffsetMm: 0 };
+    const initialize = (motionGeometry: readonly typeof headGeometry[]) => {
+      const liveMap = {
+        ...projection("live-map"),
+        trains: [{
+          trainId: "train:1", trainNumber: "RB 1", operatorId: "operator:1", movementKind: "train",
+          motionState: "moving", direction: "along", routeVersionId: "route:v1", formationVersionId: "formation:v1",
+          headRouteMm: 0, tailRouteMm: -20_000, speedMmps: 1_000, occupiedIntervals: [], occupiedBlocks: [],
+          authorityEndRouteMm: 1_000, headGeometry, tailGeometry: null, waitingReason: null, motionGeometry,
+          motionSegment: { startedAtMs: 0, validUntilMs: 1_000, startRouteMm: 0, startSpeedMmps: 1_000,
+            accelerationMmps2: 0, routeVersionId: "route:v1", authorityEndRouteMm: 1_000, segmentEndRouteMm: 1_000 },
+        }],
+      };
+      return operationalSimulationRuntimeFromAddon({
+        initializeOperationalSimulation: () => JSON.stringify({
+          schemaVersion: OPERATIONAL_SIMULATION_INITIALIZED_SCHEMA, state: state(),
+          initializationHash: INITIALIZATION_HASH, stateHash: HASH_A,
+          liveMap, rzue: { ...liveMap, kind: "rzue" }, events: [], validationReceipt: validationReceipt(),
+        }),
+        restoreOperationalSimulation: vi.fn(), applyOperationalSimulationCommand: vi.fn(),
+      }).initialize(initialization);
+    };
+    expect(initialize([headGeometry, exit, entry]).liveMap.trains[0]?.motionGeometry).toEqual([headGeometry, exit, entry]);
+    expect(() => initialize([headGeometry, entry])).toThrow(/gleisgebunden/);
+    expect(() => initialize([headGeometry, exit, { ...entry, latitudeE7: 1 }])).toThrow(/gleisgebunden/);
+    expect(() => initialize([headGeometry, headGeometry, exit])).toThrow(/gleisgebunden/);
+  });
+
   it("verwirft eine untypisierte oder unvollstaendige aktive Stoerungswirkung", () => {
     const malformed = {
       ...projection("live-map"),

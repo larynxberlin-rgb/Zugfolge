@@ -11,6 +11,61 @@ import { LIVEMAP_READ_MODEL_USER_VERSION } from "../tiles/livemap-read-model.mjs
 const releaseId = "infra-deutschland-2026.2";
 const publicBasePath = `/artifacts/maps/${releaseId}`;
 
+test("fehlender SPA-Einstieg und ungueltige Request-URL beenden den Server nicht", { timeout: 5_000 }, async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), "zugfolge-empty-static-"));
+  const server = createStaticServer({ rootDirectory: directory, environment: {} });
+  server.listen(0, "127.0.0.1");
+  await once(server, "listening");
+  t.after(async () => {
+    server.closeAllConnections();
+    await new Promise((resolve) => server.close(resolve));
+    await rm(directory, { recursive: true, force: true });
+  });
+  const origin = `http://127.0.0.1:${server.address().port}`;
+  assert.equal((await fetch(`${origin}/unbekannte-route`)).status, 404);
+  const invalidStatus = await new Promise((resolve, reject) => {
+    const request = httpRequest({ hostname: "127.0.0.1", port: server.address().port, path: "http://[" }, (response) => {
+      response.resume();
+      response.once("end", () => resolve(response.statusCode));
+    });
+    request.once("error", reject);
+    request.end();
+  });
+  assert.equal(invalidStatus, 400);
+  assert.equal((await fetch(`${origin}/runtime-config.js`)).status, 200);
+});
+
+test("API-Proxy beendet abgebrochene Streams auf beiden Seiten", { timeout: 5_000 }, async (t) => {
+  let finishUpstream;
+  const upstreamClosed = new Promise((resolve) => { finishUpstream = resolve; });
+  const upstream = createServer((request, response) => {
+    response.writeHead(200, { "content-type": "text/plain" });
+    response.write("angefangen");
+    if (request.url === "/upstream-abort") setImmediate(() => response.destroy());
+    else response.once("close", finishUpstream);
+  });
+  upstream.listen(0, "127.0.0.1");
+  await once(upstream, "listening");
+  const proxy = createStaticServer({ environment: { GAME_API_INTERNAL_URL: `http://127.0.0.1:${upstream.address().port}` } });
+  proxy.listen(0, "127.0.0.1");
+  await once(proxy, "listening");
+  t.after(async () => {
+    for (const server of [proxy, upstream]) server.closeAllConnections();
+    await Promise.all([proxy, upstream].map((server) => new Promise((resolve) => server.close(resolve))));
+  });
+  const origin = `http://127.0.0.1:${proxy.address().port}`;
+  await assert.rejects(async () => (await fetch(`${origin}/api/upstream-abort`)).text());
+  await new Promise((resolve, reject) => {
+    const request = httpRequest(`${origin}/api/client-abort`, (response) => {
+      response.once("data", () => { request.destroy(); resolve(); });
+    });
+    request.once("error", reject);
+    request.end();
+  });
+  await upstreamClosed;
+  assert.equal((await fetch(`${origin}/runtime-config.js`)).status, 200);
+});
+
 test("API-Proxy bewahrt kanonischen und fremden Host fuer die autoritative Hostgrenze", async (t) => {
   const upstream = createServer((request, response) => {
     response.writeHead(request.headers.host === "world.zugfolge.de" ? 200 : 421, { "content-type": "application/json" });

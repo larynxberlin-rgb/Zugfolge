@@ -1046,6 +1046,9 @@ fn mehrwoechige_baustelle_vergibt_eine_umleitung_und_erklaert_den_ersatz_end_to_
     let first = DisruptionRuntime::replay(policy(7), at(21 * 86_400), &commands).unwrap();
     let second = DisruptionRuntime::replay(policy(7), at(21 * 86_400), &commands).unwrap();
     assert_eq!(first.events_after(0).len(), 3);
+    assert_eq!(first.events_after(1), first.events_after(0)[1..]);
+    assert!(first.events_after(3).is_empty());
+    assert!(first.events_after(u64::MAX).is_empty());
     assert_eq!(first.state_hash(), second.state_hash());
     assert!(
         first

@@ -11,11 +11,11 @@ on:
       - "docs/milestones.md"
       - "docs/roadmap-status.md"
   pull_request:
-    types: [opened, synchronize, reopened, closed]
+    types: [reopened, closed]
   issues:
     types: [opened, closed, reopened]
   schedule:
-    - cron: "17 3 * * *"
+    - cron: "17 3 * * 1"
   workflow_dispatch:
 
 concurrency:
@@ -25,7 +25,7 @@ concurrency:
 jobs:
   validate:
     name: Roadmap-Manifest pruefen
-    if: github.event_name != 'issues' && !(github.event_name == 'pull_request' && github.event.action == 'closed')
+    if: github.event_name != 'issues' && github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:

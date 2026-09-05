@@ -58,11 +58,14 @@ import {
 } from "./panels.js";
 import {
   appendRenderSample,
+  latestTrainRenderAt,
+  nextTrainFreezeAt,
   LivemapConnection,
   operatorLabel,
   renderTrains,
   type LiveState,
   type PublicExternalTrain,
+  type PublicTrain,
   type RenderSamples,
 } from "./protocol.js";
 import { livemapNavigationDestinations, mailboxDecisionDestination, operationsCenterDestination } from "./navigation.js";
@@ -197,10 +200,13 @@ let connection: LivemapConnection | undefined;
 let mapConfig: LivemapConfigV2 | undefined;
 let renderSamples: RenderSamples | undefined;
 let renderSampleStartedAtMs = 0;
+let latestAuthorizedRenderAt = 0;
+let lastRenderedTrains: readonly PublicTrain[] = [];
 let selected: MapSelection | undefined;
 let previousSelected: MapSelection | undefined;
 let appliedObjectStates = new Map<string, PublicObjectState>();
 let renderFrame: number | undefined;
+let renderWakeup: ReturnType<typeof setTimeout> | undefined;
 let liveRenderingFrozen = false;
 let currentLiveState: LiveState | undefined;
 let rzueExpert = false;
@@ -564,9 +570,12 @@ function renderObjectList(state: LiveState): void {
 }
 
 function scheduleLiveRender(state: LiveState): void {
+  if (renderWakeup !== undefined) clearTimeout(renderWakeup);
+  renderWakeup = undefined;
   liveRenderingFrozen = false;
   currentLiveState = state;
   renderSamples = appendRenderSample(renderSamples, state);
+  latestAuthorizedRenderAt = latestTrainRenderAt(state);
   renderSampleStartedAtMs = performance.now();
   sequenceLabel.textContent = `Sequenz ${state.sequence}`;
   sequenceLabel.classList.remove("connection-error");
@@ -585,6 +594,12 @@ function freezeLiveRender(): void {
   liveRenderingFrozen = true;
   if (renderFrame !== undefined) cancelAnimationFrame(renderFrame);
   renderFrame = undefined;
+  if (renderWakeup !== undefined) clearTimeout(renderWakeup);
+  renderWakeup = undefined;
+  const source = map?.getSource(TRAIN_SOURCE_ID) as GeoJSONSource | undefined;
+  if (mapConfig !== undefined) {
+    source?.setData(trainFeatureCollection(lastRenderedTrains, mapConfig.infrastructureReleaseId, true) as never);
+  }
 }
 
 function renderLiveMapFrame(nowMs: number): void {
@@ -592,23 +607,29 @@ function renderLiveMapFrame(nowMs: number): void {
   const samples = renderSamples;
   const currentMap = map;
   const currentConfig = mapConfig;
-  if (liveRenderingFrozen || samples === undefined || currentMap === undefined || currentConfig === undefined || !currentMap.isStyleLoaded()) return;
+  if (liveRenderingFrozen || samples === undefined || currentMap === undefined || currentConfig === undefined) return;
+  // Die Zugquelle existiert vor dem Streamstart. Ausstehende Basiskacheln
+  // oder GeoJSON-Worker dürfen weder Animation noch Freeze-Termin verschlucken.
+  const source = currentMap.getSource(TRAIN_SOURCE_ID) as GeoJSONSource | undefined;
+  if (source === undefined) return;
   const elapsedS = Math.max(0, (nowMs - renderSampleStartedAtMs) / 1_000);
   const reduceMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
-  const latestAuthorizedAt = Math.max(
-    samples.current.at,
-    ...[...samples.current.operationalRegions.values()].map((frame) => frame.staleAfterMs / 1_000),
-  );
-  const renderAt = reduceMotion
-    ? samples.current.at
-    : Math.min(latestAuthorizedAt, samples.current.at + elapsedS);
-  const source = currentMap.getSource(TRAIN_SOURCE_ID) as GeoJSONSource | undefined;
-  source?.setData(trainFeatureCollection(
-    renderTrains(samples, renderAt),
+  const renderAt = samples.current.at + elapsedS;
+  lastRenderedTrains = renderTrains(samples, reduceMotion ? samples.current.at : renderAt, renderAt);
+  source.setData(trainFeatureCollection(
+    lastRenderedTrains,
     currentConfig.infrastructureReleaseId,
   ) as never);
-  if (!liveRenderingFrozen && !reduceMotion && renderAt < latestAuthorizedAt) {
+  if (!liveRenderingFrozen && !reduceMotion && renderAt < latestAuthorizedRenderAt) {
     renderFrame = requestAnimationFrame(renderLiveMapFrame);
+  } else {
+    const wakeAt = nextTrainFreezeAt(samples.current, renderAt);
+    if (wakeAt !== undefined) {
+      renderWakeup = setTimeout(() => {
+        renderWakeup = undefined;
+        if (!liveRenderingFrozen && renderFrame === undefined) renderFrame = requestAnimationFrame(renderLiveMapFrame);
+      }, Math.ceil((wakeAt - renderAt) * 1_000));
+    }
   }
 }
 

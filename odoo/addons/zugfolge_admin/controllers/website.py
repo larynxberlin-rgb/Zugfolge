@@ -4,6 +4,7 @@ import secrets
 import threading
 import time
 import uuid
+from collections import OrderedDict
 from datetime import datetime
 
 from odoo import _, http
@@ -16,25 +17,26 @@ from ..services import game_world_origin
 
 _BUCKET_LOCK = threading.Lock()
 _BUCKET_SALT = secrets.token_bytes(32)
-_BUCKETS = {}
+_BUCKETS = OrderedDict()
 _RATE_WINDOW_SECONDS = 60
 _RATE_LIMIT = 30
+_MAX_RATE_BUCKETS = 4096
 
 
 def _rate_allowed(remote_address, now=None):
-    now = time.monotonic() if now is None else now
     key = hashlib.sha256(_BUCKET_SALT + (remote_address or "unknown").encode()).hexdigest()
     with _BUCKET_LOCK:
+        now = time.monotonic() if now is None else now
+        # Neue Zeitfenster stehen hinten; abgelaufene Eintraege werden einmal
+        # entfernt statt bei jeder Anfrage den gesamten Bestand zu durchsuchen.
+        while _BUCKETS and now - next(iter(_BUCKETS.values()))[0] >= _RATE_WINDOW_SECONDS:
+            _BUCKETS.popitem(last=False)
+        if key not in _BUCKETS and len(_BUCKETS) >= _MAX_RATE_BUCKETS:
+            return False
         start, count = _BUCKETS.get(key, (now, 0))
-        if now - start >= _RATE_WINDOW_SECONDS:
-            start, count = now, 0
         if count >= _RATE_LIMIT:
             return False
         _BUCKETS[key] = (start, count + 1)
-        if len(_BUCKETS) > 4096:
-            expired = [item for item, value in _BUCKETS.items() if now - value[0] >= _RATE_WINDOW_SECONDS]
-            for item in expired[:2048]:
-                _BUCKETS.pop(item, None)
         return True
 
 

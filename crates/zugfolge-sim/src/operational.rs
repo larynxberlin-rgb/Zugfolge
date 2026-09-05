@@ -3813,23 +3813,32 @@ impl OperationalWorld {
         if !self.prepared_handovers.is_empty() {
             return Err(OperationalError::InvalidHandover);
         }
-        let mut candidates = requests.to_vec();
+        let mut candidates = requests.iter().collect::<Vec<_>>();
         candidates.sort_by(|left, right| right.key(self.now_ms).cmp(&left.key(self.now_ms)));
         for candidate in candidates {
-            match self.lock_route(&candidate.train_id, &candidate.interlocking_route_id) {
-                Ok(_) => {
-                    self.record(
-                        "dispatcher-decision",
-                        &candidate.train_id,
-                        format!("route={};lexicographic=v1", candidate.interlocking_route_id),
-                    )?;
-                    return Ok(Some(candidate.train_id));
-                }
-                Err(OperationalError::UnsafeRoute(_)) => {}
-                Err(error) => return Err(error),
+            if self.dispatch_candidate(candidate)? {
+                return Ok(Some(candidate.train_id.clone()));
             }
         }
         Ok(None)
+    }
+
+    fn dispatch_candidate(
+        &mut self,
+        candidate: &DispatchRequest,
+    ) -> Result<bool, OperationalError> {
+        match self.lock_route(&candidate.train_id, &candidate.interlocking_route_id) {
+            Ok(_) => {
+                self.record(
+                    "dispatcher-decision",
+                    &candidate.train_id,
+                    format!("route={};lexicographic=v1", candidate.interlocking_route_id),
+                )?;
+                Ok(true)
+            }
+            Err(OperationalError::UnsafeRoute(_)) => Ok(false),
+            Err(error) => Err(error),
+        }
     }
 
     /// Uebergibt Fahrten an den integrierten virtuellen Fahrdienstleiter. Nicht
@@ -3842,7 +3851,16 @@ impl OperationalWorld {
         if !self.prepared_handovers.is_empty() {
             return Err(OperationalError::InvalidHandover);
         }
+        let mut submitted = BTreeMap::new();
         for request in requests {
+            if submitted
+                .insert(&request.train_id, request)
+                .is_some_and(|existing| existing != request)
+            {
+                return Err(OperationalError::InvalidDispatchRequest(
+                    request.train_id.clone(),
+                ));
+            }
             if request.train_id.is_empty()
                 || request.interlocking_route_id.is_empty()
                 || request.waiting_since_ms > self.now_ms
@@ -3915,85 +3933,106 @@ impl OperationalWorld {
     }
 
     fn dispatch_pending(&mut self) -> Result<Vec<String>, OperationalError> {
+        let requests = self.pending_dispatch_requests.values().cloned().collect();
+        self.dispatch_pending_requests(requests)
+    }
+
+    fn dispatch_waiting_for_resources(
+        &mut self,
+        resources: &BTreeSet<String>,
+    ) -> Result<Vec<String>, OperationalError> {
+        let train_ids = resources
+            .iter()
+            .filter_map(|resource| self.waiting_by_resource.get(resource))
+            .flat_map(|waiting| waiting.iter().cloned())
+            .collect::<BTreeSet<_>>();
+        let requests = train_ids
+            .iter()
+            .filter_map(|train_id| self.pending_dispatch_requests.get(train_id).cloned())
+            .collect();
+        self.dispatch_pending_requests(requests)
+    }
+
+    fn dispatch_pending_requests(
+        &mut self,
+        requests: Vec<DispatchRequest>,
+    ) -> Result<Vec<String>, OperationalError> {
         let mut dispatched = Vec::new();
-        loop {
-            let requests: Vec<DispatchRequest> = self
-                .pending_dispatch_requests
-                .values()
-                .filter(|request| request.waiting_since_ms <= self.now_ms)
-                .cloned()
-                .collect();
-            let mut candidates = Vec::new();
-            let mut completed = Vec::new();
-            let mut missing_route = Vec::new();
-            for mut request in requests {
-                let train = self
-                    .trains
-                    .get(&request.train_id)
-                    .ok_or_else(|| OperationalError::UnknownTrain(request.train_id.clone()))?;
-                let route = self
-                    .infrastructure()?
-                    .route_version(&train.route_version_id)?
-                    .ok_or_else(|| {
-                        OperationalError::UnknownRoute(train.route_version_id.clone())
-                    })?;
-                if train.head_route_mm == route.length_mm() {
-                    completed.push(train.id.clone());
-                    continue;
-                }
-                if train.speed_mmps != 0
-                    || !matches!(train.motion_state, MotionState::Standing)
-                    || train.motion_segment.is_some()
-                    || train.authority.is_some()
-                {
-                    continue;
-                }
-                let template = if train.movement_kind == MovementKind::Train {
-                    self.infrastructure()?
-                        .train_interlocking_route(&route.template_id, train.head_route_mm)?
-                } else {
-                    self.infrastructure()?
-                        .interlocking_route(&request.interlocking_route_id)?
-                        .filter(|template| template.authority_start_route_mm == train.head_route_mm)
-                };
-                let Some(template) = template else {
-                    missing_route.push(train.id.clone());
-                    continue;
-                };
-                request.interlocking_route_id = template.id;
-                candidates.push(request);
+        let mut candidates = Vec::new();
+        let mut completed = Vec::new();
+        let mut missing_route = Vec::new();
+        for mut request in requests {
+            if request.waiting_since_ms > self.now_ms {
+                continue;
             }
-            for train_id in completed {
-                self.pending_dispatch_requests.remove(&train_id);
-                self.waiting_by_resource.retain(|_, waiting| {
-                    waiting.remove(&train_id);
-                    !waiting.is_empty()
-                });
-                if let Some(train) = self.trains.get_mut(&train_id)
-                    && matches!(
-                        train.waiting_reason.as_deref(),
-                        Some("waiting-for-route-lock" | "missing-route-authority")
-                    )
-                {
-                    train.waiting_reason = None;
-                }
+            let train = self
+                .trains
+                .get(&request.train_id)
+                .ok_or_else(|| OperationalError::UnknownTrain(request.train_id.clone()))?;
+            let route = self
+                .infrastructure()?
+                .route_version(&train.route_version_id)?
+                .ok_or_else(|| OperationalError::UnknownRoute(train.route_version_id.clone()))?;
+            if train.head_route_mm == route.length_mm() {
+                completed.push(train.id.clone());
+                continue;
             }
-            for train_id in missing_route {
-                self.waiting_by_resource.retain(|_, waiting| {
-                    waiting.remove(&train_id);
-                    !waiting.is_empty()
-                });
-                self.trains
-                    .get_mut(&train_id)
-                    .expect("pending train exists")
-                    .waiting_reason = Some("missing-route-authority".to_owned());
+            if train.speed_mmps != 0
+                || !matches!(train.motion_state, MotionState::Standing)
+                || train.motion_segment.is_some()
+                || train.authority.is_some()
+            {
+                continue;
             }
-            if candidates.is_empty() {
-                break;
-            }
-            let Some(train_id) = self.dispatch(&candidates)? else {
-                break;
+            let template = if train.movement_kind == MovementKind::Train {
+                self.infrastructure()?
+                    .train_interlocking_route(&route.template_id, train.head_route_mm)?
+            } else {
+                self.infrastructure()?
+                    .interlocking_route(&request.interlocking_route_id)?
+                    .filter(|template| template.authority_start_route_mm == train.head_route_mm)
             };
+            let Some(template) = template else {
+                missing_route.push(train.id.clone());
+                continue;
+            };
+            request.interlocking_route_id = template.id;
+            candidates.push(request);
+        }
+        for train_id in completed {
+            self.pending_dispatch_requests.remove(&train_id);
+            self.waiting_by_resource.retain(|_, waiting| {
+                waiting.remove(&train_id);
+                !waiting.is_empty()
+            });
+            if let Some(train) = self.trains.get_mut(&train_id)
+                && matches!(
+                    train.waiting_reason.as_deref(),
+                    Some("waiting-for-route-lock" | "missing-route-authority")
+                )
+            {
+                train.waiting_reason = None;
+            }
+        }
+        for train_id in missing_route {
+            self.waiting_by_resource.retain(|_, waiting| {
+                waiting.remove(&train_id);
+                !waiting.is_empty()
+            });
+            self.trains
+                .get_mut(&train_id)
+                .expect("pending train exists")
+                .waiting_reason = Some("missing-route-authority".to_owned());
+        }
+        // Zuteilungen fuegen nur Locks hinzu. Ein zuvor unsicherer Kandidat
+        // kann daher innerhalb dieses Batches nicht sicher werden; jede
+        // Anfrage wird einmal in der unveraenderten Prioritaetsfolge geprueft.
+        candidates.sort_by(|left, right| right.key(self.now_ms).cmp(&left.key(self.now_ms)));
+        for candidate in candidates {
+            if !self.dispatch_candidate(&candidate)? {
+                continue;
+            }
+            let train_id = candidate.train_id;
             if self.trains[&train_id].movement_kind == MovementKind::Train {
                 self.extend_available_train_authority(&train_id)?;
             }
@@ -4368,7 +4407,7 @@ impl OperationalWorld {
             self.resource_lifecycle
                 .insert(block.clone(), ResourceLifecycle::OccupiedByFormation);
         }
-        self.release_routes_after_tail(train_id)?;
+        let mut released_resources = self.release_routes_after_tail(train_id)?;
         if self
             .trains
             .get(train_id)
@@ -4390,6 +4429,7 @@ impl OperationalWorld {
             .cloned()
             .collect::<BTreeSet<_>>();
         self.wake_movement_continuations_for_resources(&cleared_blocks)?;
+        released_resources.extend(cleared_blocks);
         self.record(
             "motion-segment-ended",
             train_id,
@@ -4407,6 +4447,7 @@ impl OperationalWorld {
         };
         if authority_remaining {
             self.plan_motion(train_id)?;
+            self.dispatch_waiting_for_resources(&released_resources)?;
         } else if residual_speed > 0 {
             self.safe_stop(train_id, "authority-ended-with-residual-speed")?;
         } else {
@@ -4417,7 +4458,10 @@ impl OperationalWorld {
         Ok(())
     }
 
-    fn release_routes_after_tail(&mut self, train_id: &str) -> Result<(), OperationalError> {
+    fn release_routes_after_tail(
+        &mut self,
+        train_id: &str,
+    ) -> Result<BTreeSet<String>, OperationalError> {
         let (tail, terminal_route_length, terminal_complete) = {
             let train = self
                 .trains
@@ -4502,7 +4546,7 @@ impl OperationalWorld {
             self.refresh_resource_lifecycle(&released_resources);
         }
         self.wake_movement_continuations_for_resources(&released_resources)?;
-        Ok(())
+        Ok(released_resources)
     }
 
     fn refresh_resource_lifecycle(&mut self, resources: &BTreeSet<String>) {
@@ -6077,6 +6121,22 @@ fn route_geometry_for(
         let start = start_route_mm.max(leg.route_start_mm);
         let end = end_route_mm.min(leg.route_end_mm());
         if start >= end {
+            // Am Kantenende gehoert die exakte Spitze bereits zur folgenden
+            // Kante. Beide Stuetzpunkte tragen denselben Laufwegmillimeter,
+            // aber jeweils ihren eigenen Kantenoffset und Richtungswinkel.
+            if start_route_mm < end_route_mm && end_route_mm == leg.route_start_mm {
+                let mut point =
+                    edge_geometry_position(infra, &leg.edge_id, leg.edge_entry_mm, leg.direction)?;
+                point.route_mm = end_route_mm;
+                if result
+                    .last()
+                    .is_none_or(|previous: &OperationalRouteGeometryPoint| {
+                        previous.route_mm != point.route_mm || previous.edge_id != point.edge_id
+                    })
+                {
+                    result.push(point);
+                }
+            }
             continue;
         }
         let edge_offset = |route_mm: i64| match leg.direction {
@@ -6106,15 +6166,13 @@ fn route_geometry_for(
         }
         candidates.sort_unstable();
         for (route_mm, offset) in candidates {
-            if result
-                .last()
-                .is_some_and(|point: &OperationalRouteGeometryPoint| point.route_mm == route_mm)
-            {
-                continue;
-            }
             let mut point = edge_geometry_position(infra, &leg.edge_id, offset, leg.direction)?;
             point.route_mm = route_mm;
-            result.push(point);
+            if result.last().is_none_or(|previous| {
+                previous.route_mm != point.route_mm || previous.edge_id != point.edge_id
+            }) {
+                result.push(point);
+            }
         }
     }
     Ok(result)

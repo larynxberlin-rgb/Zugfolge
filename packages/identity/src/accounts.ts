@@ -8,8 +8,8 @@
  * Weltisolation aus M2.2.
  */
 
-import { accountRoles, accounts, worldAccesses } from "@zugfolge/db";
-import { and, eq, isNull } from "drizzle-orm";
+import { accountRoles, accounts, worldAccesses, worlds } from "@zugfolge/db";
+import { and, eq, isNull, sql } from "drizzle-orm";
 import type { PgDatabase, PgQueryResultHKT } from "drizzle-orm/pg-core";
 
 import type { Role } from "./roles.js";
@@ -312,23 +312,43 @@ export async function grantRole(
     readonly actingKeycloakSubject: string;
   },
 ): Promise<AccountRecord> {
-  await requireWorldAdmin(db, input.worldId, input.actingKeycloakSubject, input.targetAccountId);
+  return db.transaction(async (tx) => {
+    // Bootstrap-Pruefung und Vergabe bilden eine einzige Entscheidung je Welt.
+    await tx.execute(sql`select ${worlds.id} from ${worlds} where ${worlds.id} = ${input.worldId} for update`);
+    await requireWorldAdmin(tx, input.worldId, input.actingKeycloakSubject, input.targetAccountId);
 
-  const [target] = await db
-    .select()
-    .from(accounts)
-    .where(and(eq(accounts.id, input.targetAccountId), eq(accounts.worldId, input.worldId)))
-    .limit(1);
-  if (target === undefined) {
-    throw new AccountNotFoundError(input.targetAccountId, input.worldId);
+    const [target] = await tx
+      .select()
+      .from(accounts)
+      .where(and(eq(accounts.id, input.targetAccountId), eq(accounts.worldId, input.worldId)))
+      .limit(1);
+    if (target === undefined) {
+      throw new AccountNotFoundError(input.targetAccountId, input.worldId);
+    }
+
+    await tx
+      .insert(accountRoles)
+      .values({ worldId: input.worldId, accountId: target.id, role: input.role })
+      .onConflictDoNothing();
+
+    return { ...target, roles: await rolesOf(tx, input.worldId, target.id) };
+  });
+}
+
+function collectAccountRoles<T extends { readonly id: string; readonly worldId: string }>(
+  rows: readonly { readonly account: T; readonly role: string | null }[],
+): (T & { roles: Role[] })[] {
+  const grouped = new Map<string, T & { roles: Role[] }>();
+  for (const { account, role } of rows) {
+    const key = `${account.worldId}:${account.id}`;
+    let result = grouped.get(key);
+    if (result === undefined) {
+      result = { ...account, roles: [] };
+      grouped.set(key, result);
+    }
+    if (role !== null) result.roles.push(role as Role);
   }
-
-  await db
-    .insert(accountRoles)
-    .values({ worldId: input.worldId, accountId: target.id, role: input.role })
-    .onConflictDoNothing();
-
-  return { ...target, roles: await rolesOf(db, input.worldId, target.id) };
+  return [...grouped.values()];
 }
 
 /**
@@ -347,11 +367,14 @@ export async function listAccountsInWorld(
 
   const rows = await db
     .select({
-      id: accounts.id,
-      worldId: accounts.worldId,
-      displayName: accounts.displayName,
-      createdAt: accounts.createdAt,
-      erasedAt: accounts.erasedAt,
+      account: {
+        id: accounts.id,
+        worldId: accounts.worldId,
+        displayName: accounts.displayName,
+        createdAt: accounts.createdAt,
+        erasedAt: accounts.erasedAt,
+      },
+      role: accountRoles.role,
     })
     .from(accounts)
     .innerJoin(
@@ -362,8 +385,9 @@ export async function listAccountsInWorld(
         eq(worldAccesses.status, "active"),
       ),
     )
+    .leftJoin(accountRoles, and(eq(accountRoles.worldId, accounts.worldId), eq(accountRoles.accountId, accounts.id)))
     .where(eq(accounts.worldId, input.worldId));
-  return Promise.all(rows.map(async (row) => ({ ...row, roles: await rolesOf(db, input.worldId, row.id) })));
+  return collectAccountRoles(rows);
 }
 
 /** Alle Weltkonten eines Keycloak-Subjects, weltübergreifend — nur die eigenen. */
@@ -372,7 +396,7 @@ export async function listAccountsForSubject(
   keycloakSubject: string,
 ): Promise<readonly AccountRecord[]> {
   const rows = await db
-    .select({ account: accounts })
+    .select({ account: accounts, role: accountRoles.role })
     .from(accounts)
     .innerJoin(
       worldAccesses,
@@ -382,11 +406,7 @@ export async function listAccountsForSubject(
         eq(worldAccesses.status, "active"),
       ),
     )
+    .leftJoin(accountRoles, and(eq(accountRoles.worldId, accounts.worldId), eq(accountRoles.accountId, accounts.id)))
     .where(eq(accounts.keycloakSubject, keycloakSubject));
-  return Promise.all(
-    rows.map(async ({ account }) => ({
-      ...account,
-      roles: await rolesOf(db, account.worldId, account.id),
-    })),
-  );
+  return collectAccountRoles(rows);
 }

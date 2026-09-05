@@ -1,6 +1,6 @@
 /** Ausführung der Regeln und Aufbereitung der Befunde. */
 
-import { matchesAny } from "./glob.js";
+import { compileGlobs } from "./glob.js";
 import type { Finding, GuardConfig, Rule, SourceFile } from "./types.js";
 
 /**
@@ -20,7 +20,8 @@ export function filesForRule(
   if (pfade.length === 0) {
     return [];
   }
-  return files.filter((datei) => matchesAny(datei.path, pfade));
+  const trifftPfad = compileGlobs(pfade);
+  return files.filter((datei) => trifftPfad(datei.path));
 }
 
 /** Führt alle übergebenen Regeln aus. */

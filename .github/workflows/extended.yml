@@ -1,0 +1,281 @@
+name: Erweiterte Tests (manuell)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: extended-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  tools:
+    name: Werkzeuge, Datenimporte und Betriebsnachweise
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+
+      # Der Referenzkorpus delegiert seine Release-Qualifikation an den
+      # gepinnten Rust-Compiler. Vor dem parallelen Node-Testlauf muss diese
+      # Toolchain genau einmal vollstaendig installiert sein.
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.94.1
+          components: rustfmt, clippy
+
+      - uses: Swatinem/rust-cache@v2.9.2
+        with:
+          shared-key: typescript-reference-corpus
+
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 11
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # Die Tests importieren Workspace-Pakete über deren dist/-Ausgabe.
+      - name: Bau
+        run: pnpm -r --stream build
+
+      - name: Alpha-Compose auflösen
+        env:
+          MAP_RELEASE_START_PREFLIGHT_MODE: active-candidate
+          MAP_RELEASE_ID: infra-deutschland-2026.4
+          MAP_RELEASE_HOST_DIR: releases/infra-deutschland-2026.4
+          MAP_BASEMAP_STYLE_URL: /artifacts/maps/infra-deutschland-2026.4/style.json
+          MAP_GERMANY_PMTILES_URL: /artifacts/maps/infra-deutschland-2026.4/infra-deutschland-2026.4.pmtiles
+        run: |
+          cp .env.example .env
+          trap 'rm -f .env' EXIT
+          docker compose -f compose.alpha.yml config --quiet
+
+      - name: Erweiterte Werkzeugsuite
+        run: pnpm test:tools
+
+  m7-acceptance:
+    name: M7 48h-Offlineszenario
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2.9.2
+        with:
+          shared-key: m7-acceptance
+
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 11
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: M7-Plattform und Abnahmeharnisch bauen
+        run: pnpm --filter @zugfolge/m7-e2e... build
+
+      - name: Gespeichertes Betriebsprogramm 48 Stunden offline ausführen
+        run: pnpm --filter @zugfolge/m7-e2e test:e2e
+
+  load:
+    name: Lastziel M4.11
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2.9.2
+      - name: 180.000 Zugläufe und mindestens 2 Mio. Ereignisse
+        run: cargo run --release --locked -p zugfolge-load
+
+  production-image:
+    name: Produktionsimage (Herkunft, URI-Abhaengigkeiten, NAPI)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - name: Vollstaendiges kanonisches Image aus dem CI-Commit bauen
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker build --file ops/alpha/container/Dockerfile \
+            --build-arg "ZUGFOLGE_SOURCE_SHA=${GITHUB_SHA}" \
+            --build-arg ZUGFOLGE_DEPLOY_PATCH_SHA=none \
+            --tag "zugfolge-api-ci:${GITHUB_SHA}" .
+      - name: Herkunftslabels und finalen Runtime-Benutzer pruefen
+        shell: bash
+        run: |
+          set -euo pipefail
+          image="zugfolge-api-ci:${GITHUB_SHA}"
+          test "$(docker image inspect --format '{{ index .Config.Labels "org.opencontainers.image.source" }}' "$image")" = 'https://github.com/larynxberlin-rgb/Zugfolge'
+          test "$(docker image inspect --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}' "$image")" = "$GITHUB_SHA"
+          test "$(docker image inspect --format '{{ index .Config.Labels "de.zugfolge.deploy-patch" }}' "$image")" = 'none'
+          test "$(docker image inspect --format '{{ .Config.User }}' "$image")" = 'node'
+      - name: Beide fast-uri-Zweige im ausgelieferten API-Graph pruefen
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker run --rm --network none --entrypoint node "zugfolge-api-ci:${GITHUB_SHA}" \
+            tools/alpha-ops/production-image-dependencies.mjs
+      - name: Beide ausgelieferten nativen Addons im finalen Image ausfuehren
+        shell: bash
+        run: |
+          set -euo pipefail
+          image="zugfolge-api-ci:${GITHUB_SHA}"
+          docker run --rm --network none \
+            --env ZUGFOLGE_RUNTIME_NATIVE_PATH=/app/native/zugfolge-runtime.node \
+            --entrypoint node "$image" packages/runtime-native/smoke/native-smoke.mjs
+          docker run --rm --network none \
+            --env ZUGFOLGE_PLANNING_RUNTIME_NATIVE_PATH=/app/native/zugfolge-planning-runtime.node \
+            --entrypoint node "$image" packages/planning-runtime-native/smoke/native-planning-smoke.mjs
+
+  odoo-19:
+    name: Odoo 19 Add-on (echter getrennter Dienst)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:16.14-trixie
+        env:
+          POSTGRES_USER: odoo
+          POSTGRES_PASSWORD: odoo-test
+          POSTGRES_DB: postgres
+        options: >-
+          --health-cmd "pg_isready -U odoo -d postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v7
+      - name: Gepinntes OCA-queue_job beziehen
+        run: |
+          set -euo pipefail
+          archive="${RUNNER_TEMP}/oca-queue.tar.gz"
+          extract="${RUNNER_TEMP}/oca-queue-extract"
+          curl --fail --location --retry 3 \
+            -H "Authorization: Bearer ${{ github.token }}" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/OCA/queue/tarball/d2c1759102f1e0bc8f6244629b5b38c7b7882f36" \
+            --output "$archive"
+          mkdir -p "$extract" "${RUNNER_TEMP}/oca-queue"
+          tar -xzf "$archive" --strip-components=1 -C "$extract"
+          mv "$extract/queue_job" "${RUNNER_TEMP}/oca-queue/queue_job"
+      - name: Modul installieren und Odoo-Tests ausführen
+        run: |
+          network="$(docker inspect --format '{{range $name, $_ := .NetworkSettings.Networks}}{{$name}}{{end}}' '${{ job.services.postgres.id }}')"
+          docker build --tag zugfolge-odoo-ci - <<'EOF'
+          FROM odoo:19.0-20260723
+          USER root
+          RUN pip3 install --no-cache-dir --break-system-packages openupgradelib
+          USER odoo
+          EOF
+          docker run --rm --network "$network" --user odoo \
+            -e HOST=postgres -e USER=odoo -e PASSWORD=odoo-test \
+            -v "${RUNNER_TEMP}/oca-queue/queue_job:/mnt/extra-addons/queue_job:ro" \
+            -v "${GITHUB_WORKSPACE}/odoo/addons/zugfolge_admin:/mnt/extra-addons/zugfolge_admin:ro" \
+            -v "${GITHUB_WORKSPACE}/tools/region-import/germany/operational-infrastructure-v2-execution-pins.annual-2026.5.json:/mnt/zugfolge-contracts/operational-infrastructure-v2-execution-pins.annual-2026.5.json:ro" \
+            zugfolge-odoo-ci \
+            odoo --database=zugfolge_odoo_test --db_host=postgres --db_port=5432 \
+            --db_user=odoo --db_password=odoo-test --addons-path=/usr/lib/python3/dist-packages/odoo/addons,/mnt/extra-addons \
+            --init=queue_job,zugfolge_admin --test-enable --test-tags=/zugfolge_admin --stop-after-init --log-level=test
+
+  integration-api:
+    name: Datenbank-, Keycloak- und Wiederherstellungsdrills
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    services:
+      postgres:
+        image: postgres:16.14-trixie
+        env:
+          POSTGRES_USER: zugfolge
+          POSTGRES_PASSWORD: zugfolge-test
+          POSTGRES_DB: zugfolge_integration
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U zugfolge -d zugfolge_integration"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+      postgres_restore:
+        image: postgres:16.14-trixie
+        env:
+          POSTGRES_USER: zugfolge
+          POSTGRES_PASSWORD: zugfolge-test
+          POSTGRES_DB: postgres
+        ports:
+          - 5433:5432
+        options: >-
+          --health-cmd "pg_isready -U zugfolge -d postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      TEST_DATABASE_URL: postgres://zugfolge:zugfolge-test@127.0.0.1:5432/zugfolge_integration
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 11
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm -r --stream build
+      - name: Produktiver Migrations-CLI ist wiederholbar
+        run: |
+          DATABASE_URL="$TEST_DATABASE_URL" node packages/db/dist/migrate.js
+          DATABASE_URL="$TEST_DATABASE_URL" node packages/db/dist/migrate.js
+      - name: Echter V1-V2-Postgres/Odoo-Cross-Contract (Game-Seite)
+        run: node --test tools/alpha-ops/world-deployment-v1-v2.postgres-odoo.integration.test.mjs
+      - name: Keycloak-26.7.0 Identitaet und Token ueber Schema-Up/Down erhalten
+        run: |
+          set -euo pipefail
+          mkdir -p test-results
+          bash tools/alpha-ops/keycloak-public-to-schema.real-integration.sh \
+            "$TEST_DATABASE_URL" test-results/keycloak-schema-migration \
+            | tee test-results/keycloak-schema-migration.json
+      - name: Game-Backup, isolierter Restore und gleicher autoritativer Hash
+        run: |
+          set -euo pipefail
+          mkdir -p test-results/backup
+          DATABASE_ROLLBACK_WRITERS_QUIESCED=true sh ops/alpha/backup-game.sh "$TEST_DATABASE_URL" test-results/backup/game.dump test-results/backup/game.manifest.json test-results/backup/game.operation.json
+          restore_url='postgres://zugfolge:zugfolge-test@127.0.0.1:5433/zugfolge_restore_ci'
+          sh ops/alpha/restore-game.sh 'postgres://zugfolge:zugfolge-test@127.0.0.1:5433/postgres' zugfolge_restore_ci test-results/backup/game.dump test-results/backup/game.manifest.json test-results/backup/game.restore.json
+          node tools/alpha-ops/authoritative-state-hash.mjs "$TEST_DATABASE_URL" "$restore_url" | tee test-results/backup/state-hashes.jsonl
+          DATABASE_ROLLBACK_WRITERS_QUIESCED=true \
+          DATABASE_URL="$TEST_DATABASE_URL" \
+          DATABASE_ROLLBACK_RESTORED_DATABASE_URL="$restore_url" \
+          DATABASE_ROLLBACK_GAME_BACKUP_DUMP_PATH=test-results/backup/game.dump \
+          DATABASE_ROLLBACK_GAME_BACKUP_MANIFEST_PATH=test-results/backup/game.manifest.json \
+          DATABASE_ROLLBACK_GAME_BACKUP_OPERATION_PATH=test-results/backup/game.operation.json \
+          DATABASE_ROLLBACK_GAME_RESTORE_RECEIPT_PATH=test-results/backup/game.restore.json \
+          DATABASE_ROLLBACK_BACKUP_MANIFEST_PATH=test-results/backup/database-backup-manifest.json \
+          DATABASE_ROLLBACK_RESTORE_PROOF_PATH=test-results/backup/database-restore-proof.json \
+          node tools/alpha-ops/create-database-backup-restore-evidence.mjs
+          DATABASE_ROLLBACK_WRITERS_QUIESCED=true \
+          DATABASE_URL="$TEST_DATABASE_URL" \
+          DATABASE_ROLLBACK_RESTORED_DATABASE_URL="$restore_url" \
+          DATABASE_ROLLBACK_RELEASE_ID=infra-ci-2026.3 \
+          DATABASE_ROLLBACK_PREVIOUS_RELEASE_ID=infra-ci-2026.2 \
+          DATABASE_ROLLBACK_BACKUP_MANIFEST_PATH=test-results/backup/database-backup-manifest.json \
+          DATABASE_ROLLBACK_RESTORE_PROOF_PATH=test-results/backup/database-restore-proof.json \
+          DATABASE_ROLLBACK_PROOF_OUTPUT_PATH=test-results/backup/database-rollback-proof.json \
+          node tools/alpha-ops/create-database-rollback-proof.mjs

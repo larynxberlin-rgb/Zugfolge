@@ -19,7 +19,7 @@
  *   sind nie zulässig.
  */
 
-import { matchesAny } from "../glob.js";
+import { compileGlobs } from "../glob.js";
 import type { Finding, GuardConfig, Rule, SourceFile } from "../types.js";
 
 /** Pfad der Monorepo-Beschreibung, relativ zur Wurzel. */
@@ -39,6 +39,16 @@ export function createCoverageRule(knownRuleIds: readonly string[]): Rule {
       const befunde: Finding[] = [];
       const konfigpfad = "tools/guards/guards.config.json";
       const monorepo = files.find((datei) => datei.path === MONOREPOPFAD);
+      const domaenen = config.domains.map((domain) => ({
+        domain,
+        trifft: compileGlobs(domain.paths),
+      }));
+      const aktiveDomaenen = domaenen.filter(({ domain }) => domain.status === "active");
+      const coverageAusnahmen = config.coverageExceptions.map((ausnahme, index) => ({
+        ausnahme,
+        index,
+        trifft: compileGlobs([ausnahme.path]),
+      }));
 
       const melde = (message: string): void => {
         befunde.push({ rule: "coverage", path: konfigpfad, line: 0, message });
@@ -48,7 +58,7 @@ export function createCoverageRule(knownRuleIds: readonly string[]): Rule {
         melde(`${MONOREPOPFAD} fehlt — die Domänengrenzen sind nirgends beschrieben.`);
       }
 
-      for (const domain of config.domains) {
+      for (const { domain, trifft } of domaenen) {
         for (const path of domain.paths) {
           if (["crates/**", "packages/**", "apps/**", "tools/**"].includes(path)) {
             melde(
@@ -57,7 +67,7 @@ export function createCoverageRule(knownRuleIds: readonly string[]): Rule {
             );
           }
         }
-        const treffer = files.filter((datei) => matchesAny(datei.path, domain.paths));
+        const treffer = files.filter((datei) => trifft(datei.path));
 
         if (domain.status === "active" && treffer.length === 0) {
           melde(
@@ -91,37 +101,31 @@ export function createCoverageRule(knownRuleIds: readonly string[]): Rule {
         ),
       );
       for (const manifest of produktionsmanifeste) {
-        const zugeordnet = config.domains.filter(
-          (domain) => domain.status === "active" && matchesAny(manifest.path, domain.paths),
-        );
+        const zugeordnet = aktiveDomaenen.filter(({ trifft }) => trifft(manifest.path));
         if (zugeordnet.length !== 1) {
           const wurzel = manifest.path.slice(0, manifest.path.lastIndexOf("/"));
           melde(zugeordnet.length === 0
             ? `Produktionsdomäne '${wurzel}' ist keinem Wächterbereich mit Status 'active' zugeordnet. Den Pfad ausdrücklich in guards.config.json aufnehmen; Catch-all-Globs sind unzulässig.`
-            : `Produktionsdomäne '${wurzel}' überlappt die aktiven Wächterbereiche ${zugeordnet.map((domain) => `'${domain.id}'`).join(", ")}.`);
+            : `Produktionsdomäne '${wurzel}' überlappt die aktiven Wächterbereiche ${zugeordnet.map(({ domain }) => `'${domain.id}'`).join(", ")}.`);
         }
       }
 
       const produktiveSources = files.filter((datei) => PRODUKTIVE_SOURCE.test(datei.path));
       const verwendeteAusnahmen = new Set<number>();
       for (const datei of produktiveSources) {
-        const domains = config.domains.filter(
-          (domain) => domain.status === "active" && matchesAny(datei.path, domain.paths),
-        );
-        const ausnahmen = config.coverageExceptions
-          .map((ausnahme, index) => ({ ausnahme, index }))
-          .filter(({ ausnahme }) => matchesAny(datei.path, [ausnahme.path]));
+        const domains = aktiveDomaenen.filter(({ trifft }) => trifft(datei.path));
+        const ausnahmen = coverageAusnahmen.filter(({ trifft }) => trifft(datei.path));
 
         if (domains.length > 1) {
           melde(
             `Produktive Source-Datei '${datei.path}' überlappt aktive Domänen: ` +
-              domains.map((domain) => `'${domain.id}'`).join(", ") + ".",
+              domains.map(({ domain }) => `'${domain.id}'`).join(", ") + ".",
           );
           continue;
         }
         if (domains.length === 1) {
           if (ausnahmen.length > 0) {
-            melde(`Coverage-Ausnahme fuer '${datei.path}' ist veraltet: Die Datei gehört bereits zu '${domains[0]?.id}'.`);
+            melde(`Coverage-Ausnahme fuer '${datei.path}' ist veraltet: Die Datei gehört bereits zu '${domains[0]?.domain.id}'.`);
           }
           continue;
         }
@@ -136,8 +140,8 @@ export function createCoverageRule(knownRuleIds: readonly string[]): Rule {
         );
       }
 
-      config.coverageExceptions.forEach((ausnahme, index) => {
-        if (!verwendeteAusnahmen.has(index) && !produktiveSources.some((datei) => matchesAny(datei.path, [ausnahme.path]))) {
+      coverageAusnahmen.forEach(({ ausnahme, index, trifft }) => {
+        if (!verwendeteAusnahmen.has(index) && !produktiveSources.some((datei) => trifft(datei.path))) {
           melde(`Coverage-Ausnahme '${ausnahme.path}' trifft keine produktive Source-Datei und ist damit nicht prüfbar.`);
         }
       });

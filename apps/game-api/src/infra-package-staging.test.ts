@@ -1139,24 +1139,49 @@ export function verifyMapPackageTransport(packageRoot) {
     const modulePath = join(root, "verifier.mjs");
     const firstRoot = join(root, "first-package");
     const secondRoot = join(root, "second-package");
+    const startedPath = join(root, "started");
+    const releasePath = join(root, "release");
     await Promise.all([mkdir(firstRoot), mkdir(secondRoot)]);
     await writeFile(modulePath, `
+import { appendFileSync, existsSync } from "node:fs";
+import { setTimeout as delay } from "node:timers/promises";
 export async function verifyMapPackageTransport() {
-  await new Promise((resolve) => setTimeout(resolve, 1_000));
-  return { manifest: { packageId: "late", version: "2026.3" }, manifestSha256: "${HASH_A}" };
+  appendFileSync(${JSON.stringify(startedPath)}, "started\\n");
+  while (!existsSync(${JSON.stringify(releasePath)})) await delay(10);
+  return { manifest: { packageId: "first", version: "2026.3" }, manifestSha256: "${HASH_A}" };
 }
 `, "utf8");
+    const timeoutMs = 10_000;
     const verifier = await createLocalMapPackageVerifier(modulePath, {
-      timeoutMs: 250,
+      timeoutMs,
       maxConcurrent: 1,
       maxQueued: 1,
     });
 
-    const [first, second] = await Promise.allSettled([verifier(firstRoot), verifier(secondRoot)]);
-    expect(first).toMatchObject({ status: "rejected", reason: expect.objectContaining({ message: expect.stringContaining("Zeitlimit") }) });
-    expect(second).toMatchObject({ status: "rejected", reason: expect.objectContaining({ message: expect.stringContaining("Gesamtdeadline") }) });
-    await waitUntil(async () => (await readdir(root)).every((name) => !name.startsWith(".game-map-worker-")));
-  });
+    const first = verifier(firstRoot);
+    void first.catch(() => undefined);
+    let second: Promise<void> | undefined;
+    try {
+      await waitUntil(async () => (await readdir(root)).includes("started"));
+      // Erst den echten Worker synchronisieren, dann ausschliesslich die
+      // Queue-Uhr vorsetzen. Worker-Start und CPU-Last sind keine Testdeadline.
+      vi.useFakeTimers({ toFake: ["Date", "setTimeout", "clearTimeout"] });
+      let secondResult: PromiseSettledResult<unknown> | undefined;
+      second = verifier(secondRoot).then(
+        (value) => { secondResult = { status: "fulfilled", value }; },
+        (reason: unknown) => { secondResult = { status: "rejected", reason }; },
+      );
+      await vi.advanceTimersByTimeAsync(timeoutMs);
+      expect(secondResult).toMatchObject({ status: "rejected", reason: expect.objectContaining({ message: expect.stringContaining("Gesamtdeadline") }) });
+    } finally {
+      vi.useRealTimers();
+      await writeFile(releasePath, "freigegeben", "utf8");
+      await Promise.allSettled([first, ...(second === undefined ? [] : [second])]);
+    }
+    await expect(first).resolves.toMatchObject({ packageId: "first" });
+    expect(await readFile(startedPath, "utf8")).toBe("started\n");
+    expect((await readdir(root)).every((name) => !name.startsWith(".game-map-worker-"))).toBe(true);
+  }, 15_000);
 
   it("akzeptiert keinen frühen Erfolg vor einem späteren Throw und einer zweiten Fehlerantwort", async () => {
     const root = await mkdtemp(join(tmpdir(), "zugfolge-game-package-worker-late-error-"));

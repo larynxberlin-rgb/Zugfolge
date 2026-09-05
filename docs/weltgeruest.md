@@ -65,6 +65,11 @@ dieser Welt ist — und, weil die Zielprüfung nach `world_id` **und**
 `account_id` geht, kann kein Verwalter einer Welt Rollen in einer anderen
 vergeben.
 
+Bootstrap-Prüfung und Rollenvergabe laufen gemeinsam in einer Transaktion,
+die zuvor die Weltzeile sperrt. Bei gleichzeitigem erstem Zugriff kann sich
+dadurch genau ein Konto selbst zum Weltverwalter machen. Kontolisten laden
+die Rollen gesammelt mit denselben Welt- und Kontoschlüsseln.
+
 ## 4. Der Belegungstest
 
 Der Beweis von M2 verlangt: „Zwei Konten derselben Welt sehen einander, zwei

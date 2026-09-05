@@ -3,7 +3,7 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { join, posix, relative, sep } from "node:path";
 
-import { matchesAny } from "./glob.js";
+import { compileGlobs } from "./glob.js";
 import type { SourceFile } from "./types.js";
 
 /**
@@ -17,6 +17,7 @@ const TEXTENDUNGEN = new Set([
   ".ts",
   ".tsx",
   ".js",
+  ".jsx",
   ".mjs",
   ".cjs",
   ".json",
@@ -28,6 +29,7 @@ const TEXTENDUNGEN = new Set([
   ".md",
   ".sh",
   ".ps1",
+  ".py",
 ]);
 
 /** Dateien ohne Endung, die trotzdem gelesen werden. */
@@ -44,7 +46,7 @@ function istText(name: string): boolean {
 /** Liest den Arbeitsbaum ab `root`, ohne die ignorierten Pfade. */
 export function readRepository(root: string, ignore: readonly string[]): SourceFile[] {
   const dateien: SourceFile[] = [];
-  sammle(root, root, ignore, dateien);
+  sammle(root, root, compileGlobs(ignore), dateien);
   dateien.sort((links, rechts) => (links.path < rechts.path ? -1 : 1));
   return dateien;
 }
@@ -52,54 +54,24 @@ export function readRepository(root: string, ignore: readonly string[]): SourceF
 function sammle(
   root: string,
   ordner: string,
-  ignore: readonly string[],
+  ignoriert: (path: string) => boolean,
   ziel: SourceFile[],
 ): void {
   for (const eintrag of readdirSync(ordner, { withFileTypes: true })) {
     const absolut = join(ordner, eintrag.name);
     const relativ = relative(root, absolut).split(sep).join(posix.sep);
 
-    if (matchesAny(relativ, ignore)) {
+    if (ignoriert(relativ)) {
       continue;
     }
 
     if (eintrag.isDirectory()) {
-      sammle(root, absolut, ignore, ziel);
+      sammle(root, absolut, ignoriert, ziel);
       continue;
     }
 
     if (eintrag.isFile() && istText(eintrag.name)) {
       ziel.push({ path: relativ, text: readFileSync(absolut, "utf8") });
-    }
-  }
-}
-
-/** Alle Pfade des Arbeitsbaums, auch die nicht als Text gelesenen. */
-export function listPaths(root: string, ignore: readonly string[]): string[] {
-  const pfade: string[] = [];
-  sammlePfade(root, root, ignore, pfade);
-  pfade.sort((links, rechts) => (links < rechts ? -1 : 1));
-  return pfade;
-}
-
-function sammlePfade(
-  root: string,
-  ordner: string,
-  ignore: readonly string[],
-  ziel: string[],
-): void {
-  for (const eintrag of readdirSync(ordner, { withFileTypes: true })) {
-    const absolut = join(ordner, eintrag.name);
-    const relativ = relative(root, absolut).split(sep).join(posix.sep);
-
-    if (matchesAny(relativ, ignore)) {
-      continue;
-    }
-
-    if (eintrag.isDirectory()) {
-      sammlePfade(root, absolut, ignore, ziel);
-    } else if (eintrag.isFile()) {
-      ziel.push(relativ);
     }
   }
 }

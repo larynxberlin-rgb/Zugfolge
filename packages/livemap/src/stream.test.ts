@@ -447,6 +447,35 @@ describe("LivemapFeed", () => {
 });
 
 describe("LivemapRegistry", () => {
+  it("publiziert verbundene Kantenwechsel mit beiden Offsets und verwirft Positionssprünge", () => {
+    const train = operationalTrain(7, 1_000);
+    const motionSegment = {
+      startedAtMs: 1_000, validUntilMs: 11_000, startRouteMm: 10_000,
+      startSpeedMmPerSecond: 1_000, accelerationMmPerSecondSquared: 0,
+      authorityEndRouteMm: 20_000, segmentEndRouteMm: 20_000,
+      geometry: [
+        { routeMm: 10_000, trackId: "edge:1", offsetMm: 10_000, latitudeE7: 510_000_000, longitudeE7: 120_000_000 },
+        { routeMm: 20_000, trackId: "edge:1", offsetMm: 20_000, latitudeE7: 510_010_000, longitudeE7: 120_010_000 },
+        { routeMm: 20_000, trackId: "edge:2", offsetMm: 0, latitudeE7: 510_010_000, longitudeE7: 120_010_000 },
+      ],
+    };
+    const exact = { ...train, operational: { ...train.operational!, motionSegment } };
+    const registry = new LivemapRegistry();
+    expect(registry.initializeRegion("a", "east", {
+      at: 1, trains: [exact], operationalRegions: [operationalFrame(7, 1_000)],
+    }).changed[0]?.operational?.motionSegment?.geometry).toEqual(motionSegment.geometry);
+    for (const geometry of [
+      [motionSegment.geometry[0]!, motionSegment.geometry[2]!],
+      [motionSegment.geometry[0]!, motionSegment.geometry[1]!, { ...motionSegment.geometry[2]!, latitudeE7: 1 }],
+      [motionSegment.geometry[0]!, motionSegment.geometry[0]!, motionSegment.geometry[1]!],
+    ]) {
+      expect(() => new LivemapRegistry().initializeRegion("a", "east", {
+        at: 1, trains: [{ ...exact, operational: { ...exact.operational, motionSegment: { ...motionSegment, geometry } } }],
+        operationalRegions: [operationalFrame(7, 1_000)],
+      })).toThrow(/Bewegungsabschnitt/);
+    }
+  });
+
   it("publiziert v2-Zug und Regionsframe atomar und umgeht den Legacy-Zugprojektor", () => {
     const project = vi.fn(() => {
       throw new Error("Legacy-Projektor darf v2 nicht sehen");

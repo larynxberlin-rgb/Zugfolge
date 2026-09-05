@@ -396,7 +396,7 @@ export const trainLayers: readonly LayerSpecification[] = Object.freeze([
     minzoom: 5,
     paint: {
       "circle-radius": ["interpolate", ["linear"], ["zoom"], 5, 3.5, 12, 6.5],
-      "circle-color": ["match", ["get", "status"], "cancelled", "#ff715f", "waiting", "#f0b75a", ["case", [">", ["get", "delaySeconds"], 900], "#ff715f", [">", ["get", "delaySeconds"], 60], "#f0b75a", "#e4e8ed"]],
+      "circle-color": ["match", ["get", "status"], "cancelled", "#ff715f", "waiting", "#f0b75a", ["case", [">", ["coalesce", ["get", "delaySeconds"], 0], 900], "#ff715f", [">", ["coalesce", ["get", "delaySeconds"], 0], 60], "#f0b75a", "#e4e8ed"]],
       "circle-stroke-color": "#090b10",
       "circle-stroke-width": 2,
     },
@@ -406,7 +406,7 @@ export const trainLayers: readonly LayerSpecification[] = Object.freeze([
     type: "symbol",
     source: TRAIN_SOURCE_ID,
     minzoom: 8,
-    layout: { "text-field": ["get", "trainNumber"], "text-font": ["Noto Sans Regular"], "text-size": 11, "text-offset": [0.9, 0], "text-anchor": "left", "text-optional": true },
+    layout: { "text-field": ["get", "markerLabel"], "text-font": ["Noto Sans Regular"], "text-size": 11, "text-offset": [0.9, 0], "text-anchor": "left", "text-optional": true },
     paint: { "text-color": "#f1f3f7", "text-halo-color": "#090b10", "text-halo-width": 1.6 },
   },
   {
@@ -419,13 +419,22 @@ export const trainLayers: readonly LayerSpecification[] = Object.freeze([
 ]);
 
 export function trainFeatureCollection(
-  trains: Iterable<PublicTrain>,
+  trains: Iterable<PublicTrain & { readonly positionFrozen?: boolean }>,
   infrastructureReleaseId: string,
+  frozen = false,
 ): GeoJsonFeatureCollection {
   const features: GeoJsonPointFeature[] = [];
   for (const train of trains) {
     const projection = train.mapPosition;
     if (projection === undefined || projection.infrastructureReleaseId !== infrastructureReleaseId) continue;
+    const positionFrozen = frozen || train.positionFrozen === true;
+    const markerLabel = [
+      train.trainNumber,
+      train.status === "cancelled" ? "Ausfall" : train.status === "waiting" ? "wartet" : undefined,
+      train.status !== "cancelled" && train.delaySeconds !== undefined && train.delaySeconds > 60
+        ? `+${Math.ceil(train.delaySeconds / 60)} min` : undefined,
+      positionFrozen ? "Lage eingefroren" : undefined,
+    ].filter((part) => part !== undefined).join(" · ");
     features.push(Object.freeze({
       type: "Feature",
       id: train.id,
@@ -441,6 +450,8 @@ export function trainFeatureCollection(
         objectId: train.id,
         label: train.trainNumber,
         trainNumber: train.trainNumber,
+        markerLabel,
+        positionFrozen,
         operator: train.operator,
         category: train.category,
         status: train.status,

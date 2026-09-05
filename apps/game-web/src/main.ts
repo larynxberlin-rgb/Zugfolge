@@ -631,9 +631,13 @@ async function silentRefreshTutorial(): Promise<void> {
   if (client === undefined || session === undefined || journeyBusyScopes.has("tutorial") || journeyBusyScopes.has("initial")) { scheduleTutorialPoll(); return; }
   try {
     const next = await client.loadTutorial(session.tutorialWorldId);
-    const changed = next.currentChapter !== session.currentChapter || next.lifecycle !== session.lifecycle || next.dialogue.id !== session.dialogue.id;
-    setTutorialSession(next);
-    if (changed) { render(); focusCoach(); }
+    // Ein älterer GET darf weder eine inzwischen bestätigte Aktion noch den
+    // Wechsel in eine neu gestartete Tutorialwelt zurückschreiben.
+    if (tutorialSession === session && !journeyBusyScopes.has("tutorial") && !journeyBusyScopes.has("initial")) {
+      const changed = next.currentChapter !== session.currentChapter || next.lifecycle !== session.lifecycle || next.dialogue.id !== session.dialogue.id;
+      setTutorialSession(next);
+      if (changed) { render(); focusCoach(); }
+    }
   } catch { /* Die sichtbare Aktion liefert weiterhin erklaerbare Fehler; Polling bleibt still. */ }
   scheduleTutorialPoll();
 }

@@ -2581,11 +2581,10 @@ impl DisruptionRuntime {
     /// Resume ab exklusiver Sequenz.
     #[must_use]
     pub fn events_after(&self, sequence: u64) -> Vec<RuntimeEvent> {
-        self.events
-            .iter()
-            .filter(|event| event.sequence > sequence)
-            .cloned()
-            .collect()
+        let first = self
+            .events
+            .partition_point(|event| event.sequence <= sequence);
+        self.events[first..].to_vec()
     }
 
     /// Kanonischer Zustands-Hash für Restart und Replay.

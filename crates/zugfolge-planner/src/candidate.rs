@@ -89,10 +89,10 @@ impl CandidateDeviation {
 
     /// Die Rangfolge aus der Tabelle im Modulkopf, ohne den letzten Rang — der
     /// hängt am Laufweg und steht deshalb in
-    /// [`PathCandidate::ranking_key`].
-    fn ranking(&self) -> (i64, i64, usize, i64, i64) {
+    /// [`PathCandidate::compare_rank`].
+    fn ranking(&self) -> (u64, i64, usize, i64, i64) {
         (
-            self.shift_s.saturating_abs(),
+            self.shift_s.unsigned_abs(),
             self.extra_running_time_s,
             self.operational_stops.len(),
             self.detour.millimetres(),
@@ -108,7 +108,7 @@ impl fmt::Display for CandidateDeviation {
         }
         let mut teile: Vec<String> = Vec::new();
         match self.shift_s.cmp(&0) {
-            Ordering::Less => teile.push(format!("{} s früher", -self.shift_s)),
+            Ordering::Less => teile.push(format!("{} s früher", self.shift_s.unsigned_abs())),
             Ordering::Greater => teile.push(format!("{} s später", self.shift_s)),
             Ordering::Equal => {}
         }
@@ -182,17 +182,19 @@ impl PathCandidate {
     }
 
     /// Die Gleisfolge des Laufwegs — der letzte Rang der Bewertung.
-    fn tracks(&self) -> Vec<TrackId> {
+    fn tracks(&self) -> impl Iterator<Item = TrackId> {
         self.itinerary()
             .legs()
             .iter()
             .map(zugfolge_conflict::CheckedLeg::track)
-            .collect()
     }
 
-    /// Der vollständige Schlüssel der Rangfolge.
-    pub(crate) fn ranking_key(&self) -> ((i64, i64, usize, i64, i64), Vec<TrackId>) {
-        (self.deviation.ranking(), self.tracks())
+    /// Vergleicht Gleisfolgen erst bei fachlichem Gleichstand und ohne Kopie.
+    fn compare_rank(&self, other: &Self) -> Ordering {
+        self.deviation
+            .ranking()
+            .cmp(&other.deviation.ranking())
+            .then_with(|| self.tracks().cmp(other.tracks()))
     }
 
     /// Der Kandidat als deutscher Satz.
@@ -211,7 +213,7 @@ impl PathCandidate {
 
 /// Ordnet Kandidaten nach der veröffentlichten Rangfolge.
 pub(crate) fn rank(candidates: &mut [PathCandidate]) {
-    candidates.sort_by_key(PathCandidate::ranking_key);
+    candidates.sort_by(PathCandidate::compare_rank);
 }
 
 #[cfg(test)]
@@ -240,6 +242,9 @@ mod tests {
     #[test]
     fn bei_gleichem_betrag_gewinnt_die_fruehere_lage() {
         assert!(abweichung(-300, 0, &[], 0).ranking() < abweichung(300, 0, &[], 0).ranking());
+        assert!(
+            abweichung(i64::MAX, 0, &[], 0).ranking() < abweichung(i64::MIN, 0, &[], 0).ranking()
+        );
     }
 
     #[test]
@@ -266,5 +271,9 @@ mod tests {
         assert!(satz.contains("300 s früher"), "{satz}");
         assert!(satz.contains("120 s längere Fahrzeit"), "{satz}");
         assert!(satz.contains("Betriebshalt in Bst3"), "{satz}");
+        assert_eq!(
+            abweichung(i64::MIN, 0, &[], 0).to_string(),
+            "9223372036854775808 s früher"
+        );
     }
 }

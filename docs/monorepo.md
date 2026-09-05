@@ -231,7 +231,7 @@ Liste ist keine vollständige Karte des Repositoriums, sondern die Zuordnung
 | `economy` | `packages/economy/**`, `packages/cooperation/**`, `packages/tender/**`, `apps/economy-service/**` | aktiv | Ledger und Kooperation in Integer-Cent; Wertung deterministisch aus dem `EconomyRelease` (M6/M12) |
 | `infra-pipeline` | `crates/zugfolge-infra/**` | aktiv | **der einzige Ort mit Gleitkommarechnung** — sie endet in ganzzahligen Fahrzeittabellen |
 | `world-isolation` | `packages/db/**` | aktiv | Postgres-Zugriff der Game-Services; Wurzel der Weltisolation — `worlds`, das Event-Log und das weltgebundene Repository (M2.2) |
-| `release-tools` | `tools/reference-corpus/**`, `tools/reference-model/**`, `tools/region-import/**`, `tools/tiles/**` | aktiv | nicht autoritative Datei-I/O-, Import- und Kartenadapter; Freigabeentscheidungen bleiben in Rust |
+| `release-tools` | `tools/audits/**`, `tools/reference-corpus/**`, `tools/reference-model/**`, `tools/region-import/**`, `tools/tiles/**` | aktiv | nicht autoritative Datei-I/O-, Import- und Kartenadapter; Freigabeentscheidungen bleiben in Rust |
 | `operations-tools` | `tools/alpha-ops/**`, `tools/guards/**`, `tools/load/**`, `tools/m7-acceptance/**`, `tools/m7-e2e/**` | aktiv | Betriebs-, Abnahme-, Last- und Governance-Werkzeuge ohne fachliche Laufzeitautorität |
 | `platform-services` | explizit aufgezählte übrige `packages/*` und `apps/*` | aktiv | vollständige Zuordnung aller Produktionspakete; neue Pakete erzwingen vor dem ersten Commit eine bewusste Wächterentscheidung |
 
@@ -284,6 +284,13 @@ Querlagenausnahme muss als enger Pfad mit tragfähiger Begründung in
 Catch-all wie `packages/**` ist absichtlich nicht eingetragen: Ein neu
 angelegtes Produktionspaket stoppt damit den Wächterlauf, bis seine Regeln und
 Autoritätsgrenzen bewusst festgelegt sind.
+
+Der Arbeitsbaum-Leser verwendet eine explizite Textformat-Allowlist. Sie
+umfasst auch Python-Werkzeuge und JSX-Oberflächen, damit diese Dateien die
+Coverage-Prüfung tatsächlich erreichen. Ignorierte Verzeichnisse werden vor
+dem Betreten abgeschnitten; Binärdateien werden nicht als Text gelesen.
+Glob-Muster werden je Pfadauswahl einmal kompiliert und im Prüflauf
+wiederverwendet, ohne einen globalen Cache über mehrere Konfigurationen.
 
 **`infra-pipeline` ist die einzige Domäne ohne `no-floats`** — und das ist der
 Grund, warum sie überhaupt eine eigene ist. Die Fahrdynamik rechnet dort
@@ -343,6 +350,12 @@ und vergleicht ihn gegen die eingecheckte Referenzdatei.
 
 ## 6. Befehle
 
+Die reguläre CI hat vier Jobs: Rust einschließlich Determinismus und Lizenzen,
+TypeScript einschließlich Build und Tests, native Integration mit PostgreSQL
+und Browser sowie Repository-Wächter einschließlich Node-Abhängigkeiten.
+Lastläufe, Releasewerkzeuge und Betriebsdrills sind manuelle Zusatzprüfungen.
+Der Umfang und die Auswahl stehen in [`ci.md`](ci.md).
+
 ```bash
 cargo test --workspace
 ```
@@ -352,7 +365,7 @@ cargo clippy --workspace --all-targets -- -D warnings
 ```
 
 ```bash
-pnpm install && pnpm -r build && pnpm -r test
+pnpm install --frozen-lockfile && pnpm build && pnpm test
 ```
 
 ```bash
