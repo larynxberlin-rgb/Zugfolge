@@ -461,6 +461,26 @@ export const GENERATED_GLOSSARY_ENTRIES = Object.freeze([
     "definition": "prüft geordnete Geometriepunkte einschließlich beider exakt verbundener Gleisenden an einem Kantenwechsel"
   },
   {
+    "term": "Grafikatlas",
+    "code": "ArtAtlasManifestV1",
+    "definition": "versionierter M15.3-Korpus mit tatsächlichen PNG-Bytes, Motiven, Bewegungsphasen, Raster, Palette, Herkunft und getrennter Bild-/Releasefreigabe"
+  },
+  {
+    "term": "Grafikatlasprüfung",
+    "code": "ArtAtlasReportV1",
+    "definition": "Prüfergebnis mit Manifesthash, tatsächlichen Befunden und ausdrücklicher Aktivierbarkeit; ein Kandidat bleibt bei fehlenden Pflichtbelegen gesperrt"
+  },
+  {
+    "term": "Grafikatlassignatur",
+    "code": "ArtAtlasSignatureV1",
+    "definition": "getrennte Ed25519-Bindung eines Atlasmanifesthashs an einen unabhängig vertrauten öffentlichen Schlüssel; ersetzt keine Bild- oder Herkunftsprüfung"
+  },
+  {
+    "term": "Grafikatlas-Weltpin",
+    "code": "ArtAtlasWorldPinV1",
+    "definition": "autorisierte Bindung von Welt, Releasekennung und exakten Atlasmanifestbytes; erzeugt keine eigene Nachfrage oder Betriebsautorität"
+  },
+  {
     "term": "Grenzportal",
     "code": "BoundaryPortal",
     "definition": "benannte, versionierte Schnittstelle am Rand des spielbaren Netzes; trägt die serverseitigen Ein- oder Ausfahrfenster einer Fahrtkette"

@@ -1077,7 +1077,7 @@ Alpha-Schnitt. Vollständiger Fachvertrag:
 |---|---------------|-------|--------|
 | 15.1 | **E29, ADR und versionierter Fachvertrag** einschließlich M10-/M8-Autoritätsgrenzen, Kontrolle, Dialog, Wirtschaft, Datenschutz und Abnahme | M | erledigt |
 | 15.2 | **M10-Fahrgastmanifeste und deterministische 1:1-Projektion**: jeder tatsächlich reisende Fahrgast wird logisch materialisiert, stabil platziert und kontrollierbar; Rendering darf nur optisch degradieren | L | in Arbeit |
-| 15.3 | **Eigene Pixelart-Designsprache und freigegebener Asset-Korpus**: finale erzeugte Figuren-, Innenraum-, Bahnhof- und Umgebungsassets mit `ArtAtlasManifestV1`, Herkunft, Hash und Rechtegates | **XL** | offen |
+| 15.3 | **Eigene Pixelart-Designsprache und freigegebener Asset-Korpus**: finale erzeugte Figuren-, Innenraum-, Bahnhof- und Umgebungsassets mit `ArtAtlasManifestV1`, Herkunft, Hash und Rechtegates | **XL** | in Arbeit |
 | 15.4 | **Konfigurationsgetreue begehbare Fahrzeuginnenräume**: `InteriorLayoutV1` aus Formation und Fahrzeugkonfiguration, Begehbarkeits-, Kollisions- und Kapazitätsnachweis | **XL** | offen |
 | 15.5 | **Fließende Umgebung und modulare Bahnhofsszenen**: Umland/Vorstadt/Stadt, Tageszeit, tatsächliche Geschwindigkeit, Signal-/Bahnhofshalte, kleine/mittlere/große Stationen und dynamische Namen | **XL** | offen |
 | 15.6 | **Versionierter Sprechblasen-Dialogkorpus**: mindestens 150 geprüfte Dialogbäume und 600 Fahrgastäußerungen, verdeckter Sachverhalt, mindestens zwölf Situationsfamilien, kein Laufzeit-Sprachmodell | L | offen |
@@ -1101,6 +1101,13 @@ autorisierte interne Plattformgrenze. Produktive M10-Haltquittungen,
 freigegebene Innenraumlayouts und die spielbare Browserabnahme bleiben offen;
 M15.2 und M15 insgesamt werden dadurch nicht geschlossen. Reproduzierbare
 Prüfungen, Issue-/PR-Abgleich und Grenzen: [Teilabnahme](m15-abnahme.md).
+
+**M15.3-Stand:** [Atlasvertrag](art-atlas.md) und versionierter Pflichtkatalog
+definieren 120 Figurenframes und 52 statische Motive, tatsächliche
+Generierungsherkunft, Raster, Palette und getrennte Freigabegates. Ein
+vollständiger Kandidat kann technisch und visuell geprüft werden; fehlende
+Modell-, Herkunfts-, Bild- oder Signaturbelege werden nicht als Freigabe
+ausgegeben. M15.3 bleibt bis zum vollständigen konkreten Korpusnachweis offen.
 
 > **Beweis:** Ein eigener ausgelasteter SPNV-Zug wird mit den tatsächlichen
 > M10-Fahrgästen betreten. Der Spieler läuft durch den konfigurationsgetreuen

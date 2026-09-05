@@ -124,6 +124,10 @@ nicht prüfen, ob ein Eintrag stimmt — dafür steht die Quelle daneben.
 | Gleichstand | `Tie` | exakte Punktgleichheit im Planungslauf; wird über den veröffentlichten Seed aufgelöst | `infrastruktur.md` 10 |
 | Gleis | `Track` | das, worauf gefahren wird; liegt auf einer Kante oder in einer Betriebsstelle und trägt Vmax, Neigung, Elektrifizierung und Zugsicherung | `betriebsgraph.md` 2 |
 | Gleisgebundene Bewegungsgeometrie | `isContinuousRouteGeometry` | prüft geordnete Geometriepunkte einschließlich beider exakt verbundener Gleisenden an einem Kantenwechsel | `zugkartenprojektion.md` |
+| Grafikatlas | `ArtAtlasManifestV1` | versionierter M15.3-Korpus mit tatsächlichen PNG-Bytes, Motiven, Bewegungsphasen, Raster, Palette, Herkunft und getrennter Bild-/Releasefreigabe | `art-atlas.md` |
+| Grafikatlasprüfung | `ArtAtlasReportV1` | Prüfergebnis mit Manifesthash, tatsächlichen Befunden und ausdrücklicher Aktivierbarkeit; ein Kandidat bleibt bei fehlenden Pflichtbelegen gesperrt | `art-atlas.md` 6 |
+| Grafikatlassignatur | `ArtAtlasSignatureV1` | getrennte Ed25519-Bindung eines Atlasmanifesthashs an einen unabhängig vertrauten öffentlichen Schlüssel; ersetzt keine Bild- oder Herkunftsprüfung | `art-atlas.md` 3 |
+| Grafikatlas-Weltpin | `ArtAtlasWorldPinV1` | autorisierte Bindung von Welt, Releasekennung und exakten Atlasmanifestbytes; erzeugt keine eigene Nachfrage oder Betriebsautorität | `art-atlas.md` 3 |
 | Grenzportal | `BoundaryPortal` | benannte, versionierte Schnittstelle am Rand des spielbaren Netzes; trägt die serverseitigen Ein- oder Ausfahrfenster einer Fahrtkette | `infrastruktur.md` 10.4 |
 | Herkunft | `Provenance` | Quelle und Vertrauensgrad eines importierten Attributwertes; hängt am einzelnen Band, nicht am Gleis | `daten.md` 2 |
 | Höhenstichprobe | `ElevationSample` | Position-Höhe-Paar eines Höhenmodells entlang der Gleisgeometrie; Eingabe der Neigungsableitung | `betriebsgraph.md` 10 |
