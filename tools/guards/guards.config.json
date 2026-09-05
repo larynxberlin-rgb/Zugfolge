@@ -112,9 +112,9 @@
       "id": "operations-tools",
       "title": "Betriebs-, Abnahme-, Last- und Governance-Werkzeuge",
       "status": "active",
-        "paths": [
-          "tools/alpha-ops/**",
-          "tools/art-atlas/**",
+      "paths": [
+        "tools/alpha-ops/**",
+        "tools/art-atlas/**",
         "tools/guards/**",
         "tools/load/**",
         "tools/m7-acceptance/**",
@@ -130,8 +130,8 @@
       "paths": [
         "packages/alpha/**",
         "packages/browser-identity/**",
-          "packages/commerce/**",
-          "packages/conductor-art/**",
+        "packages/commerce/**",
+        "packages/conductor-art/**",
         "packages/design-system/**",
         "packages/disruption-provider/**",
         "packages/glossary/**",
