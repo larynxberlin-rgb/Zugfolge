@@ -1,10 +1,10 @@
 {
   "schemaVersion": "art-atlas-browser-review/v1",
   "browser": "153.0.4234.19",
-  "recordedAt": "2026-09-05T23:23:37.557Z",
+  "recordedAt": "2026-09-05T23:30:25.460Z",
   "browserChannel": "msedge",
-  "preparedSha256": "9ee844e8c0d54f48241858af85461161cf611b4020db4110dbd059bbb478d942",
-  "observedManifestSha256": "d1aa506327fa735276a67f7efba64f3a6a690b7d89d35878c67c77d1a3ed00e9",
+  "preparedSha256": "77fcbfefe8d20c67f24a2f356cdca9a0c9dbf0e4e373f74a398c30c7f720fc4e",
+  "observedManifestSha256": "3fb93905175e29b3259372acf4bbe692a9b57d91cd0af65d1b68e5fc18d44798",
   "observedManifestStatus": "candidate",
   "assets": 172,
   "animations": 60,
@@ -236,7 +236,7 @@
   "screenshots": [
     {
       "file": "scene-small-rural-1x.png",
-      "sha256": "e14589713bf18a010665952d1929d7d45b7ebdc83e5fd4dab187ad9e8a19a4bd",
+      "sha256": "7c84eb9f12c02f0500482d8f4d0dd3d2b3f68694e3dfb3e1d8fa59f15f556439",
       "viewport": {
         "width": 1440,
         "height": 1100
@@ -244,7 +244,7 @@
     },
     {
       "file": "scene-medium-suburban-1x.png",
-      "sha256": "a8d2a60a79e81d047e61e51629f1e3419856aedb83fe18f4f65218dd98f9aca0",
+      "sha256": "be6f088373f12935061937f6832736c114429f2213a33eed553c7aa43b415dfc",
       "viewport": {
         "width": 1440,
         "height": 1100
@@ -252,7 +252,7 @@
     },
     {
       "file": "scene-large-urban-1x.png",
-      "sha256": "802a4af02ae3887cd2b66aea5e39bcc5b0eb44f7807c7cbad20c4dec3c3b8e00",
+      "sha256": "44b05c93e3c67f38d8a4bde15dc3b7ffca1b32d2bc9dcc99796b4855dd541f5e",
       "viewport": {
         "width": 1440,
         "height": 1100
@@ -260,7 +260,7 @@
     },
     {
       "file": "scene-roofs-1x.png",
-      "sha256": "710f3b66a9d29b0b691a7e615c30421fcbff3d7885d356173ab269db4713c135",
+      "sha256": "4920558eb0722c3f8a58b390174ba7a2b0895f15c8ff4e3ac0e8c77d19d838a0",
       "viewport": {
         "width": 1440,
         "height": 1100
@@ -268,7 +268,7 @@
     },
     {
       "file": "actors-walk-paused-2x.png",
-      "sha256": "d9cb5096fc219062360aebc16d80ddf8d3c60f95a0178590d934d101aae5cfb6",
+      "sha256": "2f21f8edd4e31d7fc1df88fa1a0abc881efb126497b14d26d1a8791781695710",
       "viewport": {
         "width": 1440,
         "height": 1100
@@ -276,7 +276,7 @@
     },
     {
       "file": "actors-sitting-2x.png",
-      "sha256": "db2c1022875f39b2458c75c65a3168fd5fef6a0ec559f50c8386daf9b2585e56",
+      "sha256": "951f09a2b4900ec48f7c949705cec4c9b2713408b8bb4b5393e380cbd382480f",
       "viewport": {
         "width": 1440,
         "height": 1100
@@ -284,7 +284,7 @@
     },
     {
       "file": "gallery-complete-1x.png",
-      "sha256": "4a14f4500a5932b5bc9e9267344b68b0e39c586fdf02081504bdb7833db76714",
+      "sha256": "f64000e025581e8cb2660a2afd087535375a9842786da2b74406260c7e2a4cac",
       "viewport": {
         "width": 1440,
         "height": 1100
@@ -292,7 +292,7 @@
     },
     {
       "file": "gallery-stations-2x.png",
-      "sha256": "93616d9d202ebb585d4e06f9b37e0f7c897debfc7d2b59e017f1c74ef3db9d0a",
+      "sha256": "1a04cf4a9f003a347c42350db17e24a8bb5e7cb7d922e6f066c6b9ecfe054905",
       "viewport": {
         "width": 1440,
         "height": 1100
@@ -300,7 +300,7 @@
     },
     {
       "file": "release-evidence.png",
-      "sha256": "59fd2ed76a693b25779798288ab70b518c83ce3f04b5edafc238a588720e286e",
+      "sha256": "d1686d8e651fc5a5657255179f02c333d773aa14f426ce5eed528d88225e9f54",
       "viewport": {
         "width": 1440,
         "height": 1100
@@ -308,7 +308,7 @@
     },
     {
       "file": "mobile-390-scene.png",
-      "sha256": "6a08bf8184c3036453789cc0cbc1b41b66b98334d6b1b341960a53d71bfc807f",
+      "sha256": "b05e894c3c6840524115fbcea4935a0c44cbdd196f128ad7a3582ae3e43a779a",
       "viewport": {
         "width": 390,
         "height": 900
@@ -316,7 +316,7 @@
     },
     {
       "file": "mobile-390-actors.png",
-      "sha256": "d17ab00f096d257f7bcbbb7b5a6d05702d46b068b5a0615c73fef6d2f711eeb3",
+      "sha256": "93359b1ccfa35a5e44e1a80ac9c341b4f95790bd710ed1465e813d6e18bee2ec",
       "viewport": {
         "width": 390,
         "height": 900
@@ -324,7 +324,7 @@
     },
     {
       "file": "mobile-320-scene.png",
-      "sha256": "01c8256385eaaf5345b6d267cd92f6dbc5326119594814924159b5974de2e77d",
+      "sha256": "967bc6ed53acab10d73bdfdeace3ac195a8652a3d75e5e0bb4df8318adef7d9e",
       "viewport": {
         "width": 320,
         "height": 900
@@ -332,7 +332,7 @@
     },
     {
       "file": "mobile-320-actors.png",
-      "sha256": "eae31996d63368e4bc0c1fc62989af6973fc58000c01690ea605359779d0478d",
+      "sha256": "74da51e2e36a4b95a28edab78ab886f3c1b91f9cb5c49c9699034abc48fd73f4",
       "viewport": {
         "width": 320,
         "height": 900
