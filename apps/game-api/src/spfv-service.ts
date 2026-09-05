@@ -61,6 +61,14 @@ export interface SpfvServiceDependencies {
   readonly estimate: (input: SpfvEstimateInput) => Promise<SpfvEstimate>;
 }
 
+export interface SpfvReplacementTrip {
+  readonly trainId: string;
+  readonly trainNumber: number;
+  readonly departureS: number;
+  readonly originLabel: string | null;
+  readonly destinationLabel: string | null;
+}
+
 export interface SpfvPreview extends Omit<SpfvEstimate, "source"> {
   readonly source: "forecast" | "observed" | "assumption";
   readonly provenance: Readonly<Record<string, unknown>>;
@@ -75,6 +83,7 @@ export interface SpfvPreview extends Omit<SpfvEstimate, "source"> {
   readonly asOfS: number;
   readonly capacityFacts: { readonly standardSeats: number; readonly premiumSeats: number; readonly bicycleSpaces: number; readonly wheelchairSpaces: number };
   readonly replacementTrainIds: readonly string[];
+  readonly replacementTrips: readonly SpfvReplacementTrip[];
   readonly releaseId: string;
   readonly requestedPassengers: number | null;
   readonly servedPassengers: number | null;
@@ -256,7 +265,8 @@ export class SpfvService {
       firstClassSeats += asset.passenger.firstClassSeats;
     }
     valid(Number.isSafeInteger(firstClassSeats) && firstClassSeats <= capacity, "Erstklassplätze sind inkonsistent.", 503);
-    const replaceTrainIds = await this.replacementTrainIds(db, scope, draft);
+    const replacementTrips = await this.replacementTrips(db, scope, draft, release);
+    const replaceTrainIds = replacementTrips.map((trip) => trip.trainId);
     const estimate = await this.deps.estimate({ worldId: scope.worldId, operatorId: scope.operatorId, atS, draft, capacity, replaceTrainIds,
       operatingCostCentsPerTrainKm: formation.characteristics.operatingCostCentsPerTrainKm,
       firstClassSeats, bicyclePlaces: formation.characteristics.bicyclePlaces, wheelchairPlaces: formation.characteristics.wheelchairPlaces,
@@ -265,7 +275,7 @@ export class SpfvService {
     for (const value of [estimate.fareRevenueCents, estimate.costsCents]) valid(value === null || /^(0|[1-9][0-9]{0,18})$/.test(value) && BigInt(value) <= 9_223_372_036_854_775_807n, "Nachfragevorschau enthält ungültige Geldwerte.", 503);
     // Weitere Reisende dürfen Bestandszüge oder andere Verkehrsmittel wählen.
     valid(estimate.requested === null || estimate.served === null || estimate.unserved === null || BigInt(estimate.requested) >= BigInt(estimate.served) + BigInt(estimate.unserved), "Nachfragevorschau überschreitet die Fahrgastsumme.", 503);
-    return { estimate, capacity, release, checkpoint, world, replaceTrainIds,
+    return { estimate, capacity, release, checkpoint, world, replaceTrainIds, replacementTrips,
       capacityFacts: { standardSeats: capacity - firstClassSeats, premiumSeats: firstClassSeats,
         bicycleSpaces: formation.characteristics.bicyclePlaces, wheelchairSpaces: formation.characteristics.wheelchairPlaces } };
   }
@@ -275,14 +285,14 @@ export class SpfvService {
     return this.deps.db.transaction(async (tx) => {
       await tx.execute(sql`select ${worlds.id} from ${worlds} where ${worlds.id} = ${scope.worldId} for update`);
       const atS = await this.deps.timeForWorld(scope.worldId);
-      const { estimate, capacity, capacityFacts, replaceTrainIds, release, checkpoint, world } = await this.evaluate(tx, scope, draft, atS);
+      const { estimate, capacity, capacityFacts, replaceTrainIds, replacementTrips, release, checkpoint, world } = await this.evaluate(tx, scope, draft, atS);
       const lineId = draft.lineId ?? `spfv-${demandHash({ worldId: scope.worldId, operatorId: scope.operatorId, draft }).slice(0, 24)}`;
       const source = estimate.source["source"] === "observed" ? "observed" as const
         : estimate.source["source"] === "assumption" || estimate.source["kind"] === "balanced" ? "assumption" as const : "forecast" as const;
       const body: Omit<SpfvPreview, "previewId"> = { ...estimate, source, provenance: estimate.source,
         schemaVersion: "zugfolge-spfv-preview/v1", schema: "zugfolge-spfv-preview/v1", worldId: scope.worldId,
         asOfS: atS, releaseId: release.releaseId, requestedPassengers: estimate.requested, servedPassengers: estimate.served, unservedPassengers: estimate.unserved,
-        operatorId: scope.operatorId, lineId, name: draft.name, capacity, capacityFacts, replacementTrainIds: replaceTrainIds,
+        operatorId: scope.operatorId, lineId, name: draft.name, capacity, capacityFacts, replacementTrainIds: replaceTrainIds, replacementTrips,
         atS, expiresAtS: Math.min(atS + PREVIEW_TTL_S, draft.validFromS - 1), draft,
         infrastructureReleaseId: release.releaseId, infrastructureHash: demandHash(release), fleetRevision: checkpoint.state.revision,
         fleetStateHash: checkpoint.stateHash, planningRequestCount: departures(draft).length, planningStatus: "not-yet-allocated",
@@ -301,7 +311,7 @@ export class SpfvService {
     return event?.payload as Record<string, unknown> | undefined;
   }
 
-  private async replacementTrainIds(db: EconomyDatabase, scope: SpfvScope, draft: SpfvDraft): Promise<readonly string[]> {
+  private async replacementTrips(db: EconomyDatabase, scope: SpfvScope, draft: SpfvDraft, release: PlanningInfrastructureRelease): Promise<readonly SpfvReplacementTrip[]> {
     if (draft.lineId === undefined) return [];
     const [stateRow] = await db.select({ payload: domainEvents.payload }).from(domainEvents).where(and(
       eq(domainEvents.worldId, scope.worldId), eq(domainEvents.eventType, "planning.runtime-state"))).orderBy(desc(domainEvents.sequence)).limit(1);
@@ -316,9 +326,27 @@ export class SpfvService {
       eq(simulationCommands.worldId, scope.worldId), eq(simulationCommands.requestingAccountId, scope.accountId),
       eq(simulationCommands.commandType, "planning.path-request"), eq(simulationCommands.status, "processed"),
       inArray(simulationCommands.id, [...ownedIds])));
-    return [...new Set(requests.map(({ payload }) => payload as { trainId: string; operatorId: string; desiredDepartureS: number })
-      .filter((request) => request.operatorId === scope.operatorId && request.desiredDepartureS >= draft.validFromS
-        && Object.hasOwn(state?.state.reservations ?? {}, request.trainId)).map((request) => request.trainId))].sort();
+    const trips = new Map<string, SpfvReplacementTrip>();
+    for (const { payload } of requests) {
+      const request = payload as { trainId: string; trainNumber: number; operatorId: string; desiredDepartureS: number };
+      if (request.operatorId !== scope.operatorId || request.desiredDepartureS < draft.validFromS
+        || !Object.hasOwn(state?.state.reservations ?? {}, request.trainId)) continue;
+      const reservation = state!.state.reservations![request.trainId] as {
+        number?: number; passengerStops?: readonly { stationId: string; departureS: number }[];
+      } | undefined;
+      const stops = reservation?.passengerStops;
+      const first = stops?.[0], last = stops?.at(-1);
+      valid(reservation !== undefined && Number.isSafeInteger(reservation.number) && reservation.number! > 0
+        && reservation.number === request.trainNumber && first !== undefined && last !== undefined && stops!.length >= 2
+        && typeof first.stationId === "string" && typeof last.stationId === "string"
+        && Number.isSafeInteger(first.departureS) && first.departureS >= draft.validFromS,
+      "Betroffene Fahrt besitzt keine belegte Zugnummer oder Abfahrtszeit.", 503);
+      trips.set(request.trainId, { trainId: request.trainId, trainNumber: reservation.number!, departureS: first.departureS,
+        originLabel: release.stations.find((station) => station.id === first.stationId)?.name ?? null,
+        destinationLabel: release.stations.find((station) => station.id === last.stationId)?.name ?? null });
+    }
+    valid(trips.size <= MAX_DEPARTURES, "Die Änderung betrifft zu viele Fahrten für eine gemeinsame Vorschau.", 409);
+    return [...trips.values()].sort((a, b) => a.trainId < b.trainId ? -1 : a.trainId > b.trainId ? 1 : 0);
   }
 
   async confirm(scope: SpfvScope, input: { readonly previewId: string; readonly commandId: string }): Promise<SpfvSubmission> {
@@ -349,7 +377,8 @@ export class SpfvService {
         const preview = stored as unknown as SpfvPreview;
         valid(preview.confirmationAllowed && atS >= preview.atS && atS <= preview.expiresAtS, "Vorschau ist veraltet oder nicht bestätigbar.", 409);
         const current = await this.evaluate(tx, scope, parseSpfvDraft(preview.draft), atS);
-        valid(demandHash(current.replaceTrainIds) === demandHash(preview.replacementTrainIds), "Trassenzuordnung wurde seit der Vorschau geändert.", 409);
+        valid(demandHash(current.replaceTrainIds) === demandHash(preview.replacementTrainIds)
+          && demandHash(current.replacementTrips) === demandHash(preview.replacementTrips), "Trassenzuordnung wurde seit der Vorschau geändert.", 409);
         valid(current.checkpoint.stateHash === preview.fleetStateHash && demandHash(current.release) === preview.infrastructureHash,
           "Flotte oder Infrastruktur wurden seit der Vorschau geändert.", 409);
         valid(demandHash(current.estimate) === demandHash({ source: preview.provenance, requested: preview.requested, served: preview.served,

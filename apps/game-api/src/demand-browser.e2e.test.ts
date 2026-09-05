@@ -11,7 +11,7 @@ const operatorId = "22222222-2222-4222-8222-222222222222";
 // Labelled synthetic fixtures exercise browser behaviour; no claim about live-world demand.
 const period = {worldId, periodId: "Beispielperiode", periodStartS: 0, periodEndS: 86_400, asOfS: 600, releaseId: "Beispielrelease", source: "forecast" as const};
 const overview: DemandOverview = {...period, schemaVersion: "zugfolge-demand-overview/v1", items: Array.from({length: 50}, (_, index) => ({stationId: `station-${index}`, label: index === 0 ? "Berlin Hauptbahnhof" : `Beispielbahnhof ${index}`, requestedPassengers: null, servedPassengers: index % 3 === 0 ? null : index * 21, unservedPassengers: null})), zones: Array.from({length: 50}, (_, index) => ({zoneId: `zone-${index}`, label: `Beispielgebiet ${index}`, requestedPassengers: 400, servedPassengers: 210, unservedPassengers: 40, alternativePassengers: 150})), nextCursor: "next-fixture-page"};
-const catalog = {schemaVersion: "zugfolge-spfv-catalog/v1", ...period, operatorId, defaultHeadwayS: 3_600, stops: [{id: "berlin", label: "Berlin Hauptbahnhof"}, {id: "leipzig", label: "Leipzig Hauptbahnhof"}, {id: "erfurt", label: "Erfurt Hauptbahnhof"}], formations: [{id: "formation-1", label: "Beispielzugverband", seats: 240, firstClassSeats: 32, bicyclePlaces: 8, wheelchairPlaces: 2}], lines: []};
+const catalog = {schemaVersion: "zugfolge-spfv-catalog/v1", ...period, operatorId, defaultHeadwayS: 3_600, stops: [{id: "berlin", label: "Berlin Hauptbahnhof"}, {id: "leipzig", label: "Leipzig Hauptbahnhof"}, {id: "erfurt", label: "Erfurt Hauptbahnhof"}], formations: [{id: "formation-1", label: "Beispielzugverband", seats: 240, firstClassSeats: 32, bicyclePlaces: 8, wheelchairPlaces: 2}], lines: [{id: "existing-line", referenceTrainId: "release-reference-1", name: "Bestehende Beispielleinie", stopIds: ["berlin", "leipzig", "erfurt"], headwayS: 3600, fareCents: "2990", formationId: "formation-1", validFromS: 21600, validUntilS: 79200}]};
 
 (process.env["ZUGFOLGE_BROWSER_E2E"] === "1" ? describe : describe.skip)("M10 Nachfrage und Fernverkehr im Browser", () => {
   let app: FastifyInstance;
@@ -39,7 +39,10 @@ const catalog = {schemaVersion: "zugfolge-spfv-catalog/v1", ...period, operatorI
     app.post(`${base}/preview`, async (request) => {
       previewCount++;
       if (pausePreview) await new Promise<void>((resolve) => { delayPreview = resolve; });
-      return {schemaVersion: "zugfolge-spfv-preview/v1", ...period, operatorId, previewId: `preview-${previewCount}`, requestedPassengers: 510, servedPassengers: 420, unservedPassengers: 90, capacity: 240, fareRevenueCents: "1255800", costsCents: null, connectionEffects: ["Leipzig: Anschluss nach Halle mit 8 Minuten Übergang; 14 Modellreisende betroffen."], conflicts: [], confirmationAllowed: true, submittedDraft: request.body};
+      const replacementTrips = (request.body as {lineId?: string}).lineId ? [101, 103].map((number, index) => ({
+        trainId: `player-existing-${number}`, trainNumber: number, departureS: 21600 + index * 3600,
+        originLabel: "Berlin Hauptbahnhof", destinationLabel: "Erfurt Hauptbahnhof"})) : [];
+      return {schemaVersion: "zugfolge-spfv-preview/v1", ...period, operatorId, previewId: `preview-${previewCount}`, requestedPassengers: 510, servedPassengers: 420, unservedPassengers: 90, capacity: 240, capacityFacts: {standardSeats: 200, premiumSeats: 40, bicycleSpaces: 6, wheelchairSpaces: 2}, replacementTrainIds: replacementTrips.map((trip) => trip.trainId), replacementTrips, fareRevenueCents: "1255800", costsCents: null, connectionEffects: ["Leipzig: Anschluss nach Halle mit 8 Minuten Übergang; 14 Modellreisende betroffen."], conflicts: [], confirmationAllowed: true, submittedDraft: request.body};
     });
     app.post(`${base}/confirm`, async (request, reply) => {
       confirmBodies.push(request.body as {previewId: string; commandId: string});
@@ -103,6 +106,32 @@ const catalog = {schemaVersion: "zugfolge-spfv-catalog/v1", ...period, operatorI
       expect(await page.locator("#spfv-confirm").count()).toBe(0);
       expect(await page.locator('[name="fareEuro"]').inputValue()).toBe("35,00");
     } finally { pausePreview = false; delayPreview?.(); delayPreview = undefined; await page.close(); }
+  });
+  it("nennt bei einer Linienänderung die tatsächlich ersetzten Fahrten vor der Bestätigung", {timeout: 20_000}, async () => {
+    const page = await browser.newPage({viewport: {width: 390, height: 900}});
+    try {
+      await page.goto(`${origin}/?view=spfv&operator=${operatorId}&train=player-existing-101&trainScope=own&demand=1`);
+      await page.locator("#spfv-form").waitFor();
+      expect(await page.locator(".spfv-reference").innerText()).toContain("player-existing-101");
+      await page.locator("#spfv-line").selectOption("existing-line");
+      const previewRequest = page.waitForRequest((request) => request.method() === "POST" && request.url().endsWith("/preview"));
+      await page.getByRole("button", {name: "Nachfrage & Trassen prüfen"}).click(); await page.locator("#spfv-confirm").waitFor();
+      expect((await previewRequest).postDataJSON()).toMatchObject({lineId: "existing-line", referenceTrainId: "release-reference-1"});
+      expect(await page.locator(".spfv-preview").innerText()).toContain("Bestehende Beispielleinie");
+      const affected = page.getByRole("list", {name: "Zu ersetzende Fahrten"});
+      expect(await affected.innerText()).toContain("Zug 101 · Tag 1, 06:00"); expect(await affected.innerText()).toContain("Zug 103 · Tag 1, 07:00");
+      expect(await affected.innerText()).toContain("Berlin Hauptbahnhof → Erfurt Hauptbahnhof");
+      expect(await affected.innerText()).not.toContain("player-existing-");
+      await affected.focus(); expect(await affected.evaluate((element) => document.activeElement === element)).toBe(true);
+      expect(await page.locator(".spfv-preview").innerText()).toContain("1. Klasse: 40 · 2. Klasse: 200 · Fahrradplätze: 6");
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1)).toBe(true);
+      const returnUrl = new URL(await page.getByRole("link", {name: "Zur ausgewählten Karte"}).getAttribute("href") ?? "", origin);
+      expect(returnUrl.searchParams.get("focus")).toBe("train:player-existing-101");
+      await page.locator("#spfv-line").selectOption(""); await fill(page);
+      const newLineRequest = page.waitForRequest((request) => request.method() === "POST" && request.url().endsWith("/preview"));
+      await page.getByRole("button", {name: "Nachfrage & Trassen prüfen"}).click(); await page.locator("#spfv-confirm").waitFor();
+      expect((await newLineRequest).postDataJSON()).not.toHaveProperty("referenceTrainId");
+    } finally { await page.close(); }
   });
   it("hält Navigation und Formulare auf Desktop, Notebook, Tablet und schmalen Displays innerhalb des Viewports", {timeout: 20_000}, async () => {
     const page = await browser.newPage();

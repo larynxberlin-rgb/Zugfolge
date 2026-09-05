@@ -64,6 +64,8 @@ nativeIt("verknüpft HTTP, native Flotte, Nachfrage, Trassenkonkurrenz und Resto
       payload: formation.snapshot, producedAt: new Date(1000), ingestedAt: new Date(1000) });
     await db.insert(fleetWorldCheckpoints).values({ worldId: WORLD, revision: formation.state.revision,
       stateSchema: formation.state.schemaVersion, state: formation.state, stateHash: formation.stateHash, snapshotHash,
+      commandId: formation.commandReceipt.commandId, commandSchema: FLEET_FORMATION_COMMAND_SCHEMA,
+      commandJson: formation.commandReceipt.canonicalCommandJson, commandHash: formation.commandReceipt.commandHash,
       producedAt: new Date(1000), ingestedAt: new Date(1000) });
 
     const input = JSON.parse(readFileSync(new URL("../../../crates/zugfolge-demand/examples/evaluation.json", import.meta.url), "utf8"));

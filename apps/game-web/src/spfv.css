@@ -25,6 +25,8 @@
 .spfv-facts div { display: grid; grid-template-columns: minmax(100px, .7fr) minmax(0, 1fr); gap: 16px; padding: 12px 0; border-bottom: 1px solid #303b46; font-size: 13px; }
 .spfv-facts dt { color: #b5c0cc; }
 .spfv-facts dd { margin: 0; overflow-wrap: anywhere; line-height: 1.5; }
+.spfv-affected-trains { max-height: 16rem; overflow-y: auto; margin: 0; padding-left: 20px; }
+.spfv-affected-trains:focus-visible { outline: 2px solid #a9a1ff; outline-offset: 3px; }
 .spfv-metrics { display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 10px; margin: 18px 0; }
 .spfv-metrics div { display: grid; gap: 6px; }
 .spfv-metrics strong { color: #c8bfff; font-size: 22px; }

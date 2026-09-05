@@ -10,7 +10,7 @@ import { drizzle } from "drizzle-orm/pglite";
 import { migrate } from "drizzle-orm/pglite/migrator";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { demandHash } from "./demand-store.js";
+import { appendDemandEvent, demandHash } from "./demand-store.js";
 import { parseSpfvDraft, SpfvService, type SpfvDraft, type SpfvEstimate, type SpfvScope, type SpfvServiceDependencies } from "./spfv-service.js";
 
 const WORLD = "11111111-1111-4111-8111-111111111111";
@@ -138,7 +138,11 @@ describe("SPFV: persistente Vorschau und bestehende Trassenautorität", () => {
     const edit = await service.preview(scope, editDraft);
     await expect(service.confirm(scope, { previewId: edit.previewId, commandId: "edit" })).rejects.toThrow("Trassenkoordinierung");
     const old = await db.select().from(simulationCommands).where(eq(simulationCommands.commandType, "planning.path-request"));
-    const reservations = Object.fromEntries(old.map(({ payload }) => [(payload as { trainId: string }).trainId, {}]));
+    const reservations = Object.fromEntries(old.map(({ payload }) => {
+      const request = payload as {trainId: string; trainNumber: number; desiredDepartureS: number};
+      return [request.trainId, {number: request.trainNumber, passengerStops: [
+        {stationId: "a", departureS: request.desiredDepartureS}, {stationId: "c", departureS: request.desiredDepartureS + 600}]}];
+    }));
     // Transport fixture: the native tests independently prove reservation and time validity.
     const sequence = (await db.select().from(domainEvents)).length + 1;
     await db.insert(domainEvents).values({ worldId: WORLD, sequence, eventType: "planning.runtime-state", occurredAt: new Date(),
@@ -146,11 +150,22 @@ describe("SPFV: persistente Vorschau und bestehende Trassenautorität", () => {
     await db.update(simulationCommands).set({ status: "processed" });
     await expect(service.confirm(scope, { previewId: edit.previewId, commandId: "edit" })).rejects.toThrow("Trassenzuordnung");
     const freshEdit = await service.preview(scope, editDraft);
+    const expectedTrip = old.map(({payload}) => payload as {trainId: string; trainNumber: number; desiredDepartureS: number})
+      .find((request) => request.desiredDepartureS === 7200)!;
+    expect(freshEdit.replacementTrips).toEqual([{trainId: expectedTrip.trainId, trainNumber: expectedTrip.trainNumber,
+      departureS: 7200, originLabel: "Bahnhof a", destinationLabel: "Bahnhof c"}]);
+    const changed = structuredClone(reservations);
+    changed[expectedTrip.trainId]!.passengerStops[0]!.departureS = 7201;
+    await appendDemandEvent(db, WORLD, "planning.runtime-state", {
+      projectionRevision: 2, state: {infrastructureHash: "f".repeat(64), reservations: changed}}, new Date(0));
+    await expect(service.confirm(scope, {previewId: freshEdit.previewId, commandId: "edit"})).rejects.toThrow("Trassenzuordnung");
+    await appendDemandEvent(db, WORLD, "planning.runtime-state", {
+      projectionRevision: 3, state: {infrastructureHash: "f".repeat(64), reservations}}, new Date(0));
     const second = await service.confirm(scope, { previewId: freshEdit.previewId, commandId: "edit" });
     const [coordinate] = await db.select().from(simulationCommands).where(eq(simulationCommands.id, second.planningCoordinationId));
     const expected = old.filter(({ payload }) => (payload as { desiredDepartureS: number }).desiredDepartureS >= 7200)
       .map(({ payload }) => (payload as { trainId: string }).trainId);
-    expect(coordinate?.payload).toMatchObject({ expectedProjectionRevision: 1, replaceTrainIds: expected, effectiveFromS: 10 });
+    expect(coordinate?.payload).toMatchObject({ expectedProjectionRevision: 3, replaceTrainIds: expected, effectiveFromS: 10 });
     expect(freshEdit.replacementTrainIds).toEqual(expected);
     expect(second.planningRequestIds).toHaveLength(1);
     expect(second.planningRequestIds[0]).not.toBe(first.planningRequestIds[0]);
