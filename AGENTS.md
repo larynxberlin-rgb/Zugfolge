@@ -124,7 +124,11 @@ Lastgrößen: `docs/architektur.md`.
 - **Property-Tests** für Invariante 1.
 - **Determinismus-Test in CI:** gleicher Seed ⇒ gleicher Zustands-Hash.
 - **ADR für jede Grundsatzentscheidung.**
-- Kein generierter Code ohne einen Test, der ohne ihn fehlschlägt.
+- Neue fachliche Regeln und behobene Fehler erhalten gezielte Verhaltenstests.
+  Für Dokumentation, Formatierung und kleine Refactorings reichen vorhandene
+  Prüfungen. Keine Tests allein für Quelltextschreibweisen oder Workflow-Anordnung.
+- Die reguläre CI bleibt auf vier Jobs begrenzt; aufwendige Last-, Import- und
+  Betriebsabnahmen laufen bei Bedarf. Umfang und Befehle: `docs/ci.md`.
 - Monorepo mit harten Domänengrenzen. `AGENTS.md` ist die kanonische
   Agenten-Anleitung; Domänengrenzen und Fachverträge stehen in `docs/`, damit
   keine abweichenden Kopien je Paket verrotten.

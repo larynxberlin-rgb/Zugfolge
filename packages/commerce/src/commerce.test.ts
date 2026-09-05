@@ -111,18 +111,22 @@ function worldDeployCommand(
   };
 }
 
-beforeEach(async () => {
-  client = new PGlite();
-  db = drizzle(client, { schema });
-  await migrate(db, { migrationsFolder: MIGRATIONS_FOLDER });
-  await db.insert(worlds).values([
-    { id: WORLD, name: "Testwelt", schedulePeriodWeeks: 4, epoch: NOW },
-    { id: OTHER_WORLD, name: "Andere Welt", schedulePeriodWeeks: 4, epoch: NOW },
-  ]);
-}, 30_000);
-afterEach(async () => client.close());
+function useDatabase() {
+  beforeEach(async () => {
+    client = new PGlite();
+    db = drizzle(client, { schema });
+    await migrate(db, { migrationsFolder: MIGRATIONS_FOLDER });
+    await db.insert(worlds).values([
+      { id: WORLD, name: "Testwelt", schedulePeriodWeeks: 4, epoch: NOW },
+      { id: OTHER_WORLD, name: "Andere Welt", schedulePeriodWeeks: 4, epoch: NOW },
+    ]);
+  }, 30_000);
+  afterEach(async () => client.close());
+}
 
 describe("signierter Odoo-Receiver", () => {
+  useDatabase();
+
   it("reduziert Entitlement Grant, Revoke, Restore und verspätete Retries je Ursprungsbeleg", async () => {
     const send = async (eventId: string, sourceRevision: number, change: "grant" | "revoke" | "restore", offset: number, sourceReference = "invoice-42", validUntil?: string) => {
       const envelope = entitlementEnvelope(eventId);
@@ -234,6 +238,8 @@ describe("Entitlement-Schutzgrenze", () => {
 });
 
 describe("Bridge", () => {
+  useDatabase();
+
   it("retryt eine fehlgeschlagene Projektion ohne den Queue-Fortschritt des Games zu blockieren", async () => {
     await db.insert(odooProjectionOutbox).values({ worldId: WORLD, messageType: "world.projection", schemaVersion: "zugfolge-odoo/v1", correlationId: "correlation-bridge", payload: { freshness: "delayed" }, occurredAt: NOW, enqueuedAt: NOW });
     const failed = await dispatchOdooProjectionOutbox(db, WORLD, { project: async () => { throw new Error("offline"); } }, NOW);
@@ -484,6 +490,10 @@ describe("Vier-Augen-Validierung", () => {
     } as unknown as AdminCommandPayload;
     expect(() => validateAdminCommand(command)).toThrow(/fachfremde Felder/);
   });
+});
+
+describe("Administrationsqueue", () => {
+  useDatabase();
 
   it("persistiert world_deploy nur als autorisierte Queue-Nachricht und erzeugt ohne Game-Handler keine Wirkung", async () => {
     const payload: OdooWebhookEnvelope = {
@@ -1038,6 +1048,8 @@ describe("Vier-Augen-Validierung", () => {
 });
 
 describe("nächtliche Reconciliation", () => {
+  useDatabase();
+
   it("vergleicht nur die Serverhauptwelt und eigene globale Belege gegen das zentrale Odoo", async () => {
     const globalScope = "00000000-0000-0000-0000-000000000000";
     const base = { messageType: "world.projection", schemaVersion: "zugfolge-odoo/v1", correlationId: "server-scope", payload: {}, occurredAt: NOW, enqueuedAt: NOW, deliveredAt: NOW };

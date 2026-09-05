@@ -175,8 +175,10 @@ ingestiert dessen Ereignisse und prüft Betriebszentrale sowie Tagesbericht.
 Zustands-, Entscheidungs- und Programmhash werden im Lauf geprüft.
 Der Harness startet den Kern zweimal mit identischer gespeicherter Version und
 demselben Kommandolog und verlangt byteidentische Ausgabe. Der eigene
-`m7-acceptance`-Job in `.github/workflows/ci.yml` führt diesen Beweis auf Linux
-bei jedem Push und Pull Request aus.
+`m7-acceptance`-Job in `.github/workflows/extended.yml` führt diesen Beweis auf
+Linux bei einem manuell gestarteten erweiterten Prüflauf aus. Die reguläre
+PR-CI prüft weiterhin die Regeln, ihre Projektionen und den Determinismus;
+siehe [`ci.md`](ci.md).
 
 M8 bleibt für die Entstehung realer und simulierter Störungen verantwortlich.
 M7 verarbeitet eine eingespeiste Streckensperrung vollständig, erfindet aber

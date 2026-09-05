@@ -26,6 +26,7 @@ Pilotregion: **Leipzig–Halle–Erfurt**.
 | verstehen, worum es geht | [`docs/produkt.md`](docs/produkt.md) |
 | wissen, was entschieden ist | [`docs/entscheidungen.md`](docs/entscheidungen.md), [`docs/adr/`](docs/adr/README.md) |
 | Code beitragen | [`docs/monorepo.md`](docs/monorepo.md) und [`AGENTS.md`](AGENTS.md) |
+| Tests und CI ausführen | [`docs/ci.md`](docs/ci.md) |
 | Begriffe nachschlagen | [`docs/glossar.md`](docs/glossar.md) |
 | die Reihenfolge kennen | [`docs/milestones.md`](docs/milestones.md) |
 | das UX-Zielbild und die künftigen Arbeitsräume verstehen | [`docs/ux-spieler-shell.md`](docs/ux-spieler-shell.md) |
@@ -75,7 +76,7 @@ cargo test --workspace
 ```
 
 ```bash
-pnpm install && pnpm -r build && pnpm -r test
+pnpm install --frozen-lockfile && pnpm build && pnpm test
 ```
 
 ```bash
@@ -85,10 +86,17 @@ pnpm guards
 Der letzte Befehl prüft die harten Invarianten, die kein Compiler sieht — etwa
 dass der Bezahlstatus eines Spielers keine spielentscheidende Domäne berührt.
 
+Die PR-CI besteht aus vier Jobs für Rust, TypeScript, native Integration und
+Repository-Wächter samt Abhängigkeitsprüfung. Größere Last-, Infrastruktur- und
+Betriebsabnahmen werden bei Bedarf manuell gestartet. Auswahl und Befehle:
+[`docs/ci.md`](docs/ci.md).
+
 ## Mitarbeit
 
-Beiträge brauchen ein unterzeichnetes [CLA](CLA.md). Kein Beitrag ohne einen
-Test, der ohne ihn fehlschlägt.
+Beiträge brauchen ein unterzeichnetes [CLA](CLA.md). Tests sichern beobachtbares
+Spielverhalten und behobene Fehler ab. Für kleine Refactorings, Dokumentation
+oder Formatierung reichen passende vorhandene Prüfungen; neue Tests sollen
+einen konkreten Fehler erkennen können.
 
 ## Lizenz
 

@@ -1,0 +1,631 @@
+name: Infrastruktur-Realabnahme (manuell)
+
+on:
+  workflow_dispatch:
+    inputs:
+      run_germany_2026_4_real_acceptance:
+        description: "Deutschland-2026.4-Realabnahme auf dem vertrauenswuerdigen Self-hosted Runner ausfuehren"
+        required: false
+        default: false
+        type: boolean
+      run_germany_2026_5_real_acceptance:
+        description: "Deutschland-2026.5-V2-Builder und Realabnahme auf den vertrauenswuerdigen Self-hosted Runnern ausfuehren"
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: infrastructure-acceptance-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  germany-2026-4-real-acceptance:
+    name: Deutschland 2026.4 Operational-RSS und Worker/PostgreSQL-Catch-up
+    # Nie aus einem Pull Request auf dem privilegierten Self-hosted/Docker-Host
+    # ausfuehren. Der Job ist ausschliesslich eine bewusste manuelle Aktion auf
+    # einem vom Repository-Betreiber ausgewaehlten, bereits geprueften Ref.
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.run_germany_2026_4_real_acceptance == true }}
+    runs-on: [self-hosted, linux, x64, germany-2026-4]
+    timeout-minutes: 180
+    services:
+      postgres:
+        image: postgres:16.14-trixie
+        env:
+          POSTGRES_USER: zugfolge_germany_e2e
+          POSTGRES_PASSWORD: zugfolge-germany-e2e-ci
+          POSTGRES_DB: zugfolge_germany_e2e_ci
+        ports:
+          - 5432/tcp
+        options: >-
+          --health-cmd "pg_isready -U zugfolge_germany_e2e -d zugfolge_germany_e2e_ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      ZUGFOLGE_REAL_GERMANY_2026_4_ROOT: ${{ vars.ZUGFOLGE_REAL_GERMANY_2026_4_ROOT }}
+      ZUGFOLGE_REAL_GERMANY_POSTGRES_BOUNDARY: external-postgresql-process-outside-measured-app-cgroup
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Exakten sauberen Quellcommit binden
+        shell: bash
+        run: |
+          set -euo pipefail
+          git rev-parse HEAD
+          test -z "$(git status --porcelain --untracked-files=all)"
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2.9.2
+        with:
+          shared-key: germany-2026-4-real-acceptance
+
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 11
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Reale create-new-Akzeptanzharnische bauen
+        run: |
+          set -euo pipefail
+          case "${ZUGFOLGE_REAL_GERMANY_2026_4_ROOT}" in /*) ;; *) echo "Artefaktwurzel muss absolut sein." >&2; exit 1;; esac
+          test -f "${ZUGFOLGE_REAL_GERMANY_2026_4_ROOT}/alpha-world-build-configuration.json"
+          test -f "${ZUGFOLGE_REAL_GERMANY_2026_4_ROOT}/operational-infrastructure-v2.json"
+          test -f "${ZUGFOLGE_REAL_GERMANY_2026_4_ROOT}/gtfs-region-20260810-v2.json"
+          test -f "${ZUGFOLGE_REAL_GERMANY_2026_4_ROOT}/timetable-routes-v2.jsonseq"
+          test -f "${ZUGFOLGE_REAL_GERMANY_2026_4_ROOT}/timetable-routes-v2.transfer-demands-v1.json"
+          test -f "${ZUGFOLGE_REAL_GERMANY_2026_4_ROOT}/operational-infrastructure-v2.movement-route-templates-v2.json"
+          test -f "${ZUGFOLGE_REAL_GERMANY_2026_4_ROOT}/alpha-world-deployment.2026.4.json"
+          test -f "${ZUGFOLGE_REAL_GERMANY_2026_4_ROOT}/alpha-world-deployment.2026.4.signed.json"
+          pnpm --filter @zugfolge/game-api... build
+          cargo build --release --locked -p zugfolge-runtime-napi --features node-addon
+          addon_path="${RUNNER_TEMP}/zugfolge-runtime-napi-germany-2026.4.node"
+          install -m 0755 target/release/libzugfolge_runtime_napi.so "${addon_path}"
+          printf 'ZUGFOLGE_RUNTIME_NATIVE_PATH=%s\n' "${addon_path}" >> "${GITHUB_ENV}"
+          addon_sha256="$(sha256sum "${addon_path}" | awk '{print $1}')"
+          printf 'ZUGFOLGE_REAL_GERMANY_EXPECTED_NAPI_SHA256=%s\n' "${addon_sha256}" >> "${GITHUB_ENV}"
+          printf 'ZUGFOLGE_REAL_GERMANY_EXPECTED_TYPESCRIPT_BUILD_SET_SHA256=%s\n' \
+            '2540fcc5eedf7f6a76283d2922ff31d3d244d3bfb5dd15da9af92f05fa78628d' >> "${GITHUB_ENV}"
+          cargo_artifacts="${RUNNER_TEMP}/operational-streaming-real.cargo.jsonl"
+          cargo test --release --locked -p zugfolge-infra --test operational_streaming_real \
+            --no-run --message-format=json-render-diagnostics | tee "${cargo_artifacts}"
+          test_binary="$(node -e '
+            const { readFileSync } = require("node:fs");
+            const paths = new Set(readFileSync(process.argv[1], "utf8").trim().split(/\r?\n/u)
+              .filter(Boolean).map((line) => JSON.parse(line))
+              .filter((entry) => entry.reason === "compiler-artifact"
+                && entry.target?.name === "operational_streaming_real"
+                && typeof entry.executable === "string")
+              .map((entry) => entry.executable));
+            if (paths.size !== 1) throw new Error(`Erwartete exakt ein Operational-Streaming-Testbinary, erhielt ${paths.size}.`);
+            process.stdout.write([...paths][0]);
+          ' "${cargo_artifacts}")"
+          test -x "${test_binary}"
+          test_binary_relative="$(realpath --relative-to="$(realpath .)" "${test_binary}")"
+          case "${test_binary_relative}" in ../*|/*) echo "Testbinary liegt ausserhalb des Checkouts." >&2; exit 1;; esac
+          printf 'ZUGFOLGE_OPERATIONAL_STREAMING_REAL_BINARY=%s\n' "${test_binary_relative}" >> "${GITHUB_ENV}"
+          cargo test --release --locked -p zugfolge-sim-runtime --test germany_alpha_world_runtime_real --no-run
+          mkdir -p test-results/operational-v2 test-results/germany-2026.4
+
+      - name: Operational-v2 in frischer cgroup-v2 auf exakt 512 MiB begrenzen
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -x "${ZUGFOLGE_OPERATIONAL_STREAMING_REAL_BINARY}"
+          artifact_root="$(realpath "${ZUGFOLGE_REAL_GERMANY_2026_4_ROOT}")"
+          workspace="$(realpath .)"
+          docker run --rm --network none \
+            --memory 512m --memory-swap 512m \
+            --volume "${workspace}:/workspace:rw" \
+            --volume "${artifact_root}:/artifacts:ro" \
+            --workdir /workspace \
+            --env ZUGFOLGE_RUN_OPERATIONAL_V2_REAL_RSS=1 \
+            --env ZUGFOLGE_OPERATIONAL_V2_REAL_INPUT=/artifacts/operational-infrastructure-v2.json \
+            --env ZUGFOLGE_OPERATIONAL_V2_REAL_RELEASE_ID=infra-deutschland-2026.4 \
+            --env ZUGFOLGE_OPERATIONAL_V2_REAL_EXPECTED_BYTES=983736272 \
+            --env ZUGFOLGE_OPERATIONAL_V2_REAL_EXPECTED_SOURCE_SHA256=64260fb3aca24d6ed8784c2a6891e1269b8f390c7b7db185bbee3001565f47e6 \
+            --env ZUGFOLGE_OPERATIONAL_V2_REAL_EXPECTED_STATE_HASH=deb038434d53963ba6436d4b6811ffc096374ffd1c75887b4945b4a46ea3c788 \
+            --env ZUGFOLGE_OPERATIONAL_V2_REAL_RSS_PROOF_OUTPUT=/workspace/test-results/operational-v2/streaming-rss-proof.json \
+            --env ZUGFOLGE_OPERATIONAL_V2_REAL_REQUIRE_CGROUP_LIMIT=1 \
+            ubuntu:24.04 "/workspace/${ZUGFOLGE_OPERATIONAL_STREAMING_REAL_BINARY}" \
+            --ignored --exact realer_korpus_ab_900_mib_bleibt_unter_fester_rss_grenze --nocapture
+
+      - name: App-cgroup gegen externes PostgreSQL bis kaltem Worker-Catch-up, Restore und Readiness
+        shell: bash
+        env:
+          ZUGFOLGE_REAL_GERMANY_POSTGRES_URL: postgres://zugfolge_germany_e2e:zugfolge-germany-e2e-ci@127.0.0.1:${{ job.services.postgres.ports['5432'] }}/zugfolge_germany_e2e_ci
+        run: |
+          set -euo pipefail
+          systemd-run --user --scope --quiet \
+            --property MemoryMax=536870912 \
+            --property MemorySwapMax=0 \
+            env \
+              NODE_OPTIONS=--max-old-space-size=384 \
+              ZUGFOLGE_RUN_GERMANY_ALPHA_E2E=1 \
+              ZUGFOLGE_REAL_GERMANY_REQUIRE_CGROUP_LIMIT=1 \
+              ZUGFOLGE_REAL_GERMANY_2026_4_ROOT="${ZUGFOLGE_REAL_GERMANY_2026_4_ROOT}" \
+              ZUGFOLGE_REAL_GERMANY_ALPHA_E2E_EVIDENCE="${GITHUB_WORKSPACE}/test-results/germany-2026.4/alpha-world-e2e.json" \
+              ZUGFOLGE_REAL_GERMANY_POSTGRES_URL="${ZUGFOLGE_REAL_GERMANY_POSTGRES_URL}" \
+              ZUGFOLGE_REAL_GERMANY_POSTGRES_BOUNDARY="${ZUGFOLGE_REAL_GERMANY_POSTGRES_BOUNDARY}" \
+              ZUGFOLGE_RUNTIME_NATIVE_PATH="${ZUGFOLGE_RUNTIME_NATIVE_PATH}" \
+              ZUGFOLGE_REAL_GERMANY_EXPECTED_NAPI_SHA256="${ZUGFOLGE_REAL_GERMANY_EXPECTED_NAPI_SHA256}" \
+              ZUGFOLGE_REAL_GERMANY_EXPECTED_TYPESCRIPT_BUILD_SET_SHA256="${ZUGFOLGE_REAL_GERMANY_EXPECTED_TYPESCRIPT_BUILD_SET_SHA256}" \
+              ZUGFOLGE_REAL_GERMANY_REUSE_DEPLOYMENTS=1 \
+              ZUGFOLGE_REAL_GERMANY_ALPHA_UNSIGNED_DEPLOYMENT="${ZUGFOLGE_REAL_GERMANY_2026_4_ROOT}/alpha-world-deployment.2026.4.json" \
+              ZUGFOLGE_REAL_GERMANY_ALPHA_SIGNED_DEPLOYMENT="${ZUGFOLGE_REAL_GERMANY_2026_4_ROOT}/alpha-world-deployment.2026.4.signed.json" \
+              ZUGFOLGE_REAL_GERMANY_EXPECTED_UNSIGNED_DEPLOYMENT_SHA256=7400d56e2109db29050577c42a53f8e223325c4414c39b96cfcc9453f65eefba \
+              ZUGFOLGE_REAL_GERMANY_EXPECTED_SIGNED_DEPLOYMENT_SHA256=228d7c7cef743536f3b2621db200da898b4a1d30ec2cfe3b19d57fdea55c00c0 \
+              ZUGFOLGE_REAL_GERMANY_EXPECTED_DEPLOYMENT_HASH=4d9627d85ceab1c893a0fe3366e4d5f14f6173c58e164728d92825b81eb87098 \
+              node --test tools/audits/germany-2026.4-alpha-world-runtime.real.test.mjs
+
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: germany-2026-4-real-acceptance-${{ github.run_attempt }}
+          path: |
+            test-results/operational-v2/streaming-rss-proof.json
+            test-results/germany-2026.4/alpha-world-e2e.json
+          if-no-files-found: warn
+          retention-days: 30
+
+  germany-2026-5-real-builder-reproduction:
+    name: Deutschland 2026.5 manifestgebundener V2-Kartenbuilder
+    # Der Windows-GDAL-Korpus laeuft nur nach einem bewussten Dispatch auf dem
+    # dafuer inventarisierten Runner. Pull-Request-Code erreicht diesen Host nie.
+    if: ${{ github.event_name == 'workflow_dispatch' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch) && inputs.run_germany_2026_5_real_acceptance == true }}
+    runs-on: [self-hosted, windows, x64, germany-2026-5-builder]
+    timeout-minutes: 480
+    env:
+      ZUGFOLGE_REAL_GERMANY_2026_5_WINDOWS_ROOT: ${{ vars.ZUGFOLGE_REAL_GERMANY_2026_5_WINDOWS_ROOT }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+
+      - name: Exakten sauberen Quellcommit und finalen Pinvertrag binden
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $head = (& git rev-parse HEAD).Trim()
+          if ($head -notmatch '^[a-f0-9]{40}$') { throw "git HEAD ist keine volle Commit-SHA." }
+          $registrationStatus = @(& git status --porcelain --untracked-files=all)
+          if ($registrationStatus.Count -ne 0) { throw "Der Builder-Registrierungscheckout ist nicht sauber." }
+          $pinContract = "tools/audits/germany-2026.5-real-acceptance.pins.json"
+          if (-not (Test-Path -LiteralPath $pinContract -PathType Leaf)) {
+            throw "Der echte Deutschland-2026.5-Realabnahme-Pinvertrag fehlt; der Dispatch bleibt bis zum realen Repin geschlossen."
+          }
+          & git ls-files --error-unmatch -- $pinContract | Out-Null
+          if ($LASTEXITCODE -ne 0) { throw "Der Realabnahme-Pinvertrag ist nicht an HEAD gebunden." }
+          & node tools/audits/germany-2026.5-real-acceptance-pins.mjs export-env $head |
+            Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          if ($LASTEXITCODE -ne 0) { throw "Der Realabnahme-Pinvertrag ist ungueltig." }
+
+      - name: Exakten Artefakt-Source-Commit separat auschecken
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $registrationHead = (& git rev-parse HEAD).Trim()
+          $sourceCommit = $env:ZUGFOLGE_REAL_GERMANY_EXPECTED_SOURCE_COMMIT
+          if ($registrationHead -ne $env:ZUGFOLGE_REAL_GERMANY_PIN_REGISTRATION_COMMIT) {
+            throw "Registrierungscheckout wechselte nach dem Pin-Gate den Commit."
+          }
+          & git cat-file -e "$sourceCommit`^{commit}"
+          if ($LASTEXITCODE -ne 0) { throw "Artefakt-Source-Commit ist im Repository nicht vorhanden." }
+          & git merge-base --is-ancestor $sourceCommit $registrationHead
+          if ($LASTEXITCODE -ne 0) { throw "Artefakt-Source-Commit ist kein Vorfahr des Pin-Registrierungscommits." }
+          $sourceRoot = Join-Path $env:RUNNER_TEMP "zugfolge-germany-2026.5-source-$env:GITHUB_RUN_ID-$env:GITHUB_RUN_ATTEMPT"
+          if (Test-Path -LiteralPath $sourceRoot) { throw "Separater Source-Checkout existiert bereits: $sourceRoot" }
+          & git worktree add --detach -- $sourceRoot $sourceCommit
+          if ($LASTEXITCODE -ne 0) { throw "Separater Artefakt-Source-Checkout ist fehlgeschlagen." }
+          $checkedOutSource = (& git -C $sourceRoot rev-parse HEAD).Trim()
+          if ($checkedOutSource -ne $sourceCommit) { throw "Separater Checkout steht nicht exakt auf dem Artefakt-Source-Commit." }
+          $sourceStatus = @(& git -C $sourceRoot status --porcelain --untracked-files=all)
+          if ($sourceStatus.Count -ne 0) { throw "Separater Artefakt-Source-Checkout ist nicht sauber." }
+          $pinContract = (Resolve-Path -LiteralPath "tools/audits/germany-2026.5-real-acceptance.pins.json").Path
+          "ZUGFOLGE_REAL_GERMANY_2026_5_SOURCE_ROOT=$sourceRoot" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "ZUGFOLGE_REAL_GERMANY_2026_5_PIN_CONTRACT=$pinContract" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Gepinnte Windows-Korpuswurzel und create-new Builderziel vorbereiten
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          if ([string]::IsNullOrWhiteSpace($env:ZUGFOLGE_REAL_GERMANY_2026_5_WINDOWS_ROOT)) {
+            throw "Repository-Variable ZUGFOLGE_REAL_GERMANY_2026_5_WINDOWS_ROOT fehlt."
+          }
+          if ($env:ZUGFOLGE_REAL_GERMANY_2026_5_WINDOWS_ROOT -match "[`r`n]") { throw "Korpuswurzel enthaelt einen Zeilenumbruch." }
+          if (-not [IO.Path]::IsPathFullyQualified($env:ZUGFOLGE_REAL_GERMANY_2026_5_WINDOWS_ROOT)) {
+            throw "Korpuswurzel muss absolut sein."
+          }
+          $corpusRoot = (Resolve-Path -LiteralPath $env:ZUGFOLGE_REAL_GERMANY_2026_5_WINDOWS_ROOT).Path
+          $candidateRoot = (Resolve-Path -LiteralPath (Join-Path $corpusRoot "var/derived/germany-2026.5")).Path
+          $containedPrefix = $corpusRoot.TrimEnd([IO.Path]::DirectorySeparatorChar, [IO.Path]::AltDirectorySeparatorChar) + [IO.Path]::DirectorySeparatorChar
+          if (-not $candidateRoot.StartsWith($containedPrefix, [StringComparison]::OrdinalIgnoreCase)) {
+            throw "Kandidat verlaesst die gepinnte Windows-Korpuswurzel."
+          }
+          $required = @(
+            "var/derived/germany-2026.5/semantic-tile-inputs-free-v2/inputs.json",
+            "var/derived/germany-2026.5/map-release-free-v2/public/infra-release.json",
+            "var/derived/germany-2026.5/source-capture.2026.5.json",
+            "var/source-cache/annual-2026-pinned/protomaps-dark-upstream-2026-08-12-08a5067f9cc54b1068e0e3cb830d9c51a6c8375be03ebea6acc7108d8d61d2df.json",
+            "var/source-cache/annual-2026-pinned/welt-mit-deutschland-detail-2026-08-12-8a5a34b8586ef55313370a8dfc7143f80e9c5e85fb1af5c5dfc2eb68e22c658b.metadata.json",
+            "var/source-cache/annual-2026-pinned/welt-mit-deutschland-detail-2026-08-12-c766073e55b99b213276328e504cbb7a69b0b65db0546adf484539c3bd319aed.pmtiles",
+            "tools/gdal-runtime-3.13.2-win32-x64/manifest.json"
+          )
+          foreach ($relative in $required) {
+            if (-not (Test-Path -LiteralPath (Join-Path $corpusRoot $relative) -PathType Leaf)) {
+              throw "Gepinnte Builder-Eingabe fehlt: $relative"
+            }
+          }
+          $builderRoot = Join-Path $env:RUNNER_TEMP "zugfolge-germany-2026.5-builder-$env:GITHUB_RUN_ID-$env:GITHUB_RUN_ATTEMPT"
+          if (Test-Path -LiteralPath $builderRoot) { throw "Create-new Builderziel existiert bereits: $builderRoot" }
+          $builderArtifactRoot = Join-Path $builderRoot "germany-2026.5"
+          New-Item -ItemType Directory -Path (Join-Path $builderArtifactRoot "map-release-free-v2/public") | Out-Null
+          "ZUGFOLGE_REAL_GERMANY_2026_5_WINDOWS_CORPUS_ROOT=$corpusRoot" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "ZUGFOLGE_REAL_GERMANY_2026_5_WINDOWS_CANDIDATE_ROOT=$candidateRoot" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "ZUGFOLGE_REAL_GERMANY_2026_5_BUILDER_ROOT=$builderRoot" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "ZUGFOLGE_REAL_GERMANY_2026_5_BUILDER_ARTIFACT_ROOT=$builderArtifactRoot" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: PMTiles, Karten-Capture und Static Sources create-new reproduzieren
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $corpusRoot = $env:ZUGFOLGE_REAL_GERMANY_2026_5_WINDOWS_CORPUS_ROOT
+          $candidateRoot = $env:ZUGFOLGE_REAL_GERMANY_2026_5_WINDOWS_CANDIDATE_ROOT
+          $builderArtifactRoot = $env:ZUGFOLGE_REAL_GERMANY_2026_5_BUILDER_ARTIFACT_ROOT
+          $sourceRoot = $env:ZUGFOLGE_REAL_GERMANY_2026_5_SOURCE_ROOT
+          $pmtiles = Join-Path $builderArtifactRoot "map-release-free-v2/infra-deutschland-2026.5.pmtiles"
+          $capture = Join-Path $builderArtifactRoot "map-release-free-v2/public/map-source-capture.json"
+          $sources = Join-Path $builderArtifactRoot "map-release-free-v2/public/static-map-sources-v2.json"
+          Push-Location $corpusRoot
+          try {
+            & node (Join-Path $sourceRoot "tools/tiles/build-gdal-semantic-pmtiles.mjs") `
+              "var/derived/germany-2026.5/semantic-tile-inputs-free-v2/inputs.json" `
+              "var/derived/germany-2026.5/semantic-tile-inputs-free-v2" `
+              $pmtiles `
+              (Join-Path $sourceRoot "tools/tiles/gdal-runtime.3.13.2-win32-x64.manifest.json") `
+              "."
+            if ($LASTEXITCODE -ne 0) { throw "Manifestgebundener GDAL-PMTiles-Build ist fehlgeschlagen." }
+
+            & node (Join-Path $sourceRoot "tools/tiles/build-map-source-capture.mjs") `
+              "var/source-cache/annual-2026-pinned/protomaps-dark-upstream-2026-08-12-08a5067f9cc54b1068e0e3cb830d9c51a6c8375be03ebea6acc7108d8d61d2df.json" `
+              "var/source-cache/annual-2026-pinned/welt-mit-deutschland-detail-2026-08-12-8a5a34b8586ef55313370a8dfc7143f80e9c5e85fb1af5c5dfc2eb68e22c658b.metadata.json" `
+              "var/source-cache/annual-2026-pinned/welt-mit-deutschland-detail-2026-08-12-c766073e55b99b213276328e504cbb7a69b0b65db0546adf484539c3bd319aed.pmtiles" `
+              $pmtiles `
+              (Join-Path $candidateRoot "map-release-free-v2/public/infra-release.json") `
+              (Join-Path $sourceRoot "tools/tiles/map-asset-notices.annual-2026.5.json") `
+              $sourceRoot `
+              (Join-Path $sourceRoot "tools/tiles/map-build-cache-inventory.annual-2026.5.plan.json") `
+              $corpusRoot `
+              $capture
+            if ($LASTEXITCODE -ne 0) { throw "Karten-Capture-v2-Builder ist fehlgeschlagen." }
+
+            & node (Join-Path $sourceRoot "tools/tiles/static-map-sources-cli.mjs") materialize `
+              (Join-Path $sourceRoot "tools/tiles/static-map-sources.annual-2026.5.json") `
+              (Join-Path $sourceRoot "tools/region-import/germany/source-catalog.json") `
+              (Join-Path $candidateRoot "source-capture.2026.5.json") `
+              (Join-Path $sourceRoot "tools/tiles/map-source-catalog.json") `
+              $capture `
+              (Join-Path $sourceRoot "tools/guards/quellenregister.json") `
+              (Join-Path $sourceRoot "tools/tiles/map-asset-notices.annual-2026.5.json") `
+              $sourceRoot `
+              $sources
+            if ($LASTEXITCODE -ne 0) { throw "Static-Sources-v3-Builder ist fehlgeschlagen." }
+          } finally {
+            Pop-Location
+          }
+
+      - name: Frische Builderbytes gegen den commitgebundenen Kandidaten schliessen
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $receipt = Join-Path $env:ZUGFOLGE_REAL_GERMANY_2026_5_BUILDER_ROOT "builder-reproduction.json"
+          & node tools/audits/germany-2026.5-real-acceptance-pins.mjs verify-builder `
+            $env:ZUGFOLGE_REAL_GERMANY_2026_5_BUILDER_ARTIFACT_ROOT `
+            $env:ZUGFOLGE_REAL_GERMANY_2026_5_WINDOWS_CANDIDATE_ROOT `
+            $env:ZUGFOLGE_REAL_GERMANY_EXPECTED_SOURCE_COMMIT `
+            $env:ZUGFOLGE_REAL_GERMANY_PIN_REGISTRATION_COMMIT `
+            $receipt
+          if ($LASTEXITCODE -ne 0) { throw "Frischer Builder und gepinnter Kandidat laufen auseinander." }
+
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: germany-2026-5-real-builder-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/zugfolge-germany-2026.5-builder-${{ github.run_id }}-${{ github.run_attempt }}/builder-reproduction.json
+          if-no-files-found: warn
+          retention-days: 30
+
+  germany-2026-5-real-acceptance:
+    name: Deutschland 2026.5 Validator, Operational-RSS und Worker/PostgreSQL-Catch-up
+    needs: germany-2026-5-real-builder-reproduction
+    # Linux-Runtime und PostgreSQL werden erst nach der bytegleichen Windows-
+    # Builderreproduktion und nur durch denselben bewussten Dispatch erreicht.
+    if: ${{ github.event_name == 'workflow_dispatch' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch) && inputs.run_germany_2026_5_real_acceptance == true }}
+    runs-on: [self-hosted, linux, x64, germany-2026-5-runtime]
+    timeout-minutes: 360
+    services:
+      postgres:
+        image: postgres:16.14-trixie
+        env:
+          POSTGRES_USER: zugfolge_germany_e2e
+          POSTGRES_PASSWORD: zugfolge-germany-e2e-ci
+          POSTGRES_DB: zugfolge_germany_e2e_2026_5_ci
+        ports:
+          - 5432/tcp
+        options: >-
+          --health-cmd "pg_isready -U zugfolge_germany_e2e -d zugfolge_germany_e2e_2026_5_ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      ZUGFOLGE_REAL_GERMANY_2026_5_ROOT: ${{ vars.ZUGFOLGE_REAL_GERMANY_2026_5_ROOT }}
+      ZUGFOLGE_REAL_GERMANY_POSTGRES_BOUNDARY: external-postgresql-process-outside-measured-app-cgroup
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+
+      - name: Exakten sauberen Quellcommit und finalen Pinvertrag binden
+        shell: bash
+        run: |
+          set -euo pipefail
+          head="$(git rev-parse HEAD)"
+          test "${head}" = "${GITHUB_SHA}"
+          test -z "$(git status --porcelain --untracked-files=all)"
+          pin_contract=tools/audits/germany-2026.5-real-acceptance.pins.json
+          test -f "${pin_contract}" || { echo "Der echte .5-Pinvertrag fehlt; Realabnahme bleibt bis zum Repin geschlossen." >&2; exit 1; }
+          git ls-files --error-unmatch -- "${pin_contract}" >/dev/null
+          node tools/audits/germany-2026.5-real-acceptance-pins.mjs export-env "${head}" >> "${GITHUB_ENV}"
+
+      - name: Exakten Artefakt-Source-Commit separat auschecken
+        shell: bash
+        run: |
+          set -euo pipefail
+          registration_head="$(git rev-parse HEAD)"
+          test "${registration_head}" = "${ZUGFOLGE_REAL_GERMANY_PIN_REGISTRATION_COMMIT}"
+          git cat-file -e "${ZUGFOLGE_REAL_GERMANY_EXPECTED_SOURCE_COMMIT}^{commit}"
+          git merge-base --is-ancestor "${ZUGFOLGE_REAL_GERMANY_EXPECTED_SOURCE_COMMIT}" "${registration_head}"
+          source_root="${RUNNER_TEMP}/zugfolge-germany-2026.5-source-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          test ! -e "${source_root}"
+          git worktree add --detach -- "${source_root}" "${ZUGFOLGE_REAL_GERMANY_EXPECTED_SOURCE_COMMIT}"
+          test "$(git -C "${source_root}" rev-parse HEAD)" = "${ZUGFOLGE_REAL_GERMANY_EXPECTED_SOURCE_COMMIT}"
+          test -z "$(git -C "${source_root}" status --porcelain --untracked-files=all)"
+          test -f "${source_root}/tools/audits/germany-2026.5-real-acceptance-pins.mjs"
+          printf 'ZUGFOLGE_REAL_GERMANY_2026_5_SOURCE_ROOT=%s\n' "${source_root}" >> "${GITHUB_ENV}"
+          printf 'ZUGFOLGE_REAL_GERMANY_2026_5_PIN_CONTRACT=%s\n' \
+            "$(realpath tools/audits/germany-2026.5-real-acceptance.pins.json)" >> "${GITHUB_ENV}"
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2.9.2
+        with:
+          shared-key: germany-2026-5-real-acceptance
+
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 11
+
+      - name: Abhaengigkeiten im separaten Source-Checkout installieren
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "${ZUGFOLGE_REAL_GERMANY_2026_5_SOURCE_ROOT}"
+          pnpm install --frozen-lockfile
+
+      - name: Gepinnte Linux-Korpuswurzel und Kandidat pruefen
+        shell: bash
+        run: |
+          set -euo pipefail
+          case "${ZUGFOLGE_REAL_GERMANY_2026_5_ROOT}" in /*) ;; *) echo "Korpuswurzel muss absolut sein." >&2; exit 1;; esac
+          corpus_root="$(realpath "${ZUGFOLGE_REAL_GERMANY_2026_5_ROOT}")"
+          candidate_root="$(realpath "${corpus_root}/var/derived/germany-2026.5")"
+          case "${candidate_root}" in "${corpus_root}"/*) ;; *) echo "Kandidat verlaesst die Korpuswurzel." >&2; exit 1;; esac
+          test -f "${candidate_root}/alpha-world-build-configuration.json"
+          test -f "${candidate_root}/operational-infrastructure-v2.json"
+          test -f "${candidate_root}/gtfs-region-20260810-v2.json"
+          test -f "${candidate_root}/timetable-routes-v2.jsonseq"
+          test -f "${candidate_root}/timetable-routes-v2.transfer-demands-v2.json"
+          test -f "${candidate_root}/operational-infrastructure-v2.movement-route-templates-v2.json"
+          test -f "${candidate_root}/alpha-world-deployment.2026.5.json"
+          test -f "${candidate_root}/alpha-world-deployment.2026.5.signed.json"
+          test -f "${candidate_root}/map-package-signed/manifest.json"
+          printf 'ZUGFOLGE_REAL_GERMANY_2026_5_CORPUS_ROOT=%s\n' "${corpus_root}" >> "${GITHUB_ENV}"
+          printf 'ZUGFOLGE_REAL_GERMANY_2026_5_CANDIDATE_ROOT=%s\n' "${candidate_root}" >> "${GITHUB_ENV}"
+
+      - name: Runtime-Harnische in eigener 8-GiB-No-Swap-Builder-cgroup bauen
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "${ZUGFOLGE_REAL_GERMANY_2026_5_SOURCE_ROOT}"
+          test "$(stat -fc %T /sys/fs/cgroup)" = cgroup2fs
+          systemd-run --user --scope --quiet \
+            --unit="zugfolge-germany-2026-5-harness-builder-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" \
+            --property MemoryMax=8589934592 \
+            --property MemorySwapMax=0 \
+            env CARGO_BUILD_JOBS=2 NODE_OPTIONS=--max-old-space-size=4096 \
+            bash -c '
+              set -euo pipefail
+              pnpm --filter @zugfolge/game-api... build
+              cargo build --release --locked -p zugfolge-runtime-napi --features node-addon
+              cargo build --release --locked -p zugfolge-infra --bin zugfolge-infra-release
+            '
+          addon_path="${RUNNER_TEMP}/zugfolge-runtime-napi-germany-2026.5.node"
+          install -m 0755 target/release/libzugfolge_runtime_napi.so "${addon_path}"
+          addon_sha256="$(sha256sum "${addon_path}" | awk '{print $1}')"
+          test "${addon_sha256}" = "${ZUGFOLGE_REAL_GERMANY_EXPECTED_NAPI_SHA256}"
+          printf 'ZUGFOLGE_RUNTIME_NATIVE_PATH=%s\n' "${addon_path}" >> "${GITHUB_ENV}"
+          printf 'ZUGFOLGE_OPERATIONAL_V2_VALIDATOR_PATH=%s\n' "$(realpath target/release/zugfolge-infra-release)" >> "${GITHUB_ENV}"
+          mkdir -p "${GITHUB_WORKSPACE}/test-results/operational-v2" "${GITHUB_WORKSPACE}/test-results/germany-2026.5"
+
+      - name: Kandidat in eigener 1-GiB-No-Swap-Validator-cgroup pruefen
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "${ZUGFOLGE_REAL_GERMANY_2026_5_SOURCE_ROOT}"
+          systemd-run --user --scope --quiet \
+            --unit="zugfolge-germany-2026-5-validator-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" \
+            --property MemoryMax=1073741824 \
+            --property MemorySwapMax=0 \
+            env \
+              CANDIDATE_ROOT="${ZUGFOLGE_REAL_GERMANY_2026_5_CANDIDATE_ROOT}" \
+              EXPECTED_COMMIT="${ZUGFOLGE_REAL_GERMANY_EXPECTED_SOURCE_COMMIT}" \
+              REGISTRATION_COMMIT="${ZUGFOLGE_REAL_GERMANY_PIN_REGISTRATION_COMMIT}" \
+              PIN_VERIFIER="${GITHUB_WORKSPACE}/tools/audits/germany-2026.5-real-acceptance-pins.mjs" \
+              EVIDENCE_ROOT="${GITHUB_WORKSPACE}/test-results/germany-2026.5" \
+              VALIDATOR="${ZUGFOLGE_OPERATIONAL_V2_VALIDATOR_PATH}" \
+              NODE_OPTIONS=--max-old-space-size=512 \
+              bash -c '
+                set -euo pipefail
+                node "${PIN_VERIFIER}" verify-artifacts \
+                  "${CANDIDATE_ROOT}" "${EXPECTED_COMMIT}" "${REGISTRATION_COMMIT}" \
+                  "${EVIDENCE_ROOT}/artifact-verification.json"
+                set -o noclobber
+                "${VALIDATOR}" validate-operational-infrastructure-v2 \
+                  "${CANDIDATE_ROOT}/operational-infrastructure-v2.json" \
+                  infra-deutschland-2026.5 \
+                  > "${EVIDENCE_ROOT}/operational-validator.json"
+                node "${PIN_VERIFIER}" verify-validator \
+                  "${EVIDENCE_ROOT}/operational-validator.json" "${EXPECTED_COMMIT}"
+              '
+
+      - name: Operational-v2 erneut in frischer 512-MiB-No-Swap-cgroup messen
+        shell: bash
+        run: |
+          set -euo pipefail
+          source_root="$(realpath "${ZUGFOLGE_REAL_GERMANY_2026_5_SOURCE_ROOT}")"
+          evidence_root="$(realpath "${GITHUB_WORKSPACE}/test-results")"
+          candidate_root="$(realpath "${ZUGFOLGE_REAL_GERMANY_2026_5_CANDIDATE_ROOT}")"
+          test ! -e "${evidence_root}/operational-v2/germany-2026.5-runtime-validator.json"
+          test ! -e "${evidence_root}/operational-v2/germany-2026.5-cgroup.metrics"
+          docker run --rm --network none \
+            --memory 512m --memory-swap 512m \
+            --volume "${source_root}:/source:ro" \
+            --volume "${candidate_root}:/artifacts:ro" \
+            --volume "${evidence_root}:/evidence:rw" \
+            --workdir /source \
+            ubuntu:24.04 bash -c '
+              set -euo pipefail
+              memory_max="$(cat /sys/fs/cgroup/memory.max)"
+              memory_swap_max="$(cat /sys/fs/cgroup/memory.swap.max)"
+              test "${memory_max}" = 536870912
+              test "${memory_swap_max}" = 0
+              oom_before="$(awk '\''$1 == "oom" { print $2 }'\'' /sys/fs/cgroup/memory.events)"
+              oom_kill_before="$(awk '\''$1 == "oom_kill" { print $2 }'\'' /sys/fs/cgroup/memory.events)"
+              set -o noclobber
+              /source/target/release/zugfolge-infra-release validate-operational-infrastructure-v2 \
+                /artifacts/operational-infrastructure-v2.json \
+                infra-deutschland-2026.5 \
+                > /evidence/operational-v2/germany-2026.5-runtime-validator.json
+              memory_peak="$(cat /sys/fs/cgroup/memory.peak)"
+              oom_after="$(awk '\''$1 == "oom" { print $2 }'\'' /sys/fs/cgroup/memory.events)"
+              oom_kill_after="$(awk '\''$1 == "oom_kill" { print $2 }'\'' /sys/fs/cgroup/memory.events)"
+              {
+                printf "memoryMaxBytes=%s\n" "${memory_max}"
+                printf "memorySwapMaxBytes=%s\n" "${memory_swap_max}"
+                printf "memoryPeakBytes=%s\n" "${memory_peak}"
+                printf "oomBefore=%s\n" "${oom_before}"
+                printf "oomAfter=%s\n" "${oom_after}"
+                printf "oomKillBefore=%s\n" "${oom_kill_before}"
+                printf "oomKillAfter=%s\n" "${oom_kill_after}"
+              } > /evidence/operational-v2/germany-2026.5-cgroup.metrics
+            '
+          node tools/audits/germany-2026.5-real-acceptance-pins.mjs write-rss-proof \
+            test-results/operational-v2/germany-2026.5-runtime-validator.json \
+            test-results/operational-v2/germany-2026.5-cgroup.metrics \
+            "${ZUGFOLGE_REAL_GERMANY_EXPECTED_SOURCE_COMMIT}" \
+            "${ZUGFOLGE_REAL_GERMANY_PIN_REGISTRATION_COMMIT}" \
+            test-results/operational-v2/germany-2026.5-streaming-rss-proof.json
+
+      - name: Signiertes Delivery-v2-Paket create-new im Game-Staging qualifizieren
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "${ZUGFOLGE_REAL_GERMANY_2026_5_SOURCE_ROOT}"
+          staging_root="${RUNNER_TEMP}/zugfolge-germany-2026.5-game-staging-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          test ! -e "${staging_root}"
+          systemd-run --user --scope --quiet \
+            --unit="zugfolge-germany-2026-5-game-staging-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" \
+            --property MemoryMax=1073741824 \
+            --property MemorySwapMax=0 \
+            env \
+              NODE_OPTIONS=--max-old-space-size=512 \
+              ZUGFOLGE_REAL_SIGNED_MAP_PACKAGE_ROOT="${ZUGFOLGE_REAL_GERMANY_2026_5_CANDIDATE_ROOT}/map-package-signed" \
+              ZUGFOLGE_REAL_SIGNED_MAP_STAGING_ROOT="${staging_root}" \
+              ZUGFOLGE_REAL_SIGNED_MAP_STAGING_EVIDENCE="${GITHUB_WORKSPACE}/test-results/germany-2026.5/signed-game-staging.json" \
+              ZUGFOLGE_REAL_SIGNED_MAP_PACKAGE_VERIFIER="$(realpath tools/tiles/map-package.mjs)" \
+              INFRA_OPERATIONAL_V2_VALIDATOR_PATH="${ZUGFOLGE_OPERATIONAL_V2_VALIDATOR_PATH}" \
+              ZUGFOLGE_REAL_TRUSTED_DELIVERY_KEYS="$(realpath ops/keys/trusted-delivery-keys.json)" \
+              ZUGFOLGE_REAL_GERMANY_2026_5_PIN_CONTRACT="${ZUGFOLGE_REAL_GERMANY_2026_5_PIN_CONTRACT}" \
+              ZUGFOLGE_REAL_GERMANY_EXPECTED_SOURCE_COMMIT="${ZUGFOLGE_REAL_GERMANY_EXPECTED_SOURCE_COMMIT}" \
+              ZUGFOLGE_REAL_GERMANY_PIN_REGISTRATION_COMMIT="${ZUGFOLGE_REAL_GERMANY_PIN_REGISTRATION_COMMIT}" \
+              ZUGFOLGE_REAL_SIGNED_MAP_EXPECTED_MANIFEST_BYTES="${ZUGFOLGE_REAL_SIGNED_MAP_EXPECTED_MANIFEST_BYTES}" \
+              ZUGFOLGE_REAL_SIGNED_MAP_EXPECTED_MANIFEST_SHA256="${ZUGFOLGE_REAL_SIGNED_MAP_EXPECTED_MANIFEST_SHA256}" \
+              node --test tools/audits/germany-2026.5-signed-game-staging.real.test.mjs
+
+      - name: App-cgroup gegen externes PostgreSQL bis kaltem Worker-Catch-up, Restore und Readiness
+        shell: bash
+        env:
+          ZUGFOLGE_REAL_GERMANY_POSTGRES_URL: postgres://zugfolge_germany_e2e:zugfolge-germany-e2e-ci@127.0.0.1:${{ job.services.postgres.ports['5432'] }}/zugfolge_germany_e2e_2026_5_ci
+        run: |
+          set -euo pipefail
+          cd "${ZUGFOLGE_REAL_GERMANY_2026_5_SOURCE_ROOT}"
+          systemd-run --user --scope --quiet \
+            --unit="zugfolge-germany-2026-5-worker-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" \
+            --property MemoryMax=536870912 \
+            --property MemorySwapMax=0 \
+            env \
+              NODE_OPTIONS=--max-old-space-size=384 \
+              ZUGFOLGE_RUN_GERMANY_ALPHA_E2E=1 \
+              ZUGFOLGE_REAL_GERMANY_REQUIRE_CGROUP_LIMIT=1 \
+              ZUGFOLGE_REAL_GERMANY_2026_5_ROOT="${ZUGFOLGE_REAL_GERMANY_2026_5_CANDIDATE_ROOT}" \
+              ZUGFOLGE_REAL_GERMANY_2026_5_PIN_CONTRACT="${ZUGFOLGE_REAL_GERMANY_2026_5_PIN_CONTRACT}" \
+              ZUGFOLGE_REAL_GERMANY_EXPECTED_SOURCE_COMMIT="${ZUGFOLGE_REAL_GERMANY_EXPECTED_SOURCE_COMMIT}" \
+              ZUGFOLGE_REAL_GERMANY_PIN_REGISTRATION_COMMIT="${ZUGFOLGE_REAL_GERMANY_PIN_REGISTRATION_COMMIT}" \
+              ZUGFOLGE_REAL_GERMANY_ALPHA_E2E_EVIDENCE="${GITHUB_WORKSPACE}/test-results/germany-2026.5/alpha-world-e2e.json" \
+              ZUGFOLGE_REAL_GERMANY_POSTGRES_URL="${ZUGFOLGE_REAL_GERMANY_POSTGRES_URL}" \
+              ZUGFOLGE_REAL_GERMANY_POSTGRES_BOUNDARY="${ZUGFOLGE_REAL_GERMANY_POSTGRES_BOUNDARY}" \
+              ZUGFOLGE_RUNTIME_NATIVE_PATH="${ZUGFOLGE_RUNTIME_NATIVE_PATH}" \
+              ZUGFOLGE_REAL_GERMANY_EXPECTED_NAPI_SHA256="${ZUGFOLGE_REAL_GERMANY_EXPECTED_NAPI_SHA256}" \
+              ZUGFOLGE_REAL_GERMANY_EXPECTED_TYPESCRIPT_BUILD_SET_SHA256="${ZUGFOLGE_REAL_GERMANY_EXPECTED_TYPESCRIPT_BUILD_SET_SHA256}" \
+              ZUGFOLGE_REAL_GERMANY_REUSE_DEPLOYMENTS=1 \
+              ZUGFOLGE_REAL_GERMANY_ALPHA_UNSIGNED_DEPLOYMENT="${ZUGFOLGE_REAL_GERMANY_2026_5_CANDIDATE_ROOT}/alpha-world-deployment.2026.5.json" \
+              ZUGFOLGE_REAL_GERMANY_ALPHA_SIGNED_DEPLOYMENT="${ZUGFOLGE_REAL_GERMANY_2026_5_CANDIDATE_ROOT}/alpha-world-deployment.2026.5.signed.json" \
+              ZUGFOLGE_REAL_GERMANY_EXPECTED_UNSIGNED_DEPLOYMENT_SHA256="${ZUGFOLGE_REAL_GERMANY_EXPECTED_UNSIGNED_DEPLOYMENT_SHA256}" \
+              ZUGFOLGE_REAL_GERMANY_EXPECTED_SIGNED_DEPLOYMENT_SHA256="${ZUGFOLGE_REAL_GERMANY_EXPECTED_SIGNED_DEPLOYMENT_SHA256}" \
+              ZUGFOLGE_REAL_GERMANY_EXPECTED_DEPLOYMENT_HASH="${ZUGFOLGE_REAL_GERMANY_EXPECTED_DEPLOYMENT_HASH}" \
+              node --test tools/audits/germany-2026.5-alpha-world-runtime.real.test.mjs
+
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: germany-2026-5-real-acceptance-${{ github.run_attempt }}
+          path: |
+            test-results/germany-2026.5/artifact-verification.json
+            test-results/germany-2026.5/operational-validator.json
+            test-results/germany-2026.5/signed-game-staging.json
+            test-results/operational-v2/germany-2026.5-runtime-validator.json
+            test-results/operational-v2/germany-2026.5-cgroup.metrics
+            test-results/operational-v2/germany-2026.5-streaming-rss-proof.json
+            test-results/germany-2026.5/alpha-world-e2e.json
+          if-no-files-found: warn
+          retention-days: 30

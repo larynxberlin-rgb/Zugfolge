@@ -253,7 +253,8 @@ Peak und beide OOM-Zähler gemeinsam grün sind, trägt die Top-level-Evidence
 `acceptanceEligible=true`. Ein ephemer neu signierter Debuglauf bleibt rot.
 Wegen des privilegierten Self-hosted/Docker-Runners läuft dieser
 Schritt niemals aus einem Pull Request. Er wird nur per bewusstem
-`workflow_dispatch` auf einem vom Repository-Betreiber ausgewählten Ref mit
+`workflow_dispatch` des Workflows [Infrastruktur-Realabnahme](../.github/workflows/infrastructure-acceptance.yml)
+auf einem vom Repository-Betreiber ausgewählten Ref mit
 `run_germany_2026_4_real_acceptance=true` gestartet.
 
 Der getrennte Operational-Streaming-RSS-Test verlangt einen realen Korpus von

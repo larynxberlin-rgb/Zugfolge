@@ -350,6 +350,12 @@ und vergleicht ihn gegen die eingecheckte Referenzdatei.
 
 ## 6. Befehle
 
+Die reguläre CI hat vier Jobs: Rust einschließlich Determinismus und Lizenzen,
+TypeScript einschließlich Build und Tests, native Integration mit PostgreSQL
+und Browser sowie Repository-Wächter einschließlich Node-Abhängigkeiten.
+Lastläufe, Releasewerkzeuge und Betriebsdrills sind manuelle Zusatzprüfungen.
+Der Umfang und die Auswahl stehen in [`ci.md`](ci.md).
+
 ```bash
 cargo test --workspace
 ```
@@ -359,7 +365,7 @@ cargo clippy --workspace --all-targets -- -D warnings
 ```
 
 ```bash
-pnpm install && pnpm -r build && pnpm -r test
+pnpm install --frozen-lockfile && pnpm build && pnpm test
 ```
 
 ```bash

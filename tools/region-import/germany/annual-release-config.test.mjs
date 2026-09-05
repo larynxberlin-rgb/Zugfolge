@@ -565,7 +565,7 @@ test("aktueller 900-MiB-Kandidat und archivierter >1-GiB-Robustheitspfad bleiben
     text("crates/zugfolge-infra/tests/operational_streaming_real.rs"),
     text("docs/infrarelease-deutschland-2026.4-readiness.md"),
     text("docs/kartenrelease-deutschland-2026.4-v2.md"),
-    text(".github/workflows/ci.yml"),
+    text(".github/workflows/infrastructure-acceptance.yml"),
   ]);
 
   assert.match(rustRealTest, /CURRENT_2026_4_CONTRACT[\s\S]*expected_source_bytes: 983_736_272[\s\S]*minimum_source_bytes: MINIMUM_CURRENT_2026_4_CORPUS_BYTES/u);
@@ -618,7 +618,7 @@ test("2026.4-Dokumente und Real-Audits enthalten keine verworfenen oder ueberzog
     text("docs/kartenrelease-deutschland-2026.4-v2.md"),
     text("tools/audits/germany-2026.4-signed-game-staging.real.test.mjs"),
     text("tools/audits/germany-2026.4-alpha-world-runtime.real.test.mjs"),
-    text(".github/workflows/ci.yml"),
+    text(".github/workflows/infrastructure-acceptance.yml"),
   ]);
   for (const documentation of [readiness, mapRunbook]) {
     assert.match(documentation, /64260fb3aca24d6ed8784c2a6891e1269b8f390c7b7db185bbee3001565f47e6/u);
@@ -658,7 +658,7 @@ test("2026.4-Dokumente und Real-Audits enthalten keine verworfenen oder ueberzog
   assert.match(runtimeAudit, /assertNoCgroupOom\(cgroupMemoryEventsAfter/u);
   assert.match(ci, /POSTGRES_DB: zugfolge_germany_e2e_ci/u);
   assert.match(ci, /- 5432\/tcp/u);
-  assert.match(ci, /job\.services\.postgres\.ports\[5432\]/u);
+  assert.match(ci, /job\.services\.postgres\.ports\['5432'\]/u);
   assert.doesNotMatch(ci, /55432:5432/u);
   assert.match(ci, /test -f "\$\{ZUGFOLGE_REAL_GERMANY_2026_4_ROOT\}\/alpha-world-build-configuration\.json"/u);
   assert.match(ci, /test -f "\$\{ZUGFOLGE_REAL_GERMANY_2026_4_ROOT\}\/timetable-routes-v2\.transfer-demands-v1\.json"/u);

@@ -407,9 +407,9 @@ test("Installationsvertrag trennt den V1-V2-Hard-Cutover von spaeteren Same-Worl
   assert.match(installation, /`deploymentRevision: 2` gilt erst für eine spätere,\s+neu signierte Deploymentgeneration derselben V2-Welt/u);
 });
 
-test("CI fuehrt den gemeinsamen V1-V2-Postgres/Odoo-Vertrag an beiden Dienstgrenzen aus", async () => {
+test("die erweiterte Abnahme fuehrt den V1-V2-Postgres/Odoo-Vertrag an beiden Dienstgrenzen aus", async () => {
   const [workflow, postgresTest, commerceTest, odooTest] = await Promise.all([
-    read(".github/workflows/ci.yml"),
+    read(".github/workflows/extended.yml"),
     read("tools/alpha-ops/world-deployment-v1-v2.postgres-odoo.integration.test.mjs"),
     read("packages/commerce/src/commerce.test.ts"),
     read("odoo/addons/zugfolge_admin/tests/test_projection_ingress.py"),
@@ -466,14 +466,13 @@ test("Produktions-Runbooks erzwingen Schema 33, Keycloak-Up und Hot-Drill in die
   assert.equal((rollbackOdoo.match(/\/var\/lib\/odoo\/filestore/gu) ?? []).length, 1);
 });
 
-test("CI prueft den gepinnten Keycloak mit echter Identitaet und Token vor, nach Up und nach Down", async () => {
+test("die erweiterte Abnahme prueft Keycloak mit echter Identitaet und Token vor, nach Up und nach Down", async () => {
   const [workflow, integration, migration] = await Promise.all([
-    read(".github/workflows/ci.yml"),
+    read(".github/workflows/extended.yml"),
     read("tools/alpha-ops/keycloak-public-to-schema.real-integration.sh"),
     read("tools/alpha-ops/keycloak-public-to-schema.mjs"),
   ]);
   assert.match(workflow, /keycloak-public-to-schema\.real-integration\.sh[\s\\]+\s+"\$TEST_DATABASE_URL"/u);
-  assert.match(workflow, /integration-api:[\s\S]*timeout-minutes: 25[\s\S]*keycloak-public-to-schema\.real-integration\.sh/u);
   assert.match(integration, /quay\.io\/keycloak\/keycloak:26\.7\.0@sha256:0f198be292568439d700cdbfb893e69a6009bb43a94a06a945b1d3d506c76b13/u);
   assert.match(integration, /start_keycloak public[\s\S]*create_isolated_restore[^\n]+up[\s\S]*run_mutating_command bind-backup[\s\S]*run_mutating_command plan-up[\s\S]*run_mutating_command up[\s\S]*run_mutating_command recover[\s\S]*start_keycloak keycloak/u);
   assert.match(integration, /run_mutating_command recover[^\n]+up\/recover-receipt\.json[\s\S]*run_runtime_gate preflight-up[^\n]+up\/recover-receipt\.json/u);
