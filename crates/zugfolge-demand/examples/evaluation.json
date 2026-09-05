@@ -1,0 +1,61 @@
+{
+  "schemaVersion": "zugfolge-demand-evaluation/v1",
+  "worldId": "balanced-pilot",
+  "periodId": "period-1",
+  "seed": "42",
+  "nowMs": 0,
+  "revision": 1,
+  "windowStartMs": 0,
+  "windowEndMs": 600000,
+  "daySliceId": "morning",
+  "release": {
+    "schemaVersion": "zugfolge-demand-release/v1",
+    "id": "balanced-pilot-v1",
+    "provenance": "balanced",
+    "sources": [],
+    "zones": [
+      {"id":"leipzig","population":80,"workplaces":40,"poiWeight":2,"stations":[{"stationId":"leipzig-hbf","accessMs":0,"serviceIntervalMs":0,"stepFree":true}]},
+      {"id":"halle","population":40,"workplaces":40,"poiWeight":2,"stations":[{"stationId":"halle-hbf","accessMs":0,"serviceIntervalMs":0,"stepFree":true}]},
+      {"id":"erfurt","population":40,"workplaces":40,"poiWeight":2,"stations":[{"stationId":"erfurt-hbf","accessMs":0,"serviceIntervalMs":0,"stepFree":true}]}
+    ],
+    "profiles": [
+      {"id":"commute","purpose":"work","dailyTripsBasisPoints":10000,"workplaceWeight":1,"poiWeight":0,"populationWeight":0,"comfortClass":"standard","spaceNeeds":"ordinary","requiresReservation":false,"maxFareCents":2000,"maxJourneyMs":14400000,"ranking":["fare","time","transfers","frequency","reliability","comfort"]}
+    ],
+    "daySlices": [
+      {"id":"morning","startOffsetMs":0,"endOffsetMs":600000,"shareBasisPoints":2500},
+      {"id":"rest","startOffsetMs":600000,"endOffsetMs":86400000,"shareBasisPoints":7500}
+    ],
+    "seasonBasisPoints":10000,
+    "minimumTransferMs":120000,
+    "maxTransfers":2,
+    "maxGeneratedPassengers":10000,
+    "maxConnectionsPerCohort":128,
+    "fareCompliance":{"schemaVersion":"fare-compliance-policy/v1","validBasisPoints":9500,"unpresentableBasisPoints":300,"provenance":"balanced","sourceIds":[]}
+  },
+  "services":[
+    {
+      "worldId":"balanced-pilot","trainRunId":"regional-1","operatorId":"regional-operator","mode":"spnv","cancelled":false,
+      "stops":[
+        {"stopId":"regional-leipzig","stationId":"leipzig-hbf","arrivalMs":600000,"departureMs":600000,"passengerStop":true},
+        {"stopId":"regional-halle","stationId":"halle-hbf","arrivalMs":1800000,"departureMs":1920000,"passengerStop":true},
+        {"stopId":"regional-erfurt","stationId":"erfurt-hbf","arrivalMs":5400000,"departureMs":5400000,"passengerStop":true}
+      ],
+      "fares":[{"id":"regional-standard","comfortClass":"standard","centsPerSegment":300,"salesAvailable":true,"onboardSales":false,"reservationRequired":false}],
+      "capacity":{"standardSeats":4,"standardStanding":2,"premiumSeats":0,"wheelchairSpaces":1,"bicycleSpaces":1,"strollerSpaces":1},
+      "serviceIntervalMs":3600000,"reliabilityBasisPoints":9500,"comfortBasisPoints":6000
+    },
+    {
+      "worldId":"balanced-pilot","trainRunId":"express-1","operatorId":"express-operator","mode":"spfv","cancelled":false,
+      "stops":[
+        {"stopId":"express-leipzig","stationId":"leipzig-hbf","arrivalMs":660000,"departureMs":660000,"passengerStop":true},
+        {"stopId":"express-erfurt","stationId":"erfurt-hbf","arrivalMs":3300000,"departureMs":3300000,"passengerStop":true}
+      ],
+      "fares":[{"id":"express-standard","comfortClass":"standard","centsPerSegment":900,"salesAvailable":true,"onboardSales":false,"reservationRequired":false}],
+      "capacity":{"standardSeats":20,"standardStanding":0,"premiumSeats":0,"wheelchairSpaces":1,"bicycleSpaces":1,"strollerSpaces":1},
+      "serviceIntervalMs":3600000,"reliabilityBasisPoints":9800,"comfortBasisPoints":8500
+    }
+  ],
+  "alternatives":[
+    {"worldId":"balanced-pilot","id":"coach-leipzig-erfurt","originZoneId":"leipzig","destinationZoneId":"erfurt","mode":"coach","fareCents":1000,"journeyMs":7200000,"serviceIntervalMs":7200000,"reliabilityBasisPoints":9000,"comfortBasisPoints":5000,"capacity":20,"accessible":true}
+  ]
+}
