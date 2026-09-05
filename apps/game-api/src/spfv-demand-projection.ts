@@ -54,8 +54,14 @@ export async function loadCommittedSpfvServices(db: IdentityDatabase, worldId: s
     && /^[a-f0-9]{64}$/.test(stateHash), "Bestätigte Fernverkehrsplanung besitzt eine fremde Welt oder Revision.");
   const key = demandHash({ sequence: row.sequence, revision, stateHash, baseServices, window: window ?? null });
   const cache = caches.get(db) ?? new Map(); caches.set(db, cache);
-  const existing = cache.get(worldId);
+  const cacheSlot = demandHash({ worldId, baseServices, window: window ?? null });
+  const existing = cache.get(cacheSlot);
   if (existing?.key === key) return structuredClone(existing.result);
+  const remember = (result: CommittedSpfvServices) => {
+    cache.delete(cacheSlot);
+    if (cache.size >= 256) cache.delete(cache.keys().next().value!);
+    cache.set(cacheSlot, { key, result: structuredClone(result) });
+  };
   const [diagram] = await db.select({ payload: domainEvents.payload }).from(domainEvents).where(and(eq(domainEvents.worldId, worldId),
     eq(domainEvents.eventType, "planning.diagram"), eq(domainEvents.sequence, row.sequence + 1))).limit(1);
   requireFact(diagram !== undefined && demandHash(diagram.payload) === demandHash(projection), "Fernverkehrsplanung besitzt keinen identischen veröffentlichten Fahrplan.");
@@ -71,16 +77,16 @@ export async function loadCommittedSpfvServices(db: IdentityDatabase, worldId: s
     return departureMs >= window.windowStartMs && departureMs < window.windowEndMs;
   }));
   const empty: CommittedSpfvServices = { services: [], provenance: { kind: "forecast", planningRevision: revision, planningStateHash: stateHash, referenceTrainIds: [] } };
-  if (trainIds.length === 0) { cache.set(worldId, { key, result: empty }); return empty; }
+  if (trainIds.length === 0) { remember(empty); return empty; }
   const requests = bounded(await db.select().from(simulationCommands).where(and(eq(simulationCommands.worldId, worldId),
     eq(simulationCommands.status, "processed"), eq(simulationCommands.commandType, "planning.path-request"),
     inArray(sql<string>`${simulationCommands.payload}->>'trainId'`, [...trainIds]))).limit(MAX_SERVICES + 1));
-  if (requests.length === 0) { cache.set(worldId, { key, result: empty }); return empty; }
+  if (requests.length === 0) { remember(empty); return empty; }
   const requestIds = requests.map((request) => request.id);
   const receipts = bounded(await db.select({ payload: domainEvents.payload }).from(domainEvents).where(and(eq(domainEvents.worldId, worldId),
     eq(domainEvents.eventType, "spfv.submitted"), sql`exists (select 1 from jsonb_array_elements_text(${domainEvents.payload}->'submission'->'planningRequestIds') as item(id)
       where ${inArray(sql<string>`item.id`, requestIds)})`)).limit(MAX_SERVICES + 1));
-  if (receipts.length === 0) { cache.set(worldId, { key, result: empty }); return empty; }
+  if (receipts.length === 0) { remember(empty); return empty; }
   const receiptFacts = receipts.map(({ payload }) => demandRecord(payload));
   const [operatorRows, coordinateRows, previewRows] = await Promise.all([
     db.select({ id: operators.id, accountId: operators.foundingAccountId }).from(operators).where(and(eq(operators.worldId, worldId),
@@ -163,6 +169,6 @@ export async function loadCommittedSpfvServices(db: IdentityDatabase, worldId: s
     return left < right ? -1 : left > right ? 1 : 0;
   }),
     provenance: { kind: "forecast", planningRevision: revision, planningStateHash: stateHash, referenceTrainIds: [...references].sort() } };
-  cache.set(worldId, { key, result: structuredClone(projected) });
+  remember(projected);
   return projected;
 }

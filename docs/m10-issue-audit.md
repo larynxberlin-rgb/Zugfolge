@@ -1,6 +1,6 @@
 # M10 — Audit der offenen Issues und Pull Requests
 
-Prüfstand: 05.09.2026, GitHub CLI. Alle offenen Issue-Titel und -Beschreibungen
+Prüfstand: 05.–06.09.2026, GitHub CLI. Alle offenen Issue-Titel und -Beschreibungen
 wurden gesichtet; M10, fachlich einschlägige Issues sowie sämtliche offenen
 PRs mit Review-, Inline- und Diskussionskommentaren wurden vertieft gelesen.
 Die Bestandsliste unten dokumentiert den Eingangsstand. Es wurden keine
@@ -19,6 +19,12 @@ Sie baut auf #530 auf. #530 wurde während dieser Arbeit bereits als
 cab1db7 in main gemergt; #531 ist weiterhin ein Entwurf. Sein Inhalt und
 seine Reviewzuständigkeit bleiben erhalten. Bei der Bestandsprüfung gab es
 keine unbeantworteten Review- oder Inlinekommentare auf diesen PRs.
+
+Der neue M10-Stack baut darauf in dieser Reihenfolge auf:
+[#532](https://github.com/larynxberlin-rgb/Zugfolge/pull/532) (Nachfragekern),
+[#533](https://github.com/larynxberlin-rgb/Zugfolge/pull/533) (Trassenplanung),
+[#534](https://github.com/larynxberlin-rgb/Zugfolge/pull/534) (API, Oberfläche,
+freie Kalibrierungsdaten und gemeinsame Abnahmematrix).
 
 #530 entfernt Tutorialwelten, erzwingt eine Welt je Server und verwendet
 Schema 35. M10 führt diese alten Konzepte nicht erneut ein. Die ausdrücklich

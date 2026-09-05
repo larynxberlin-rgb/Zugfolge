@@ -9,7 +9,10 @@ Eine Nachfrageprognose ist keine Trassenzuteilung und kein Betriebsnachweis.
 Eine Linie enthält Name, geordnete eindeutige Halte, Formation, Takt,
 Fahrpreis sowie ein halboffenes Zeitfenster `[validFromS, validUntilS)`.
 Die optionale `referenceTrainId` bezeichnet eine im aktiven Fahrplan belegte
-Referenzfahrt für Laufzeiten. Der Fahrpreis ist ein Betrag in Cent **je
+Referenzfahrt aus dem gepinnten Nachfragekorpus. Neu beantragte oder bestätigte
+Spielerangebote sind keine Referenzquelle. Ohne explizite Kennung wählen
+Vorschau und bestätigte Projektion dieselbe passende Fahrt in aufsteigender
+Kennungsreihenfolge. Der Fahrpreis ist ein Betrag in Cent **je
 befahrenem Abschnitt zwischen zwei gewählten Halten**. Er wird als Dezimaltext
 übertragen; der Browser liefert keine Zugnummer, Physik, Kapazität oder Erlöse.
 
@@ -19,8 +22,10 @@ Versionierte Eingabegrenzen:
   Korridors; keine Lücken oder mehrdeutigen Kantenbindungen.
 - Takt zwischen 60 und 86.400 ganzzahligen Sekunden; höchstens 256 gewünschte
   Abfahrten pro Vorschau. Die erste Abfahrt liegt nach der Simulationszeit.
-- Kein Überspannen einer Fahrplanperiodengrenze. Alle Zeiten sind Sekunden
-  seit der Weltepoche; Journalzeitstempel addieren diese Epoche.
+- Alle beantragten Abfahrten liegen innerhalb einer Fahrplanperiode. Eine
+  später endende Fahrt bleibt im bisherigen Nachfragepool bis zu ihrem
+  wirksamen Ende erhalten. Alle Zeiten sind Sekunden seit der Weltepoche;
+  Journalzeitstempel addieren diese Epoche.
 - Geld ist nichtnegativer Centtext bis 1.000.000.000 Cent je Abschnitt;
   dieser Bereich entspricht dem ganzzahligen Nachfragevertrag.
 - Zwischenhalte werden mit mindestens 60 Sekunden Aufenthalt beantragt.
