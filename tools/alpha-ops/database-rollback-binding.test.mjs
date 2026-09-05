@@ -13,6 +13,8 @@ import {
 } from "./database-rollback-binding.mjs";
 import {
   DATABASE_AUTHORITATIVE_TABLES,
+  databaseAuthoritativeCatalog,
+  databaseCutoverGuards,
   DATABASE_AUTHORITATIVE_TABLES_SCHEMA_34,
   DATABASE_CUTOVER_CONSTRAINTS,
   DATABASE_CUTOVER_GUARDS,
@@ -75,7 +77,7 @@ function sqlFixture(databaseIdentity = DATABASE_A, domainRowsSha256 = "d".repeat
         }));
       }
       if (query.includes("from pg_trigger")) {
-        return DATABASE_CUTOVER_GUARDS.map((entry) => ({
+        return databaseCutoverGuards(migrationCount).map((entry) => ({
           name: entry.name,
           relation_name: entry.relation,
           trigger_type: entry.type,
@@ -87,7 +89,7 @@ function sqlFixture(databaseIdentity = DATABASE_A, domainRowsSha256 = "d".repeat
       }
       if (query.includes("select relation.relname as table_name")) {
         return [
-          ...(migrationCount === 34 ? DATABASE_AUTHORITATIVE_TABLES_SCHEMA_34 : DATABASE_AUTHORITATIVE_TABLES),
+          ...databaseAuthoritativeCatalog(migrationCount).tables,
           ...(extraAuthoritativeTable === undefined ? [] : [extraAuthoritativeTable]),
         ].sort().map((table_name) => ({ table_name }));
       }
@@ -331,4 +333,17 @@ test("Welt-Historienseal verlangt eine bekannte zum DB-Schema passende Version",
   for (const schemaVersion of ["zugfolge-world-final-history-seal/v2", "foreign/v1"]) {
     await assert.rejects(worldFinalHistorySeal(worldSealSql(), "00000000-0000-4000-8000-000000000014", { schemaVersion }), /Schema-\/Spaltenversion/u);
   }
+});
+
+test("Schema35 bindet den bereinigten Tabellen- und Triggerbestand mit einem eigenen Beleg", async () => {
+  const source = await inspectLiveDatabaseRollbackSnapshot(sqlFixture(DATABASE_A, "d".repeat(64), { migrationCount: 35 }));
+  const current = proof(source);
+  assert.equal(current.schema, "zugfolge-database-rollback-proof/v5");
+  assert.equal(source.authoritativeHead.tableCount, databaseAuthoritativeCatalog(34).tables.length - 3);
+  assert.equal(source.guards.length, databaseCutoverGuards(34).length - 3);
+  assert.equal(assertDatabaseRollbackProofMatchesLive(current, source), current);
+  assert.throws(() => validateDatabaseRollbackProof({ ...current, schema: "zugfolge-database-rollback-proof/v4" }), /34 Eintraegen/u);
+  const missingGuard = structuredClone(current);
+  missingGuard.source.guards.pop();
+  assert.throws(() => validateDatabaseRollbackProof(missingGuard), /Unveraenderlichkeitsvertrag/u);
 });

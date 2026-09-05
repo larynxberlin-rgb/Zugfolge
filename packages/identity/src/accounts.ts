@@ -389,24 +389,3 @@ export async function listAccountsInWorld(
     .where(eq(accounts.worldId, input.worldId));
   return collectAccountRoles(rows);
 }
-
-/** Alle Weltkonten eines Keycloak-Subjects, weltübergreifend — nur die eigenen. */
-export async function listAccountsForSubject(
-  db: IdentityDatabase,
-  keycloakSubject: string,
-): Promise<readonly AccountRecord[]> {
-  const rows = await db
-    .select({ account: accounts, role: accountRoles.role })
-    .from(accounts)
-    .innerJoin(
-      worldAccesses,
-      and(
-        eq(worldAccesses.worldId, accounts.worldId),
-        eq(worldAccesses.keycloakSubject, accounts.keycloakSubject),
-        eq(worldAccesses.status, "active"),
-      ),
-    )
-    .leftJoin(accountRoles, and(eq(accountRoles.worldId, accounts.worldId), eq(accountRoles.accountId, accounts.id)))
-    .where(eq(accounts.keycloakSubject, keycloakSubject));
-  return collectAccountRoles(rows);
-}

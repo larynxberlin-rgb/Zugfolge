@@ -6,7 +6,5 @@ export * from "./hash.js";
 export * from "./infra-update.js";
 export * from "./monitoring.js";
 export * from "./starting-capital.js";
-export * from "./tutorial-session.js";
-export * from "./tutorial-template.js";
 export * from "./world.js";
 export * from "./world-end.js";

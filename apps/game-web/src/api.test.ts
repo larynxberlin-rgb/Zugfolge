@@ -58,34 +58,6 @@ function transferResponse(schemaVersion: unknown): Record<string, unknown> {
   };
 }
 
-function tutorialResponse(): Record<string, unknown> {
-  return {
-    schemaVersion: "zugfolge-tutorial-session/v1",
-    reference: "tut_abc", tutorialWorldId: "tutorial-id", publicWorldId: "public-id", lifecycle: "running",
-    templateVersion: "tutorial/v1", templateHash: "hash", currentChapter: 1, progressLabel: "Kapitel 1 von 5",
-    chapters: [{ chapter: 1, code: "bid", title: "Angebot", goal: "Angebot abgeben" }],
-    evidence: { "1": { completed: false, references: [] } },
-    dialogue: { id: "dialogue", templateVersion: "tutorial/v1", chapter: 1, trigger: "session.started", speaker: "lutz", text: "Los.", canDismiss: true },
-    presentation: {
-      schemaVersion: "zugfolge-tutorial-presentation/v1",
-      tender: {
-        id: "tutorial-tender", priceWeightBasisPoints: 5000, qualityWeightBasisPoints: 5000, penaltyFocus: "punctuality",
-        viabilityThresholdCentsPerTrainKm: "1739",
-        limits: {
-          minimumOrderingFeeCentsPerTrainKm: "100", maximumOrderingFeeCentsPerTrainKm: "1520", defaultOrderingFeeCentsPerTrainKm: "1450",
-          minimumPunctualityBasisPoints: 8800, maximumPunctualityBasisPoints: 9800, defaultPunctualityBasisPoints: 9200,
-          minimumExtraSeats: 0, maximumExtraSeats: 40, defaultExtraSeats: 12,
-        },
-      },
-      leases: [], paths: [], programmes: [], programmeRuleEffects: [
-        { rule: "hold-connections", label: "Anschlüsse abwarten", effect: { costCents: "55000", qualityBasisPoints: 400, penaltyRiskBasisPoints: -450 } },
-        { rule: "prioritize-punctuality", label: "Pünktlichkeit priorisieren", effect: { costCents: "25000", qualityBasisPoints: 250, penaltyRiskBasisPoints: -300 } },
-        { rule: "activate-reserve", label: "Reserve aktivieren", effect: { costCents: "55000", qualityBasisPoints: 400, penaltyRiskBasisPoints: -450 } },
-      ], disruptionOptions: [],
-    }, idleExpiresAt: "2026-01-01T00:10:00Z", maximumExpiresAt: "2026-01-01T00:15:00Z",
-    publicWorldUrl: "?world=public-id",
-  };
-}
 
 function worldContractResponse(): Record<string, unknown> {
   return {
@@ -146,7 +118,7 @@ describe("GameApiClient", () => {
     ));
     const client = new GameApiClient("https://api.test", "token", fetchImplementation as typeof fetch);
 
-    await client.loadOwnOperators();
+    await client.loadOwnOperators("world/1");
     await expect(client.loadSimulationTime("world/1")).resolves.toBe(123);
     await client.loadWorldOperators("world/1");
     await client.loadMailbox("world/1");
@@ -157,7 +129,7 @@ describe("GameApiClient", () => {
     await client.loadVehicleHistory("world/1", "asset/1");
 
     expect(fetchImplementation.mock.calls.map(([input]) => String(input))).toEqual([
-      "https://api.test/me/operators",
+      "https://api.test/worlds/world%2F1/me/operators",
       "https://api.test/worlds/world%2F1/simulation-time",
       "https://api.test/worlds/world%2F1/operators",
       "https://api.test/worlds/world%2F1/mailbox",
@@ -233,7 +205,7 @@ describe("GameApiClient", () => {
 
   it.each([401, 403])("bewahrt HTTP %i als Authentifizierungsstatus", async (status) => {
     const client = new GameApiClient("", "token", async () => new Response(JSON.stringify({ error: "Sitzung ungueltig" }), { status }));
-    await expect(client.loadOwnOperators()).rejects.toMatchObject({ status, retryable: false, message: "Sitzung ungueltig" });
+    await expect(client.loadOwnOperators("world/1")).rejects.toMatchObject({ status, retryable: false, message: "Sitzung ungueltig" });
   });
 
   it("bewahrt den Authentifizierungsstatus nach einem stillen Erneuerungsversuch", async () => {
@@ -241,7 +213,7 @@ describe("GameApiClient", () => {
     const fetchImplementation = vi.fn(async () => new Response(JSON.stringify({ error: "Sitzung ungueltig" }), { status: 401 }));
     const client = new GameApiClient("", accessToken, fetchImplementation);
 
-    await expect(client.loadOwnOperators()).rejects.toMatchObject({ status: 401, retryable: false, message: "Sitzung ungueltig" });
+    await expect(client.loadOwnOperators("world/1")).rejects.toMatchObject({ status: 401, retryable: false, message: "Sitzung ungueltig" });
     expect(accessToken).toHaveBeenNthCalledWith(1, false);
     expect(accessToken).toHaveBeenNthCalledWith(2, true);
     expect(fetchImplementation).toHaveBeenCalledTimes(2);
@@ -265,7 +237,7 @@ describe("GameApiClient", () => {
         init?.signal?.addEventListener("abort", () => reject(new DOMException("aborted", "AbortError")), { once: true });
       }));
       const client = new GameApiClient("https://api.test", "token", fetchImplementation as typeof fetch);
-      const result = expect(client.loadOwnOperators()).rejects.toThrow(/antwortet nicht/);
+      const result = expect(client.loadOwnOperators("world/1")).rejects.toThrow(/antwortet nicht/);
       await vi.advanceTimersByTimeAsync(15_000);
       await result;
     } finally {
@@ -290,31 +262,11 @@ describe("GameApiClient", () => {
         },
       }), { status }));
       const client = new GameApiClient("", "token", request);
-      const pending = expect(client.loadOwnOperators()).rejects.toMatchObject({ retryable: true, message: expect.stringMatching(/antwortet nicht/) });
+      const pending = expect(client.loadOwnOperators("world/1")).rejects.toMatchObject({ retryable: true, message: expect.stringMatching(/antwortet nicht/) });
       await vi.advanceTimersByTimeAsync(15_000);
       await pending;
       expect(vi.getTimerCount()).toBe(0);
     } finally { vi.useRealTimers(); }
-  });
-
-  it("erneuert abgelehnte Tokens auch für Tutorialstatus, Planung und das unveränderte Alternativkommando", async () => {
-    for (const operation of ["tutorial", "projection", "alternative"] as const) {
-      const token = vi.fn(async (forceRefresh = false) => forceRefresh ? "neu" : "alt");
-      const request = vi.fn()
-        .mockResolvedValueOnce(new Response(null, { status: 401 }))
-        .mockResolvedValueOnce(operation === "tutorial" ? new Response(JSON.stringify(tutorialResponse()))
-          : operation === "projection" ? envelope(1) : new Response(null, { status: 202 }));
-      const client = new GameApiClient("", token, request);
-      if (operation === "tutorial") await client.loadActiveTutorial("public-id");
-      else if (operation === "projection") await client.loadProjection("world-1");
-      else await client.queueAlternative("world-1", {
-        schemaVersion: "planning-alternative-command/v1", projectionRevision: 7,
-        alternativeId: "offer", idempotencyKey: "alternative:7:offer",
-      });
-      expect(token.mock.calls).toEqual([[false], [true]]);
-      expect(new Headers(request.mock.calls[1]?.[1]?.headers).get("authorization")).toBe("Bearer neu");
-      expect(request.mock.calls[1]?.[1]?.body).toBe(request.mock.calls[0]?.[1]?.body);
-    }
   });
 
   it("entfernt Abort-Listener nach jedem erfolgreich beendeten Polling-Intervall", async () => {
@@ -350,27 +302,6 @@ describe("GameApiClient", () => {
     const response = { ...worldContractResponse(), entry: { ...(worldContractResponse()["entry"] as Record<string, unknown>), status: "scheduled" } };
     const client = new GameApiClient("https://api.test", "token", async () => new Response(JSON.stringify([response])));
     await expect(client.loadPublicWorldContracts()).resolves.toMatchObject([{ entry: { status: "scheduled" } }]);
-  });
-
-  it("verwirft fehlerhafte Tutorial- und Vertragsantworten kontrolliert", async () => {
-    const invalidContract = new GameApiClient("", "token", async () => new Response(JSON.stringify({ schemaVersion: "zugfolge-cooperation-page/v1", items: [{ schemaVersion: "zugfolge-operator-contract/v1", id: "nur-eine-id" }], nextCursor: null })));
-    await expect(invalidContract.loadContracts("world", "operator")).rejects.toThrow(/Vertragsseite\.items\[0\]/);
-    const invalidTutorial = new GameApiClient("", "token", async () => new Response(JSON.stringify({ ...tutorialResponse(), lifecycle: "fremd" })));
-    await expect(invalidTutorial.loadTutorial("tutorial-id")).rejects.toThrow(/unbekannten Wert/);
-    const unversioned = new GameApiClient("", "token", async () => new Response(JSON.stringify({ ...tutorialResponse(), schemaVersion: undefined })));
-    await expect(unversioned.loadTutorial("tutorial-id")).rejects.toThrow(/unbekanntes Schema/);
-    const malformedPresentation = tutorialResponse();
-    malformedPresentation["presentation"] = { ...(malformedPresentation["presentation"] as Record<string, unknown>), leases: [{ id: "zu-wenig" }] };
-    const malformed = new GameApiClient("", "token", async () => new Response(JSON.stringify(malformedPresentation)));
-    await expect(malformed.loadTutorial("tutorial-id")).rejects.toThrow(/presentation\.leases\[0\]/);
-    const incompleteSummary = tutorialResponse();
-    incompleteSummary["lifecycle"] = "summary";
-    incompleteSummary["summary"] = {
-      startLiquidityCents: "100", leasingCostCents: "0", pathAndOperatingCostCents: "0", orderingRevenueCents: "100",
-      disruptionCostCents: "0", resultCents: "100", punctualityBasisPoints: 9000, qualityTargetsMet: [], comparison: { selectedAction: "request_reroute" },
-    };
-    const incompleteComparison = new GameApiClient("", "token", async () => new Response(JSON.stringify(incompleteSummary)));
-    await expect(incompleteComparison.loadTutorial("tutorial-id")).rejects.toThrow(/programmePenaltyRiskBasisPoints/);
   });
 
   it("verlangt die serverautoritative Postfachprioritaet im Laufzeitvertrag", async () => {
@@ -539,23 +470,6 @@ describe("GameApiClient", () => {
     await expect(
       client.waitForNewerProjection("world-1", 7, { pollAttempts: 1, pollIntervalMs: 0 }),
     ).rejects.toThrow(/zurückgefallen/);
-  });
-
-  it("startet, setzt fort und steuert die private Tutorialwelt nur ueber den Sessionvertrag", async () => {
-    const view = tutorialResponse();
-    const fetchImplementation = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-      const url = String(input);
-      if (url.endsWith("/tutorial-sessions/active")) return new Response(null, { status: 404 });
-      return new Response(JSON.stringify(view), { status: init?.method === "POST" ? 201 : 200 });
-    });
-    const client = new GameApiClient("https://api.test", "token", fetchImplementation as typeof fetch);
-    await expect(client.loadActiveTutorial("public-id")).resolves.toBeUndefined();
-    await expect(client.startTutorial("public-id")).resolves.toMatchObject(view);
-    await expect(client.tutorialAction("tutorial-id", { type: "confirm-path", alternativeId: "path-robust" })).resolves.toMatchObject(view);
-    expect(fetchImplementation).toHaveBeenNthCalledWith(2, "https://api.test/worlds/public-id/tutorial-sessions", expect.objectContaining({ method: "POST" }));
-    const action = fetchImplementation.mock.calls[2];
-    expect(String(action?.[0])).toBe("https://api.test/worlds/tutorial-id/tutorial-session/actions");
-    expect(JSON.parse(String((action?.[1] as RequestInit).body))).toEqual({ type: "confirm-path", alternativeId: "path-robust" });
   });
 
   it("meldet einen sicheren Fehler, wenn nur die Eventsequenz und nie die Fachrevision steigt", async () => {

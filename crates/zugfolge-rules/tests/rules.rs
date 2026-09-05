@@ -134,7 +134,7 @@ fn single_case_boundary_uses_real_rules_and_keeps_manual_decision_explainable() 
                 contract_effect: "Qualitaetsziel gehalten".into(),
             },
             manual_action: Some(Action::RequestReroute),
-            manual_reason: Some("Gefuehrte Tutorialentscheidung".into()),
+            manual_reason: Some("Manueller Eingriff".into()),
         },
     )
     .unwrap();

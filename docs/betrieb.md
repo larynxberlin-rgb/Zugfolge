@@ -338,9 +338,7 @@ Nach E28 ist dieser sichtbare Markt in einer öffentlichen Welt der normale
 Einstiegsweg, **kein Startpaket**. Ein neues EVU erhält kein Fahrzeug
 zugewiesen; es wählt ein konkretes Angebot und finanziert Kaution und Rate über
 sein weltgebundenes Startkapital oder einen regulären Kredit. Derselbe Preis-
-und Verfügbarkeitsvertrag gilt für bestehende EVU. Nur das getrennte
-Tutorial-Deployment darf ein vorbereitetes Leasingfahrzeug didaktisch
-zuteilen. Der öffentliche Weltentwurf ist bei endlichem Startkapital von null
+und Verfügbarkeitsvertrag gilt für bestehende EVU. Der öffentliche Weltentwurf ist bei endlichem Startkapital von null
 nur freigabefähig, wenn mindestens eine erreichbare Ausschreibungs-, Kredit-
 und Leasingkombination den Einstieg tatsächlich ermöglicht.
 

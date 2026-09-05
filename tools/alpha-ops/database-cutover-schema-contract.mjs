@@ -115,7 +115,23 @@ export const DATABASE_AUTHORITATIVE_TABLES_SCHEMA_34 = Object.freeze([
 ].sort((left, right) => left.localeCompare(right, "en")));
 export const DATABASE_AUTHORITATIVE_TABLE_SET_SHA256_SCHEMA_34 = definitionSha256(DATABASE_AUTHORITATIVE_TABLES_SCHEMA_34);
 
+// Historische Signaturen behalten ihren Tabellenvertrag. Schema 35 entfernt die alten Lernweltdaten.
+const RETIRED_TABLES = new Set(["tutorial_progress", "tutorial_sessions", "tutorial_telemetry_events"]);
+export const DATABASE_AUTHORITATIVE_TABLES_SCHEMA_35 = Object.freeze(DATABASE_AUTHORITATIVE_TABLES_SCHEMA_34.filter((table) => !RETIRED_TABLES.has(table)));
+export const DATABASE_AUTHORITATIVE_TABLE_SET_SHA256_SCHEMA_35 = definitionSha256(DATABASE_AUTHORITATIVE_TABLES_SCHEMA_35);
+
+export function databaseWorldHistoryBindings(migrationCount) {
+  databaseAuthoritativeCatalog(migrationCount);
+  return migrationCount === 35 ? DATABASE_WORLD_HISTORY_BINDINGS.filter(({ table }) => !RETIRED_TABLES.has(table)) : DATABASE_WORLD_HISTORY_BINDINGS;
+}
+
+export function databaseCutoverGuards(migrationCount) {
+  databaseAuthoritativeCatalog(migrationCount);
+  return migrationCount === 35 ? DATABASE_CUTOVER_GUARDS.filter(({ relation }) => !RETIRED_TABLES.has(relation)) : DATABASE_CUTOVER_GUARDS;
+}
+
 export function databaseAuthoritativeCatalog(migrationCount) {
+  if (migrationCount === 35) return Object.freeze({ tables: DATABASE_AUTHORITATIVE_TABLES_SCHEMA_35, tableSetSha256: DATABASE_AUTHORITATIVE_TABLE_SET_SHA256_SCHEMA_35 });
   if (migrationCount === 33) return Object.freeze({ tables: DATABASE_AUTHORITATIVE_TABLES, tableSetSha256: DATABASE_AUTHORITATIVE_TABLE_SET_SHA256 });
   if (migrationCount === 34) return Object.freeze({ tables: DATABASE_AUTHORITATIVE_TABLES_SCHEMA_34, tableSetSha256: DATABASE_AUTHORITATIVE_TABLE_SET_SHA256_SCHEMA_34 });
   throw new Error(`Schema ${migrationCount} besitzt keinen qualifizierten autoritativen Tabellenvertrag.`);

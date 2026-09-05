@@ -67,7 +67,7 @@ class ZugfolgeWorldProjection(models.Model):
     simulation_time = fields.Datetime(readonly=True)
     world_status = fields.Char(readonly=True)
     profile_kind = fields.Selection(
-        [("public", "Oeffentlich"), ("tutorial", "Tutorial"), ("private", "Privat"), ("test", "Test")],
+        [("public", "Oeffentlich"), ("private", "Privat"), ("test", "Test")],
         readonly=True,
     )
     schedule_period = fields.Char(readonly=True)
@@ -127,7 +127,7 @@ class ZugfolgeWorldProjection(models.Model):
         body = payload.get("payload")
         if not isinstance(world_id, str) or not isinstance(body, dict):
             raise ValidationError("Unvollstaendige Game-Projektion.")
-        if "profileKind" in body and body.get("profileKind") not in ("public", "tutorial", "private", "test"):
+        if "profileKind" in body and body.get("profileKind") not in ("public", "private", "test"):
             raise ValidationError("Game-Weltprojektion besitzt kein gueltiges Weltprofil.")
         for hash_name in ("blueprintHash", "deploymentHash"):
             hash_value = body.get(hash_name)

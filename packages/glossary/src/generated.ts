@@ -796,6 +796,11 @@ export const GENERATED_GLOSSARY_ENTRIES = Object.freeze([
     "definition": "Gepinnte Erzeugungsregel für Zeitraster und Mindestfahrzeit des Spielangebots"
   },
   {
+    "term": "Spielhinweis",
+    "code": "GameHint",
+    "definition": "kurzer, lokal abschaltbarer Tooltip an einem echten Bedienelement; löst keine Spielhandlung aus"
+  },
+  {
     "term": "Spiellinie",
     "code": "GameTimetableLine",
     "definition": "Eigene Linie mit tatsächlichem innerem Endhalt, Taktreferenz und Herkunftsbelegen"
@@ -864,21 +869,6 @@ export const GENERATED_GLOSSARY_ENTRIES = Object.freeze([
     "term": "Trassenkandidat",
     "code": "PathCandidate",
     "definition": "ein gegen das Belegungsbuch geprüftes Verkehrsangebot samt seiner Abweichung vom Trassenantrag"
-  },
-  {
-    "term": "Tutorialbegleiter",
-    "code": "TutorialDialogue",
-    "definition": "versionierter, reproduzierbarer Hinweis von Lutz mit Trigger, Handlung, optionalem Warum und Zielbereich; keine generative Laufzeit-KI"
-  },
-  {
-    "term": "Tutorialsitzung",
-    "code": "TutorialSession",
-    "definition": "Bindung genau eines öffentlichen Weltkontos an eine private, ungewertete, beschleunigte und kurzlebige Tutorialwelt mit externer tut_…-Referenz"
-  },
-  {
-    "term": "Tutorialtemplate",
-    "code": "TutorialTemplate",
-    "definition": "unveränderliches, versioniertes und gehashtes Minimalartefakt für Korridor, Inventar, Dialoge, Zeitgrenzen und stets endliches Tutorialkapital"
   },
   {
     "term": "Umlauf",

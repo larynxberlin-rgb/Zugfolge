@@ -14,7 +14,7 @@ import { createManualDisruptionAdminHandler, type ManualDisruptionAdminContext }
 import { ManualDisruptionCommandCatalog } from "./manual-disruption-catalog.js";
 import { advanceRegionalSimulations } from "./regional-simulation-scheduler.js";
 import { RegionalSimulationWorker } from "./regional-simulation-worker.js";
-import { TUTORIAL_OPERATIONAL_INFRASTRUCTURE_DESCRIPTOR } from "./tutorial-operational-infrastructure.js";
+import { TEST_INFRASTRUCTURE_BINDING } from "./operational-infrastructure.fixture.js";
 
 const WORLD = "11111111-1111-4111-8111-111111111111";
 const REGION = "manual-native";
@@ -28,8 +28,8 @@ function context(id: string, startsAtMs = 1_000, endsAtMs = 4_000, nowMs = 0): M
       kind: "admin.manual_disruption_create", worldId: WORLD, actionType: "manual_disruption_create", riskClass: "high",
       requesterReference: "requester", approverReference: "approver", reason: "Freigegebene zeitlich begrenzte Sperre",
       manualDisruption: { startsAt: at(startsAtMs).toISOString(), endsAt: at(endsAtMs).toISOString(), cause: "Betrieblicher Eingriff",
-        affectedResourceIds: ["track:tut-segment-1"], declaredEffect: { schemaVersion: "zugfolge-manual-disruption-effect/v1",
-          kind: "closure", causeCode: 26, fineCauseId: "track.inspection", targets: [{ resourceId: "track:tut-segment-1", regionId: REGION }] } },
+        affectedResourceIds: ["test-track-west"], declaredEffect: { schemaVersion: "zugfolge-manual-disruption-effect/v1",
+          kind: "closure", causeCode: 26, fineCauseId: "track.inspection", targets: [{ resourceId: "test-track-west", regionId: REGION }] } },
     } };
 }
 
@@ -54,8 +54,8 @@ function context(id: string, startsAtMs = 1_000, endsAtMs = 4_000, nowMs = 0): M
     return row!.state as OperationalSimulationState & { world: { activeDisruptions: Record<string, unknown> } };
   };
   beforeEach(async () => {
-    vi.stubEnv(OPERATIONAL_INFRASTRUCTURE_ROOTS_ENV, JSON.stringify({ [TUTORIAL_OPERATIONAL_INFRASTRUCTURE_DESCRIPTOR.binding.infraReleaseId]:
-      fileURLToPath(new URL("../tutorial-infrastructure/tutorial-minimal-2026.1/", import.meta.url)) }));
+    vi.stubEnv(OPERATIONAL_INFRASTRUCTURE_ROOTS_ENV, JSON.stringify({ [TEST_INFRASTRUCTURE_BINDING.infraReleaseId]:
+      fileURLToPath(new URL("../test-infrastructure/operations-v1/", import.meta.url)) }));
     client = new PGlite();
     const database = drizzle(client, { schema });
     await migrate(database, { migrationsFolder: MIGRATIONS_FOLDER });
@@ -65,7 +65,7 @@ function context(id: string, startsAtMs = 1_000, endsAtMs = 4_000, nowMs = 0): M
     worker = new RegionalSimulationWorker(db, runtime, new LivemapRegistry(), new OperationsRegistry());
     const initialized = await worker.initialize({ schemaVersion: OPERATIONAL_SIMULATION_INITIALIZE_SCHEMA, worldId: WORLD, regionId: REGION,
       nowMs: 0, repeatEveryMs: null, protectionModeSelectionPolicy: OPERATIONAL_PROTECTION_MODE_SELECTION_POLICY,
-      infraRelease: TUTORIAL_OPERATIONAL_INFRASTRUCTURE_DESCRIPTOR.binding, vehicleTypes: [], vehicles: [], formations: [], trains: [], movementContinuations: [] }, EPOCH);
+      infraRelease: TEST_INFRASTRUCTURE_BINDING, vehicleTypes: [], vehicles: [], formations: [], trains: [], movementContinuations: [] }, EPOCH);
     initializationHash = initialized.initializationHash;
     catalog = createCatalog();
   });
@@ -87,7 +87,7 @@ function context(id: string, startsAtMs = 1_000, endsAtMs = 4_000, nowMs = 0): M
     expect(projection?.payload).toMatchObject({ outcome: "accepted", manualDisruptionStatus: "scheduled", effectiveStartsAtMs: 1_000, endsAtMs: 4_000 });
     expect((await state()).world.activeDisruptions).toEqual({});
     await advance(1_000);
-    expect(Object.values((await state()).world.activeDisruptions)).toEqual([{ "resource-closed": { resourceId: "track:tut-segment-1" } }]);
+    expect(Object.values((await state()).world.activeDisruptions)).toEqual([{ "resource-closed": { resourceId: "test-track-west" } }]);
     await advance(4_000);
     expect((await state()).world.activeDisruptions).toEqual({});
     expect(await db.select().from(domainEvents).where(eq(domainEvents.eventType, "disruption.manual-scheduled"))).toHaveLength(1);
@@ -128,8 +128,8 @@ function context(id: string, startsAtMs = 1_000, endsAtMs = 4_000, nowMs = 0): M
     const manual = input.payload.manualDisruption!;
     const before = await state();
     await expect(handler({ ...input, payload: { ...input.payload, manualDisruption: { ...manual,
-      affectedResourceIds: ["track:tut-segment-1", "missing-resource"], declaredEffect: { ...manual.declaredEffect,
-        targets: [{ resourceId: "track:tut-segment-1", regionId: REGION }, { resourceId: "missing-resource", regionId: REGION }] } } } })).rejects.toThrow();
+      affectedResourceIds: ["test-track-west", "missing-resource"], declaredEffect: { ...manual.declaredEffect,
+        targets: [{ resourceId: "test-track-west", regionId: REGION }, { resourceId: "missing-resource", regionId: REGION }] } } } })).rejects.toThrow();
     await expect(handler(context("expired", 1_000, 2_000, 2_000))).rejects.toMatchObject({ code: "time" });
     expect(await state()).toEqual(before);
     expect(await db.select().from(domainEvents).where(eq(domainEvents.eventType, "disruption.manual-scheduled"))).toEqual([]);
@@ -147,12 +147,12 @@ function context(id: string, startsAtMs = 1_000, endsAtMs = 4_000, nowMs = 0): M
     await entered;
     const original = context("late-speed");
     const scheduled = handler({ ...original, payload: { ...original.payload, manualDisruption: { ...original.payload.manualDisruption!,
-      affectedResourceIds: ["tut-segment-1"], declaredEffect: { schemaVersion: "zugfolge-manual-disruption-effect/v1", kind: "speed-restriction",
-        causeCode: 26, fineCauseId: "track.inspection", targets: [{ resourceId: "tut-segment-1", regionId: REGION, maximumSpeedMmps: 5_555 }] } } } });
+      affectedResourceIds: ["test-edge-west"], declaredEffect: { schemaVersion: "zugfolge-manual-disruption-effect/v1", kind: "speed-restriction",
+        causeCode: 26, fineCauseId: "track.inspection", targets: [{ resourceId: "test-edge-west", regionId: REGION, maximumSpeedMmps: 5_555 }] } } } });
     release(); await cycle;
     expect((await scheduled).result).toMatchObject({ effectiveStartsAtMs: 2_000, endsAtMs: 4_000 });
     await advance(2_000);
-    expect((await state()).world.activeDisruptions).toEqual({ "manual:late-speed:0": { "speed-restriction": { edgeId: "tut-segment-1", maximumSpeedMmps: 5_555 } } });
+    expect((await state()).world.activeDisruptions).toEqual({ "manual:late-speed:0": { "speed-restriction": { edgeId: "test-edge-west", maximumSpeedMmps: 5_555 } } });
     await advance(4_000);
     expect((await state()).world.activeDisruptions).toEqual({});
   });

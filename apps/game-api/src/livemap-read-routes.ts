@@ -344,7 +344,7 @@ export function registerLivemapReadRoutes(
       }
       const identity = request.identity;
       if (identity === undefined) return reply.code(401).send({ error: "Keine Identitaet." });
-      const ownedOperators = (await listOperatorsForAccount(deps.db, identity.keycloakSubject))
+      const ownedOperators = (await listOperatorsForAccount(deps.db, identity.keycloakSubject, request.params.worldId))
         .filter((operator) => operator.worldId === request.params.worldId)
         .sort((left, right) => left.id < right.id ? -1 : left.id > right.id ? 1 : 0);
       const cursor = { streamId: snapshot.streamId, sequence: snapshot.sequence, atS: snapshot.at };

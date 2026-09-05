@@ -180,7 +180,7 @@ for (const scenario of [
   { name: "Schema-34-Manifest mit Schema-33-Datenbank", migrationCount: 34, sourceSnapshot: snapshot(), error: /Schema-34-Migrationsledger/u },
   { name: "Schema-33-Manifest mit Schema-34-Datenbank", migrationCount: 33, sourceSnapshot: snapshot({}, 34), error: /Schema-33-Migrationsledger/u },
   { name: "Schema-34-Ledger mit historischem Schema-33-Tabellensatz", migrationCount: 34, sourceSnapshot: snapshot({ authoritativeHead: snapshot().authoritativeHead }, 34), error: /Schema-34-Tabellensatz/u },
-  { name: "unqualifiziertes Schema 35", migrationCount: 35, sourceSnapshot: snapshot(), error: /keinen qualifizierten autoritativen Tabellenvertrag/u },
+  { name: "unqualifiziertes Schema 36", migrationCount: 36, sourceSnapshot: snapshot(), error: /keinen qualifizierten autoritativen Tabellenvertrag/u },
 ]) {
   test(`publiziert keine Belege fuer ${scenario.name}`, async () => {
     const value = await fixture({ migrationCount: scenario.migrationCount });

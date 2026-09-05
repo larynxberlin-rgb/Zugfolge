@@ -232,7 +232,7 @@ describe("signierte Fahrzeugkatalog-Deployment-Bindung", () => {
     const releasePathOnly = new Map([[signed.deployment.worldId, structuredClone(signed)]]);
     for (const verifiedSource of [persistedOnly, releasePathOnly]) {
       const runtime = new ActiveWorldDeploymentRuntime({
-        activeWorlds: [],
+        worldId: signed.deployment.worldId,
         operationalProgramPreflight: UNUSED_OPERATIONAL_PROGRAM_PREFLIGHT,
         fleetAuthorityConfigurations: { [signed.deployment.worldId]: configuration },
       });
@@ -240,7 +240,7 @@ describe("signierte Fahrzeugkatalog-Deployment-Bindung", () => {
     }
 
     const missing = new ActiveWorldDeploymentRuntime({
-      activeWorlds: [],
+      worldId: signed.deployment.worldId,
       operationalProgramPreflight: UNUSED_OPERATIONAL_PROGRAM_PREFLIGHT,
       fleetAuthorityConfigurations: { [signed.deployment.worldId]: configuration },
     });
@@ -255,7 +255,7 @@ describe("signierte Fahrzeugkatalog-Deployment-Bindung", () => {
       authority.assets[0].tradeName = "Loader-Konflikt";
     });
     const runtime = new ActiveWorldDeploymentRuntime({
-      activeWorlds: [],
+      worldId: signed.deployment.worldId,
       operationalProgramPreflight: UNUSED_OPERATIONAL_PROGRAM_PREFLIGHT,
       fleetAuthorityConfigurations: {
         [signed.deployment.worldId]: {

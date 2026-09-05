@@ -14,10 +14,8 @@ const uiWorldId = assertProductionServerWorldEnvironment(process.env);
 const databaseUrl = process.env.DATABASE_URL;
 if (!databaseUrl) throw new Error("DATABASE_URL fehlt.");
 
-const deploymentPaths = JSON.parse(process.env.ALPHA_WORLD_RELEASE_PATHS_JSON ?? "[]");
-if (!Array.isArray(deploymentPaths) || deploymentPaths.length !== 1 || typeof deploymentPaths[0] !== "string") {
-  throw new Error("Der Produktions-Bootstrap braucht genau ein signiertes Weltdeployment.");
-}
+const deploymentPath = process.env.ALPHA_WORLD_RELEASE_PATH;
+if (typeof deploymentPath !== "string" || deploymentPath.trim() === "") throw new Error("ALPHA_WORLD_RELEASE_PATH fehlt.");
 const {
   parseTrustedReleaseKeys,
   parseTrustedReleaseKeyScopes,
@@ -38,9 +36,9 @@ const {
 } = await import("../../apps/game-api/dist/alpha-world-start.js");
 const { ensureSignedPlanningAuthority } = await import("../../apps/game-api/dist/odoo-admin-handlers.js");
 const { inspectPublicReadModel } = await import("../tiles/livemap-read-model.mjs");
-const signedEnvelope = JSON.parse(await readFile(deploymentPaths[0], "utf8"));
+const signedEnvelope = JSON.parse(await readFile(deploymentPath, "utf8"));
 const candidate = inspectSignedOperationalV2Candidate(signedEnvelope, trustedKeys);
-const signed = await loadSignedAlphaWorldDeployment(deploymentPaths[0], trustedKeys);
+const signed = await loadSignedAlphaWorldDeployment(deploymentPath, trustedKeys);
 if (candidate.deploymentHash !== signed.deploymentHash) {
   throw new Error("Preflight und Game-Parser ermitteln verschiedene Deployment-Hashes.");
 }

@@ -32,15 +32,11 @@ describe("primäre Spieloberfläche", () => {
 });
 
 describe("kanonischer Weltkontext", () => {
-  it("verwendet bei einer normalen Spielerreise immer die verlinkte Welt", () => {
+  it("ignoriert fremde Weltparameter und bindet die Spielerreise an den Server", () => {
     expect(resolveWorldContext(new URLSearchParams("view=journey&world=world-b&publicWorld=world-a"), "world-a"))
-      .toEqual({ worldId: "world-b", publicWorldId: "world-b" });
+      .toEqual({ worldId: "world-a", publicWorldId: "world-a" });
   });
 
-  it("trennt beim Tutorial-Reentry Tutorial- und öffentliche Welt", () => {
-    expect(resolveWorldContext(new URLSearchParams("world=tutorial-b&publicWorld=world-b&tutorial=tut-1"), "world-a"))
-      .toEqual({ worldId: "tutorial-b", publicWorldId: "world-b" });
-  });
 
   it("fällt ohne URL-Welt ausschließlich auf den Runtime-Vertrag zurück", () => {
     expect(resolveWorldContext(new URLSearchParams("view=journey"), "world-a"))

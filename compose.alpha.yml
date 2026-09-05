@@ -219,7 +219,7 @@ services:
     command: [node, tools/alpha-ops/world-deployment-cutover-preflight.mjs]
     environment:
       DATABASE_URL: "postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}"
-      ALPHA_WORLD_RELEASE_PATHS_JSON: "${ALPHA_WORLD_RELEASE_PATHS_JSON}"
+      ALPHA_WORLD_RELEASE_PATH: "${ALPHA_WORLD_RELEASE_PATH}"
       ZUGFOLGE_WORLD_ID: "${ZUGFOLGE_WORLD_ID:?ZUGFOLGE_WORLD_ID fehlt}"
       INFRA_RELEASE_TRUSTED_KEYS_JSON: "${INFRA_RELEASE_TRUSTED_KEYS_JSON}"
       RELEASE_TRUSTED_KEY_SCOPES_JSON: "${RELEASE_TRUSTED_KEY_SCOPES_JSON:?RELEASE_TRUSTED_KEY_SCOPES_JSON fehlt}"
@@ -245,7 +245,7 @@ services:
     command: [node, tools/alpha-ops/production-db-bootstrap.mjs]
     environment:
       DATABASE_URL: "postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}"
-      ALPHA_WORLD_RELEASE_PATHS_JSON: "${ALPHA_WORLD_RELEASE_PATHS_JSON}"
+      ALPHA_WORLD_RELEASE_PATH: "${ALPHA_WORLD_RELEASE_PATH}"
       ZUGFOLGE_WORLD_ID: "${ZUGFOLGE_WORLD_ID:?ZUGFOLGE_WORLD_ID fehlt}"
       INFRA_RELEASE_TRUSTED_KEYS_JSON: "${INFRA_RELEASE_TRUSTED_KEYS_JSON}"
       RELEASE_TRUSTED_KEY_SCOPES_JSON: "${RELEASE_TRUSTED_KEY_SCOPES_JSON:?RELEASE_TRUSTED_KEY_SCOPES_JSON fehlt}"
@@ -289,7 +289,7 @@ services:
       INFRA_PACKAGE_VERIFIER_MODULE: /app/tools/tiles/map-package.mjs
       INFRA_UPLOAD_KEYS_JSON: '[{"id":"${INFRA_UPLOAD_KEY_ID}","secret":"${INFRA_UPLOAD_SECRET}"}]'
       ZUGFOLGE_RUNTIME_NATIVE_PATH: /app/native/zugfolge-runtime.node
-      ZUGFOLGE_OPERATIONAL_INFRASTRUCTURE_ROOTS_JSON: '{"${MAP_RELEASE_ID:?MAP_RELEASE_ID muss aus active/map-release.env kommen}":"/map-release","tutorial-minimal-2026.1:operational-infra":"/app/apps/game-api/tutorial-infrastructure/tutorial-minimal-2026.1"}'
+      ZUGFOLGE_OPERATIONAL_INFRASTRUCTURE_ROOTS_JSON: '{"${MAP_RELEASE_ID:?MAP_RELEASE_ID muss aus active/map-release.env kommen}":"/map-release"}'
       ZUGFOLGE_PLANNING_RUNTIME_NATIVE_PATH: /app/native/zugfolge-planning-runtime.node
       MAP_RELEASE_PREFLIGHT_EVIDENCE_PATH: /map-preflight/evidence.json
       MAP_RELEASE_PREFLIGHT_DEPLOYMENT_ROOT: /map-deployment

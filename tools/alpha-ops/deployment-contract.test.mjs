@@ -103,7 +103,7 @@ test("Alpha-Compose erzwingt Map- und Welt-Cutover-Gates, Migration, signierten 
   assert.match(compose, /\$\{MAP_RELEASE_DEPLOYMENT_HOST_ROOT:\?[^}]+\}\/\$\{MAP_RELEASE_HOST_DIR:\?[^}]+\}:\/map-release:ro/u);
   assert.match(compose, /\$\{MAP_RELEASE_DEPLOYMENT_HOST_ROOT:\?[^}]+\}\/\$\{MAP_RELEASE_HOST_DIR:\?[^}]+\}:\/map-artifacts\/maps\/\$\{MAP_RELEASE_ID:\?[^}]+\}:ro/u);
   assert.match(compose, /world-deployment-cutover-preflight:[\s\S]*world-deployment-cutover-preflight\.mjs/u);
-  assert.match(compose, /world-deployment-cutover-preflight:[\s\S]*ALPHA_WORLD_RELEASE_PATHS_JSON:[^\n]+[\s\S]*INFRA_RELEASE_TRUSTED_KEYS_JSON:[^\n]+[\s\S]*RELEASE_TRUSTED_KEY_SCOPES_JSON:[^\n]+[\s\S]*ALPHA_PUBLIC_WORLD_ID:[^\n]+[\s\S]*LIVEMAP_READ_MODEL_PATH: \/map-release\/read-model\.sqlite/u);
+  assert.match(compose, /world-deployment-cutover-preflight:[\s\S]*ALPHA_WORLD_RELEASE_PATH:[^\n]+[\s\S]*INFRA_RELEASE_TRUSTED_KEYS_JSON:[^\n]+[\s\S]*RELEASE_TRUSTED_KEY_SCOPES_JSON:[^\n]+[\s\S]*ALPHA_PUBLIC_WORLD_ID:[^\n]+[\s\S]*LIVEMAP_READ_MODEL_PATH: \/map-release\/read-model\.sqlite/u);
   for (const serviceSource of [mapReleasePreflightService, worldDeploymentPreflightService, gameBootstrapService, gameApiService]) {
     assert.match(serviceSource, /RELEASE_TRUSTED_KEY_SCOPES_JSON: "\$\{RELEASE_TRUSTED_KEY_SCOPES_JSON:\?RELEASE_TRUSTED_KEY_SCOPES_JSON fehlt\}"/u);
   }
@@ -151,14 +151,14 @@ test("Alpha-Compose erzwingt Map- und Welt-Cutover-Gates, Migration, signierten 
   assert.match(compose, /production-recovery-cold-qualify:[\s\S]*PRODUCTION_SCHEMA31_RECEIPT_PATH:[^\n]+schema31-prepared\.json/u);
   assert.match(compose, /game-schema33-migrate:[\s\S]*PRODUCTION_SCHEMA31_RECEIPT_PATH:[^\n]+schema31-prepared\.json/u);
   assert.match(compose, /game-schema33-migrate:[\s\S]*production-cold-backup\.mjs, preflight, node, packages\/db\/dist\/migrate\.js/u);
-  assert.match(composeWrapper, /--schema33-after-cold[\s\S]*game-schema33-migrate[\s\S]*select count\(\*\) from drizzle\.__drizzle_migrations"\)" = 34/u);
+  assert.match(composeWrapper, /--schema33-after-cold[\s\S]*game-schema33-migrate[\s\S]*select count\(\*\) from drizzle\.__drizzle_migrations"\)" = 35/u);
   assert.match(
     composeWrapper,
-    /if \(\(keycloak_after_schema33 == 1\)\); then[\s\S]*select count\(\*\) from drizzle\.__drizzle_migrations"\)" = 34[\s\S]*keycloak-schema-backup[\s\S]*keycloak-schema-restore[\s\S]*bind-backup[\s\S]*plan-up[\s\S]*keycloak_schema_command up[\s\S]*keycloak_schema_command recover[\s\S]*keycloak_schema_command preflight-up/u,
+    /if \(\(keycloak_after_schema33 == 1\)\); then[\s\S]*select count\(\*\) from drizzle\.__drizzle_migrations"\)" = 35[\s\S]*keycloak-schema-backup[\s\S]*keycloak-schema-restore[\s\S]*bind-backup[\s\S]*plan-up[\s\S]*keycloak_schema_command up[\s\S]*keycloak_schema_command recover[\s\S]*keycloak_schema_command preflight-up/u,
   );
   assert.match(
     composeWrapper,
-    /if \(\(prepare_v2_hot == 1\)\); then[\s\S]*select count\(\*\) from drizzle\.__drizzle_migrations"\)" = 34[\s\S]*keycloak_schema_command preflight-up[\s\S]*backup-game\.sh/u,
+    /if \(\(prepare_v2_hot == 1\)\); then[\s\S]*select count\(\*\) from drizzle\.__drizzle_migrations"\)" = 35[\s\S]*keycloak_schema_command preflight-up[\s\S]*backup-game\.sh/u,
   );
   assert.match(
     composeWrapper,
@@ -173,7 +173,6 @@ test("Alpha-Compose erzwingt Map- und Welt-Cutover-Gates, Migration, signierten 
   assert.doesNotMatch(compose, /LIVEMAP_TRAIN_PROJECTION_PATH|train-map-projection\.sqlite/u);
   assert.match(gameApiService, /ZUGFOLGE_OPERATIONAL_INFRASTRUCTURE_ROOTS_JSON:/u);
   assert.match(gameApiService, /\$\{MAP_RELEASE_ID:\?[^}]+\}":"\/map-release/u);
-  assert.match(gameApiService, /tutorial-minimal-2026\.1:operational-infra":"\/app\/apps\/game-api\/tutorial-infrastructure\/tutorial-minimal-2026\.1/u);
   assert.doesNotMatch(gameApiService, /ZUGFOLGE_OPERATIONAL_INFRASTRUCTURE_ROOT:/u);
   assert.match(compose, /game-bootstrap:[\s\S]*ALPHA_WORLD_V2_CUTOVER_AUTHORIZATION_JSON:/u);
   assert.match(compose, /game-bootstrap:[\s\S]*ALPHA_PUBLIC_WORLD_ID:/u);
@@ -297,7 +296,6 @@ test("Alpha-Compose erzwingt Map- und Welt-Cutover-Gates, Migration, signierten 
   assert.match(mapPreflight, /mode === "attested-rollback" \? rollbackPreflight : preflight/u);
   assert.doesNotMatch(mapPreflight, /fallback/u);
   assert.match(worldPreflight, /active_world_requires_operational_v2_cutover/u);
-  assert.match(worldPreflight, /active_tutorial_requires_v2_cutover_archive/u);
   assert.match(worldPreflight, /set transaction read only/u);
   assert.doesNotMatch(worldPreflight, /fallback/u);
   assert.match(compose, /ZUGFOLGE_SOURCE_SHA: "\$\{ZUGFOLGE_SOURCE_SHA:-unversioned\}"/);
@@ -501,7 +499,7 @@ test("Produktions-Bootstrap ist auf genau eine signierte öffentliche Welt begre
     read("tools/alpha-ops/world-deployment-cutover-apply.mjs"),
     read(".env.example"),
   ]);
-  assert.match(bootstrap, /deploymentPaths\.length !== 1/);
+  assert.match(bootstrap, /const deploymentPath = process.env.ALPHA_WORLD_RELEASE_PATH/);
   assert.match(bootstrap, /definition\.kind !== "public" \|\| definition\.rankingStatus !== "ranked"/);
   assert.match(bootstrap, /applyWorldDeploymentCutover/);
   assert.match(bootstrap, /const uiWorldId = assertProductionServerWorldEnvironment\(process.env\);/u);
@@ -509,9 +507,9 @@ test("Produktions-Bootstrap ist auf genau eine signierte öffentliche Welt begre
   assert.match(apply, /on conflict \(id\) do nothing/);
   assert.match(apply, /widerspricht dem signierten Vertrag/);
   assert.match(bootstrap, /ensureSignedPlanningAuthority/);
-  const deploymentValue = /^ALPHA_WORLD_RELEASE_PATHS_JSON=(.+)$/mu.exec(environmentSource)?.[1];
+  const deploymentValue = /^ALPHA_WORLD_RELEASE_PATH=(.+)$/mu.exec(environmentSource)?.[1];
   assert.notEqual(deploymentValue, undefined);
-  assert.deepEqual(JSON.parse(deploymentValue), ["/evidence/alpha-world-deployment.json"]);
+  assert.equal(deploymentValue, "/evidence/alpha-world-deployment.json");
 });
 
 test("Game trennt einen kanonischen Release-Keyring strikt nach Alpha- und Map-/Infra-Rolle", async () => {
@@ -521,7 +519,6 @@ test("Game trennt einen kanonischen Release-Keyring strikt nach Alpha- und Map-/
   ]);
   assert.match(server, /const trustedReleaseKeys = parseTrustedReleaseKeys\(requireEnv\("INFRA_RELEASE_TRUSTED_KEYS_JSON"\)\);[\s\S]*parseTrustedReleaseKeyScopes\([\s\S]*requireEnv\("RELEASE_TRUSTED_KEY_SCOPES_JSON"\)[\s\S]*trustedReleaseKeys[\s\S]*const alphaWorldTrustedKeys = trustedReleaseKeyScopes\.alphaWorldDeployments;[\s\S]*const mapInfraTrustedKeys = trustedReleaseKeyScopes\.mapInfraDeliveries;/u);
   assert.match(server, /loadOptionalInfraPackageStaging\(mapInfraTrustedKeys\)/u);
-  assert.match(server, /alphaWorldReleasePaths\(\)\.map\(\(path\) => loadSignedAlphaWorldDeployment\(path, alphaWorldTrustedKeys\)\)/u);
   assert.match(server, /resolveAlphaWorldStartupDeployments\([\s\S]*db,[\s\S]*alphaWorldTrustedKeys,[\s\S]*configuredSignedDeployments,[\s\S]*\)/u);
   assert.match(server, /new InfraUpdateService\([\s\S]*mapInfraTrustedKeys/u);
   assert.match(server, /trustedKeys: alphaWorldTrustedKeys/u);

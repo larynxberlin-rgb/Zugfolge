@@ -43,7 +43,7 @@ function decision(sequence = 1) {
     decisions = [decision()]; streams = new Set(); operationsReads = 0; overrideRequests = 0;
     consumerAvailable = true;
     app = Fastify();
-    const index = readFileSync(resolve(dist, "index.html"), "utf8").replace('<script src="./runtime-config.js"></script>', `<script>sessionStorage.setItem("zugfolge.oidc.operations-center.accessToken","browser-test");sessionStorage.setItem("zugfolge.oidc.operations-center.accessTokenExpiresAt",String(Date.now()+3600000));</script>`);
+    const index = readFileSync(resolve(dist, "index.html"), "utf8").replace('<script src="./runtime-config.js"></script>', `<script>globalThis.__ZUGFOLGE_RUNTIME_CONFIG__={publicWorldId:"world"};sessionStorage.setItem("zugfolge.oidc.operations-center.accessToken","browser-test");sessionStorage.setItem("zugfolge.oidc.operations-center.accessTokenExpiresAt",String(Date.now()+3600000));</script>`);
     app.get("/", async (_request, reply) => reply.type("text/html").send(index));
     app.get("/assets/*", async (request, reply) => {
       const path = resolve(dist, "assets", (request.params as { "*": string })["*"]);

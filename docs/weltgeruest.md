@@ -276,8 +276,8 @@ den Rest der Rechte nach.
 Weltzugangs, alle in dieser Welt gegründeten EVU und das vollständige
 Postfach zu einem `PersonalDataExport` — was das Spielsystem über ein Konto
 in einer Welt weiß, an einer Stelle, maschinenlesbar. Der versionierte
-Export `zugfolge-personal-data-export/v2` enthält außerdem eigene
-Weltvertragsbestätigungen, Tutorial-Sitzungen und kaufmännische Berechtigungen.
+Export `zugfolge-personal-data-export/v3` enthält außerdem eigene
+Weltvertragsbestätigungen und kaufmännische Berechtigungen.
 Die authentifizierte Selbst-Auskunft bleibt nach Entzug des Weltzugangs möglich.
 
 **Löschung.** `eraseAccountData` anonymisiert den Anzeigenamen

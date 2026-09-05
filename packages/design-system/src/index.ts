@@ -1,4 +1,5 @@
 export type Density = "control" | "document";
+export { mountGameHints, readGameHintPreferences, type GameHint, type GameHintPreferences } from "./game-hints.js";
 export type StatusTone = "neutral" | "attention" | "danger" | "success";
 export type IconName =
   | "alert"

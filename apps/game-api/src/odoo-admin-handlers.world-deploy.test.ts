@@ -785,22 +785,6 @@ describe("Game world_deploy: signierte Weltanlage", () => {
     };
   }
 
-  it("weist ein gueltig signiertes Tutorial-Hauptdeployment vor jeder DB- oder Runtimewirkung ab", async () => {
-    const base = deployment();
-    const signed = signedDeployment({ ...base,
-      worldDefinition: { ...base.worldDefinition, kind: "tutorial", rankingStatus: "unranked" },
-      blueprint: { ...base.blueprint, profileKind: "tutorial", accelerationFactor: 60, entryFacilityPolicy: { schemaVersion: PUBLIC_ENTRY_FACILITY_SCHEMA, mode: "disabled" } },
-    });
-    const scope = serverWorldScope(WORLD_ID, "https://elbe.zugfolge.test");
-    const { run, prepareWorldProgram, registerStartedWorld } = handler(vi.fn(), true, scope);
-    expect(parseSignedAlphaWorldDeployment(signed, { [KEY_ID]: PUBLIC_KEY_PEM }).deployment.blueprint.profileKind).toBe("tutorial");
-    await expect(run(context(commandFor(signed)))).rejects.toThrow("Serverhauptweltbindung");
-    expect(await db.select().from(worlds)).toHaveLength(0);
-    expect(await db.select().from(alphaWorldProfiles)).toHaveLength(0);
-    expect(await db.select().from(alphaWorldDeployments)).toHaveLength(0);
-    expect(prepareWorldProgram).not.toHaveBeenCalled();
-    expect(registerStartedWorld).not.toHaveBeenCalled();
-  });
 
   it("nimmt eine live gestartete Welt und den globalen Scope sofort in den Odoo-Dispatch auf", () => {
     expect(worldIdsForOdooProjectionDispatch([])).toEqual([
@@ -1075,37 +1059,7 @@ describe("Game world_deploy: signierte Weltanlage", () => {
     await expect(assertActivePublicWorldDeploymentCoverage(db, { [KEY_ID]: PUBLIC_KEY_PEM }))
       .resolves.toEqual([WORLD_ID]);
 
-    const tutorialWorldId = "70000000-0000-4000-8000-000000000003";
-    const tutorialBlueprint = {
-      ...(decodeEconomyValue(profile!.blueprint) as AlphaWorldBlueprint),
-      profileKind: "tutorial" as const,
-      accelerationFactor: 60,
-      entryFacilityPolicy: {
-        schemaVersion: PUBLIC_ENTRY_FACILITY_SCHEMA,
-        mode: "disabled" as const,
-      },
-    };
-    await db.insert(worlds).values({
-      id: tutorialWorldId,
-      name: "Kurzlebige Tutorialwelt",
-      schedulePeriodWeeks: 4,
-      epoch: new Date(WORLD_EPOCH),
-      worldKind: "private",
-      rankingStatus: "unranked",
-      lifecycleStatus: "active",
-    });
-    await db.insert(alphaWorldProfiles).values({
-      ...profile!,
-      worldId: tutorialWorldId,
-      profileKind: "tutorial",
-      worldSeed: 19n,
-      accelerationFactor: 60,
-      blueprint: encodeEconomyValue(tutorialBlueprint),
-      blueprintHash: validateWorldBlueprint(tutorialBlueprint),
-      deploymentHash: null,
-    });
-    await expect(assertActivePublicWorldDeploymentCoverage(db, { [KEY_ID]: PUBLIC_KEY_PEM }))
-      .resolves.toEqual([WORLD_ID]);
+
   });
 
   it("stoppt den Neustart bei einer zusaetzlichen aktiven Public-Welt ohne verifiziertes Deployment", async () => {

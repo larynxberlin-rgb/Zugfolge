@@ -1,9 +1,9 @@
 # ADR-0030: Odoo-Weltkatalog und kommerzielle Teilnahme an Game-autoritativen Welten
 
-- **Status:** Vorgeschlagen – technische Ausgestaltung von E23 und E28; die Aktivitätsgrenzwerte sind noch nicht angenommen
-- **Bezug:** [ADR-0023](0023-odoo-als-administrativer-kontrollpunkt.md) · [ADR-0028](0028-getrennter-tutorial-und-wettbewerbsstart.md) · [../odoo-betrieb.md](../odoo-betrieb.md)
+- **Status:** Vorgeschlagen – technische Ausgestaltung von E23; die Aktivitätsgrenzwerte sind noch nicht angenommen
+- **Bezug:** [ADR-0023](0023-odoo-als-administrativer-kontrollpunkt.md) · [../odoo-betrieb.md](../odoo-betrieb.md)
 - **Betrifft Milestones:** M9.3, M9.6, M9.7, M13.1, M13.2, M13.3
-- **Verwandte ADRs:** ADR-0005, ADR-0018, ADR-0023, ADR-0028
+- **Verwandte ADRs:** ADR-0005, ADR-0018, ADR-0023, ADR-0033
 
 ## Kontext
 
@@ -19,7 +19,7 @@ Nach bestätigter Zahlung sendet Odoo `world.participation.change` in der vorhan
 
 Neue öffentliche Weltverträge erweitern den vorhandenen `zugfolge-alpha-world-blueprint/v2`. `StartingCapitalPolicy`, Aufnahmevertrag, öffentliche Metadaten und eine explizite `ActivityPolicy | null` sind Teil des gehashten und extern Ed25519-signierten Blueprints. Damit bleibt die parallel vorhandene Welt-Deployment-Architektur maßgeblich; es entsteht kein zweiter Weltstartpfad. Blueprints ohne den vollständigen Katalogvertrag werden nicht als öffentliche Website-Snapshots ausgegeben.
 
-`StartingCapitalPolicy` ist ausschließlich `{mode:"finite", amountCents: bigint}` oder `{mode:"unlimited"}`; Wire-Beträge sind kanonische Dezimalstrings. Blueprint v2 verlangt die Policy explizit, und neue öffentliche Welten verwenden standardmäßig den signierten Nullstart. Bei der EVU-Gründung wird nur diese Geldregel atomar angewandt; Fahrzeuge, Strecken, Personal und andere Startpakete werden nicht angelegt. Tutorialwelten behalten ihren getrennten geführten Startpaketvertrag.
+`StartingCapitalPolicy` ist ausschließlich `{mode:"finite", amountCents: bigint}` oder `{mode:"unlimited"}`; Wire-Beträge sind kanonische Dezimalstrings. Blueprint v2 verlangt die Policy explizit, und neue öffentliche Welten verwenden standardmäßig den signierten Nullstart. Bei der EVU-Gründung wird nur diese Geldregel atomar angewandt; Fahrzeuge, Strecken, Personal und andere Startpakete werden nicht angelegt.
 
 Die Aktivitätsberechnung ist versioniert, weltgebunden und deterministisch gegen autoritative Weltzeit. Sie zählt ausschließlich freigegebene Game-Ereignistypen mit direkter EVU-Bindung in einem rollierenden Fenster und schließt System-EVU, Bots, ausgeschiedene und gelöschte EVU aus. Solange die Policy `null` ist, lautet der öffentliche Zustand `unconfigured` und die Zahl ist `null`, niemals `0`.
 

@@ -3,8 +3,8 @@ import { createHash } from "node:crypto";
 import { validateDatabaseRollbackProof } from "../tiles/map-release-build-evidence.mjs";
 import {
   DATABASE_CUTOVER_CONSTRAINTS,
-  DATABASE_CUTOVER_GUARDS,
-  DATABASE_WORLD_HISTORY_BINDINGS,
+  databaseCutoverGuards,
+  databaseWorldHistoryBindings,
   databaseAuthoritativeCatalog,
   normalizeDatabaseDefinition,
 } from "./database-cutover-schema-contract.mjs";
@@ -17,6 +17,7 @@ import {
 const AUTHORITATIVE_HEAD_SCHEMA = "zugfolge-database-authoritative-head/v1";
 const WORLD_HISTORY_SEAL_SCHEMA = "zugfolge-world-final-history-seal/v1";
 const WORLD_HISTORY_SEAL_SCHEMA_34 = "zugfolge-world-final-history-seal/v2";
+const WORLD_HISTORY_SEAL_SCHEMA_35 = "zugfolge-world-final-history-seal/v3";
 const HISTORY_COLUMNS_ADDED_IN_SCHEMA_34 = Object.freeze({
   abuse_observations: Object.freeze(["observation_key", "facts_hash"]),
   mailbox_messages: Object.freeze(["content_hash", "purged_at"]),
@@ -243,7 +244,7 @@ export async function inspectLiveDatabaseRollbackSnapshot(sql, { inspectKeycloak
 
   const identity = exactOne(identityRows, "Die Datenbank besitzt nicht genau eine persistente Instanzidentitaet.");
   invariant(constraintRows.length === DATABASE_CUTOVER_CONSTRAINTS.length, "Der Live-Stand besitzt nicht den exakten Cutover-Constraintvertrag.");
-  invariant(guardRows.length === DATABASE_CUTOVER_GUARDS.length, "Der Live-Stand besitzt nicht den exakten Unveraenderlichkeitsvertrag.");
+  invariant(guardRows.length === databaseCutoverGuards(migrationHeadRows.length).length, "Der Live-Stand besitzt nicht den exakten Unveraenderlichkeitsvertrag.");
 
   const migrationLedger = migrationRows.map((row) => ({
     id: positiveInteger(row.id, "migration.id"),
@@ -268,7 +269,7 @@ export async function inspectLiveDatabaseRollbackSnapshot(sql, { inspectKeycloak
       validated: true,
     });
   });
-  const guards = DATABASE_CUTOVER_GUARDS.map((expected) => {
+  const guards = databaseCutoverGuards(migrationHeadRows.length).map((expected) => {
     const row = exactOne(
       guardRows.filter(({ name }) => name === expected.name),
       `Guard '${expected.name}' fehlt oder ist doppelt vorhanden.`,
@@ -324,9 +325,10 @@ export async function worldFinalHistorySeal(sql, worldId, { schemaVersion } = {}
   const [migrationHead] = await sql.unsafe("select count(*)::int as migration_count from drizzle.__drizzle_migrations");
   const migrationCount = migrationHead?.migration_count;
   databaseAuthoritativeCatalog(migrationCount);
-  const selectedSchema = schemaVersion ?? (migrationCount === 34 ? WORLD_HISTORY_SEAL_SCHEMA_34 : WORLD_HISTORY_SEAL_SCHEMA);
-  invariant([WORLD_HISTORY_SEAL_SCHEMA, WORLD_HISTORY_SEAL_SCHEMA_34].includes(selectedSchema)
-    && (selectedSchema !== WORLD_HISTORY_SEAL_SCHEMA_34 || migrationCount === 34), "Welt-Historienseal besitzt keine passende Schema-/Spaltenversion.");
+  const selectedSchema = schemaVersion ?? (migrationCount === 35 ? WORLD_HISTORY_SEAL_SCHEMA_35 : migrationCount === 34 ? WORLD_HISTORY_SEAL_SCHEMA_34 : WORLD_HISTORY_SEAL_SCHEMA);
+  invariant([WORLD_HISTORY_SEAL_SCHEMA, WORLD_HISTORY_SEAL_SCHEMA_34, WORLD_HISTORY_SEAL_SCHEMA_35].includes(selectedSchema)
+    && (selectedSchema !== WORLD_HISTORY_SEAL_SCHEMA_35 || migrationCount === 35)
+    && (selectedSchema !== WORLD_HISTORY_SEAL_SCHEMA_34 || migrationCount >= 34), "Welt-Historienseal besitzt keine passende Schema-/Spaltenversion.");
   const worldBindingRows = await sql.unsafe(`
     select columns.table_name, columns.column_name
     from information_schema.columns as columns
@@ -341,7 +343,7 @@ export async function worldFinalHistorySeal(sql, worldId, { schemaVersion } = {}
       )
     order by columns.table_name, columns.column_name
   `);
-  const expectedBindings = DATABASE_WORLD_HISTORY_BINDINGS
+  const expectedBindings = databaseWorldHistoryBindings(migrationCount)
     .flatMap(({ table, columns }) => columns.map((column) => ({ table_name: table, column_name: column })))
     .sort((left, right) => left.table_name.localeCompare(right.table_name, "en") || left.column_name.localeCompare(right.column_name, "en"));
   invariant(
@@ -349,8 +351,17 @@ export async function worldFinalHistorySeal(sql, worldId, { schemaVersion } = {}
     `Der Welt-Historienvertrag weicht vom eingecheckten Schema-${migrationCount}-Sollvertrag ab.`,
   );
   const tableStates = [];
-  for (const binding of DATABASE_WORLD_HISTORY_BINDINGS) {
-    const omitted = selectedSchema === WORLD_HISTORY_SEAL_SCHEMA && migrationCount === 34
+  const liveBindings = databaseWorldHistoryBindings(migrationCount);
+  const historicalBindings = selectedSchema === WORLD_HISTORY_SEAL_SCHEMA_35 ? liveBindings : databaseWorldHistoryBindings(34);
+  for (const binding of historicalBindings) {
+    if (!liveBindings.some(({ table }) => table === binding.table)) {
+      // Ein historisches Siegel bleibt nur vergleichbar, wenn die entfernte
+      // Relation fuer diese regulaere Welt bereits leer war. Ein alter nichtleerer
+      // Fingerprint kann durch diesen leeren Wert niemals erfolgreich validieren.
+      tableStates.push({ table: binding.table, rowCount: "0", rowsSha256: createHash("sha256").update("").digest("hex") });
+      continue;
+    }
+    const omitted = selectedSchema === WORLD_HISTORY_SEAL_SCHEMA && migrationCount >= 34
       ? HISTORY_COLUMNS_ADDED_IN_SCHEMA_34[binding.table] ?? [] : [];
     tableStates.push(await tableFingerprint(sql, binding.table, binding.columns, [worldId], omitted));
   }
@@ -433,5 +444,6 @@ export const DATABASE_ROLLBACK_BINDING_SCHEMAS = Object.freeze({
   authoritativeHead: AUTHORITATIVE_HEAD_SCHEMA,
   worldHistorySeal: WORLD_HISTORY_SEAL_SCHEMA,
   worldHistorySealSchema34: WORLD_HISTORY_SEAL_SCHEMA_34,
+  worldHistorySealSchema35: WORLD_HISTORY_SEAL_SCHEMA_35,
   cutoverReceipt: CUTOVER_RECEIPT_SCHEMA,
 });

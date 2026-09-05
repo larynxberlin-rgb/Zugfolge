@@ -94,7 +94,6 @@ const AUDIENCE = "game-api";
 const WORLD_LHE = "11111111-1111-1111-1111-111111111111";
 const WORLD_MIDDLE_GERMANY = "22222222-2222-2222-2222-222222222222";
 const PRIVATE_WORLD = "33333333-3333-3333-3333-333333333333";
-const TUTORIAL_WORLD = "44444444-4444-4444-4444-444444444444";
 function publicBlueprint(
   startingCapitalPolicy: AlphaWorldBlueprintV1["startingCapitalPolicy"] = { kind: "finite", amountCents: "0" },
 ): AlphaWorldBlueprintV1 {
@@ -399,10 +398,10 @@ describe("Serverwelt und Subdomain", () => {
     const headers = { host: "elbe.zugfolge.test", authorization: `Bearer ${await sign("kc-server-scope", "Weltbindung")}` };
     expect((await app.inject({ url: `/worlds/${WORLD_LHE}/access`, headers })).statusCode).toBe(200);
     expect((await app.inject({ url: `/worlds/${WORLD_MIDDLE_GERMANY}/access`, headers })).statusCode).toBe(404);
-    expect((await app.inject({ url: "/me/worlds", headers })).json<{ worldId: string }[]>().map((row) => row.worldId)).toEqual([WORLD_LHE]);
+    expect((await app.inject({ url: "/me/worlds", headers })).statusCode).toBe(404);
     expect((await app.inject({ url: "/public-world-contracts", headers })).json<{ worldId: string }[]>().map((row) => row.worldId)).toEqual([WORLD_LHE]);
     expect((await app.inject({ url: "/me/worlds", headers: { ...headers, host: "spree.zugfolge.test", "x-forwarded-host": "elbe.zugfolge.test" } })).statusCode).toBe(421);
-    expect((await app.inject({ method: "POST", url: "/private-worlds", headers, payload: { name: "Zweite Welt", schedulePeriodWeeks: 4, epoch: "2026-01-01T00:00:00Z" } })).json()).toMatchObject({ code: "dedicated_world_server_required" });
+    expect((await app.inject({ method: "POST", url: "/private-worlds", headers, payload: { name: "Zweite Welt", schedulePeriodWeeks: 4, epoch: "2026-01-01T00:00:00Z" } })).statusCode).toBe(404);
     expect((await app.inject({ url: "/health", headers: { host: "127.0.0.1:3000" } })).statusCode).toBe(200);
     expect(await db.select().from(worlds)).toHaveLength(2);
   });
@@ -452,31 +451,6 @@ describe("M13 signierter Odoo-Receiver", () => {
 });
 
 describe("M13 Entitlement-Grenzen", () => {
-  it("vergibt bei parallelem Eintritt in zwei Welten mit Limit 1 genau einen oeffentlichen Weltplatz", async () => {
-    const token = await sign("kc-parallel-slot", "Parallel Slot");
-    const request = (worldId: string) => app.inject({
-      method: "POST",
-      url: `/worlds/${worldId}/access`,
-      headers: { authorization: `Bearer ${token}` },
-      payload: { displayName: "Parallel Slot", acceptedWorldContractHash: TEST_WORLD_CONTRACT_HASH },
-    });
-
-    const [first, second] = await Promise.all([
-      request(WORLD_LHE),
-      request(WORLD_MIDDLE_GERMANY),
-    ]);
-
-    expect([first.statusCode, second.statusCode].sort()).toEqual([201, 403]);
-    const accesses = await db
-      .select({ worldId: worldAccesses.worldId })
-      .from(worldAccesses)
-      .where(and(
-        eq(worldAccesses.keycloakSubject, "kc-parallel-slot"),
-        eq(worldAccesses.status, "active"),
-      ));
-    expect(accesses).toHaveLength(1);
-    expect([WORLD_LHE, WORLD_MIDDLE_GERMANY]).toContain(accesses[0]?.worldId);
-  });
 
   it("behandelt parallele Wiederholungen derselben Welt idempotent", async () => {
     const token = await sign("kc-parallel-replay", "Parallel Replay");
@@ -515,7 +489,7 @@ describe("M13 Entitlement-Grenzen", () => {
     expect(status.json<{ id: string }>().id).toBe(created.json<{ id: string }>().id);
   });
 
-  it("laesst private und Tutorialwelten nicht ueber den oeffentlichen Slotpfad betreten", async () => {
+  it("laesst private Welten nicht ueber den oeffentlichen Eintritt betreten", async () => {
     await db.insert(worlds).values([
       {
         id: PRIVATE_WORLD,
@@ -525,31 +499,7 @@ describe("M13 Entitlement-Grenzen", () => {
         worldKind: "private",
         rankingStatus: "unranked",
       },
-      {
-        id: TUTORIAL_WORLD,
-        name: "Tutorial-Testwelt",
-        schedulePeriodWeeks: 4,
-        epoch: new Date("2026-01-01T00:00:00Z"),
-        worldKind: "private",
-        rankingStatus: "unranked",
-      },
     ]);
-    await db.insert(alphaWorldProfiles).values({
-      worldId: TUTORIAL_WORLD,
-      profileKind: "tutorial",
-      regionId: "tutorial-test",
-      regionVariant: "T",
-      worldSeed: 1n,
-      accelerationFactor: 60,
-      infraReleaseHash: "a".repeat(64),
-      timetableReleaseHash: "b".repeat(64),
-      fleetReleaseHash: "c".repeat(64),
-      economyReleaseHash: "d".repeat(64),
-      blueprint: {},
-      blueprintHash: "e".repeat(64),
-      state: "running",
-      startedAtS: 0,
-    });
     const token = await sign("kc-private-oracle", "Privat Test");
     const enter = (worldId: string) => app.inject({
       method: "POST",
@@ -559,12 +509,9 @@ describe("M13 Entitlement-Grenzen", () => {
     });
 
     const privateResponse = await enter(PRIVATE_WORLD);
-    const tutorialResponse = await enter(TUTORIAL_WORLD);
 
     expect(privateResponse.statusCode).toBe(403);
     expect(privateResponse.json()).toMatchObject({ code: "private_world_access_managed" });
-    expect(tutorialResponse.statusCode).toBe(403);
-    expect(tutorialResponse.json()).toMatchObject({ code: "tutorial_session_required" });
     await expect(db
       .select({ worldId: worldAccesses.worldId })
       .from(worldAccesses)
@@ -572,20 +519,6 @@ describe("M13 Entitlement-Grenzen", () => {
       .resolves.toEqual([]);
   });
 
-  it("begrenzt öffentliche Weltplätze im Game und erzeugt private Welten nur ungewertet", async () => {
-    const token = await sign("kc-entitlement", "Entitlement Test");
-    expect((await app.inject({ method: "POST", url: `/worlds/${WORLD_LHE}/access`, headers: { authorization: `Bearer ${token}` }, payload: { displayName: "Entitlement Test", acceptedWorldContractHash: TEST_WORLD_CONTRACT_HASH } })).statusCode).toBe(201);
-    expect((await app.inject({ method: "POST", url: `/worlds/${WORLD_MIDDLE_GERMANY}/access`, headers: { authorization: `Bearer ${token}` }, payload: { displayName: "Entitlement Test", acceptedWorldContractHash: TEST_WORLD_CONTRACT_HASH } })).statusCode).toBe(403);
-    expect((await app.inject({ method: "POST", url: "/private-worlds", headers: { authorization: `Bearer ${token}` }, payload: { name: "Privat", schedulePeriodWeeks: 4, epoch: "2026-01-01T00:00:00.000Z" } })).statusCode).toBe(403);
-
-    await db.insert(commerceEntitlements).values({ externalEventId: "direct-test-plus", keycloakSubject: "kc-entitlement", productKind: "zugfolge_plus", status: "active", validFrom: new Date("2026-01-01T00:00:00.000Z"), quantity: "1", correlationId: "entitlement-test", sourceReference: "test" });
-    expect((await app.inject({ method: "POST", url: `/worlds/${WORLD_MIDDLE_GERMANY}/access`, headers: { authorization: `Bearer ${token}` }, payload: { displayName: "Entitlement Test", acceptedWorldContractHash: TEST_WORLD_CONTRACT_HASH } })).statusCode).toBe(201);
-
-    await db.insert(commerceEntitlements).values({ externalEventId: "direct-test-private", keycloakSubject: "kc-entitlement", productKind: "private_unranked_world", status: "active", validFrom: new Date("2026-01-01T00:00:00.000Z"), quantity: "1", correlationId: "private-test", sourceReference: "test" });
-    const privateWorld = await app.inject({ method: "POST", url: "/private-worlds", headers: { authorization: `Bearer ${token}` }, payload: { name: "Privat", schedulePeriodWeeks: 4, epoch: "2026-01-01T00:00:00.000Z" } });
-    expect(privateWorld.statusCode).toBe(201);
-    expect(privateWorld.json()).toMatchObject({ worldKind: "private", rankingStatus: "unranked" });
-  });
 
   it("sperrt Katalogwelten fuer Self-Service und akzeptiert nur den Game-autoritativen Odoo-Teilnahmebeleg", async () => {
     const catalogWorld = "33333333-3333-4333-8333-333333333333";
@@ -2710,7 +2643,7 @@ describe("Datenschutz (M2.6)", () => {
     expect(eraseResponse.json<{ displayName: string }>().displayName).toBe("Gelöschtes Konto");
     const afterErase = await app.inject({ method: "GET", url: `/worlds/${WORLD_LHE}/me/export`, headers: { authorization: `Bearer ${token}` } });
     expect(afterErase.statusCode).toBe(200);
-    expect(afterErase.json()).toMatchObject({ schemaVersion: "zugfolge-personal-data-export/v2", worldAccessStatus: "revoked", worldAccess: { acceptedWorldContractHash: TEST_WORLD_CONTRACT_HASH }, account: { erasedAt: expect.any(String) } });
+    expect(afterErase.json()).toMatchObject({ schemaVersion: "zugfolge-personal-data-export/v3", worldAccessStatus: "revoked", worldAccess: { acceptedWorldContractHash: TEST_WORLD_CONTRACT_HASH }, account: { erasedAt: expect.any(String) } });
 
     const reaccessResponse = await app.inject({
       method: "POST",

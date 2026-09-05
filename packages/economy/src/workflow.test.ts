@@ -11,7 +11,7 @@ import {
   grantEmergencyStartPackage,
   openTender,
   settleContractPeriod,
-  seedTutorialAccount,
+  seedEconomyAccount,
   startEconomyWorld,
   submitBid,
   submitMobilizationReference,
@@ -101,18 +101,18 @@ function world() {
 }
 
 describe("zustandsbehafteter M6-Gesamtablauf", () => {
-  it("nimmt ein nach Weltstart eingeladenes Tutorialkonto idempotent und weltgebunden auf", () => {
+  it("nimmt ein nach Weltstart eingeladenes Weltkonto idempotent und weltgebunden auf", () => {
     const started = startEconomyWorld({
-      worldId: "tutorial-world", seed: 7n, durationMonths: 6, release,
-      lots: Array.from({ length: 8 }, (_, index) => ({ id: `tutorial-lot-${index}`, size: 10, attractiveness: 10 })),
+      worldId: "seed-world", seed: 7n, durationMonths: 6, release,
+      lots: Array.from({ length: 8 }, (_, index) => ({ id: `seed-lot-${index}`, size: 10, attractiveness: 10 })),
       authorityBudgets: [], accounts: [],
     }).state;
-    const seeded = seedTutorialAccount(started, { commandId: "tutorial-account:1", accountId: "late-account" });
+    const seeded = seedEconomyAccount(started, { commandId: "seed-account:1", accountId: "late-account" });
     expect(seeded.prequalifications.get("late-account")).toMatchObject({
-      worldId: "tutorial-world", accountId: "late-account", score: 5_000, creditScore: 5_000,
+      worldId: "seed-world", accountId: "late-account", score: 5_000, creditScore: 5_000,
     });
-    expect(seedTutorialAccount(seeded, { commandId: "tutorial-account:1", accountId: "late-account" })).toBe(seeded);
-    expect(() => seedTutorialAccount(started, { commandId: "tutorial-account:missing", accountId: "" })).toThrow(/Tutorialkonto/);
+    expect(seedEconomyAccount(seeded, { commandId: "seed-account:1", accountId: "late-account" })).toBe(seeded);
+    expect(() => seedEconomyAccount(started, { commandId: "seed-account:missing", accountId: "" })).toThrow(/Weltkonto/);
   });
 
   it("vergibt das Alpha-Startpaket nur ueber einen echten, idempotenten Weltuebergang", () => {

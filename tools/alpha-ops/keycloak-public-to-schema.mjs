@@ -9,6 +9,7 @@ import {
   DATABASE_AUTHORITATIVE_TABLES,
   DATABASE_AUTHORITATIVE_TABLES_SCHEMA_28_TO_32,
   DATABASE_AUTHORITATIVE_TABLES_SCHEMA_34,
+  DATABASE_AUTHORITATIVE_TABLES_SCHEMA_35,
 } from "./database-cutover-schema-contract.mjs";
 
 export const KEYCLOAK_SCHEMA_MIGRATION_SCHEMA = "keycloak-public-to-schema/v1";
@@ -527,8 +528,8 @@ export function assertCatalogSignature(actual, catalog, label) {
 }
 
 function gameRelationVariant(names, migrationCount) {
-  invariant([28, 29, 30, 31, 32, 33, 34].includes(migrationCount), `Drizzle-Stand ${migrationCount} ist fuer den Keycloak-Cutover nicht freigegeben.`);
-  const authoritative = migrationCount === 34 ? DATABASE_AUTHORITATIVE_TABLES_SCHEMA_34 : migrationCount >= 33
+  invariant([28, 29, 30, 31, 32, 33, 34, 35].includes(migrationCount), `Drizzle-Stand ${migrationCount} ist fuer den Keycloak-Cutover nicht freigegeben.`);
+  const authoritative = migrationCount === 35 ? DATABASE_AUTHORITATIVE_TABLES_SCHEMA_35 : migrationCount === 34 ? DATABASE_AUTHORITATIVE_TABLES_SCHEMA_34 : migrationCount >= 33
     ? DATABASE_AUTHORITATIVE_TABLES
     : DATABASE_AUTHORITATIVE_TABLES_SCHEMA_28_TO_32;
   const expected = [
@@ -536,7 +537,7 @@ function gameRelationVariant(names, migrationCount) {
     ...(migrationCount >= 31 ? GAME_SUPPORT_RELATIONS : []),
   ].sort();
   invariant(JSON.stringify(names) === JSON.stringify(expected), `Der public-Game-Relationssatz passt nicht zum Drizzle-Stand ${migrationCount}.`);
-  return migrationCount === 34 ? "schema-34" : migrationCount >= 31 ? "schema-31-to-33" : "schema-28-to-30";
+  return migrationCount === 35 ? "schema-35" : migrationCount === 34 ? "schema-34" : migrationCount >= 31 ? "schema-31-to-33" : "schema-28-to-30";
 }
 
 function assertGameRoutines(routines, migrationCount) {
@@ -766,7 +767,7 @@ export function validateKeycloakStateSnapshot(snapshot) {
     invariant(snapshot.targetSchemaComment === KEYCLOAK_BOOTSTRAP_SCHEMA_COMMENT, "Keycloak-Bootstrap besitzt keinen Init-Hook-Ursprungsmarker.");
     return snapshot;
   }
-  invariant(["schema-28-to-30", "schema-31-to-33", "schema-34"].includes(snapshot.gameVariant), "Keycloak-Schema-Zustand besitzt keinen bekannten Game-Katalog.");
+  invariant(["schema-28-to-30", "schema-31-to-33", "schema-34", "schema-35"].includes(snapshot.gameVariant), "Keycloak-Schema-Zustand besitzt keinen bekannten Game-Katalog.");
   validateKeycloakIdentityHead(snapshot.identityHead);
   invariant(snapshot.identityHead.objectCatalogSha256 === snapshot.objectCatalogSha256, "Keycloak-Schema-Zustand bindet widerspruechliche Objektkataloge.");
   invariant(snapshot.objectOids.length === 544, "Keycloak-Schema-Zustand bindet nicht exakt 544 Tabellen-, Index- und Constraint-OIDs.");

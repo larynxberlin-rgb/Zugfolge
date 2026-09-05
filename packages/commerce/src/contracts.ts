@@ -71,7 +71,7 @@ export type SerializedStartingCapitalPolicy =
 
 export interface WorldDefinition {
   readonly name: string;
-  readonly kind: "public" | "tutorial" | "private" | "test";
+  readonly kind: "public" | "private" | "test";
   readonly rankingStatus: "ranked" | "unranked";
   readonly schedulePeriodWeeks: number;
   readonly epoch: string;

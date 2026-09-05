@@ -23,17 +23,17 @@ import {
 const worldId = "11111111-1111-4111-8111-111111111111";
 const lotId = "lot-native-smoke";
 const timetableBoundaryS = 604_800;
-const tutorialInfrastructureRootUrl = new URL(
-  "../../../apps/game-api/tutorial-infrastructure/tutorial-minimal-2026.1/",
+const testInfrastructureRootUrl = new URL(
+  "../../../apps/game-api/test-infrastructure/operations-v1/",
   import.meta.url,
 );
-const tutorialInfrastructureRoot = fileURLToPath(tutorialInfrastructureRootUrl);
-const tutorialInfrastructureDescriptor = JSON.parse(readFileSync(
-  new URL("descriptor.json", tutorialInfrastructureRootUrl),
+const testInfrastructureRoot = fileURLToPath(testInfrastructureRootUrl);
+const testInfrastructureDescriptor = JSON.parse(readFileSync(
+  new URL("binding.json", testInfrastructureRootUrl),
   "utf8",
 ));
 process.env[OPERATIONAL_INFRASTRUCTURE_ROOTS_ENV] = JSON.stringify({
-  [tutorialInfrastructureDescriptor.binding.infraReleaseId]: tutorialInfrastructureRoot,
+  [testInfrastructureDescriptor.infraReleaseId]: testInfrastructureRoot,
 });
 const addonPath = process.env.ZUGFOLGE_RUNTIME_NATIVE_PATH;
 assert.ok(addonPath, "ZUGFOLGE_RUNTIME_NATIVE_PATH fehlt");
@@ -151,11 +151,11 @@ assert.deepEqual(fleetInitialized.snapshot.formations, []);
 const operationalInitialization = {
   schemaVersion: OPERATIONAL_SIMULATION_INITIALIZE_SCHEMA,
   worldId,
-  regionId: "tutorial-korridor",
+  regionId: "test-region",
   nowMs: 0,
   repeatEveryMs: null,
   protectionModeSelectionPolicy: "zugfolge-protection-mode-selection/conservative-v1",
-  infraRelease: tutorialInfrastructureDescriptor.binding,
+  infraRelease: testInfrastructureDescriptor,
   vehicleTypes: [{
     powered: true,
     vehicleType: {
@@ -197,12 +197,12 @@ const operationalInitialization = {
     trainNumber: "RB 1",
     operatorId: "operator:1",
     movementKind: "train",
-    routeVersionId: "tutorial-minimal-2026.1:route:v1",
+    routeVersionId: "test-route",
     formationVersionId: "formation:1",
     headRouteMm: 0,
     scheduledDepartureMs: null,
     publicPassengerStop: false,
-    dispatchInterlockingRouteId: "tutorial-minimal-2026.1:interlocking:v1",
+    dispatchInterlockingRouteId: "test-interlocking-west",
     protectionModeSelectionRuns: [{
       throughRouteLegIndex: 2,
       selectedProtectionSystem: "pzb",
@@ -241,7 +241,7 @@ assert.equal(
 const operationalCommand = (head, commandId, command) => ({
   schemaVersion: OPERATIONAL_SIMULATION_COMMAND_SCHEMA,
   worldId,
-  regionId: "tutorial-korridor",
+  regionId: "test-region",
   commandId,
   expectedStateHash: head.stateHash,
   expectedRevision: head.state.revision,
@@ -311,7 +311,7 @@ const operationalActivated = await operationalRuntime.apply(
   operationalCommand(operationalDispatched, "native-operational-activate", {
     type: "activate-disruption",
     disruptionId: "native-block-closure",
-    effect: { "resource-closed": { resourceId: "track:tut-segment-1" } },
+    effect: { "resource-closed": { resourceId: "test-track-west" } },
   }),
 );
 assert.equal(operationalActivated.state.revision, 3);
@@ -379,14 +379,14 @@ assert.equal(operationalRetry.idempotentReplay, true);
 assert.equal(operationalRetry.stateHash, operationalCleared.stateHash);
 
 const nativeBatchEffect = {
-  "resource-closed": { resourceId: "track:tut-segment-1" },
+  "resource-closed": { resourceId: "test-track-west" },
 };
 const operationalBatch = await operationalRuntime.applyBatch(
   operationalCleared.state,
   {
     schemaVersion: OPERATIONAL_SIMULATION_COMMAND_BATCH_SCHEMA,
     worldId,
-    regionId: "tutorial-korridor",
+    regionId: "test-region",
     expectedStateHash: operationalCleared.stateHash,
     expectedRevision: operationalCleared.state.revision,
     expectedPublisherSequence: operationalCleared.state.publisherSequence,

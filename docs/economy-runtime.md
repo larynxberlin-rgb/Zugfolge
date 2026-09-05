@@ -90,15 +90,6 @@ zur erfolgreichen Zielquittung auditierbar. Der begrenzte Drainpfad löscht
 keine Restzeile und setzt kein Ack vor dem erfolgreichen, idempotenten
 Zieladapter-Commit.
 
-Tutorials wechseln vor dem Abschluss dauerhaft in `closing`. Provisionierung,
-Vergabe, Mobilisierung und Abrechnung drainieren ihre persistierte Outbox; der
-Economy-Abschluss setzt davor eine persistierte fachliche Endmarke, die weitere
-Scheduler- und Spielerkommandos abweist. Der Archivierungscommit folgt erst
-nach dem anschließenden erfolgreichen Abschluss-Drain. Ein
-Adapterfehler lässt die Sitzung deshalb retryfähig in `closing`, während
-der globale Recoverylauf auch Altzeilen bereits archivierter Tutorialwelten
-über deren persistierten Kontenplan erneut zustellen kann.
-
 Nach Prozessneustart beginnt der Worker beim Datenbankzustand. Damit werden
 Ausfälle zwischen Fristen nachgeholt, ohne die veröffentlichte Fachzeit zu
 verschieben. Ein nicht vorhandener oder nicht mehr gültiger M5-Nachweis führt

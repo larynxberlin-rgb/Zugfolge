@@ -21,11 +21,6 @@ wirtschaftlichem Realismus.
   und stellen keine Signale.
 - Erste geschlossene Pilotregion ist **Leipzig–Halle–Erfurt** mit Infrastruktur-
   und Wirtschaftsstand 2026.
-- Eine Tutorialwelt ist eine ausdrückliche Ausnahme vom No-Wipe-Vertrag: Sie
-  wird beim Spielerstart privat erzeugt, läuft beschleunigt und ungewertet und
-  wird nach Abschluss, Abbruch oder TTL automatisch archiviert. Öffentliche
-  Wettbewerbswelten bleiben dauerhaft bei 1:1 und werden nie zurückgesetzt.
-
 ## 2. Zentrale Benutzeroberflächen
 
 - **Live-Lage** — selbst gehostete, dunkle Weltkarte mit dem vollständigen
@@ -97,41 +92,17 @@ autoritativen Zuordnung. → [ADR-0026](adr/0026-karte-als-spielzentrum.md),
 
 ## 3. Onboarding
 
-Zugfolge ist komplex. Ohne bewusstes Onboarding verliert es Spieler in den
-ersten zehn Minuten.
+Neue Spieler erhalten kurze Tooltipps direkt an den Bedienelementen ihrer Welt.
+Fragezeichen öffnen Hinweise per Maus, Tastatur oder Berührung. Die globale
+Schaltfläche „Spielhinweise“ schaltet sie aus oder wieder ein. Es gibt keine
+separate Spielphase und keinen vorgeschriebenen Ablauf. Der Verhaltensvertrag
+steht in [Spielhinweise](spielhinweise.md).
 
-- **Persönliche Tutorialwelt**, etwa zwölf Minuten Sollzeit: Beim Start erzeugt
-  das Game aus einem versionierten, gehashten Minimaltemplate genau eine
-  private Welt für dieses öffentliche Weltkonto. Fünf geführte Kapitel lauten
-  erste Ausschreibung → Fahrzeug selbst leasen → Trasse selbst bestätigen →
-  Betriebsprogramm verändern und aktivieren → erste Störung disponieren. Ein
-  Reload setzt dieselbe Sitzung fort; ein Neustart archiviert die alte Welt und
-  erzeugt eine neue UUID. Die Abnahmegrenze bleibt 90 Prozent externer
-  Testspieler unter 15 Minuten.
-- **Keine öffentliche Startausstattung.** Wettbewerbswelten vergeben weder
-  Verkehrsvertrag noch Fahrzeug, Trasse, Personal oder Betriebsprogramm
-  automatisch. Ihr Geldbestand folgt ausschließlich der im signierten
-  Weltentwurf freigegebenen `StartingCapitalPolicy`. Vertragshash und Policy
-  werden bei der Zugangsbestätigung gebunden; die erste EVU-Gründung wendet sie
-  atomar genau einmal an. Endliches Kapital wird ausgeglichen gegen
-  Eigenkapital gebucht, `unlimited` bleibt ein nichtnumerischer Modus ohne
-  Startbuchung. Beides ist rangneutral. Tutorialkapital und Tutorialhandlungen
-  werden niemals übertragen.
-- Das Tutorial besitzt nur vorbereitetes, noch nicht kapitelabschließendes
-  Inventar: EVU und Präqualifikation, endliches Kapital, Personalpool, offene
-  Leasingangebote, unbestätigte Trassenalternativen, inaktive
-  Betriebsprogrammvorlagen, offene Ausschreibung und eine spätere
-  deterministische Störung.
-- **Lutz**, Mitarbeiter eines vollständig fiktiven Infrastrukturbetreibers,
-  führt mit kurzen, reproduzierbaren Dialogen durch jeweils eine Hauptaufgabe.
-  Sein Sarkasmus richtet sich gegen Bürokratie und Chaos; Sicherheits-, Geld-
-  und Handlungsinformationen bleiben eindeutig. Seine Texte werden nie zur
-  Laufzeit generiert.
-- **Glossar-Layer** über der gesamten Oberfläche: jeder Fachbegriff — Sperrzeit,
-  Durchrutschweg, Wendezeit, Zugsicherung, Bremshundertstel — ist anklickbar
-  erklärt. Kein Wiki-Zwang.
-- **Betriebsleiter-Assistent:** kontextuelle Warnungen statt Handbuch. Für alle
-  kostenlos.
+Die Welt vergibt keine automatische Ausstattung mit Verträgen, Fahrzeugen,
+Trassen, Personal oder Betriebsprogrammen. Der signierte Weltvertrag bestimmt
+die `StartingCapitalPolicy`; die erste EVU-Gründung wendet sie atomar genau
+einmal an. Endliches Kapital wird ausgeglichen gebucht, `unlimited` bleibt ein
+nichtnumerischer Modus. Hinweise erläutern diese echten Entscheidungen.
 
 ## 4. Netzabgrenzung (E14)
 

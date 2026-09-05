@@ -1,5 +1,5 @@
 import { PGlite } from "@electric-sql/pglite";
-import { accountRoles, accounts, MIGRATIONS_FOLDER, worldAccesses, worlds } from "@zugfolge/db";
+import { accountRoles, accounts, commerceEntitlements, commerceWorldClaims, MIGRATIONS_FOLDER, worldAccesses, worldParticipations, worlds } from "@zugfolge/db";
 import * as schema from "@zugfolge/db/schema";
 import {
   AccessRevokedError,
@@ -42,6 +42,28 @@ afterEach(async () => {
 });
 
 describe("exportAccountData (Auskunft)", () => {
+  it("liefert im v3-Export ausschließlich die eigenen kaufmännischen Belege", async () => {
+    const timestamp = new Date("2026-02-01T00:00:00Z");
+    for (const subject of ["own", "other"]) {
+      await requestWorldAccess(db, { worldId: WORLD_LHE, keycloakSubject: subject, displayName: subject });
+      const [entitlement] = await db.insert(commerceEntitlements).values({
+        externalEventId: `order:${subject}`, keycloakSubject: subject, productKind: "cosmetic", status: "active",
+        validFrom: timestamp, correlationId: `correlation:${subject}`, sourceReference: `odoo:${subject}`,
+      }).returning();
+      await db.insert(commerceWorldClaims).values({ worldId: WORLD_LHE, entitlementId: entitlement!.id, claimKind: "cosmetic" });
+      await db.insert(worldParticipations).values({
+        worldId: WORLD_LHE, keycloakSubject: subject, displayName: subject, odooPartnerReference: subject,
+        odooOrderReference: `order:${subject}`, paymentReference: `payment:${subject}`, state: "active",
+        lastIdempotencyKey: `participation:${subject}`, correlationId: subject, createdAt: timestamp, changedAt: timestamp,
+      });
+    }
+    const result = await exportAccountData(db, { worldId: WORLD_LHE, keycloakSubject: "own", exportedAt: timestamp });
+    expect(result.schemaVersion).toBe("zugfolge-personal-data-export/v3");
+    expect(result.commerceEntitlements.map((row) => row.keycloakSubject)).toEqual(["own"]);
+    expect(result.commerceWorldClaims.map((row) => row.entitlementId)).toEqual([result.commerceEntitlements[0]!.id]);
+    expect(result.worldParticipations.map((row) => row.keycloakSubject)).toEqual(["own"]);
+  });
+
   it("exportiert den eigenen Vertragsstand auch nach Widerruf und Loeschvormerkung", async () => {
     const own = await requestWorldAccess(db, { worldId: WORLD_LHE, keycloakSubject: "kc-own", displayName: "Eigene Person", acceptedWorldContract: { hash: "a".repeat(64), startingCapitalPolicy: { kind: "finite", amountCents: "1000" } } });
     await sendMessage(db, { worldId: WORLD_LHE, recipientAccountId: own.id, messageType: "personal", payload: { own: true } });
@@ -58,31 +80,6 @@ describe("exportAccountData (Auskunft)", () => {
     await expect(exportAccountData(db, query)).rejects.toBeInstanceOf(PersonalDataNotFoundError);
   });
 
-  it("exportiert eigene Tutorial- und globale Berechtigungsdaten ohne fremde Konten", async () => {
-    const own = await requestWorldAccess(db, { worldId: WORLD_LHE, keycloakSubject: "kc-own", displayName: "Eigene Person" });
-    const tutorialWorld = "22222222-2222-4222-8222-222222222222";
-    await db.insert(worlds).values({ id: tutorialWorld, name: "Tutorial", schedulePeriodWeeks: 4, epoch: new Date("2026-01-01Z") });
-    const tutorialAccount = await requestWorldAccess(db, { worldId: tutorialWorld, keycloakSubject: "tutorial-own", displayName: "Tutorial" });
-    const operator = await foundOperator(db, { worldId: tutorialWorld, foundingKeycloakSubject: "tutorial-own", name: "Tutorialbahn" });
-    const [session] = await db.insert(schema.tutorialSessions).values({ reference: `tut_${"a".repeat(20)}`, publicWorldId: WORLD_LHE, publicAccountId: own.id, tutorialWorldId: tutorialWorld, tutorialAccountId: tutorialAccount.id, tutorialOperatorId: operator.id, templateVersion: "v1", templateHash: "a".repeat(64), startedAt: new Date("2026-01-01Z"), lastActivityAt: new Date("2026-01-01Z"), idleExpiresAt: new Date("2026-01-02Z"), maximumExpiresAt: new Date("2026-01-03Z"), hintsUsed: { chapter1: 2 } }).returning();
-    await db.insert(schema.tutorialTelemetryEvents).values({ worldId: tutorialWorld, sessionId: session!.id, idempotencyKey: "hint", eventType: "tutorial_hint_opened", templateVersion: "v1", chapter: 1, elapsedMilliseconds: 1_000, hintUsed: true, occurredAt: new Date("2026-01-01Z") });
-    await db.insert(schema.tutorialProgress).values({ worldId: WORLD_LHE, accountId: own.id, checkpointHash: "a".repeat(64), updatedAtS: 1 });
-    for (const subject of ["kc-own", "kc-other"]) {
-      const [entitlement] = await db.insert(schema.commerceEntitlements).values({ keycloakSubject: subject, externalEventId: subject, productKind: "cosmetic", status: "active", validFrom: new Date("2026-01-01Z"), correlationId: subject, sourceReference: subject }).returning();
-      await db.insert(schema.commerceWorldClaims).values({ worldId: WORLD_LHE, entitlementId: entitlement!.id, claimKind: "cosmetic" });
-      await db.insert(schema.worldParticipations).values({ worldId: WORLD_LHE, keycloakSubject: subject, displayName: subject, odooPartnerReference: subject, odooOrderReference: subject, paymentReference: subject, state: "active", lastIdempotencyKey: `participation-${subject}`, correlationId: subject, createdAt: new Date("2026-01-01Z"), changedAt: new Date("2026-01-01Z") });
-    }
-    const exported = await exportAccountData(db, { worldId: WORLD_LHE, keycloakSubject: "kc-own", exportedAt: new Date("2026-02-01Z") });
-    expect(exported.schemaVersion).toBe("zugfolge-personal-data-export/v2");
-    expect(exported.tutorialSessions).toMatchObject([{ reference: `tut_${"a".repeat(20)}`, hintsUsed: { chapter1: 2 } }]);
-    expect(exported.tutorialTelemetry).toMatchObject([{ eventType: "tutorial_hint_opened", hintUsed: true }]);
-    expect(exported.tutorialProgress).toMatchObject([{ accountId: own.id }]);
-    expect(exported.commerceWorldClaims).toHaveLength(1);
-    expect(exported.worldParticipations).toMatchObject([{ keycloakSubject: "kc-own" }]);
-    expect(exported.worldParticipations).toHaveLength(1);
-    expect(exported.commerceEntitlements).toMatchObject([{ keycloakSubject: "kc-own" }]);
-    expect(exported.commerceEntitlements).toHaveLength(1);
-  });
   it("bündelt Konto, Weltzugang, EVU und Postfach", async () => {
     const anna = await requestWorldAccess(db, { worldId: WORLD_LHE, keycloakSubject: "kc-anna", displayName: "Anna" });
     await foundOperator(db, { worldId: WORLD_LHE, foundingKeycloakSubject: "kc-anna", name: "Elbtalbahn" });

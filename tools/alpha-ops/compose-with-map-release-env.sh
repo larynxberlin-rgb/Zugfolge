@@ -8,7 +8,7 @@ cd "$repository_root"
 compose_project=zugfolge
 
 if (($# == 0)); then
-  printf 'Aufruf: compose-with-map-release-env.sh [--prepare-v2-schema31|--prepare-v2-cold|--schema33-after-cold|--schema34-after-cold|--keycloak-after-schema33|--keycloak-after-schema34|--keycloak-recover-after-schema33|--keycloak-recover-after-schema34|--prepare-v2-hot|--quiesced-cutover|--attested-rollback|--attested-rollback-stop|--fixed-stop] COMPOSE_ARGUMENTE...\n' >&2
+  printf 'Aufruf: compose-with-map-release-env.sh [--prepare-v2-schema31|--prepare-v2-cold|--schema33-after-cold|--schema35-after-cold|--schema34-after-cold|--keycloak-after-schema33|--keycloak-after-schema35|--keycloak-after-schema34|--keycloak-recover-after-schema33|--keycloak-recover-after-schema35|--keycloak-recover-after-schema34|--prepare-v2-hot|--quiesced-cutover|--attested-rollback|--attested-rollback-stop|--fixed-stop] COMPOSE_ARGUMENTE...\n' >&2
   exit 64
 fi
 
@@ -39,7 +39,7 @@ elif [[ ${1:-} == --prepare-v2-cold ]]; then
     printf 'Die kalte V2-Vorbereitung braucht die kanonische Compose-Datei.\n' >&2
     exit 64
   fi
-elif [[ ${1:-} == --schema33-after-cold || ${1:-} == --schema34-after-cold ]]; then
+elif [[ ${1:-} == --schema33-after-cold || ${1:-} == --schema34-after-cold || ${1:-} == --schema35-after-cold ]]; then
   schema33_after_cold=1
   preflight_mode=pre-activation
   shift
@@ -47,7 +47,7 @@ elif [[ ${1:-} == --schema33-after-cold || ${1:-} == --schema34-after-cold ]]; t
     printf 'Der Schema-32/33/34-Gate braucht die kanonische Compose-Datei.\n' >&2
     exit 64
   fi
-elif [[ ${1:-} == --keycloak-after-schema33 || ${1:-} == --keycloak-after-schema34 ]]; then
+elif [[ ${1:-} == --keycloak-after-schema33 || ${1:-} == --keycloak-after-schema34 || ${1:-} == --keycloak-after-schema35 ]]; then
   keycloak_after_schema33=1
   preflight_mode=pre-activation
   shift
@@ -55,7 +55,7 @@ elif [[ ${1:-} == --keycloak-after-schema33 || ${1:-} == --keycloak-after-schema
     printf 'Der Keycloak-public-nach-keycloak-Gate braucht die kanonische Compose-Datei.\n' >&2
     exit 64
   fi
-elif [[ ${1:-} == --keycloak-recover-after-schema33 || ${1:-} == --keycloak-recover-after-schema34 ]]; then
+elif [[ ${1:-} == --keycloak-recover-after-schema33 || ${1:-} == --keycloak-recover-after-schema34 || ${1:-} == --keycloak-recover-after-schema35 ]]; then
   keycloak_recover_after_schema33=1
   preflight_mode=pre-activation
   shift
@@ -751,7 +751,7 @@ chmod 600 "$legacy_pointer_snapshot"
 
 for argument in "$@"; do
   case "$argument" in
-    --prepare-v2-schema31|--prepare-v2-cold|--schema33-after-cold|--schema34-after-cold|--keycloak-after-schema33|--keycloak-after-schema34|--keycloak-recover-after-schema33|--keycloak-recover-after-schema34|--prepare-v2-hot|--quiesced-cutover|--attested-rollback|--attested-rollback-stop|--fixed-stop)
+    --prepare-v2-schema31|--prepare-v2-cold|--schema33-after-cold|--schema35-after-cold|--schema34-after-cold|--keycloak-after-schema33|--keycloak-after-schema35|--keycloak-after-schema34|--keycloak-recover-after-schema33|--keycloak-recover-after-schema35|--keycloak-recover-after-schema34|--prepare-v2-hot|--quiesced-cutover|--attested-rollback|--attested-rollback-stop|--fixed-stop)
       printf 'Der Wrappermodus muss das erste Wrapperargument sein.\n' >&2
       exit 64
       ;;
@@ -1284,7 +1284,7 @@ if ((quiesced_cutover == 1 || attested_rollback == 1 || attested_rollback_stop =
     "${current_compose[@]}" --profile production-recovery-preparation \
       run --rm --no-deps game-schema33-migrate
     run_recovery_material -eu -c '
-      test "$(psql "$PRODUCTION_COLD_GAME_DATABASE_URL" -X -v ON_ERROR_STOP=1 -Atc "select count(*) from drizzle.__drizzle_migrations")" = 34
+      test "$(psql "$PRODUCTION_COLD_GAME_DATABASE_URL" -X -v ON_ERROR_STOP=1 -Atc "select count(*) from drizzle.__drizzle_migrations")" = 35
     '
     preparation_completed=1
     trap - EXIT INT TERM
@@ -1308,7 +1308,7 @@ if ((quiesced_cutover == 1 || attested_rollback == 1 || attested_rollback_stop =
     stop_runtime_services
     start_preparation_database_services
     run_recovery_material -eu -c '
-      test "$(psql "$PRODUCTION_COLD_GAME_DATABASE_URL" -X -v ON_ERROR_STOP=1 -Atc "select count(*) from drizzle.__drizzle_migrations")" = 34
+      test "$(psql "$PRODUCTION_COLD_GAME_DATABASE_URL" -X -v ON_ERROR_STOP=1 -Atc "select count(*) from drizzle.__drizzle_migrations")" = 35
     '
     "${current_compose[@]}" --profile keycloak-schema-migration \
       run --rm --no-deps keycloak-schema-backup
@@ -1346,7 +1346,7 @@ if ((quiesced_cutover == 1 || attested_rollback == 1 || attested_rollback_stop =
     stop_runtime_services
     start_preparation_database_services
     run_recovery_material -eu -c '
-      test "$(psql "$PRODUCTION_COLD_GAME_DATABASE_URL" -X -v ON_ERROR_STOP=1 -Atc "select count(*) from drizzle.__drizzle_migrations")" = 34
+      test "$(psql "$PRODUCTION_COLD_GAME_DATABASE_URL" -X -v ON_ERROR_STOP=1 -Atc "select count(*) from drizzle.__drizzle_migrations")" = 35
     '
     run_quiesced_keycloak_schema_command recover
     run_quiesced_keycloak_schema_command preflight-up
@@ -1372,7 +1372,7 @@ if ((quiesced_cutover == 1 || attested_rollback == 1 || attested_rollback_stop =
     stop_runtime_services
     start_preparation_database_services
     run_recovery_material -eu -c '
-      test "$(psql "$PRODUCTION_COLD_GAME_DATABASE_URL" -X -v ON_ERROR_STOP=1 -Atc "select count(*) from drizzle.__drizzle_migrations")" = 34
+      test "$(psql "$PRODUCTION_COLD_GAME_DATABASE_URL" -X -v ON_ERROR_STOP=1 -Atc "select count(*) from drizzle.__drizzle_migrations")" = 35
     '
     run_quiesced_keycloak_schema_command preflight-up
     run_recovery_material -eu -c '

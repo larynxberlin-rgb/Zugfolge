@@ -92,11 +92,11 @@ Begründungen: `docs/entscheidungen.md`. Änderungen dort eintragen und begründ
 | E25 | Durch E33 ersetzt: historische Fahrtketten mit Außenlauf bleiben nur für alte Nachweise und Replays |
 | E26 | Die selbst gehostete Weltkarte ist das Spielzentrum; der Deutschland-Korpus bleibt vollständig |
 | E27 | Nur die exakte releasegebundene Zugposition darf öffentlich dargestellt werden; Unsicherheit friert die letzte garantierte Lage ein |
-| E28 | Tutorialstart und öffentlicher Markteintritt sind getrennte Weltverträge |
+| E28 | Die Einführung besteht ausschließlich aus neu erstellten Tooltipps im laufenden Spiel |
 | E29 | Der Schaffnermodus vertieft den serverautoritativen Betrieb |
 | E30 | Die Spielerkarte zeigt die lebendige gemeinsame Welt, nicht den Infrastruktur-Editor |
 | E31 | Bewegung, Belegung, Stellwerk, FDL, Rangieren, LiveMap und RZÜ bilden eine einzige autoritative Betriebswirklichkeit |
-| E32 | Jede regulaere Spielwelt besitzt einen eigenen Server und eine feste Subdomain; nur ihre Tutorialinstanzen laufen mit |
+| E32 | Jede Spielwelt besitzt ausnahmslos einen eigenen Server und eine feste Subdomain |
 | E33 | GTFS ist Referenz; das Spiel erzeugt eigene Fahrpläne vollständig innerhalb der spielbaren Karte |
 
 ---

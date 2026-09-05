@@ -1,7 +1,7 @@
 # Datenschutzinventar
 
 Inventarversion `zugfolge-personal-data-inventory/v2`, Exportversion
-`zugfolge-personal-data-export/v2`. Jede neue unmittelbar oder mittelbar
+`zugfolge-personal-data-export/v3`. Jede neue unmittelbar oder mittelbar
 kontobezogene Tabelle erfordert eine explizite Entscheidung in diesem Inventar
 und einen Test ihres Exportwegs. Das Weltkonto ist der autorisierte
 Einstiegspunkt; sein Subject stammt ausschliesslich aus dem verifizierten Token.
@@ -13,9 +13,6 @@ Aktiver Spielzugang ist fuer die Selbstauskunft nicht erforderlich.
 | Weltzugang und Vertragsbestaetigung | `worldAccess`, einschliesslich Erteilung, Widerruf, Vertrags-Hash, Startkapitalregel und Annahmezeit |
 | Gegruendete EVU | `operators`, auf Gruenderkonto und Welt begrenzt |
 | Postfach | `mailboxMessages`, auf eigenen Empfaenger und Welt begrenzt; geraeumte Inhalte sind nicht mehr vorhanden |
-| Tutorialfortschritt | `tutorialProgress`, eigenes Konto in der angefragten Welt |
-| Tutorialinstanzen | `tutorialSessions`, ausschliesslich die direkt an oeffentliche Welt und Konto gebundenen Instanzen |
-| Tutorialtelemetrie | `tutorialTelemetry`, nur ueber diese eigenen Instanzen und ihre jeweilige Tutorialwelt |
 | Kommerzielle Berechtigungen | `commerceEntitlements`, alle eigenen globalen Berechtigungen anhand des authentifizierten Subjects; keine fremden Vertragsanbieter-/Kundendaten |
 | Berechtigungsverwendung | `commerceWorldClaims`, eigene Entitlements ausschliesslich in der angefragten Welt |
 | Kaufmaennische Weltteilnahme | `worldParticipations`, eigene Teilnahme in der angefragten Welt |

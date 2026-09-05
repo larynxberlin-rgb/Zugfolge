@@ -706,7 +706,7 @@ class PlanningInfrastructureReleaseRegistry implements PlanningInfrastructureRel
 }
 
 export interface ActiveWorldRuntimeSeed {
-  readonly activeWorlds: readonly { readonly worldId: string; readonly epoch: Date }[];
+  readonly worldId: string;
   /** Reiner nativer Preflight: validiert die externe Operational-v2-Datei und materialisiert keine Zugzustaende. */
   readonly operationalProgramPreflight: (
     initialization: OperationalSimulationInitialization,
@@ -730,9 +730,9 @@ export class ActiveWorldDeploymentRuntime implements RegionalScheduledCommandCat
   readonly planningInfrastructureReleases: PlanningInfrastructureReleaseCatalog;
   readonly worldEpochs = new Map<string, Date>();
 
-  readonly #activeWorldIds = new Set<string>();
-  readonly #realtimeWorldIds = new Set<string>();
-  readonly #deploymentHashes = new Map<string, string>();
+  readonly #worldId: string;
+  #active = false;
+  #deploymentHash: string | undefined;
   readonly #realtimeRegions = new Map<string, RegionalRealtimeRegistration>();
   readonly #operationalPrograms = new Map<string, OperationalDeploymentProgram>();
   readonly #operationalInfrastructure = new Map<string, OperationalInfrastructureBinding>();
@@ -741,6 +741,14 @@ export class ActiveWorldDeploymentRuntime implements RegionalScheduledCommandCat
   readonly #operationalProgramPreflight: ActiveWorldRuntimeSeed["operationalProgramPreflight"];
 
   constructor(seed: ActiveWorldRuntimeSeed) {
+    if (typeof seed.worldId !== "string" || seed.worldId.trim() === "") throw new Error("Die Serverwelt fehlt.");
+    this.#worldId = seed.worldId;
+    for (const worldId of [
+      ...Object.keys(seed.fleetAuthorityConfigurations ?? {}),
+      ...Object.keys(seed.fleetAuthorityReleases ?? {}),
+      ...Object.keys(seed.planningAuthorityAccountIds ?? {}),
+      ...(seed.planningInfrastructureReleases ?? []).map((release) => parsePlanningInfrastructureRelease(release).worldId),
+    ]) this.#assertWorld(worldId);
     this.#operationalProgramPreflight = seed.operationalProgramPreflight;
     this.fleetAuthorityConfigurations = { ...(seed.fleetAuthorityConfigurations ?? {}) };
     for (const [worldId, authorityRelease] of Object.entries(seed.fleetAuthorityReleases ?? {})) {
@@ -757,11 +765,10 @@ export class ActiveWorldDeploymentRuntime implements RegionalScheduledCommandCat
     this.planningAuthorityAccountIds = { ...(seed.planningAuthorityAccountIds ?? {}) };
     this.#planningRegistry = new PlanningInfrastructureReleaseRegistry(seed.planningInfrastructureReleases ?? []);
     this.planningInfrastructureReleases = this.#planningRegistry;
-    for (const world of seed.activeWorlds) {
-      if (Number.isNaN(world.epoch.getTime())) throw new Error(`Weltepoche fuer '${world.worldId}' ist ungueltig.`);
-      this.#activeWorldIds.add(world.worldId);
-      this.worldEpochs.set(world.worldId, new Date(world.epoch));
-    }
+  }
+
+  #assertWorld(worldId: string): void {
+    if (worldId !== this.#worldId) throw new Error(`Welt '${worldId}' verletzt die Serverbindung an '${this.#worldId}'.`);
   }
 
   /**
@@ -771,6 +778,7 @@ export class ActiveWorldDeploymentRuntime implements RegionalScheduledCommandCat
    * die aktive Runtimeprojektion idempotent.
    */
   prepareOperationalProgram(signed: SignedAlphaWorldDeployment): { readonly rollback: () => void } {
+    this.#assertWorld(signed.deployment.worldId);
     validateAlphaVehicleCatalogBinding(signed.deployment);
     const key = realtimeRegionKey(
       signed.deployment.worldId,
@@ -872,12 +880,13 @@ export class ActiveWorldDeploymentRuntime implements RegionalScheduledCommandCat
   /** Idempotente Live- oder Restart-Projektion eines bereits aktiven Deployments. */
   register(signed: SignedAlphaWorldDeployment, epoch: Date): void {
     const { deployment, deploymentHash } = signed;
+    this.#assertWorld(deployment.worldId);
     validateAlphaVehicleCatalogBinding(deployment);
     const signedEpoch = new Date(deployment.worldDefinition.epoch);
     if (Number.isNaN(epoch.getTime()) || epoch.getTime() !== signedEpoch.getTime()) {
       throw new Error(`Weltepoche fuer '${deployment.worldId}' weicht vom signierten Deployment ab.`);
     }
-    const existingHash = this.#deploymentHashes.get(deployment.worldId);
+    const existingHash = this.#deploymentHash;
     if (existingHash !== undefined && existingHash !== deploymentHash) {
       throw new Error(`Aktive Welt '${deployment.worldId}' besitzt bereits ein anderes Deployment.`);
     }
@@ -942,9 +951,8 @@ export class ActiveWorldDeploymentRuntime implements RegionalScheduledCommandCat
       );
     }
     this.#committedOperationalProgramKeys.add(operationalProgramKey);
-    this.#realtimeWorldIds.add(deployment.worldId);
-    this.#activeWorldIds.add(deployment.worldId);
-    this.#deploymentHashes.set(deployment.worldId, deploymentHash);
+    this.#active = true;
+    this.#deploymentHash = deploymentHash;
   }
 
   /** Authority v2 darf erst nach erfolgreicher Signatur- und Binderpruefung starten. */
@@ -976,7 +984,7 @@ export class ActiveWorldDeploymentRuntime implements RegionalScheduledCommandCat
   }
 
   worldIds(): readonly string[] {
-    return [...this.#activeWorldIds].sort(compareUtf8);
+    return this.#active ? [this.#worldId] : [];
   }
 
   /** Nur signierte 1:1-Deployments, niemals bloss restaurierte Laufzeitregionen. */
@@ -1032,19 +1040,19 @@ export class ActiveWorldDeploymentRuntime implements RegionalScheduledCommandCat
 
   /** Weltkennungen mit einem verifizierten, explizit registrierten 1:1-Takt. */
   realtimeWorldIds(): readonly string[] {
-    return [...this.#realtimeWorldIds].sort(compareUtf8);
+    return this.worldIds();
   }
 
   isRealtimeWorld(worldId: string): boolean {
-    return this.#realtimeWorldIds.has(worldId);
+    return (this.#active && worldId === this.#worldId);
   }
 
   /** Entfernt nur die prozesslokale Projektion einer dauerhaft archivierten Welt. */
   releaseWorld(worldId: string): void {
+    if (worldId !== this.#worldId) return;
     const prefix = `${worldId}\u0000`;
-    this.#activeWorldIds.delete(worldId);
-    this.#realtimeWorldIds.delete(worldId);
-    this.#deploymentHashes.delete(worldId);
+    this.#active = false;
+    this.#deploymentHash = undefined;
     this.worldEpochs.delete(worldId);
     delete this.fleetAuthorityConfigurations[worldId];
     delete this.fleetAuthorityReleases[worldId];
@@ -1068,7 +1076,7 @@ export class ActiveWorldDeploymentRuntime implements RegionalScheduledCommandCat
   expectsLivemapFreshness(worldId: string, nowMs: number): boolean {
     if (!Number.isFinite(nowMs)) throw new RangeError("Livemap-Pruefzeit ist ungueltig.");
     const epoch = this.worldEpochs.get(worldId);
-    return this.#realtimeWorldIds.has(worldId)
+    return (this.#active && worldId === this.#worldId)
       && epoch !== undefined
       && epoch.getTime() <= nowMs;
   }

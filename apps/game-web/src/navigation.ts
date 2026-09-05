@@ -73,21 +73,12 @@ export function focusCooperationDeepLink(
   return true;
 }
 
-/**
- * Eine normale Spielerreise bleibt immer in der mit `world` verlinkten Welt.
- * Nur ein expliziter Tutorial-Reentry besitzt zusätzlich eine getrennte
- * öffentliche Welt. So kann ein Runtime-Default keine fremde Welt unterschieben.
- */
+/** Die Subdomain-Konfiguration bestimmt die einzige Welt. URL-Parameter wählen keine andere. */
 export function resolveWorldContext(
-  parameters: URLSearchParams,
-  runtimeDefaultWorldId: string,
+  _parameters: URLSearchParams,
+  runtimeWorldId: string,
 ): WorldContext {
-  const worldId = parameters.get("world") ?? runtimeDefaultWorldId;
-  const tutorialReference = parameters.get("tutorial");
-  const publicWorldId = tutorialReference === null
-    ? worldId
-    : (parameters.get("publicWorld") ?? runtimeDefaultWorldId);
-  return Object.freeze({ worldId, publicWorldId });
+  return Object.freeze({ worldId: runtimeWorldId, publicWorldId: runtimeWorldId });
 }
 
 /**

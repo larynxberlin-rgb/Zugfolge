@@ -185,6 +185,7 @@ nicht prüfen, ob ein Eintrag stimmt — dafür steht die Quelle daneben.
 | Sperrzeitparameter | `SignallingParameters` | Signalsichtzeit, Vorsignalabstand, Durchrutschweg und Stellwerksbauart einer Betriebsstelle — die Werte, aus denen die sechs Anteile der Sperrzeit entstehen | `infrastruktur.md` 6 |
 | Spielfahrplan-Erzeugung | `compileGameTimetable` | Deterministische Ableitung eigener Fahrten aus GTFS-Taktreferenzen und zusammenhängenden Innenabschnitten | `gtfs-angebotsplanung.md` |
 | Spielfahrplan-Regel | `GameTimetableSpecification` | Gepinnte Erzeugungsregel für Zeitraster und Mindestfahrzeit des Spielangebots | `gtfs-angebotsplanung.md` |
+| Spielhinweis | `GameHint` | kurzer, lokal abschaltbarer Tooltip an einem echten Bedienelement; löst keine Spielhandlung aus | `spielhinweise.md` |
 | Spiellinie | `GameTimetableLine` | Eigene Linie mit tatsächlichem innerem Endhalt, Taktreferenz und Herkunftsbelegen | `gtfs-angebotsplanung.md` |
 | Spurweite | `TrackGauge` | Abstand der Schienen in Millimetern; das Spielnetz führt ausschließlich Regelspur (E14), der Netzfilter braucht die Angabe zum Aussortieren | `betriebsgraph.md` 2 |
 | Starting-Capital-Policy | `StartingCapitalPolicy` | im signierten Weltentwurf festgelegtes Startkapital einer öffentlichen Welt: endliche Integer-Cent, null oder explizit `unlimited`; niemals eine Startausstattung | `produkt.md` 3 |
@@ -199,9 +200,6 @@ nicht prüfen, ob ein Eintrag stimmt — dafür steht die Quelle daneben.
 | Trasse | `TrainPath` | zugewiesenes Recht, einen Laufweg zu einer Zeitlage zu befahren | `infrastruktur.md` 2 |
 | Trassenantrag | `PathRequest` | Antrag auf eine Trasse mit Zugcharakteristik, Verkehrstagen, Halten, Wunschzeiten und zulässigen Abweichungen | `infrastruktur.md` 2 |
 | Trassenkandidat | `PathCandidate` | ein gegen das Belegungsbuch geprüftes Verkehrsangebot samt seiner Abweichung vom Trassenantrag | `infrastruktur.md` 9 |
-| Tutorialbegleiter | `TutorialDialogue` | versionierter, reproduzierbarer Hinweis von Lutz mit Trigger, Handlung, optionalem Warum und Zielbereich; keine generative Laufzeit-KI | `produkt.md` 3 |
-| Tutorialsitzung | `TutorialSession` | Bindung genau eines öffentlichen Weltkontos an eine private, ungewertete, beschleunigte und kurzlebige Tutorialwelt mit externer `tut_…`-Referenz | `adr/0028-getrennter-tutorial-und-wettbewerbsstart.md` |
-| Tutorialtemplate | `TutorialTemplate` | unveränderliches, versioniertes und gehashtes Minimalartefakt für Korridor, Inventar, Dialoge, Zeitgrenzen und stets endliches Tutorialkapital | `adr/0028-getrennter-tutorial-und-wettbewerbsstart.md` |
 | Umlauf | `VehicleRotation` | die Folge von Zugfahrten, die ein Fahrzeug oder eine Formation nacheinander leistet | `betrieb.md` 2 |
 | Vergabekalender | `TenderCalendar` | beim Weltstart erzeugte, veröffentlichte Verteilung der Erstvergaben über die erste Welthälfte | `wirtschaft.md` 3.3 |
 | Vergabeprofil | `TenderProfile` | deterministisch aus dem Seed gezogene, vorab veröffentlichte Kombination von Anforderungs- und Wertungshebeln einer Ausschreibung; sorgt dafür, dass eine Angebotsschablone nicht auf jedes Los passt | `wirtschaft.md` 3.7 |

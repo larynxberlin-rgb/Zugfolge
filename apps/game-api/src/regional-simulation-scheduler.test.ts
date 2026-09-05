@@ -729,20 +729,20 @@ describe("regionaler 1:1-Scheduler", () => {
     expect(applyBatch).not.toHaveBeenCalled();
   });
 
-  it("ignoriert nach einem Neustart restaurierte Tutorialregionen ohne Echtzeitregistrierung", async () => {
+  it("ignoriert nach einem Neustart restaurierte Region ohne signiertes Deploymenten ohne Echtzeitregistrierung", async () => {
     const applyBatch = vi.fn(async (work: RegionalSimulationWorkBatch) =>
       batchResult(resultingNowMs(work)));
     const worker = {
       readyRegions: () => [
         {
-          worldId: "active-tutorial",
-          regionId: "tutorial-region",
+          worldId: "active-unregistered",
+          regionId: "unregistered-region",
           initializationHash: INITIALIZATION_HASH,
           nowMs: 90_220_000,
         },
         {
-          worldId: "archived-tutorial",
-          regionId: "tutorial-region",
+          worldId: "archived-unregistered",
+          regionId: "unregistered-region",
           initializationHash: INITIALIZATION_HASH,
           nowMs: 90_220_000,
         },

@@ -54,8 +54,7 @@ bleibt `formation-operating-cost`. Vorher entstehen weder Asset noch
 Nutzungsrecht oder Buchung. Spätere Kredit-, Leasing- und Sekundärmarktwege
 bleiben regulär. Der Weltentwurf muss diesen ersten Vergabeweg mit echten
 Los- und Fahrzeugdaten nachweisen; sonst ist die Welt nicht startfähig.
-Das didaktische Startpaket gehört ausschließlich in das getrennte signierte
-Tutorial-Deployment. → [ADR-0028](adr/0028-getrennter-tutorial-und-wettbewerbsstart.md)
+→ [ADR-0028](adr/0028-spielhinweise-im-spiel.md)
 
 ## 2. Nachfrage und Wettbewerb
 
@@ -231,8 +230,7 @@ Die **Schnellvergabe kleiner Lose** ist Absicht: Ein neuer Spieler soll seine
 erste eigene Ausschreibung in Tagen gewinnen können, nicht in Wochen. Eine
 öffentliche Welt überbrückt diese Zeit nicht durch heimlich zugeteilte
 Verträge, Fahrzeuge oder Trassen. Der wirtschaftliche Einstieg beginnt mit der
-im signierten Weltentwurf festgelegten `StartingCapitalPolicy`; nur die private
-Tutorialwelt besitzt ihr eigenes, stets endliches Übungskapital.
+im signierten Weltentwurf festgelegten `StartingCapitalPolicy`.
 
 Beim Bestätigen des öffentlichen Weltvertrags speichert das Game dessen
 Blueprint-Hash und `StartingCapitalPolicy` am Weltzugang. Eine spätere
@@ -246,17 +244,6 @@ die Zahlung selbst bleibt als Integer-Cent-Buchung vollständig ausgeglichen.
 Weder Startfinanzierung noch der Modus `unlimited` fließen in die
 Wirtschaftsrangliste ein. Kein Modus erzeugt Fahrzeuge, Verträge, Personal,
 Trassen oder Betriebsprogramme.
-
-### 3.5a Tutorialwirtschaft ist echte, isolierte Wirtschaft
-
-Das Tutorialtemplate pinnt `2.000.000` Integer-Cent als endliches Kapital. Die
-Tutorial-World-Factory eröffnet echte Ledgerkonten und bucht es ausgeglichen
-gegen Tutorialeigenkapital. Angebote, Vertrag, Halterwechsel, Trassenbeleg,
-Betriebsprogramm, Störung, Dispositionsentscheidung und Periodenabrechnung
-laufen über dieselben fachlichen Writer wie im Spiel. Vorbereitetes Inventar
-erfüllt kein Kapitel: Erst die Spielerhandlung und ihr autoritativer Beleg
-schalten weiter. Weder Kapital noch Fachzustand gelangen in die öffentliche
-Welt; `unlimited` ist im Tutorialtemplate unzulässig.
 
 **Die Leistungsbeschreibung ist eine Karte, kein Aktenordner** — in einer halben
 Minute lesbar: Linien, Zugkm je Periode, Takt, Betriebszeiten, Mindest-

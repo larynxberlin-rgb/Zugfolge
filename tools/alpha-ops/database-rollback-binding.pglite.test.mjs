@@ -37,6 +37,20 @@ function inspectLiveDatabaseRollbackSnapshot(sql) {
   return inspectSnapshotWithoutKeycloakFixture(sql, { inspectKeycloakState: keycloakStateInspectorFixture() });
 }
 
+test("Schema35 liefert aus dem echten Katalog einen vollständigen v5-Restorebeleg", async () => {
+  const client = new PGlite();
+  try {
+    await migrate(drizzle(client), { migrationsFolder: sourceMigrationsFolder });
+    const source = await inspectLiveDatabaseRollbackSnapshot(adapter(client));
+    assert.equal(source.migrationLedger.length, 35);
+    assert.equal(source.guards.length, 55);
+    const evidence = databaseRollbackEvidenceFixtures(source);
+    const proof = createDatabaseRollbackProof({ releaseId: "infra-deutschland-2026.4", previousReleaseId: "infra-deutschland-2026.2", source, ...evidence, writersQuiesced: true, rollbackWindow: "pre-activation-only" });
+    assert.equal(proof.schema, "zugfolge-database-rollback-proof/v5");
+    assert.equal(validateDatabaseRollbackProof(proof), proof);
+  } finally { await client.close(); }
+});
+
 async function migrationsThrough(count) {
   const folder = await mkdtemp(join(tmpdir(), `zugfolge-migrations-${count}-`));
   const meta = join(folder, "meta");

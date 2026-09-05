@@ -436,10 +436,6 @@ function acceptanceDecision({
     && snapshot.odooProjectionPendingRows === 0
     && snapshot.odooCommandQueueRows === 0
     && snapshot.odooCommandPendingRows === 0);
-  const noTutorialInteraction = isolationCounts.every((snapshot) => snapshot !== null
-    && typeof snapshot === "object"
-    && snapshot.tutorialSessionRows === 0
-    && snapshot.tutorialTelemetryRows === 0);
   const gates = Object.freeze({
     exactSourceCheckout: sourceCheckout.acceptanceEligible === true,
     exactSignedReleaseCandidate: reuseCandidate?.exactCandidateVerified === true,
@@ -466,7 +462,6 @@ function acceptanceDecision({
         && typeof interval === "object"
         && isDeepStrictEqual(interval.livemapReadiness, { status: "ok", code: "livemap_fresh" })),
     emptyEconomyAndOdooQueues,
-    noTutorialInteraction,
   });
   return Object.freeze({
     schema: "zugfolge-germany-alpha-e2e-eligibility/v2",
@@ -596,9 +591,7 @@ async function postgresRuntimeIsolationSnapshot(client) {
       (select count(*)::int from odoo_projection_outbox where delivered_at is null) as odoo_projection_pending_rows,
       (select count(*)::int from odoo_command_queue) as odoo_command_queue_rows,
       (select count(*)::int from odoo_command_queue where status in ('pending', 'processing', 'accepted'))
-        as odoo_command_pending_rows,
-      (select count(*)::int from tutorial_sessions) as tutorial_session_rows,
-      (select count(*)::int from tutorial_telemetry_events) as tutorial_telemetry_rows
+        as odoo_command_pending_rows
   `);
   const snapshot = Object.freeze({
     economyOutboxRows: row.economy_outbox_rows,
@@ -607,8 +600,6 @@ async function postgresRuntimeIsolationSnapshot(client) {
     odooProjectionPendingRows: row.odoo_projection_pending_rows,
     odooCommandQueueRows: row.odoo_command_queue_rows,
     odooCommandPendingRows: row.odoo_command_pending_rows,
-    tutorialSessionRows: row.tutorial_session_rows,
-    tutorialTelemetryRows: row.tutorial_telemetry_rows,
   });
   for (const [name, value] of Object.entries(snapshot)) {
     assert.ok(Number.isSafeInteger(value) && value >= 0, `PostgreSQL-Isolationszaehler '${name}' ist ungueltig.`);
@@ -723,7 +714,7 @@ async function coldWorkerCatchUp({
     const preflight = runtime.initialize(signed.deployment.regionalSimulation);
     assert.equal(preflight.validationReceipt.dynamicTrainCount, 0);
     const deploymentRuntime = new ActiveWorldDeploymentRuntime({
-      activeWorlds: [],
+      worldId: signed.deployment.worldId,
       operationalProgramPreflight: () => preflight.validationReceipt,
     });
     const livemap = new LivemapRegistry();
@@ -1081,7 +1072,6 @@ async function coldWorkerCatchUp({
       runtimeIsolation: {
         databaseContract: "fresh-dedicated-postgresql-16-database",
         economyAndOdooContract: "no-queued-or-pending-rows-before-or-after-realtime-intervals",
-        tutorialContract: "no-tutorial-session-or-telemetry-row-and-no-tutorial-service-invocation",
         beforeWorldMutation: isolationBeforeWorldMutation,
         afterRealtimeIntervals: isolationAfterRealtimeIntervals,
       },
@@ -1399,8 +1389,6 @@ test("Top-level-Akzeptanz verlangt Speichergrenze und echten Zehn-Intervall-Isol
     odooProjectionPendingRows: 0,
     odooCommandQueueRows: 0,
     odooCommandPendingRows: 0,
-    tutorialSessionRows: 0,
-    tutorialTelemetryRows: 0,
   });
   const initialHead = Object.freeze({
     nowMs: 1_000,
@@ -1532,19 +1520,6 @@ test("Top-level-Akzeptanz verlangt Speichergrenze und echten Zehn-Intervall-Isol
         runtimeIsolation: {
           ...runtimeEvidence.runtimeIsolation,
           afterRealtimeIntervals: { ...emptyIsolation, odooCommandPendingRows: 1 },
-        },
-      },
-    }).eligible,
-    false,
-  );
-  assert.equal(
-    acceptanceDecision({
-      ...base,
-      runtimeEvidence: {
-        ...runtimeEvidence,
-        runtimeIsolation: {
-          ...runtimeEvidence.runtimeIsolation,
-          afterRealtimeIntervals: { ...emptyIsolation, tutorialSessionRows: 1 },
         },
       },
     }).eligible,

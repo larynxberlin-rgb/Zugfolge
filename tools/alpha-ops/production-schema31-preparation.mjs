@@ -55,8 +55,9 @@ function sameValue(left, right) {
 
 async function expectedMigrationLedger(count) {
   const journal = JSON.parse(await readFile(new URL("meta/_journal.json", MIGRATIONS_FOLDER), "utf8"));
-  invariant(Array.isArray(journal.entries) && [33, 34].includes(journal.entries.length), "Das digestgebundene Image besitzt keinen freigegebenen Schema-33/34-Journalvertrag.");
-  if (journal.entries.length === 34) invariant(journal.entries[33]?.tag === "0034_platform_audit_boundaries", "Migration 0034 fehlt oder steht an falscher Position.");
+  invariant(Array.isArray(journal.entries) && [33, 34, 35].includes(journal.entries.length), "Das digestgebundene Image besitzt keinen freigegebenen Schema-33/34/35-Journalvertrag.");
+  if (journal.entries.length >= 34) invariant(journal.entries[33]?.tag === "0034_platform_audit_boundaries", "Migration 0034 fehlt oder steht an falscher Position.");
+  if (journal.entries.length === 35) invariant(journal.entries[34]?.tag === "0035_remove_tutorial_worlds", "Migration 0035 fehlt oder steht an falscher Position.");
   invariant(journal.entries[28]?.tag === "0029_operational_initialization_binding", "Migrationskopf 29 ist nicht kanonisch.");
   invariant(journal.entries[29]?.tag === "0030_legacy_runtime_rollback_window", "Migration 0030 fehlt oder steht an falscher Position.");
   invariant(journal.entries[30]?.tag === "0031_database_bound_cutover_receipts", "Migration 0031 fehlt oder steht an falscher Position.");

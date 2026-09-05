@@ -10,8 +10,7 @@ Ein Server und seine kanonische Subdomain betreiben genau eine Spielwelt.
 `ZUGFOLGE_WORLD_ID` bindet diese Hauptwelt und muss mit `ALPHA_PUBLIC_WORLD_ID`
 uebereinstimmen. `PUBLIC_GAME_URL` ist ihr einziger oeffentlicher Origin, etwa
 `https://world.zugfolge.de`; Web, LiveMap und Operations Center laufen darunter
-auf `/`, `/livemap/` und `/operations/`. Zusaetzlich sind nur die an diese
-Hauptwelt gebundenen kurzlebigen Tutorialinstanzen erlaubt. Ein zweites
+auf `/`, `/livemap/` und `/operations/`. Ein zweites
 oeffentliches oder Sandbox-Deployment benoetigt einen eigenen Server und eine
 eigene Subdomain. Der Weltwechsel im attestierten Rollback bindet explizit
 `PRODUCTION_RECOVERY_PREVIOUS_WORLD_ID`, niemals gleichzeitig beide Welten.
@@ -60,22 +59,32 @@ Spielerkommandos an; nur neue menschliche Adminanträge und Projektionen warten
 in der persistenten Queue. Ein Operator darf die Odoo-Queue nicht durch einen
 direkten Game-Adminpfad umgehen.
 
-## Kurzlebige Tutorialwelten
+## Upgrade auf Spielhinweise
 
-Tutorialinstanzen gehören allein dem Game und erscheinen nicht in Odoo. Der
-30-Sekunden-Reaper schließt Sitzungen nach 30 Minuten Inaktivität, spätestens
-nach 60 Minuten sowie fünf Minuten nach unbestätigter Ergebnisansicht. Bei
-einem Neustart scannt er auch `closing` und setzt die idempotente Archivierung
-fort. Erwartete Diagnosefelder sind `tut_…`-Referenz, Templateversion,
-Lebenszyklus, Provisionierungsschritt, Kapitel, Abschlussgrund und finaler
-Zustandshash.
+Alle Game-Writer vor Migration 0035 stoppen und ein geprüftes Backup erstellen.
+Die transaktionale Migration entfernt alte Tutorialwelten samt abhängigen Daten
+und löscht `tutorial_progress`, `tutorial_sessions` und `tutorial_telemetry_events`.
+Widersprüchliche Bindungen an reguläre Welten brechen die Migration ab. Reguläre
+Spielstände und ihre Schreibschutztrigger bleiben erhalten. Die Migration ist
+eine einmalige Bereinigung; neue Spielhinweise erzeugen keine Serverdaten.
 
-Ein wiederholt wachsender Bestand aktiver Tutorialwelten ist ein Incident:
-zuerst Reaper-Fehler und Datenbank-Unique-Constraint prüfen, dann den ältesten
-`idle_expires_at`-Wert. Aktive Welten werden nicht manuell gelöscht. Zulässig
-ist nur das erneute Ausführen des idempotenten Reapers; eine spätere
-Laufzeitdatenbereinigung braucht ein eigenes, auditiertes Retentionverfahren.
-Individuelle Referenzen/UUIDs bleiben aus Prometheus-Labels heraus.
+Pro Server genau `ZUGFOLGE_WORLD_ID`, `ALPHA_PUBLIC_WORLD_ID`, `PUBLIC_GAME_URL`
+und den einzelnen `ALPHA_WORLD_RELEASE_PATH` konfigurieren. Für weitere reguläre
+Welten eigene Server und Odoo-Zuordnungen verwenden. Vorhandene reguläre
+Mehrweltbestände werden nicht automatisch aufgeteilt.
+
+Schema 35 verwendet den Tabellenvertrag ohne die drei entfernten Tabellen,
+`zugfolge-database-rollback-proof/v5` und
+`zugfolge-world-final-history-seal/v3`. Alte signierte Belege bleiben auf ihren
+jeweiligen historischen Schema- und Datenstand beschränkt. Nach der Bereinigung
+neue Sicherungen und Belege erstellen; ein Rückgang vor Schema 35 erfordert das
+passende vollständige Backup, da die gelöschten Daten nicht rekonstruierbar sind.
+
+Archivierte reguläre Welten können ihre ausdrücklich angeforderten v1-/v2-Siegel
+auch unter Schema 35 prüfen: Für die entfernten Tabellen wird ausschließlich
+der kanonische Leerbestand angesetzt. Ein früherer Beleg mit Zeilen in diesen
+Tabellen passt damit nicht mehr. Es werden weder gelöschte Daten erfunden noch
+nichtleere Belege stillschweigend als gültig übernommen.
 
 ## Backup und isolierter Restore
 
@@ -98,10 +107,10 @@ historische Projektion. Es gibt keinen automatischen Hashvergleich mit
 ausgeblendeten Fakten und keine Aenderung archivierter Zeilen.
 
 Der gestufte neue Installationspfad endet nach dem kalten Schema-31-Nachweis mit
-`--schema34-after-cold`, `--keycloak-after-schema34` und `--prepare-v2-hot` auf
-exakt Schema 34. Die aelteren `schema33`-Flag-/Dienstnamen sind
+`--schema35-after-cold`, `--keycloak-after-schema35` und `--prepare-v2-hot` auf
+exakt Schema 35. Die aelteren `schema33`-Flag-/Dienstnamen sind
 Kompatibilitaetsaliasnamen fuer diesen aktuellen Gatepfad. Der Wrapper prueft
-nach der Migration und vor Keycloak/Hot-Backup immer den tatsaechlichen Stand 34.
+nach der Migration und vor Keycloak/Hot-Backup immer den tatsaechlichen Stand 35.
 
 `ops/alpha/backup-game.sh` erzeugt einen PostgreSQL-Custom-Dump samt SHA-256-
 Manifest, Dateigröße und der tatsächlich gesicherten Drizzle-Migrationszahl.

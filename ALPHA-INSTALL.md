@@ -2,8 +2,8 @@
 
 Diese Anleitung startet den selbst gehosteten Alpha-Stack reproduzierbar.
 Odoo steuert Einladungen und Freigaben, Keycloak verwaltet Identitäten, und
-ausschließlich das Game hält weltgebundene Konten, Zugänge und kurzlebige
-Tutorialinstanzen. Odoo und Keycloak liegen nie im heißen Simulationspfad.
+ausschließlich das Game hält die Konten, Zugänge und den Spielstand seiner
+einzigen Welt. Odoo und Keycloak liegen nie im heißen Simulationspfad.
 
 Die öffentlichen Dienste verwenden die bereits vom Host bereitgestellten
 externen Netze `zugfolge-proxy` und `zugfolge-mail`. Compose verbindet
@@ -74,7 +74,8 @@ oder Rückweg und scheitert ohne die bewusst aus `.env` entfernten Pointerwerte.
 Die Vorlage bindet genau ein signiertes Public-Deployment und den unveränderlichen
 Kartenrelease `infra-deutschland-2026.4`. Dessen `read-model.sqlite` muss das
 SQLite-`user_version` 3 besitzen; die Game API verweigert jedes ältere oder fremde
-ReadModel beim Start. Tutorialwelten werden nicht statisch gebootstrapped.
+ReadModel beim Start. Jede weitere Welt benötigt einen eigenen Server und eine
+eigene Subdomain; Odoo verwaltet die Zuordnungen zentral.
 
 `INFRA_RELEASE_TRUSTED_KEYS_JSON` bleibt der eine kanonische öffentliche
 Release-Keyring. Jeder Wert muss exakt ein Ed25519-SPKI-Public-Key-PEM sein;
@@ -155,9 +156,10 @@ wiederhergestellte Cache. Private Signaturschlüssel gehören in keinen dieser
 Serverpfade.
 
 Alle `replace-*`-Werte werden durch getrennte, zufällige Geheimnisse ersetzt.
-Öffentliche URLs zeigen auf die tatsächlichen HTTPS-Adressen. Es gibt keine
-Variable `ALPHA_TUTORIAL_WORLD_ID`, keine statische Tutorialwelt und keine
-Phase-2-Startpaketkonfiguration. Der öffentliche Weltbestand enthält keinen
+Öffentliche URLs zeigen auf die tatsächlichen HTTPS-Adressen. Der einzelne
+`ALPHA_WORLD_RELEASE_PATH`, `ZUGFOLGE_WORLD_ID`, `ALPHA_PUBLIC_WORLD_ID` und
+`PUBLIC_GAME_URL` müssen dieselbe Serverwelt beschreiben. Der öffentliche
+Weltbestand enthält keinen
 reservierten Startvertrag, kein Startfahrzeug, keine Starttrasse, kein
 Startpersonal und kein Startprogramm.
 
@@ -174,7 +176,8 @@ Pointerwerte müssen zusammenpassen. Erst danach wendet `game-migrate` den
 vollständigen Drizzle-Migrationsstand an; `game-bootstrap` prüft
 genau ein signiertes öffentliches Weltdeployment und legt dessen Welt- und
 Planning-Authority-Bindung an. Ein Widerspruch zur bestehenden Datenbank
-bricht den Start ab; statische Tutorialdeployments sind verboten.
+bricht den Start ab. Zusätzliche laufende Welten auf demselben Server werden
+abgewiesen.
 
 Keycloak verwendet dieselbe PostgreSQL-Instanz, aber ausschließlich das eigene
 Schema `keycloak`. Der normale Start führt keine Schema-DDL aus: Ein separates
@@ -186,7 +189,7 @@ Abweichung. Der Weltbootstrap stabilisiert den v3-Keycloak-Kopf unter einem
 begrenzten `SHARE`-Lock aller 100 Tabellen; erst danach darf der Clientabgleich
 Realm- oder Clientzeilen verändern. Die einmalige, reversible und vollständig
 quieszierte Migration aus `public` läuft im Produktions-Cutover nur über den
-kanonischen Wrappermodus `--keycloak-after-schema33`; das darin gekapselte
+kanonischen Wrappermodus `--keycloak-after-schema35`; das darin gekapselte
 Compose-Profil `keycloak-schema-migration` ist beschrieben in
 [`docs/keycloak-schema-migration.md`](docs/keycloak-schema-migration.md).
 
@@ -248,9 +251,9 @@ bash tools/alpha-ops/compose-with-map-release-env.sh \
 bash tools/alpha-ops/compose-with-map-release-env.sh \
   --prepare-v2-cold -f /opt/zugfolge/compose.yml
 bash tools/alpha-ops/compose-with-map-release-env.sh \
-  --schema33-after-cold -f /opt/zugfolge/compose.yml
+  --schema35-after-cold -f /opt/zugfolge/compose.yml
 bash tools/alpha-ops/compose-with-map-release-env.sh \
-  --keycloak-after-schema33 -f /opt/zugfolge/compose.yml
+  --keycloak-after-schema35 -f /opt/zugfolge/compose.yml
 ```
 
 Ein direktes `run game-migrate` ist im kanonischen Wrapper gesperrt. Auch
@@ -266,7 +269,7 @@ vollständige Shared-Database-Backup, stellt es isoliert wieder her und führt
 installierten Up- oder Up-Recover-Receipt gegen den weiterhin gestoppten
 Livezustand; ein Fresh-Bootstrap-Receipt ist für diesen Bestands-Cutover
 unzulässig. Ein Prozessabbruch nach dem Up-Commit darf nur mit demselben Plan
-über `--keycloak-recover-after-schema33` abgeschlossen werden.
+über `--keycloak-recover-after-schema35` abgeschlossen werden.
 
 Diese vorbereitenden Modi verwenden kein `down`, überschreiben kein vorhandenes
 Artefakt und droppen keine Live-Datenbank. Nach dem Keycloak-Postcheck bleiben
@@ -584,80 +587,47 @@ denselben DB-, Add-on- und `queue_job`-Parametern wie im Normalbetrieb sowie
 steht in [`docs/odoo-betrieb.md`](docs/odoo-betrieb.md). `--init` im
 Compose-Start ersetzt dieses kontrollierte Upgrade nicht.
 
-## Einladungen und persönlicher Tutorialstart
+## Einladungen und Einstieg ins Spiel
 
 1. In Odoo **Zugfolge → Alpha-Einladungen → Neu** öffnen.
-2. E-Mail, Anzeigename, öffentliche Zielwelt und Rolle erfassen.
+2. E-Mail, Anzeigename, Zielwelt auf deren eigenem Server und Rolle erfassen.
 3. **Einladung senden**. Der signierte Antrag erzeugt idempotent die
-   Keycloak-Identität und ausschließlich `worldAccesses`, `accounts` und Rolle
-   der öffentlichen Zielwelt. Es entsteht noch keine Tutorialwelt und kein
-   Tutorialkonto.
-4. Nach Anmeldung ruft Game Web
-   `POST /worlds/:publicWorldId/tutorial-sessions` auf. Das Game sperrt das
-   öffentliche Weltkonto und setzt eine vorhandene aktive Sitzung fort oder
-   erzeugt eine neue private, ungewertete Welt mit UUID und externer
-   `tut_…`-Referenz.
-5. Die `TutorialWorldFactory` provisioniert Economy, Ledger, Fleet, Planner,
-   Operating und Regional Simulation aus dem gehashten Template
-   `tutorial-minimal-2026.1`. Vorbereitet sind nur offenes Inventar und ein
-   Personalpool; Fahrzeughalterwechsel, Trassenbestätigung und aktives
-   Betriebsprogramm erfolgen erst durch die Kapitelhandlungen.
+   Keycloak-Identität und den Zugang zur freigegebenen Zielwelt.
+4. Die eigene Subdomain der Welt öffnen, den Weltvertrag prüfen und das EVU
+   gründen. Die Bedienung wird dort mit kurzen Tooltipps erklärt.
 
-Tutorialprofile sind von Odoo-Weltlisten und Odoo-Projektionen ausgeschlossen.
-Ein Versuch erzeugt keinen Weltstartantrag, Odoo-Datensatz oder Outbox-Eintrag.
+Die Spielhinweise besitzen weder Sitzungen noch Spielwelten oder Serverzustand.
+Ein Fragezeichen an einem vorhandenen Bedienelement öffnet die Erklärung per
+Klick, Touch oder Tastaturfokus. **Spielhinweise** schaltet die Hilfe ein und aus;
+die Einstellung und bereits gelesene Hinweise bleiben lokal im Browser.
+Siehe [Spielhinweise](docs/spielhinweise.md).
 
-## Tutoriallebenszyklus und Reaper
+## Upgrade bestehender Installationen
 
-```text
-provisioning → running → summary → closing → archived
-```
+Vor dem Upgrade die Writer stoppen und Datenbank sowie Odoo-Filestore sichern.
+Migration 0035 entfernt die alten Tutorialwelten einschließlich ihrer Daten und
+Tabellen. Das Odoo-Modulupgrade auf 19.0.2.0.7 bereinigt die zugehörigen Spiegel,
+Verwaltungsdatensätze und Anhänge. Reguläre Welten, Partner, Rechnungen und die
+zentrale Serververwaltung bleiben erhalten. Widersprüchliche Zuordnungen führen
+zum Abbruch statt zur Löschung regulärer Spielstände.
 
-- höchstens eine aktive Sitzung pro öffentlichem Weltkonto;
-- Reload setzt dieselbe Sitzung fort;
-- Neustart archiviert die alte Welt und erzeugt eine neue UUID;
-- Idle-TTL: 30 Minuten; maximale Dauer: 60 Minuten;
-- Summary-Schonfrist ohne Bestätigung: 5 Minuten;
-- Game-API-Reaper: alle 30 Sekunden;
-- ab `closing` keine neuen Spielkommandos;
-- Archivierung schließt Economy, entzieht Zugang und persistiert finalen Hash,
-  Templateversion, Abschluss-/Abbruchgrund und Telemetrie.
+Vorhandene reguläre Welten auf getrennte Server mit eigenen Subdomains umziehen,
+bevor sie mit dieser Version gestartet werden. Die Migration teilt solche
+Bestände nicht automatisch auf. Neue Backups und Restorebelege verwenden
+Schema 35. Die genauen Vorbedingungen stehen unter
+[Upgrade auf Spielhinweise](docs/alpha-betrieb.md#upgrade-auf-spielhinweise).
 
-Der Reaper ist idempotent. Nach einem Prozessabbruch setzt der nächste Lauf
-`provisioning`, eine ausstehende Kapitelaktion oder `closing` anhand
-persistenter Schritte fort. Zur Diagnose dienen strukturierte Game-Logs und
-Zustandshashes; individuelle Tutorialwelt-IDs werden nicht als Prometheus-
-Label verwendet.
+## Abnahme und Wiederherstellung
 
-## Abnahme
+Build, Typprüfung und Pakettests laufen in der regulären CI. Der Linux-Job
+**Native Runtime ABI (Linux, echtes NAPI)** prüft die echten Simulationsgrenzen
+und die neue Browserhilfe einschließlich Tastatur, Touch und Weltbindung.
+Der manuelle erweiterte Workflow prüft zusätzlich den Odoo-19-Dienst und die
+Werkzeuge für Migration, Backup und Restore.
 
-Repository- und CI-Abnahme umfasst:
+Eine externe Prüfung der Verständlichkeit für neue Spieler bleibt Teil von
+M9.1. Repositorytests ersetzen diese Produktabnahme nicht.
 
-```bash
-pnpm --filter @zugfolge/alpha test
-pnpm --filter @zugfolge/game-api test
-pnpm --filter @zugfolge/game-web test
-cargo test --locked -p zugfolge-rules -p zugfolge-runtime-napi
-pnpm guards
-node .github/scripts/sync-milestones.mjs check
-```
-
-Der Linux-Job **Native Runtime ABI (Linux, echtes NAPI)** baut beide NAPI-
-Addons und durchläuft alle fünf Kapitel mit PGlite über echte Economy-, Fleet-,
-Planning-, Operating-, Disruption- und Ledgerpfade.
-
-Die Produktabnahme bleibt getrennt offen: externe Testspieler müssen im echten
-Browser gegen jeweils neu erzeugte Sitzungen einen Median um zwölf Minuten,
-mindestens 90 Prozent unter 15 Minuten und die erste Entscheidung unter
-90 Sekunden belegen. M9.1 bleibt bis dahin `in Arbeit`.
-
-## Betrieb und Wiederherstellung
-
-Öffentliche Welten und ihre Backups bleiben vollständig persistent. Die
-automatische Archivierung kurzlebiger Tutorialwelten ist eine ausdrückliche,
-ungewertete Ausnahme. Ein späterer Cleanup darf umfangreiche Laufzeitdaten
-entfernen, aber nicht Sitzungsreferenz, Templateversion, Kapitelzeiten,
-Abschlussgrund, finalen Hash und notwendige Auditmetadaten.
-
-Weitere Wiederherstellungs-, Alert- und Odoo-Drills stehen in
-[`docs/alpha-betrieb.md`](docs/alpha-betrieb.md). Eine lokale grüne Suite
-ersetzt weder GitHub CI noch den realen Odoo-19- und externen Browserlauf.
+Öffentliche Welten und ihre Backups bleiben vollständig persistent.
+Wiederherstellungs-, Alert- und Odoo-Drills stehen in
+[Alpha-Betrieb](docs/alpha-betrieb.md).

@@ -254,7 +254,7 @@ export function generateDueTenders(initial: EconomyWorldState, at: number): {
 }
 
 /**
- * Nimmt ein nach Weltstart eingeladenes Tutorialkonto in genau denselben
+ * Nimmt ein nach Weltstart eingeladenes Weltkonto in genau denselben
  * persistenten Praequalifikationszustand auf wie ein Konto beim Weltstart.
  */
 export function seedEconomyAccount(
@@ -278,15 +278,6 @@ export function seedEconomyAccount(
     }));
   }
   return withCommand(state, input.commandId, { prequalifications });
-}
-
-/** Kompatibler, enger Tutorial-Name fuer den bestehenden Reset-/Seed-Pfad. */
-export function seedTutorialAccount(
-  state: EconomyWorldState,
-  input: { readonly commandId: string; readonly accountId: string },
-): EconomyWorldState {
-  if (input.accountId.trim() === "") throw new Error("Tutorialkonto fehlt.");
-  return seedEconomyAccount(state, input);
 }
 
 export function announceTender(state: EconomyWorldState, input: {
