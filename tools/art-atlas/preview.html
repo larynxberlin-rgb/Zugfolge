@@ -23,6 +23,7 @@
     <p id="load-state" role="status" aria-live="polite">Lade den lokalen Grafikstand.</p>
     <nav class="tabs" aria-label="Prüfbereiche" role="tablist">
       <button role="tab" id="tab-scene" aria-selected="true" aria-controls="panel-scene" tabindex="0">Zusammenspiel</button>
+      <button role="tab" id="tab-vehicles" aria-selected="false" aria-controls="panel-vehicles" tabindex="-1">Wagenvergleich</button>
       <button role="tab" id="tab-actors" aria-selected="false" aria-controls="panel-actors" tabindex="-1">Figuren & Bewegung</button>
       <button role="tab" id="tab-gallery" aria-selected="false" aria-controls="panel-gallery" tabindex="-1">Alle Motive <span id="gallery-count"></span></button>
       <button role="tab" id="tab-evidence" aria-selected="false" aria-controls="panel-evidence" tabindex="-1">Stand & Nachweise</button>
@@ -32,12 +33,18 @@
       <button id="motion" aria-pressed="false">Grafikanimation starten</button><span class="control-note">32 px/m · Nearest Neighbor</span>
     </div>
     <section id="panel-scene" class="panel" role="tabpanel" aria-labelledby="tab-scene">
+      <div class="vehicle-controls"><label>Fahrzeug<select id="vehicle"></select></label><label>Innenebene<select id="deck"></select></label><span id="vehicle-note"></span></div>
       <div class="scene-controls"><label>Station<select id="station"><option value="small">Kleiner Haltepunkt</option><option value="medium">Mittlerer Bahnhof</option><option value="large">Großer Bahnhof</option></select></label><label>Umgebung<select id="environment"><option value="rural">Umland</option><option value="suburban">Vorstadt</option><option value="urban">Stadt</option></select></label><label class="check"><input id="roof" type="checkbox"> Wagendach</label><label class="check"><input id="platform-roof" type="checkbox"> Bahnsteigdach</label></div>
       <div class="scene-heading"><div><h2 id="scene-title">Umland · Kleiner Haltepunkt</h2><p>Illustrative Modulmontage aus den vorhandenen Bildern.</p></div><span class="tag">KEINE BETRIEBSDATEN</span></div>
       <div class="scene-navigation" aria-label="Bildbereich wählen"><button id="focus-train" class="quiet">Zum Zug</button><button id="focus-station" class="quiet">Zum Bahnhof</button><span>Bei großem Pixelzoom innerhalb der Grafik scrollen.</span></div>
       <div class="scene-viewport" tabindex="0" aria-label="Grafikmontage, bei Vergrößerung innen scrollbar"><canvas id="scene" width="896" height="400" aria-label="Zusammengesetzte Grafikprüfung mit tatsächlichen Wagen-, Stations- und Umgebungsmotiven"></canvas></div>
       <p class="scene-caption">Figurenbewegung zeigt nur die Bildfolge. Zugfahrt, Halte, Personenbelegung und Kapazität werden hier nicht simuliert.</p>
       <details class="missing"><summary id="scene-missing-summary">Noch fehlende Szenenmotive</summary><ul id="scene-missing"></ul></details>
+    </section>
+    <section id="panel-vehicles" class="panel" role="tabpanel" aria-labelledby="tab-vehicles" hidden>
+      <div class="section-heading"><div><h2>Sechs Wagen, klar unterscheidbar.</h2><p>Generische Wagenbilder · 3 × 27 m Bildrahmen · keine verbindlichen Fahrzeugmaße.</p></div><label>Vergleichsansicht<select id="comparison-view"><option value="lower">Innenräume / Unterdecks</option><option value="upper">Innenräume / Oberdecks</option><option value="roof">Geschlossene Dächer</option></select></label></div>
+      <p class="comparison-note">Doppelstockwagen zeigen zwei getrennte Innenebenen. Einstöckige Wagen behalten ihren einzigen Innenraum. Jeder Wagen bleibt einzeln scrollbar.</p>
+      <div id="vehicle-grid" class="vehicle-grid"></div>
     </section>
     <section id="panel-actors" class="panel" role="tabpanel" aria-labelledby="tab-actors" hidden>
       <div class="section-heading"><div><h2>Eine Figur, jede Perspektive.</h2><p>Vier Fahrgastsets und ein Schaffner. Feste Pivots, unveränderte Originalframes.</p></div><label>Pose<select id="pose"><option value="idle">Ruhend</option><option value="walk">Gehfolge</option><option value="sitting">Sitzend</option></select></label></div>

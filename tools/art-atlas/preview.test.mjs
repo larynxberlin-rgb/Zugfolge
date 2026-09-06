@@ -76,16 +76,37 @@ test("Edge reviews actual atlas images, motion, pixel zoom, keyboard and 320px l
     await page.keyboard.press("Tab");
     assert.equal(await page.locator(".skip").evaluate((link) => getComputedStyle(link).opacity), "0");
     const release = await (await page.request.get(`${origin}/api/release`)).json();
-    assert.equal(release.prepared.assets.length, 172); assert.equal(release.prepared.animations.length, 60);
+    const required = release.catalog.requiredAssetIds, vehicles = release.catalog.vehicleVariants;
+    assert.deepEqual(release.prepared.assets.map(({ id }) => id).sort(), [...required].sort());
+    assert.equal(vehicles.length, 6);
+    assert.equal(vehicles.flatMap((vehicle) => vehicle.parts).length, 14);
+    assert.equal(release.prepared.animations.length, 60);
     for (const file of release.prepared.files) {
       const image = await page.request.get(`${origin}/${file.path}`);
       assert.equal(createHash("sha256").update(await image.body()).digest("hex"), file.sha256, file.id);
     }
-    assert.equal(await page.locator("#gallery .asset-card").count(), 172);
+    assert.equal(await page.locator("#gallery .asset-card").count(), required.length);
     assert.equal(await page.locator("#gallery .missing-frame").count(), 0);
-    assert.match(await page.locator("#file-count").textContent(), /6\/6 Atlasdateien geladen/);
+    assert.ok((await page.locator("#file-count").textContent()).startsWith(`${release.prepared.files.length}/${release.prepared.files.length} Atlasdateien geladen`));
     assert.equal(await page.locator("#motion").getAttribute("aria-pressed"), "false");
     await layout("desktop-scene");
+    for (const vehicle of vehicles) {
+      await page.locator("#vehicle").selectOption(vehicle.id);
+      for (const deck of vehicle.decks) {
+        if (vehicle.decks.length > 1) await page.locator("#deck").selectOption(deck);
+        assert.equal(await page.locator("#scene").getAttribute("data-vehicle-asset-id"), `vehicle.${vehicle.id}.${deck}`);
+        assert.equal(await page.locator("#scene").getAttribute("data-missing"), "0");
+      }
+      const retainedDeck = await page.locator("#deck").inputValue();
+      await page.locator("#roof").check();
+      assert.equal(await page.locator("#deck").isDisabled(), true);
+      assert.equal(await page.locator("#scene").getAttribute("data-vehicle-asset-id"), `vehicle.${vehicle.id}.roof`);
+      await page.locator("#roof").uncheck();
+      assert.equal(await page.locator("#deck").inputValue(), retainedDeck);
+      assert.equal(await page.locator("#deck").isDisabled(), vehicle.decks.length === 1);
+    }
+    await page.locator("#vehicle").selectOption(vehicles[0].id);
+    await page.locator("#deck").selectOption(vehicles[0].decks[0]);
     for (const [station, environment] of [["small", "rural"], ["medium", "suburban"], ["large", "urban"]]) {
       await page.locator("#station").selectOption(station); await page.locator("#environment").selectOption(environment);
       assert.equal(await page.locator("#scene").getAttribute("data-station"), station);
@@ -102,9 +123,25 @@ test("Edge reviews actual atlas images, motion, pixel zoom, keyboard and 320px l
       assert.deepEqual(await page.locator("#scene").evaluate((canvas) => ({ width: canvas.width, smoothing: canvas.getContext("2d").imageSmoothingEnabled })), { width: 960 * zoom, smoothing: false });
       await layout(`desktop-zoom-${zoom}`);
     }
-    await page.locator('[data-zoom="2"]').click();
+    await page.locator('[data-zoom="1"]').click();
     await page.locator("#tab-scene").focus(); await page.keyboard.press("ArrowRight");
+    assert.equal(await page.locator("#tab-vehicles").getAttribute("aria-selected"), "true");
+    for (const view of ["lower", "upper", "roof"]) {
+      await page.locator("#comparison-view").selectOption(view);
+      assert.equal(await page.locator("#vehicle-grid canvas").count(), vehicles.length);
+      for (const vehicle of vehicles) {
+        const part = view === "roof" ? "roof" : view === "upper" ? vehicle.decks.at(-1) : vehicle.decks[0];
+        assert.equal(await page.locator(`#vehicle-grid [data-vehicle-id="${vehicle.id}"] canvas`).getAttribute("data-asset-id"), `vehicle.${vehicle.id}.${part}`);
+      }
+      await screenshot(`vehicles-six-${view}-1x`);
+    }
+    await page.locator("#comparison-view").selectOption("upper");
+    await page.locator("#vehicle-grid .vehicle-card button").first().click();
+    assert.equal(await page.locator("#deck").inputValue(), "upper");
+    assert.equal(await page.locator("#tab-scene").getAttribute("aria-selected"), "true");
+    await page.locator("#tab-vehicles").focus(); await page.keyboard.press("ArrowRight");
     assert.equal(await page.locator("#tab-actors").getAttribute("aria-selected"), "true");
+    await page.locator('[data-zoom="2"]').click();
     assert.equal(await page.locator("#actor-grid canvas").count(), 20);
     await page.locator("#pose").selectOption("walk");
     const first = page.locator("#actor-grid canvas").first();
@@ -135,7 +172,7 @@ test("Edge reviews actual atlas images, motion, pixel zoom, keyboard and 320px l
 
     for (const width of [390, 320]) {
       await page.setViewportSize({ width, height: 900 });
-      for (const tab of ["scene", "actors", "gallery", "evidence"]) {
+      for (const tab of ["scene", "vehicles", "actors", "gallery", "evidence"]) {
         await page.locator(`#tab-${tab}`).click();
         for (const zoom of [1, 2, 3, 4]) {
           await page.locator(`[data-zoom="${zoom}"]`).click(); await layout(`mobile-${width}-${tab}-${zoom}x`);
@@ -146,18 +183,24 @@ test("Edge reviews actual atlas images, motion, pixel zoom, keyboard and 320px l
       assert.ok(await page.locator(".scene-viewport").evaluate((viewport) => viewport.scrollTop > 0 && viewport.scrollLeft > 0));
       await screenshot(`mobile-${width}-scene`);
       await page.locator("#tab-actors").click(); await screenshot(`mobile-${width}-actors`);
+      await page.locator("#tab-vehicles").click(); await screenshot(`mobile-${width}-vehicles`);
     }
 
     // An absent motif remains explicitly missing; no alternative art is substituted.
     await page.route("**/api/release", async (route) => {
       const data = structuredClone(release);
-      data.prepared.assets = data.prepared.assets.filter((asset) => asset.id !== "vehicle.body");
+      data.prepared.assets = data.prepared.assets.filter((asset) => !["vehicle.body", "vehicle.regional-double.upper"].includes(asset.id));
       await route.fulfill({ json: data });
     });
     await page.locator("#reload").click();
-    await page.waitForFunction(() => document.body.dataset.assetCount === "171");
+    await page.waitForFunction((count) => Number(document.body.dataset.assetCount) === count, required.length - 2);
+    await page.locator("#tab-scene").click(); await page.locator("#vehicle").selectOption("legacy");
     assert.equal(await page.locator('[data-asset-id="vehicle.body"] .missing-frame').count(), 1);
     assert.match(await page.locator("#scene-missing").textContent(), /vehicle.body/);
+    await page.locator("#vehicle").selectOption("regional-double"); await page.locator("#deck").selectOption("upper");
+    assert.match(await page.locator("#scene-missing").textContent(), /vehicle.regional-double.upper/);
+    assert.equal(await page.locator("#scene").getAttribute("data-vehicle-asset-id"), "vehicle.regional-double.upper");
+    assert.equal(await page.locator("#vehicle-grid .missing-frame").count(), 1);
     assert.deepEqual(errors, []);
     await mkdir(dirname(reportPath), { recursive: true });
     await writeFile(reportPath, `${JSON.stringify({
@@ -165,6 +208,8 @@ test("Edge reviews actual atlas images, motion, pixel zoom, keyboard and 320px l
       browserChannel: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH ? "configured-executable" : process.platform === "win32" ? "msedge" : "chromium",
       preparedSha256: release.preparedSha256, observedManifestSha256: release.manifestSha256, observedManifestStatus: release.manifest?.status ?? null,
       assets: release.prepared.assets.length, animations: release.prepared.animations.length,
+      catalogVersion: release.catalog.version, vehicleVariants: vehicles.map(({ id }) => id),
+      vehicleDeckAndRoofSelectionVerified: true,
       files: release.prepared.files.map(({ id, sha256 }) => ({ id, sha256 })),
       proof: "Local graphics review only; no game world, M10 operations or release activation proof.",
       reducedMotionStartsPaused: true, pausePreservesFrame: true, missingMotifHasNoReplacement: true,

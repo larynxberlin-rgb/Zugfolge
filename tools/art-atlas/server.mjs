@@ -3,6 +3,7 @@ import { readFile, realpath } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import { dirname, isAbsolute, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
+import { ART_CATALOG_VERSIONS, ART_DIRECTIONS, CONDUCTOR_APPEARANCE, PASSENGER_APPEARANCES, VEHICLE_VARIANTS, requiredStaticAssets } from "../../packages/conductor-art/src/catalog.ts";
 
 const TOOL = dirname(fileURLToPath(import.meta.url));
 const RELEASE = resolve(TOOL, "../../assets/conductor-art/v1");
@@ -30,7 +31,13 @@ async function readRelease(root) {
     manifest = JSON.parse(manifestBytes.toString("utf8"));
     manifestSha256 = digest(manifestBytes);
   } catch (error) { if (error.code !== "ENOENT") throw error; }
-  return { schemaVersion: "conductor-art-preview/v1", preparedSha256: digest(bytes), prepared, manifest, manifestSha256 };
+  const version = ART_CATALOG_VERSIONS.at(-1);
+  const appearanceIds = [...PASSENGER_APPEARANCES, CONDUCTOR_APPEARANCE];
+  const requiredAssetIds = [...requiredStaticAssets(version), ...appearanceIds.flatMap((appearance) => ART_DIRECTIONS.flatMap((direction) => [
+    `actor.${appearance}.${direction}.idle`, ...[1, 2, 3, 4].map((phase) => `actor.${appearance}.${direction}.walk.${phase}`), `actor.${appearance}.${direction}.sitting`,
+  ]))];
+  return { schemaVersion: "conductor-art-preview/v1", preparedSha256: digest(bytes), prepared, manifest, manifestSha256,
+    catalog: { version, requiredAssetIds, vehicleVariants: VEHICLE_VARIANTS } };
 }
 
 /** Local read-only review surface: only this release's declared atlas PNGs are served. */
