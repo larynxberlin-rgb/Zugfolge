@@ -67,3 +67,23 @@ und Polizei benötigen den gesonderten echten Kontrolladapter. Die aktuelle
 Basisformation besitzt drei Wagenkästen auf einem Hauptdeck; sie behauptet
 keinen Doppelstock-Sitzungsnachweis. Die gesonderten M15.4-Nachweise bleiben
 die Quelle für die dort tatsächlich geprüften Treppen und Oberdecks.
+
+## Zusammenhängende Kontrollfahrt
+
+`control-browser-proof.mjs` verwendet zusätzlich die wirkliche M6-Wirtschaft,
+den nativen Kontrollkern, den Produktionsscheduler und den nativen
+Polizeihaltadapter in derselben Sitzung:
+
+```sh
+CONDUCTOR_CONTROL_BROWSER_TEST=1 node --test tools/conductor-session/control-browser-proof.mjs
+```
+
+Ohne NAPI ist zusätzlich `ZUGFOLGE_FARE_CONTROL_TEST_BINARY` auf
+`fare_control_json` zu setzen. `CONDUCTOR_CONTROL_REPORT_PATH` steuert den
+eigenen Kontrollbericht. Die private Kandidatenauswahl liest ausschließlich
+die tatsächlichen M10-Fakten im Node-Testprozess und prüft mögliche
+Dokument-/Identitätsergebnisse isoliert durch denselben nativen Kern. Diese
+Probe verändert keinen gespeicherten Zustand. Sie überträgt weder diese
+Fakten noch ein vorhergesagtes Ergebnis an den Browser. Jede berichtete
+Kontrolle beginnt anschließend über den wirklichen UI-Button und erhält
+ihre tatsächlichen Belege aus dem autorisierten Sitzungs- und Kontrollpfad.

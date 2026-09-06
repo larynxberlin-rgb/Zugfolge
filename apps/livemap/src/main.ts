@@ -561,7 +561,12 @@ async function appendConductorEntry(selection: MapSelection, operatorId: string)
   const section = document.createElement("section"); section.className = "owner-action";
   const entry = document.createElement("button"); entry.type = "button"; entry.textContent = "Als Schaffner mitfahren"; entry.disabled = true;
   const note = document.createElement("p"); note.textContent = "Verfügbarkeit der Fahrt wird geprüft …";
-  section.append(entry, note); detailsContent.append(section);
+  const report = document.createElement("button"); report.type = "button"; report.textContent = "Kontrollbericht";
+  report.addEventListener("click", async () => {
+    const { openConductorReport } = await import("./conductor-report.js");
+    await openConductorReport({ api: conductor, trainLabel: selection.label, returnFocus: report });
+  });
+  section.append(entry, report, note); detailsContent.append(section);
   try {
     const available = await conductor.availability();
     if (selected?.id !== selection.id || selected.kind !== "train" || !section.isConnected) return;

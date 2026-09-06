@@ -1,7 +1,7 @@
 import Fastify from "fastify";
 import { expect, it } from "vitest";
 import type { ConductorCommandV1 } from "@zugfolge/runtime-native";
-import { conductorCommandReceipts, conductorLeases, conductorSnapshots, conductorTrainStates, domainEvents, worldAccesses } from "@zugfolge/db";
+import { conductorCommandReceipts, conductorLeases, conductorSnapshots, conductorTrainStates, domainEvents, regionalSimulationStates, worldAccesses } from "@zugfolge/db";
 import { and, eq } from "drizzle-orm";
 import { createConductorSessionNativeFixture, hasSessionNativeFixture } from "./conductor-session.native-fixture.js";
 import { registerConductorSessionRoutes } from "./conductor-session-routes.js";
@@ -90,5 +90,24 @@ nativeIt("führt echte M5- und M10-Fakten durch persistente Sitzung, HTTP, Resto
     const [revoked] = await fixture.db.select().from(conductorTrainStates);
     expect((revoked!.state as { session: { status: string; endReason: string } }).session).toMatchObject({ status: "ended", endReason: "access_revoked" });
     expect(await fixture.db.select().from(conductorLeases)).toHaveLength(0);
+    // Native cancellation must leave a readable final snapshot without inventing a new M10 manifest.
+    await fixture.db.update(worldAccesses).set({ status: "active" }).where(and(eq(worldAccesses.worldId, fixture.access.worldId), eq(worldAccesses.keycloakSubject, subject)));
+    const fourth = await app.inject({ method: "POST", url, payload: { ...command, sessionId: "fixture-session-fourth", idempotencyKey: "fixture:fourth" } });
+    expect(fourth.statusCode, fourth.body).toBe(200);
+    const [regional] = await fixture.db.select().from(regionalSimulationStates).where(and(eq(regionalSimulationStates.worldId, fixture.access.worldId),
+      eq(regionalSimulationStates.regionId, fixture.initialization.regionId)));
+    const actual = regional!.state as { world: { trains: Record<string, { passengerStops: { planHash: string } }> } };
+    await fixture.apply("fixture:cancel-stop-plan", { type: "cancel-passenger-stop-plan", cancellation: { trainId: fixture.access.trainRunId,
+      expectedStopPlanHash: actual.world.trains[fixture.access.trainRunId]!.passengerStops.planHash, causalityId: "fixture:cancel-stop-plan" } });
+    const final = await app.inject({ method: "GET", url: `${url}/snapshot` });
+    expect(final.statusCode, final.body).toBe(200);
+    expect(final.json().snapshot).toMatchObject({ status: "ended", endReason: "train_unavailable", sessionId: "fixture-session-fourth" });
+    expect(final.body).not.toMatch(/fareFact|ownerRef|keycloakSubject|dialogueReleases|journeyChainId/u);
+    expect(final.json()).toMatchObject({ scene: null, control: null });
+    const finalChanges = await fixture.sessions.changes(fixture.access, fourth.json().snapshot.sequence);
+    expect(finalChanges.reset).toBe(true); expect(finalChanges.snapshots).toEqual([final.json().snapshot]);
+    expect(await fixture.db.select().from(conductorLeases)).toHaveLength(0);
+    await fixture.db.update(worldAccesses).set({ status: "revoked" }).where(and(eq(worldAccesses.worldId, fixture.access.worldId), eq(worldAccesses.keycloakSubject, subject)));
+    expect((await app.inject({ method: "GET", url: `${url}/snapshot` })).statusCode).toBe(403);
   } finally { await app.close(); await fixture.dispose(); }
 }, 120_000);

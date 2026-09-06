@@ -408,7 +408,11 @@ pub struct EconomyReleaseDocument {
     pub rates: EconomyReleaseRates,
     pub rules: EconomyReleaseRules,
     pub tender_profiles: Vec<EconomyTenderProfile>,
-    #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "crate::deserialize_optional_fare_inspection")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "crate::deserialize_optional_fare_inspection"
+    )]
     pub fare_inspection: Option<crate::FareInspectionEconomyV1>,
     pub checksum: String,
 }
@@ -2905,7 +2909,11 @@ pub fn validate_economy_release_document(
 ) -> Result<(), CatalogCompileError> {
     require_schema(&release.schema, ECONOMY_RELEASE_SCHEMA, "EconomyRelease")?;
     require_identifier(&release.version, "economy.release.version")?;
-    if release.fare_inspection.as_ref().is_some_and(|rules| !rules.validate()) {
+    if release
+        .fare_inspection
+        .as_ref()
+        .is_some_and(|rules| !rules.validate())
+    {
         return invalid("EconomyRelease enthält ungültige Fahrkartenkontrollregeln");
     }
     validate_sha256(&release.checksum, "economy.release.checksum")?;

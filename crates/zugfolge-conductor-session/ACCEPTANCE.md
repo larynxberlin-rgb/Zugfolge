@@ -40,3 +40,45 @@ Reproduktion: cargo build --release -p zugfolge-conductor-session --example
 acceptance_json; Kernprüfungen: cargo test -p zugfolge-conductor-session
 --test acceptance sowie cargo test -p zugfolge-sim --test
 operational_fare_control.
+
+## Gemessener Stand vom 7. September 2026
+
+Der Release-Lauf mit Rust 1.94.1 auf Windows x64 (acht logische Prozessoren)
+misst 15 Antworten je Phase nach einer Aufwärmantwort. Die P95-Werte in
+Millisekunden und die tatsächlichen sichtbaren Snapshotgrößen sind:
+
+| Fiktiver M5-Typ | Personen | Layout | M10 | Fahrgastprojektion | Sitzungsstart | Restore | Snapshotbytes |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 101 | 160 | 6,692 | 9,949 | 4,163 | 18,486 | 3,800 | 60.135 |
+| 102 | 220 | 8,053 | 15,545 | 6,515 | 24,135 | 4,921 | 81.903 |
+| 103 | 144 | 6,307 | 11,928 | 4,445 | 18,713 | 4,141 | 54.539 |
+
+Alle Wiederholungen ergeben je Konfiguration dieselben Fachhashes. Rohwerte,
+Binärhash und Quellpins stehen in
+[core-measurement-v1.json](evidence/core-measurement-v1.json).
+[measure-acceptance.ps1](examples/measure-acceptance.ps1) erzeugt den Nachweis
+mit `-Binary <Release-Binary> -OutputDirectory <Nachweisordner>` neu. Diese
+einzelne lokale Messung ist keine Lastzusage für einen Produktionsserver.
+
+Der reale Kontrollhalt verschiebt Führungszug und Folgezug jeweils um
+600.000 Millisekunden. 20 M10-Reisende verpassen den zunächst erreichbaren
+Anschluss und wählen das spätere Angebot; niemand bleibt in diesem Gegenlauf
+gestrandet. Der tatsächliche Fahrgastpräfix bleibt einschließlich Plätze,
+Identitäten und privater Fahrschein-Fakten unverändert. Alle erzeugten
+Haltquittungen, Betriebsereignisse und Hashes stehen in
+[network-consequence-v1.json](evidence/network-consequence-v1.json). Der
+Regressionstest vergleicht den vollständigen Bericht mit diesem Golden-Beleg,
+einschließlich Restoregleichheit und tatsächlicher Ressourcenereignisse.
+
+Die Szenarien sind ausdrücklich synthetische Testdaten. Insbesondere ist der
+Artpin im nativen Innenraumfixture ein als Test gekennzeichneter Platzhalter;
+hieraus folgt keine Art-Releasefreigabe. Die signierte Art-/Dialogfreigabe und
+der volle Datenbank-, Browser-, Touch-, Polizei- und Ledgerpfad müssen in den
+separaten Plattformnachweisen bestehen. Der zweite Zug ist eine echte native
+Fahrzeug-/Formationsmaterialisierung auf derselben Strecke; der Kapazitäts-
+und Innenraumbeweis gehört den drei vom M5-Compiler erzeugten Konfigurationen.
+[input-manifest-v1.json](evidence/input-manifest-v1.json) bindet deren
+Eingabedateien, den vollständigen lokalen Rust-Abhängigkeitsbaum und den
+Messadapter mit SHA-256 über UTF-8 mit LF. Die Messung wurde nach der Korrektur
+des Einpunkt-Bremsrests neu erzeugt; die Betriebs- und M10-Golden-Hashes bleiben
+unverändert.

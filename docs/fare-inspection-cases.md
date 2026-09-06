@@ -63,11 +63,19 @@ Die Rust-Validierung begrenzt die gesetzlichen beziehungsweise vertraglichen
 Maximalregeln; kein Runtime-Default ergänzt fehlende Felder.
 
 Die Nachweisfrist basiert auf expliziter Welttagslänge und Tagesbeginn der
-Feststellung. Maßgeblich ist der belegte Eingang des gültigen Nachweises,
+Feststellung. Nach [§187 BGB](https://www.gesetze-im-internet.de/bgb/__187.html)
+zählt der Ereignistag nicht; [§188 BGB](https://www.gesetze-im-internet.de/bgb/__188.html)
+bestimmt das Fristende. Der exklusive Grenzwert ist deshalb
+`Tagesbeginn(Kontrolle) + (proofWindowDays + 1) * dayLengthMs`.
+Maßgeblich ist der belegte Eingang des gültigen Nachweises,
 nicht die spätere Verarbeitungszeit. Der gepinnte Nachweis reduziert eine
 vorläufige Forderung auf den freigegebenen 7-Euro-Satz; nachweislich falsche
 Unterlagen bewirken keine Reduzierung. Rechnung, Zahlung, Reduzierung,
 Bearbeitungskosten und Abschreibung bleiben getrennte Ereignisse.
+Die tatsächliche einmalige Reduzierung verursacht den ausdrücklich gepinnten
+EVU-Aufwand `proofHandlingCostCents`. Er wird nicht dem Fahrgastbetrag
+zugeschlagen und ist keine Sanktion für eine zulässige vorläufige Forderung.
+Ein unbegründeter Anlageversuch wird vollständig zurückgewiesen.
 
 ## Polizei und Betrieb
 
@@ -110,6 +118,9 @@ Kosten und betriebliche Pönalen bleiben vollständig wirksam. Der getrennte
 Deckelausgleich begrenzt den positiven Kontrollbeitrag, ohne Kosten zu erstatten.
 Spätere Korrekturen sind zusätzliche ausgeglichene Buchungen; ältere Belege
 werden niemals überschrieben.
+Eine Rücknahme einer Abschreibung korrigiert ausschließlich den ursprünglichen
+Abschreibungstag desselben Falls. Sie ist am späteren Nachweistag kein neuer
+Zahlungseingang und erzeugt dort keine positive Prämiengrundlage.
 
 Die vorhandene M6-Abrechnung liefert Periodenbelege. Das optionale Modul pinnt
 deshalb ausdrücklich `revenueAllocation = uniform_settled_service_interval/v1`:
@@ -125,6 +136,30 @@ kann ältere Tagesabschlüsse durch zusätzliche Korrekturbuchungen freigeben.
 Diese Abgrenzung ist eine explizite Spielabrechnungsregel, keine Prognose aus
 Nachfrage oder geplanten Kilometern.
 
+`nextFareControlWakeup` bestimmt im Rust-Kern die nächste tatsächlich relevante
+Nachweis-, Zahlungs- oder Abschreibungsgrenze. Ein 250-ms-Worker erzeugt keine
+dauerhaften Zeitquittungen ohne fällige Wirkung. Polizeifortschritt liest weiter
+den bestätigten betriebsseitigen Hold; Tageskorrekturen deduplizieren die
+zugrunde liegenden tatsächlichen Journalbelege.
+
+Der Plattformloader akzeptiert ausschließlich eine lokal und unabhängig
+SHA-256-gepinnte `conductor-control-deployment/v1`-Datei mit Welt und Perioden.
+Jede Periode benennt Gültigkeitsintervall, `economyReleaseHash`, vollständige
+`inspectionPolicy`, `policeResponseModel` und exakt gebundene `journeys`.
+Symlinks, mehr als 16 MiB, mehr als 256 Perioden, mehr als 100000 Teilreisebelege
+je Periode, unsichere Zahlen und unbekannte Felder werden abgelehnt.
+Die tatsächliche M6-Datenbankpinnung muss denselben EconomyRelease bestätigen.
+Weder Clientzeit noch Browserpolicy kann diese Eingänge ersetzen.
+
+`ConductorControlService` ist eine interne Grenze hinter dem bestehenden
+Account-/Welt-/EVU-/Zugzugriff und dem exklusiven Weltwriter. `publicStatus`
+liefert nur die native Whitelist eigener Zugfälle und tatsächlichen Holdstatus.
+Private native Effektquittungen pinnen den resultierenden Fachzustand aus
+Fällen, Polizeiplänen, Tagen und Journal; ihre Hashes bleiben bei späteren
+Fortschreibungen unverändert. Lebenszyklusabschluss beendet ausschließlich
+bereits bestehende ungebundene Fälle. Forderungen und Holds laufen nach
+Sitzungsende über den Produktionsscheduler weiter.
+
 ## Abnahme
 
 Gezielte native Tests prüfen gültige/nicht vorzeigbare/ungültige Fahrkarten,
@@ -135,3 +170,41 @@ negative Folgen, Tagesdeckel über mehrere Züge sowie Überläufe und identisch
 Replays. Die Plattformprobe nutzt echte M10-, Session-, Kontroll- und
 Operational-Kerne mit dem bestehenden Ledger und Datenbankrestore; reine
 Mock-Callbacks gelten nicht als positiver Fachnachweis.
+
+Nachweisstand 2026-09-07:
+
+- `cargo test -p zugfolge-fare-control --offline`: zwölf native Fachtests;
+  `cargo clippy -p zugfolge-fare-control --all-targets --offline -- -D warnings`
+  ohne Warnungen. Enthalten sind auch unabhängige Mehrzug-Tagesdeckel,
+  gebündelte erfolglose/nicht verfügbare/abgebrochene Polizeifälle, die
+  Abschreibungskorrektur ohne neue Prämie und extreme zulässige Centwerte.
+- `packages/economy/src/fare-revenue.test.ts`: tatsächlicher M6-Periodenproducer,
+  persistente Outbox und bestehender Ledgeradapter. 10000 Cent Brutto und
+  1700 Cent Pönale ergeben tatsächlich 8300 Cent Kasse; der gebundene
+  Bruttobeleg wird erst nach bestätigter Journalbuchung freigegeben.
+- `apps/game-api/src/conductor-control.native.integration.test.ts`: echte
+  M5-/Operational-/M10-/Dialog-/Sitzungs-/Kontrollkerne mit PGlite,
+  Forderung/Zahlung, Fremdzugriff, Restore, Replay und No-op-Worker. Eine
+  absichtlich abgewiesene zweite echte Ledgerbuchung beweist die atomare
+  Rücknahme der ersten Buchung und des Kontrollzustands; derselbe Befehl
+  funktioniert nach Beseitigung der Teststörung ohne Doppelbuchung. Windows
+  verwendet die unveränderten Adapter mit echten Rust-CLI-Prozessen;
+  die native Linux-CI verwendet das NAPI-Addon. Vier zusätzliche reine
+  Negativtests laufen auch ohne native Bibliothek.
+- `conductor-control.native-fixture.ts` enthält ausschließlich fiktive
+  Tarif-/Erwerbsbelege und temporäre Testidentitäten. Seine isolierte
+  `inspectionCandidates`-Probe ist nur eine Node-seitige Auswahlhilfe für
+  tatsächliche UI-Kontrollen, kein Nachweis einer ausgeführten Kontrolle.
+  `advanceControl` delegiert an den produktiven Welt-Scheduler. Die
+  zusammenhängende Browserfahrt wird separat in deren Abnahmebericht belegt.
+
+Der native öffentliche Tagesbericht liefert ausschließlich `dayStartMs`,
+`contractRevenueCents`, `netCents`, `premiumCents`, `capAdjustmentCents`,
+`contributionCents` und `settlementRevision`, chronologisch sortiert. Der Kern
+berechnet den Beitrag aus Netto plus Prämie minus Deckelkorrektur mit geprüfter
+Ganzzahlarithmetik. Private Journal-IDs, Tarif-/Modellpins und Passagierfakten
+verlassen die Projektion nicht. Tage gelten gemeinsam für das eigene EVU über
+alle Züge; die Fallliste bleibt auf den angefragten Zug beschränkt. Die interne
+Lesemethode `publicHistory(tx, {worldId, operatorId, trainRunId})` benötigt
+keinen aktiven Fahrgastmanifest- oder Sitzungskontext. Ihre Aufrufer müssen
+vorher den aktuellen Konto-, Welt-, EVU- und Zugzugriff autorisieren.

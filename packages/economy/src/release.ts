@@ -61,7 +61,7 @@ export interface FareInspectionEconomyV1 {
   readonly schemaVersion: "fare-inspection-economy/v1";
   readonly minimumClaimCents: bigint; readonly ordinaryFareMultiplier: number; readonly reducedClaimCents: bigint;
   readonly proofWindowDays: number; readonly dayLengthMs: number; readonly handlingCostCents: bigint;
-  readonly unfoundedClaimCostCents: bigint; readonly policeHandlingCostCents: bigint;
+  readonly proofHandlingCostCents: bigint; readonly policeHandlingCostCents: bigint;
   readonly fullPaymentBasisPoints: number; readonly partialPaymentBasisPoints: number;
   readonly partialPaymentShareBasisPoints: number; readonly paymentDelayMs: number; readonly writeOffDelayMs: number;
   readonly validProofSubmissionBasisPoints: number; readonly validProofDelayMs: number;

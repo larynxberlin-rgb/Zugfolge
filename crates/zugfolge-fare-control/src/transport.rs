@@ -84,6 +84,15 @@ pub fn project_fare_cases_json(input: &str) -> Result<String, FareControlError> 
 pub fn fare_inspection_policy_hash_json(input: &str) -> Result<String, FareControlError> {
     encode(&fare_inspection_policy_hash(&parse(input)?)?)
 }
+pub fn project_fare_control_report_json(input: &str) -> Result<String, FareControlError> {
+    let value: Project = parse(input)?;
+    encode(&project_fare_control_report(
+        &value.state,
+        &value.expected_state_hash,
+        &value.world_id,
+        &value.operator_id,
+    )?)
+}
 pub fn fare_journey_evidence_hash_json(input: &str) -> Result<String, FareControlError> {
     encode(&fare_journey_evidence_hash(&parse(input)?)?)
 }

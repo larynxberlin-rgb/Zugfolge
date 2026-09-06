@@ -1,6 +1,7 @@
 import type { ConductorCommandActionV1, ConductorCommandV1, InteriorDeckId, InteriorPointV1, VisiblePassengerV2 } from "@zugfolge/runtime-native";
 import { ConductorApi, ConductorApiError, type ConductorResponse } from "./conductor-api.js";
 import { createConductorRenderer, type ConductorRenderer } from "./conductor-renderer.js";
+import { openConductorReport, renderConductorControlReport } from "./conductor-report.js";
 import "./conductor.css";
 
 const deckLabels = { main: "Hauptdeck", lower: "Unterdeck", upper: "Oberdeck" };
@@ -12,11 +13,6 @@ function button(text: string, act: () => void): HTMLButtonElement { const value 
 const sameSpace = (a: InteriorPointV1, b: InteriorPointV1) => a.vehicleId === b.vehicleId && a.bodyId === b.bodyId && a.deckId === b.deckId;
 const distance = (a: InteriorPointV1, b: InteriorPointV1) => sameSpace(a, b) ? Math.abs(a.xMm - b.xMm) + Math.abs(a.yMm - b.yMm) : Infinity;
 const pause = (duration: number) => new Promise<void>((resolve) => setTimeout(resolve, duration));
-function euro(value: string): string {
-  if (!/^-?(?:0|[1-9][0-9]*)$/u.test(value)) return "Betrag nicht verfügbar";
-  const cents = BigInt(value), magnitude = cents < 0n ? -cents : cents;
-  return `${cents < 0n ? "−" : ""}${(magnitude / 100n).toLocaleString("de-DE")},${String(magnitude % 100n).padStart(2, "0")} €`;
-}
 
 export async function openConductorMode(input: { api: ConductorApi; trainLabel: string; returnFocus: HTMLElement }): Promise<void> {
   const { api } = input;
@@ -33,7 +29,7 @@ export async function openConductorMode(input: { api: ConductorApi; trainLabel: 
   const zoomLabel = element("label", "Zoom "), zoom = element("select");
   for (const value of [1, 2, 3, 4]) { const option = element("option", `${value}×`); option.value = String(value); zoom.append(option); } zoom.value = "2";
   zoomLabel.append(zoom); tools.append(zoomLabel);
-  tools.append(button("Zu meiner Position", () => renderer?.focusPlayer()), button("Ansicht ←", () => renderer?.panBy(-200)), button("Ansicht →", () => renderer?.panBy(200)));
+  tools.append(button("Zu meiner Position", () => focusPlayer()), button("Ansicht ←", () => renderer?.panBy(-200)), button("Ansicht →", () => renderer?.panBy(200)));
   const content = element("div", undefined, "conductor-content"), visual = element("section", undefined, "conductor-visual");
   const stage = element("div", undefined, "conductor-stage"); stage.tabIndex = 0; stage.setAttribute("aria-label", "Innenraum. Pfeiltasten oder W A S D bewegen deine Figur.");
   const movement = element("div", undefined, "conductor-movement"); movement.setAttribute("aria-label", "Bewegen");
@@ -54,7 +50,8 @@ export async function openConductorMode(input: { api: ConductorApi; trainLabel: 
   const footer = element("footer", undefined, "conductor-footer"), reconnect = button("Verbindung wiederherstellen", () => { void recover(); }); reconnect.hidden = true;
   const retry = button("Letzte Handlung erneut bestätigen", () => { if (pending) void send(pending.action, pending); }); retry.hidden = true;
   const finish = button("Schaffnersitzung beenden", () => { void leave(true); });
-  footer.append(reconnect, retry, finish); dialog.append(header, status, problem, tools, content, footer);
+  const reportButton = button("Kontrollbericht", () => { void openConductorReport({ api, trainLabel: input.trainLabel, returnFocus: reportButton }); });
+  footer.append(reportButton, reconnect, retry, finish); dialog.append(header, status, problem, tools, content, footer);
   document.body.append(dialog); dialog.showModal(); close.focus();
 
   let response: ConductorResponse | undefined, renderer: ConductorRenderer | undefined;
@@ -75,6 +72,15 @@ export async function openConductorMode(input: { api: ConductorApi; trainLabel: 
     const parts = section.value.split("|");
     const vehicle = response.layout.vehicles[Number(parts[0])], body = vehicle?.bodies[Number(parts[1])];
     if (vehicle && body) renderer?.setView({ vehicleId: vehicle.vehicleId, bodyId: body.bodyId, deckId: parts[2] as InteriorDeckId, zoom: Number(zoom.value) as 1 | 2 | 3 | 4 });
+  }
+  function focusPlayer() {
+    if (!response) return;
+    const { position } = response.snapshot;
+    const vehicleIndex = response.layout.vehicles.findIndex((vehicle) => vehicle.vehicleId === position.vehicleId);
+    const bodyIndex = response.layout.vehicles[vehicleIndex]?.bodies.findIndex((body) => body.bodyId === position.bodyId);
+    if (vehicleIndex < 0 || bodyIndex === undefined || bodyIndex < 0) return;
+    section.value = `${vehicleIndex}|${bodyIndex}|${position.deckId}`;
+    renderer?.focusPlayer();
   }
   section.addEventListener("change", setView); zoom.addEventListener("change", setView);
   filter.addEventListener("input", () => { listKey = ""; render(); });
@@ -150,33 +156,11 @@ export async function openConductorMode(input: { api: ConductorApi; trainLabel: 
     for (const control of encounter.querySelectorAll("button")) control.disabled = !actionEnabled() || !!active && snapshot.nowMs < active.availableAtMs;
     const nextControlKey = JSON.stringify(response.control);
     if (controlKey !== nextControlKey) {
-      controlKey = nextControlKey; controlStatus.replaceChildren();
-      const control = response.control;
-      if (control && (control.cases.length || control.hold)) {
-        controlStatus.append(element("h2", "Fälle dieser Fahrt"));
-        if (control.hold) {
-          const labels = { requested: "Polizei angefordert · Halt wird vorbereitet", active: "Polizeihalt aktiv · die Fahrt wartet", released: "Polizeihalt freigegeben" };
-          const outcomes = { identity_confirmed: "Identität bestätigt", identity_not_confirmed: "Identität konnte nicht bestätigt werden", unavailable: "Polizei nicht verfügbar",
-            timeout: "Wartezeit beendet", target_unavailable: "Vorgesehener Halt nicht mehr erreichbar" };
-          controlStatus.append(element("p", labels[control.hold.status], "conductor-evidence"));
-          if (control.hold.outcome) controlStatus.append(element("p", outcomes[control.hold.outcome]));
-        }
-        const statuses = { open: "In Bearbeitung", closed_without_claim: "Ohne Forderung abgeschlossen", claim_open: "Forderung offen", settled: "Abgerechnet" };
-        control.cases.forEach((row, index) => {
-          const detail = element("details"), summary = element("summary", `Fall ${index + 1} · ${statuses[row.status]}`);
-          detail.append(summary);
-          if (row.claimKind) {
-            detail.append(element("p", `${row.claimKind === "provisional" ? "Vorläufige" : "Reguläre"} Forderung: ${euro(row.claimCents)}`),
-              element("p", `Gezahlt: ${euro(row.paidCents)} · Kosten: ${euro(row.costsCents)}`), element("p", `Abgeschrieben: ${euro(row.writtenOffCents)}`));
-            if (row.claimKind === "provisional" && row.status === "claim_open") {
-              const remainingMinutes = Math.max(0, Math.ceil((row.proofDeadlineMs - snapshot.nowMs) / 60000));
-              detail.append(element("p", remainingMinutes > 0 ? `Nachweisfrist: noch ${remainingMinutes} Spielminuten beim letzten bestätigten Fallstand.` : "Die Nachweisfrist ist abgelaufen."));
-            }
-          }
-          controlStatus.append(detail);
-        });
-      }
+      controlKey = nextControlKey;
+      if (response.control) renderConductorControlReport(controlStatus, response.control, snapshot.nowMs);
+      else controlStatus.replaceChildren();
     }
+
     if (focusedKey && priorFocus && !priorFocus.isConnected) {
       const replacement = [...dialog.querySelectorAll<HTMLElement>("[data-conductor-focus]")].find((node) => node.dataset["conductorFocus"] === focusedKey);
       if (replacement && !(replacement instanceof HTMLButtonElement && replacement.disabled)) replacement.focus({ preventScroll: true });
@@ -185,7 +169,12 @@ export async function openConductorMode(input: { api: ConductorApi; trainLabel: 
   }
   function accept(value: ConductorResponse) {
     if (response && value.snapshot.sessionId === response.snapshot.sessionId && value.snapshot.sequence < response.snapshot.sequence) return;
+    const changedSpace = response && !sameSpace(response.snapshot.position, value.snapshot.position);
+    if (value.snapshot.status === "ended") {
+      streamAbort?.abort(); ++walkGeneration; pending = undefined; problem.hidden = true;
+    }
     response = value; render();
+    if (changedSpace) focusPlayer();
   }
   async function send(action: ConductorCommandActionV1, original?: ConductorCommandV1): Promise<boolean> {
     const resumeAllowed = action.type === "resume_session" && !disposed && connected && response?.snapshot.status === "detached";

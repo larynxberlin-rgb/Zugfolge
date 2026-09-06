@@ -117,6 +117,23 @@ pub(crate) fn reduce(
     case.paid_cents = (paid - refund).to_string();
     case.written_off_cents = (written_off - reverse_writeoff).to_string();
     case.reduced_cents = add(nonnegative(&case.reduced_cents)?, reduction)?.to_string();
+    let handling = nonnegative(&rules(&case.pin.economy_release)?.proof_handling_cost_cents)?;
+    if handling > 0 {
+        case.costs_cents = add(nonnegative(&case.costs_cents)?, handling)?.to_string();
+        post(
+            state,
+            command,
+            Some(&case.case_id),
+            at,
+            FareLedgerEventKindV1::HandlingCost,
+            &case.pin.economy_release,
+            &[
+                (FareLedgerRoleV1::HandlingCost, handling),
+                (FareLedgerRoleV1::Cash, -handling),
+            ],
+            "proof-handling",
+        )?;
+    }
     Ok(())
 }
 fn process_payment(
@@ -177,9 +194,13 @@ pub(crate) fn advance_case(
             );
         }
     }
-    if case.proof_received_at_ms.is_some_and(|at| at <= command.now_ms)
-        && case.pin.passenger.fare_fact != zugfolge_demand::FareFactV1::Invalid {
-        case.evidence.document_status = zugfolge_conductor_dialogue::DocumentStatusV1::VerifiedValid;
+    if case
+        .proof_received_at_ms
+        .is_some_and(|at| at <= command.now_ms)
+        && case.pin.passenger.fare_fact != zugfolge_demand::FareFactV1::Invalid
+    {
+        case.evidence.document_status =
+            zugfolge_conductor_dialogue::DocumentStatusV1::VerifiedValid;
     }
     let valid_proof_at = case
         .proof_received_at_ms
@@ -362,8 +383,10 @@ pub(crate) fn settle_day(
         }
     }
     let cap = fraction(revenue, rules.positive_daily_cap_basis_points)?;
-    let premium =
-        fraction(net.max(0), rules.premium_multiplier_basis_points)?.min((cap - net.max(0)).max(0));
+    let requested_premium =
+        i128::from(net.max(0)) * i128::from(rules.premium_multiplier_basis_points) / 10_000;
+    let premium = i64::try_from(requested_premium.min(i128::from((cap - net.max(0)).max(0))))
+        .map_err(|_| FareControlError("fare_arithmetic_overflow"))?;
     let adjustment =
         i64::try_from((i128::from(net) + i128::from(premium) - i128::from(cap)).max(0))
             .map_err(|_| FareControlError("fare_arithmetic_overflow"))?;

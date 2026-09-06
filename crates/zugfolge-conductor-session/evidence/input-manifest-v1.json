@@ -1,0 +1,679 @@
+{
+  "schemaVersion": "conductor-core-input-manifest/v1",
+  "testOnly": true,
+  "hashEncoding": "utf8-lf-without-bom",
+  "files": [
+    {
+      "path": "assets/conductor-dialogue/v1/release.json",
+      "sha256": "a602cc60e168cc7cc39e60fddfa57e44cf10f4c9b72cfe79fb014f0679e5e651"
+    },
+    {
+      "path": "Cargo.lock",
+      "sha256": "c96b6ad5af897764bd090b1f62e75f0547bb9ab330024192ef31a7babdd235e3"
+    },
+    {
+      "path": "Cargo.toml",
+      "sha256": "f7915e92a474997b9d8f71235110e0dc55c70dd26708a40210ecd0764eb6913e"
+    },
+    {
+      "path": "crates/zugfolge-conductor-dialogue/Cargo.toml",
+      "sha256": "fb46772a6ef4912b22e754998351bffe59ad8e949cf1b2803970687d5256d139"
+    },
+    {
+      "path": "crates/zugfolge-conductor-dialogue/examples/dialogue_json.rs",
+      "sha256": "a9c9875527a4d9b2d82fd7cfa144a97cb35342b155221366c045c274afbc47ee"
+    },
+    {
+      "path": "crates/zugfolge-conductor-dialogue/src/engine.rs",
+      "sha256": "714f94a58133efbd9930f4558f3a4d1f2349649b325b669959ac323f8cb4b27e"
+    },
+    {
+      "path": "crates/zugfolge-conductor-dialogue/src/lib.rs",
+      "sha256": "8303f2fc34948ece63eb485837a1e6a84606227d60610b3d8e329ced8672d628"
+    },
+    {
+      "path": "crates/zugfolge-conductor-dialogue/src/types.rs",
+      "sha256": "86d2b8f8f245d98ab2ecbc8a3d268e5bb294eab699031cf04fa84ca102ee0c6e"
+    },
+    {
+      "path": "crates/zugfolge-conductor-dialogue/src/validation.rs",
+      "sha256": "36c1bdf3279bf10e7701976dfdc72f1f351f8ad32b261c7071c26935005795ce"
+    },
+    {
+      "path": "crates/zugfolge-conductor-dialogue/tests/dialogue.rs",
+      "sha256": "fdcaf1e0647a77e40655a55c814d2afddbb6028326fea9db349f40337420d407"
+    },
+    {
+      "path": "crates/zugfolge-conductor-session/Cargo.toml",
+      "sha256": "e22231481c6f04c05fcaacc6c569f8ed9c657a67d092ec472b8b382a31e94fbb"
+    },
+    {
+      "path": "crates/zugfolge-conductor-session/examples/acceptance_json.rs",
+      "sha256": "5593bf8072993ec82ca970ab9e5674d65d6ba6d553b7a1835c6e44ab484a486b"
+    },
+    {
+      "path": "crates/zugfolge-conductor-session/examples/measure-acceptance.ps1",
+      "sha256": "6e61c4ce38ae1b438c6def7dfc1c5e9685be64beff53e8f61c0daee96379dc9b"
+    },
+    {
+      "path": "crates/zugfolge-conductor-session/examples/session_fixture.rs",
+      "sha256": "1b7ac6ce11fd0e9c3b763e14e56fa83f5aca43cac992514502688a798d609a14"
+    },
+    {
+      "path": "crates/zugfolge-conductor-session/examples/session_json.rs",
+      "sha256": "51b066a63cd276e42ce89de5c2cc3deda542d2a47e498f6af2882645829147ec"
+    },
+    {
+      "path": "crates/zugfolge-conductor-session/src/commands.rs",
+      "sha256": "6554f765fc17596dbd5c050bf3e22b45552fcf340148b483c978804623125f49"
+    },
+    {
+      "path": "crates/zugfolge-conductor-session/src/common.rs",
+      "sha256": "8c3d675751e1b2e421352d25d9a4a2a07c3351b3c6b7b984be029c4b6f4da071"
+    },
+    {
+      "path": "crates/zugfolge-conductor-session/src/lib.rs",
+      "sha256": "efbbd8409af933c313083c93928964db06d123e4d61ba60fb50d89179e60f00d"
+    },
+    {
+      "path": "crates/zugfolge-conductor-session/src/source.rs",
+      "sha256": "8456f12c127a30c5457caa87bed0d97e0995cb9f0ad95da8e7e01f0af7a46cf7"
+    },
+    {
+      "path": "crates/zugfolge-conductor-session/src/state.rs",
+      "sha256": "5390c3fd654560557cd69825d1556624a1cfc51454d07160dd994984713b0072"
+    },
+    {
+      "path": "crates/zugfolge-conductor-session/src/transport.rs",
+      "sha256": "e549741fad1b777bacec0dc69477e754faa8e1721f74973c77dcf0a6f0c0c609"
+    },
+    {
+      "path": "crates/zugfolge-conductor-session/src/types.rs",
+      "sha256": "56df30e68294cfc107e398407602bf410395e808eb924dc3bd5d4e07b254d47d"
+    },
+    {
+      "path": "crates/zugfolge-conductor-session/tests/acceptance.rs",
+      "sha256": "a39050b87d194ed383e964d0973095d4f9bfee32dbcc0b2457a71d3068fd4f46"
+    },
+    {
+      "path": "crates/zugfolge-conductor-session/tests/session.rs",
+      "sha256": "1a02f506c11fd9c54ad36cac64a862ae12128d3d154c615541e40fa6744d9748"
+    },
+    {
+      "path": "crates/zugfolge-conductor-session/tests/support/acceptance.rs",
+      "sha256": "ea82709e5f2f8874349db43dbda768655e81a0485395d706b62a4f29bcd4f55c"
+    },
+    {
+      "path": "crates/zugfolge-conductor-session/tests/support/interior.rs",
+      "sha256": "ab233a20cb4066bac57eec9f4a6ab6d91bb44e928074929dbcb79c8c22226896"
+    },
+    {
+      "path": "crates/zugfolge-conductor-session/tests/support/mod.rs",
+      "sha256": "352a5d79fbb0d392ae427b327eed8006e9cce76f1a01023c6dda2003a3b057b0"
+    },
+    {
+      "path": "crates/zugfolge-conductor-session/tests/support/operational.rs",
+      "sha256": "90f27c0cb0cabfeb44ef7066685ec3f36c005d3c6aefe3e998bcfa4341b4532a"
+    },
+    {
+      "path": "crates/zugfolge-conductor/Cargo.toml",
+      "sha256": "77bf205f70dc83035dd30cedcc70a3ff042b8177b7506baef05f6715f730085d"
+    },
+    {
+      "path": "crates/zugfolge-conductor/examples/interior_json.rs",
+      "sha256": "95ebf5efe0f6868d1187124bd30a383b625e2cf515156e20a3966a19bda0b413"
+    },
+    {
+      "path": "crates/zugfolge-conductor/examples/project_json.rs",
+      "sha256": "11665b65f42971530b4de37e95060e0fb1dc55c0e73119a0fe10554e939b8b0b"
+    },
+    {
+      "path": "crates/zugfolge-conductor/src/engine.rs",
+      "sha256": "37a8dffd0757b7724dda3a60f1e5e91341f3cacec3eaa22b5b7088116146d2c9"
+    },
+    {
+      "path": "crates/zugfolge-conductor/src/interior_geometry.rs",
+      "sha256": "f0e2c006c34b5d1e1f18df9d257733878776944d3d4b8bbbcae3ffaf2baf44f9"
+    },
+    {
+      "path": "crates/zugfolge-conductor/src/interior_movement.rs",
+      "sha256": "fc4c14aa02da6d7fc7de6447ff03e29fcd0758b43f2e66f04d863e7a34b7c731"
+    },
+    {
+      "path": "crates/zugfolge-conductor/src/interior_types.rs",
+      "sha256": "3d067e448e3f86313b9b7b3e21a9a975b76b1f1bbc13e34c0f34b4e281cacb2f"
+    },
+    {
+      "path": "crates/zugfolge-conductor/src/interior.rs",
+      "sha256": "165dcb9c675964af4699510f193d0268f360148a3165329768623b9fdd13f2f6"
+    },
+    {
+      "path": "crates/zugfolge-conductor/src/lib.rs",
+      "sha256": "0470191a4dd170488b151e0662c400cc34217bdb6df28ef07ac2a18fff5dadf0"
+    },
+    {
+      "path": "crates/zugfolge-conductor/src/places.rs",
+      "sha256": "3d66e5342d2be5532d717b5d55e3a65de5c0615cd3c11d10bfcd533f6e7822f7"
+    },
+    {
+      "path": "crates/zugfolge-conductor/src/projection_v2.rs",
+      "sha256": "ef1f76297e957a951faaf978d0e6079c9066dcb06e3494ec6c9ca19517df9440"
+    },
+    {
+      "path": "crates/zugfolge-conductor/src/types.rs",
+      "sha256": "49ad17a1ee533128e01183bcfc42e21762a4b43018fc8df09616d994826e39f8"
+    },
+    {
+      "path": "crates/zugfolge-conductor/tests/interior_layout.rs",
+      "sha256": "908af9fbcfd3b67327c166a4adeed7bc4e81481f5aa0ec0633241b35cd72c466"
+    },
+    {
+      "path": "crates/zugfolge-conductor/tests/passenger_projection.rs",
+      "sha256": "b02fae6900ef3abb3b5b027728fe9941e86cf70a89b0bc32cc61cc38720b427a"
+    },
+    {
+      "path": "crates/zugfolge-conflict/Cargo.toml",
+      "sha256": "cf5a3750729a87bda0f89b15a46f88b410d45392aef3bed2488244aea7310dd4"
+    },
+    {
+      "path": "crates/zugfolge-conflict/src/blocking.rs",
+      "sha256": "b9f9717c63f48928ff478fb5d11cc400d5ee21e2ca99afeb5e6633284ea9619b"
+    },
+    {
+      "path": "crates/zugfolge-conflict/src/conflict.rs",
+      "sha256": "d49e6e574b8a35a4e1e95312c512078ffd40c83263a66b5a88686283b4ba85bb"
+    },
+    {
+      "path": "crates/zugfolge-conflict/src/error.rs",
+      "sha256": "13e259b1c9bdf869c092616b1666cfa9ead7830033a28c094d5c12b335ca30ed"
+    },
+    {
+      "path": "crates/zugfolge-conflict/src/example.rs",
+      "sha256": "2eb4cae3a3e60626e64567a6276b3ee54504d1b6c0aec298c7a0c4ca949a33ea"
+    },
+    {
+      "path": "crates/zugfolge-conflict/src/framework.rs",
+      "sha256": "306c6de5476529c9ef65eb38bec590e17fe0b68d13809f4cc5e17706be4a0f16"
+    },
+    {
+      "path": "crates/zugfolge-conflict/src/infrastructure.rs",
+      "sha256": "dec92b7fbd0bc594b8f07644f5d8f77bfc7f50aca24331f634a2392d2289b320"
+    },
+    {
+      "path": "crates/zugfolge-conflict/src/itinerary.rs",
+      "sha256": "2ea5543d6806967e11da5770525ad952fa8601483a3f31b6b07389a4115bd0a2"
+    },
+    {
+      "path": "crates/zugfolge-conflict/src/lib.rs",
+      "sha256": "90f3f904688beb7555b09c4c6ae16125f8774a0d9cabb3ab7e6f59321032deac"
+    },
+    {
+      "path": "crates/zugfolge-conflict/src/profile.rs",
+      "sha256": "c458cf394389ba3f8154c4762a103c1d34aeb12e0046ec13c7cc3840b7944dd7"
+    },
+    {
+      "path": "crates/zugfolge-conflict/src/reservation.rs",
+      "sha256": "9a75ff9e01c1ce8be92d28fe99c61e59e6dbcaa682e653cdf130723165f37528"
+    },
+    {
+      "path": "crates/zugfolge-conflict/src/resource.rs",
+      "sha256": "8185e522e54bdeb89320a01b31e131f9df40f4590502ac785df2c94d5ab92f54"
+    },
+    {
+      "path": "crates/zugfolge-conflict/src/service.rs",
+      "sha256": "769e12071cc7a0c390fa444abf86528f1006a494cbf922a94660d2dc590762b7"
+    },
+    {
+      "path": "crates/zugfolge-conflict/src/signalling.rs",
+      "sha256": "ee52fd05dc140e355c88e0581080fc03bcd0c95483fb1a9c270fc1fed8987081"
+    },
+    {
+      "path": "crates/zugfolge-conflict/src/timetable.rs",
+      "sha256": "7386b3747ebfcc5ed417e8de5616fafaa728054283a7d4b5eddd2278c6423742"
+    },
+    {
+      "path": "crates/zugfolge-conflict/tests/determinismus.rs",
+      "sha256": "7402a28e0ad65f0548376dfea119cbafa4f7f1d887bf6c39a08950ea39c45144"
+    },
+    {
+      "path": "crates/zugfolge-conflict/tests/invariante.rs",
+      "sha256": "7e57ff8d26796bd7481d0706b7a3ed527c17dc526118f004978b9765626afa2a"
+    },
+    {
+      "path": "crates/zugfolge-demand/Cargo.toml",
+      "sha256": "c425f846c5c281e2d5c8b127d6c52f0cb60ae7a9927167f973b95c4c46b360ad"
+    },
+    {
+      "path": "crates/zugfolge-demand/examples/evaluate_json.rs",
+      "sha256": "c32c7295208b81fff247840e770ec0a26dbef47ae8a194b8bd0a782844896372"
+    },
+    {
+      "path": "crates/zugfolge-demand/examples/evaluate.rs",
+      "sha256": "2de0380d5a7c70adaf915dfb3e1b13f4aea5ab08f77cc705c6f5ec4cd00f4ea8"
+    },
+    {
+      "path": "crates/zugfolge-demand/examples/evaluation.json",
+      "sha256": "5285a113d6a3fc2ad9a310af54d3934c5fa52f1a385a3e45019f85bcf183414a"
+    },
+    {
+      "path": "crates/zugfolge-demand/src/calibration.rs",
+      "sha256": "43c712631ecfd1219bec442dd0c6d9e264ae0d7a53ad73eff9a44b08665b25f6"
+    },
+    {
+      "path": "crates/zugfolge-demand/src/engine.rs",
+      "sha256": "ade0f05b5c4aa8fe4d1760ee25c69053301bab74bf5c5ed7b8ef252052d0617a"
+    },
+    {
+      "path": "crates/zugfolge-demand/src/lib.rs",
+      "sha256": "b60d302033ff3d72260fb9d34a736d487d9dd37fcd1545848085c58b7f1723ce"
+    },
+    {
+      "path": "crates/zugfolge-demand/src/population.rs",
+      "sha256": "1e9fd93b27157e7672c20c8f7865455cfbb6604985ba596461ba68b254b9dd4b"
+    },
+    {
+      "path": "crates/zugfolge-demand/src/types.rs",
+      "sha256": "08a5a5b57a3b0eea5f2086f812cddb83d5ea1e33251f7064a51d15da47f3048f"
+    },
+    {
+      "path": "crates/zugfolge-demand/tests/calibration.rs",
+      "sha256": "39fc4799c17afd7dd02034257a67fc50f160bbd7ca2d919458b0a2b28565af53"
+    },
+    {
+      "path": "crates/zugfolge-demand/tests/closure_acceptance.rs",
+      "sha256": "13def2b8685d421acc7549e3777a719f49c4062fa3aa15dcde08a37ef2920743"
+    },
+    {
+      "path": "crates/zugfolge-demand/tests/passenger_demand.rs",
+      "sha256": "8dd3e04f431f0fd53c48c6400131a5be0a2e7300eb74903f4b9f1f451a0217b5"
+    },
+    {
+      "path": "crates/zugfolge-demand/tests/population_demand.rs",
+      "sha256": "3a501331a081072f55e4b4beb4ddb47f8d79164d19af18cf63eda579c2c253d9"
+    },
+    {
+      "path": "crates/zugfolge-demand/tests/population_revision.rs",
+      "sha256": "f2f3cdf9389e5adc02c94ea1af2b86166b406627b3d9977345505b8c42952454"
+    },
+    {
+      "path": "crates/zugfolge-determinism/Cargo.toml",
+      "sha256": "a9184dac2f94afca2007b6f62b63f0c47285fd13193da88e786cd47af9fa25aa"
+    },
+    {
+      "path": "crates/zugfolge-determinism/src/golden.rs",
+      "sha256": "907710726cdd6f89ae4dc7c604fdd298f14a3dceddc9292d9d4938eb754cd191"
+    },
+    {
+      "path": "crates/zugfolge-determinism/src/harness.rs",
+      "sha256": "2ca2748b94077d995b29033bcfb3e448f10e56b3f07c5d94a5164dafb087579a"
+    },
+    {
+      "path": "crates/zugfolge-determinism/src/hash.rs",
+      "sha256": "88dde01cb1113a9c7aa492a22450ce90ff900ca1d26b9e8a1bdcdabccd4eab47"
+    },
+    {
+      "path": "crates/zugfolge-determinism/src/lib.rs",
+      "sha256": "822d85e9e28fb9b3cfc1e097fa55b645a96ddef7b939671f17fb87abee19e35a"
+    },
+    {
+      "path": "crates/zugfolge-determinism/src/rng.rs",
+      "sha256": "2b9bea26eab32c6439fd8f652c5c85732eebd37c4482d2cd567f4034834e232b"
+    },
+    {
+      "path": "crates/zugfolge-determinism/src/seed.rs",
+      "sha256": "56537442f88d6979ff9b4e51a19570a8f7506bd59246253921d961f88720efcf"
+    },
+    {
+      "path": "crates/zugfolge-determinism/tests/determinismus.rs",
+      "sha256": "74f119551db1d7bb1302693d7a0230dca5104bc84525aa17f017da528f47fca3"
+    },
+    {
+      "path": "crates/zugfolge-fleet/Cargo.toml",
+      "sha256": "3a6dfc7a24af825cf2650172d6538fa8bd4c64dd7bf86638040b496c77281951"
+    },
+    {
+      "path": "crates/zugfolge-fleet/src/assets.rs",
+      "sha256": "33d96d4d9da97de8c113b8834b3a22917c7b01df980d0827e4cca9216cce5555"
+    },
+    {
+      "path": "crates/zugfolge-fleet/src/bin/zugfolge-vehicle-catalog.rs",
+      "sha256": "ec6bc5e1d48b72c3383d280488e9cd16c994313ae4a60849f9821bceeeb7094f"
+    },
+    {
+      "path": "crates/zugfolge-fleet/src/catalog.rs",
+      "sha256": "cfee7ca2affaddef1b92af942dcee3e6223ba3fc9b71eceba2e86fb16895c01b"
+    },
+    {
+      "path": "crates/zugfolge-fleet/src/configuration.rs",
+      "sha256": "b4f58e527ac2e3c7863a79230efb939c74baae2538fa2eac2c4ae200919d2221"
+    },
+    {
+      "path": "crates/zugfolge-fleet/src/fare_economy.rs",
+      "sha256": "02240fa40636c606c1b68e846cccf411ac87b5170d3add3c46e9f678a72e4470"
+    },
+    {
+      "path": "crates/zugfolge-fleet/src/lib.rs",
+      "sha256": "2674b0e2e3f59e8490dbe735c734b5c67f0e096eea59d3b4b1349e74257378bf"
+    },
+    {
+      "path": "crates/zugfolge-fleet/src/market.rs",
+      "sha256": "0c52368a0545f9b203774ade8704784f59ff645750acf232d00551055bf03198"
+    },
+    {
+      "path": "crates/zugfolge-fleet/src/mobilization.rs",
+      "sha256": "380675f7761eb8f0435ebf1d1b21bccdbf0c11627cc4aba09a16789269217ded"
+    },
+    {
+      "path": "crates/zugfolge-fleet/src/operations.rs",
+      "sha256": "2216f921d963a4fcbcdddb39105bd80d474812ab43c1be9f0989d0872e84d399"
+    },
+    {
+      "path": "crates/zugfolge-fleet/src/release_catalog.rs",
+      "sha256": "e21078788aea5015ae77a298451a3487d3fa624e3e91c2f0a82382d29c32356b"
+    },
+    {
+      "path": "crates/zugfolge-fleet/src/tests.rs",
+      "sha256": "bc97ccef9f183c3ac5cc90190ed564aaebc21041f326d997ce20b1e45d33e014"
+    },
+    {
+      "path": "crates/zugfolge-fleet/tests/catalog_and_assets.rs",
+      "sha256": "ca531fd6b6ddc88f7a589e8c293f69d4dd1f06660ec00f8518a12ace82be949a"
+    },
+    {
+      "path": "crates/zugfolge-fleet/tests/configuration_compiler.rs",
+      "sha256": "db09f9852c12b3494d4407d61465ce60d841a6309d985f8588a7336861eaabdb"
+    },
+    {
+      "path": "crates/zugfolge-fleet/tests/configuration_transport.rs",
+      "sha256": "de1c4e584e93e0535e29fb6658bde491dfdf561a3cb97fd90941f6098855d200"
+    },
+    {
+      "path": "crates/zugfolge-fleet/tests/fixtures/vehicle-catalog-source-v2-interior.json",
+      "sha256": "6ff147f8ad3d760b33993293ed29e6e21701456fd328ed5fafff275ef80c3d4e"
+    },
+    {
+      "path": "crates/zugfolge-fleet/tests/fixtures/vehicle-world-seed-v3-interior.json",
+      "sha256": "f6a29754ce82f2e5c9dca81f6cd033b32611937a698a9efe4fd7a6e1c05ff5c7"
+    },
+    {
+      "path": "crates/zugfolge-fleet/tests/release_catalog.rs",
+      "sha256": "2b91d227374e324ae756737b394a4e9c9d757f29a27608e6a8ff2af5c905252e"
+    },
+    {
+      "path": "crates/zugfolge-infra/Cargo.toml",
+      "sha256": "f7c93d0f97b3d282d23a0eeadb676e999dc0522384fca5cbeb377f1c1b760ec6"
+    },
+    {
+      "path": "crates/zugfolge-infra/examples/pbf_release_report.rs",
+      "sha256": "ca06660902f14315710e61cb1e4edecb13bf762ca2af2c5895f6ffb5aa70087e"
+    },
+    {
+      "path": "crates/zugfolge-infra/examples/pbf_semantic_export.rs",
+      "sha256": "83c55883cfa2e4692fd5f6690f8ac7aca51d1b1801d15c99f7ec1d9baeebd796"
+    },
+    {
+      "path": "crates/zugfolge-infra/src/bands.rs",
+      "sha256": "973295ac441139b569ccd8b9f7f71fef8612e19c257d33aeb769b9a0315b6022"
+    },
+    {
+      "path": "crates/zugfolge-infra/src/bin/zugfolge-infra-release.rs",
+      "sha256": "43e261a9093bb0786acb8873015977233a07d8b8d30fb2fe6702a7bdb31da971"
+    },
+    {
+      "path": "crates/zugfolge-infra/src/blocks.rs",
+      "sha256": "ff593547efa268d26dd23e045ecb3a49c9e15584b31cd4d7e99a7b7a11541f48"
+    },
+    {
+      "path": "crates/zugfolge-infra/src/canonical.rs",
+      "sha256": "c383e4a1b4cd0541364b43bf0a79762db55627becfd90acd69d5c2d3da7a5ca4"
+    },
+    {
+      "path": "crates/zugfolge-infra/src/coverage.rs",
+      "sha256": "6bcd09b27bed55a977291ada23970169b26c27a5092542c19b41f31a191166d3"
+    },
+    {
+      "path": "crates/zugfolge-infra/src/dynamics.rs",
+      "sha256": "6607c6134d78215f0932d276f5492013e330edf2cf811d48abc7c67bb74dc785"
+    },
+    {
+      "path": "crates/zugfolge-infra/src/edge.rs",
+      "sha256": "031f175fbd073adc2e5f622eea728d16f29d306f5df9b1b3cc25fe640f72c527"
+    },
+    {
+      "path": "crates/zugfolge-infra/src/electrification.rs",
+      "sha256": "32d6c5c3313e10d2aff2a8d18e42f46c268fddb40b9cda4d3231832c1d2009a7"
+    },
+    {
+      "path": "crates/zugfolge-infra/src/elevation.rs",
+      "sha256": "d879b5195e250c8c9ee85996c724a6905c6c0c3c7245bf19d146c620e5446b5c"
+    },
+    {
+      "path": "crates/zugfolge-infra/src/error.rs",
+      "sha256": "7ab178bd423fc4d1acd93156d594c434c1b8a6aa93718d8d6e7a202c26ce64a2"
+    },
+    {
+      "path": "crates/zugfolge-infra/src/example.rs",
+      "sha256": "47c88a57fa69a55a3cf517cc68d032df9840dd54b616f69e6604fbc3c8f3283d"
+    },
+    {
+      "path": "crates/zugfolge-infra/src/facility.rs",
+      "sha256": "5fa2d2e3ca7853d97b8da587652aa1c0f594dbf4bc75b1e706c15bf3fd118f20"
+    },
+    {
+      "path": "crates/zugfolge-infra/src/germany_operational_v2.rs",
+      "sha256": "cad4f34102d17078189776b2c6f60500ae2ea4aa8c17bb5a425209072c2077ef"
+    },
+    {
+      "path": "crates/zugfolge-infra/src/graph.rs",
+      "sha256": "637b34a7107296f8c05293f64fd45b40b7ffe0d0b1870a2b08d44d8df0a8efe7"
+    },
+    {
+      "path": "crates/zugfolge-infra/src/identity.rs",
+      "sha256": "a9d18fbc299818bed9f319a19e3333b7e85454c3c7c11b9589f92daeea7105b2"
+    },
+    {
+      "path": "crates/zugfolge-infra/src/import/blob.rs",
+      "sha256": "1deb8c7fc680807b7c10f97f7c42336f46d1af681de8f7f7bbb9d4817a8ddfa4"
+    },
+    {
+      "path": "crates/zugfolge-infra/src/import/block.rs",
+      "sha256": "1a224c82e642c51b5fea705af381732adf07743aef3036e379cbdb97aa9b1c3d"
+    },
+    {
+      "path": "crates/zugfolge-infra/src/import/element.rs",
+      "sha256": "9cb345413be0272a7dc315160fccb66541d9419befe7f0ec172c742eb56cbe1a"
+    },
+    {
+      "path": "crates/zugfolge-infra/src/import/error.rs",
+      "sha256": "d726e99190daf40d13be06e7fb0ac26c0028d86e2e629a6cc56f1c921ff77b07"
+    },
+    {
+      "path": "crates/zugfolge-infra/src/import/mod.rs",
+      "sha256": "858493cffcbf374b114d63e3374325875a2ed3a3fa08ccb87e6409ad7449626b"
+    },
+    {
+      "path": "crates/zugfolge-infra/src/import/pipeline.rs",
+      "sha256": "1c6b745c51ae2c2409afee9817cb3f004f7fdc28f2b2cfd05e408f43b0447a31"
+    },
+    {
+      "path": "crates/zugfolge-infra/src/import/proto.rs",
+      "sha256": "f93cb29a37f457174049ffe087db9c90ef80362b21e654b74eeee7523c9010cd"
+    },
+    {
+      "path": "crates/zugfolge-infra/src/import/topology.rs",
+      "sha256": "19ae975964da341b61573bd9acf030742e2b1ae29b49e9befbb9b1d878574f89"
+    },
+    {
+      "path": "crates/zugfolge-infra/src/interlocking.rs",
+      "sha256": "fb99c57f6f564032b49401fed36c28283dedd78b84589a76662d070820b08cff"
+    },
+    {
+      "path": "crates/zugfolge-infra/src/lib.rs",
+      "sha256": "91090347e1040f3a934b7582da2fa1bb8976ec5f42001086c0481392a76b6246"
+    },
+    {
+      "path": "crates/zugfolge-infra/src/network_filter.rs",
+      "sha256": "5eec2c59c6b687c95b9da8b38e3f30b657ccc21932713f613398f031a1eefefa"
+    },
+    {
+      "path": "crates/zugfolge-infra/src/operating_point.rs",
+      "sha256": "e403ddab5e2fae53ef0552c9c4b506db2611c28c3c4ad407c9dd2992002f27c7"
+    },
+    {
+      "path": "crates/zugfolge-infra/src/operational_streaming.rs",
+      "sha256": "61d0f45c4814ee57117d1a1ae35055253584321810635814437bf8a57f4eb6f9"
+    },
+    {
+      "path": "crates/zugfolge-infra/src/platform.rs",
+      "sha256": "1a4433c4166a8dbe4d6db98b6b48e54ac95c31115b6448a10bbd7678d37f4953"
+    },
+    {
+      "path": "crates/zugfolge-infra/src/protection.rs",
+      "sha256": "4e3bac3f1a49579205db57689c142b09d18832124d31942941cb0a32cf1b227b"
+    },
+    {
+      "path": "crates/zugfolge-infra/src/provenance.rs",
+      "sha256": "1f0673cefe0e76d9520411872f3eec80163b511bee342e63e3b68c7ee8f0f40f"
+    },
+    {
+      "path": "crates/zugfolge-infra/src/reference.rs",
+      "sha256": "0595742f168452c4715b4cb95c38f0f9b2183c2e3bcd1b3a6c5571c8bad23690"
+    },
+    {
+      "path": "crates/zugfolge-infra/src/release_manifest.rs",
+      "sha256": "3d4aa208181a7b2ffbd54cf5f06412c3730d77eae2a09550183c91e5f9071f82"
+    },
+    {
+      "path": "crates/zugfolge-infra/src/release.rs",
+      "sha256": "bbc1ffd365ad03ecc80dfc9ec9bb12e9ab340f7953a9eaf01220e98464b97686"
+    },
+    {
+      "path": "crates/zugfolge-infra/src/semantic_export.rs",
+      "sha256": "ae3243dbfedc10f5891bc2185d662e6bdb03eba4990e672e0e83415aa3e48c80"
+    },
+    {
+      "path": "crates/zugfolge-infra/src/speed.rs",
+      "sha256": "dc37d5b66904768cee82fcf6ac67eb545a6073fd7b74710246ad680013aec22d"
+    },
+    {
+      "path": "crates/zugfolge-infra/src/station.rs",
+      "sha256": "2cabdaacde67afdfa97fb0c7d825adb340b46a6a21a11bdb7aea58090d57b4df"
+    },
+    {
+      "path": "crates/zugfolge-infra/src/track.rs",
+      "sha256": "a2169b580a82c3c5068edc34946583cd9a29ba7a6a172b1a2c83b22086426919"
+    },
+    {
+      "path": "crates/zugfolge-infra/src/train.rs",
+      "sha256": "3d6de66c395a5d2f053dc090cde3665ebe530b389592581433c3b3291df8da09"
+    },
+    {
+      "path": "crates/zugfolge-infra/src/units.rs",
+      "sha256": "c9643449afb927356eebcc7933ba4d721effdd32a6cabeae538151d748c78e60"
+    },
+    {
+      "path": "crates/zugfolge-infra/tests/betriebsgraph.rs",
+      "sha256": "7dd2a233eb6559359f711552463942c52784f48f52f17cd611673d4d7cc5f18d"
+    },
+    {
+      "path": "crates/zugfolge-infra/tests/determinismus.rs",
+      "sha256": "af32f8d9ad0fd87f890c347dd3280ff267539ebd13caf05a70f160b7cec50667"
+    },
+    {
+      "path": "crates/zugfolge-infra/tests/germany_operational_v2.rs",
+      "sha256": "774893ae1a769b44eae5dd3c694219b0d5af9286b40a0bb974468ee1ba425dd8"
+    },
+    {
+      "path": "crates/zugfolge-infra/tests/import.rs",
+      "sha256": "e9492e0e076aaf175561d42d4b0c848c7546858d54cfdd3e67f3accdb74cd74b"
+    },
+    {
+      "path": "crates/zugfolge-infra/tests/operational_streaming_real.rs",
+      "sha256": "c258380dbd5976a8115667d4bb4a3179776c9376d310c21bb88333eeaeee5415"
+    },
+    {
+      "path": "crates/zugfolge-infra/tests/operational_streaming.rs",
+      "sha256": "4e90f2cee97e9b0d04b51b845ae73df6588da9603dbf8c197d88d0d1be09d764"
+    },
+    {
+      "path": "crates/zugfolge-infra/tests/release_manifest_golden.rs",
+      "sha256": "c949b3155d464bf37fd8fe944bf3546265210b0bd3c199b099b1104c0aa86f12"
+    },
+    {
+      "path": "crates/zugfolge-infra/tests/release.rs",
+      "sha256": "7144c6cdc5442ec2c99c743332bc3a7253119848b680b3ed10e923119472763e"
+    },
+    {
+      "path": "crates/zugfolge-runtime/Cargo.toml",
+      "sha256": "1fd1e9ccdcd719f600d3b51171d778f77e44644eb14ca45894b3875c4ee5cec3"
+    },
+    {
+      "path": "crates/zugfolge-runtime/examples/fleet_json.rs",
+      "sha256": "a652e4747539950e82eeab9f2c480c2a7f57bb6e90e4b704be9ce8ad49801a31"
+    },
+    {
+      "path": "crates/zugfolge-runtime/examples/fleet_release_hash.rs",
+      "sha256": "71c3ae2695c2d142180f19e8e172bae9f045840bbb1b96306ad36455e50f44f3"
+    },
+    {
+      "path": "crates/zugfolge-runtime/src/fleet.rs",
+      "sha256": "a2e42adc302b4812fa4f09a8183576881fe4da8307c2b065d2cbf14cec09fe06"
+    },
+    {
+      "path": "crates/zugfolge-runtime/src/lib.rs",
+      "sha256": "70ee51a603eefd8ab1c078ddfba0bec6cc6a8317a0de3b18907e055303429a14"
+    },
+    {
+      "path": "crates/zugfolge-sim/Cargo.toml",
+      "sha256": "212d84045147a0324c15a8120bf5d0b5dc2d783492489beb47297b9e01a380c0"
+    },
+    {
+      "path": "crates/zugfolge-sim/examples/operational_load.rs",
+      "sha256": "729a2705c74004844e2d438054d2f10fc45023b16abf546b8875457e9171fbb8"
+    },
+    {
+      "path": "crates/zugfolge-sim/examples/operational_shared_load.rs",
+      "sha256": "11c77a0b41a3f3fa1baa542da3c262fd9a0ce5a4fb5a9ae79cb09bf5176fd147"
+    },
+    {
+      "path": "crates/zugfolge-sim/src/lib.rs",
+      "sha256": "4a4c18d21b4a88c153a811018d081e17335fce589f8622d75a3f41f963a8ee82"
+    },
+    {
+      "path": "crates/zugfolge-sim/src/operational.rs",
+      "sha256": "09140b01583e3690e293ed72abe65cc51bd8781aa0bd58f1ac9b620892db1b7d"
+    },
+    {
+      "path": "crates/zugfolge-sim/src/operational/fare_control_types.rs",
+      "sha256": "3638948a7686f50798f86fa010e2ae16503640b80a105d21a648ee61d3e7309e"
+    },
+    {
+      "path": "crates/zugfolge-sim/src/operational/fare_control.rs",
+      "sha256": "1aefac904d06e60eee8c2064433f3c5510df10aae8f6f85a72c47218bbac57eb"
+    },
+    {
+      "path": "crates/zugfolge-sim/src/operational/passenger_stops.rs",
+      "sha256": "4c59e5f3b0bb0aaf2be5d09a3b81048e01c22dce348e39f97c18b36c9dc943ae"
+    },
+    {
+      "path": "crates/zugfolge-sim/src/operational/service_outcomes.rs",
+      "sha256": "757c318e35e241bf034af15bbd26291720ee5d53e235ee72a6c73bb602f8c5cc"
+    },
+    {
+      "path": "crates/zugfolge-sim/tests/determinismus.rs",
+      "sha256": "a7e89f64d5b28bf8bfcbd789b6aeff4b88bf2f7bff2aaef3344649f37583f9e5"
+    },
+    {
+      "path": "crates/zugfolge-sim/tests/operational_engine.rs",
+      "sha256": "bc8c1d3b768ef074b850ce46099d10219940af38527b6b505bec8ddba4f0dce1"
+    },
+    {
+      "path": "crates/zugfolge-sim/tests/operational_fare_control.rs",
+      "sha256": "0836422c65cef44e1cf5e6ab2349b3dd161adb670c3eeda8c1e1f37b79c577a0"
+    },
+    {
+      "path": "crates/zugfolge-sim/tests/support/passenger_stops.rs",
+      "sha256": "1101689642fc2bfecd3b93a02a035e05df43272c03587369a6dad01454302ec7"
+    }
+  ]
+}

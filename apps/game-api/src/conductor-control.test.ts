@@ -39,3 +39,12 @@ it("lässt zusätzliche private Felder niemals durch die öffentliche Fallprojek
     fareFact: "private-marker" }]); } });
   expect(() => runtime.project({ worldId: "world", operatorId: "operator", stateHash: "a".repeat(64) } as FareControlState)).toThrow("fare_control_core_rejected");
 });
+it("weist private und ungültige Tagesberichte an der öffentlichen Transportgrenze ab", () => {
+  const base = { dayStartMs: 0, contractRevenueCents: "0", netCents: "-100", premiumCents: "0", capAdjustmentCents: "0", contributionCents: "-100", settlementRevision: 1 };
+  for (const days of [[{ ...base, contractReceiptIds: ["private-marker"] }], [{ ...base, netCents: "-0" }],
+    [{ ...base, contributionCents: "9223372036854775808" }], [{ ...base, premiumCents: "-1" }],
+    [{ ...base, dayStartMs: -1 }], [{ ...base, settlementRevision: 0 }], [base, base]]) {
+    const runtime = fareControlRuntimeFromAddon({ projectFareControlReport() { return JSON.stringify({ cases: [], days }); } });
+    expect(() => runtime.report({ worldId: "world", operatorId: "operator", stateHash: "a".repeat(64) } as FareControlState)).toThrow("fare_control_core_rejected");
+  }
+});

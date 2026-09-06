@@ -222,6 +222,42 @@ pub fn project_fare_cases(
         })
         .collect())
 }
+pub fn project_fare_control_report(
+    state: &FareControlWorldStateV1,
+    expected_hash: &str,
+    world_id: &str,
+    operator_id: &str,
+) -> Result<FareControlReportV1, FareControlError> {
+    let cases = project_fare_cases(state, expected_hash, world_id, operator_id)?;
+    let mut days = Vec::with_capacity(state.days.len());
+    for (key, day) in &state.days {
+        need(
+            key == &day.day_start_ms.to_string()
+                && day.day_start_ms >= 0
+                && day.day_start_ms <= state.now_ms
+                && day.settlement_revision > 0
+                && sha(&day.economy_release_hash),
+            "fare_day_state_invalid",
+        )?;
+        nonnegative(&day.contract_revenue_cents)?;
+        let contribution = i128::from(amount(&day.net_cents)?)
+            + i128::from(nonnegative(&day.premium_cents)?)
+            - i128::from(nonnegative(&day.cap_adjustment_cents)?);
+        let contribution = i64::try_from(contribution)
+            .map_err(|_| FareControlError("fare_arithmetic_overflow"))?;
+        days.push(FareDayReportV1 {
+            day_start_ms: day.day_start_ms,
+            contract_revenue_cents: day.contract_revenue_cents.clone(),
+            net_cents: day.net_cents.clone(),
+            premium_cents: day.premium_cents.clone(),
+            cap_adjustment_cents: day.cap_adjustment_cents.clone(),
+            contribution_cents: contribution.to_string(),
+            settlement_revision: day.settlement_revision,
+        });
+    }
+    days.sort_by_key(|day| day.day_start_ms);
+    Ok(FareControlReportV1 { cases, days })
+}
 pub fn apply_fare_control(
     state: &FareControlWorldStateV1,
     expected_hash: &str,

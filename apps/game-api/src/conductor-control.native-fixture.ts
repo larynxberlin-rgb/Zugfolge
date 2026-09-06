@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { resolve } from "node:path";
-import type { FareControlPolicyV1 } from "@zugfolge/runtime-native";
+import type { DialogueEvidenceV1, FareControlPolicyV1 } from "@zugfolge/runtime-native";
 import { buildEconomyRelease, persistEconomyTransition, startEconomyWorld, type EconomyRelease, type FareInspectionEconomyV1 } from "@zugfolge/economy";
 import { controlJson, controlRecord, fareControlRuntimeFromAddon, loadFareControlRuntime, type FareControlRuntime } from "./conductor-control-runtime.js";
 import { createConductorControlIntegration, type ConductorControlService } from "./conductor-control.js";
@@ -19,7 +19,7 @@ export const fareControlBinary = process.env["ZUGFOLGE_FARE_CONTROL_TEST_BINARY"
 export const hasFareControlNative = hasSessionNativeFixture && (process.env["ZUGFOLGE_RUNTIME_NATIVE_PATH"] !== undefined || existsSync(fareControlBinary));
 export function fareControlFixtureRuntime(): FareControlRuntime {
   if (process.env["ZUGFOLGE_RUNTIME_NATIVE_PATH"] !== undefined) return loadFareControlRuntime();
-  const methods = { initializeFareControl: "initialize", applyFareControl: "apply", restoreFareControl: "restore", projectFareCases: "project",
+  const methods = { initializeFareControl: "initialize", applyFareControl: "apply", restoreFareControl: "restore", projectFareCases: "project", projectFareControlReport: "report",
     hashFareInspectionPolicy: "policy-hash", hashFareJourneyEvidence: "journey-hash", hashPoliceResponseModel: "model-hash",
     duePoliceResponse: "police-due", nextFareControlWakeup: "next-wakeup" };
   return fareControlRuntimeFromAddon(Object.fromEntries(Object.entries(methods).map(([name, operation]) => [name,
@@ -30,7 +30,7 @@ export function fareControlFixtureEconomy(overrides: Partial<FareInspectionEcono
     (_key, value: unknown) => typeof value === "string" && /^-?[0-9]+$/u.test(value) ? BigInt(value) : value).economy.release as EconomyRelease;
   return buildEconomyRelease({ ...source, fareInspection: { schemaVersion: "fare-inspection-economy/v1", minimumClaimCents: 6000n,
     ordinaryFareMultiplier: 2, reducedClaimCents: 700n, proofWindowDays: 7, dayLengthMs: 86_400_000, handlingCostCents: 100n,
-    unfoundedClaimCostCents: 250n, policeHandlingCostCents: 300n, fullPaymentBasisPoints: 10_000, partialPaymentBasisPoints: 0,
+    proofHandlingCostCents: 250n, policeHandlingCostCents: 300n, fullPaymentBasisPoints: 10_000, partialPaymentBasisPoints: 0,
     partialPaymentShareBasisPoints: 5000, paymentDelayMs: 10_000, writeOffDelayMs: 30_000, validProofSubmissionBasisPoints: 10_000,
     validProofDelayMs: 20_000, premiumMultiplierBasisPoints: 40_000, positiveDailyCapBasisPoints: 50,
     revenueAllocation: "uniform_settled_service_interval/v1", ...overrides } });
@@ -41,6 +41,7 @@ export async function createFareControlNativeFixture(options: { identityRefusalB
     async apply(...args) { if (control === undefined) throw new Error("Kontrolladapter ist noch nicht initialisiert."); return control.apply(...args); },
     async evidence(...args) { if (control === undefined) throw new Error("Kontrolladapter ist noch nicht initialisiert."); return control.evidence(...args); },
     async closeSession(...args) { if (control?.closeSession === undefined) throw new Error("Kontrolladapter ist noch nicht initialisiert."); return control.closeSession(...args); },
+    async publicHistory(...args) { if (control === undefined) throw new Error("Kontrolladapter ist noch nicht initialisiert."); return control.publicHistory(...args); },
     async publicStatus(...args) { if (control === undefined) throw new Error("Kontrolladapter ist noch nicht initialisiert."); return control.publicStatus(...args); },
   });
   try {
@@ -83,7 +84,7 @@ export async function createFareControlNativeFixture(options: { identityRefusalB
     control = createConductorControlIntegration({ runtime, releases, police });
     return { ...fixture, control, controlRuntime: runtime, controlReleases: releases, controlDeploymentBytes: bytes, economy,
       controlContext: () => loadConductorContext(fixture.db, fixture.access, fixture.dependencies), operatorId,
-      async inspectionCandidates() {
+      async inspectionCandidates(options: { all?: boolean } = {}) {
         // Ausschließlich Node-Testauswahl: Diese isolierte Native-Probe wird
         // niemals persistiert oder als tatsächlich erfolgte Kontrolle gezählt.
         const actual = await loadConductorContext(fixture.db, fixture.access, fixture.dependencies);
@@ -93,25 +94,38 @@ export async function createFareControlNativeFixture(options: { identityRefusalB
         const manifest = manifests.find((row) => row["trainRunId"] === trainRunId && row["segmentId"] === projected.segmentId);
         if (manifest === undefined) throw new Error("Die tatsächliche Teilreise fehlt.");
         const release = releases.resolve(worldId, periodId, actual.nowMs)!;
-        const visible = new Map(projected.passengers.map((passenger) => [passenger.passengerKey, passenger]));
+        const visible = new Map(projected.passengers.filter((passenger) => passenger.activity === "onboard").map((passenger) => [passenger.passengerKey, passenger]));
         const passengers = (manifest["passengers"] as unknown[]).map(controlRecord).filter((passenger) => visible.has(String(passenger["passengerKey"])))
           .sort((a, b) => visible.get(String(a["passengerKey"]))!.xMm - visible.get(String(b["passengerKey"]))!.xMm);
-        for (const passenger of passengers) {
-          const scratch = runtime.initialize(worldId, operatorId, actual.nowMs), caseId = "native-candidate-probe";
+        const pins = passengers.map((passenger) => {
           const journey = release.journeys.find((row) => row["trainRunId"] === trainRunId && row["boardingStopId"] === passenger["boardingStopId"] && row["alightingStopId"] === passenger["alightingStopId"]);
-          const opened = runtime.apply(scratch, { worldId, operatorId, commandId: "candidate-open", expectedRevision: 0, nowMs: actual.nowMs,
-            action: { type: "open_case", caseId, pin: { worldId, operatorId, periodId, trainRunId, encounterId: "native-selection-probe",
+          return { worldId, operatorId, periodId, trainRunId, encounterId: "native-selection-probe",
               manifestRevision: binding.manifestRevision, demandStateHash: binding.demandStateHash, segmentId: projected.segmentId, passenger,
               dialogueReleaseHash: fixture.dependencies.sessionReleases.resolve(worldId, periodId)!.currentDialogueReleaseHash,
               inspectedAtMs: actual.nowMs, seedHash: binding.seedHash, inspectionPolicy: release.inspectionPolicy,
-              journeyEvidence: journey ?? null, economyRelease: JSON.parse(controlJson(economy)), expectedEconomyReleaseHash: economy.checksum } } });
+              journeyEvidence: journey ?? null, economyRelease: JSON.parse(controlJson(economy)), expectedEconomyReleaseHash: economy.checksum };
+        });
+        const candidates: { passengerKey: string; fareFact: unknown; evidence: DialogueEvidenceV1 }[] = process.env["ZUGFOLGE_RUNTIME_NATIVE_PATH"] === undefined
+          ? JSON.parse(callInteriorFixtureRust(fareControlBinary, ["inspect-candidates"], pins))
+          : pins.map((pin) => {
+          const scratch = runtime.initialize(worldId, operatorId, actual.nowMs), caseId = "native-candidate-probe";
+          const opened = runtime.apply(scratch, { worldId, operatorId, commandId: "candidate-open", expectedRevision: 0, nowMs: actual.nowMs,
+            action: { type: "open_case", caseId, pin } });
           const checked = runtime.apply(opened.state, { worldId, operatorId, commandId: "candidate-check", expectedRevision: opened.state.revision,
             nowMs: actual.nowMs, action: { type: "inspect_document", caseId } });
-          const evidence = checked.state.cases[caseId]!.evidence, key = `${passenger["fareFact"]}:${evidence.identityStatus}`;
-          if (!selected.has(key)) selected.set(key, { passengerKey: passenger["passengerKey"], fareFact: passenger["fareFact"], evidence });
-          if (selected.size >= 5) break;
+          return { passengerKey: String(pin.passenger["passengerKey"]), fareFact: pin.passenger["fareFact"], evidence: checked.state.cases[caseId]!.evidence };
+        });
+        const measured = [];
+        for (const candidate of candidates) {
+          const passenger = visible.get(candidate.passengerKey)!;
+          const target = actual.layout.interactions.find((row) => row.kind === "passenger" && row.targetId === passenger.placeId)!;
+          const path = fixture.runtimes.interior.path({ schemaVersion: "conductor-interior-path-input/v1", layout: actual.layout,
+            expectedLayoutHash: actual.layout.layoutHash, fromNodeId: actual.layout.entranceNodeId, toNodeId: target.nodeId, wheelchair: false });
+          const key = `${candidate.fareFact}:${candidate.evidence.identityStatus}`, previous = selected.get(key);
+          const result = { ...candidate, pathLengthMm: path.lengthMm }; measured.push(result);
+          if (previous === undefined || path.lengthMm < Number(previous["pathLengthMm"])) selected.set(key, result);
         }
-        return [...selected.values()];
+        return options.all === true ? measured : [...selected.values()];
       },
       async advanceControl() {
         await advanceConductorControlWorld({ db: fixture.db, worldId, regions: fixture.dependencies.regionBindings(),

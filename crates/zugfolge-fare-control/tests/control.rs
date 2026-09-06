@@ -7,6 +7,64 @@ use zugfolge_fleet::{
     release_catalog::{EconomyReleaseDocument, recompute_economy_release_checksum},
 };
 const DAY: i64 = 86_400_000;
+#[test]
+fn cap_is_applied_before_narrowing_an_extreme_premium_intermediate() {
+    let mut source = pin(FareFactV1::Invalid);
+    source
+        .economy_release
+        .fare_inspection
+        .as_mut()
+        .unwrap()
+        .handling_cost_cents = "0".into();
+    source.economy_release.checksum =
+        recompute_economy_release_checksum(&source.economy_release).unwrap();
+    source.expected_economy_release_hash = source.economy_release.checksum.clone();
+    let journey = source.journey_evidence.as_mut().unwrap();
+    journey.ordinary_fare_cents = Some((i64::MAX / 2).to_string());
+    journey.content_hash = fare_journey_evidence_hash(journey).unwrap();
+    let release = source.economy_release.clone();
+    let mut state = claimed(source);
+    step(&mut state, 2 * DAY, FareControlActionV1::AdvanceTime);
+    step(
+        &mut state,
+        2 * DAY,
+        FareControlActionV1::SettleDay {
+            day_start_ms: DAY,
+            contract_revenue_evidence: revenue(DAY, &i64::MAX.to_string(), &release),
+            economy_release: Box::new(release),
+        },
+    );
+    assert_eq!(state.days[&DAY.to_string()].premium_cents, "0");
+    assert_eq!(
+        state.days[&DAY.to_string()].net_cents,
+        (i64::MAX - 1).to_string()
+    );
+}
+#[test]
+fn wakeup_only_reports_real_unprocessed_domain_deadlines() {
+    let open = opened(pin(FareFactV1::Invalid));
+    assert_eq!(
+        next_fare_control_wakeup(&open, &open.state_hash).unwrap(),
+        None
+    );
+    let mut state = claimed(pin(FareFactV1::Invalid));
+    let original = state.clone();
+    assert_eq!(
+        next_fare_control_wakeup(&state, &state.state_hash).unwrap(),
+        Some(DAY)
+    );
+    assert_eq!(state, original);
+    step(&mut state, DAY, FareControlActionV1::AdvanceTime);
+    assert_eq!(
+        next_fare_control_wakeup(&state, &state.state_hash).unwrap(),
+        Some(2 * DAY)
+    );
+    step(&mut state, 2 * DAY, FareControlActionV1::AdvanceTime);
+    assert_eq!(
+        next_fare_control_wakeup(&state, &state.state_hash).unwrap(),
+        None
+    );
+}
 fn economy() -> EconomyReleaseDocument {
     let seed: serde_json::Value = serde_json::from_str(include_str!(
         "../../zugfolge-fleet/tests/fixtures/vehicle-world-seed-v3.json"
@@ -22,7 +80,7 @@ fn economy() -> EconomyReleaseDocument {
         proof_window_days: 7,
         day_length_ms: DAY,
         handling_cost_cents: "100".into(),
-        unfounded_claim_cost_cents: "250".into(),
+        proof_handling_cost_cents: "250".into(),
         police_handling_cost_cents: "300".into(),
         full_payment_basis_points: 10_000,
         partial_payment_basis_points: 0,
@@ -189,8 +247,14 @@ fn genuine_and_false_phone_problem_stay_identical_until_actual_proof() {
     assert_eq!(genuine.cases["case"].claim_cents, "6000");
     step(&mut genuine, 2 * DAY, FareControlActionV1::AdvanceTime);
     step(&mut false_excuse, 2 * DAY, FareControlActionV1::AdvanceTime);
-    assert_eq!(genuine.cases["case"].evidence.document_status, DocumentStatusV1::VerifiedValid);
-    assert_eq!(false_excuse.cases["case"].evidence.document_status, DocumentStatusV1::NotPresentable);
+    assert_eq!(
+        genuine.cases["case"].evidence.document_status,
+        DocumentStatusV1::VerifiedValid
+    );
+    assert_eq!(
+        false_excuse.cases["case"].evidence.document_status,
+        DocumentStatusV1::NotPresentable
+    );
     assert_eq!(
         (
             genuine.cases["case"].claim_cents.as_str(),
@@ -347,7 +411,7 @@ fn late_worker_preserves_payment_writeoff_and_refund_days() {
         );
     }
     assert_eq!(restored.days[&(3 * DAY).to_string()].net_cents, "-700");
-    assert_eq!(restored.days[&(4 * DAY).to_string()].net_cents, "0");
+    assert_eq!(restored.days[&(4 * DAY).to_string()].net_cents, "-250");
     assert_eq!(restored.days[&(4 * DAY).to_string()].premium_cents, "0");
 }
 #[test]
@@ -427,6 +491,32 @@ fn daily_cap_missing_receipt_and_later_correction_are_idempotent() {
         result.state
     );
     assert!(project_fare_cases(&restored, &restored.state_hash, "foreign", "operator").is_err());
+    let report =
+        project_fare_control_report(&restored, &restored.state_hash, "world", "operator").unwrap();
+    assert_eq!(report.days.len(), 1);
+    assert_eq!(report.days[0].contract_revenue_cents, "4000000");
+    assert_eq!(report.days[0].contribution_cents, "20000");
+    assert_eq!(report.days[0].settlement_revision, 2);
+    let input = serde_json::json!({"state":restored,"expectedStateHash":restored.state_hash,"worldId":"world","operatorId":"operator"});
+    let public = project_fare_control_report_json(&input.to_string()).unwrap();
+    assert_eq!(
+        serde_json::from_str::<FareControlReportV1>(&public).unwrap(),
+        report
+    );
+    for private in [
+        "contractReceiptIds",
+        "economyReleaseHash",
+        "fareFact",
+        "passengerKey",
+        "seedHash",
+        "policePlans",
+    ] {
+        assert!(!public.contains(private));
+    }
+    assert!(
+        project_fare_control_report(&restored, &restored.state_hash, "world", "foreign").is_err()
+    );
+    assert!(project_fare_control_report(&restored, &"a".repeat(64), "world", "operator").is_err());
 }
 
 fn police_model(available: u32, delay: i64, success: u32) -> PoliceResponseModelV1 {

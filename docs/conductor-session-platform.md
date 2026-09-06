@@ -23,6 +23,10 @@ ursprünglich signiert gebundenen Regionalstands beendet werden kann. Das Sweep
 verwendet die private alte Ownerzuordnung ausschließlich für die erneute
 Rechteprüfung; sie autorisiert niemals den neuen Aufrufer.
 
+Eine bestehende Sitzung in einer anderen Region wird ausschließlich gegen
+deren eigenen bestätigten Betriebsstand bereinigt. Die weiter fortgeschrittene
+Uhr des angefragten Zuges darf keine fremde Lease vorzeitig freigeben.
+
 Der Dienst liest die signiert gebundenen regionalen Checkpoints und lässt
 den betreffenden Zustand durch die vorhandene Operational-v2-Runtime
 restaurieren. Initialisierungspin, Zustandshash, Revision, Welt und Region
@@ -62,6 +66,15 @@ unpassende Sequenz wird durch einen vollständigen Snapshot ersetzt; sie darf
 keine Deltafolge über einen unbekannten Grundzustand legen. Die Oberfläche
 beendet ihre lokale Interaktion bei Verbindungsverlust und lädt vor weiteren
 Befehlen den aktuellen Stand.
+
+Ein nativ bestätigter Sitzungsabschluss bleibt für sein weiterhin berechtigtes
+Konto lesbar, auch wenn die physische Fahrt bereits entfernt oder abgebrochen
+wurde. Dieser reine Abschlussabruf prüft die aktuelle Welt-/EVU-Berechtigung,
+die private Eigentümerzuordnung und den restaurierten Regionalzustand gegen
+seinen Initialisierungspin. Er projiziert den gespeicherten nativen Endzustand
+mit dessen aufbewahrtem Dialogrelease; ein neues M5-/M10-Fahrtangebot ist dafür
+nicht erforderlich. Der SSE-Strom liefert diesen Vollsnapshot und endet.
+Widerrufene Konten erhalten auch diese historische Projektion nicht.
 
 Kontolöschung entfernt die private Kontozuordnung, Lease und den privaten
 Quittungs-/Snapshotbestand. Der native Zugzustand verwendet ausschließlich

@@ -10,6 +10,8 @@ export interface ConductorResponse {
 }
 export interface ConductorControlStatus {
   readonly schemaVersion: "conductor-control-status/v1";
+  readonly days: readonly { readonly dayStartMs: number; readonly contractRevenueCents: string; readonly netCents: string;
+    readonly premiumCents: string; readonly capAdjustmentCents: string; readonly contributionCents: string; readonly settlementRevision: number }[];
   readonly cases: readonly { readonly caseId: string; readonly encounterId: string; readonly trainRunId: string;
     readonly status: "open" | "closed_without_claim" | "claim_open" | "settled"; readonly claimKind: "regular" | "provisional" | null;
     readonly claimCents: string; readonly paidCents: string; readonly costsCents: string; readonly writtenOffCents: string; readonly proofDeadlineMs: number }[];
@@ -56,6 +58,13 @@ export class ConductorApi {
   }
   async availability(): Promise<ConductorAvailability> { return (await this.request("")).json() as Promise<ConductorAvailability>; }
   async snapshot(): Promise<ConductorResponse> { return this.response(await (await this.request("/snapshot")).json() as ConductorResponse); }
+  async report(): Promise<ConductorControlStatus> {
+    const value = await (await this.request("/report")).json() as { schemaVersion: string; worldId: string; operatorId: string; trainRunId: string; control: ConductorControlStatus };
+    if (value.schemaVersion !== "conductor-report/v1" || value.worldId !== this.worldId || value.operatorId !== this.operatorId
+      || value.trainRunId !== this.trainRunId || value.control.schemaVersion !== "conductor-control-status/v1"
+      || value.control.cases.some((row) => row.trainRunId !== this.trainRunId)) throw new Error("Der Kontrollbericht gehört nicht zu deinem Unternehmen und dieser Fahrt.");
+    return value.control;
+  }
   async command(command: ConductorCommandV1): Promise<ConductorResponse> {
     return this.response(await (await this.request("", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(command) })).json() as ConductorResponse);
   }

@@ -7,6 +7,7 @@ import Fastify from "../../apps/game-api/node_modules/fastify/fastify.js";
 import { createServer } from "../../apps/livemap/node_modules/vite/dist/node/index.js";
 import { createConductorSessionNativeFixture } from "../../apps/game-api/dist/conductor-session.native-fixture.js";
 import { registerConductorSessionRoutes } from "../../apps/game-api/dist/conductor-session-routes.js";
+import { loadConductorContext } from "../../apps/game-api/dist/conductor-context.js";
 
 const ROOT = fileURLToPath(new URL("../../", import.meta.url));
 const noControlEffects = {
@@ -57,6 +58,14 @@ export async function startConductorSessionBrowserBackend({ control = noControlE
     const receipt = JSON.parse(await readFile(resolve(fixture.compiled.output, "vehicle-catalog-compile-receipt-v4.json"), "utf8"));
     return {
       url, route, token, fixture,
+      async throughPassengerKeys() {
+        // Node-only target selection for a path that spans the actual middle
+        // arrival. Journey metadata is never sent to the page or its API.
+        const context = await loadConductorContext(fixture.db, fixture.access, fixture.dependencies);
+        const finalStopId = fixture.initialization.trains[0].stopPlan.stops.at(-1).stopId;
+        return [...new Set(context.projectionInput.evaluation.manifests.filter((manifest) => manifest.trainRunId === config.trainRunId)
+          .flatMap((manifest) => manifest.passengers.filter((person) => person.alightingStopId === finalStopId).map((person) => person.passengerKey)))];
+      },
       evidence: { source: "Explicit fictional infrastructure and M5 game configurations; real compiler, PGlite, OperationalWorker, M10 DemandService and session core",
         controlIntegration: fixture.control ? "Actual native fare-control, police and ledger integration" : control === noControlEffects ? "Unconfigured: all nonempty control effects fail closed" : "Explicit caller-provided integration",
         worldId: config.worldId, trainRunId: config.trainRunId, compilerOutputSetHash: receipt.outputSetSha256,
@@ -69,6 +78,17 @@ export async function startConductorSessionBrowserBackend({ control = noControlE
           await fixture.apply(`browser-proof:advance:${++advanceSequence}`, { type: "advance-to", atMs: fixture.clock.nowMs });
           await fixture.refresh();
           if (fixture.advanceControl) await fixture.advanceControl();
+        });
+        tail = next.catch(() => {}); return next;
+      },
+      async advanceForReport(atMs) {
+        if (!fixture.advanceControl || !Number.isSafeInteger(atMs) || atMs <= fixture.clock.nowMs || atMs > 86_400_001) throw new Error("Invalid explicit report time boundary.");
+        const next = tail.then(async () => {
+          fixture.clock.nowMs = atMs;
+          await fixture.apply(`browser-proof:report:${++advanceSequence}`, { type: "advance-to", atMs });
+          // Historical cases keep their native tariff pins. A completed day
+          // needs no new passenger manifest or synthetic settlement command.
+          await fixture.advanceControl();
         });
         tail = next.catch(() => {}); return next;
       },

@@ -68,6 +68,9 @@ export function registerConductorSessionRoutes(app: FastifyInstance, deps: {
   app.get<{ Params: Params }>(`${base}/snapshot`, { ...routeOptions, schema: { params } }, async (request, reply) => {
     reply.header("cache-control", "private, no-store"); return service().snapshot(access(request));
   });
+  app.get<{ Params: Params }>(`${base}/report`, { ...routeOptions, schema: { params } }, async (request, reply) => {
+    reply.header("cache-control", "private, no-store"); return service().report(access(request));
+  });
   app.get<{ Params: Params }>(`${base}/art`, { ...routeOptions, schema: { params } }, async (request, reply) => {
     reply.header("cache-control", "private, no-store"); return service().art(access(request));
   });

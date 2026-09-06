@@ -4,8 +4,8 @@ import type { IdentityDatabase } from "@zugfolge/identity";
 import type { ConductorCommandReceiptV1, ConductorCommandV1, ConductorSessionAccessV1, ConductorSessionControlReceiptV1,
   ConductorSessionEffectV1, ConductorSessionPolicyV1, ConductorSessionRuntime, ConductorSessionSnapshotV1, ConductorSessionSourceV1,
   ConductorSessionTransitionV1, ConductorTrainStateV1, DialogueEvidenceV1, InteriorLayoutV1, InteriorPointV1, ConductorSceneRuntime, SceneProjectionV1, OperationalSimulationState } from "@zugfolge/runtime-native";
-import { and, asc, eq, gt, isNull, lt, lte } from "drizzle-orm";
-import { ConductorAccessError, conductorHoldsVehicles, loadConductorFleet, loadConductorContext, type ConductorAccess, type ConductorCommittedContext, type ConductorContextDependencies } from "./conductor-context.js";
+import { and, asc, eq, gt, isNull, lt } from "drizzle-orm";
+import { ConductorAccessError, conductorHoldsVehicles, loadConductorFleet, loadConductorContext, requireConductorAccount, type ConductorAccess, type ConductorCommittedContext, type ConductorContextDependencies } from "./conductor-context.js";
 import { demandHash, demandRecord, demandText } from "./demand-store.js";
 import type { ConductorSceneDeployment } from "./conductor-scene-configuration.js";
 import type { ConductorControlStatusV1 } from "./conductor-control.js";
@@ -25,6 +25,7 @@ export interface ConductorControlIntegration {
     effects: readonly ConductorSessionEffectV1[]): Promise<void>;
   closeSession?(tx: IdentityDatabase, state: ConductorTrainStateV1, effects: readonly ConductorSessionEffectV1[]): Promise<void>;
   publicStatus?(tx: IdentityDatabase, context: ConductorCommittedContext): Promise<ConductorControlStatusV1>;
+  publicHistory?(tx: IdentityDatabase, scope: { worldId: string; operatorId: string; trainRunId: string }): Promise<ConductorControlStatusV1>;
 }
 export interface ConductorSessionResponse {
   readonly schemaVersion: "conductor-session-response/v1"; readonly receipt: ConductorCommandReceiptV1 | null;
@@ -43,15 +44,62 @@ function reject(status: number, code: string, message: string): never { throw ne
 export class ConductorSessionService {
   constructor(private readonly deps: ConductorSessionServiceDependencies) {}
 
-  private async underWorld<T>(access: ConductorAccess, run: (tx: IdentityDatabase, context: ConductorCommittedContext) => Promise<T>): Promise<T> {
+  private async underWorld<T>(access: ConductorAccess, run: (tx: IdentityDatabase, context: ConductorCommittedContext) => Promise<T>,
+    onEnded?: (response: ConductorSessionResponse) => T): Promise<T> {
     // Maintenance has its own commit: rejecting the browser afterwards must
     // not roll back an independently required revocation or lease expiry.
     await this.sweepWorld(access.worldId, access.trainRunId);
     return this.deps.db.transaction(async (tx) => {
       const [world] = await tx.select({ status: worlds.lifecycleStatus }).from(worlds).where(eq(worlds.id, access.worldId)).for("update");
       if (world?.status !== "active") reject(409, "conductor_world_inactive", "Die Spielwelt ist nicht aktiv.");
+      if (onEnded !== undefined) {
+        const response = await this.endedResponse(tx, access);
+        if (response !== undefined) return onEnded(response);
+      }
       const context = await loadConductorContext(tx, access, this.deps);
       return run(tx, context);
+    });
+  }
+
+  private async endedResponse(tx: IdentityDatabase, access: ConductorAccess): Promise<ConductorSessionResponse | undefined> {
+    const accountId = await requireConductorAccount(tx, access);
+    const [stored] = await tx.select().from(conductorTrainStates).where(and(eq(conductorTrainStates.worldId, access.worldId), eq(conductorTrainStates.trainRunId, access.trainRunId)));
+    const raw = stored?.state as ConductorTrainStateV1 | undefined;
+    if (stored === undefined || raw?.session?.status !== "ended") return undefined;
+    const [owner] = await tx.select().from(conductorOwners).where(and(eq(conductorOwners.worldId, access.worldId), eq(conductorOwners.accountId, accountId)));
+    if (owner === undefined || owner.ownerRef !== raw.session.ownerRef || raw.session.operatorId !== access.operatorId)
+      reject(403, "conductor_access_denied", "Diese abgeschlossene Sitzung gehört nicht zu deinem Unternehmen.");
+    const policy = raw.session["policy"] as ConductorSessionPolicyV1;
+    const releases = this.deps.sessionReleases.resolve(access.worldId, policy.periodId, Number(raw.session["startedAtMs"]));
+    if (releases === undefined) reject(503, "conductor_release_unavailable", "Der aufbewahrte Regelstand der Sitzung fehlt.");
+    const state = this.deps.sessionRuntime.restore(raw, stored.stateHash, releases.dialogueReleases);
+    if (state.worldId !== access.worldId || state.trainRunId !== access.trainRunId || state.revision !== stored.revision || state.nowMs !== stored.atMs)
+      reject(503, "conductor_state_invalid", "Der gespeicherte Sitzungsabschluss konnte nicht bestätigt werden.");
+    const binding = this.deps.regionBindings(access.worldId).find((row) => row.regionId === stored.regionId);
+    const [head] = await tx.select().from(regionalSimulationStates).where(and(eq(regionalSimulationStates.worldId, access.worldId), eq(regionalSimulationStates.regionId, stored.regionId)));
+    if (binding === undefined || head === undefined || head.initializationHash !== binding.initializationHash)
+      reject(503, "conductor_source_unavailable", "Der bestätigte regionale Betriebsstand fehlt.");
+    const restored = this.deps.operationalRuntime.restore(head.state as OperationalSimulationState, binding.initializationHash);
+    if (restored.stateHash !== head.stateHash || restored.state.revision !== head.revision || restored.state.publisherSequence !== head.publisherSequence
+      || restored.state.world.worldId !== access.worldId || restored.state.world.regionId !== stored.regionId)
+      reject(503, "conductor_source_unavailable", "Der regionale Betriebsstand ist nicht bestätigt.");
+    const snapshot = this.deps.sessionRuntime.project(state, { worldId: access.worldId, operatorId: access.operatorId,
+      ownerRef: owner.ownerRef, worldAccessActive: true, operatorActive: true, trainUseAuthorized: true, otherActiveSessionId: null },
+    { operationalWorld: restored.state.world, expectedOperationalWorldHash: this.deps.sessionRuntime.operationalWorldHash(restored.state.world),
+      interior: null, projection: null, sessionPolicy: policy, currentDialogueReleaseHash: releases.currentDialogueReleaseHash,
+      dialogueReleases: releases.dialogueReleases, encounterEvidence: [], controlReceipts: [] });
+    if (snapshot === null || state.layout === null) reject(503, "conductor_state_invalid", "Der Sitzungsabschluss konnte nicht dargestellt werden.");
+    return { schemaVersion: "conductor-session-response/v1", receipt: null, snapshot, layout: state.layout, scene: null,
+      control: await this.deps.control.publicHistory?.(tx, access) ?? null };
+  }
+
+  async report(access: ConductorAccess) {
+    return this.deps.db.transaction(async (tx) => {
+      await tx.select({ id: worlds.id }).from(worlds).where(eq(worlds.id, access.worldId)).for("update");
+      await requireConductorAccount(tx, access);
+      if (this.deps.control.publicHistory === undefined) reject(503, "conductor_control_unavailable", "Der Kontrollbericht ist noch nicht verfügbar.");
+      return { schemaVersion: "conductor-report/v1" as const, worldId: access.worldId, operatorId: access.operatorId, trainRunId: access.trainRunId,
+        control: await this.deps.control.publicHistory(tx, access) };
     });
   }
 
@@ -86,7 +134,8 @@ export class ConductorSessionService {
       if (region === undefined || head === undefined || head.initializationHash !== region.initializationHash)
         reject(503, "conductor_source_unavailable", "Der bestätigte regionale Betriebsstand fehlt.");
       const restored = this.deps.operationalRuntime.restore(head.state as OperationalSimulationState, region.initializationHash);
-      if (restored.stateHash !== head.stateHash || restored.state.revision !== head.revision || restored.state.world.worldId !== worldId)
+      if (restored.stateHash !== head.stateHash || restored.state.revision !== head.revision || restored.state.publisherSequence !== head.publisherSequence
+        || restored.state.world.worldId !== worldId || restored.state.world.regionId !== stored.regionId)
         reject(503, "conductor_source_unavailable", "Der regionale Betriebsstand ist nicht bestätigt.");
       const world = restored.state.world, train = demandRecord(world["trains"])[state.trainRunId] as Record<string, unknown> | undefined;
       const [owner] = await tx.select({ accountId: accounts.id, subject: accounts.keycloakSubject, access: worldAccesses.status }).from(conductorOwners)
@@ -97,7 +146,7 @@ export class ConductorSessionService {
       const worldAccessActive = owner?.access === "active", operatorActive = operator?.lifecycle === "active" && operator.foundingAccountId === owner?.accountId;
       const pins = session["pins"] as { vehicleIds: readonly string[] };
       // Rights come from M5, while missing/cancelled trains are classified by the native lifecycle.
-      const trainUseAuthorized = !worldAccessActive || !operatorActive ? true : conductorHoldsVehicles(
+      const trainUseAuthorized = !worldAccessActive || !operatorActive || world.nowMs >= session.leaseUntilMs || train === undefined ? true : conductorHoldsVehicles(
         await loadConductorFleet(tx, worldId, world.nowMs, this.deps.fleetRuntime), session.operatorId, pins.vehicleIds, world.nowMs);
       const eligible = train !== undefined && train["operatorId"] === session.operatorId && train["movementKind"] === "train" && train["publicPassengerStop"] === true;
       const receipts = train?.["passengerStops"] === undefined || train["passengerStops"] === null ? [] : demandRecord(train["passengerStops"])["receipts"] as Record<string, unknown>[];
@@ -157,11 +206,19 @@ export class ConductorSessionService {
       [owner] = await tx.insert(conductorOwners).values({ worldId: access.worldId, accountId: context.accountId, ownerRef: randomUUID() }).returning();
     }
     if (owner === undefined) reject(404, "conductor_session_missing", "Du hast noch keine Schaffnersitzung in dieser Welt.");
-    await tx.delete(conductorLeases).where(and(eq(conductorLeases.worldId, access.worldId), lte(conductorLeases.leaseUntilMs, context.nowMs)));
-    const [other] = await tx.select().from(conductorLeases).where(and(eq(conductorLeases.worldId, access.worldId), eq(conductorLeases.accountId, context.accountId)));
+    const other = await this.accountLease(tx, access, context.accountId);
     return { worldId: access.worldId, operatorId: access.operatorId, ownerRef: owner.ownerRef,
       worldAccessActive: true, operatorActive: true, trainUseAuthorized: true,
       otherActiveSessionId: other !== undefined && other.trainRunId !== access.trainRunId ? other.sessionId : null };
+  }
+
+  private async accountLease(tx: IdentityDatabase, access: ConductorAccess, accountId: string) {
+    const read = () => tx.select().from(conductorLeases).where(and(eq(conductorLeases.worldId, access.worldId), eq(conductorLeases.accountId, accountId)));
+    const [lease] = await read();
+    if (lease === undefined || lease.trainRunId === access.trainRunId) return lease;
+    // Only the other train's actual native lifecycle can release its lease.
+    await this.sweep(tx, access.worldId, lease.trainRunId);
+    const [current] = await read(); return current;
   }
 
   private async persist(tx: IdentityDatabase, context: ConductorCommittedContext, transition: ConductorSessionTransitionV1): Promise<void> {
@@ -243,7 +300,7 @@ export class ConductorSessionService {
   }
 
   async snapshot(access: ConductorAccess): Promise<ConductorSessionResponse> {
-    return this.underWorld(access, (tx, context) => this.synchronizedSnapshot(tx, context, access));
+    return this.underWorld(access, (tx, context) => this.synchronizedSnapshot(tx, context, access), (response) => response);
   }
 
   async changes(access: ConductorAccess, afterSequence: number): Promise<{ reset: boolean; response: ConductorSessionResponse; snapshots: readonly ConductorSessionSnapshotV1[] }> {
@@ -258,7 +315,7 @@ export class ConductorSessionService {
         && (rows.length === 0 || rows.some((row, index) => row.sequence !== afterSequence + index + 1)
           || rows.at(-1)?.sequence !== response.snapshot.sequence);
       return { reset: gap, response, snapshots: gap ? [response.snapshot] : rows.map((row) => row.snapshot as ConductorSessionSnapshotV1) };
-    });
+    }, (response) => ({ reset: true, response, snapshots: [response.snapshot] }));
   }
 
   async availability(access: ConductorAccess): Promise<{ available: true; revision: number; manifestRevision: number; sessionId: string | null }> {
@@ -267,7 +324,7 @@ export class ConductorSessionService {
       const [owner] = await tx.select().from(conductorOwners).where(and(eq(conductorOwners.worldId, access.worldId), eq(conductorOwners.accountId, context.accountId)));
       const active = state.session !== null && state.session.status !== "ended" && state.session.leaseUntilMs > context.nowMs;
       if (active && state.session!.ownerRef !== owner?.ownerRef) reject(409, "conductor_train_reserved", "In diesem Zug ist bereits eine Schaffnersitzung geöffnet.");
-      const [other] = await tx.select().from(conductorLeases).where(and(eq(conductorLeases.worldId, access.worldId), eq(conductorLeases.accountId, context.accountId), gt(conductorLeases.leaseUntilMs, context.nowMs)));
+      const other = await this.accountLease(tx, access, context.accountId);
       if (other !== undefined && other.trainRunId !== access.trainRunId) reject(409, "conductor_account_reserved", "Beende zuerst deine Schaffnersitzung im anderen Zug.");
       return { available: true, revision: active ? state.session!.revision : 0, manifestRevision: context.projectionInput.binding.manifestRevision, sessionId: active ? state.session!.sessionId : null };
     });

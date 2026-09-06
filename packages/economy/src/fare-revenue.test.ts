@@ -27,7 +27,7 @@ it("liefert tatsächliche M6-Bruttoabrechnung erst mit Outbox- und Ledgerquittun
       (_key, value: unknown) => typeof value === "string" && /^-?[0-9]+$/u.test(value) ? BigInt(value) : value).economy.release as EconomyRelease;
     const release = buildEconomyRelease({ ...source, fareInspection: { schemaVersion: "fare-inspection-economy/v1", minimumClaimCents: 6000n,
       ordinaryFareMultiplier: 2, reducedClaimCents: 700n, proofWindowDays: 7, dayLengthMs: DAY * 1000, handlingCostCents: 100n,
-      unfoundedClaimCostCents: 250n, policeHandlingCostCents: 300n, fullPaymentBasisPoints: 10_000, partialPaymentBasisPoints: 0,
+      proofHandlingCostCents: 250n, policeHandlingCostCents: 300n, fullPaymentBasisPoints: 10_000, partialPaymentBasisPoints: 0,
       partialPaymentShareBasisPoints: 5000, paymentDelayMs: 1000, writeOffDelayMs: 3000, validProofSubmissionBasisPoints: 10_000,
       validProofDelayMs: 2000, premiumMultiplierBasisPoints: 40_000, positiveDailyCapBasisPoints: 50, revenueAllocation: "uniform_settled_service_interval/v1" } });
     expect(buildEconomyRelease(source).checksum).toBe(source.checksum);

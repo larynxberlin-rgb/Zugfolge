@@ -8,17 +8,19 @@ import { and, eq } from "drizzle-orm";
 import { ConductorAccessError, type ConductorCommittedContext } from "./conductor-context.js";
 import type { ConductorControlDeployment } from "./conductor-control-configuration.js";
 import { controlJson, controlRecord, controlText, type ConductorPoliceAdapter, type ControlCase, type ControlLedgerEvent,
-  type ControlOperationalHoldReceipt, type ControlRecord, type FareControlRuntime, type FareControlState } from "./conductor-control-runtime.js";
+  type ControlOperationalHoldReceipt, type ControlRecord, type FareControlRuntime, type FareControlState, type FareDayReportV1 } from "./conductor-control-runtime.js";
 import type { ConductorControlIntegration } from "./conductor-session-service.js";
 
 export interface ConductorControlService extends ConductorControlIntegration {
   /** Autoritativer Weltcommit; läuft auch ohne verbundene Schaffnersitzung. */
   advanceWorld(tx: IdentityDatabase, worldId: string, nowMs: number): Promise<void>;
+  publicHistory(tx: IdentityDatabase, scope: { readonly worldId: string; readonly operatorId: string; readonly trainRunId: string }): Promise<ConductorControlStatusV1>;
   publicStatus(tx: IdentityDatabase, context: ConductorCommittedContext): Promise<ConductorControlStatusV1>;
 }
 export interface ConductorControlStatusV1 {
   readonly schemaVersion: "conductor-control-status/v1";
   readonly cases: readonly ControlRecord[];
+  readonly days: readonly FareDayReportV1[];
   readonly hold: { readonly holdId: string; readonly targetStopId: string; readonly status: "requested" | "active" | "released";
     readonly deadlineMs: number | null; readonly outcome: ControlOperationalHoldReceipt["hold"]["outcome"] } | null;
 }
@@ -136,23 +138,27 @@ export function createConductorControlIntegration(deps: {
     return command(tx, current, effect.effectId, effect.atMs, action);
   }
   async function guarded<T>(run: () => Promise<T>): Promise<T> { try { return await run(); } catch { return reject(); } }
-  return Object.freeze({
-    async publicStatus(tx: IdentityDatabase, context: ConductorCommittedContext): Promise<ConductorControlStatusV1> {
+  async function publicHistory(tx: IdentityDatabase, binding: { readonly worldId: string; readonly operatorId: string; readonly trainRunId: string }): Promise<ConductorControlStatusV1> {
       return guarded(async () => {
-        const binding = context.projectionInput.binding;
         const state = await load(tx, binding.worldId, binding.operatorId);
-        if (state === undefined) return { schemaVersion: "conductor-control-status/v1", cases: [], hold: null };
-        const cases = deps.runtime.project(state).filter((row) => row["trainRunId"] === binding.trainRunId);
+        if (state === undefined) return { schemaVersion: "conductor-control-status/v1", cases: [], days: [], hold: null };
+        const report = deps.runtime.report(state), days = report.days;
+        const cases = report.cases.filter((row) => row["trainRunId"] === binding.trainRunId);
         if (!Object.values(state.policePlans).some((plan) => plan.trainRunId === binding.trainRunId)) {
-          return { schemaVersion: "conductor-control-status/v1", cases, hold: null };
+          return { schemaVersion: "conductor-control-status/v1", cases, days, hold: null };
         }
         const receipt = await deps.police.read(tx, { worldId: binding.worldId, operatorId: binding.operatorId, trainRunId: binding.trainRunId });
-        if (receipt === undefined) return { schemaVersion: "conductor-control-status/v1", cases, hold: null };
+        if (receipt === undefined) return { schemaVersion: "conductor-control-status/v1", cases, days, hold: null };
         const value = receipt.hold; requireFact(value.worldId === binding.worldId && value.trainRunId === binding.trainRunId);
-        return { schemaVersion: "conductor-control-status/v1", cases, hold: { holdId: value.holdId, targetStopId: value.targetStopId,
+        return { schemaVersion: "conductor-control-status/v1", cases, days, hold: { holdId: value.holdId, targetStopId: value.targetStopId,
           status: value.releasedAtMs !== null ? "released" : value.activatedAtMs !== null ? "active" : "requested",
           deadlineMs: value.deadlineMs, outcome: value.outcome } };
       });
+  }
+  return Object.freeze({
+    publicHistory,
+    publicStatus(tx: IdentityDatabase, context: ConductorCommittedContext): Promise<ConductorControlStatusV1> {
+      return publicHistory(tx, context.projectionInput.binding);
     },
     async apply(tx: IdentityDatabase, context: ConductorCommittedContext, train: ConductorTrainStateV1, effects: readonly ConductorSessionEffectV1[]) {
       return guarded(async () => {

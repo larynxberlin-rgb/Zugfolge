@@ -30,6 +30,12 @@ pub fn project_fare_cases(input_json: String) -> napi::Result<String> {
     zugfolge_fare_control::project_fare_cases_json(&input_json)
         .map_err(|error| napi::Error::from_reason(error.to_string()))
 }
+/// Projiziert Kontrollfälle und den belegten Tagesbericht im selben Kernaufruf.
+#[napi(js_name = "projectFareControlReport")]
+pub fn project_fare_control_report(input_json: String) -> napi::Result<String> {
+    zugfolge_fare_control::project_fare_control_report_json(&input_json)
+        .map_err(|error| napi::Error::from_reason(error.to_string()))
+}
 /// Prüft den typisierten Fachvertrag ausschließlich im Rust-Kern.
 #[napi(js_name = "hashFareInspectionPolicy")]
 pub fn hash_fare_inspection_policy(input_json: String) -> napi::Result<String> {

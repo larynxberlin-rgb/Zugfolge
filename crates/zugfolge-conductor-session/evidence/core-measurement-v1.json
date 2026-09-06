@@ -1,0 +1,478 @@
+{
+  "schemaVersion": "conductor-core-measurement/v1",
+  "testOnly": true,
+  "measuredAtUtc": "2026-09-06T23:02:44.2231368Z",
+  "profile": "release",
+  "compilerVersion": "rustc 1.94.1 (e408947bf 2026-03-25)",
+  "sampleCount": 15,
+  "warmupCountPerPhase": 1,
+  "transport": "local-jsonl-core-and-serialization-without-db-http-rendering",
+  "os": "Microsoft Windows NT 10.0.26220.0",
+  "processArchitecture": "X64",
+  "processorCount": 8,
+  "binarySha256": "d774c9706b712082f47c30729e0203a5087216215c8e359085b19afecea9de70",
+  "configurations": [
+    {
+      "source": {
+        "bodies": 3,
+        "capacity": {
+          "bicycleSpaces": 12,
+          "premiumSeats": 16,
+          "standardSeats": 104,
+          "standardStanding": 40,
+          "strollerSpaces": 4,
+          "wheelchairSpaces": 2
+        },
+        "configuration": 1,
+        "demandReleaseHash": "7192d0258a6a5941f3a2cf6f1813acd4f2c8cb2377f633dfca1801994b545f4f",
+        "demandStateHash": "f7f3893c90908f652f26fb88d54d719c04534ddb93eee6043b18766f6b281f22",
+        "fleetAuthorityHash": "528509439b241c15ea8ef46abc6e4fd6c923a1f146f76e2c9dba762d1d21dec3",
+        "layoutHash": "4e623f508f4b2a29358ab851ff24171bd68ce11955353f0a0b66b8c4d3f09b60",
+        "lengthMm": 70000,
+        "operationalHash": "846e7001afeca8c97c6939ac1e7c85484345de22f4253f4669ab1a94ac66cce8",
+        "passengers": 160,
+        "places": 160,
+        "projectionHash": "72871e9b8deb948d24183d0d45bc4f41c4be7f7e189ff31f52ffd13bc2655019",
+        "testOnly": true
+      },
+      "phases": {
+        "layout": {
+          "medianUs": 4956,
+          "p95Us": 6692,
+          "maxUs": 6692,
+          "samplesUs": [
+            6692,
+            5084,
+            4516,
+            4956,
+            5065,
+            5980,
+            4942,
+            4901,
+            5466,
+            4531,
+            4544,
+            5305,
+            4871,
+            4521,
+            5056
+          ],
+          "result": {
+            "hash": "4e623f508f4b2a29358ab851ff24171bd68ce11955353f0a0b66b8c4d3f09b60"
+          }
+        },
+        "demand": {
+          "medianUs": 7533,
+          "p95Us": 9949,
+          "maxUs": 9949,
+          "samplesUs": [
+            6748,
+            7596,
+            7198,
+            7533,
+            9949,
+            8195,
+            9073,
+            8769,
+            6932,
+            7424,
+            6988,
+            7076,
+            9383,
+            6852,
+            7626
+          ],
+          "result": {
+            "generated": 12600,
+            "hash": "f7f3893c90908f652f26fb88d54d719c04534ddb93eee6043b18766f6b281f22"
+          }
+        },
+        "projection": {
+          "medianUs": 2783,
+          "p95Us": 4163,
+          "maxUs": 4163,
+          "samplesUs": [
+            2973,
+            2727,
+            4163,
+            2819,
+            2589,
+            2698,
+            2586,
+            2569,
+            3301,
+            2783,
+            2697,
+            2706,
+            2856,
+            2874,
+            2933
+          ],
+          "result": {
+            "hash": "72871e9b8deb948d24183d0d45bc4f41c4be7f7e189ff31f52ffd13bc2655019",
+            "passengers": 160
+          }
+        },
+        "start": {
+          "medianUs": 12791,
+          "p95Us": 18486,
+          "maxUs": 18486,
+          "samplesUs": [
+            11239,
+            14744,
+            14599,
+            12724,
+            12645,
+            18486,
+            11453,
+            17813,
+            12759,
+            16119,
+            12791,
+            13310,
+            17705,
+            11619,
+            12579
+          ],
+          "result": {
+            "hash": "d394042bc0f9a6f6252436f51f48e76a74c60cbd5b8940e2012726b75dcac7d5",
+            "snapshotBytes": 60135
+          }
+        },
+        "restore": {
+          "medianUs": 2724,
+          "p95Us": 3800,
+          "maxUs": 3800,
+          "samplesUs": [
+            2811,
+            2724,
+            2902,
+            2388,
+            2750,
+            2951,
+            3800,
+            2752,
+            2722,
+            2662,
+            2655,
+            2529,
+            3386,
+            2484,
+            2321
+          ],
+          "result": {
+            "hash": "d394042bc0f9a6f6252436f51f48e76a74c60cbd5b8940e2012726b75dcac7d5"
+          }
+        }
+      }
+    },
+    {
+      "source": {
+        "bodies": 3,
+        "capacity": {
+          "bicycleSpaces": 12,
+          "premiumSeats": 16,
+          "standardSeats": 184,
+          "standardStanding": 20,
+          "strollerSpaces": 2,
+          "wheelchairSpaces": 2
+        },
+        "configuration": 2,
+        "demandReleaseHash": "7192d0258a6a5941f3a2cf6f1813acd4f2c8cb2377f633dfca1801994b545f4f",
+        "demandStateHash": "320e52ff3069f494bf4f8ef2eed94390b7a054c15ac1a58098f90f0cf1eb45f9",
+        "fleetAuthorityHash": "528509439b241c15ea8ef46abc6e4fd6c923a1f146f76e2c9dba762d1d21dec3",
+        "layoutHash": "0ba8e35ab8197c6fbe30db1971ddcf1f5e8cd5cba3aac5a6380cbce100f930c5",
+        "lengthMm": 70000,
+        "operationalHash": "b8c1187f3e803993a65ef60bb71b659571d6ac0ae784dd9c3d9195bb2996376c",
+        "passengers": 220,
+        "places": 220,
+        "projectionHash": "2ac2c807b5dde839ba3bb19d7efb6081dc1bf303cf5415b3320bdd8917e00c0e",
+        "testOnly": true
+      },
+      "phases": {
+        "layout": {
+          "medianUs": 6567,
+          "p95Us": 8053,
+          "maxUs": 8053,
+          "samplesUs": [
+            6673,
+            5895,
+            6481,
+            7090,
+            6596,
+            6763,
+            6567,
+            6200,
+            8053,
+            6435,
+            6810,
+            5634,
+            5674,
+            6682,
+            5785
+          ],
+          "result": {
+            "hash": "0ba8e35ab8197c6fbe30db1971ddcf1f5e8cd5cba3aac5a6380cbce100f930c5"
+          }
+        },
+        "demand": {
+          "medianUs": 9714,
+          "p95Us": 15545,
+          "maxUs": 15545,
+          "samplesUs": [
+            8841,
+            13903,
+            9769,
+            8444,
+            9287,
+            8414,
+            15545,
+            11517,
+            8831,
+            11959,
+            9714,
+            8517,
+            14661,
+            11819,
+            8442
+          ],
+          "result": {
+            "generated": 12600,
+            "hash": "320e52ff3069f494bf4f8ef2eed94390b7a054c15ac1a58098f90f0cf1eb45f9"
+          }
+        },
+        "projection": {
+          "medianUs": 4501,
+          "p95Us": 6515,
+          "maxUs": 6515,
+          "samplesUs": [
+            5872,
+            3945,
+            6002,
+            4831,
+            4115,
+            4501,
+            4111,
+            4015,
+            4048,
+            4885,
+            6393,
+            4635,
+            4037,
+            6515,
+            4264
+          ],
+          "result": {
+            "hash": "2ac2c807b5dde839ba3bb19d7efb6081dc1bf303cf5415b3320bdd8917e00c0e",
+            "passengers": 220
+          }
+        },
+        "start": {
+          "medianUs": 16222,
+          "p95Us": 24135,
+          "maxUs": 24135,
+          "samplesUs": [
+            15709,
+            15792,
+            15954,
+            16378,
+            16222,
+            17805,
+            20563,
+            15655,
+            14776,
+            15345,
+            17006,
+            17817,
+            17292,
+            24135,
+            15700
+          ],
+          "result": {
+            "hash": "48ae955dbcd90ac993d1b37947bc00a0b950a40731904ec49d3c6bd526e26efa",
+            "snapshotBytes": 81903
+          }
+        },
+        "restore": {
+          "medianUs": 3488,
+          "p95Us": 4921,
+          "maxUs": 4921,
+          "samplesUs": [
+            3734,
+            3326,
+            4921,
+            3715,
+            3528,
+            3335,
+            3652,
+            3958,
+            3488,
+            3412,
+            3460,
+            4527,
+            3378,
+            3385,
+            3356
+          ],
+          "result": {
+            "hash": "48ae955dbcd90ac993d1b37947bc00a0b950a40731904ec49d3c6bd526e26efa"
+          }
+        }
+      }
+    },
+    {
+      "source": {
+        "bodies": 3,
+        "capacity": {
+          "bicycleSpaces": 12,
+          "premiumSeats": 16,
+          "standardSeats": 80,
+          "standardStanding": 48,
+          "strollerSpaces": 8,
+          "wheelchairSpaces": 2
+        },
+        "configuration": 3,
+        "demandReleaseHash": "7192d0258a6a5941f3a2cf6f1813acd4f2c8cb2377f633dfca1801994b545f4f",
+        "demandStateHash": "84d2760429f475ae51644a58bd7abf82a3cfdc7511918da0133064e3193983cf",
+        "fleetAuthorityHash": "528509439b241c15ea8ef46abc6e4fd6c923a1f146f76e2c9dba762d1d21dec3",
+        "layoutHash": "d568279556b221ec41de83b63c9dcf3d0dfae7bf1ad034feb9a3a71e1f225fec",
+        "lengthMm": 70000,
+        "operationalHash": "0f9bb0d0e2b2031ba585065c12219c10e426d108690e3f09bec91d82d0eb3d98",
+        "passengers": 144,
+        "places": 144,
+        "projectionHash": "b1193348f2a25905e2082efbc23c171d9cd88f0a1692519ea915b60088f0ec83",
+        "testOnly": true
+      },
+      "phases": {
+        "layout": {
+          "medianUs": 4870,
+          "p95Us": 6307,
+          "maxUs": 6307,
+          "samplesUs": [
+            4385,
+            4614,
+            4601,
+            5235,
+            6307,
+            4870,
+            5368,
+            4715,
+            4430,
+            5389,
+            4987,
+            4914,
+            5836,
+            4841,
+            4862
+          ],
+          "result": {
+            "hash": "d568279556b221ec41de83b63c9dcf3d0dfae7bf1ad034feb9a3a71e1f225fec"
+          }
+        },
+        "demand": {
+          "medianUs": 6727,
+          "p95Us": 11928,
+          "maxUs": 11928,
+          "samplesUs": [
+            6470,
+            6653,
+            6856,
+            6037,
+            7294,
+            6727,
+            7288,
+            11928,
+            7142,
+            6568,
+            7059,
+            6561,
+            6632,
+            7560,
+            6592
+          ],
+          "result": {
+            "generated": 12600,
+            "hash": "84d2760429f475ae51644a58bd7abf82a3cfdc7511918da0133064e3193983cf"
+          }
+        },
+        "projection": {
+          "medianUs": 2605,
+          "p95Us": 4445,
+          "maxUs": 4445,
+          "samplesUs": [
+            3401,
+            2802,
+            2605,
+            2683,
+            2607,
+            2686,
+            4445,
+            2569,
+            2538,
+            2518,
+            2496,
+            2544,
+            3428,
+            2584,
+            2566
+          ],
+          "result": {
+            "hash": "b1193348f2a25905e2082efbc23c171d9cd88f0a1692519ea915b60088f0ec83",
+            "passengers": 144
+          }
+        },
+        "start": {
+          "medianUs": 11846,
+          "p95Us": 18713,
+          "maxUs": 18713,
+          "samplesUs": [
+            11846,
+            11552,
+            12897,
+            12795,
+            18713,
+            12384,
+            15505,
+            12177,
+            11032,
+            11504,
+            11328,
+            11601,
+            12984,
+            11769,
+            11136
+          ],
+          "result": {
+            "hash": "f6030cac8928357b186edf620f59c3f4d64f7bf9118620b6a7cf4c209a4e0a9f",
+            "snapshotBytes": 54539
+          }
+        },
+        "restore": {
+          "medianUs": 2535,
+          "p95Us": 4141,
+          "maxUs": 4141,
+          "samplesUs": [
+            2784,
+            2842,
+            2644,
+            2503,
+            2535,
+            2369,
+            2434,
+            4141,
+            2534,
+            2483,
+            2175,
+            2577,
+            2244,
+            3120,
+            2604
+          ],
+          "result": {
+            "hash": "f6030cac8928357b186edf620f59c3f4d64f7bf9118620b6a7cf4c209a4e0a9f"
+          }
+        }
+      }
+    }
+  ]
+}

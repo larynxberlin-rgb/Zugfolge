@@ -122,7 +122,8 @@ test("actual conductor DOM and Pixi WebGL on committed native DB/API facts", { s
     // Select a real projected passenger in the next body. The actual UI asks the
     // server for a path and submits every movement; the harness supplies no path.
     const nextBody = initial.layout.vehicles[0].bodies[1].bodyId;
-    const indexInNextBody = resumed.snapshot.passengers.passengers.findIndex((person) => person.bodyId === nextBody && person.activity === "onboard");
+    const throughKeys = new Set(await backend.throughPassengerKeys());
+    const indexInNextBody = resumed.snapshot.passengers.passengers.findIndex((person) => person.bodyId === nextBody && person.activity === "onboard" && throughKeys.has(person.passengerKey));
     assert.ok(indexInNextBody >= 0);
     await page.locator(".conductor-passenger").nth(indexInNextBody).click();
     await page.getByRole("button", { name: "Zum Fahrgast gehen", exact: true }).click();
@@ -160,7 +161,8 @@ test("actual conductor DOM and Pixi WebGL on committed native DB/API facts", { s
   } catch (error) {
     const browserText = await page?.locator("body").innerText().catch(() => "Browser unavailable");
     if (page) await page.screenshot({ path: resolve(output, "failure.png"), fullPage: true }).catch(() => {});
-    await writeFile(resolve(dirname(reportPath), "failure.json"), JSON.stringify({ message: error.message, browserText, pageErrors: errors, screenshots }, null, 2));
+    await writeFile(resolve(dirname(reportPath), "failure.json"), JSON.stringify({ message: error.message, atMs: backend.fixture.clock.nowMs,
+      browserText, pageErrors: errors, actions, screenshots }, null, 2));
     throw error;
   } finally { await browser?.close(); await backend.close(); }
 });

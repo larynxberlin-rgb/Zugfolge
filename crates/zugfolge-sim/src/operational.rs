@@ -6286,6 +6286,13 @@ fn route_geometry_for(
     start_route_mm: i64,
     end_route_mm: i64,
 ) -> Result<Vec<OperationalRouteGeometryPoint>, OperationalError> {
+    if start_route_mm == end_route_mm {
+        // Ein zeitlicher Bremsrest am erreichten Fahrgasthalt besitzt keinen
+        // weiteren Millimeterweg, aber weiterhin genau diesen realen Ort.
+        return route_geometry_position(infra, route, start_route_mm)?
+            .map(|point| vec![point])
+            .ok_or(OperationalError::UnsafeState);
+    }
     let mut result = Vec::new();
     for leg in &route.legs {
         let start = start_route_mm.max(leg.route_start_mm);

@@ -341,16 +341,6 @@ export const GENERATED_GLOSSARY_ENTRIES = Object.freeze([
     "definition": "revisionierte M10-Projektion der tatsächlich reisenden Fahrgäste eines Zuglaufabschnitts einschließlich Ein-/Ausstieg und verdecktem Fahrberechtigungsstatus"
   },
   {
-    "term": "Fahrtpreisbeleg",
-    "code": "FareJourneyEvidenceV1",
-    "definition": "welt-, perioden- und abschnittsgebundene Tarif- und Erwerbsmöglichkeitsquelle; fehlende Belege erlauben keine erfundene Kontrollforderung"
-  },
-  {
-    "term": "Feststellungsbeleg",
-    "code": "DialogueEvidenceV1",
-    "definition": "ausschließlich bestätigter Dokument-, Identitäts- und Gefährdungsstand für öffentliche Gesprächsoptionen; vom verdeckten Fahrscheinstatus getrennt"
-  },
-  {
     "term": "Fahrgastprojektion",
     "code": "PassengerProjectionV1",
     "definition": "private 1:1-Innenraumprojektion eines quittierten M10-Zugabschnitts mit stabilen Plätzen und ausschließlich sichtbaren Merkmalen; erzeugt keine Nachfrage oder Fahrberechtigung"
@@ -394,6 +384,11 @@ export const GENERATED_GLOSSARY_ENTRIES = Object.freeze([
     "term": "Fahrstraßenbildezeit",
     "code": "RouteSettingTime",
     "definition": "erster Anteil der Sperrzeit: Stellen und Festlegen des Fahrwegs, bevor das Signal Fahrt zeigen kann"
+  },
+  {
+    "term": "Fahrtpreisbeleg",
+    "code": "FareJourneyEvidenceV1",
+    "definition": "welt-, perioden- und abschnittsgebundene Tarif- und Erwerbsmöglichkeitsquelle; fehlende Belege erlauben keine erfundene Kontrollforderung"
   },
   {
     "term": "Fahrweg",
@@ -449,6 +444,11 @@ export const GENERATED_GLOSSARY_ENTRIES = Object.freeze([
     "term": "Fernverkehrslinienentwurf",
     "code": "SpfvDraft",
     "definition": "Spielerabsicht für Linie, Halte, Formation, Takt, Abschnittspreis und begrenzte Gültigkeit"
+  },
+  {
+    "term": "Feststellungsbeleg",
+    "code": "DialogueEvidenceV1",
+    "definition": "ausschließlich bestätigter Dokument-, Identitäts- und Gefährdungsstand für öffentliche Gesprächsoptionen; vom verdeckten Fahrscheinstatus getrennt"
   },
   {
     "term": "Flankenschutz",
@@ -601,14 +601,14 @@ export const GENERATED_GLOSSARY_ENTRIES = Object.freeze([
     "definition": "bindender zusätzlicher Aufenthalt am nächsten planmäßigen Fahrgasthalt nach Polizeianforderung; verlängert reale Ressourcenbelegungen und verlangt anschließend ein neues Abfahrtsrecht"
   },
   {
-    "term": "Kontrollhaltpolicy",
-    "code": "FareControlPolicyV1",
-    "definition": "welt- und periodenverbindliche Regeln für zulässige Polizeigründe, Zielhalt, Zuständigkeit, einmalige Anforderung und maximale zusätzliche Wartezeit"
-  },
-  {
     "term": "Kontrollfolgenquittung",
     "code": "ConductorSessionControlReceiptV1",
     "definition": "native Bindung eines angenommenen Sitzungseffekts an einen tatsächlich committed Forderungs- oder Haltebeleg"
+  },
+  {
+    "term": "Kontrollhaltpolicy",
+    "code": "FareControlPolicyV1",
+    "definition": "welt- und periodenverbindliche Regeln für zulässige Polizeigründe, Zielhalt, Zuständigkeit, einmalige Anforderung und maximale zusätzliche Wartezeit"
   },
   {
     "term": "Kündigungsvormerkung",

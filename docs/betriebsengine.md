@@ -116,9 +116,18 @@ am Start, das Abschnittsende aber exakt einen Millimeter dahinter, wird dieser
 Millimeter ausschließlich bei `valid_until` erreicht. Nullzeitabschnitte und
 groessere positive Nullfortschritte springen nicht und werden beim Abschluss
 fail-closed abgewiesen. An internen Abschnittsenden bleibt die analytische
-Geschwindigkeit erhalten; am erreichten Fahrberechtigungsende oder gebundenen
-Fahrgasthalt wird sie auf null geklemmt. Rust-Kern und TypeScript-Kartenprojektion wenden diese Regel
-identisch an.
+Geschwindigkeit erhalten; am erreichten Fahrberechtigungsende wird sie auf
+null geklemmt. Rust-Kern und TypeScript-Kartenprojektion wenden diese Regel
+identisch an. Am gebundenen Fahrgasthalt kann nach Erreichen des ganzzahligen
+Zielmillimeters ein zeitlich positiver Bremsrest ohne weiteren darstellbaren
+Weg verbleiben. Er bleibt ein echter Bewegungsabschnitt mit gleicher Start-
+und Endposition; der Ankunftsbeleg entsteht erst bei Geschwindigkeit null.
+Seine Projektion enthält genau einen tatsächlichen Gleisgeometriepunkt an der
+committed Zugspitze. Zeitlich leere Abschnitte oder fehlende, fremde oder mehrere
+Punkte sind hierfür unzulässig. Räumlich fortschreitende Abschnitte benötigen
+weiterhin mindestens zwei lückenlos verbundene Punkte. LiveMap und RZÜ halten
+beim Einpunktabschnitt dieselbe Position, werten den Geschwindigkeitsrest bis
+zur Zeitgrenze aus und extrapolieren danach nicht.
 
 ## 4. Belegung und Stellwerk
 

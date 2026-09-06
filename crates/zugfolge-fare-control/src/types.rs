@@ -350,6 +350,25 @@ pub struct FareInspectionCaseViewV1 {
     pub proof_deadline_ms: i64,
 }
 
+/// Öffentliche EVU-Tageswerte ohne private Beleg-, Personen- oder Modellpins.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct FareDayReportV1 {
+    pub day_start_ms: i64,
+    pub contract_revenue_cents: String,
+    pub net_cents: String,
+    pub premium_cents: String,
+    pub cap_adjustment_cents: String,
+    pub contribution_cents: String,
+    pub settlement_revision: u64,
+}
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct FareControlReportV1 {
+    pub cases: Vec<FareInspectionCaseViewV1>,
+    pub days: Vec<FareDayReportV1>,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct FareControlError(pub &'static str);
 impl std::fmt::Display for FareControlError {

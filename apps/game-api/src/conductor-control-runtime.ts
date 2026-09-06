@@ -30,11 +30,20 @@ export interface FareControlState extends ControlRecord {
 export interface FareControlTransition {
   readonly state: FareControlState; readonly receipt: ControlRecord; readonly ledgerEvents: readonly ControlLedgerEvent[];
 }
+export interface FareDayReportV1 {
+  readonly dayStartMs: number; readonly contractRevenueCents: string; readonly netCents: string;
+  readonly premiumCents: string; readonly capAdjustmentCents: string; readonly contributionCents: string;
+  readonly settlementRevision: number;
+}
+export interface FareControlReportV1 {
+  readonly cases: readonly ControlRecord[]; readonly days: readonly FareDayReportV1[];
+}
 export interface FareControlRuntime {
   initialize(worldId: string, operatorId: string, nowMs: number): FareControlState;
   apply(state: FareControlState, command: ControlRecord): FareControlTransition;
   restore(state: FareControlState, expectedStateHash: string): FareControlState;
   project(state: FareControlState): readonly ControlRecord[];
+  report(state: FareControlState): FareControlReportV1;
   policyHash(policy: ControlRecord): string;
   journeyHash(evidence: ControlRecord): string;
   modelHash(model: ControlRecord): string;
@@ -77,6 +86,26 @@ export function fareControlRuntimeFromAddon(addon: Readonly<Record<string, unkno
   function digest(name: string, input: unknown): string {
     const value = invoke(name, input); if (typeof value !== "string" || !/^[a-f0-9]{64}$/u.test(value)) fail(); return value;
   }
+  function publicCases(result: unknown): readonly ControlRecord[] {
+  if (!Array.isArray(result)) fail();
+  const fields = ["caseId", "encounterId", "trainRunId", "status", "evidence", "claimKind", "claimCents", "paidCents", "costsCents", "writtenOffCents", "proofDeadlineMs"];
+  for (const item of result) {
+    const row = controlRecord(item); if (Object.keys(row).length !== fields.length || fields.some((field) => !Object.hasOwn(row, field))) fail();
+    for (const key of ["caseId", "encounterId", "trainRunId"]) if (!/^[a-zA-Z0-9_:./-]{1,160}$/u.test(controlText(row[key]))) fail();
+    if (!["open", "closed_without_claim", "claim_open", "settled"].includes(String(row["status"]))
+      || (row["claimKind"] !== null && row["claimKind"] !== "regular" && row["claimKind"] !== "provisional")
+      || typeof row["proofDeadlineMs"] !== "number" || row["proofDeadlineMs"] < 0) fail();
+    for (const key of ["claimCents", "paidCents", "costsCents", "writtenOffCents"]) {
+      const amount = controlText(row[key]); if (!/^(?:0|[1-9][0-9]*)$/u.test(amount) || BigInt(amount) > 9223372036854775807n) fail();
+    }
+    const evidence = controlRecord(row["evidence"]), evidenceFields = ["documentStatus", "acquisitionException", "identityStatus", "concreteDanger"];
+    if (Object.keys(evidence).length !== evidenceFields.length || evidenceFields.some((field) => !Object.hasOwn(evidence, field))
+      || !["unchecked", "verified_valid", "not_presentable", "verified_invalid"].includes(String(evidence["documentStatus"]))
+      || !["unknown", "proven", "excluded"].includes(String(evidence["acquisitionException"]))
+      || !["unknown", "confirmed", "refused"].includes(String(evidence["identityStatus"])) || typeof evidence["concreteDanger"] !== "boolean") fail();
+  }
+  return result as readonly ControlRecord[];
+  }
   return Object.freeze({
     initialize(worldId: string, operatorId: string, nowMs: number) {
       const result = state(invoke("initializeFareControl", { worldId, operatorId, nowMs }));
@@ -94,10 +123,26 @@ export function fareControlRuntimeFromAddon(addon: Readonly<Record<string, unkno
     },
     project(current: FareControlState) {
       const result = invoke("projectFareCases", { state: current, expectedStateHash: current.stateHash, worldId: current.worldId, operatorId: current.operatorId });
-      if (!Array.isArray(result)) fail();
-      const fields = ["caseId", "encounterId", "trainRunId", "status", "evidence", "claimKind", "claimCents", "paidCents", "costsCents", "writtenOffCents", "proofDeadlineMs"];
-      for (const item of result) { const row = controlRecord(item); if (Object.keys(row).length !== fields.length || fields.some((field) => !Object.hasOwn(row, field))) fail(); }
-      return result as readonly ControlRecord[];
+      return publicCases(result);
+    },
+    report(current: FareControlState): FareControlReportV1 {
+      const row = controlRecord(invoke("projectFareControlReport", { state: current, expectedStateHash: current.stateHash, worldId: current.worldId, operatorId: current.operatorId }));
+      if (Object.keys(row).length !== 2 || !Object.hasOwn(row, "cases") || !Array.isArray(row["days"])) fail();
+      const fields = ["dayStartMs", "contractRevenueCents", "netCents", "premiumCents", "capAdjustmentCents", "contributionCents", "settlementRevision"];
+      let previous = -1;
+      for (const item of row["days"]) {
+        const day = controlRecord(item);
+        if (Object.keys(day).length !== fields.length || fields.some((field) => !Object.hasOwn(day, field))
+          || typeof day["dayStartMs"] !== "number" || day["dayStartMs"] <= previous
+          || typeof day["settlementRevision"] !== "number" || day["settlementRevision"] < 1) fail();
+        previous = day["dayStartMs"];
+        for (const key of ["contractRevenueCents", "netCents", "premiumCents", "capAdjustmentCents", "contributionCents"]) {
+          const amount = controlText(day[key]), signed = key === "netCents" || key === "contributionCents";
+          if (!(signed ? /^(?:0|-?[1-9][0-9]*)$/u : /^(?:0|[1-9][0-9]*)$/u).test(amount)
+            || BigInt(amount) < -9223372036854775808n || BigInt(amount) > 9223372036854775807n) fail();
+        }
+      }
+      return { cases: publicCases(row["cases"]), days: row["days"] as unknown as readonly FareDayReportV1[] };
     },
     policyHash: (input: ControlRecord) => digest("hashFareInspectionPolicy", input),
     journeyHash: (input: ControlRecord) => digest("hashFareJourneyEvidence", input),

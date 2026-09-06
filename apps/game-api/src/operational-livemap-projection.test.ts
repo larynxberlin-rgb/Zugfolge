@@ -150,6 +150,20 @@ describe("operative LiveMap-Allowlist", () => {
     expect(train.operational?.motionSegment).toBeUndefined();
   });
 
+  it("publiziert den zeitlichen Bremsrest mit genau seiner tatsächlichen Position", () => {
+    const source = projection();
+    const train = source.trains[0]!;
+    const constant = { ...train, motionGeometry: [train.headGeometry], motionSegment: {
+      ...train.motionSegment!, segmentEndRouteMm: train.headRouteMm, validUntilMs: 10_001,
+      startSpeedMmps: 70, accelerationMmps2: -900,
+    } };
+    const projected = projectOperationalLivemap({ ...source, trains: [constant] }).trains[0]!;
+    expect(projected.operational?.motionSegment?.geometry).toHaveLength(1);
+    expect(projected.mapPosition).toMatchObject({ trackId: "edge:1", offsetMm: 10_000 });
+    expect(() => projectOperationalLivemap({ ...source, trains: [{ ...constant, motionGeometry: [] }] }))
+      .toThrow(/Bewegungsverlauf/);
+  });
+
   it("verwirft eine getrennte RZUE-Projektion und unvollstaendige Bewegungsgeometrie", () => {
     expect(() => projectOperationalLivemap({ ...projection(), kind: "rzue" })).toThrow(/LiveMap-Projektion/);
     const source = projection();

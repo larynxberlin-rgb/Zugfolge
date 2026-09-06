@@ -390,8 +390,11 @@ export async function createConductorRenderer(options: ConductorRendererOptions)
     const body = selectedBody(), zoom = view.zoom;
     const width = px(body.lengthMm), height = px(body.widthMm);
     const center = cameraMm ?? (sameSpace(value.position, view) ? value.position.xMm : Math.floor(body.lengthMm / 2));
-    const minimum = Math.min(app.screen.width / 2, width * zoom / 2);
-    const centerPx = Math.min(Math.max(px(center) * zoom, minimum), Math.max(minimum, width * zoom - app.screen.width / 2));
+    // Keep the full 64px actor frame visible at real gangway endpoints near
+    // x=0/length. Camera padding changes no native position or collision area.
+    const edgePadding = 32 * zoom;
+    const minimum = Math.min(app.screen.width / 2 - edgePadding, width * zoom / 2);
+    const centerPx = Math.min(Math.max(px(center) * zoom, minimum), Math.max(minimum, width * zoom - app.screen.width / 2 + edgePadding));
     train.scale.set(zoom);
     train.position.set(Math.round(app.screen.width / 2 - centerPx), Math.round(app.screen.height / 2 - height * zoom / 2));
     const nextGeometryKey = `${value.layout.layoutHash}|${view.vehicleId}|${view.bodyId}|${view.deckId}`;

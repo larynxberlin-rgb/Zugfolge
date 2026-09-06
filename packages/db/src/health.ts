@@ -6,7 +6,7 @@ import type { PgDatabase, PgQueryResultHKT } from "drizzle-orm/pg-core";
 type AnyDatabase = PgDatabase<PgQueryResultHKT, Record<string, unknown>, any>;
 
 /** Zahl der mit diesem Quellstand ausgelieferten Drizzle-Migrationen. */
-export const EXPECTED_SCHEMA_MIGRATIONS = 35;
+export const EXPECTED_SCHEMA_MIGRATIONS = 36;
 
 function firstRow(result: unknown): Record<string, unknown> | undefined {
   if (Array.isArray(result)) return result[0] as Record<string, unknown> | undefined;
@@ -111,6 +111,12 @@ export function createDatabaseHealthCheck(db: AnyDatabase): HealthCheck {
       await db.execute(
         sql`select world_id, release_hash, status from infra_release_changes limit 0`,
       );
+      await db.execute(sql`select world_id, account_id, owner_ref from conductor_owners limit 0`);
+      await db.execute(sql`select world_id, train_run_id, region_id, state_hash, revision, at_ms from conductor_train_states limit 0`);
+      await db.execute(sql`select world_id, account_id, owner_ref, train_run_id, session_id, lease_until_ms from conductor_leases limit 0`);
+      await db.execute(sql`select world_id, train_run_id, command_id, owner_ref, request_hash, receipt from conductor_command_receipts limit 0`);
+      await db.execute(sql`select world_id, train_run_id, session_id, owner_ref, sequence, snapshot from conductor_snapshots limit 0`);
+      await db.execute(sql`select world_id, operator_id, state_hash, revision, at_ms from conductor_control_states limit 0`);
       return { status: "ok", code: "schema_current" };
     },
   };

@@ -100,8 +100,6 @@ nicht prüfen, ob ein Eintrag stimmt — dafür steht die Quelle daneben.
 | Fahrgastinformationsanzeige | `PassengerInformationDisplay` | öffentliche, zuggebundene Projektion von Ziel, nächstem Halt, Folgehalten, Verspätung und Meldungen; Grundlage des generischen FIS-Monitors | `adr/0026-karte-als-spielzentrum.md` |
 | Fahrgastkontrollfall | `FareInspectionCaseV1` | persistenter, pseudonymer Kontrollvorgang eines materialisierten Manifestfahrgasts mit Dialog-, Feststellungs- und Forderungszustand | `schaffnermodus.md` 3.1, 8 |
 | Fahrgastmanifest | `PassengerManifestV1` | revisionierte M10-Projektion der tatsächlich reisenden Fahrgäste eines Zuglaufabschnitts einschließlich Ein-/Ausstieg und verdecktem Fahrberechtigungsstatus | `schaffnermodus.md` 3.1 |
-| Fahrtpreisbeleg | `FareJourneyEvidenceV1` | welt-, perioden- und abschnittsgebundene Tarif- und Erwerbsmöglichkeitsquelle; fehlende Belege erlauben keine erfundene Kontrollforderung | `fare-inspection-cases.md` |
-| Feststellungsbeleg | `DialogueEvidenceV1` | ausschließlich bestätigter Dokument-, Identitäts- und Gefährdungsstand für öffentliche Gesprächsoptionen; vom verdeckten Fahrscheinstatus getrennt | `conductor-dialogue.md`, `fare-inspection-cases.md` |
 | Fahrgastprojektion | `PassengerProjectionV1` | private 1:1-Innenraumprojektion eines quittierten M10-Zugabschnitts mit stabilen Plätzen und ausschließlich sichtbaren Merkmalen; erzeugt keine Nachfrage oder Fahrberechtigung | `schaffnermodus.md` 3.3 |
 | Fahrgastprojektion mit Deckbindung | `PassengerProjectionV2` | M15.2-Projektion mit Wagenkasten-/Deckkennungen, exklusiver Sonderflächenzuordnung und Hash des geprüften M15.4-Quelllayouts; unveränderte Fahrgäste und Kapazitätszuweisungen | `conductor-interior.md` 7 |
 | Fahrplanperiode | `SchedulePeriod` | Saison aus Anmeldung, Koordinierung, Veröffentlichung und Betrieb; Länge ist Weltparameter, 3 bis 8 Wochen | `infrastruktur.md` 11 |
@@ -111,6 +109,7 @@ nicht prüfen, ob ein Eintrag stimmt — dafür steht die Quelle daneben.
 | Fahrstraßenauflösezeit | `RouteReleaseTime` | letzter Anteil der Sperrzeit: das Auflösen des Fahrwegs, nachdem der Zug geräumt hat | `infrastruktur.md` 1 |
 | Fahrstraßenausschluss | `RouteExclusion` | Belegungskonflikt zweier Fahrstraßen desselben Bahnhofskopfs, die sich ein Fahrwegelement oder eine Weiche teilen | `infrastruktur.md` 8 |
 | Fahrstraßenbildezeit | `RouteSettingTime` | erster Anteil der Sperrzeit: Stellen und Festlegen des Fahrwegs, bevor das Signal Fahrt zeigen kann | `infrastruktur.md` 1 |
+| Fahrtpreisbeleg | `FareJourneyEvidenceV1` | welt-, perioden- und abschnittsgebundene Tarif- und Erwerbsmöglichkeitsquelle; fehlende Belege erlauben keine erfundene Kontrollforderung | `fare-inspection-cases.md` |
 | Fahrweg | `RunPath` | lückenlose Folge von Segmenten mit Länge, zulässiger Geschwindigkeit und Neigung, aus der die Fahrdynamik eine Fahrzeit rechnet — anders als der `Laufweg` bereits auf konstante Werte geschnitten | `betriebsgraph.md` 16 |
 | Fahrzeitrechner | `derive_running_time_table` | Verfahren, das über einen Fahrweg und eine Zugcharakteristik eine ganzzahlige Fahrzeittabelle rechnet — der einzige Ort mit Gleitkommarechnung in der Infra-Release-Pipeline | `betriebsgraph.md` 16 |
 | Fahrzeittabelle | `RunningTimeTable` | vorberechnete, ganzzahlige Folge von Fahrzeiten und erreichten Geschwindigkeiten an den Segmentgrenzen eines Fahrwegs | `betriebsgraph.md` 16 |
@@ -122,6 +121,7 @@ nicht prüfen, ob ein Eintrag stimmt — dafür steht die Quelle daneben.
 | Fahrzeugmarktstatus | `VehicleMarketStatus` | autoritativer Zustand eines konkreten Fahrzeugs: Eigentum, Leasing, serverseitiges Leasingangebot, Gebrauchtangebot oder Ausmusterung | `betrieb.md` 3.6 |
 | Fahrzeugzustand | `VehicleCondition` | mehrdimensionaler, ganzzahliger Zustand für Mechanik, Antrieb, Bremsen, Betrieb und Innenraum; wird im Lebenslauf fortgeschrieben | `betrieb.md` 3.6 |
 | Fernverkehrslinienentwurf | `SpfvDraft` | Spielerabsicht für Linie, Halte, Formation, Takt, Abschnittspreis und begrenzte Gültigkeit | `personenverkehr.md`, `spfv-planung.md` |
+| Feststellungsbeleg | `DialogueEvidenceV1` | ausschließlich bestätigter Dokument-, Identitäts- und Gefährdungsstand für öffentliche Gesprächsoptionen; vom verdeckten Fahrscheinstatus getrennt | `conductor-dialogue.md`, `fare-inspection-cases.md` |
 | Flankenschutz | `flank_resources` | zusätzlich zum Fahrweg verriegelte Ressourcen, die unbeabsichtigte seitliche Einfahrten in eine eingestellte Fahrstraße verhindern | `betriebsengine.md` 4 |
 | Formation | `Formation` | konkrete Zusammenstellung von Fahrzeugen für eine Zugfahrt | `betrieb.md` 2 |
 | Frist | `deadlineAt` | Zeitpunkt, bis zu dem eine Reaktion auf eine Postfach-Nachricht erwartet wird; optional, nicht jede Nachricht trägt eine | `weltgeruest.md` 9 |
@@ -152,8 +152,8 @@ nicht prüfen, ob ein Eintrag stimmt — dafür steht die Quelle daneben.
 | Konfliktressource | `ConflictResource` | alles, worum zwei Zugfahrten konkurrieren können — Block, Fahrstraße, Bahnsteig, Anlage | `infrastruktur.md` 1 |
 | Konto | `Account` | Spielkonto, das ein Keycloak-Subject aus einem Weltzugang heraus in genau einer Welt führt; Anzeigename ist eine Angabe des Spielsystems, nicht der Identität bei Keycloak | `weltgeruest.md` 2 |
 | Kontrollbedingter Betriebshalt | `FareControlHoldV1` | bindender zusätzlicher Aufenthalt am nächsten planmäßigen Fahrgasthalt nach Polizeianforderung; verlängert reale Ressourcenbelegungen und verlangt anschließend ein neues Abfahrtsrecht | `schaffnermodus.md` 9 |
-| Kontrollhaltpolicy | `FareControlPolicyV1` | welt- und periodenverbindliche Regeln für zulässige Polizeigründe, Zielhalt, Zuständigkeit, einmalige Anforderung und maximale zusätzliche Wartezeit | `schaffnermodus.md` 9.0 |
 | Kontrollfolgenquittung | `ConductorSessionControlReceiptV1` | native Bindung eines angenommenen Sitzungseffekts an einen tatsächlich committed Forderungs- oder Haltebeleg | `conductor-session-platform.md` |
+| Kontrollhaltpolicy | `FareControlPolicyV1` | welt- und periodenverbindliche Regeln für zulässige Polizeigründe, Zielhalt, Zuständigkeit, einmalige Anforderung und maximale zusätzliche Wartezeit | `schaffnermodus.md` 9.0 |
 | Kündigungsvormerkung | `termination-pending` | serverautoritiver Zwischenzustand eines EVU-Vertrags: Die Kündigung ist angenommen, Leistung und Fahrzeughaltung bleiben aber bis zum berechneten Fristende wirksam | `wirtschaft.md` 6 |
 | Längsneigung | `Gradient` | Steigung oder Gefälle eines Gleisabschnitts in Zehntel Promille, bezogen auf die Kilometrierung; kehrt sich in der Gegenrichtung um | `betriebsgraph.md` 4 |
 | Laufweg | `Itinerary` | die Folge von Betriebsstellen und Kanten, die eine Zugfahrt befährt | `infrastruktur.md` 2 |

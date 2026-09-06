@@ -16,8 +16,18 @@ bestätigte Zahlung, Kosten, Abschreibung und Nachweisfrist. Ein Polizeihalt zei
 Anforderung, aktiven Halt oder Freigabe und den bekannten Ausgang. Beträge werden
 aus ganzzahligen Centzeichenketten formatiert. Weder Modellparameter noch eine
 vermutete Identität oder verborgene Fahrscheinfakten erscheinen im Browser.
+Der Tagesbericht zeigt die nativ bestätigte SPNV-Vertragsbasis, Nettoergebnis,
+Prämie, Deckelausgleich und verbleibenden Beitrag des eigenen EVU. Er ist über
+die eigene Zugansicht und im Kontrollbereich auch ohne aktive Schaffnersitzung
+abrufbar. Nach Fahrtende aktualisiert ein ausdrücklicher Abruf die späteren
+Nachweise, Zahlungen und Tagesabschlüsse; der Browser berechnet keine Buchung.
 Kontroll- und Szenenaktualisierungen tragen dieselbe Sitzungs-/Sequenzbindung
 wie der zugehörige native Snapshot.
+
+„Zu meiner Position“ synchronisiert auch die Fahrzeug-/Deckauswahl. Ein nativ
+bestätigter Wagen- oder Deckwechsel führt die Ansicht zur tatsächlichen Figur.
+Ein bestätigter Sitzungsabschluss stoppt den privaten Strom und lokale Wege;
+das reguläre Stromende erscheint nicht als Verbindungsfehler.
 
 Ein ausdrücklich wegen veralteter Sitzungsrevision abgewiesener Gehschritt
 darf höchstens zweimal mit aktuellem Snapshot erneut gesendet werden. Dabei

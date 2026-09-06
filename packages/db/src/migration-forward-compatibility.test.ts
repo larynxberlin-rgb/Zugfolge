@@ -86,7 +86,7 @@ async function schema31MigrationsFolder(): Promise<string> {
   return folder;
 }
 
-it("migriert Schema 28 atomar bis 35 und bindet alle Welt-Writer an die DB-Instanz", async () => {
+it("migriert Schema 28 atomar bis 36 und bindet alle Welt-Writer an die DB-Instanz", async () => {
   const previousMigrationsFolder = await schema28MigrationsFolder();
   const client = new PGlite();
   const db = drizzle(client);
@@ -118,7 +118,7 @@ it("migriert Schema 28 atomar bis 35 und bindet alle Welt-Writer an die DB-Insta
       `select count(*)::int as trigger_count
        from pg_trigger
        where not tgisinternal and tgname like 'zugfolge_world_guard_%'`,
-    )).resolves.toMatchObject({ rows: [{ trigger_count: 47 }] });
+    )).resolves.toMatchObject({ rows: [{ trigger_count: 53 }] });
     await expect(client.query<{ function_source: string }>(
       `select prosrc as function_source from pg_proc
        where proname = 'zugfolge_enforce_world_writer_guard'`,

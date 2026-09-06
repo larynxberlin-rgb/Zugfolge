@@ -1077,12 +1077,18 @@ function projectedTrain(value: unknown, name: string): asserts value is Operatio
     }),
     `${name}.motionGeometry ist nicht lueckenlos gleisgebunden geordnet.`,
   );
-  invariant(
-    value["motionSegment"] === null
-      ? value["motionGeometry"].length === 0
-      : value["motionGeometry"].length >= 2,
-    `${name}.motionSegment und motionGeometry widersprechen sich.`,
-  );
+  const segment = value["motionSegment"];
+  const geometry = value["motionGeometry"];
+  const head = value["headGeometry"];
+  const constantPosition = segment !== null && segment.startRouteMm === segment.segmentEndRouteMm;
+  invariant(segment === null ? geometry.length === 0 : constantPosition
+    ? segment.validUntilMs > segment.startedAtMs && geometry.length === 1
+      && segment.startRouteMm === head.routeMm
+      && (["routeMm", "edgeId", "edgeOffsetMm", "latitudeE7", "longitudeE7", "bearingMilliDegrees"] as const)
+        .every((key) => geometry[0]?.[key] === head[key])
+    : geometry.length >= 2 && geometry[0]?.routeMm === segment.startRouteMm
+      && geometry.at(-1)?.routeMm === segment.segmentEndRouteMm,
+  `${name}.motionSegment und motionGeometry widersprechen sich.`);
   if (value["waitingReason"] !== null) nonEmptyString(value["waitingReason"], `${name}.waitingReason`);
 }
 
