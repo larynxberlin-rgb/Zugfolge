@@ -51,6 +51,26 @@ class TestDemandData(TransactionCase):
         with self.assertRaises(ValidationError), self.cr.savepoint():
             lines[0].write({"population": 51})
 
+    def test_plain_zugfolge_admin_can_import_and_save_without_system_or_approver_role(self):
+        user = self.env["res.users"].with_context(no_reset_password=True).create({
+            "name": "Nachfragedatenpflege", "login": "demand-data-editor",
+            "group_ids": [Command.set([self.env.ref("zugfolge_admin.group_zugfolge_admin").id])],
+        })
+        self.assertFalse(user.has_group("base.group_system"))
+        self.assertFalse(user.has_group("zugfolge_admin.group_zugfolge_approver"))
+        data = self.env["zugfolge.demand.data"].with_user(user).create({
+            "world_id": "55555555-5555-4555-8555-555555555555",
+            "initial_file": base64.b64encode(json.dumps(release_fixture()).encode()),
+        })
+        data.action_import()
+        town = data.settlement_ids.filtered(lambda line: line.settlement_id == "town-a")
+        data.write({"settlement_ids": [Command.update(town.id, {"population": 105})]})
+        self.assertEqual(data.source_revision, 2)
+        latest = data.event_ids.filtered(lambda event: event.source_revision == 2)
+        self.assertEqual(latest.editor_id, user)
+        self.assertEqual(latest.state, "queued")
+        self.assertEqual(sum(data.allocation_ids.filtered(lambda line: line.settlement_ref_id == town).mapped("population")), 105)
+
     def test_new_known_station_pair_and_zero_hint_save_immediately(self):
         stations = self.data.station_ids.sorted("zone_id")
         revision = self.data.source_revision
@@ -97,7 +117,13 @@ class TestDemandData(TransactionCase):
                 self.data.with_user(user).write({"name": "forbidden"})
             with self.subTest(role=role), self.assertRaises(AccessError), self.cr.savepoint():
                 self.data.settlement_ids[:1].with_user(user).write({"population": 100})
-            self.assertNotIn(self.env.ref("zugfolge_admin.menu_zugfolge_demand_data").id, self.env["ir.ui.menu"].with_user(user)._visible_menu_ids())
+            menus = self.env["ir.ui.menu"].with_user(user)
+            if role == "base.group_portal":
+                # Portal users cannot read backend menus at all in Odoo 19.
+                with self.assertRaises(AccessError):
+                    menus._visible_menu_ids()
+            else:
+                self.assertNotIn(self.env.ref("zugfolge_admin.menu_zugfolge_demand_data").id, menus._visible_menu_ids())
 
     def test_delivery_retry_uses_frozen_revision_and_result_tracks_that_revision(self):
         event = self.data.event_ids[:1]

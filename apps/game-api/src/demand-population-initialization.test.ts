@@ -8,7 +8,7 @@ import { migrate } from "drizzle-orm/pglite/migrator";
 import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { DEMAND_POPULATION_EVENT, type PopulationRevision } from "./demand-population-data.js";
+import { DEMAND_POPULATION_EVENT, loadPopulationDataHistory, savePopulationData, type PopulationRevision } from "./demand-population-data.js";
 import { loadDemandPoolSeed, pinDemandPoolSeeds } from "./demand-pool-seeds.js";
 import { DemandProgressConsumer } from "./demand-progress.js";
 import { DemandStore, demandHash, demandInteger, demandList, demandRecord } from "./demand-store.js";
@@ -78,6 +78,11 @@ describe.skipIf(!nativeAvailable)("Datenrevisionen beim Poolanfang: echte Rust-N
         sourceRevision: value.revision, commandHash: demandHash(value), snapshot: value, snapshotHash: demandHash(value),
       } })));
   }
+  async function saveData(inputs: readonly Readonly<Record<string, unknown>>[], value: PopulationRevision) {
+    return db.transaction((tx) => savePopulationData(tx, runtime, { kind: "demand.data.update", schemaVersion: "zugfolge-demand-data-update/v1",
+      worldId: WORLD, baseReleaseId: String(demandRecord(inputs[0]!["release"])["id"]), sourceRevision: value.revision,
+      populationModel: value.populationModel, zonePopulations: value.zonePopulations }, inputs, value.effectiveAtMs, new Date(value.effectiveAtMs)));
+  }
   async function receipt(input: Readonly<Record<string, unknown>>, kind: "arrival" | "departure", atMs: number) {
     const train = demandList(input["services"])[0]!, stop = demandList(train["stops"])[0]!;
     const value: OperationalPassengerStopReceipt = { schemaVersion: "zugfolge-operational-passenger-stop-receipt/v1", worldId: WORLD,
@@ -143,5 +148,33 @@ describe.skipIf(!nativeAvailable)("Datenrevisionen beim Poolanfang: echte Rust-N
     expect(demandRecord(result.result["totals"])["generated"]).toBe(320);
     expect(await loadDemandPoolSeed(db, runtime, WORLD, String(input["periodId"]), PIN)).toEqual(seed);
     expect(await new DemandStore(db, runtime).latest(WORLD, PIN)).toEqual(result);
+  }, 30_000);
+
+  it.each([false, true])("hält den 257. noch offenen Save für den Retry zurück (Checkpoint: %s)", async (withCheckpoint) => {
+    const input = template();
+    if (withCheckpoint) await run(input);
+    await dataEvents(input, Array.from({ length: 255 }, (_, index) => snapshot(input, index + 1, 0, 1)));
+    expect(await saveData([input], snapshot(input, 256, 0, 1))).toEqual({ outcome: "accepted" });
+    const beforeHead = await head();
+    await expect(saveData([input], snapshot(input, 257, 0, 1))).rejects.toMatchObject({ statusCode: 503, code: "pending_population_data_limit" });
+    expect(await head()).toBe(beforeHead);
+    const history = await loadPopulationDataHistory(db, WORLD, String(demandRecord(input["release"])["id"]), 0, beforeHead);
+    expect(history).toHaveLength(256);
+    expect(history.at(-1)?.snapshot.revision).toBe(256);
+  }, 30_000);
+
+  it("fasst vor dem ersten Seed nur reine Zukunftsstände zusammen und begrenzt Stände am ersten Wunschzeitpunkt", async () => {
+    const input = template(DAY);
+    await dataEvents(input, Array.from({ length: 260 }, (_, index) => snapshot(input, index + 1, index + 1, 1)));
+    expect(await saveData([input], snapshot(input, 261, 261, 1))).toEqual({ outcome: "accepted" });
+    await dataEvents(input, Array.from({ length: 254 }, (_, index) => snapshot(input, index + 262, DAY, 1)));
+    expect(await saveData([input], snapshot(input, 516, DAY, 1))).toEqual({ outcome: "accepted" });
+    const beforeHead = await head();
+    await expect(saveData([input], snapshot(input, 517, DAY, 1))).rejects.toMatchObject({ statusCode: 503, code: "pending_population_data_limit" });
+    expect(await head()).toBe(beforeHead);
+    const history = await loadPopulationDataHistory(db, WORLD, String(demandRecord(input["release"])["id"]), 0, beforeHead, DAY - 1);
+    expect(history).toHaveLength(256);
+    expect(history[0]?.snapshot.revision).toBe(261);
+    expect(history.at(-1)?.snapshot.revision).toBe(516);
   }, 30_000);
 });

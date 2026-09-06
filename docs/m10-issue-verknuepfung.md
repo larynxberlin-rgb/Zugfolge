@@ -5,12 +5,15 @@ Abgleich vom 06.09.2026 mit den acht vollständigen Issue-Beschreibungen des
 Der Stack besteht aus [#532](https://github.com/larynxberlin-rgb/Zugfolge/pull/532)
 (Kern), [#533](https://github.com/larynxberlin-rgb/Zugfolge/pull/533)
 (Trassenautorität) und [#534](https://github.com/larynxberlin-rgb/Zugfolge/pull/534)
-(Integration, Oberfläche, Daten und gemeinsame Nachweise).
+(Integration, Oberfläche, Daten und gemeinsame Nachweise), ergänzt um
+[#537](https://github.com/larynxberlin-rgb/Zugfolge/pull/537)
+(Einwohnernachfrage und direkte Odoo-Datenpflege auf `codex/m10-population-demand`).
 
-Schließende Verknüpfungen gehören an den obersten PR #534: Erst er enthält
-auch die Plattformintegration und die ergänzten Abnahmebeweise. Die unteren
-PRs bleiben als Implementierungsreferenzen verknüpft. Voraussetzung für die
-Schließung ist ein grüner CI-Lauf des endgültigen Stacks. Kein Issue wird
+Die schließenden Verknüpfungen für #169–#172, #210, #361 und #379 sind per
+GitHub-API an #534 bestätigt. #173 erhält wegen des geänderten Nutzerumfangs
+seine schließende Verknüpfung am vierten PR nach den abschließenden Tests.
+Die unteren PRs bleiben als Implementierungsreferenzen verknüpft. Voraussetzung
+für die Schließung ist ein grüner CI-Lauf des endgültigen Stacks. Kein Issue wird
 allein durch diesen Bericht oder einen bestandenen Teiltest geschlossen.
 
 | Issue | Fachlicher Abgleich | PR-Zuordnung | Verknüpfung |
@@ -19,8 +22,8 @@ allein durch diesen Bericht oder einen bestandenen Teiltest geschlossen.
 | [#170](https://github.com/larynxberlin-rgb/Zugfolge/issues/170) | Alle sechs lexikographischen Größen, Verkehrsmittel-/Verbindungs-/Zugwahl, Erklärungen und Angebotsänderungen abgedeckt | #532, #534 | Schließend mit #534 verknüpft |
 | [#171](https://github.com/larynxberlin-rgb/Zugfolge/issues/171) | Tarif-/Vertriebsstörung, Kapazität, Reservierung, Komfort, freie Quellenbindung und unabhängiger Fahrberechtigungsstatus abgedeckt | #532, #534 | Schließend mit #534 verknüpft |
 | [#172](https://github.com/larynxberlin-rgb/Zugfolge/issues/172) | Spielerplanung mit nativer Nachfrage, echter Trassenkonkurrenz und wirtschaftlicher Prognose verbunden; Gesamtnachweis im Native-HTTP-Test | #533, #534 | Schließend mit #534 verknüpft |
-| [#210](https://github.com/larynxberlin-rgb/Zugfolge/issues/210) | Signierte Haltanker, native Ankunft/Abfahrt, geschützte Anfangspools und kausaler Journalconsumer mit Drei-Halt-/Restore-Beweis implementiert | #532, #534 | Abschluss über #534 nach grünem vollständigem Native-Nachweis vorgesehen |
-| [#173](https://github.com/larynxberlin-rgb/Zugfolge/issues/173) | Vergleichsverfahren, freie Quellen und echter SPNV-Holdout vorhanden; Toleranzen verfehlt, weitere Holdouts fehlen | #532, #534 | Referenz, keine automatische Schließung |
+| [#210](https://github.com/larynxberlin-rgb/Zugfolge/issues/210) | Signierte Haltanker, native Ankunft/Abfahrt, geschützte Anfangspools und kausaler Journalconsumer mit Drei-Halt-/Restore-Beweis implementiert | #532, #534 | Schließend mit #534 verknüpft |
+| [#173](https://github.com/larynxberlin-rgb/Zugfolge/issues/173) | Geänderter Nutzerumfang: Einwohnererhaltung, Stationsklassen, ungefähre Wunschziele und normale Odoo-Datenpflege sind im gemeinsamen Kern integriert | #537 | Schließende Verknüpfung nach finalen Tests vorgesehen |
 | [#361](https://github.com/larynxberlin-rgb/Zugfolge/issues/361) | Planungsablauf, Datenzustände, Datenschutz, Rücknavigation und tatsächliche Deutschland-/Knoten-Kartenprüfung mit deklariertem Lastkorpus belegt | #534 | Schließend mit #534 verknüpft |
 | [#379](https://github.com/larynxberlin-rgb/Zugfolge/issues/379) | Gestaltung, Legenden, gestufte Details, Kartenklick und mobile Listen unter Deutschland-/Knotenlast nachgewiesen | #534 | Schließend mit #534 verknüpft |
 
@@ -69,7 +72,7 @@ Die fünf Abschlusschecklistenpunkte sind durch versionierte
 Determinismustests, den echten Rust→PGlite→API-Nachweis, Negativ-/Restore-/
 Periodentests sowie [Glossar](glossar.md) und [Abnahmematrix](m10-abnahme.md)
 zugeordnet. Der balancierte Pilot ist als Modellannahme gekennzeichnet.
-Die reale Kalibrierung von #173 und der Ist-Manifestanschluss von #210 werden
+Der neue Populationsumfang von #173 und der Ist-Manifestanschluss von #210 werden
 nicht als versteckte zusätzliche Anforderungen dieser drei Kern-Issues behandelt.
 
 ## #172 — Spielerwerkzeug bis zur tatsächlichen Trassenzuteilung
@@ -152,15 +155,37 @@ nachgelagerte M15-PR #535 liest weiterhin denselben `PassengerManifestV1`-
 und `demand-operational-progress/v1`-Vertrag; ein zweiter Nachfragekern entsteht
 nicht.
 
-## Präzise verbleibende Kalibrierungsanforderung
+## #173 — geänderter Nutzerumfang und tatsächlicher Datenweg
 
-**#173:** [Kalibrierungsquellen](m10-kalibrierungsquellen.md) und
-[nativer Vergleich](../tools/demand-calibration/README.md) belegen freie
-Quellen, getrennte Daten und reproduzierbare Abweichungen. Der SPNV-Holdout
-besteht nur 6/21 Stunden- und 31/105 Abschnittsvergleiche, WAPE 52,38 % bzw.
-45,34 %. SPNV-Umstiege sowie SPFV-Tagesgang, -Querschnitt und -Umstiege fehlen
-als getrennte gemessene Holdouts. Die erforderlichen sechs Bereiche sind
-damit nicht innerhalb der Toleranzen nachgewiesen.
+Am 06.09.2026 ersetzte der Nutzer die empirische Kalibrierungsabnahme durch
+Ortsbevölkerung, daraus abgeleitete Stationsklassen und ungefähre Wunschziele
+aus bestehenden Verbindungen. Hinzu kommt die ausdrücklich gewünschte
+direkte Datenpflege durch normales Speichern in Odoo. Titel und Beschreibung von #173 wurden entsprechend auf
+„[Roadmap 10.5] Einwohnerbasierte Stationsnachfrage und direkte Odoo-Datenpflege“
+aktualisiert; die [Spezifikation](m10-populationsnachfrage.md) dokumentiert den
+verbindlichen Umfang.
+
+| Anforderung | Verbundener Code und Nachweis |
+|---|---|
+| Freie Einwohner- und Verbindungsdaten | [Import/Builder](../tools/population-demand/README.md), BKG-VG250-EW, GTFS.de-RV/FV, gepinnte Originalhashes und sieben Verkehrstage; 21 Python-Tests einschließlich drei nativer Integrationen |
+| Einwohner einmal verteilen, Klassen und grobe Ziele | [population.rs](../crates/zugfolge-demand/src/population.rs), gemeinsamer `cohorts_for_window`-Pfad; konservierende Zuteilung, Klassenränder, deduplizierte gerichtete Verbindungen, positive latente Ziele und keine Rückkopplung aktueller Spielerangebote |
+| Echter regionaler End-to-End-Korpus | Zwölf Originalstationskennungen, acht Orte, 1.245.193 erfasste Einwohner; [Report](../tools/population-demand/example/report.json) mit 3.729 nativen Wünschen und explizit synthetischen Testzügen |
+| Normales Speichern in Odoo | [Datenmodelle](../odoo/addons/zugfolge_admin/models/demand_data.py) und [Pflegeansicht](../odoo/addons/zugfolge_admin/views/demand_data_views.xml): Einwohner, Stationsanteile und Verbindungen, Originalwerte und Änderungsbelege, automatische Übertragung ohne Freigabe-/Exportablauf |
+| Signierter Datenbankweg und atomarer Ergebnisbeleg | [Datenkommandovertrag](../packages/commerce/src/demand-data.ts), [Transaktionsworker](../packages/commerce/src/demand-data-worker.ts) und [Game-Datenconsumer](../apps/game-api/src/demand-population-data.ts); HMAC, bestehende Adminrolle, Weltbindung, Revision, native Validierung, Wiederholung und Rollback |
+| Wirkung auf neue Wünsche, bestehende Reisen erhalten | `populationRevision`, zeitliche Datenhistorie und `DemandService`; [Initialisierung](../apps/game-api/src/demand-population-initialization.test.ts), [signierte Übernahme](../apps/game-api/src/demand-population-data.integration.test.ts) und native Fortschritts-/Restorefälle |
+| Schätzungen nachvollziehbar anzeigen | Nachfrage-API und LiveMap zeigen Klasse, zugeteilte Einwohner, höchstens fünf aus echten Kohorten aggregierte Wunschziele, Referenzwoche und Quellen; auch unbediente Stationen bleiben sichtbar |
+
+Die lokalen Prüfungen sind in [der Abnahmematrix](m10-abnahme.md) aufgeführt.
+Der finale CI-Lauf sowie neun ORM- und zwei HTTP-Tests im echten Odoo 19
+werden am PR mit ihrem tatsächlich geprüften Commit und Lauf verknüpft.
+Die Verknüpfung an #537 ist deshalb vorgesehen und wird hier
+nicht als bereits ausgeführt behauptet.
+
+Die historischen [Kalibrierungsquellen](m10-kalibrierungsquellen.md) und
+[AFZS-Holdoutberichte](../tools/demand-calibration/README.md) bleiben unverändert:
+6/21 Stunden- und 31/105 Abschnittsvergleiche bestanden, WAPE 52,38 % bzw.
+45,34 %. Daraus wird keine empirische Genauigkeit abgeleitet. Diese alte
+Abnahmeschwelle ist durch den ausdrücklichen neuen Auftrag ersetzt.
 
 ## #361/#379 — UI-/UX-Abnahme mit echter Karte
 
@@ -184,5 +209,6 @@ gemessen; späte Kartenfehler und externe Laufzeitrequests führen zum Fehler.
 
 Damit sind diese UI-/UX-Anforderungen im offengelegten Testumfang erfüllt.
 Das ist kein Nachweis des produktiven millionenfachen Deutschland-Korpus,
-keine reale Nachfragekalibrierung und keine Betriebsfreigabe. Diese anderen
-Fachabnahmen bleiben in #173 sowie den bestehenden Release-/Betriebsissues.
+keine reale Nachfragekalibrierung und keine Betriebsfreigabe. Der geänderte
+Umfang von #173 wird oben eigenständig geprüft; produktive Fachabnahmen
+bleiben bei den bestehenden Release-/Betriebsissues.

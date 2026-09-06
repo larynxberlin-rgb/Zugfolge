@@ -2,9 +2,14 @@ import { domainEvents, worlds } from "@zugfolge/db";
 import type { IdentityDatabase } from "@zugfolge/identity";
 import type { DemandRuntime } from "@zugfolge/runtime-native";
 import { and, asc, desc, eq, gt, lte, sql } from "drizzle-orm";
-import { appendDemandEvent, DemandError, DemandStore, demandHash, demandInteger, demandRecord } from "./demand-store.js";
+import { appendDemandEvent, DemandError, DemandStore, demandHash, demandInteger, demandList, demandRecord } from "./demand-store.js";
 
 export const DEMAND_POPULATION_EVENT = "demand.population-data-updated";
+const MAX_POPULATION_REVISIONS = 256;
+class PopulationDataLimitError extends DemandError {
+  readonly code = "pending_population_data_limit";
+  constructor() { super(503, "Die Nachfrage muss zuerst offene Einwohnerkorrekturen verarbeiten. Die Speicherung wird danach automatisch wiederholt."); }
+}
 export interface PopulationDataCommand {
   readonly kind: "demand.data.update";
   readonly schemaVersion: "zugfolge-demand-data-update/v1";
@@ -69,6 +74,9 @@ export async function savePopulationData(db: IdentityDatabase, runtime: DemandRu
       let currentInput = checkpoint.input, currentResult = checkpoint.result;
       const pending = await loadPopulationDataHistory(db, worldId, command.baseReleaseId,
         populationRevisionOf(currentInput)?.revision ?? 0, Number.MAX_SAFE_INTEGER);
+      // Der neue Stand muss noch in denselben begrenzten Consumerlauf passen.
+      // Ein akzeptierter 257. Stand würde sonst jeden folgenden Takt blockieren.
+      if (pending.length + 1 > MAX_POPULATION_REVISIONS) throw new PopulationDataLimitError();
       for (const populationRevision of [...pending.map((event) => event.snapshot), snapshot]) {
         const progress = currentResult["operationalProgress"] == null
           ? { schemaVersion: "demand-operational-progress/v1", worldId, trains: [] }
@@ -80,8 +88,25 @@ export async function savePopulationData(db: IdentityDatabase, runtime: DemandRu
           previousEvaluation: { services: currentInput["services"], result: currentResult } };
         currentResult = runtime.evaluate(nextInput); currentInput = nextInput;
       }
+    } else {
+      for (const template of selected) {
+        const firstGenerationStart = template["generationWindows"] === undefined ? demandInteger(template["windowStartMs"])
+          : Math.min(...demandList(template["generationWindows"]).map((window) => demandInteger(window["windowStartMs"])));
+        const initialAtMs = firstGenerationStart > demandInteger(template["nowMs"])
+          ? Math.min(firstGenerationStart - 1, effectiveAtMs) : undefined;
+        const pending = await loadPopulationDataHistory(db, worldId, command.baseReleaseId, 0, Number.MAX_SAFE_INTEGER, initialAtMs);
+        // Vor dem ersten Wunsch ersetzt ein neuer Stand den bisherigen reinen
+        // Zukunftsstand. Änderungen am Wunschbeginn selbst bleiben einzeln.
+        const count = initialAtMs !== undefined && effectiveAtMs <= initialAtMs ? 1 : pending.length + 1;
+        if (count > MAX_POPULATION_REVISIONS) throw new PopulationDataLimitError();
+      }
     }
-  } catch { return { outcome: "rejected" as const, code: "invalid_population_data", detail: "Einwohner, Stationsanteile oder Verbindungswerte verletzen die Nachfragegrundlage." }; }
+  } catch (error) {
+    // Rückstau ist kein fachlich ungültiger Zahlenstand: Der Queue-Handler
+    // rollt zurück und hält den Auftrag für den automatischen Retry offen.
+    if (error instanceof PopulationDataLimitError) throw error;
+    return { outcome: "rejected" as const, code: "invalid_population_data", detail: "Einwohner, Stationsanteile oder Verbindungswerte verletzen die Nachfragegrundlage." };
+  }
   await appendDemandEvent(db, worldId, DEMAND_POPULATION_EVENT, { schemaVersion: "zugfolge-demand-population-data-event/v1",
     worldId, baseReleaseId: command.baseReleaseId, sourceRevision: command.sourceRevision, commandHash,
     snapshot, snapshotHash: demandHash(snapshot) }, occurredAt);
@@ -97,14 +122,14 @@ export async function loadPopulationDataHistory(db: IdentityDatabase, worldId: s
   const events = await db.select().from(domainEvents).where(and(predicate,
     gt(sql<number>`(${domainEvents.payload}->>'sourceRevision')::bigint`, afterRevision),
     initialAtMs === undefined ? undefined : gt(sql<number>`(${domainEvents.payload}->'snapshot'->>'effectiveAtMs')::bigint`, initialAtMs)))
-    .orderBy(asc(domainEvents.sequence)).limit(257);
+    .orderBy(asc(domainEvents.sequence)).limit(MAX_POPULATION_REVISIONS + 1);
   if (initialAtMs !== undefined) {
     const [initial] = await db.select().from(domainEvents).where(and(predicate,
       lte(sql<number>`(${domainEvents.payload}->'snapshot'->>'effectiveAtMs')::bigint`, initialAtMs)))
       .orderBy(desc(domainEvents.sequence)).limit(1);
     if (initial !== undefined) events.unshift(initial);
   }
-  if (events.length > 256) throw new DemandError(503, "Zu viele Einwohnerkorrekturen in einem Nachfragefenster.");
+  if (events.length > MAX_POPULATION_REVISIONS) throw new PopulationDataLimitError();
   const result = events.map((event) => ({ worldSequence: event.sequence, snapshot: eventValue(event.payload, worldId, baseReleaseId) }));
   for (let index = 1; index < result.length; index += 1) {
     if (result[index]!.snapshot.revision <= result[index - 1]!.snapshot.revision || result[index]!.snapshot.effectiveAtMs < result[index - 1]!.snapshot.effectiveAtMs)

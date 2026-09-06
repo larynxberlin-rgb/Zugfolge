@@ -9,13 +9,17 @@ automatisch geschlossen.
 Reihenfolge: [Gestaltungsbasis #531](https://github.com/larynxberlin-rgb/Zugfolge/pull/531)
 → [Nachfragekern #532](https://github.com/larynxberlin-rgb/Zugfolge/pull/532)
 → [Trassenplanung #533](https://github.com/larynxberlin-rgb/Zugfolge/pull/533)
-→ [API, Oberfläche und Kalibrierung #534](https://github.com/larynxberlin-rgb/Zugfolge/pull/534).
-Die drei M10-PRs bleiben bis zur fachlichen Abnahme Entwürfe.
+→ [API, Oberfläche und ursprüngliche Datenprüfung #534](https://github.com/larynxberlin-rgb/Zugfolge/pull/534)
+→ [Einwohnernachfrage und direkte Odoo-Datenpflege #537](https://github.com/larynxberlin-rgb/Zugfolge/pull/537).
+Der vierte Teil liegt auf `codex/m10-population-demand`. Die vier regulären
+CI-Ergebnisse und der tatsächliche Odoo-19-Installationsnachweis werden direkt
+am [PR #537](https://github.com/larynxberlin-rgb/Zugfolge/pull/537) dem geprüften Commit zugeordnet.
 
 Der ergänzende [Abgleich aller acht Issue-Anforderungen mit Code und Tests](m10-issue-verknuepfung.md)
 unterscheidet die vollständig implementierten Fachumfänge #169–#172,
-#210, #361 und #379 von der konkret offenen Kalibrierungsanforderung in #173. Schließende
-Verknüpfungen werden am gesamten Stack über #534 geführt.
+#210, #361 und #379 von der ausdrücklich geänderten Anforderung in #173.
+Die sieben bisherigen Issues sind schließend mit #534 verknüpft; #173 ist
+nach den abschließenden Tests dem vierten Stack-PR zugeordnet.
 
 ## Fachlicher Umfang
 
@@ -27,7 +31,47 @@ Verknüpfungen werden am gesamten Stack über #534 geführt.
 | #210 | Deterministische SPNV-Manifeste, versteckte Fahrberechtigungen, stabile Schlüssel; tatsächliche Haltbelege frieren bereits gereiste Abschnitte, Sitze und gebuchte Preise ein | Signierte Zwischenhaltbindungen, native Belege und persistenter Consumer sind implementiert; endgültiger Linux-NAPI-Lauf ist der Integrationsnachweis. Ohne genehmigten Haltplan entsteht kein Ist-Manifest |
 | #172 | Linien-/Halte-/Takt-/Preis-/Formationsvorschau; bestehende Flotten-/Zugnummernautorität; atomare Anträge und Batchkoordinierung; Ablaufgrenzen und sichere künftige Ersetzung; bestätigte Reservierungen fließen zurück in die Nachfrage | Aktivierung im Betriebsprogramm, Umlaufvollständigkeit und Ist-Erlöse brauchen die vorhandenen Betriebsproducer |
 | #361, #379 | Nachfrageoverlay, gestufte Details, Planung und Rücknavigation; echte MapLibre-/PMTiles-Karte mit 5.400 synthetischen Stationen, 5.000 Zügen, dichtem Knoten, Live-Deltas, Kartenklick und Listenalternative bei 1366/390/320 px | UI-/UX-Abnahme im dokumentierten synthetischen Lastumfang erfüllt. Produktiver Deutschland-Release und externe Produktabnahme bleiben eigenständige Nachweise |
-| #173 | Recherchierte freie Quellen, unveränderte Lizenz-/Hashbelege, echte AFZS-Trainings-/Holdout-Tage, nativer Vergleich und strenges Kalibrierungsgate | Eine bestandene gemeinsame SPNV-/SPFV-Abnahme wird nicht behauptet; SPFV- und Umstiegsholdouts fehlen |
+| #173 | Amtliche Ortsbevölkerung, konservierende Stationszuteilung, Klassen 0–10, ungefähre Wunschziele aus freien Referenzverbindungen; normal editierbare Odoo-Daten, signierte Übernahme und zeitlich gebundenes natives Replay | Geänderter Nutzerumfang vom 06.09.2026; bewusst `balanced`, keine empirische Genauigkeitsbehauptung. Maßgeblich sind die am PR verlinkten finalen CI- und Odoo-Nachweise |
+
+## Geänderter Umfang von #173
+
+Der ausdrückliche Nutzerauftrag vom 06.09.2026 ersetzt das bisherige
+empirische Kalibrierungsgate durch eine einwohnerbasierte Schätzung mit
+Stationsklassen und groben Wunschzielen sowie direkte Datenbankkorrekturen
+aus Odoo. Verbindlich ist [M10-Populationsnachfrage](m10-populationsnachfrage.md).
+Die Analogie zu AirlineSim betrifft das Grundprinzip; Klassen, Einzugsgebiete
+und Gewichtungen sind eigene, offengelegte Modellannahmen.
+
+Der [reproduzierbare Offlinekorpus](../tools/population-demand/README.md)
+verwendet BKG-Einwohner zum 31.12.2024 unter `dl-de/by-2-0` und GTFS.de-RV-/FV-
+Verbindungen unter CC BY 4.0. Der Release erfasst zwölf originale
+GTFS-Stationskennungen und acht Orte mit genau 1.245.193 Einwohnern;
+Querfurts 10.007 Einwohner bleiben wegen fehlender Radiusabdeckung ausdrücklich
+außerhalb. Leipzigs Einwohner werden auf drei Stationen verteilt und nicht
+dreimal gezählt. Die Referenzwoche 07.–13.09.2026 liefert 58 gerichtete
+Stationspaare; Datums-, Quellen- und Inhaltsbindungen sind geprüft.
+
+Der echte Rust-Kern erzeugt im dokumentierten Beispiel 3.729 Reisewünsche,
+davon 2.562 bediente Bahnreisen und 1.167 unbediente Wünsche. Die 18 aktiven
+Beispielzüge sind deklarierte synthetische Testangebote. Der Referenzfahrplan
+erzeugt keine aktiven Spielzüge. Die gespeicherten
+[Ergebnisse](../tools/population-demand/example/report.json) belegen
+Reproduzierbarkeit und Summenerhaltung im regionalen Testumfang.
+
+Nach der Erstbefüllung speichert die bestehende Odoo-Adminrolle Einwohner,
+Stationsanteile und Verbindungswerte in normalen Tabellen. Speichern erzeugt
+automatisch `demand.data.update`; es braucht keinen manuellen Export und
+keine Freigabe. HMAC, Akteurs-/Weltbindung und Queue schützen die Übernahme.
+Der Game-Consumer validiert mit Rust und persistiert Datenrevision, Wirkzeit,
+Queueabschluss und `demand.data.result` atomar. Bereits gestellte Wünsche und
+begonnene Teilreisen behalten ihre Vergangenheit; zukünftige Wünsche verwenden
+den passenden neuen Datenstand. Die Oberfläche zeigt Klassen, Einwohnerbasis,
+geschätzte Ziele und freie Quellen. Private Fahrgast- und Tarifdaten bleiben privat.
+
+Die früheren [AFZS-Holdoutberichte](../tools/demand-calibration/README.md)
+bleiben unverändert als historische Diagnose erhalten. Ihre verfehlten
+Toleranzen werden weder nachträglich zu Erfolgen erklärt noch als
+Abnahmebedingung des geänderten Auftrags weitergeführt.
 
 ## Betriebs- und Datenschutzgrenze
 
@@ -84,6 +128,8 @@ pnpm test
 pnpm guards
 pnpm licenses list --json | node tools/guards/dist/licenses-cli.js
 cargo test --locked -p zugfolge-demand -p zugfolge-conflict -p zugfolge-planner -p zugfolge-planning-runtime
+cargo build --locked -p zugfolge-demand --example evaluate_json
+ZUGFOLGE_DEMAND_TEST_BINARY="$PWD/target/debug/examples/evaluate_json" python -m unittest discover -s tools/population-demand -p 'test_*.py'
 python -m unittest discover -s tools/demand-calibration -p 'test_*.py'
 node .github/scripts/sync-milestones.mjs check
 ```
@@ -106,14 +152,14 @@ und verspätete Vorschauergebnisse. Sie ersetzen keine produktiven Fahrgastdaten
 Die drei zusätzlichen [MapLibre-Lastfälle](m10-kartenabnahme.md) prüfen eine
 synthetische Deutschlandkarte und einen dichten Knoten mit tatsächlich
 gerenderten Tiles, Kartenklicks, Live-Deltas und kollisionsfreier Legende.
-Zusammen sind acht M10-Browserfälle vorhanden.
+Mit dem zusätzlichen Einwohnerfall sind neun M10-Browserfälle vorhanden.
 
 ![Fernverkehrsplanung mit gekennzeichneten Beispieldaten](screenshots/m10/spfv-desktop.png)
 
 Die schmalen Ansichten sind als [Fernverkehr auf Mobilgeräten](screenshots/m10/spfv-mobile.png)
 und [Nachfrageliste auf Mobilgeräten](screenshots/m10/demand-mobile.png) dokumentiert.
 
-Lokal nachgewiesen: 835 Rust-Workspace-Tests im Basislauf (ohne die beiden
+Historischer Basisnachweis vor dem vierten Stack-Teil: 835 Rust-Workspace-Tests (ohne die beiden
 Linux-NAPI-Crates) sowie drei ergänzte Issue-Akzeptanztests. Die neue Haltbelegkette wurde
 zusätzlich mit 148 Sim-/Runtime-Rust-Tests, 52 Import-/Bindungstests,
 Infrastruktur-Negativfällen und den API-/Pool-Lebenszyklustests geprüft. Die
@@ -124,7 +170,22 @@ Browsernachweise sowie sechs Python-Tests zu freien Originalquellen,
 Trainings-/Holdout-Trennung und bytegenauen JSON-Pins. Clippy, Typprüfung und 15 Repositorywächter sind Bestandteil
 der Prüfung. Der vollständige Windows-TypeScript-Lauf wurde wegen Zeitlimits
 in unveränderten PGlite-Bestandstests unter paralleler Compilerlast abgebrochen;
-er wird nicht als grün ausgegeben. Der Linux-CI-Lauf bleibt maßgeblich.
+er wird nicht als grün ausgegeben.
+
+Für den vierten Teil sind lokal Build, Typprüfung und Repositorywächter grün,
+ebenso 21 Python-Tests einschließlich drei echter Rust-Integrationen,
+fünf Odoo-Vertragshelfer, sieben UI-Tests und sechs Browserfälle. Die
+Einwohnerinitialisierung, signierte Odoo-Übernahme und der Fortschrittslebenszyklus
+sind zusammen mit 17 nativen Integrationsfällen geprüft. Die Commerce-Regression
+und sieben gezielte Datenkommando-Tests prüfen insbesondere Welt-/Akteursbindung,
+Replay, Transaktionsrollback und minimale Ergebnisbelege. Acht Odoo-ORM- und
+zwei HTTP-Tests sind für den echten Odoo-19-Dienst vorbereitet; der
+[Odoo-Lauf](https://github.com/larynxberlin-rgb/Zugfolge/actions/runs/34025161638)
+und die regulären vier CI-Jobs wurden gestartet, ihre Ergebnisse stehen noch aus.
+Der breitere API-Lauf wurde lokal ebenfalls geprüft; die einzig angepasste
+Privacy-Erwartung berücksichtigt den zusätzlichen privaten Datenrevisionsbeleg,
+und die betreffende Testdatei besteht anschließend vollständig.
+Frühere grüne CI-Läufe werden nicht als Nachweis der neuen Änderungen verwendet.
 
 Die echten Quelldaten und den wiederholbaren nativen Vergleich beschreibt
 [tools/demand-calibration](../tools/demand-calibration/README.md).
@@ -141,6 +202,7 @@ und die fachliche Zuordnung. Besonders relevant bleiben #517/#518
 M9-/Deutschland-/Produktionsabnahme. M15 erhält ausschließlich den M10-Vertrag;
 der Schaffnermodus erzeugt keine zweite Nachfrage oder Fahrberechtigung.
 
-Die Implementierung ermöglicht überprüfbare technische Reviews. Die gesamte
-M10-Abnahme bleibt offen, bis gemessene SPFV-/Umstiegsholdouts, passende
-Toleranznachweise und produktive Betriebs-/Last-/Spielerbelege vorliegen.
+Der geänderte M10-Fachumfang ist zur abschließenden Prüfung implementiert.
+Vor einer vollständigen Abnahme fehlen noch die genannten finalen CI- und
+Odoo-Nachweise. Produktive Betriebs-, Deutschlandlast- und externe
+Spielerabnahmen verbleiben bei ihren bestehenden Release-/Betriebsissues.
