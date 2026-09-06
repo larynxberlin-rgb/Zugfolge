@@ -416,6 +416,10 @@ const fleetCommandBody = {
 
 const RESERVED_SINGLE_WRITER_EVENT_TYPES = new Set([
   "demand.evaluated",
+  "demand.pool-initialized",
+  "demand.pool-progressed",
+  "operations.passenger-stop-arrival",
+  "operations.passenger-stop-departure",
   "spfv.preview",
   "spfv.submitted",
   "planning.runtime-state",

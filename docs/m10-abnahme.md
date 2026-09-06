@@ -14,7 +14,7 @@ Die drei M10-PRs bleiben bis zur fachlichen Abnahme Entwürfe.
 
 Der ergänzende [Abgleich aller acht Issue-Anforderungen mit Code und Tests](m10-issue-verknuepfung.md)
 unterscheidet die vollständig implementierten Fachumfänge #169–#172,
-#361 und #379 von den konkreten offenen Anforderungen in #210 und #173. Schließende
+#210, #361 und #379 von der konkret offenen Kalibrierungsanforderung in #173. Schließende
 Verknüpfungen werden am gesamten Stack über #534 geführt.
 
 ## Fachlicher Umfang
@@ -24,7 +24,7 @@ Verknüpfungen werden am gesamten Stack über #534 geführt.
 | #169 | `zugfolge-demand`: versionierte Zonen, Stationsanbindung, Profile, Saison, Tagesgang, deterministische Kohorten; Pilot-Golden und Poolingtests | Datenparameter bleiben sichtbar `balanced`, solange sie nicht beobachtet und belegt sind |
 | #170 | Lexikographische Verkehrsmittel-/Verbindungs-/Zugwahl, Kapazitätsalternativen, Zugausfall, Anschlussverlust, Preis und Komfort; Permutations-/Replayszenarien | Nationale Laufzeit- und Abdeckungstests sind keine Folge des kleinen Pilotnachweises |
 | #171 | Abschnittspreise, Vertriebsverfügbarkeit, Komfort-/Sonderplätze, durchgehende Reservierungen und Stehplätze; gemeinsame Kapazität über Generationfenster | Prognostizierte Erlöse lösen keine tatsächlichen Einnahmebuchungen aus |
-| #210 | Deterministische SPNV-Manifeste, versteckte Fahrberechtigungen, stabile Schlüssel; tatsächliche Haltbelege frieren bereits gereiste Abschnitte, Sitze und gebuchte Preise ein | Signierte Zwischenhaltbindungen, native Ankunfts-/Abfahrtsbelege und persistenter Nachfrageconsumer fehlen. Native Fahrtabschlussbelege existieren bereits. Die API kennzeichnet ihre aktuellen Ansichten als Prognose/Annahme |
+| #210 | Deterministische SPNV-Manifeste, versteckte Fahrberechtigungen, stabile Schlüssel; tatsächliche Haltbelege frieren bereits gereiste Abschnitte, Sitze und gebuchte Preise ein | Signierte Zwischenhaltbindungen, native Belege und persistenter Consumer sind implementiert; endgültiger Linux-NAPI-Lauf ist der Integrationsnachweis. Ohne genehmigten Haltplan entsteht kein Ist-Manifest |
 | #172 | Linien-/Halte-/Takt-/Preis-/Formationsvorschau; bestehende Flotten-/Zugnummernautorität; atomare Anträge und Batchkoordinierung; Ablaufgrenzen und sichere künftige Ersetzung; bestätigte Reservierungen fließen zurück in die Nachfrage | Aktivierung im Betriebsprogramm, Umlaufvollständigkeit und Ist-Erlöse brauchen die vorhandenen Betriebsproducer |
 | #361, #379 | Nachfrageoverlay, gestufte Details, Planung und Rücknavigation; echte MapLibre-/PMTiles-Karte mit 5.400 synthetischen Stationen, 5.000 Zügen, dichtem Knoten, Live-Deltas, Kartenklick und Listenalternative bei 1366/390/320 px | UI-/UX-Abnahme im dokumentierten synthetischen Lastumfang erfüllt. Produktiver Deutschland-Release und externe Produktabnahme bleiben eigenständige Nachweise |
 | #173 | Recherchierte freie Quellen, unveränderte Lizenz-/Hashbelege, echte AFZS-Trainings-/Holdout-Tage, nativer Vergleich und strenges Kalibrierungsgate | Eine bestandene gemeinsame SPNV-/SPFV-Abnahme wird nicht behauptet; SPFV- und Umstiegsholdouts fehlen |
@@ -39,29 +39,33 @@ als leere Züge dargestellt. Es gibt keinen JavaScript-Ersatz für die native
 Nachfrageberechnung und keinen automatisch aktivierten Beispielkorpus.
 
 Alle Generationfenster einer Periode werden unter einem Release und Seed in
-einem Kapazitätspool ausgewertet. Doppelte Fahrtkennungen müssen identische
-Fakten besitzen. Ein Pool bleibt für die enthaltenen Reisen über das reine
-Erzeugungsfenster hinaus verfügbar. Bereits im Korpus überlappende
-Periodenreleases werden ohne gemeinsamen Übergangsbeleg zurückgewiesen.
-Bestätigte SPFV-Fahrten und aktuelle Verspätungen verlängern dagegen den
-wirksamen Horizont der laufenden Periode: Der bisherige Pool bleibt bis zum
-letzten Fahrtende lesbar, der nächste wird bis dahin zurückgestellt. Der
-gespeicherte Checkpoint erhält diese Zuordnung über Neustarts. Ohne vorherigen
-Checkpoint werden höchstens 256 begonnene Pools mit ihren jeweils begrenzten
-Planungsprojektionen geprüft; dies ersetzt keinen Deutschlandlastnachweis.
+einem Kapazitätspool ausgewertet. Innerhalb des Pools müssen doppelte
+Fahrtkennungen identische Fakten besitzen; zwischen Pools sind wiederverwendete
+Fahrtkennungen unzulässig. Die statische Fahrplanbindung nutzt exakte indizierte
+Halteabfragen. Vor dem ersten Betriebsadvance werden sämtliche genehmigten
+Poolanfänge privat gepinnt, auch für spätere Tage. Bereits vergangene Abfahrten
+können ohne einen solchen Anfang nicht nachträglich materialisiert werden.
 
-Der Scheduler aktualisiert die Prognose höchstens alle 30 Sekunden nach einem
-bestätigten Betriebsschritt. Unveränderte Eingaben erzeugen auch nach Neustart
-keinen weiteren Checkpoint. Ausfall-/Verspätungsfakten werden beim Entfernen
-eines Zuges aus dem Kartensnapshot nicht auf den ursprünglichen Fahrplan
-zurückgesetzt. Die statische Fahrplanbindung nutzt exakte indizierte Halteabfragen;
-die auf 160 Einträge begrenzte Stationsanzeige dient nicht als Datenautorität.
+Vor und nach dem bestätigten Betriebsschritt konsumiert der Scheduler die
+nativen Haltbelege. Nur Zeitpunkte strikt vor dem Stand sämtlicher gebundener
+Regionen gelten als abgeschlossen. Verschiedene Abfahrtszeitpunkte führen
+das vorherige native Ergebnis weiter; gleichzeitige Belege werden gemeinsam
+verarbeitet. Ein begonnener Fahrgastfall bleibt bis zur belegten Zielankunft
+im alten Pool. Leere Züge, ein noch nicht begonnenes erstes Fenster und das
+Ende des letzten Fensters blockieren den Weltfortschritt nicht. Restore kann
+mehrere vorab gepinnte Tagespools kausal nachholen, ohne öffentliche Zeit oder
+Revision zurückzusetzen. Unveränderte Eingaben erzeugen keinen weiteren
+Checkpoint.
 
-`demand.evaluated`, `spfv.preview`, `spfv.submitted` und `spfv.confirm` benutzen
-das vorhandene Weltjournal beziehungsweise die Kommandoqueue. Weltmutex,
-Archivfence, monotone Revision, Freigabepin, Inhaltskonflikt und natives Replay
-werden geprüft. Neue Datenbanktabellen oder konkurrierende Migrationsnummern
-werden nicht benötigt. Öffentlicher Ingest kann diese Fachbelege nicht erzeugen.
+`demand.pool-initialized`, `demand.pool-progressed`, `demand.evaluated`,
+`spfv.preview`, `spfv.submitted` und `spfv.confirm` nutzen das vorhandene
+Weltjournal beziehungsweise die Kommandoqueue. Der Cursor und private
+Zeitgrenzen werden gemeinsam mit dem finalen Checkpoint unter Weltmutex
+committet. Archivfence, monotone Revision, Freigabepin, Inhaltskonflikt und
+natives Replay werden geprüft. Öffentlicher Ingest kann diese Fachbelege und
+die nativen Ankunfts-/Abfahrtsquittungen nicht erzeugen; generische
+Ereignisprojektionen geben sie ebenfalls nicht heraus. Neue Datenbanktabellen
+oder konkurrierende Migrationsnummern werden nicht benötigt.
 
 Öffentliche Abfragen liefern Aggregate. Die separate Manifestansicht prüft
 aktiven Weltzugang und Unternehmenseigentum bei jeder Anfrage und paginiert
@@ -84,8 +88,11 @@ python -m unittest discover -s tools/demand-calibration -p 'test_*.py'
 node .github/scripts/sync-milestones.mjs check
 ```
 
-Der reguläre Linux-NAPI-Job führt `demand-service.test.ts` mit dem echten
-Addon aus; `spfv-native.integration.test.ts` verbindet zusätzlich echte Flotte,
+Der reguläre Linux-NAPI-Job führt `demand-service.test.ts` und die
+Halt-/Pool-/Journaltests mit dem echten Addon aus.
+`demand-operational-native.integration.test.ts` verbindet signierte Haltanker,
+native Bewegung, Signalstörung, Anschlussverlust, persistente Nachfrage,
+Manifest-HTTP und Restore; `spfv-native.integration.test.ts` verbindet zusätzlich echte Flotte,
 HTTP, Trassenkonkurrenz und Nachfrage-Restore. `demand-browser.e2e.test.ts`
 und `demand-map-browser.e2e.test.ts` laufen mit den gebauten Browserclients.
 Lokal wurde zusätzlich der echte Rust-JSON-CLI mit PGlite und API-Projektion
@@ -107,11 +114,13 @@ Die schmalen Ansichten sind als [Fernverkehr auf Mobilgeräten](screenshots/m10/
 und [Nachfrageliste auf Mobilgeräten](screenshots/m10/demand-mobile.png) dokumentiert.
 
 Lokal nachgewiesen: 835 Rust-Workspace-Tests im Basislauf (ohne die beiden
-Linux-NAPI-Crates) sowie drei ergänzte Issue-Akzeptanztests. Die
+Linux-NAPI-Crates) sowie drei ergänzte Issue-Akzeptanztests. Die neue Haltbelegkette wurde
+zusätzlich mit 148 Sim-/Runtime-Rust-Tests, 52 Import-/Bindungstests,
+Infrastruktur-Negativfällen und den API-/Pool-Lebenszyklustests geprüft. Die
 Nachfrageprüfung umfasst damit 17 Kerntests einschließlich Golden und
 Properties; hinzu kommen 13 native
 Planning-Runtime-Tests sowie die fokussierten API-, Privacy-, Planner- und
-Browsernachweise sowie fünf Python-Tests zu freien Originalquellen,
+Browsernachweise sowie sechs Python-Tests zu freien Originalquellen,
 Trainings-/Holdout-Trennung und bytegenauen JSON-Pins. Clippy, Typprüfung und 15 Repositorywächter sind Bestandteil
 der Prüfung. Der vollständige Windows-TypeScript-Lauf wurde wegen Zeitlimits
 in unveränderten PGlite-Bestandstests unter paralleler Compilerlast abgebrochen;

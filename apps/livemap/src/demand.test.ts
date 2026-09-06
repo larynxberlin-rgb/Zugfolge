@@ -38,6 +38,9 @@ describe("Nachfrageansichten mit belegten Zeitfenstern", () => {
     const html = passengerManifestMarkup(parsePassengerManifest({...manifest, fareFact: "secret", items: [{...manifest.items[0], ticketStatus: "invalid"}]}, period.worldId, "own", "t1"));
     expect(html).toContain("Fahrrad"); expect(html).not.toMatch(/ticketStatus|invalid|secret|fareFact/);
     expect(() => parsePassengerManifest(manifest, period.worldId, "other", "t1")).toThrow();
+    const confirmed = passengerManifestMarkup(parsePassengerManifest({ ...manifest, source: "confirmed" }, period.worldId, "own", "t1"));
+    expect(confirmed).toContain("Bestätigter Fahrgastbestand");
+    expect(confirmed).not.toContain("Prognostizierte Fahrgastkennungen");
   });
   it("trägt Karte, Auswahl und Filter zur Planung weiter, ohne Loginparameter mitzunehmen", () => {
     const url = new URL(demandPlanningDestination("https://game.test/", "https://map.test/?operator=own&focus=train%3At1&trainScope=own&trainQuery=FV&demand=1&code=secret", period.worldId, "t1"));

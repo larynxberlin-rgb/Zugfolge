@@ -311,6 +311,16 @@ export const GENERATED_GLOSSARY_ENTRIES = Object.freeze([
     "definition": "Expliziter weltgebundener Beleg tatsächlicher Ankunft und Abfahrt; schützt bereits gereiste Reiseabschnitte"
   },
   {
+    "term": "Fahrgasthaltbeleg",
+    "code": "OperationalPassengerStopReceipt",
+    "definition": "einmaliger nativer Ankunfts- oder Abfahrtsbeleg eines signiert gebundenen Haltvorkommens mit tatsächlicher Zeit, Planhash und Zug-/Formationsbezug; ein Signalhalt genügt nicht"
+  },
+  {
+    "term": "Fahrgasthaltplan",
+    "code": "OperationalPassengerStopPlan",
+    "definition": "optionaler signierter Plan mit zwei bis 100 geordneten Haltvorkommen, exakten gerichteten Positionen, Plattformbindung und Mindestaufenthalt"
+  },
+  {
     "term": "Fahrgastinformationsanzeige",
     "code": "PassengerInformationDisplay",
     "definition": "öffentliche, zuggebundene Projektion von Ziel, nächstem Halt, Folgehalten, Verspätung und Meldungen; Grundlage des generischen FIS-Monitors"
@@ -323,7 +333,7 @@ export const GENERATED_GLOSSARY_ENTRIES = Object.freeze([
   {
     "term": "Fahrgastmanifest",
     "code": "PassengerManifestV1",
-    "definition": "revisionierte M10-Projektion der tatsächlich reisenden Fahrgäste eines Zuglaufabschnitts einschließlich Ein-/Ausstieg und verdecktem Fahrberechtigungsstatus"
+    "definition": "revisionierte M10-Zuteilung der Fahrgäste eines Zuglaufabschnitts einschließlich Ein-/Ausstieg und verdecktem Fahrberechtigungsstatus; tatsächlicher Bestand nur mit nativen Haltbelegen, sonst Prognose"
   },
   {
     "term": "Fahrplanperiode",
@@ -596,6 +606,16 @@ export const GENERATED_GLOSSARY_ENTRIES = Object.freeze([
     "definition": "Zeit zwischen Zuschlag und Betriebsaufnahme; nachweispflichtig auf Fahrzeuge, Personal und Trassen"
   },
   {
+    "term": "Nachfrageanfangspool",
+    "code": "DemandPoolSeed",
+    "definition": "vor Betriebsfortschritt persistierte private Anfangsauswertung eines freigegebenen Pools mit vollständigen Eingaben, nativer Ergebnisprüfung und gebundener Journal-/Regionsgrenze"
+  },
+  {
+    "term": "Nachfrageangebotsrevision",
+    "code": "DemandOfferRevision",
+    "definition": "bestätigter historischer Angebotsstand mit Welt-/Periodenbindung, wirksamer Zeit und Planungssequenz; beeinflusst keine zuvor abgefahrene Reise rückwirkend"
+  },
+  {
     "term": "Nachfrageauswertung",
     "code": "DemandEvaluationV1",
     "definition": "Kanonisches Ergebnis des gemeinsamen SPNV-/SPFV-Kerns mit Wahlbegründungen, Belegungen und privaten Manifesten"
@@ -604,6 +624,11 @@ export const GENERATED_GLOSSARY_ENTRIES = Object.freeze([
     "term": "Nachfragefensterpool",
     "code": "DemandGenerationWindowV1",
     "definition": "Zeitlich begrenzte Kohortenerzeugung innerhalb eines gemeinsamen Kapazitätspools"
+  },
+  {
+    "term": "Nachfragefortschrittscursor",
+    "code": "DemandProgressCursor",
+    "definition": "persistierter kausaler Verarbeitungsstand mit Journalgrenze, Regionspins sowie bestätigten und noch wartenden nativen Haltbelegen"
   },
   {
     "term": "Nachfragefreigabe",

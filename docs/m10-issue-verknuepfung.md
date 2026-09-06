@@ -15,14 +15,14 @@ allein durch diesen Bericht oder einen bestandenen Teiltest geschlossen.
 
 | Issue | Fachlicher Abgleich | PR-Zuordnung | Verknüpfung |
 |---|---|---|---|
-| [#169](https://github.com/larynxberlin-rgb/Zugfolge/issues/169) | Gemeinsame Quelle, alle Nachfragetreiber, versionierte Kohorten, Pilot-/Tagesgang-Golden und Summenerhaltung abgedeckt | #532, #534 | Abschluss über #534 vorgesehen |
-| [#170](https://github.com/larynxberlin-rgb/Zugfolge/issues/170) | Alle sechs lexikographischen Größen, Verkehrsmittel-/Verbindungs-/Zugwahl, Erklärungen und Angebotsänderungen abgedeckt | #532, #534 | Abschluss über #534 vorgesehen |
-| [#171](https://github.com/larynxberlin-rgb/Zugfolge/issues/171) | Tarif-/Vertriebsstörung, Kapazität, Reservierung, Komfort, freie Quellenbindung und unabhängiger Fahrberechtigungsstatus abgedeckt | #532, #534 | Abschluss über #534 vorgesehen |
-| [#172](https://github.com/larynxberlin-rgb/Zugfolge/issues/172) | Spielerplanung mit nativer Nachfrage, echter Trassenkonkurrenz und wirtschaftlicher Prognose verbunden; Gesamtnachweis im Native-HTTP-Test | #533, #534 | Abschluss über #534 vorgesehen |
-| [#210](https://github.com/larynxberlin-rgb/Zugfolge/issues/210) | Manifest-/Fortschrittskern und geschützte Persistenz vorhanden; produktiver Haltbelegpfad fehlt | #532, #534 | Referenz, keine automatische Schließung |
+| [#169](https://github.com/larynxberlin-rgb/Zugfolge/issues/169) | Gemeinsame Quelle, alle Nachfragetreiber, versionierte Kohorten, Pilot-/Tagesgang-Golden und Summenerhaltung abgedeckt | #532, #534 | Schließend mit #534 verknüpft |
+| [#170](https://github.com/larynxberlin-rgb/Zugfolge/issues/170) | Alle sechs lexikographischen Größen, Verkehrsmittel-/Verbindungs-/Zugwahl, Erklärungen und Angebotsänderungen abgedeckt | #532, #534 | Schließend mit #534 verknüpft |
+| [#171](https://github.com/larynxberlin-rgb/Zugfolge/issues/171) | Tarif-/Vertriebsstörung, Kapazität, Reservierung, Komfort, freie Quellenbindung und unabhängiger Fahrberechtigungsstatus abgedeckt | #532, #534 | Schließend mit #534 verknüpft |
+| [#172](https://github.com/larynxberlin-rgb/Zugfolge/issues/172) | Spielerplanung mit nativer Nachfrage, echter Trassenkonkurrenz und wirtschaftlicher Prognose verbunden; Gesamtnachweis im Native-HTTP-Test | #533, #534 | Schließend mit #534 verknüpft |
+| [#210](https://github.com/larynxberlin-rgb/Zugfolge/issues/210) | Signierte Haltanker, native Ankunft/Abfahrt, geschützte Anfangspools und kausaler Journalconsumer mit Drei-Halt-/Restore-Beweis implementiert | #532, #534 | Abschluss über #534 nach grünem vollständigem Native-Nachweis vorgesehen |
 | [#173](https://github.com/larynxberlin-rgb/Zugfolge/issues/173) | Vergleichsverfahren, freie Quellen und echter SPNV-Holdout vorhanden; Toleranzen verfehlt, weitere Holdouts fehlen | #532, #534 | Referenz, keine automatische Schließung |
-| [#361](https://github.com/larynxberlin-rgb/Zugfolge/issues/361) | Planungsablauf, Datenzustände, Datenschutz, Rücknavigation und tatsächliche Deutschland-/Knoten-Kartenprüfung mit deklariertem Lastkorpus belegt | #534 | Abschluss über #534 vorgesehen |
-| [#379](https://github.com/larynxberlin-rgb/Zugfolge/issues/379) | Gestaltung, Legenden, gestufte Details, Kartenklick und mobile Listen unter Deutschland-/Knotenlast nachgewiesen | #534 | Abschluss über #534 vorgesehen |
+| [#361](https://github.com/larynxberlin-rgb/Zugfolge/issues/361) | Planungsablauf, Datenzustände, Datenschutz, Rücknavigation und tatsächliche Deutschland-/Knoten-Kartenprüfung mit deklariertem Lastkorpus belegt | #534 | Schließend mit #534 verknüpft |
+| [#379](https://github.com/larynxberlin-rgb/Zugfolge/issues/379) | Gestaltung, Legenden, gestufte Details, Kartenklick und mobile Listen unter Deutschland-/Knotenlast nachgewiesen | #534 | Schließend mit #534 verknüpft |
 
 ## Gemeinsame tatsächliche Verkabelung
 
@@ -101,34 +101,64 @@ Der [Plattformvertrag](spfv-planung.md), native/Worker-Negativtests und
 Browsertests vervollständigen die Abschlusscheckliste. Tatsächliche
 Betriebsaktivierung und Ist-Erlösbuchung sind getrennte, offene Producer-Aufgaben.
 
-## Präzise verbleibende Anforderungen
+## #210 — autoritative Fahrgastmanifeste bis zur API
 
-**#210:** Der Kern besitzt `previousEvaluation`, `operationalProgress`,
-`frozen_journeys` und Tests für tatsächliche Halte, Anschlussverlust, stabile
-Personen/Sitze/FareFacts und Restore. `DemandService.refreshOnce` übergibt
-produktiv aber noch keine bestätigten Haltbelege und keinen Vorgängerbeleg
-an diesen Modus. Die derzeitige API ist ausdrücklich eine Prognose. Es fehlt
-die durchgehende Kette vom Betriebsproducer bis zum persistenten revidierten
-Ist-Manifest; der vorhandene Kern braucht dafür keinen zweiten Nachfragedienst.
+Die Kette ist in [M10-Haltbelege](m10-haltbelege.md) beschrieben und besteht
+aus tatsächlichen Produzenten und einem persistenten Consumer:
 
-Die konkrete Lücke liegt vor dem Consumer: `OperationalTrain` und
-`TrainMaterialization` in [operational.rs](../crates/zugfolge-sim/src/operational.rs)
-besitzen noch keine geordnete, physisch gebundene Zwischenhaltliste. Benötigt
-werden signierte Haltanker, native Ankunfts-/Abfahrtsquittungen mit Aufenthalt
-und deren persistenter Nachfrageconsumer einschließlich Ausgangsmanifest.
-Der vorhandene [Fahrtabschlussproducer](../crates/zugfolge-sim/src/operational/service_outcomes.rs)
-erzeugt bereits `train-outcome`; dieser Terminalbeleg ersetzt keine
-Zwischenhalte. #518 ist benachbarte Abschluss-/Abrechnungsarbeit und keine
-zwingende externe Blockade für diese noch offene M10-Implementierung.
-Der [versionierte Haltbelegplan](m10-haltbelege.md) benennt die erforderlichen
-Verträge, Produzenten, kausale Reihenfolge und den vollständigen nativen
-Drei-Halt-Nachweis; er wird ausdrücklich nicht als fertige Implementierung gewertet.
+- Der [Fahrplancompiler](../tools/region-import/germany/timetable-route-compiler.mjs)
+  erhält exakte gerichtete Haltanker. Der [Haltbinder](../tools/region-import/passenger-stop-binding-v1.mjs)
+  und der Alpha-Builder verbinden sie mit tatsächlicher Fahrstraße, Bahnsteig,
+  Formation und signiertem Deployment. Die Rust-Infrastrukturgrenze prüft die
+  Anker auch beim realen JSON-Sequence-Import.
+- [Native Fahrgasthalte](../crates/zugfolge-sim/src/operational/passenger_stops.rs)
+  bremsen innerhalb der bestehenden Fahrterlaubnis, belegen tatsächlichen
+  Stillstand und Mindesthalt und quittieren erst die tatsächliche Abfahrt.
+  Signalausfälle erzeugen keine erfundenen Zwischenhalte. Der Runtime-Hash
+  schützt Planvorlagen, Fortschritt und tägliche Fahrtbindungen über Restore.
+- [Poolanfänge](../apps/game-api/src/demand-pool-seeds.ts) werden vor der ersten
+  Abfahrt mit Quellpins und Journalgrenze geschützt gespeichert. Der
+  [Journalconsumer](../apps/game-api/src/demand-progress.ts) verarbeitet nur
+  gemeinsam abgeschlossene Regionszeitpunkte, wahrt Vorgängerergebnis und
+  kumulative Ist-Belege und persistiert Zeitgrenzen und Cursor atomar.
+  Folgepools behalten getrennte Fahrtkennungen; belegte begonnene Reisen
+  wechseln erst nach bestätigter Zielankunft. Leere Züge blockieren diesen
+  Wechsel nicht.
+- `DemandService` wird vor und nach dem bestätigten Betriebsadvance aufgerufen.
+  Die Manifest-API zeigt im autoritativen Modus ausschließlich einen tatsächlich
+  abgefahrenen Abschnitt vor seiner Folgeankunft. Am Halt und nach Fahrtende
+  meldet sie keinen aktiven Fahrgastabschnitt. Schlüssel, Sitze und verdeckte
+  FareFacts bleiben für bereits gereiste Abschnitte erhalten.
+
+Der [Drei-Halt-Integrationstest](../apps/game-api/src/demand-operational-native.integration.test.ts)
+führt echten Betriebs- und Nachfrage-Rust mit PGlite, Signalstörung,
+Anschlussverlust, Restore und HTTP zusammen. `demand-progress.test.ts`,
+`demand-pool-seeds.test.ts`, `demand-pool-lifecycle.test.ts` und
+`world-deployment-passenger-stops.test.ts` prüfen Bindungsfehler, Weltgrenzen,
+mehrere Regionen, Abfahrten bei Zeit 0, Kaltstart über zwei Pools, tägliche
+Kennungen und idempotentes Ende. `demand-offer-history.test.ts` belegt mit
+Rust, dass bestätigte Angebotswechsel vor, nach und gleichzeitig mit einer
+Abfahrt nach Zeit und Weltsequenz wirken. Neue Dienste, vorgemerkte
+Planungsstände und historische Revisionen vor dem Seedcursor bleiben über
+Restore erhalten. Unhistorisierte Snapshotänderungen werden abgewiesen.
+Öffentlicher Ingest und Ereignisprojektionen
+geben die privaten Fachbelege nicht frei. Die reguläre Linux-CI führt den
+Drei-Halt-Beweis mit dem echten NAPI-Addon aus; die schließende Verknüpfung
+setzt einen grünen Lauf des finalen Codes voraus.
+
+Alte Deployments ohne nachgewiesene Haltanker erhalten keine erfundenen
+Ist-Manifeste. Neue Routen benötigen eine zertifizierte Haltbindung. Der
+nachgelagerte M15-PR #535 liest weiterhin denselben `PassengerManifestV1`-
+und `demand-operational-progress/v1`-Vertrag; ein zweiter Nachfragekern entsteht
+nicht.
+
+## Präzise verbleibende Kalibrierungsanforderung
 
 **#173:** [Kalibrierungsquellen](m10-kalibrierungsquellen.md) und
 [nativer Vergleich](../tools/demand-calibration/README.md) belegen freie
 Quellen, getrennte Daten und reproduzierbare Abweichungen. Der SPNV-Holdout
-besteht nur 6/21 Stunden- und 31/105 Abschnittsvergleiche, WAPE 52,20 % bzw.
-45,06 %. SPNV-Umstiege sowie SPFV-Tagesgang, -Querschnitt und -Umstiege fehlen
+besteht nur 6/21 Stunden- und 31/105 Abschnittsvergleiche, WAPE 52,38 % bzw.
+45,34 %. SPNV-Umstiege sowie SPFV-Tagesgang, -Querschnitt und -Umstiege fehlen
 als getrennte gemessene Holdouts. Die erforderlichen sechs Bereiche sind
 damit nicht innerhalb der Toleranzen nachgewiesen.
 
@@ -155,4 +185,4 @@ gemessen; späte Kartenfehler und externe Laufzeitrequests führen zum Fehler.
 Damit sind diese UI-/UX-Anforderungen im offengelegten Testumfang erfüllt.
 Das ist kein Nachweis des produktiven millionenfachen Deutschland-Korpus,
 keine reale Nachfragekalibrierung und keine Betriebsfreigabe. Diese anderen
-Fachabnahmen bleiben in #173/#210 sowie den bestehenden Release-/Betriebsissues.
+Fachabnahmen bleiben in #173 sowie den bestehenden Release-/Betriebsissues.

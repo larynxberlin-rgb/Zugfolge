@@ -174,6 +174,9 @@ jobs:
           # Echter Alpha-Builder -> serialisierter Compact-v2-Vertrag -> Serverstart-Registry.
           node --test tools/region-import/build-alpha-world-runtime.integration.test.mjs
 
+      - name: M10-Haltbelege, Journalcursor und native Fahrgastfortschreibung
+        run: pnpm --filter @zugfolge/game-api exec vitest run --no-file-parallelism src/demand-progress.test.ts src/demand-pool-seeds.test.ts src/demand-pool-lifecycle.test.ts src/demand-offer-history.test.ts src/demand-operational-native.integration.test.ts
+
       - name: PostgreSQL-Migration, Weltisolation und Autorisierung
         env:
           TEST_DATABASE_URL: postgres://zugfolge:zugfolge-test@127.0.0.1:5432/zugfolge_integration

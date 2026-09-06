@@ -262,8 +262,8 @@
       "goal": "Ein gemeinsames SPNV-/SPFV-Nachfragemodell mit Reiseketten, Zugwahl, Auslastung und autoritativen SPNV-Fahrgastmanifesten liefern.",
       "area": "area:economy",
       "dependsOn": ["M9"],
-      "status": { "core": "verified", "integration": "in_progress", "operations": "blocked", "acceptance": "blocked" },
-      "evidence": [{ "label": "M10 Implementierung und Abnahmegrenzen", "url": "docs/m10-abnahme.md" }, { "label": "Issue-Anforderungen, Code und PR-Zuordnung", "url": "docs/m10-issue-verknuepfung.md" }, { "label": "Freie Kalibrierungsquellen und Holdout", "url": "docs/m10-kalibrierungsquellen.md" }],
+      "status": { "core": "verified", "integration": "verified", "operations": "blocked", "acceptance": "blocked" },
+      "evidence": [{ "label": "M10 Implementierung und Abnahmegrenzen", "url": "docs/m10-abnahme.md" }, { "label": "Issue-Anforderungen, Code und PR-Zuordnung", "url": "docs/m10-issue-verknuepfung.md" }, { "label": "Freie Kalibrierungsquellen und Holdout", "url": "docs/m10-kalibrierungsquellen.md" }, { "label": "Native Haltbelege und kausale Manifestfortschreibung", "url": "docs/m10-haltbelege.md" }],
       "items": [
         { "number": 169, "kind": "issue", "labels": ["area:economy", "type:enhancement", "priority:p1"] },
         { "number": 170, "kind": "issue", "labels": ["area:economy", "area:planning", "type:enhancement", "priority:p1"] },

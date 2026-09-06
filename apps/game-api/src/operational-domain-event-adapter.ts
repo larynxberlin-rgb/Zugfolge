@@ -1,4 +1,5 @@
 import { decodeOperationalServiceEvent } from "./operational-service-outcome.js";
+import { decodeOperationalPassengerStop } from "./operational-passenger-stop.js";
 import type {
   OperationalDisruption,
   OperationalProjection,
@@ -251,6 +252,10 @@ export function adaptOperationalDomainEvents(
       subjectId: event.subjectId,
       detail: event.detail,
     };
+    if (event.kind === "passenger-stop-arrival" || event.kind === "passenger-stop-departure") {
+      const facts = decodeOperationalPassengerStop(event.kind, event.detail, event.subjectId, event.atMs, worldId);
+      return Object.freeze({ eventType: `operations.${event.kind}`, payload: Object.freeze({ ...common, ...facts }) });
+    }
     if (event.kind === "train-service-planned" || event.kind === "train-outcome") {
       const facts = decodeOperationalServiceEvent(event.kind, event.detail, event.subjectId, event.atMs, worldId);
       return Object.freeze({ eventType: `operations.${event.kind}`, payload: Object.freeze({ ...common, ...facts }) });

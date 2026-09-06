@@ -1,8 +1,9 @@
 # Personenverkehr: Nachfrage, Zugwahl und Fahrgastmanifest
 
-Version: `zugfolge-demand/v1` (M10.1–M10.3a). Dieser Vertrag wird vor dem
-Simulationscode eingeführt. Er erweitert [Wirtschaft](wirtschaft.md) 2 und
-liefert die Grundlage für [Schaffnermodus](schaffnermodus.md) 3.
+Version: `zugfolge-demand/v1` (M10.1–M10.3a). Der implementierte Rust-Vertrag
+erweitert [Wirtschaft](wirtschaft.md) 2 und liefert die Grundlage für
+[Schaffnermodus](schaffnermodus.md) 3. Die operative Haltbelegkette und ihr
+Nachweisstand sind in [M10-Haltbelege](m10-haltbelege.md) dokumentiert.
 
 ## 1. Autorität und Grenzen
 
@@ -49,10 +50,44 @@ Eine während der Fahrt gekürzte oder gestrichene Zugteilreise benötigt zunäc
 eine bestätigte Ausstiegslage; der Kern lehnt eine Fortschreibung ohne diese
 Quittung ab. Er erfindet keinen Ausstieg und verlagert keine bereits Reisenden.
 
-Die bestehende öffentliche Betriebsprojektion liefert noch keine vollständigen
-Haltquittungen. Deshalb ist die produktive Anbindung dieses Eingangs ein offenes
-Abnahmegate. Die Kernprüfungen führen dafür ausdrücklich synthetische Quittungen
-zu. Laufende Reiseketten enden nicht mit dem Ende ihres Erzeugungsfensters.
+Die native Betriebsengine liefert mit `OperationalPassengerStopReceipt`
+gebundene Ankunfts- und Abfahrtsbelege für Züge mit signiertem `stopPlan`.
+Der Compiler erhält dazu Originalanker und bindet sie an die tatsächliche
+gerichtete Route, eine eindeutige Plattform und die vollständige Formation.
+Zwei bis 100 geordnete Halte werden nativ geprüft. Alte Korpora ohne diese
+Evidenz erhalten keinen nachträglich geschätzten Haltplan. Kartenpositionen,
+Sollzeiten, gewöhnliche Signalhalte und Bewegungsereignisse ersetzen keinen
+Beleg. Die Betriebsengine erzeugt Ankunft erst an der exakten Haltlage bei
+Stillstand und Abfahrt erst beim tatsächlichen Beginn eines freigegebenen
+Bewegungsabschnitts nach Mindestaufenthalt und frühester Sollabfahrt.
+
+Der regionale Worker speichert Belege und Betriebszustand atomar.
+`DemandProgressConsumer` prüft Welt, Region, Initialisierungspin, Commit,
+native Ereignissequenz und Haltidentität. Er übergibt die Fakten dem Rust-Kern
+in ihrer tatsächlichen Reihenfolge. Der persistente `DemandProgressCursor`
+behält auch noch nicht vollständig bestätigte Belege vorauslaufender Regionen.
+Erst Zeiten strikt vor dem kleinsten bestätigten Regionszeitpunkt werden
+übernommen; gleichzeitige Fakten werden gemeinsam ausgewertet. Ein
+Angebotsendsnapshot darf frühere Abfahrten nicht rückwirkend beeinflussen.
+
+`loadDemandOfferHistory` rekonstruiert dafür bestätigte SPFV-Angebote aus dem
+atomaren Paar `planning.runtime-state`/`planning.diagram` bis zur jeweiligen
+Weltsequenz. Ihre wirksame Zeit ist die bestätigte Commitzeit seit Weltepoche,
+nicht die Bestell- oder Vorschauzeit. Höchstens 256 Angebotsrevisionen werden
+mit den Haltbelegen zeitlich fortgeschrieben; bei gleicher Zeit entscheidet
+die dauerhafte Weltsequenz. Noch vorauseilende Angebote bleiben im privaten
+Cursor. Unbelegte Cancel-/Delay- oder Betreiberänderungen eines aktuellen
+Kartensnapshots werden im autoritativen Pfad abgelehnt. Ist-Zeiten und daraus
+abgeleitete Folgeprognosen stammen dort ausschließlich aus den Haltbelegen.
+
+Der serverseitige Regionalzyklus bereitet Nachfrage vor dem Advance vor und
+holt die Belege danach nach. Die neue Integration führt Importbinder, echte
+native Bewegung, Workerjournal, Consumer, native Nachfrage, Restore und HTTP
+zusammen. Ihr lokaler Rust-Lauf ist bestanden; die vollständige Linux-NAPI-CI
+steht noch aus. Kern- und Transporttests mit synthetisch zugeführten Belegen
+bleiben als solche gekennzeichnet und ersetzen diesen Addonnachweis nicht.
+
+Laufende Reiseketten enden nicht mit dem Ende ihres Erzeugungsfensters.
 Der Kern erlaubt `nowMs` nach `windowEndMs`, damit ein vorhandenes Fenster bis
 zum Ende seiner Reiseketten fortgeschrieben werden kann.
 
@@ -69,6 +104,19 @@ addiert und als gemeinsam kapazitätsgeprüfte Belegung veröffentlicht werden.
 Gesamtgrenzen für Reisende, Sucharbeit und Manifestgröße gelten für den ganzen
 Pool, nicht jeweils erneut pro Fenster.
 
+`pinDemandPoolSeeds` persistiert vor dem ersten Regional-Advance alle
+freigegebenen Pools, einschließlich zukünftiger Fenster, als private
+`demand.pool-initialized`-Einträge. `DemandPoolSeed` bindet die vollständige
+Vorlage, native Anfangsauswertung, Deployment-/Eingabe-/Ergebnishashes,
+Regionsstände und tatsächliche Journalgrenze. Eine bereits vorhandene
+passende Abfahrt verhindert einen neuen Seed, auch bei Weltzeit null.
+Wiederanlauf prüft den gespeicherten Anfang nativ und berechnet keine
+historische Anfangsbelegung mit dem heutigen Angebot. Zwischenfortschritte
+stehen in privaten `demand.pool-progressed`-Einträgen; nur der finale
+`demand.evaluated`-Kopf wird zur aktuellen Nachfrageprojektion. Cursor und
+Auswertung werden unter Weltmutex atomar committet. Seeds/Checkpoints sind
+auf 16 MiB, Regionen auf 256 und Haltbelege pro Pool auf 40.000 begrenzt.
+
 Die Plattform hält den bisherigen Pool bis zum Maximum aus Fensterende und
 wirksamen Fahrtenden seiner Dienste verfügbar. Dabei berücksichtigt sie bereits
 gespeicherte Betriebsfakten, aktuelle bestätigte Verspätungen und neu native
@@ -77,8 +125,12 @@ diesem Ende zurückgestellt; danach beginnt er mit seinem eigenen Pin. Statisch
 überlappende Releasekorpora bleiben unzulässig. Ein Kaltstart prüft höchstens 256
 bereits begonnene Pools mit jeweils zeitlich begrenzter SPFV-Projektion; deren
 Cache hält höchstens 256 Einträge. Nach Restore beginnt die Suche beim zuletzt
-gespeicherten Pool und öffnet abgeschlossene Releases nicht erneut. Diese
-Horizonte bleiben Prognosezeiten, solange die operativen Haltquittungen fehlen.
+gespeicherten Pool und öffnet abgeschlossene Releases nicht erneut. Mit
+operativen Belegen hält sie zusätzlich sämtliche begonnenen Reiseketten
+bis zur bestätigten Zielankunft im alten Pool, auch während eines Umstiegs.
+Eine prognostizierte Endzeit beendet keine laufende oder gestrandete Reise.
+Der bereits gepinnte Folgepool holt seine historischen Belege beim Übergang
+nach; die öffentlich sichtbare Nachfragezeit geht dabei nicht zurück.
 
 ## 2. Release und gemeinsame Kohorten
 
@@ -187,8 +239,17 @@ erzeugt keinen zweiten Reisenden. Je Zugabschnitt sind Personenkennungen eindeut
 `StopPassengerFlowV1` beweist je Halt `vorher + Einsteiger − Aussteiger = nachher`;
 die Abschnittsbelegung stimmt mit Manifest und Kapazitätszuteilung überein.
 Die öffentliche Projektion enthält ausschließlich aggregierte Auslastung,
-Ein-/Aussteiger und erklärbare Nachfragegründe. `fareFact` und individuelle
-Personenschlüssel werden ausschließlich serverseitig gespeichert.
+Ein-/Aussteiger und erklärbare Nachfragegründe. Nur die eigentümergeprüfte,
+paginierte SPNV-Manifestroute zeigt Fahrgastkennungen, Ein-/Ausstiegsbezeichnungen,
+Sitzklasse und Platzbedarf. `fareFact`, Tarifpolicy, interne Sitznummern und
+Reiseketten bleiben im geschützten serverseitigen Manifest.
+
+Für ein tatsächliches Abschnittsmanifest müssen die Abfahrt am Ausgangshalt
+und die noch ausstehende Ankunft am Folgehalt belegt sein. Nur dann trägt die
+Ansicht `source: confirmed`. Ein Signalhalt ändert den Abschnitt nicht;
+am Fahrgasthalt, vor Beginn und nach Ende antwortet die Route mit 409.
+Künftige Belegungen und nachgeführte Fahrplanzeiten bleiben Prognosen, auch
+wenn die Gesamtauswertung `projectionMode = progress_bound` verwendet.
 
 ## 6. Kalibrierung und Abnahmegrenze
 
@@ -209,3 +270,13 @@ gekennzeichnete Pilotregion-Regressionen. Sie beweisen Tagesgang, Erhaltung,
 mehrere Halte, gemeinsame SPNV-/SPFV-Wahl, Kapazität, Reservierung, Vertriebsstörung,
 Anschlussverlust, Welttrennung, Eingabepermutation und JSON-Restore.
 Ein echter freigegebener SPNV-/SPFV-Holdout ist ein gesonderter Abnahmebeleg.
+
+Der dokumentierte reale RE7-Vergleich ist noch nicht bestanden:
+Holdout-WAPE **52,38 %** für stündliche Einsteiger und **45,34 %** für
+gerichtete Abschnittsbesetzung; nur 6/21 beziehungsweise 31/105 Vergleiche
+liegen innerhalb der Diagnosegrenze. Freie Vergleichsdaten für SPNV-Umstiege
+sowie SPFV-Tagesgang, -Querschnitt und -Umstiege fehlen weiterhin.
+[#173](https://github.com/larynxberlin-rgb/Zugfolge/issues/173) bleibt deshalb
+ausdrücklich offen. Die implementierte Haltbelegkette verändert weder diese
+Messwerte noch die Kalibrierungstoleranzen; Quelle und reproduzierbarer
+Vergleich stehen in [M10-Kalibrierungsquellen](m10-kalibrierungsquellen.md).

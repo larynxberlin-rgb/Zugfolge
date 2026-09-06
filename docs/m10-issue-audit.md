@@ -29,11 +29,12 @@ freie Kalibrierungsdaten und gemeinsame Abnahmematrix).
 Während der Abschlussprüfung kam
 [#535](https://github.com/larynxberlin-rgb/Zugfolge/pull/535) hinzu. Dieser
 M15-Entwurf baut auf #534 auf und übernimmt M10-Manifeste ausschließlich mit
-tatsächlichen Haltbelegen. Seine interne Projektion bleibt bei den derzeitigen
-produktiven M10-Prognosen gesperrt. Der M10-Stack erhält additive Commits;
+tatsächlichen Haltbelegen. Die ergänzte M10-Haltbelegkette liefert diesen
+bestehenden Vertrag. Deployments ohne gebundene Haltpläne bleiben für die
+Ist-Projektion ungeeignet. Der M10-Stack erhält additive Commits;
 der Manifestvertrag wird für den nachgelagerten PR nicht umgeschrieben.
 
-Der Anschlussabgleich von #535 (Head `a13fbc5`) bestätigt den gemeinsamen
+Der historische Anschlussabgleich von #535 (Head `a13fbc5`) bestätigt den gemeinsamen
 Manifesttyp, die Ablehnung von Prognosen und eine datensparsame Projektion.
 Die verbesserte native Flottenfixture wurde in #534 übernommen; der
 Textkonflikt ist beseitigt. Ein konkreter M15-Prüfpunkt bleibt:
@@ -42,10 +43,27 @@ aber noch nicht `operators.lifecycle === "active"`. Vor der öffentlichen
 Sitzungseinbindung braucht dieser interne Dienst die Aktivitätsprüfung samt
 Negativtest. Das gehört zur M15-Abnahme und wird durch M10 nicht geschlossen.
 
+Der erneute Codevergleich gegen #535, Head `e00165b`, bestätigt weiterhin
+kompatible Manifest- und Fortschrittsfelder. Seine Projektion liest nur den
+jüngsten abgeschlossenen Nachfragecheckpoint aus dem privaten Store; zusätzliche
+Poolanfänge, Zwischenrevisionen und Cursor ändern den M15-Vertrag nicht.
+Die M10-API zeigt Fahrgäste während eines aktiven Abschnitts, während M15
+zusätzlich den belegten Ausstieg am Halt projizieren darf.
+
 #530 entfernt Tutorialwelten, erzwingt eine Welt je Server und verwendet
 Schema 35. M10 führt diese alten Konzepte nicht erneut ein. Die ausdrücklich
 abgenommene M9.1-Hinweisfunktion bleibt erhalten. #531 liefert Layout,
 Navigation und Gestaltungsregeln; seine Beispieldaten sind keine Nachfragequelle.
+
+Die erneute Prüfung vom 06.09.2026 umfasst auch
+[#536](https://github.com/larynxberlin-rgb/Zugfolge/pull/536),
+„M15.3: Pixelartkorpus, geprüfter Atlaszugriff und Browsergalerie“, Head
+`0a614ed2184f15033fba54828daca6575d855775`. Er baut auf #535 (`e00165b`) auf.
+Titel, vollständiger PR-Text und Dateiumfang wurden geprüft: Grafikartefakte,
+Atlasloader und Galerie ersetzen keine M10-Manifeste oder Haltbelege. Die
+schließenden Referenzen sind leer; #213 bleibt wegen ausstehender formaler
+Freigaben ausdrücklich offen. Seine zusätzlichen CI-Schritte und
+Roadmap-/Glossarergänzungen sind beim Stack-Abgleich zu bewahren.
 
 ## Fachliche Abhängigkeiten
 
