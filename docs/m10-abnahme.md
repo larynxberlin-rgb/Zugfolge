@@ -22,6 +22,14 @@ Die sieben bisherigen Issues sind schließend mit #534 verknüpft; #173 ist
 dem vierten Stack-PR #537 zugeordnet. Eine Verknüpfung ersetzt weder dessen
 CI-Prüfung noch den späteren Merge.
 
+Der Nutzer hat den geänderten M10-Fachumfang am 06.09.2026 abgenommen und
+das Zusammenführen aller vier M10-PRs beauftragt. Kern, Integration und
+fachliche Abnahme sind damit nachgewiesen; die finale Zusammenführung
+bleibt an die vier regulären grünen CI-Jobs gebunden. Produktionsreife ist
+davon getrennt und wegen der offenen M9-/Betriebsabnahmen weiterhin
+blockiert. Der GitHub-Milestone bleibt daher offen, auch wenn seine acht
+Issues und vier Implementierungs-PRs abgeschlossen sind.
+
 ## Fachlicher Umfang
 
 | Issue | Implementierung und reproduzierbarer Nachweis | Abnahmegrenze |
@@ -215,7 +223,10 @@ und die fachliche Zuordnung. Besonders relevant bleiben #517/#518
 M9-/Deutschland-/Produktionsabnahme. M15 erhält ausschließlich den M10-Vertrag;
 der Schaffnermodus erzeugt keine zweite Nachfrage oder Fahrberechtigung.
 
-Der geänderte M10-Fachumfang ist zur abschließenden Prüfung implementiert.
-Vor einer vollständigen Abnahme fehlen noch die genannten finalen CI- und
-Odoo-Nachweise. Produktive Betriebs-, Deutschlandlast- und externe
-Spielerabnahmen verbleiben bei ihren bestehenden Release-/Betriebsissues.
+Der geänderte M10-Fachumfang ist implementiert, integriert und auf
+Nutzerauftrag fachlich abgenommen. Der echte Odoo-19-Nachweis ist auf
+`8d20f7e` erfolgreich abgeschlossen; die finalen vier CI-Ergebnisse
+werden am tatsächlich zusammenzuführenden Commit geprüft. Produktive
+Betriebs-, Deutschlandlast- und externe Spielerabnahmen verbleiben bei
+ihren bestehenden Release-/Betriebsissues und halten die Produktionsreife
+des GitHub-Milestones ausdrücklich offen.
