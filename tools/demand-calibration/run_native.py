@@ -47,13 +47,20 @@ def build_inputs(rows: list[dict[str, str]], source: dict) -> tuple[dict, dict]:
         alighting[row["DHID"]] += tenths(row["Aussteiger"])
     hour_boardings = Counter()
     measured_hours = Counter()
-    training_hours = Counter(int(row["Abfahrtszeit"].split(":")[0]) % 24 for row in training_rows)
+    # NVBW verwendet Betriebsstunden 24/25 für den Folgetag. Die Gewichtung
+    # gehört zur gleichen Uhrzeit wie die zugehörige Fahrt, nicht 24 h davor.
+    training_hours = Counter(int(row["Abfahrtszeit"].split(":")[0]) for row in training_rows)
+    operating_hours = sorted(training_hours)
+    if not operating_hours or operating_hours[0] < 0 or operating_hours[-1] - operating_hours[0] >= 24:
+        raise ValueError("Trainings-Betriebstag muss in ein eindeutiges 24-Stunden-Profil passen")
     for row in measured_training:
-        hour = int(row["Abfahrtszeit"].split(":")[0]) % 24
+        hour = int(row["Abfahrtszeit"].split(":")[0])
         hour_boardings[hour] += tenths(row["Einsteiger"])
         measured_hours[hour] += 1
-    expanded_hours = [Fraction(hour_boardings[hour] * training_hours[hour], measured_hours[hour])
-                      if measured_hours[hour] else Fraction(0) for hour in range(24)]
+    expanded_hours = [Fraction(0) for _ in range(24)]
+    for hour in operating_hours:
+        expanded_hours[hour % 24] = (Fraction(hour_boardings[hour] * training_hours[hour], measured_hours[hour])
+                                     if measured_hours[hour] else Fraction(0))
     total_hours = sum(expanded_hours)
     shares = [int(value * 10000 / total_hours) for value in expanded_hours]
     residual = 10000 - sum(shares)
@@ -122,15 +129,17 @@ def build_inputs(rows: list[dict[str, str]], source: dict) -> tuple[dict, dict]:
             })
         inputs[split] = {"schemaVersion": "zugfolge-demand-evaluation/v1", "worldId": WORLD,
                          "periodId": "-".join(reversed(day.split("."))), "seed": "42", "nowMs": 0,
-                         "revision": 1, "windowStartMs": 0, "windowEndMs": DAY_MS, "daySliceId": "pooled",
+                         "revision": 1, "windowStartMs": operating_hours[0] * 3600000,
+                         "windowEndMs": (operating_hours[-1] + 1) * 3600000, "daySliceId": "pooled",
                          "generationWindows": [{"windowStartMs": hour * 3600000, "windowEndMs": (hour + 1) * 3600000,
-                                                "daySliceId": f"hour-{hour:02d}"} for hour in range(24)],
+                                                "daySliceId": f"hour-{hour % 24:02d}"} for hour in operating_hours],
                          "release": release, "services": services, "alternatives": []}
     parameters = {"schemaVersion": "zugfolge-demand-training-parameters/v1", "trainingDate": "2025-01-14",
                   "sourceRowNumbers": [int(row["sourceRowNumber"]) for row in measured_training],
                   "effectiveGeneratedPassengers": sum(zone["population"] for zone in zones),
                   "stationCount": len(zones), "releaseSha256": hashlib.sha256(json.dumps(release, sort_keys=True).encode()).hexdigest(),
-                  "provenance": "balanced", "hourlySharesBasisPoints": shares, "release": release}
+                  "provenance": "balanced", "hourlySharesBasisPoints": shares,
+                  "generationOperatingHours": operating_hours, "release": release}
     return inputs, parameters
 
 
@@ -209,14 +218,15 @@ def main() -> None:
                             "observedSum": observed, "simulatedSum": sum(row["simulatedPassengers"] for row in selected),
                             "absoluteDeviationSum": absolute,
                             "weightedAbsolutePercentageErrorBasisPoints": absolute * 10000 // observed if observed else None})
-    report = {"schemaVersion": "zugfolge-demand-limited-native-calibration/v1", "sourceId": SOURCE_ID,
+    report = {"schemaVersion": "zugfolge-demand-limited-native-calibration/v1",
+              "comparisonVersion": "nvbw-re7-native-comparison/v2", "sourceId": SOURCE_ID,
               "nativeBinarySha256": sha256(binary), "trainingParametersSha256": sha256(ROOT / "training-parameters.json"),
               "observationsSha256": sha256(ROOT / "observations.json"), "tolerance": {"absolutePassengers": 20, "relativeBasisPoints": 2500},
               "nativeOutcomes": outcomes, "summary": summary, "deviations": deviations,
               "spnvMeasuredSubsetAccepted": all(row["accepted"] for row in deviations if row["split"] == "holdout"),
               "fullM10CalibrationAccepted": False,
               "missingRequiredHoldouts": ["spnv/transfer_flow", "spfv/daily_profile", "spfv/cross_section", "spfv/transfer_flow"],
-              "limitations": ["See README native comparison v1: balanced OD/marginals and training-derived hourly shares, zero fares/dwell/standing, observed train mask, cross-border RE7 only."]}
+              "limitations": ["See README native comparison v2: balanced OD/marginals and training-derived hourly shares on the source operating-day axis, zero fares/dwell/standing, observed train mask, cross-border RE7 only."]}
     (ROOT / "native-report.json").write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8", newline="\n")
     print(json.dumps({"summary": summary, "spnvMeasuredSubsetAccepted": report["spnvMeasuredSubsetAccepted"],
                       "fullM10CalibrationAccepted": False}, ensure_ascii=True))

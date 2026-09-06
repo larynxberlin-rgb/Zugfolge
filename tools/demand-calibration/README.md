@@ -59,7 +59,7 @@ Das Vollabnahme-Gate `zugfolge-demand-calibration/v1` bleibt streng: SPNV und
 SPFV brauchen jeweils unabhängige Tagesprofil-, Querschnitts- und
 Umstiegsbeobachtungen. Der Quellenbericht erklärt die noch fehlende Abdeckung.
 
-## Native Vergleichsrechnung v1
+## Native Vergleichsrechnung v2
 
 `run_native.py --binary /absolut/evaluate_json` verwendet den echten Rust-Kern.
 Die Schätzregel wird vor dem Holdout-Vergleich festgelegt: je Station werden
@@ -89,10 +89,23 @@ werden ausschließlich aus den AFZS-Trainingseinsteigern gebildet und mit
 `alle Trainingshalte der Stunde / gezählte Trainingshalte der Stunde`
 hochgerechnet. Fehlende Stunden erhalten kein erfundenes Volumen. Die
 Gewichte werden per größtem Rest exakt auf 10.000 Basispunkte aufgeteilt;
-innerhalb jeder Stunde sind die Abfahrtswünsche gleichverteilt. Alle 24
-`generationWindows` werden in **einem** nativen Lauf mit gemeinsamer
+innerhalb jeder Stunde sind die Abfahrtswünsche gleichverteilt. Die 24
+Uhrzeitgewichte werden auf die tatsächlich im Trainingsangebot vorhandenen
+Betriebsstunden gebunden: 22 `generationWindows` von Stunde 4 bis einschließlich
+25. Stunde 24 liegt bei 86.400.000 ms und verwendet das Uhrzeitgewicht 0;
+sie wird nicht auf den Anfang desselben Tages vorverlegt. Stunde 25 verhält
+sich entsprechend. Alle Fenster werden in **einem** nativen Lauf mit gemeinsamer
 Kapazitätsvergabe gerechnet. Getrennte, später aufsummierte Stundenläufe
 wären fachlich falsch und werden nicht verwendet.
+
+Version 2 korrigiert ausschließlich diese Zeitbindung. Version 1 hatte die
+beiden Nachmitternachtsstunden mit `% 24` auf frühe Stunden desselben Tages
+gefaltet. Die 838 Trainingshalte umfassen 26 Halte in Betriebsstunde 24 und
+einen in 25. Modellrelease, Zonenmarginalen, 24 Uhrzeitgewichte, Tagesmasse,
+Messfahrten, Beobachtungen, Seed und Toleranz bleiben identisch. Es wird
+dieselbe durch SHA-256 gepinnte Rust-Binary verwendet. Ein Trainingsangebot,
+das mehrere Vorkommen derselben Uhrzeit in verschiedenen Tagen benötigt,
+wird ausdrücklich abgelehnt; dafür wäre ein anderes Profil erforderlich.
 
 Die vor dem Vergleich festgelegte Diagnose-Toleranz beträgt pro Beobachtung
 `max(20 Fahrgäste, 25 % des Beobachtungswerts)`. Sie ist eine Entwicklungsgrenze,
@@ -110,10 +123,15 @@ python tools/demand-calibration/run_native.py --binary target/release/examples/e
 Unter Windows endet der Binarypfad auf `.exe`. Der gespeicherte
 `native-report.json` weist für den Holdout 6/21 Stundenbeobachtungen und
 31/105 Querschnitte innerhalb der Grenze aus; gewichtete absolute Fehler
-52,20 % beziehungsweise 45,06 %. Der eingeschränkte Vergleich und die
+52,38 % beziehungsweise 45,34 %. Der eingeschränkte Vergleich und die
 Vollabnahme sind deshalb ausdrücklich nicht bestanden. Die vier tatsächlich
 ausgeführten nativen Rechnungen (beide Tage plus jeweils ein Replay) und
 ihre Hashbindungen sind im Bericht nachvollziehbar.
+
+Die frühere Rechnung v1 hatte 52,20 % beziehungsweise 45,06 % Holdoutfehler.
+Die fachlich richtige Zeitachse verbessert diese Werte also nicht. Die
+akzeptierten Anzahlen bleiben 6/21 und 31/105; es wurden weder nachträglich
+Parameter auf den Holdout eingestellt noch dessen Grenzen gelockert.
 
 Alle erzeugten JSON-Dateien verwenden explizit UTF-8 ohne BOM und LF-Zeilenenden,
 auch unter Windows. Die SHA-256 im Bericht beziehen sich auf diese gespeicherten
