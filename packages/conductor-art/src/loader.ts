@@ -1,8 +1,8 @@
 import { createPublicKey, verify } from "node:crypto";
-import { ART_DIRECTIONS } from "./catalog.js";
+import { ART_DIRECTIONS, CONDUCTOR_APPEARANCE } from "./catalog.js";
 import { ArtAtlasError, invariant } from "./errors.js";
 import { parseArtAtlasManifest, parseArtAtlasSignature, parseArtAtlasWorldPin } from "./parse.js";
-import type { ArtAtlasAssetV1, ArtAtlasManifestV1, ArtAtlasResources, ArtDirection } from "./types.js";
+import type { ArtAtlasAssetV1, ArtAtlasManifestV1, ArtAtlasResources, ArtAtlasRenderViewV1, ArtDirection } from "./types.js";
 import { artSha256, inspectArtAtlas } from "./validate.js";
 
 export interface LoadArtAtlasInput {
@@ -16,6 +16,7 @@ export interface LoadArtAtlasInput {
 
 /** Zugriff entsteht ausschließlich durch die vollständige Freigabeprüfung. */
 export interface LoadedArtAtlas {
+  renderView(worldId: string): ArtAtlasRenderViewV1;
   asset(worldId: string, assetId: string): ArtAtlasAssetV1;
   file(worldId: string, fileId: string): Uint8Array;
   passengerFrame(worldId: string, variant: number, direction: ArtDirection, state: "idle" | "walk" | "sitting", elapsedMs: number): ArtAtlasAssetV1;
@@ -25,14 +26,28 @@ class VerifiedArtAtlas implements LoadedArtAtlas {
   readonly #files: Map<string, Uint8Array>;
   readonly #manifest: ArtAtlasManifestV1;
   readonly #worldId: string;
-  constructor(worldId: string, manifest: ArtAtlasManifestV1, resources: ArtAtlasResources) {
+  readonly #manifestSha256: string;
+  constructor(worldId: string, manifest: ArtAtlasManifestV1, resources: ArtAtlasResources, manifestSha256: string) {
     this.#worldId = worldId;
+    this.#manifestSha256 = manifestSha256;
     this.#manifest = structuredClone(manifest);
     this.#files = new Map(manifest.files.map((file) => [file.id, Uint8Array.from(resources.files.get(file.path)!)]));
     Object.freeze(this);
   }
 
   #assertWorld(worldId: string): void { invariant(worldId === this.#worldId, "atlas_world_mismatch"); }
+
+  renderView(worldId: string): ArtAtlasRenderViewV1 {
+    this.#assertWorld(worldId);
+    const manifest = this.#manifest;
+    return structuredClone({ schemaVersion: "conductor-art-view/v1", releaseId: manifest.releaseId,
+      manifestSha256: this.#manifestSha256, pixelsPerMetre: manifest.pixelsPerMetre,
+      files: manifest.files.map(({ id, sha256, widthPx, heightPx, sourceScale }) => ({ id, sha256, widthPx, heightPx, sourceScale })),
+      assets: manifest.assets.map(({ id, fileId, rect, pivot, worldWidthMm, worldHeightMm }) => ({ id, fileId, rect, pivot, worldWidthMm, worldHeightMm })),
+      appearanceVariants: manifest.appearanceVariants,
+      animations: manifest.animations.map(({ appearanceId, direction, state, frames }) => ({ appearanceId, direction, state, frames })),
+      accessoryBindings: manifest.accessoryBindings, conductorAppearanceId: CONDUCTOR_APPEARANCE });
+  }
 
   asset(worldId: string, assetId: string): ArtAtlasAssetV1 {
     this.#assertWorld(worldId);
@@ -106,5 +121,5 @@ export function loadArtAtlasForWorld(input: LoadArtAtlasInput): LoadedArtAtlas {
   const report = inspectArtAtlas(manifestBytes, resources);
   invariant(report.activationEligible, "atlas_activation_blocked");
   invariant(report.releaseId === pin.releaseId, "atlas_release_mismatch");
-  return new VerifiedArtAtlas(pin.worldId, manifest, resources);
+  return new VerifiedArtAtlas(pin.worldId, manifest, resources, digest);
 }

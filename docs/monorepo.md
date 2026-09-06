@@ -13,6 +13,10 @@ Spieleroberfläche folgt [Design](design.md) und
 crates/                     Rust — Simulationskern, Solver, Release-Pipeline
   zugfolge-determinism/     Determinismus-Testharnisch (M0.2)
   zugfolge-conductor/       M15.2/M15.4: quittierte M10-Manifeste und konfigurationsgetreue Innenraumgeometrie samt Deck-, Weg- und Kollisionsprüfung; keine Nachfrage, Sitzung oder Betriebssteuerung
+  zugfolge-conductor-scenes/ M15.5: gebundene Stations-/Umgebungsprojektion aus echten analytischen Betriebsabschnitten
+  zugfolge-conductor-dialogue/ M15.6: versionierte Offline-Dialoge und ausschließlich belegte öffentliche Gesprächsoptionen
+  zugfolge-conductor-session/ M15.7: reine Sitzungs-, Bewegungs-, Lease- und Dialogkommandos mit Restore/Replay
+  zugfolge-fare-control/    M15.10/M15.11: Feststellungen, Polizeireaktion, Forderungen, Ganzzahlbuchungen und Tagesdeckel
   zugfolge-infra/           Betriebsgraph und Infra-Release-Pipeline (M1)
   zugfolge-conflict/        Sperrzeiten, Belegungsprofile, Konfliktprüfung (M3.1–M3.3), Rahmenverträge (M3.8)
   zugfolge-planner/         Trassen-Planner (M3.4), PlanningRun, Fahrplanperiode, Ad-hoc-Trassen (M3.5–M3.7)
@@ -27,6 +31,7 @@ crates/                     Rust — Simulationskern, Solver, Release-Pipeline
   zugfolge-disruption/      Policies, Ursachen, Wirkungen, Fahrdienstleitung und Ersatzplanung (M8)
 packages/                   TypeScript — fachliche Bibliotheken (ab M2)
   conductor-art/            M15.3: geprüfter Pixelartkorpus, Signatur-/Weltpinprüfung und begrenzter lokaler Dateisystemloader
+  conductor-dialogue/       M15.6: nativer Korpusvalidator mit unabhängigem Schlüsselring und Weltpin
   db/                       Postgres-Zugriff über Drizzle, Wurzel der Weltisolation (M2.2)
   disruption-provider/      Rechtegeprüfter Snapshot-Adapter für REALISTIC (M8.12)
   identity/                 Konten, Rollen, Weltzugänge; Keycloak-Verifikation (M2.1)
@@ -54,6 +59,9 @@ spikes/                     Wegwerf-Code mit Verfallsdatum — derzeit leer
 tools/                      Werkzeuge für CI und Entwicklung
   art-atlas/                M15.3: reproduzierbare Atlasvorbereitung, Freigabegates, Signiereinstieg und Grafikprüfung
   conductor-interior/       M15.4: echter M5-/DB-/Rust-Nachweis mit lokaler begehbarer Geometrieprüfung; keine Produktivsitzung
+  conductor-scenes/         M15.5: belegte Quellenaufnahme und infrastrukturell gebundener Szenencompiler
+  conductor-dialogue/       M15.6: ursprünglicher Dialogkorpus, redaktionelle Prüfung und Signierwerkzeug
+  conductor-session/        M15.8/M15.12: tatsächliches Produkt-DOM und PixiJS gegen native Kerne und DB im Browser
   guards/                   die Wächter der harten Invarianten
   load/                     äußerer Lastmessharnisch für 180.000 Fahrten und ≥2 Mio. Ereignisse (M4.11)
   m7-acceptance/            echter 48h-Rust-Ereigniserzeuger für die M7-Abnahme
@@ -354,6 +362,16 @@ Für M15 bleiben Aktionsautorität und Datenschutz im kanonischen
 erhält ausschließlich geprüfte M10- und Innenraumfakten; der interne
 Game-API-Service setzt die Welt-/EVU-/Kontogrenze vor dem nativen Aufruf durch.
 Er erzeugt keine Ersatznachfrage, Haltquittungen oder Fahrzeuglayouts.
+
+`ConductorSessionService` verbindet diese belegten Eingänge inzwischen unter
+dem bestehenden Weltwriter. `zugfolge-conductor-session` entscheidet Sitzung
+und Bewegung, `zugfolge-sim::operational` hält reale Konfliktressourcen und
+`zugfolge-fare-control` erzeugt wirtschaftliche Folgen. Die Game-API speichert
+native Zustände, private Quittungen und ausgeglichene Ledgerbuchungen atomar.
+Ein unabhängiger Zyklus liest bestätigte regionale Uhren; Browser, Wallclock
+und Nachfrageprognosen können diesen Fortschritt nicht ersetzen. Die
+[Plattformgrenzen](conductor-session-platform.md) erklären Migration 36,
+Löschung, Sicherung, öffentliche Projektion und Produktionskonfiguration.
 
 ---
 

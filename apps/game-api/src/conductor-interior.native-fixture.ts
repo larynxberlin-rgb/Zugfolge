@@ -32,7 +32,7 @@ export const hasInteriorNativeFixture = existsSync(interiorFixtureCompiler) && e
 
 export function callInteriorFixtureRust(binary: string, args: string[], input: unknown): string {
   const result = spawnSync(binary, args, { input: JSON.stringify(input), encoding: "utf8", maxBuffer: 128 * 1024 * 1024, windowsHide: true });
-  if (result.status !== 0) throw new Error(result.stderr.trim() || "Der echte Rust-Prüfprozess ist fehlgeschlagen.");
+  if (result.status !== 0) throw new Error(result.stderr?.trim() || result.error?.message || "Der echte Rust-Prüfprozess ist fehlgeschlagen.");
   return result.stdout;
 }
 function unsupported(): never { throw new Error("Dieser Beleg ruft keine Betriebsengine-Kommandos auf."); }
@@ -56,11 +56,16 @@ export function interiorFixtureRuntimes() {
 }
 
 /** UUID-/Testvarianten werden am Seed vor dem Compiler geändert, niemals am Authority-Ergebnis. */
-export function compileInteriorFixture(directory: string, missingConfigurationVehicleId?: string) {
+export function compileInteriorFixture(directory: string, missingConfigurationVehicleId?: string, longTrip = false) {
   const fixtureDirectory = resolve(ROOT, "crates/zugfolge-fleet/tests/fixtures");
   const seed = JSON.parse(readFileSync(join(fixtureDirectory, "vehicle-world-seed-v3-interior.json"), "utf8"));
   for (const rows of [seed.assets, seed.personnelPools, seed.pathReceipts]) for (const row of rows) row.operatorId = INTERIOR_FIXTURE_OPERATOR;
   for (const asset of seed.assets) if (asset.id === missingConfigurationVehicleId) delete asset.vehicleConfiguration;
+  if (longTrip) {
+    // Ausschließlich längere fiktive Integrationstour, vor der M5-Kompilierung.
+    for (const asset of seed.assets) { asset.retiredAt = 172_800; for (const deadline of asset.maintenanceDeadlines) deadline.dueAt = 86_400; }
+    for (const receipt of seed.pathReceipts) receipt.validUntil = 86_400;
+  }
   seed.pathReceipts.push({ ...structuredClone(seed.pathReceipts[0]), id: "fixture-path-other", numericRouteId: 3002, operatorId: INTERIOR_FIXTURE_OTHER_OPERATOR });
   const seedPath = join(directory, "world-seed.json"), output = join(directory, "compiled");
   writeFileSync(seedPath, JSON.stringify(seed));
@@ -85,13 +90,13 @@ export function interiorFixtureGeometry(authority: FleetAuthorityReleaseV2): Int
 }
 
 /** Echte freigegebene Grafikbytes; die neu erzeugte Signeridentität gilt ausschließlich für diesen Test. */
-export async function interiorFixtureDeployment(directory: string, geometryPolicy: InteriorGeometryPolicyV1) {
+export async function interiorFixtureDeployment(directory: string, geometryPolicy: InteriorGeometryPolicyV1, validUntilMs = 400_000) {
   const artDirectory = resolve(ROOT, "assets/conductor-art/v1");
   const bytes = readFileSync(join(artDirectory, "manifest.json")), manifest = JSON.parse(bytes.toString("utf8"));
   const digest = createHash("sha256").update(bytes).digest("hex"), keyId = "temporary-integration-test-only";
   const keys = generateKeyPairSync("ed25519");
   const deployment = { schemaVersion: "conductor-interior-deployment/v1", worldId: INTERIOR_FIXTURE_WORLD, periods: [{
-    periodId: INTERIOR_FIXTURE_PERIOD, validFromMs: 100_000, validUntilMs: 400_000, geometryPolicy,
+    periodId: INTERIOR_FIXTURE_PERIOD, validFromMs: 100_000, validUntilMs, geometryPolicy,
     geometryPolicyHash: callInteriorFixtureRust(interiorFixtureBinary, ["policy-hash"], geometryPolicy).trim(),
     artPin: { schemaVersion: "art-atlas-world-pin/v1", worldId: INTERIOR_FIXTURE_WORLD, releaseId: manifest.releaseId, manifestSha256: digest },
     artSignature: { algorithm: "ed25519", keyId, signedHash: digest, valueBase64: sign(null, Buffer.from(digest, "utf8"), keys.privateKey).toString("base64") }, artDirectory,
@@ -114,9 +119,9 @@ export async function initializeInteriorFixtureDatabase(db: IdentityDatabase) {
   ]);
 }
 
-export async function createInteriorNativeFixture(options: { missingConfigurationVehicleId?: string; form?: boolean } = {}) {
+export async function createInteriorNativeFixture(options: { missingConfigurationVehicleId?: string; form?: boolean; longTrip?: boolean } = {}) {
   const directory = mkdtempSync(join(tmpdir(), "zugfolge-interior-evidence-"));
-  const compiled = compileInteriorFixture(directory, options.missingConfigurationVehicleId), runtimes = interiorFixtureRuntimes();
+  const compiled = compileInteriorFixture(directory, options.missingConfigurationVehicleId, options.longTrip), runtimes = interiorFixtureRuntimes();
   const signed = await interiorFixtureDeployment(directory, interiorFixtureGeometry(compiled.authority));
   const client = new PGlite(), db = drizzle(client, { schema });
   try {

@@ -107,6 +107,16 @@ function nativeError(error: unknown): ConductorInteriorError {
     return new ConductorInteriorError(row["code"], row["vehicleId"] as string | undefined, row["bodyId"] as string | undefined);
   } catch { return new ConductorInteriorError("interior_native_rejected"); }
 }
+
+/** Erneute Whitelistprüfung bei der Einbettung in private Sitzungssnapshots. */
+export function parsePassengerProjectionV2(value: unknown): PassengerProjectionV2 {
+  checkProjection(value);
+  const projection = value as PassengerProjectionV2;
+  distinct(projection.passengers.map((row) => row.passengerKey));
+  distinct(projection.passengers.map((row) => row.placeId));
+  if (projection.passengers.some((row) => row.appearanceVariant > 255)) throw invalid();
+  return projection;
+}
 function decode<T>(call: (json: string) => string, input: unknown, check: Check): T {
   let json: string;
   try { json = call(JSON.stringify(input)); } catch (error) { throw nativeError(error); }

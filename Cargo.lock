@@ -413,6 +413,41 @@ dependencies = [
 ]
 
 [[package]]
+name = "zugfolge-conductor-dialogue"
+version = "0.0.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "sha2",
+ "zugfolge-demand",
+]
+
+[[package]]
+name = "zugfolge-conductor-scenes"
+version = "0.0.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "sha2",
+ "zugfolge-sim",
+]
+
+[[package]]
+name = "zugfolge-conductor-session"
+version = "0.0.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "sha2",
+ "zugfolge-conductor",
+ "zugfolge-conductor-dialogue",
+ "zugfolge-demand",
+ "zugfolge-fleet",
+ "zugfolge-runtime",
+ "zugfolge-sim",
+]
+
+[[package]]
 name = "zugfolge-conflict"
 version = "0.0.0"
 dependencies = [
@@ -447,6 +482,18 @@ dependencies = [
  "zugfolge-infra",
  "zugfolge-planner",
  "zugfolge-sim",
+]
+
+[[package]]
+name = "zugfolge-fare-control"
+version = "0.0.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "sha2",
+ "zugfolge-conductor-dialogue",
+ "zugfolge-demand",
+ "zugfolge-fleet",
 ]
 
 [[package]]
@@ -567,7 +614,11 @@ dependencies = [
  "napi-derive",
  "serde_json",
  "zugfolge-conductor",
+ "zugfolge-conductor-dialogue",
+ "zugfolge-conductor-scenes",
+ "zugfolge-conductor-session",
  "zugfolge-demand",
+ "zugfolge-fare-control",
  "zugfolge-rules",
  "zugfolge-runtime",
  "zugfolge-sim-runtime",

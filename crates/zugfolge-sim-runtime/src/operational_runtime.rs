@@ -184,6 +184,8 @@ struct InitializationValidationReceipt {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct Initialization {
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    fare_control_policy: Option<zugfolge_sim::operational::FareControlPolicyV1>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     service_outcome_policy: Option<zugfolge_sim::operational::ServiceOutcomePolicy>,
     schema_version: String,
     world_id: String,
@@ -208,6 +210,18 @@ struct Initialization {
     deny_unknown_fields
 )]
 enum CommandPayload {
+    CancelPassengerStopPlan {
+        cancellation: zugfolge_sim::operational::CancelPassengerStopPlanInputV1,
+    },
+    SetFareControlPolicy {
+        policy: zugfolge_sim::operational::FareControlPolicyV1,
+    },
+    RequestFareControlHold {
+        request: zugfolge_sim::operational::RequestFareControlHoldInputV1,
+    },
+    ResolveFareControlHold {
+        resolution: zugfolge_sim::operational::ResolveFareControlHoldInputV1,
+    },
     Materialize {
         train: TrainInput,
     },
@@ -1289,6 +1303,24 @@ pub fn hash_operational_simulation_command(
     command_hash(&command)
 }
 
+/// Berechnet die kompakte typisierte Prüfsumme der gepinnten Kontrollhaltpolicy.
+pub fn hash_fare_control_policy(input_json: &str) -> Result<String, OperationalRuntimeError> {
+    if input_json.len() > MAX_COMMAND_JSON_BYTES {
+        return Err(OperationalRuntimeError::new(
+            "fare_control_policy_size_limit",
+            "Kontrollhaltpolicy überschreitet die Prüfgrenze",
+        ));
+    }
+    let policy: zugfolge_sim::operational::FareControlPolicyV1 = serde_json::from_str(input_json)
+        .map_err(|_| {
+        OperationalRuntimeError::new(
+            "invalid_fare_control_policy_json",
+            "Kontrollhaltpolicy ist kein gültiger typisierter Vertrag",
+        )
+    })?;
+    Ok(zugfolge_sim::operational::fare_control_policy_hash(&policy))
+}
+
 fn state_hash(
     initialization_hash: &str,
     infra_release: &InfrastructureBinding,
@@ -1569,6 +1601,21 @@ fn execute(
 ) -> Result<(), OperationalRuntimeError> {
     let rejected = operational_command_rejection;
     match command {
+        CommandPayload::CancelPassengerStopPlan { cancellation } => world
+            .cancel_passenger_stop_plan(&cancellation)
+            .map(|_| ())
+            .map_err(rejected),
+        CommandPayload::SetFareControlPolicy { policy } => {
+            world.set_fare_control_policy(policy).map_err(rejected)
+        }
+        CommandPayload::RequestFareControlHold { request } => world
+            .request_fare_control_hold(&request)
+            .map(|_| ())
+            .map_err(rejected),
+        CommandPayload::ResolveFareControlHold { resolution } => world
+            .resolve_fare_control_hold(&resolution)
+            .map(|_| ())
+            .map_err(rejected),
         CommandPayload::Materialize { train } => materialize(world, train),
         CommandPayload::Retire { train_id } => world.retire_train(&train_id).map_err(rejected),
         CommandPayload::AdvanceTo { at_ms } => world.advance_to(at_ms).map_err(rejected),
@@ -1711,6 +1758,14 @@ pub fn initialize_operational_simulation(
             .map_err(|error| {
                 OperationalRuntimeError::new("invalid_formation", error.to_string())
             })?;
+    }
+    if let Some(policy) = input.fare_control_policy {
+        world.set_fare_control_policy(policy).map_err(|_| {
+            OperationalRuntimeError::new(
+                "invalid_fare_control_policy",
+                "Gepinnte Kontrollhaltpolicy ist ungueltig",
+            )
+        })?;
     }
     if let Some(policy) = input.service_outcome_policy {
         world.configure_service_outcomes(policy).map_err(|error| {
@@ -2523,6 +2578,7 @@ mod tests {
         };
         Initialization {
             service_outcome_policy: None,
+            fare_control_policy: None,
             schema_version: INITIALIZE_SCHEMA.to_owned(),
             world_id: "world:1".to_owned(),
             region_id: "region:1".to_owned(),
@@ -3836,6 +3892,61 @@ mod tests {
         let origin_fact: Value =
             serde_json::from_str(origin[0]["detail"].as_str().unwrap()).unwrap();
         assert_eq!(origin_fact["actualTimeMs"], 0);
+        // Kontrollhalt und Abbruch durchlaufen dieselbe reale Runtime-/Restoregrenze.
+        let mut policy: zugfolge_sim::operational::FareControlPolicyV1 = serde_json::from_value(json!({
+            "schema":"zugfolge-fare-control-policy/v1", "policyId":"test-only-control", "revision":1,
+            "worldId":"world:1", "schedulePeriodId":"test-period", "contentHash":"",
+            "maxPoliceHoldsPerTrainRun":1, "eligibleReasons":["identity_refusal","concrete_danger"],
+            "targetRule":"next_unreached_scheduled_passenger_stop",
+            "providerByStopId":{"train:1:1":"test-provider","train:1:2":"test-provider"},
+            "maxWaitMs":10000,"policeResponseModelId":"test-model","policeResponseModelHash":"b".repeat(64),
+            "publicCause":"authority.police.fare-control"
+        })).unwrap();
+        policy.content_hash =
+            super::hash_fare_control_policy(&serde_json::to_string(&policy).unwrap()).unwrap();
+        let policy_bound = apply(
+            &materialized["state"],
+            "control:policy",
+            json!({"type":"set-fare-control-policy","policy":policy}),
+        );
+        let requested = apply(
+            &policy_bound["state"],
+            "control:request",
+            json!({"type":"request-fare-control-hold","request":{"trainId":"train:1","caseId":"test-case","reason":"identity_refusal","causalityId":"test-request"}}),
+        );
+        assert_eq!(
+            requested["state"]["world"]["fareControlState"]["holds"]["train:1"]["status"],
+            "requested"
+        );
+        let dispatched_hold = apply(
+            &requested["state"],
+            "control:dispatch",
+            json!({"type":"dispatch","requests":[{
+                "trainId":"train:1","interlockingRouteId":"interlocking:1","committedRank":0,"timetableDeviationMs":0,
+                "passengerImpact":0,"contractualImpact":0,"networkImpact":0,"resourceConsequence":0,"recoveryRank":0,"waitingSinceMs":0
+            }]}),
+        );
+        let held_finished = apply(
+            &dispatched_hold["state"],
+            "control:advance",
+            json!({"type":"advance-to","atMs":100000}),
+        );
+        assert_eq!(
+            held_finished["state"]["world"]["fareControlState"]["holds"]["train:1"]["outcome"],
+            "timeout"
+        );
+        let restored_hold:Value=serde_json::from_str(&super::restore_operational_simulation(&json!({"schemaVersion":RESTORE_SCHEMA,"expectedInitializationHash":initialized["initializationHash"],"state":held_finished["state"]}).to_string(),&path).unwrap()).unwrap();
+        assert_eq!(restored_hold["stateHash"], held_finished["stateHash"]);
+        let cancellation = json!({"type":"cancel-passenger-stop-plan","cancellation":{"trainId":"train:1","expectedStopPlanHash":requested["state"]["world"]["trains"]["train:1"]["passengerStops"]["planHash"],"causalityId":"test-disposition"}});
+        let cancelled = apply(&requested["state"], "control:cancel", cancellation.clone());
+        assert_eq!(
+            cancelled["state"]["world"]["fareControlState"]["holds"]["train:1"]["outcome"],
+            "target_unavailable"
+        );
+        let duplicate_cancel = apply(&cancelled["state"], "control:cancel", cancellation);
+        assert_eq!(duplicate_cancel["stateHash"], cancelled["stateHash"]);
+        assert_eq!(duplicate_cancel["events"], json!([]));
+        super::restore_operational_simulation(&json!({"schemaVersion":RESTORE_SCHEMA,"expectedInitializationHash":initialized["initializationHash"],"state":cancelled["state"]}).to_string(),&path).unwrap();
         let dispatched = apply(
             &materialized["state"],
             "stops:dispatch",

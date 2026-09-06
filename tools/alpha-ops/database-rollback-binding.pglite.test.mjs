@@ -39,8 +39,9 @@ function inspectLiveDatabaseRollbackSnapshot(sql) {
 
 test("Schema35 liefert aus dem echten Katalog einen vollständigen v5-Restorebeleg", async () => {
   const client = new PGlite();
+  const schema35 = await migrationsThrough(35);
   try {
-    await migrate(drizzle(client), { migrationsFolder: sourceMigrationsFolder });
+    await migrate(drizzle(client), { migrationsFolder: schema35 });
     const source = await inspectLiveDatabaseRollbackSnapshot(adapter(client));
     assert.equal(source.migrationLedger.length, 35);
     assert.equal(source.guards.length, 55);
@@ -48,6 +49,30 @@ test("Schema35 liefert aus dem echten Katalog einen vollständigen v5-Restorebel
     const proof = createDatabaseRollbackProof({ releaseId: "infra-deutschland-2026.4", previousReleaseId: "infra-deutschland-2026.2", source, ...evidence, writersQuiesced: true, rollbackWindow: "pre-activation-only" });
     assert.equal(proof.schema, "zugfolge-database-rollback-proof/v5");
     assert.equal(validateDatabaseRollbackProof(proof), proof);
+  } finally { await client.close(); await rm(schema35, { recursive: true, force: true }); }
+});
+
+test("Schema36 bindet Sitzungszustände und blockiert das Ausblenden im historischen Siegel", async () => {
+  const client = new PGlite();
+  try {
+    await migrate(drizzle(client), { migrationsFolder: sourceMigrationsFolder });
+    const source = await inspectLiveDatabaseRollbackSnapshot(adapter(client));
+    assert.equal(source.migrationLedger.length, 36);
+    assert.equal(source.guards.length, 61);
+    const evidence = databaseRollbackEvidenceFixtures(source);
+    const proof = createDatabaseRollbackProof({ releaseId: "infra-deutschland-2026.4", previousReleaseId: "infra-deutschland-2026.2", source,
+      ...evidence, writersQuiesced: true, rollbackWindow: "pre-activation-only" });
+    assert.equal(proof.schema, "zugfolge-database-rollback-proof/v6");
+    assert.equal(validateDatabaseRollbackProof(proof), proof);
+    const worldId = "10000000-0000-4000-8000-000000000036";
+    await client.query("insert into worlds(id,name,schedule_period_weeks,epoch) values($1,'Sitzungsarchiv',3,to_timestamp(0))", [worldId]);
+    const before = await worldFinalHistorySeal(adapter(client), worldId);
+    await client.query("insert into conductor_train_states(world_id,train_run_id,region_id,state,state_hash,revision,at_ms) values($1,'train','test-region',$2,$3,1,0)",
+      [worldId, JSON.stringify({ worldId, trainRunId: "train" }), "a".repeat(64)]);
+    assert.notEqual(await worldFinalHistorySeal(adapter(client), worldId), before);
+    await assert.rejects(worldFinalHistorySeal(adapter(client), worldId, { schemaVersion: "zugfolge-world-final-history-seal/v3" }), /Schema-36-Fakten/u);
+    await client.query("update worlds set lifecycle_status='archived' where id=$1", [worldId]);
+    await assert.rejects(client.query("update conductor_train_states set revision=2 where world_id=$1", [worldId]), /fenced/u);
   } finally { await client.close(); }
 });
 

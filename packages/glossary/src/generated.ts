@@ -341,6 +341,16 @@ export const GENERATED_GLOSSARY_ENTRIES = Object.freeze([
     "definition": "revisionierte M10-Projektion der tatsächlich reisenden Fahrgäste eines Zuglaufabschnitts einschließlich Ein-/Ausstieg und verdecktem Fahrberechtigungsstatus"
   },
   {
+    "term": "Fahrtpreisbeleg",
+    "code": "FareJourneyEvidenceV1",
+    "definition": "welt-, perioden- und abschnittsgebundene Tarif- und Erwerbsmöglichkeitsquelle; fehlende Belege erlauben keine erfundene Kontrollforderung"
+  },
+  {
+    "term": "Feststellungsbeleg",
+    "code": "DialogueEvidenceV1",
+    "definition": "ausschließlich bestätigter Dokument-, Identitäts- und Gefährdungsstand für öffentliche Gesprächsoptionen; vom verdeckten Fahrscheinstatus getrennt"
+  },
+  {
     "term": "Fahrgastprojektion",
     "code": "PassengerProjectionV1",
     "definition": "private 1:1-Innenraumprojektion eines quittierten M10-Zugabschnitts mit stabilen Plätzen und ausschließlich sichtbaren Merkmalen; erzeugt keine Nachfrage oder Fahrberechtigung"
@@ -594,6 +604,11 @@ export const GENERATED_GLOSSARY_ENTRIES = Object.freeze([
     "term": "Kontrollhaltpolicy",
     "code": "FareControlPolicyV1",
     "definition": "welt- und periodenverbindliche Regeln für zulässige Polizeigründe, Zielhalt, Zuständigkeit, einmalige Anforderung und maximale zusätzliche Wartezeit"
+  },
+  {
+    "term": "Kontrollfolgenquittung",
+    "code": "ConductorSessionControlReceiptV1",
+    "definition": "native Bindung eines angenommenen Sitzungseffekts an einen tatsächlich committed Forderungs- oder Haltebeleg"
   },
   {
     "term": "Kündigungsvormerkung",
@@ -889,6 +904,11 @@ export const GENERATED_GLOSSARY_ENTRIES = Object.freeze([
     "term": "Schaffnersitzung",
     "code": "ConductorSessionV1",
     "definition": "exklusive autorisierte Sitzung eines Spielers in einem eigenen aktiven SPNV-Zug; projiziert den Weltzustand und nimmt typisierte Kontrollkommandos an"
+  },
+  {
+    "term": "Schaffnerszenenrelease",
+    "code": "ConductorSceneReleaseV1",
+    "definition": "unveränderliche Umgebungs-, Kalender- und Stationsmetadaten, an ursprüngliche Operational-Infrastruktur gebunden"
   },
   {
     "term": "Schichtentrennung",

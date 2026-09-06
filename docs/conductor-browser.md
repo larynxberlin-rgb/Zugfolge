@@ -1,0 +1,27 @@
+# Schaffneroberfläche im Spiel (M15.8)
+
+Der Einstieg steht in der privaten Zugansicht eines eigenen aktiven Zuges. Der Server prüft Weltzugang, EVU-Eigentum, laufende Betriebsformation, M5-Konfiguration, M10-Manifest und freigegebene Periodenpins. Die Oberfläche öffnet einen fokussierten Dialog mit Fahrtkontext und Rückkehr zur unveränderten Karte. Ein fehlender oder abgelaufener Vertrag erklärt die Nichtverfügbarkeit.
+
+Das Canvas verwendet PixiJS, das native InteriorLayoutV1 und die vollständige PassengerProjectionV2. Alle Fahrgäste bleiben im Modell; nur unsichtbare Sprites werden ausgeblendet. Positionen entstehen in Millimetern im Rust-Kern. Klicks, Tastatur und Touch erzeugen begrenzte Bewegungsbefehle; Kollision, Nähe, Deckwechsel und Wartezeiten entscheidet der Server. Es gibt keine optimistisch bestätigte Bewegung oder klientenseitig erzeugte Dialog-/Geldfolgen.
+
+Der geprüfte Atlas stellt eine explizite öffentliche Renderprojektion bereit: Release-/Dateihashes, Pixelmaße, Ausschnitte, Pivot, Weltmaße, Erscheinungsvarianten, Animationen und Zubehörbindungen. Herkunftsbelege, Prompts und interne Prüfvermerke bleiben im Release. Dateiabrufe werden auf dieselbe aktive Eigentümersitzung begrenzt; der Browser prüft die SHA-256-Bytes. Ganzzahliger Zoom, 32 Pixel pro Meter und Nearest-Neighbor gelten auch nach Resize. Änderungen der Bewegungspräferenz werden berücksichtigt.
+
+Ein paralleles DOM enthält Fahrzeug-/Deckauswahl, vollständige Fahrgastliste und alle angebotenen Dialogoptionen. Fokusfang, Escape/Rückkehr, beschriftete Touchflächen, Tastaturbedienung, Live-Status und reduzierte Bewegung machen die Handlung ohne Canvas möglich. Optionen stammen nur aus dem öffentlichen Encounter-Snapshot; verborgene Fahrscheinmerkmale werden nicht übertragen. Polizei und Forderungen erfordern einen sichtbaren Bestätigungsschritt mit den bekannten Folgen.
+
+Authentifizierter Fetch-SSE transportiert nummerierte private Snapshots. Bei Verbindungsabbruch bleibt die letzte bestätigte Ansicht sichtbar und schreibgeschützt; ein neuer Vollsnapshot synchronisiert vor weiteren Befehlen. Wiederholungen verwenden dieselbe Idempotenzkennung. Ein aktiver Befehl sperrt konkurrierende lokale Eingaben. Manifestwechsel aktualisieren die vollständige Liste, ohne einen ausgestiegenen Fahrgast weiter anwählbar zu halten.
+
+Der eigene Kontrollbereich zeigt ausschließlich die nativ öffentlich projizierten
+Fälle dieser Fahrt: Bearbeitungsstand, reguläre oder vorläufige Forderung,
+bestätigte Zahlung, Kosten, Abschreibung und Nachweisfrist. Ein Polizeihalt zeigt
+Anforderung, aktiven Halt oder Freigabe und den bekannten Ausgang. Beträge werden
+aus ganzzahligen Centzeichenketten formatiert. Weder Modellparameter noch eine
+vermutete Identität oder verborgene Fahrscheinfakten erscheinen im Browser.
+Kontroll- und Szenenaktualisierungen tragen dieselbe Sitzungs-/Sequenzbindung
+wie der zugehörige native Snapshot.
+
+Ein ausdrücklich wegen veralteter Sitzungsrevision abgewiesener Gehschritt
+darf höchstens zweimal mit aktuellem Snapshot erneut gesendet werden. Dabei
+müssen Sitzung, Layout und Ausgangsposition unverändert sein; nur das bereits
+beauftragte Ziel bleibt erhalten. Fachliche Bewegungsablehnungen und unklare
+Netzwerkergebnisse erhalten keine neue Idempotenzkennung. Letztere wiederholen
+weiterhin ausschließlich den ursprünglichen Befehl.

@@ -22,6 +22,14 @@ die den echten Datenbankdienst benötigen; der native Teil aktiviert gezielt
 die Fälle mit echten Addons und Browsern. Referenzkorpus und Betriebswerkzeuge
 gehören zum erweiterten Prüflauf.
 
+M15 ergänzt den vorhandenen nativen Job um die originale M5-/M10-/Betriebsquelle,
+private Sitzungs-/Releaseintegration und die tatsächliche PixiJS-Oberfläche
+mit Desktop, Touch, Verbindungsverlust und Wiederaufnahme. Er benötigt das
+wirklich gebaute NAPI-Addon; die Fixture erzeugt fachliche Testdaten mit
+denselben Rust-Kernen. Testsignaturen autorisieren ausschließlich diesen
+gekennzeichneten Korpus. Die vier regulären Jobs bleiben erhalten; ein grüner
+Testkorpus ersetzt keine produktive Release- oder Deutschlandabnahme.
+
 ## Lokal arbeiten
 
 Die Toolchain steht in [`monorepo.md`](monorepo.md#2-werkzeugkette).

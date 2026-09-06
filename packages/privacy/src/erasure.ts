@@ -11,7 +11,7 @@
  * bleibt verboten.
  */
 
-import { accountRoles, accounts, worldAccesses, worldParticipations } from "@zugfolge/db";
+import { accountRoles, accounts, worldAccesses, worldParticipations, worlds } from "@zugfolge/db";
 import {
   AuthorizationError,
   getAccount,
@@ -23,6 +23,7 @@ import {
 import { and, eq, isNotNull, lte, sql } from "drizzle-orm";
 
 import { PersonalDataNotFoundError } from "./export.js";
+import { eraseConductorPersonalData } from "./conductor.js";
 
 /** Der im Konto sichtbare Anzeigename nach einer Löschung — trägt keine Personendaten mehr. */
 export const ERASED_DISPLAY_NAME = "Gelöschtes Konto";
@@ -58,30 +59,35 @@ export async function eraseAccountData(
     readonly erasedAt: Date;
   },
 ): Promise<AccountRecord> {
-  await requireSelfOrWorldAdmin(db, input.worldId, input.actingKeycloakSubject, input.targetKeycloakSubject);
+  return db.transaction(async (tx) => {
+    await tx.select({ id: worlds.id }).from(worlds).where(eq(worlds.id, input.worldId)).for("update");
+    const db = tx;
+    await requireSelfOrWorldAdmin(db, input.worldId, input.actingKeycloakSubject, input.targetKeycloakSubject);
 
-  const target = await getAccountIncludingRevoked(db, {
-    worldId: input.worldId,
-    keycloakSubject: input.targetKeycloakSubject,
+    const target = await getAccountIncludingRevoked(db, {
+      worldId: input.worldId,
+      keycloakSubject: input.targetKeycloakSubject,
+    });
+    if (target === undefined) {
+      throw new PersonalDataNotFoundError(input.worldId, input.targetKeycloakSubject);
+    }
+
+    await revokeWorldAccess(db, {
+      worldId: input.worldId,
+      targetKeycloakSubject: input.targetKeycloakSubject,
+      actingKeycloakSubject: input.actingKeycloakSubject,
+    });
+
+    const [updated] = await db
+      .update(accounts)
+      .set({ displayName: ERASED_DISPLAY_NAME, erasedAt: sql`coalesce(${accounts.erasedAt}, ${input.erasedAt})` })
+      .where(and(eq(accounts.worldId, input.worldId), eq(accounts.id, target.id)))
+      .returning();
+
+    if (updated === undefined) throw new PersonalDataNotFoundError(input.worldId, input.targetKeycloakSubject);
+    await eraseConductorPersonalData(tx, input.worldId, target.id);
+    return { ...updated, roles: target.roles };
   });
-  if (target === undefined) {
-    throw new PersonalDataNotFoundError(input.worldId, input.targetKeycloakSubject);
-  }
-
-  await revokeWorldAccess(db, {
-    worldId: input.worldId,
-    targetKeycloakSubject: input.targetKeycloakSubject,
-    actingKeycloakSubject: input.actingKeycloakSubject,
-  });
-
-  const [updated] = await db
-    .update(accounts)
-    .set({ displayName: ERASED_DISPLAY_NAME, erasedAt: sql`coalesce(${accounts.erasedAt}, ${input.erasedAt})` })
-    .where(and(eq(accounts.worldId, input.worldId), eq(accounts.id, target.id)))
-    .returning();
-
-  if (updated === undefined) throw new PersonalDataNotFoundError(input.worldId, input.targetKeycloakSubject);
-  return { ...updated, roles: target.roles };
 }
 
 const ACCOUNT_RETENTION_MILLISECONDS = 90 * 24 * 60 * 60 * 1000;

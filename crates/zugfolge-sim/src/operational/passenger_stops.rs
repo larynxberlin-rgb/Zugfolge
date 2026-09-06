@@ -116,6 +116,8 @@ pub struct OperationalPassengerStopFact {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct OperationalPassengerStopProgress {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cancellation: Option<OperationalPassengerStopCancellation>,
     pub plan: OperationalPassengerStopPlan,
     pub plan_hash: String,
     pub next_stop_index: usize,
@@ -125,6 +127,7 @@ pub struct OperationalPassengerStopProgress {
 impl OperationalPassengerStopProgress {
     pub(super) fn new(plan: OperationalPassengerStopPlan) -> Self {
         Self {
+            cancellation: None,
             plan_hash: plan.hash(),
             next_stop_index: 0,
             receipts: vec![OperationalPassengerStopFact::default(); plan.stops.len()],
@@ -133,6 +136,9 @@ impl OperationalPassengerStopProgress {
     }
 
     pub(super) fn departure_due(&self) -> Option<SimMillis> {
+        if self.cancellation.is_some() {
+            return None;
+        }
         let index = self.next_stop_index;
         if index + 1 >= self.plan.stops.len() {
             return None;
@@ -163,6 +169,25 @@ pub struct OperationalPassengerStopReceipt {
     pub receipt_id: String,
 }
 
+/// Unveränderlicher Nachweis eines serverseitig disponierten Fahrgasthaltplan-Abbruchs.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct OperationalPassengerStopCancellation {
+    pub world_id: String,
+    pub train_run_id: String,
+    pub stop_plan_hash: String,
+    pub cancelled_at_ms: i64,
+    pub causality_id: String,
+}
+/// Nur aus einer verbindlichen Betriebsdisposition gebildeter Abbruchbefehl.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct CancelPassengerStopPlanInputV1 {
+    pub train_id: String,
+    pub expected_stop_plan_hash: String,
+    pub causality_id: String,
+}
+
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Ord, PartialOrd, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub(super) struct ScheduledPassengerDeparture {
@@ -172,6 +197,94 @@ pub(super) struct ScheduledPassengerDeparture {
 }
 
 impl OperationalWorld {
+    /// Bricht ausschließlich den gebundenen tatsächlichen Haltplan atomar ab.
+    pub fn cancel_passenger_stop_plan(
+        &mut self,
+        input: &CancelPassengerStopPlanInputV1,
+    ) -> Result<OperationalPassengerStopCancellation, OperationalError> {
+        if !self.prepared_handovers.is_empty() || !valid_id(&input.causality_id) {
+            return Err(OperationalError::InvalidPassengerStopPlan);
+        }
+        let train = self
+            .trains
+            .get(&input.train_id)
+            .ok_or(OperationalError::InvalidPassengerStopPlan)?;
+        let progress = train
+            .passenger_stops
+            .as_ref()
+            .ok_or(OperationalError::InvalidPassengerStopPlan)?;
+        if progress.plan_hash != input.expected_stop_plan_hash {
+            return Err(OperationalError::InvalidPassengerStopPlan);
+        }
+        if let Some(receipt) = &progress.cancellation {
+            return if receipt.causality_id == input.causality_id {
+                Ok(receipt.clone())
+            } else {
+                Err(OperationalError::InvalidPassengerStopPlan)
+            };
+        }
+        let receipt = OperationalPassengerStopCancellation {
+            world_id: self.world_id.clone(),
+            train_run_id: input.train_id.clone(),
+            stop_plan_hash: progress.plan_hash.clone(),
+            cancelled_at_ms: self.now_ms,
+            causality_id: input.causality_id.clone(),
+        };
+        let mut next = self.clone();
+        // Zwischen Segmentgrenzen gilt die tatsächlich erreichte Position.
+        if let Some(segment) = train.motion_segment.clone() {
+            let head = segment.position_at(self.now_ms)?;
+            let route = self
+                .infrastructure()?
+                .route_version(&train.route_version_id)?
+                .ok_or(OperationalError::InvalidPassengerStopPlan)?;
+            let length = self
+                .formations
+                .get(&train.formation_version_id)
+                .ok_or(OperationalError::InvalidPassengerStopPlan)?
+                .performance
+                .length_mm;
+            let tail = head.saturating_sub(i64::from(length));
+            let intervals = intervals_for(&route, tail, head)?;
+            next.ensure_intervals_free(&input.train_id, &intervals)?;
+            let mut blocks = blocks_for(&route, tail, head);
+            if let Some(protection) = self.handover_protection_by_train.get(&input.train_id) {
+                blocks.extend(protection.iter().cloned());
+            }
+            let changed = train.occupied_blocks.union(&blocks).cloned().collect();
+            let value = next.trains.get_mut(&input.train_id).expect("geprüfter Zug");
+            value.head_route_mm = head;
+            value.tail_route_mm = tail;
+            value.occupied_intervals = intervals;
+            value.occupied_blocks = blocks;
+            value.direction = route
+                .leg_at(head)
+                .ok_or(OperationalError::InvalidPassengerStopPlan)?
+                .direction;
+            // Ausschließlich die tatsächliche Zugschlusslage kann Fahrstraßen freigeben.
+            next.release_routes_after_tail(&input.train_id)?;
+            next.refresh_resource_lifecycle(&changed);
+        }
+        next.trains
+            .get_mut(&input.train_id)
+            .expect("geprüfter Zug")
+            .passenger_stops
+            .as_mut()
+            .expect("Haltplan")
+            .cancellation = Some(receipt.clone());
+        next.safe_stop(&input.train_id, "passenger-stop-plan-cancelled")?;
+        next.cancel_requested_fare_control_hold(&input.train_id, &input.causality_id)?;
+        next.record(
+            "passenger-stop-plan-cancelled",
+            &input.train_id,
+            serde_json::to_string(&receipt)
+                .map_err(|_| OperationalError::InvalidPassengerStopPlan)?,
+        )?;
+        next.verify_invariants()?;
+        *self = next;
+        Ok(receipt)
+    }
+
     pub fn validate_passenger_stop_plan(
         &self,
         input: &TrainMaterialization,
@@ -259,6 +372,17 @@ impl OperationalWorld {
     }
 
     pub(super) fn passenger_stop_waiting(&self, train_id: &str) -> bool {
+        if self
+            .trains
+            .get(train_id)
+            .and_then(|t| t.passenger_stops.as_ref())
+            .is_some_and(|p| p.cancellation.is_some())
+        {
+            return true;
+        }
+        if self.fare_control_blocks_departure(train_id) {
+            return true;
+        }
         self.trains
             .get(train_id)
             .and_then(|train| train.passenger_stops.as_ref())
@@ -350,6 +474,8 @@ impl OperationalWorld {
         progress.receipts[progress.next_stop_index].actual_arrival_ms = Some(self.now_ms);
         train.waiting_reason = Some("passenger-stop".to_owned());
         self.schedule_passenger_departure(train_id);
+        self.schedule_fare_control_hold(train_id)?;
+        self.progress_fare_control_holds()?;
         Ok(true)
     }
 
@@ -427,6 +553,9 @@ impl OperationalWorld {
             {
                 continue;
             }
+            if self.fare_control_blocks_departure(&next.train_id) {
+                continue;
+            }
             if train
                 .authority
                 .as_ref()
@@ -445,6 +574,21 @@ impl OperationalWorld {
             let Some(progress) = &train.passenger_stops else {
                 continue;
             };
+            if let Some(cancel) = &progress.cancellation {
+                if cancel.world_id != self.world_id
+                    || cancel.train_run_id != train.id
+                    || cancel.stop_plan_hash != progress.plan_hash
+                    || cancel.cancelled_at_ms < 0
+                    || cancel.cancelled_at_ms > self.now_ms
+                    || !valid_id(&cancel.causality_id)
+                    || train.speed_mmps != 0
+                    || train.motion_segment.is_some()
+                    || train.authority.is_some()
+                    || !matches!(train.motion_state, MotionState::SafeStop { .. })
+                {
+                    return Err(OperationalError::InvalidPassengerStopPlan);
+                }
+            }
             progress.plan.validate()?;
             if progress.plan_hash != progress.plan.hash()
                 || progress.plan.world_id != self.world_id

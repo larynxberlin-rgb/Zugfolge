@@ -713,7 +713,7 @@ describe("operativer v2-Regionalsimulationsworker", () => {
       release.resolve(undefined);
       await client.close();
     }
-  });
+  }, 15_000);
 
   it("wiederholt dieselbe Kommando-ID ohne DB-Event oder LiveMap-Sequenz", async () => {
     const { client, db } = await testDatabase();

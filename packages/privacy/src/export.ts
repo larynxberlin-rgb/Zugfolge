@@ -8,6 +8,7 @@
 import { operators, worldAccesses, mailboxMessages, commerceEntitlements, commerceWorldClaims, worldParticipations, type MailboxMessage, type Operator, type WorldAccess } from "@zugfolge/db";
 import { getAccountIncludingRevoked, type AccountRecord, type IdentityDatabase } from "@zugfolge/identity";
 import { and, eq, isNull } from "drizzle-orm";
+import { exportConductorPersonalData } from "./conductor.js";
 
 /** Für dieses Keycloak-Subject existiert kein Konto in der angefragten Welt. */
 export class PersonalDataNotFoundError extends Error {
@@ -28,6 +29,7 @@ export interface PersonalDataExport {
   readonly worldParticipations: readonly (typeof worldParticipations.$inferSelect)[];
   readonly operators: readonly Operator[];
   readonly mailboxMessages: readonly MailboxMessage[];
+  readonly conductor: Awaited<ReturnType<typeof exportConductorPersonalData>>;
   readonly exportedAt: Date;
 }
 
@@ -74,6 +76,7 @@ export async function exportAccountData(
     worldParticipations: participations,
     operators: ownedOperators,
     mailboxMessages: messages,
+    conductor: await exportConductorPersonalData(db, input.worldId, account.id),
     exportedAt: input.exportedAt,
   };
 }

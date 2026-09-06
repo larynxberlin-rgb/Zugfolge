@@ -115,6 +115,20 @@ export interface ArtAtlasWorldPinV1 {
   manifestSha256: string;
 }
 
+/** Öffentliche Renderdaten; keine Herkunftsbelege, Prompts oder Dateipfade. */
+export interface ArtAtlasRenderViewV1 {
+  schemaVersion: "conductor-art-view/v1";
+  releaseId: string;
+  manifestSha256: string;
+  pixelsPerMetre: 32;
+  files: Pick<ArtAtlasFileV1, "id" | "sha256" | "widthPx" | "heightPx" | "sourceScale">[];
+  assets: Pick<ArtAtlasAssetV1, "id" | "fileId" | "rect" | "pivot" | "worldWidthMm" | "worldHeightMm">[];
+  appearanceVariants: { variant: number; appearanceId: string }[];
+  animations: Pick<ArtAnimationV1, "appearanceId" | "direction" | "state" | "frames">[];
+  accessoryBindings: ArtAccessoryBindingV1[];
+  conductorAppearanceId: string;
+}
+
 /** Bestehende Alpha-Releasekonvention: Ed25519 über den UTF-8-Hashstring. */
 export interface ArtAtlasSignatureV1 {
   algorithm: "ed25519";

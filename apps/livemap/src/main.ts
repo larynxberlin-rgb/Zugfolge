@@ -29,6 +29,7 @@ import {
 } from "@zugfolge/player-context";
 
 import { LivemapApiClient } from "./api.js";
+import { ConductorApi } from "./conductor-api.js";
 import { renderAttentionRail, renderAttentionUnavailable } from "./attention.js";
 import { ensureAccessToken, loadRuntimeConfiguration } from "./auth.js";
 import {
@@ -533,6 +534,7 @@ async function selectObject(selection: MapSelection): Promise<void> {
         : await client.ownerTrain(worldId, operatorId, selection.id);
       if (selected?.id === selection.id && selected.kind === "train") {
         setPanel(trainPanel(publicDetail, ownerDetail));
+        if (ownerDetail !== undefined && operatorId !== undefined) void appendConductorEntry(selection, operatorId);
         void appendTrainDemand(selection.id, ownerDetail === undefined ? undefined : operatorId);
       }
       return;
@@ -550,6 +552,28 @@ async function selectObject(selection: MapSelection): Promise<void> {
     if (selected?.id !== selection.id) return;
     setPanel(messagePanel(error instanceof Error ? error.message : "Detail konnte nicht geladen werden.", "error"));
   }
+}
+
+async function appendConductorEntry(selection: MapSelection, operatorId: string): Promise<void> {
+  const configuration = loadRuntimeConfiguration();
+  const conductor = new ConductorApi(configuration.gameApiUrl, worldId, operatorId, selection.id,
+    (refresh) => ensureAccessToken(configuration, refresh));
+  const section = document.createElement("section"); section.className = "owner-action";
+  const entry = document.createElement("button"); entry.type = "button"; entry.textContent = "Als Schaffner mitfahren"; entry.disabled = true;
+  const note = document.createElement("p"); note.textContent = "Verfügbarkeit der Fahrt wird geprüft …";
+  section.append(entry, note); detailsContent.append(section);
+  try {
+    const available = await conductor.availability();
+    if (selected?.id !== selection.id || selected.kind !== "train" || !section.isConnected) return;
+    entry.disabled = false; entry.textContent = available.sessionId === null ? "Als Schaffner mitfahren" : "Schaffnersitzung fortsetzen";
+    note.textContent = "Begehbarer Innenraum, Fahrgäste und Fahrkartenkontrolle in deiner aktuellen Fahrt.";
+    entry.addEventListener("click", async () => {
+      entry.disabled = true;
+      try { const { openConductorMode } = await import("./conductor-mode.js"); await openConductorMode({ api: conductor, trainLabel: selection.label, returnFocus: entry }); }
+      catch (error) { note.textContent = error instanceof Error ? error.message : "Der Schaffnermodus konnte nicht geöffnet werden."; }
+      finally { entry.disabled = false; }
+    });
+  } catch (error) { note.textContent = error instanceof Error ? error.message : "Der Schaffnermodus ist für diese Fahrt nicht verfügbar."; }
 }
 
 function showSelectionMenu(selections: readonly MapSelection[], left: number, top: number): void {

@@ -1,5 +1,6 @@
 import { decodeOperationalServiceEvent } from "./operational-service-outcome.js";
 import { decodeOperationalPassengerStop } from "./operational-passenger-stop.js";
+import { decodeFareControlHoldEvent, FARE_CONTROL_CAUSE } from "@zugfolge/runtime-native";
 import type {
   OperationalDisruption,
   OperationalProjection,
@@ -252,6 +253,36 @@ export function adaptOperationalDomainEvents(
       subjectId: event.subjectId,
       detail: event.detail,
     };
+    if (["fare-control-hold-requested", "fare-control-hold-activated", "fare-control-hold-released"].includes(event.kind)) {
+      if (worldId === undefined) throw new TypeError("Kontrollhaltereignis benötigt die gebundene Welt.");
+      let value: unknown;
+      try { value = JSON.parse(event.detail); } catch { throw new TypeError("Kontrollhaltereignis besitzt ungültige Fakten."); }
+      const facts = decodeFareControlHoldEvent(value, worldId, event.subjectId, event.atMs);
+      const expected = event.kind === "fare-control-hold-requested" ? "requested" : event.kind === "fare-control-hold-activated" ? "active" : "released";
+      if (facts.status !== expected) throw new TypeError("Kontrollhaltereignis besitzt einen fremden Übergang.");
+      return Object.freeze({ eventType: `operations.${event.kind}`, payload: Object.freeze({
+        ...common, ...facts, causeLabel: "Polizeiliche Maßnahme nach Fahrkartenkontrolle",
+      }) });
+    }
+    if (event.kind === "departure-authority-withheld" || event.kind === "departure-authority-requested") {
+      if (worldId === undefined || event.detail !== FARE_CONTROL_CAUSE) throw new TypeError("Abfahrtsereignis besitzt keine gebundene Kontrollhaltursache.");
+      return Object.freeze({ eventType: `operations.${event.kind}`, payload: Object.freeze({
+        ...common, worldId, trainRunId: event.subjectId, cause: FARE_CONTROL_CAUSE,
+        causeLabel: "Polizeiliche Maßnahme nach Fahrkartenkontrolle",
+        status: event.kind === "departure-authority-withheld" ? "withheld" : "requested",
+      }) });
+    }
+    if (event.kind === "passenger-stop-plan-cancelled") {
+      let decoded: unknown;
+      try { decoded = JSON.parse(event.detail); } catch { throw new TypeError("Haltplanabbruch besitzt ungültige Fakten."); }
+      const facts = record(decoded, "Haltplanabbruch besitzt keine Fakten.");
+      exactKeys(facts, ["worldId", "trainRunId", "stopPlanHash", "cancelledAtMs", "causalityId"], "Haltplanabbruch besitzt unbekannte Felder.");
+      if (worldId === undefined || facts["worldId"] !== worldId || facts["trainRunId"] !== event.subjectId
+        || facts["cancelledAtMs"] !== event.atMs || typeof facts["stopPlanHash"] !== "string"
+        || !/^[a-f0-9]{64}$/u.test(facts["stopPlanHash"])) throw new TypeError("Haltplanabbruch verletzt seine Betriebsbindung.");
+      nonempty(facts["causalityId"], "Haltplanabbruch besitzt keine Kausalität.");
+      return Object.freeze({ eventType: "operations.passenger-stop-plan-cancelled", payload: Object.freeze({ ...common, ...facts }) });
+    }
     if (event.kind === "passenger-stop-arrival" || event.kind === "passenger-stop-departure") {
       const facts = decodeOperationalPassengerStop(event.kind, event.detail, event.subjectId, event.atMs, worldId);
       return Object.freeze({ eventType: `operations.${event.kind}`, payload: Object.freeze({ ...common, ...facts }) });

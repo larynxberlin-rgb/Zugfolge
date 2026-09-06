@@ -14,7 +14,9 @@
     "@zugfolge/glossary": "workspace:*",
     "@zugfolge/livemap-stream": "workspace:*",
     "@zugfolge/player-context": "workspace:*",
+    "@zugfolge/runtime-native": "workspace:*",
     "maplibre-gl": "6.6.0",
+    "pixi.js": "^8.20.1",
     "pmtiles": "4.5.0"
   },
   "devDependencies": {

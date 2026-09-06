@@ -4,6 +4,11 @@ Prüfstand: 06.09.2026. Diese Teilabnahme trennt den versionierten Fachvertrag
 von der technischen Fahrgastprojektion und vom späteren spielbaren Modus.
 Sie schließt M15 insgesamt und seine nachgelagerten Arbeitspakete nicht ab.
 
+Der [integrierte Stand vom 07.09.2026](m15-integration.md) ergänzt inzwischen
+echte Operational-Haltproducer, konfiguriertes M5-Inventar, persistente
+Sitzungen, Browser, Szenen und Kontroll-/Geldfolgen. Die folgenden Angaben
+bleiben die historische Liefergrenze des ursprünglichen M15.1/M15.2-PRs.
+
 ## M15.1: nachprüfbarer Fachvertrag
 
 [E29/ADR-0029](adr/0029-schaffnermodus-als-serverautoritative-betriebsvertiefung.md)

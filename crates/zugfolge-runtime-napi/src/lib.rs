@@ -63,6 +63,20 @@ pub fn check_conductor_interior_movement(input_json: String) -> napi::Result<Str
 use napi_derive::napi;
 
 #[cfg(feature = "node-addon")]
+mod conductor_session;
+#[cfg(feature = "node-addon")]
+pub use conductor_session::*;
+#[cfg(feature = "node-addon")]
+mod conductor_content;
+#[cfg(feature = "node-addon")]
+pub use conductor_content::*;
+
+#[cfg(feature = "node-addon")]
+mod fare_control;
+#[cfg(feature = "node-addon")]
+pub use fare_control::*;
+
+#[cfg(feature = "node-addon")]
 mod regional_simulation;
 
 #[cfg(feature = "node-addon")]
