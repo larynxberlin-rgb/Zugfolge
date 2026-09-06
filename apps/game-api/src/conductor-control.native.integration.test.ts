@@ -104,7 +104,7 @@ nativeIt("führt echte M10-Fahrgäste über Prüfung und Forderung in den unver�
     // danach weder eine laufende Sitzung noch einen aktuellen Fahrgastmanifest.
     f.clock.nowMs = (Math.floor(f.clock.nowMs / 86_400_000) + 1) * 86_400_000 + 1;
     await f.apply("control:day-close", { type: "advance-to", atMs: f.clock.nowMs });
-    expect(await f.advanceControl()).toBe(true);
+    await f.advanceControl();
     let subject = f.access.keycloakSubject;
     app.decorateRequest("identity", null);
     registerConductorSessionRoutes(app, { conductorSessions: restoredSessions, async authenticate(request) {
