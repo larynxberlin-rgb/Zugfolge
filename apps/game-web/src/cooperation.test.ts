@@ -140,7 +140,7 @@ describe("M12-Spieleroberfläche", () => {
     expect(html).toContain("87 %");
     expect(html).toContain("door-2");
     expect(html).toContain('data-listing-reserve="listing-1"');
-    expect(html).toContain("Unveränderlicher Fahrzeuglebenslauf");
+    expect(html).toContain("Die Geschichte dieses Fahrzeugs");
     expect(html).toContain("Registriert");
   });
 
@@ -252,7 +252,7 @@ describe("M12-Spieleroberfläche", () => {
     expect(html).toContain("tender-bid-form");
     expect(html).toContain('data-path-request="schedule"');
     expect(html).toContain('data-path-request="empty-run"');
-    expect(html).toContain("Zugnummer wird bei der Planung automatisch und eindeutig vergeben");
+    expect(html).toContain("Deine Fahrt bekommt automatisch eine Zugnummer.");
     expect(html).not.toContain('name="trainNumber"');
     expect(html).toContain('id="maintenance-form"');
     expect(html).toContain("Leipzig Hbf");
@@ -299,7 +299,7 @@ describe("M12-Spieleroberfläche", () => {
     }));
     expect(html).toContain('value="public:S5:formation-public"');
     expect(html).toContain('data-lot-id="S5"');
-    expect(html).toContain("zuschlagsgebundener Wet-Lease");
+    expect(html).toContain("Startpaket aus Zug, Personal und Trasse");
     expect(html).toContain('data-resources-ready="true">Angebot verbindlich abgeben</button>');
   });
 

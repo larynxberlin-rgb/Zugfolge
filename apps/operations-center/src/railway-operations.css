@@ -1,0 +1,521 @@
+body:has(.railway-operations) {
+  overflow:hidden
+}
+.railway-operations {
+  height:100dvh;
+  min-height:0;
+  display:grid;
+  grid-template-columns:188px minmax(0,1fr);
+  grid-template-rows:68px minmax(0,1fr);
+  background:var(--zf-canvas)
+}
+.operations-global-header {
+  grid-column:1/-1;
+  display:flex;
+  align-items:center;
+  gap:28px;
+  min-width:0;
+  padding:0 22px;
+  border-bottom:1px solid var(--zf-line);
+  background:#141a20;
+  z-index:30
+}
+.operations-global-title {
+  padding-left:24px;
+  border-left:1px solid var(--zf-line);
+  font-size:9px;
+  letter-spacing:.12em;
+  color:var(--zf-text-faint)
+}
+.operations-global-company {
+  display:flex;
+  align-items:center;
+  gap:25px;
+  min-width:0;
+  margin-left:auto;
+  font-size:12px
+}
+.operations-global-company>span {
+  max-width:180px;
+  white-space:nowrap;
+  text-overflow:ellipsis;
+  overflow:hidden;
+  color:var(--zf-text-muted)
+}
+.operations-global-company>strong {
+  font-size:13px;
+  white-space:nowrap;
+  padding-left:24px;
+  border-left:1px solid var(--zf-line)
+}
+.operations-mail {
+  display:grid;
+  place-items:center;
+  width:38px;
+  height:38px;
+  min-width:38px;
+  border:1px solid var(--zf-line);
+  border-radius:8px;
+  color:var(--zf-text-muted)
+}
+.railway-operations>.rail-nav {
+  grid-column:1;
+  grid-row:2
+}
+.railway-operations #main {
+  min-height:0;
+  min-width:0;
+  display:flex;
+  flex-direction:column;
+  padding:0;
+  overflow:hidden
+}
+.railway-operations #main>.topbar {
+  width:100%;
+  max-width:none;
+  min-height:108px;
+  margin:0;
+  padding:22px 28px;
+  border-bottom:1px solid var(--zf-line);
+  background:#141b22;
+  align-items:center;
+  flex-wrap:nowrap
+}
+.railway-operations .topbar h1 {
+  font-size:clamp(21px,2vw,29px);
+  letter-spacing:-.035em
+}
+.railway-operations .topbar .eyebrow {
+  font-size:9px;
+  margin-bottom:8px
+}
+.railway-operations .topbar-actions {
+  justify-content:flex-end;
+  gap:10px
+}
+.railway-operations #refresh {
+  font-size:11px;
+  min-height:38px
+}
+.railway-operations .topbar .zf-badge {
+  font-size:10px;
+  min-height:28px;
+  white-space:nowrap
+}
+.railway-operations .operations-tabs {
+  flex-shrink:0;
+  margin:0;
+  padding:0 28px;
+  display:flex;
+  align-items:center;
+  gap:26px;
+  min-height:57px;
+  border-bottom:1px solid var(--zf-line);
+  background:#171f28
+}
+.railway-operations .operations-tabs a {
+  position:relative;
+  display:flex;
+  align-items:center;
+  min-height:57px;
+  padding:0 3px;
+  border:0;
+  border-bottom:2px solid transparent;
+  color:var(--zf-text-faint);
+  font-size:12px;
+  font-weight:600;
+  text-decoration:none
+}
+.railway-operations .operations-tabs a[aria-current=page] {
+  color:white;
+  background:none;
+  border-bottom-color:var(--zf-brand)
+}
+.railway-operations .operations-tabs a:hover {
+  color:white
+}
+.railway-operations .operations-workspace {
+  min-height:0;
+  overflow:auto;
+  overscroll-behavior:contain;
+  padding:24px 28px 46px;
+  scrollbar-gutter:stable;
+  background:#10161d
+}
+.railway-operations .metrics-strip {
+  border:0;
+  background:none;
+  gap:12px;
+  max-width:1400px;
+  margin-bottom:22px
+}
+.railway-operations .metrics-strip div {
+  min-height:102px;
+  padding:20px 22px;
+  border:1px solid var(--zf-line);
+  border-radius:10px;
+  background:#19222b
+}
+.railway-operations .metrics-strip span {
+  font-size:9px;
+  letter-spacing:.08em
+}
+.railway-operations .metrics-strip strong {
+  font-size:30px;
+  font-weight:650;
+  letter-spacing:-.04em
+}
+.railway-operations .metrics-strip div:first-child strong {
+  color:var(--zf-success)
+}
+.railway-operations .metrics-strip div:nth-child(3) strong {
+  color:var(--zf-danger)
+}
+.railway-operations .panel {
+  max-width:1400px;
+  margin-bottom:0;
+  padding:24px;
+  border-radius:11px;
+  box-shadow:none;
+  background:#18212a
+}
+.railway-operations .section-header {
+  padding-bottom:20px;
+  border-color:var(--zf-line)
+}
+.railway-operations .section-header h2 {
+  font-size:20px;
+  letter-spacing:-.025em
+}
+.railway-operations .section-header p:not(.eyebrow) {
+  font-size:12px;
+  max-width:600px;
+  line-height:1.6;
+  color:var(--zf-text-faint)
+}
+.railway-operations .section-header .eyebrow {
+  font-size:9px
+}
+.railway-operations .decision-grid {
+  gap:14px;
+  padding-top:20px;
+  grid-template-columns:repeat(auto-fit,minmax(min(325px,100%),1fr))
+}
+.railway-operations .decision-card {
+  border-radius:9px;
+  background:#121b24;
+  padding:18px
+}
+.railway-operations .decision-card--major {
+  border-left:3px solid var(--zf-danger);
+  background:linear-gradient(125deg,#36212988,transparent 75%),#121b24
+}
+.railway-operations .decision-card h4 {
+  font-size:21px;
+  font-weight:650;
+  margin:18px 0
+}
+.railway-operations .decision-card dt {
+  font-size:9px;
+  letter-spacing:.05em
+}
+.railway-operations .decision-card dd {
+  font-size:12px;
+  line-height:1.5
+}
+.railway-operations .decision-card dl {
+  gap:15px;
+  margin:0 0 20px
+}
+.railway-operations .decision-card .sequence {
+  font-size:10px
+}
+.railway-operations .decision-card .quiet-button {
+  width:100%;
+  font-size:11px;
+  min-height:39px
+}
+.railway-operations .primary-button {
+  border-color:var(--zf-brand);
+  background:var(--zf-brand);
+  color:white
+}
+.railway-operations .primary-button:hover {
+  background:var(--zf-brand-hover)
+}
+.railway-operations .danger-button {
+  border-color:#964351;
+  background:#522c38;
+  color:#ffd6dd
+}
+.railway-operations .quiet-button {
+  background:#242f39;
+  border-color:#435362;
+  color:var(--zf-text)
+}
+.railway-operations button {
+  border-radius:6px
+}
+.railway-operations input,.railway-operations select,.railway-operations textarea {
+  background:#101922;
+  border-radius:6px;
+  border-color:var(--zf-line-strong);
+  font-size:12px
+}
+.railway-operations .rule-card {
+  border:1px solid var(--zf-line);
+  border-radius:9px;
+  background:#121b24
+}
+.railway-operations .rule-card__header {
+  background:#202a35;
+  border-radius:9px 9px 0 0
+}
+.railway-operations .rule-number {
+  color:#ff7d90;
+  background:var(--zf-brand-soft);
+  border-color:#673440;
+  border-radius:5px
+}
+.railway-operations .rule-fields {
+  gap:17px;
+  padding:18px
+}
+.railway-operations .condition-tree {
+  padding:0 18px 20px
+}
+.railway-operations .condition {
+  border-radius:7px
+}
+.railway-operations .condition-heading {
+  font-size:12px
+}
+.railway-operations .editor-toolbar {
+  gap:9px;
+  padding:18px 0
+}
+.railway-operations .editor-toolbar button {
+  font-size:11px;
+  min-height:39px
+}
+.railway-operations .editor-toolbar label {
+  font-size:11px
+}
+.railway-operations .empty {
+  padding:50px 25px;
+  gap:10px
+}
+.railway-operations .empty strong {
+  font-size:20px;
+  font-weight:600
+}
+.railway-operations .empty span {
+  font-size:12px;
+  color:var(--zf-text-faint)
+}
+.railway-operations .report-card {
+  border-radius:10px;
+  padding:20px;
+  background:#121b24
+}
+.railway-operations .report-card h4 {
+  font-size:20px
+}
+.railway-operations .report-card p,.railway-operations .report-card li {
+  font-size:12px;
+  line-height:1.7
+}
+.railway-operations .report-card details {
+  padding:10px 0;
+  border-bottom:1px solid var(--zf-line)
+}
+.railway-operations .report-card summary {
+  font-size:12px;
+  cursor:pointer
+}
+.railway-operations .report-card .metrics {
+  margin:20px 0
+}
+.railway-operations dialog {
+  padding:26px;
+  max-width:calc(100vw - 24px);
+  max-height:calc(100dvh - 32px);
+  border-radius:12px;
+  background:var(--zf-surface-1);
+  border-color:var(--zf-line-strong);
+  box-shadow:0 30px 100px #0009
+}
+.railway-operations dialog::backdrop {
+  background:#05090fcc;
+  backdrop-filter:blur(4px)
+}
+.railway-operations dialog h2 {
+  font-size:24px
+}
+.railway-operations dialog p {
+  line-height:1.7;
+  color:var(--zf-text-muted);
+  font-size:13px
+}
+@media(max-width:1100px) {
+  .railway-operations {
+    grid-template-columns:78px minmax(0,1fr)
+  }
+  .operations-global-header {
+    gap:20px
+  }
+  .operations-global-company {
+    gap:15px
+  }
+  .railway-operations #main>.topbar {
+    padding:20px
+  }
+  .railway-operations .operations-workspace {
+    padding:20px 20px 46px
+  }
+  .railway-operations .operations-tabs {
+    padding-inline:20px
+  }
+  .railway-operations .topbar .zf-badge {
+    font-size:9px
+  }
+  .railway-operations .metrics-strip {
+    gap:9px
+  }
+  .railway-operations .metrics-strip div {
+    padding:17px
+  }
+  .railway-operations .section-header {
+    gap:15px
+  }
+  .railway-operations .editor-toolbar {
+    flex-wrap:wrap
+  }
+}
+@media(max-width:760px) {
+  .railway-operations {
+    height:calc(100dvh - 64px - env(safe-area-inset-bottom));
+    grid-template-columns:minmax(0,1fr);
+    grid-template-rows:56px minmax(0,1fr)
+  }
+  .operations-global-header {
+    padding:0 12px;
+    gap:13px;
+    grid-column:1
+  }
+  .operations-global-title,.operations-global-company>span {
+    display:none
+  }
+  .operations-global-company {
+    margin-left:auto
+  }
+  .operations-global-company>strong {
+    border:0;
+    padding:0;
+    font-size:11px
+  }
+  .operations-mail {
+    width:32px;
+    height:32px;
+    min-width:32px
+  }
+  .railway-operations #main {
+    grid-column:1;
+    grid-row:2
+  }
+  .railway-operations #main>.topbar {
+    padding:17px 15px;
+    min-height:120px;
+    display:block
+  }
+  .railway-operations .topbar h1 {
+    font-size:24px
+  }
+  .railway-operations .topbar-actions {
+    justify-content:space-between;
+    margin-top:14px
+  }
+  .railway-operations .topbar .zf-badge {
+    font-size:10px
+  }
+  .railway-operations .operations-tabs {
+    gap:22px;
+    padding:0 15px;
+    min-height:50px
+  }
+  .railway-operations .operations-tabs a {
+    min-height:50px;
+    font-size:11px
+  }
+  .railway-operations .operations-workspace {
+    padding:15px 14px 38px;
+    scrollbar-gutter:auto
+  }
+  .railway-operations .metrics-strip {
+    grid-template-columns:1fr 1fr;
+    gap:8px;
+    margin-bottom:15px
+  }
+  .railway-operations .metrics-strip div {
+    min-height:90px;
+    padding:15px 17px
+  }
+  .railway-operations .metrics-strip strong {
+    font-size:27px
+  }
+  .railway-operations .panel {
+    padding:17px
+  }
+  .railway-operations .section-header {
+    gap:12px;
+    flex-wrap:wrap
+  }
+  .railway-operations .section-header h2 {
+    font-size:19px
+  }
+  .railway-operations .section-header>.zf-badge {
+    font-size:10px
+  }
+  .railway-operations .decision-grid {
+    grid-template-columns:1fr
+  }
+  .railway-operations .decision-card {
+    padding:15px
+  }
+  .railway-operations .section-header .program-switch {
+    margin:0
+  }
+  .railway-operations .editor-toolbar label {
+    width:100%;
+    grid-template-columns:auto minmax(0,1fr)
+  }
+  .railway-operations .rule-fields {
+    grid-template-columns:1fr 1fr;
+    gap:12px;
+    padding:13px
+  }
+  .railway-operations .rule-card__header {
+    gap:7px;
+    padding:10px;
+    flex-wrap:wrap
+  }
+  .railway-operations .condition--predicate {
+    grid-template-columns:1fr
+  }
+  .railway-operations .condition-tree {
+    padding:0 10px 15px
+  }
+  .railway-operations .rule-id {
+    min-width:100px
+  }
+  .railway-operations .report-action {
+    width:100%;
+    flex-wrap:wrap
+  }
+  .railway-operations .report-action input {
+    width:155px
+  }
+  .railway-operations .empty {
+    padding:30px 10px
+  }
+}

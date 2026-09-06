@@ -10,6 +10,23 @@ function invariant(condition, message) {
   if (!condition) throw new Error(message);
 }
 
+/** Attach plans only after the allocator has selected the authoritative movement route. */
+export function bindMovementPassengerStopPlansV1(allocation, passengerTrains, bind) {
+  invariant(typeof bind === "function", "Fahrgasthaltbindung braucht einen qualifizierenden Compiler.");
+  const passengers = new Map(passengerTrains.map((train) => [passengerId(train), train]));
+  invariant(passengers.size === passengerTrains.length, "Doppelte Personenfahrt in der Haltbindung.");
+  return Object.freeze({...allocation, programTrains: Object.freeze(allocation.programTrains.map((materialization) => {
+    if (!materialization.publicPassengerStop) return materialization;
+    const passenger = passengers.get(materialization.id);
+    invariant(passenger !== undefined, "Personenfahrt der Haltbindung fehlt im Fahrplan.");
+    const stopPlan = bind({passenger, materialization});
+    if (stopPlan === undefined) return materialization;
+    invariant(stopPlan.trainRunId === materialization.id && stopPlan.routeVersionId === materialization.routeVersionId,
+      "Haltplan bindet eine fremde Fahrt oder eine nicht zugewiesene Route.");
+    return Object.freeze({...materialization, stopPlan});
+  }))});
+}
+
 function compareText(left, right) {
   return left < right ? -1 : left > right ? 1 : 0;
 }

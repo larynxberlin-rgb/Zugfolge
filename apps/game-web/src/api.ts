@@ -9,6 +9,7 @@ import {
   parsePlayerOperatorContext,
   type PlayerOperatorContextV1,
 } from "@zugfolge/player-context";
+import { parseSpfvCatalog, parseSpfvPreview, type SpfvCatalog, type SpfvLineDraft, type SpfvPreview, type SpfvSubmission } from "./spfv.js";
 
 export interface AlternativeApplicationOptions {
   readonly queueAttempts?: number;
@@ -731,6 +732,24 @@ export class GameApiClient {
 
   #token(forceRefresh = false): Promise<string> {
     return typeof this.#accessToken === "string" ? Promise.resolve(this.#accessToken) : this.#accessToken(forceRefresh);
+  }
+
+  loadSpfvCatalog(worldId: string, operatorId: string, referenceTrainId?: string): Promise<SpfvCatalog> {
+    const query = new URLSearchParams();
+    if (referenceTrainId !== undefined) query.set("referenceTrainId", referenceTrainId);
+    return this.#journeyJson<unknown>(`/worlds/${encodeURIComponent(worldId)}/operators/${encodeURIComponent(operatorId)}/spfv/catalog?${query}`)
+      .then((value) => parseSpfvCatalog(value, worldId, operatorId));
+  }
+
+  previewSpfv(worldId: string, operatorId: string, draft: SpfvLineDraft): Promise<SpfvPreview> {
+    return this.#journeyJson<unknown>(`/worlds/${encodeURIComponent(worldId)}/operators/${encodeURIComponent(operatorId)}/spfv/preview`, { method: "POST", body: JSON.stringify(draft) })
+      .then((value) => parseSpfvPreview(value, worldId, operatorId));
+  }
+
+  async confirmSpfv(worldId: string, operatorId: string, previewId: string, commandId: string): Promise<SpfvSubmission> {
+    const result = await this.#journeyJson<SpfvSubmission>(`/worlds/${encodeURIComponent(worldId)}/operators/${encodeURIComponent(operatorId)}/spfv/confirm`, { method: "POST", body: JSON.stringify({ previewId, commandId }) });
+    if (result.status !== "submitted" || typeof result.lineId !== "string" || !Array.isArray(result.planningRequestIds) || !result.planningRequestIds.every((id) => typeof id === "string")) throw new GameApiError("Die Planung hat keine gültige Einreichungsbestätigung geliefert.", true);
+    return result;
   }
 
   async #authorizedFetch(path: string, init: RequestInit = {}): Promise<Response> {

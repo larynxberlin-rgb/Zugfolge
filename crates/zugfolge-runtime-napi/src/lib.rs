@@ -3,6 +3,14 @@
 //! All validation and state transitions remain in the dependency crate. The functions in
 //! this module only translate napi strings and stable error messages.
 
+/// Wertet den gepinnten Personenverkehrsvertrag ohne Plattform-Fachlogik aus.
+#[cfg(feature = "node-addon")]
+#[napi(js_name = "evaluatePassengerDemand")]
+pub fn evaluate_passenger_demand(input_json: String) -> napi::Result<String> {
+    zugfolge_demand::evaluate_demand_json(&input_json)
+        .map_err(|error| napi::Error::from_reason(error.to_string()))
+}
+
 #[cfg(feature = "node-addon")]
 use napi_derive::napi;
 

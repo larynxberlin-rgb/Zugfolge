@@ -2,6 +2,12 @@ name: Erweiterte Tests (manuell)
 
 on:
   workflow_dispatch:
+    inputs:
+      suite:
+        description: Auszuführender Prüfbereich
+        type: choice
+        options: [all, odoo]
+        default: all
 
 permissions:
   contents: read
@@ -15,6 +21,7 @@ env:
 
 jobs:
   tools:
+    if: inputs.suite != 'odoo'
     name: Werkzeuge, Datenimporte und Betriebsnachweise
     runs-on: ubuntu-latest
     timeout-minutes: 45
@@ -64,6 +71,7 @@ jobs:
         run: pnpm test:tools
 
   m7-acceptance:
+    if: inputs.suite != 'odoo'
     name: M7 48h-Offlineszenario
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -94,6 +102,7 @@ jobs:
         run: pnpm --filter @zugfolge/m7-e2e test:e2e
 
   load:
+    if: inputs.suite != 'odoo'
     name: Lastziel M4.11
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -105,6 +114,7 @@ jobs:
         run: cargo run --release --locked -p zugfolge-load
 
   production-image:
+    if: inputs.suite != 'odoo'
     name: Produktionsimage (Herkunft, URI-Abhaengigkeiten, NAPI)
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -196,6 +206,7 @@ jobs:
             --init=queue_job,zugfolge_admin --test-enable --test-tags=/zugfolge_admin --stop-after-init --log-level=test
 
   integration-api:
+    if: inputs.suite != 'odoo'
     name: Datenbank-, Keycloak- und Wiederherstellungsdrills
     runs-on: ubuntu-latest
     timeout-minutes: 25

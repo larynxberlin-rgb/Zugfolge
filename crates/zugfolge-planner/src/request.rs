@@ -344,6 +344,7 @@ pub struct PathRequest {
     operating_days: OperatingDays,
     tolerances: PathTolerances,
     boundary_windows: Vec<BoundaryPlanningWindow>,
+    service_window: Option<zugfolge_conflict::ServiceWindow>,
 }
 
 impl PathRequest {
@@ -395,7 +396,31 @@ impl PathRequest {
             operating_days,
             tolerances,
             boundary_windows: Vec::new(),
+            service_window: None,
         })
+    }
+
+    /// Bindet die wiederkehrende Tageslage an ein absolutes Abfahrtsfenster.
+    ///
+    /// # Errors
+    /// Die Wunschabfahrt muss innerhalb des halboffenen Fensters liegen.
+    pub fn with_service_window(
+        mut self,
+        window: zugfolge_conflict::ServiceWindow,
+    ) -> Result<Self, PlannerError> {
+        if !window.contains(self.desired_departure) {
+            return Err(PlannerError::InvalidTolerance {
+                what: "Wunschabfahrt außerhalb des Abfahrtsfensters",
+                value: self.desired_departure.seconds(),
+            });
+        }
+        self.service_window = Some(window);
+        Ok(self)
+    }
+
+    /// Absoluter Gültigkeitsbereich der Abfahrt, falls eingeschränkt.
+    pub const fn service_window(&self) -> Option<zugfolge_conflict::ServiceWindow> {
+        self.service_window
     }
 
     /// Bindet den Antrag an serverseitig aufgeloeste Grenzfenster.
@@ -476,6 +501,14 @@ impl PathRequest {
 
     /// Erste verletzte Randbedingung, falls vorhanden.
     pub fn boundary_violation(&self, departure: SimTime, arrival: SimTime) -> Option<String> {
+        if self
+            .service_window
+            .is_some_and(|window| !window.contains(departure))
+        {
+            return Some(
+                "Abfahrt liegt außerhalb des autorisierten absoluten Zeitfensters".to_owned(),
+            );
+        }
         self.boundary_windows
             .iter()
             .find_map(|window| window.explain_violation(departure, arrival))

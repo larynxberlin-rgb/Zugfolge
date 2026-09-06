@@ -1,0 +1,312 @@
+{
+  "help": "https://mobidata-bw.de/api/3/action/help_show?name=package_show",
+  "success": true,
+  "result": {
+    "author": "MobiData BW",
+    "author_email": "mobidata-bw@nvbw.de",
+    "creator_user_id": "bb48b6ac-8101-41ea-8cd6-cecd62ca4061",
+    "id": "1ac96dda-36e4-469d-9034-ab9501a808d4",
+    "isopen": true,
+    "license_id": "http://dcat-ap.de/def/licenses/dl-by-de/2.0",
+    "license_title": "Datenlizenz Deutschland Namensnennung 2.0",
+    "license_url": "https://www.govdata.de/dl-de/by-2-0",
+    "maintainer": "NVBW - Team Nachfragemanagement",
+    "maintainer_email": "florian.wondratschek@nvbw.de",
+    "metadata_created": "2026-02-10T15:44:49.047907",
+    "metadata_modified": "2026-04-30T09:55:10.405179",
+    "name": "automatische-fahrgast-zahldaten-baden-wurttemberg",
+    "notes": "<p>Die Nachfragedaten, die das Land Baden-Württemberg für die verkehrswissenschaftliche Analysen verwendet, stammen im Wesentlichen aus zwei Quellen: </p>\r\n\r\n<p>In vielen neu vergebenen SPNV-Netzen wurden in den vergangenen Jahren <strong>automatische Fahrgastzählsysteme (AFZS)</strong> in Betrieb genommen. Hier messen Sensoren an den Außentüren die Einsteiger-, Aussteigerzahlen und somit die Besetzung mit höchster Genauigkeit. Auf manchen Strecken sind jedoch noch ältere Fahrzeuge im Einsatz, die nicht mit automatischen Zählsystemen ausgestattet sind. In solchen Fällen erhebt externes Zählpersonal die Nachfragedaten nach einem <strong>bundesweit einheitlichen, statistisch abgesicherten System im Halbjahrestakt (Reisendenerfassungssystem RES)</strong>. Mittlerweile sind es über 75 % aller Fahrgäste, die über das moderne AFZS erhoben werden. </p>\r\n\r\n<p>Bei den hier veröffentlichten Halbjahres-Daten handelt es sich um eine Kombination der AFZS- und RES-Daten. Diese Daten werden pro Halbjahr gebündelt, für eine vollständige Erfassung. </p>\r\n\r\n<p><strong>Datenveröffentlichung:</strong></p>\r\n\r\n<p>Auf Grundlage der PSI-Richtlinie hat die Europäische Kommission Ende 2022 die Durchführungsverordnung 2023/138 zur Festlegung bestimmter Datensätze erlassen. Am 9. Februar 2023 ist die DVO-HVD in Kraft getreten und regelt eine Veröffentlichung bestimmter Datensätze ab dem 9. Juni 2024. Nach der EU-weiten Liste sind Mobilitätsdaten zu veröffentlichen. </p>\r\n<hr>\r\n<h3>Hinweise zu den Daten</h3>\r\n<p> Die Datensätze stellen einen systematischen Abzug aus dem zentralen Datenportal dar und liegen in einem vollständig standardisierten Format vor, um eine effiziente maschinelle Weiterverarbeitung zu gewährleisten. Es ist jedoch zu beachten, dass aufgrund von systembedingten Herausforderungen bei der automatisierten Datenzusammenführung sowie vereinzelten Abweichungen in der Zuordnungspräzision in spezifischen Einzelfällen manuelle Auswertungen erforderlich sein können, welche sich nachträglich systemseitig nicht im regulären Standardformat abbilden lassen und daher gesondert zu betrachten sind.</p>\r\n<hr>",
+    "num_resources": 8,
+    "num_tags": 3,
+    "organization": {
+      "id": "ca6d7fd3-d0d9-412f-b6d6-02fc9bb40284",
+      "name": "nvbw-nachfrage",
+      "title": "NVBW - Team Nachfragemanagement",
+      "type": "organization",
+      "description": "Das Team Nachfragemanagement der NVBW-Nahverkehrsgesellschaft Baden-Württemberg mbH aus dem Bereich Marketing/Erlöse/Vertrieb.",
+      "image_url": "https://www.nvbw.de/fileadmin/user_upload/logo/nvbw-logo-01.png",
+      "created": "2025-10-28T10:06:29.39672",
+      "is_organization": true,
+      "approval_status": "approved",
+      "state": "active"
+    },
+    "owner_org": "ca6d7fd3-d0d9-412f-b6d6-02fc9bb40284",
+    "private": false,
+    "state": "active",
+    "title": "Fahrgast-Zähldaten im Schienenpersonennahverkehr Baden-Württemberg",
+    "type": "dataset",
+    "url": "",
+    "version": "",
+    "extras": [
+      {
+        "key": "spatial",
+        "value": "{                 \"type\": \"Polygon\",                 \"coordinates\": [                     [                         [                             7.51177,                             47.532404                         ],                         [                             10.495627,                             47.532404                         ],                         [                             10.495627,                             49.791296                         ],                         [                             7.51177,                             49.791296                         ],                         [                             7.51177,                             47.532404                         ]                     ]                 ]             }"
+      }
+    ],
+    "groups": [
+      {
+        "description": "",
+        "display_name": "Öffentlicher Personenverkehr",
+        "id": "f7f5cf56-0192-4702-a22b-bb5eeed48bbf",
+        "image_display_url": "https://mobidata-bw.de/uploads/group/2025-08-05-110030.444624nvbw-MobiData-BW-Piktogramm-OePNV-RZ-1.png",
+        "name": "oeffentlicher-personenverkehr",
+        "title": "Öffentlicher Personenverkehr"
+      },
+      {
+        "description": "",
+        "display_name": "Verkehrszähldaten ",
+        "id": "69de7379-7bb9-4581-ba36-8f1eaa139620",
+        "image_display_url": "https://mobidata-bw.de/uploads/group/2025-08-05-094944.572613nvbw-MobiData-BW-Piktogramm-AutozahlungRZ-1.png",
+        "name": "verkehrszaehldaten",
+        "title": "Verkehrszähldaten "
+      }
+    ],
+    "resources": [
+      {
+        "cache_last_updated": null,
+        "cache_url": null,
+        "created": "2026-02-10T15:45:45.353526",
+        "datastore_active": true,
+        "datastore_contains_all_records_of_source_file": false,
+        "description": "",
+        "format": "CSV(ZIP)",
+        "hash": "",
+        "id": "979d7e9c-0cf9-4a41-b0d5-3ca0e5b5cdc9",
+        "last_modified": null,
+        "metadata_modified": "2026-04-14T14:38:44.390317",
+        "mimetype": "text/csv",
+        "mimetype_inner": null,
+        "name": "1. Halbjahr 2025",
+        "package_id": "1ac96dda-36e4-469d-9034-ab9501a808d4",
+        "position": 0,
+        "resource_type": null,
+        "size": null,
+        "state": "active",
+        "tracking_summary": {
+          "total": 35,
+          "recent": 3
+        },
+        "url": "http://mobidata-bw.de/portal/opnv/afzs/2025_1.HJ_20241215-20250614.csv.gz",
+        "url_type": ""
+      },
+      {
+        "cache_last_updated": null,
+        "cache_url": null,
+        "created": "2026-02-16T12:05:13.803408",
+        "datastore_active": false,
+        "datastore_contains_all_records_of_source_file": false,
+        "description": "",
+        "format": "CSV(ZIP)",
+        "hash": "",
+        "id": "0b893d04-ef6c-42da-bc2e-047fe9640793",
+        "last_modified": null,
+        "metadata_modified": "2026-04-15T09:00:57.064052",
+        "mimetype": "text/csv",
+        "mimetype_inner": null,
+        "name": "2. Halbjahr 2025",
+        "package_id": "1ac96dda-36e4-469d-9034-ab9501a808d4",
+        "position": 1,
+        "resource_type": null,
+        "size": null,
+        "state": "active",
+        "tracking_summary": {
+          "total": 34,
+          "recent": 5
+        },
+        "url": "http://mobidata-bw.de/portal/opnv/afzs/2025_2.HJ_20250615-20251213.csv.gz",
+        "url_type": ""
+      },
+      {
+        "cache_last_updated": null,
+        "cache_url": null,
+        "created": "2026-04-21T07:08:08.702078",
+        "datastore_active": false,
+        "datastore_contains_all_records_of_source_file": false,
+        "description": "",
+        "format": "CSV(ZIP)",
+        "hash": "",
+        "id": "d2ae39f9-a7b2-4ad9-92b5-06c98e1af430",
+        "last_modified": null,
+        "metadata_modified": "2026-04-21T07:09:04.700121",
+        "mimetype": "application/x-7z-compressed",
+        "mimetype_inner": null,
+        "name": "1. Halbjahr 2024",
+        "package_id": "1ac96dda-36e4-469d-9034-ab9501a808d4",
+        "position": 2,
+        "resource_type": null,
+        "size": null,
+        "state": "active",
+        "tracking_summary": {
+          "total": 7,
+          "recent": 2
+        },
+        "url": "http://mobidata-bw.de/portal/opnv/afzs/2024_1.HJ_20231210-20240608.7z",
+        "url_type": ""
+      },
+      {
+        "cache_last_updated": null,
+        "cache_url": null,
+        "created": "2026-04-21T07:09:04.706724",
+        "datastore_active": false,
+        "datastore_contains_all_records_of_source_file": false,
+        "description": "",
+        "format": "CSV(ZIP)",
+        "hash": "",
+        "id": "8d4aa6cb-501a-453f-b382-d27de3a42e27",
+        "last_modified": null,
+        "metadata_modified": "2026-04-21T07:09:30.496859",
+        "mimetype": "application/x-7z-compressed",
+        "mimetype_inner": null,
+        "name": "2. Halbjahr 2024",
+        "package_id": "1ac96dda-36e4-469d-9034-ab9501a808d4",
+        "position": 3,
+        "resource_type": null,
+        "size": null,
+        "state": "active",
+        "tracking_summary": {
+          "total": 5,
+          "recent": 1
+        },
+        "url": "http://mobidata-bw.de/portal/opnv/afzs/2024_2.HJ_20240609-20241214.7z",
+        "url_type": ""
+      },
+      {
+        "cache_last_updated": null,
+        "cache_url": null,
+        "created": "2026-04-16T07:20:51.266261",
+        "datastore_active": false,
+        "datastore_contains_all_records_of_source_file": false,
+        "description": "",
+        "format": "CSV(ZIP)",
+        "hash": "",
+        "id": "b09d87f9-2fe9-4426-b915-775b1a5a7618",
+        "last_modified": null,
+        "metadata_modified": "2026-04-16T15:31:25.814652",
+        "mimetype": "text/csv",
+        "mimetype_inner": null,
+        "name": "1. Halbjahr 2023",
+        "package_id": "1ac96dda-36e4-469d-9034-ab9501a808d4",
+        "position": 4,
+        "resource_type": null,
+        "size": null,
+        "state": "active",
+        "tracking_summary": {
+          "total": 2,
+          "recent": 1
+        },
+        "url": "http://mobidata-bw.de/portal/opnv/afzs/2023_1.HJ_20221211-20230610.csv.gz",
+        "url_type": ""
+      },
+      {
+        "cache_last_updated": null,
+        "cache_url": null,
+        "created": "2026-04-16T15:31:25.901871",
+        "datastore_active": false,
+        "datastore_contains_all_records_of_source_file": false,
+        "description": "",
+        "format": "CSV(ZIP)",
+        "hash": "",
+        "id": "80069b80-46bd-41d5-9211-55bd2b122ff1",
+        "last_modified": null,
+        "metadata_modified": "2026-04-21T07:08:08.6132",
+        "mimetype": "application/zip",
+        "mimetype_inner": null,
+        "name": "2. Halbjahr 2023",
+        "package_id": "1ac96dda-36e4-469d-9034-ab9501a808d4",
+        "position": 5,
+        "resource_type": null,
+        "size": null,
+        "state": "active",
+        "tracking_summary": {
+          "total": 1,
+          "recent": 1
+        },
+        "url": "http://mobidata-bw.de/portal/opnv/afzs/2023_2.HJ_20230611-20231209.zip",
+        "url_type": ""
+      },
+      {
+        "cache_last_updated": null,
+        "cache_url": null,
+        "created": "2026-04-15T09:00:57.077232",
+        "datastore_active": false,
+        "datastore_contains_all_records_of_source_file": false,
+        "description": "",
+        "format": "CSV(ZIP)",
+        "hash": "",
+        "id": "76652c6f-424b-4282-93da-12f52101e249",
+        "last_modified": null,
+        "metadata_modified": "2026-04-15T09:29:39.617889",
+        "mimetype": "application/x-7z-compressed",
+        "mimetype_inner": null,
+        "name": "1. Halbjahr 2022",
+        "package_id": "1ac96dda-36e4-469d-9034-ab9501a808d4",
+        "position": 6,
+        "resource_type": null,
+        "size": null,
+        "state": "active",
+        "tracking_summary": {
+          "total": 3,
+          "recent": 1
+        },
+        "url": "http://mobidata-bw.de/portal/opnv/afzs/2022_1.HJ_20211212-20220611.7z",
+        "url_type": ""
+      },
+      {
+        "cache_last_updated": null,
+        "cache_url": null,
+        "created": "2026-04-15T09:29:39.623701",
+        "datastore_active": false,
+        "datastore_contains_all_records_of_source_file": false,
+        "description": "",
+        "format": "CSV(ZIP)",
+        "hash": "",
+        "id": "9fcc67da-cd2b-4564-a944-5e2ee87db21c",
+        "last_modified": null,
+        "metadata_modified": "2026-04-16T07:20:51.203715",
+        "mimetype": "application/x-7z-compressed",
+        "mimetype_inner": null,
+        "name": "2. Halbjahr 2022",
+        "package_id": "1ac96dda-36e4-469d-9034-ab9501a808d4",
+        "position": 7,
+        "resource_type": null,
+        "size": null,
+        "state": "active",
+        "tracking_summary": {
+          "total": 2,
+          "recent": 1
+        },
+        "url": "http://mobidata-bw.de/portal/opnv/afzs/2022_2.HJ_20220612-20221210.7z",
+        "url_type": ""
+      }
+    ],
+    "tags": [
+      {
+        "display_name": "AFZS",
+        "id": "2bb74d43-4936-4f97-953f-d0ae07da63b4",
+        "name": "AFZS",
+        "state": "active",
+        "vocabulary_id": null
+      },
+      {
+        "display_name": "SPNV",
+        "id": "4d6a7b53-98d9-45c4-b17c-d23687cfe63c",
+        "name": "SPNV",
+        "state": "active",
+        "vocabulary_id": null
+      },
+      {
+        "display_name": "Zähldaten",
+        "id": "12fac137-caf7-4823-ac9a-817abd41b6b5",
+        "name": "Zähldaten",
+        "state": "active",
+        "vocabulary_id": null
+      }
+    ],
+    "relationships_as_subject": [],
+    "relationships_as_object": [],
+    "tracking_summary": {
+      "total": 216,
+      "recent": 16
+    }
+  }
+}

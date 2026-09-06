@@ -25,6 +25,7 @@ import {
   bindPlanningPathRequest,
   bindPersistedPlanningPathRequest,
   PLANNING_PATH_REQUEST_SCHEMA_V3,
+  PLANNING_COORDINATE_BATCH_AUTHORITY_SCHEMA,
   parsePlanningApplyAlternativePayload,
   parsePlanningInfrastructureRelease,
   type BoundPlanningPathRequest,
@@ -310,8 +311,8 @@ export async function queuePlanningCoordinate(
 }
 
 interface ResolvedPathRequests {
-  readonly commandIds: readonly [string, string];
-  readonly requests: readonly [PlanningCoordinateRequestV2, PlanningCoordinateRequestV2];
+  readonly commandIds: readonly string[];
+  readonly requests: readonly PlanningCoordinateRequestV2[];
 }
 
 function legacyMaximumSpeedMmps(maximumSpeedKph: number): number {
@@ -383,10 +384,10 @@ async function resolvePathRequests(
     })
     .from(simulationCommands)
     .where(and(eq(simulationCommands.worldId, coordinate.worldId), inArray(simulationCommands.id, commandIds)));
-  invariant(rows.length === 2, "planning.coordinate referenziert nicht exakt zwei Antraege derselben Welt.");
+  invariant(rows.length === commandIds.length, "planning.coordinate referenziert nicht alle Antraege derselben Welt.");
   invariant(rows.every((row) => commandIds.includes(row.id)), "planning.coordinate referenziert fremde Antraege.");
   invariant(rows.every((row) => row.commandType === PATH_REQUEST_COMMAND_TYPE), "planning.coordinate referenziert ein Nicht-Antragskommando.");
-  invariant(rows.every((row) => row.status === expectedStatus), `planning.coordinate braucht zwei ${expectedStatus === "pending" ? "offene" : "verarbeitete"} Antraege.`);
+  invariant(rows.every((row) => row.status === expectedStatus), `planning.coordinate braucht ausschliesslich ${expectedStatus === "pending" ? "offene" : "verarbeitete"} Antraege.`);
   if (expectedResultEventSequence !== undefined) {
     invariant(
       rows.every((row) => row.resultEventSequence === expectedResultEventSequence),
@@ -394,12 +395,12 @@ async function resolvePathRequests(
     );
   }
   invariant(
-    new Set(rows.map((row) => row.requestingAccountId)).size === 2,
+    coordinate.schemaVersion === PLANNING_COORDINATE_BATCH_AUTHORITY_SCHEMA || new Set(rows.map((row) => row.requestingAccountId)).size === 2,
     "planning.coordinate braucht zwei Trassenantraege verschiedener Konten.",
   );
   const parsed = rows.map((row) => ({ row, request: parsePersistedPathRequest(row) }));
-  invariant(new Set(parsed.map(({ request }) => request.requestId)).size === 2, "planning.coordinate besitzt doppelte fachliche Antrags-IDs.");
-  invariant(new Set(parsed.map(({ request }) => request.trainId)).size === 2, "planning.coordinate besitzt doppelte Zug-IDs.");
+  invariant(new Set(parsed.map(({ request }) => request.requestId)).size === rows.length, "planning.coordinate besitzt doppelte fachliche Antrags-IDs.");
+  invariant(new Set(parsed.map(({ request }) => request.trainId)).size === rows.length, "planning.coordinate besitzt doppelte Zug-IDs.");
   parsed.sort((left, right) => compareUtf8(left.request.requestId, right.request.requestId));
   const requests = parsed.map(({ request }, index) => {
     const coordinateTrain: PlanningCoordinateRequestV2["train"] = request.schemaVersion
@@ -442,8 +443,8 @@ async function resolvePathRequests(
       `Grenzfenster '${boundaryPlanningWindowId}' gehoert zu einem anderen regionalen Fahrtabschnitt.`,
     );
     return { requestNumericId: index + 1, ...facts, boundaryWindows: boundary.windows };
-  }) as [PlanningCoordinateRequestV2, PlanningCoordinateRequestV2];
-  return { commandIds: commandIds as [string, string], requests };
+  });
+  return { commandIds, requests };
 }
 
 function resolveInfrastructureRelease(
@@ -459,6 +460,7 @@ function runtimeCoordinate(
   coordinate: PlanningCoordinateAuthorityCommand,
   release: PlanningInfrastructureRelease,
   requests: ResolvedPathRequests["requests"],
+  previousState?: PlanningRuntimeState,
 ): PlanningCoordinateCommandV2 {
   return {
     schemaVersion: PLANNING_COORDINATE_SCHEMA,
@@ -473,6 +475,12 @@ function runtimeCoordinate(
     stations: release.stations,
     segments: release.segments,
     requests,
+    // Even the two-account authority contract must retain modern reservations.
+    // Only legacy states without a reservation/infrastructure proof keep v1's
+    // original full-recoordination behavior.
+    ...(previousState !== undefined && (coordinate.schemaVersion === PLANNING_COORDINATE_BATCH_AUTHORITY_SCHEMA
+      || previousState.infrastructureHash !== undefined) ? { previousState } : {}),
+    ...(coordinate.replaceTrainIds === undefined ? {} : { replaceTrainIds: coordinate.replaceTrainIds, effectiveFromS: coordinate.effectiveFromS! }),
   };
 }
 
@@ -578,7 +586,7 @@ export async function processPlanningCommand(
 
     const current = await latestState(tx, command.worldId);
     let result: PlanningRuntimeResult;
-    let consumedPathRequestIds: readonly [string, string] | undefined;
+    let consumedPathRequestIds: readonly string[] | undefined;
     if (command.commandType === "planning.coordinate") {
       const coordinate = parsePersistedCoordinate(command.worldId, command.payload);
       if (coordinate.expectedProjectionRevision === null) {
@@ -591,7 +599,37 @@ export async function processPlanningCommand(
       const release = resolveInfrastructureRelease(infrastructureReleases, coordinate);
       const resolved = await resolvePathRequests(tx, coordinate, release, "pending");
       consumedPathRequestIds = resolved.commandIds;
-      result = runtime.coordinate(runtimeCoordinate(coordinate, release, resolved.requests));
+      let nativeInput = runtimeCoordinate(coordinate, release, resolved.requests, current?.event.state);
+      if (coordinate.schemaVersion === PLANNING_COORDINATE_BATCH_AUTHORITY_SCHEMA) {
+        const [world] = await tx.select({ epoch: worlds.epoch }).from(worlds).where(eq(worlds.id, command.worldId)).limit(1);
+        systemInvariant(world !== undefined, "Planungswelt besitzt keine Weltepoche.");
+        const elapsedMs = committedAt.getTime() - world.epoch.getTime();
+        systemInvariant(Number.isSafeInteger(elapsedMs), "Planning-Commit besitzt keine sichere Weltzeit.");
+        const processingTimeS = Math.max(0, Math.floor(elapsedMs / 1_000));
+        invariant(resolved.requests.every((request) => request.desiredDepartureS > processingTimeS),
+          "Ein Planungsbatch enthält bei Verarbeitung eine bereits begonnene Abfahrt.");
+        if (coordinate.replaceTrainIds !== undefined) {
+          const effectiveFromS = Math.max(coordinate.effectiveFromS!, processingTimeS);
+          for (const trainId of coordinate.replaceTrainIds) {
+            const reservation = current?.event.state.reservations?.[trainId] as
+              { readonly serviceWindow?: { readonly validFromS: number } } | undefined;
+            invariant(reservation?.serviceWindow !== undefined && Number.isSafeInteger(reservation.serviceWindow.validFromS)
+              && reservation.serviceWindow.validFromS > effectiveFromS,
+            "Die zu ersetzende Fahrt hat bei Verarbeitung ihr Gültigkeitsfenster bereits begonnen oder besitzt keine begrenzte Reservierung.");
+          }
+          nativeInput = { ...nativeInput, effectiveFromS };
+        }
+      }
+      try {
+        result = runtime.coordinate(nativeInput);
+      } catch (error) {
+        // These stable Rust codes describe deterministic domain rejection.
+        // ABI, corrupt-state and other technical errors remain retryable.
+        if (error instanceof Error && /^(replacement_conflict|planning_failed): /u.test(error.message)) {
+          throw new PlanningWorkerConflictError(error.message);
+        }
+        throw error;
+      }
     } else {
       invariant(current !== undefined, "Alternativkommando besitzt keinen PlanningRun-Zustand.");
       await assertLatestDiagramMatchesState(tx, command.worldId, current.event);
@@ -635,7 +673,7 @@ export async function processPlanningCommand(
           inArray(simulationCommands.id, [...consumedPathRequestIds]),
         ))
         .returning({ id: simulationCommands.id });
-      systemInvariant(consumed.length === 2, "Trassenantraege wurden waehrend der Welttransaktion veraendert.");
+      systemInvariant(consumed.length === consumedPathRequestIds.length, "Trassenantraege wurden waehrend der Welttransaktion veraendert.");
     }
     const updated = await tx
       .update(simulationCommands)

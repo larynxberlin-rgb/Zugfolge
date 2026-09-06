@@ -12,6 +12,7 @@ import {
 } from "@zugfolge/player-context";
 
 import { decodeAttentionMessages, type MailboxAttentionMessage } from "./attention.js";
+import { parseDemandOverview, parseTrainDemand, parsePassengerManifest, type DemandOverview, type TrainDemand, type PassengerManifest } from "./demand.js";
 
 export class LivemapApiError extends Error {
   constructor(message: string, readonly status: number) {
@@ -66,6 +67,25 @@ export class LivemapApiClient {
   mailbox(worldId: string): Promise<readonly MailboxAttentionMessage[]> {
     return this.#json<unknown>(`/worlds/${encodeURIComponent(worldId)}/mailbox`)
       .then((value) => decodeAttentionMessages(value, worldId));
+  }
+
+  demandOverview(worldId: string, cursor?: string): Promise<DemandOverview> {
+    const query = new URLSearchParams({ limit: "50" });
+    if (cursor !== undefined) query.set("cursor", cursor);
+    return this.#json<unknown>(`/worlds/${encodeURIComponent(worldId)}/demand/overview?${query}`)
+      .then((value) => parseDemandOverview(value, worldId));
+  }
+
+  trainDemand(worldId: string, trainId: string): Promise<TrainDemand> {
+    return this.#json<unknown>(`/worlds/${encodeURIComponent(worldId)}/demand/trains/${encodeURIComponent(trainId)}`)
+      .then((value) => parseTrainDemand(value, worldId, trainId));
+  }
+
+  passengerManifest(worldId: string, operatorId: string, trainId: string, cursor?: string): Promise<PassengerManifest> {
+    const query = new URLSearchParams({ limit: "50" });
+    if (cursor !== undefined) query.set("cursor", cursor);
+    return this.#json<unknown>(`/worlds/${encodeURIComponent(worldId)}/operators/${encodeURIComponent(operatorId)}/demand/trains/${encodeURIComponent(trainId)}/manifest?${query}`)
+      .then((value) => parsePassengerManifest(value, worldId, operatorId, trainId));
   }
 
   playerContext(worldId: string): Promise<PlayerOperatorContextV1> {

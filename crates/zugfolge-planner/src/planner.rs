@@ -571,7 +571,7 @@ impl<'a> TrainPathPlanner<'a> {
         shift: i64,
     ) -> Result<ServicePattern, PlannerError> {
         let abfahrt = request.desired_departure().plus_seconds(shift);
-        ServicePattern::new(
+        let pattern = ServicePattern::new(
             request.number(),
             request.train().id(),
             laufweg.clone(),
@@ -579,7 +579,11 @@ impl<'a> TrainPathPlanner<'a> {
             abfahrt.seconds().rem_euclid(SECONDS_PER_DAY),
             request.operating_days(),
         )
-        .map_err(PlannerError::Conflict)
+        .map_err(PlannerError::Conflict)?;
+        Ok(match request.service_window() {
+            Some(window) => pattern.with_service_window(window),
+            None => pattern,
+        })
     }
 
     /// Die erste Kollision im Prüfhorizont — `None`, wenn jede Fahrt frei

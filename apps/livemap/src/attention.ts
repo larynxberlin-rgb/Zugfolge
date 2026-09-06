@@ -145,7 +145,7 @@ function title(message: MailboxAttentionMessage): string {
 function stateWord(message: MailboxAttentionMessage): string {
   if (message.priority === "overdue") return "Überfällig";
   if (message.priority === "due-soon") return "Bald fällig";
-  if (message.priority === "acknowledged") return "Quittiert";
+  if (message.priority === "acknowledged") return "Gelesen";
   if (message.priority === "information") return "Information";
   return "Handlungsbedarf";
 }
@@ -155,7 +155,7 @@ function instantLabel(value: string): string {
 }
 
 function timing(message: MailboxAttentionMessage): string {
-  if (message.acknowledgedAt !== null) return `Quittiert am ${instantLabel(message.acknowledgedAt)}`;
+  if (message.acknowledgedAt !== null) return `Gelesen am ${instantLabel(message.acknowledgedAt)}`;
   if (message.deadlineAt === null) return "Ohne Frist";
   return message.overdue
     ? `Überfällig seit ${instantLabel(message.deadlineAt)}`
@@ -180,9 +180,9 @@ export function attentionRailMarkup(
     return `<li class="attention-card${message.acknowledgedAt === null ? " is-open" : " is-acknowledged"}" data-priority="${message.priority}"><span class="attention-state">${state}</span><strong>${escapeHtml(messageTitle)}</strong><small>${escapeHtml(timing(message))}</small><a href="${escapeHtml(destination(message))}">Öffnen<span class="sr-only">: ${escapeHtml(messageTitle)}</span></a></li>`;
   }).join("");
   const content = items === ""
-    ? '<p class="attention-empty">Keine offenen Fristen oder Entscheidungen.</p>'
+    ? '<p class="attention-empty">Alles erledigt. Neue Aufgaben erscheinen hier.</p>'
     : `<div class="attention-scroll" role="region" aria-label="Priorisierte Nachrichten" tabindex="0"><ol>${items}</ol></div>`;
-  return `<div class="attention-heading"><div><p class="eyebrow">AUFMERKSAMKEIT</p><h2 id="attention-title">Fristen und Entscheidungen</h2></div><span class="attention-summary">${summary}</span></div>${content}`;
+  return `<div class="attention-heading"><div><p class="eyebrow">DEIN POSTFACH</p><h2 id="attention-title">Das steht an</h2></div><span class="attention-summary">${summary}</span></div>${content}`;
 }
 
 export function renderAttentionRail(
@@ -195,6 +195,6 @@ export function renderAttentionRail(
 }
 
 export function renderAttentionUnavailable(container: HTMLElement): void {
-  container.innerHTML = '<div class="attention-heading"><div><p class="eyebrow">AUFMERKSAMKEIT</p><h2 id="attention-title">Fristen und Entscheidungen</h2></div></div><p class="attention-unavailable" role="status">Aufmerksamkeit konnte nicht geprüft werden.</p>';
+  container.innerHTML = '<div class="attention-heading"><div><p class="eyebrow">DEIN POSTFACH</p><h2 id="attention-title">Das steht an</h2></div></div><p class="attention-unavailable" role="status">Deine Nachrichten sind gerade nicht erreichbar.</p>';
   container.hidden = false;
 }

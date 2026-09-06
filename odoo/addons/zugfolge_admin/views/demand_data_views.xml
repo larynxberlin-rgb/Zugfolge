@@ -1,0 +1,77 @@
+<odoo>
+  <record id="view_zugfolge_demand_data_list" model="ir.ui.view">
+    <field name="name">zugfolge.demand.data.list</field>
+    <field name="model">zugfolge.demand.data</field>
+    <field name="arch" type="xml">
+      <list delete="false"><field name="name"/><field name="world_id"/><field name="base_release_id"/><field name="source_revision"/><field name="sync_state"/><field name="write_date"/></list>
+    </field>
+  </record>
+  <record id="view_zugfolge_demand_data_form" model="ir.ui.view">
+    <field name="name">zugfolge.demand.data.form</field>
+    <field name="model">zugfolge.demand.data</field>
+    <field name="arch" type="xml">
+      <form delete="false">
+        <header><button name="action_import" type="object" string="Originaldaten einmalig erfassen" class="oe_highlight" invisible="base_release_id"/></header>
+        <sheet>
+          <div class="oe_title"><h1><field name="name"/></h1></div>
+          <group>
+            <group><field name="world_id" readonly="base_release_id"/><field name="base_release_id"/><field name="source_revision"/></group>
+            <group><field name="sync_state"/><field name="sync_detail"/></group>
+          </group>
+          <group invisible="base_release_id">
+            <p>Einmal die bestehende einwohnerbasierte Datengrundlage auswählen. Anschließend werden die Daten direkt in den Tabellen gepflegt.</p>
+            <field name="initial_file" filename="initial_filename"/><field name="initial_filename" invisible="1"/>
+          </group>
+          <div class="alert alert-info" role="status" invisible="not base_release_id">Änderungen werden beim Speichern automatisch an den Weltserver übertragen. Es gibt keine zusätzliche Freigabe. Originalwerte bleiben zum Vergleich erhalten; die wirksamen Werte sind Modellannahmen.</div>
+          <notebook invisible="not base_release_id">
+            <page string="Orte und Einwohner">
+              <p>Einwohner hier korrigieren. Die bestehenden Stationsanteile werden automatisch proportional angepasst.</p>
+              <field name="settlement_ids">
+                <list editable="bottom" create="false" delete="false">
+                  <field name="name"/><field name="settlement_id" optional="hide"/><field name="source_id" optional="hide"/>
+                  <field name="original_population"/><field name="population"/>
+                </list>
+              </field>
+            </page>
+            <page string="Stationsanteile">
+              <p>Mehrere Anteile eines Ortes gemeinsam ändern und speichern. Ihre Summe muss der wirksamen Einwohnerzahl des Ortes entsprechen. Ein zusätzlicher Anteil darf nur eine bereits bekannte Station derselben Datengrundlage verwenden. Null setzt einen Anteil außer Wirkung.</p>
+              <field name="allocation_ids" context="{'default_data_id': id}">
+                <list editable="bottom" delete="false">
+                  <field name="id" column_invisible="True"/><field name="data_id" column_invisible="True"/>
+                  <field name="settlement_ref_id" readonly="id" domain="[('data_id', '=', parent.id)]" options="{'no_create': True}"/>
+                  <field name="station_ref_id" readonly="id" domain="[('data_id', '=', parent.id)]" options="{'no_create': True}"/>
+                  <field name="original_population"/><field name="population"/>
+                </list>
+              </field>
+            </page>
+            <page string="Stationen und Klassen">
+              <p>Nachfrageklassen werden aus den zugeordneten Einwohnern berechnet. Sie erhöhen das Einwohnerbudget nicht nochmals und sind keine Infrastrukturkategorien.</p>
+              <field name="station_ids" readonly="1"><list create="false" edit="false" delete="false"><field name="station_id"/><field name="zone_id" optional="hide"/><field name="population"/><field name="demand_class"/></list></field>
+            </page>
+            <page string="Verbindungshinweise">
+              <p>Die Zahlen beschreiben ungefähre Zielpräferenzen anhand der festen Referenzwoche. Hin- und Rückrichtung sind getrennt. Null entfernt den zusätzlichen Verbindungshinweis; das Ziel bleibt grundsätzlich möglich.</p>
+              <field name="connection_ids" context="{'default_data_id': id}">
+                <list editable="bottom" delete="false">
+                  <field name="id" column_invisible="True"/><field name="data_id" column_invisible="True"/>
+                  <field name="origin_id" readonly="id" domain="[('data_id', '=', parent.id)]" options="{'no_create': True}"/>
+                  <field name="destination_id" readonly="id" domain="[('data_id', '=', parent.id)]" options="{'no_create': True}"/>
+                  <field name="original_connections"/><field name="connections"/>
+                </list>
+              </field>
+            </page>
+            <page string="Änderungsverlauf">
+              <field name="event_ids" readonly="1">
+                <list create="false" edit="false" delete="false"><field name="source_revision"/><field name="editor_id"/><field name="create_date"/><field name="state"/><field name="detail"/></list>
+                <form create="false" edit="false" delete="false"><sheet><group><field name="source_revision"/><field name="editor_id"/><field name="create_date"/><field name="state"/><field name="detail"/><field name="correlation_id"/><field name="command_hash"/></group><notebook><page string="Gespeicherte Änderung"><field name="command_json" widget="json"/></page><page string="Weltserver-Rückmeldung"><field name="result_json" widget="json"/></page></notebook></sheet></form>
+              </field>
+            </page>
+            <page string="Originalquelle"><group><field name="base_sha256"/></group><field name="base_release" widget="json" readonly="1"/></page>
+          </notebook>
+        </sheet>
+        <chatter/>
+      </form>
+    </field>
+  </record>
+  <record id="action_zugfolge_demand_data" model="ir.actions.act_window"><field name="name">Nachfragedaten bearbeiten</field><field name="res_model">zugfolge.demand.data</field><field name="view_mode">list,form</field></record>
+  <menuitem id="menu_zugfolge_demand_data" name="Nachfragedaten" parent="zugfolge_admin.menu_zugfolge_root" action="action_zugfolge_demand_data" groups="zugfolge_admin.group_zugfolge_admin" sequence="23"/>
+</odoo>

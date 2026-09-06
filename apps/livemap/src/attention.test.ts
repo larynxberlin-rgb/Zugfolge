@@ -69,7 +69,7 @@ describe("Aufmerksamkeitsschiene der Live-Lage", () => {
     const markup = attentionRailMarkup(messages, (entry) => `https://spiel.example/?world=${entry.worldId}#${entry.id}`);
     expect(markup.match(/class="attention-card/g)).toHaveLength(ATTENTION_ITEM_LIMIT);
     expect(markup).toContain("Überfällig");
-    expect(markup).toContain("Quittiert");
+    expect(markup).toContain("Gelesen");
     expect(markup).toContain(`${ATTENTION_ITEM_LIMIT} von ${messages.length} sichtbar`);
     expect(markup).not.toContain("<script>");
     expect(markup).toContain("&lt;script&gt;fremd&lt;/script&gt;");

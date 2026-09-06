@@ -39,7 +39,7 @@ export function rzueMarkup(
       ? "KEIN REGIONSFRAME"
       : `${operationalRegions.length} REGIONSFRAMES`;
   if (exact.length === 0) {
-    return `<div class="rzue-empty"><p class="eyebrow">RZÜ · ${commitLabel}</p><h2>Sichere Lage wartet</h2><p>Ohne exakt gebundenen Regionsframe wird keine schematische Position geschätzt.</p></div>`;
+    return `<div class="rzue-empty"><p class="eyebrow">RZÜ · ${commitLabel}</p><h2>Das Gleisbild wird vorbereitet.</h2><p>Das Gleisbild wartet auf aktuelle Betriebsdaten. Versuche es gleich noch einmal.</p></div>`;
   }
   const maximum = Math.max(...exact.map((train) =>
     Math.max(train.operational!.headRouteMm, train.operational!.authorityEndRouteMm ?? 0),
@@ -101,11 +101,11 @@ export function rzueMarkup(
       </section>`;
     }).join("");
   return `<header class="rzue-header">
-    <div><p class="eyebrow">RZÜ · ${commitLabel}</p><h2>Betriebsspiegel</h2></div>
+    <div><p class="eyebrow">RZÜ · ${commitLabel}</p><h2>Dein Netz im Gleisbild</h2></div>
     <p>${exact.length} exakte Bewegungen · ${operationalRegions.length} Regionsframes · ${expert ? "Expertenebene" : "Übersicht"}</p>
   </header>
   <div class="rzue-regions">${regionTruth}</div>
-  <div class="rzue-scroll"><svg class="rzue-diagram" viewBox="0 0 ${diagramWidth} ${Math.max(160, 82 + exact.length * rowHeight)}" role="img" aria-label="Schematischer Betriebsspiegel mit Zugspitze, Zugschluss und Fahrberechtigung">
+  <div class="rzue-scroll"><svg class="rzue-diagram" viewBox="0 0 ${diagramWidth} ${Math.max(160, 82 + exact.length * rowHeight)}" role="img" aria-label="Schematischer Dein Netz im Gleisbild mit Zugspitze, Zugschluss und Fahrberechtigung">
     ${rows}
   </svg></div>`;
 }

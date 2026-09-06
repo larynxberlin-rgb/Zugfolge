@@ -1,3 +1,4 @@
+import { railwayTabs } from "@zugfolge/design-system";
 import type {
   ContractType,
   CooperationPageView,
@@ -263,7 +264,7 @@ function hasRequiredResources(contractType: ContractType, resources: Cooperation
 }
 
 function operatorName(state: CooperationSurfaceState, operatorId: string): string {
-  return state.operators.find((operator) => operator.id === operatorId)?.name ?? "Unbekanntes EVU";
+  return state.operators.find((operator) => operator.id === operatorId)?.name ?? "Unbekanntes Unternehmen";
 }
 
 function contractActions(state: CooperationSurfaceState, contract: OperatorContractView): string {
@@ -288,13 +289,13 @@ function contractSurface(state: CooperationSurfaceState): string {
   const targetOperators = state.operators.filter((operator) => operator.id !== state.activeOperatorId);
   const resourcesAvailable = hasRequiredResources(state.contractType, state.resources);
   const visibleContracts = state.contracts.slice(0, MAX_RENDERED_COOPERATION_ITEMS);
-  const contracts = visibleContracts.length === 0 ? `<p class="m12-empty">Noch keine EVU-Verträge. Angebote und Antworten erscheinen hier mit Frist und Zustandswort.</p>` : visibleContracts.map((contract) => contractCard(state, contract)).join("");
+  const contracts = visibleContracts.length === 0 ? `<p class="m12-empty">Noch keine Zusammenarbeit. Erstelle ein Angebot, um mit anderen Unternehmen gemeinsam zu fahren.</p>` : visibleContracts.map((contract) => contractCard(state, contract)).join("");
   return `<section class="journey-card m12-card" id="cooperation-contracts">
-    <div class="journey-heading"><div><p class="eyebrow">EVU-zu-EVU</p><h2>Kooperationsverträge</h2></div><span class="state-word">${state.contracts.length} geladen</span></div>
+    <div class="journey-heading"><div><p class="eyebrow">GEMEINSAM WEITERKOMMEN</p><h2>Deine Zusammenarbeit</h2></div><span class="state-word">${state.contracts.length} geladen</span></div>
     <label class="m12-filter"><span>Vertragsansicht</span><select id="m12-contract-view"><option value="actionable"${state.contractPageView === "actionable" ? " selected" : ""}>Offen und laufend</option><option value="archive"${state.contractPageView === "archive" ? " selected" : ""}>Abgeschlossenes Archiv</option></select></label>
-    <form id="m12-contract-form" class="m12-form" data-preserve-draft>
+    <details class="market-compose" data-preserve-disclosure="contract-compose"><summary>Neues Kooperationsangebot</summary><form id="m12-contract-form" class="m12-form" data-preserve-draft>
       <label class="m12-field"><span>Leistungsart</span><select id="m12-contract-type" name="contractType">${Object.entries(CONTRACT_LABELS).map(([value, label]) => `<option value="${value}"${state.contractType === value ? " selected" : ""}>${escapeHtml(label)}</option>`).join("")}</select></label>
-      <label class="m12-field"><span>Empfangendes EVU</span><select name="offereeOperatorId" required>${targetOperators.map((operator) => `<option value="${escapeHtml(operator.id)}">${escapeHtml(operator.name)}</option>`).join("")}</select></label>
+      <label class="m12-field"><span>Partnerunternehmen</span><select name="offereeOperatorId" required>${targetOperators.map((operator) => `<option value="${escapeHtml(operator.id)}">${escapeHtml(operator.name)}</option>`).join("")}</select></label>
       <div class="resource-provenance">Auswahl aus dem bestätigten Weltstand${state.resources?.fleetRevision === null || state.resources?.fleetRevision === undefined ? "" : ` <details><summary>Technische Details</summary><code>Flottenrevision ${state.resources.fleetRevision}</code></details>`}</div>
       ${subjectFields(state.contractType, state.resources)}
       ${field("termsSummary", "Vereinbarte Leistung / Qualität")}
@@ -304,9 +305,9 @@ function contractSurface(state: CooperationSurfaceState): string {
       ${field("durationDays", "Laufzeit · Tage", { type: "number", min: 1, value: "7" })}
       ${field("terminationMinutes", "Kündigungsfrist · Minuten", { type: "number", min: 0, value: "60" })}
       <button type="submit"${targetOperators.length === 0 || !resourcesAvailable ? " disabled" : ""}>Verbindliches Angebot senden</button>
-      ${resourcesAvailable ? "" : '<p class="resource-empty">Das Angebot kann erst gesendet werden, wenn alle benötigten Ressourcen im autoritativen Weltstand verfügbar sind.</p>'}
-    </form>
-    <div class="m12-list">${contracts}</div>${state.contracts.length >= MAX_RENDERED_COOPERATION_ITEMS ? '<p class="m12-empty">Die Darstellungsgrenze ist erreicht. Wechseln Sie zwischen laufenden Vorgängen und Archiv, um den Bestand weiter einzugrenzen.</p>' : state.contractNextCursor === null ? "" : '<button id="m12-contract-more" class="secondary" type="button">Weitere Verträge laden</button>'}
+      ${resourcesAvailable ? "" : '<p class="resource-empty">Für dieses Angebot brauchst du noch passende Fahrzeuge oder Leistungen.</p>'}
+    </form></details>
+    <div class="m12-list">${contracts}</div>${state.contracts.length >= MAX_RENDERED_COOPERATION_ITEMS ? '<p class="m12-empty">Viele Verträge auf einmal? Wechsle zwischen offenen Vorgängen und Archiv.</p>' : state.contractNextCursor === null ? "" : '<button id="m12-contract-more" class="secondary" type="button">Weitere Verträge laden</button>'}
   </section>`;
 }
 
@@ -372,7 +373,7 @@ function listingCard(state: CooperationSurfaceState, listing: VehicleMarketListi
 function historySurface(state: CooperationSurfaceState): string {
   if (state.selectedVehicleHistory === undefined) return "";
   const entries = state.selectedVehicleHistory.map((event) => `<li><span>${escapeHtml(formatRelativeS(event.atS, state.atS))}</span><strong>${escapeHtml(HISTORY_LABELS[event.eventType])}</strong><details><summary>Technische Details</summary><code>${escapeHtml(event.resultingHistoryHash)}</code></details></li>`).join("");
-  return `<section class="vehicle-history"><div class="journey-heading"><h3>Unveränderlicher Fahrzeuglebenslauf</h3></div><ol>${entries || "<li>Keine Historieneinträge.</li>"}</ol></section>`;
+  return `<section class="vehicle-history"><div class="journey-heading"><h3>Die Geschichte dieses Fahrzeugs</h3></div><ol>${entries || "<li>Keine Historieneinträge.</li>"}</ol></section>`;
 }
 
 function compatibilityExplanation(disclosure: Readonly<Record<string, unknown>>): string {
@@ -393,20 +394,20 @@ function robustnessExplanation(disclosure: Readonly<Record<string, unknown>>): s
 function marketSurface(state: CooperationSurfaceState): string {
   const filtered = state.listings.filter((listing) => listingMatches(listing, state.marketQuery)).slice(0, MAX_RENDERED_COOPERATION_ITEMS);
   const marketAlternatives = filtered.slice(0, 8).map((listing) => ({ id: listing.id, label: String(listing.disclosure["classDesignation"] ?? "Fahrzeugangebot"), dimensions: { price: formatCents(listing.priceCents), type: listing.listingType === "sale" ? "Fahrzeugkauf" : "Leasing", capacity: `${String(disclosedValue(listing.disclosure, "seats") ?? "–")} Sitzplätze`, condition: conditionPercent(listing.disclosure["conditionBasisPoints"]), mileage: odometerKilometres(listing.disclosure["odometerMetres"]), maintenance: disclosureList(listing.disclosure["maintenanceDeadlines"], "Keine Frist offengelegt"), robustness: robustnessExplanation(listing.disclosure), penaltyRisk: "Nicht berechenbar: noch kein Einsatzvertrag gebunden", compatibility: compatibilityExplanation(listing.disclosure), provenance: listing.disclosure["authorityReleaseId"] === undefined ? "Bestätigter Weltstand" : "Gepinnter Flottenrelease" } }));
-  const pathAlternatives = (state.pathAlternatives ?? []).slice(0, 8).map((path) => ({ id: path.id, label: path.label, dimensions: { price: "Getrennte Trassenabrechnung", type: "Trassenalternative", capacity: "Vom Planner geprüft", condition: "Nicht anwendbar", mileage: "Nicht anwendbar", maintenance: "Nicht anwendbar", robustness: `Konfliktgeprüfte Zeitlage ${path.shift} · Reserve nicht separat ausgewiesen`, penaltyRisk: "Nicht berechenbar: noch kein Leistungsvertrag gebunden", compatibility: path.compatibility, provenance: path.provenance, shift: path.shift } }));
+  const pathAlternatives = (state.pathAlternatives ?? []).slice(0, 8).map((path) => ({ id: path.id, label: path.label, dimensions: { price: "Getrennte Trassenabrechnung", type: "Trassenalternative", capacity: "Fahrt geprüft", condition: "Nicht anwendbar", mileage: "Nicht anwendbar", maintenance: "Nicht anwendbar", robustness: `Konfliktgeprüfte Zeitlage ${path.shift} · Reserve nicht separat ausgewiesen`, penaltyRisk: "Nicht berechenbar: noch kein Leistungsvertrag gebunden", compatibility: path.compatibility, provenance: path.provenance, shift: path.shift } }));
   const comparison = renderComparisonWorkbench("Fahrzeuge, Leasing und Trassen in dieser Welt", { type: "Entscheidungsart", price: "Kosten", capacity: "Kapazität", condition: "Zustand", mileage: "Laufleistung", maintenance: "Wartung", robustness: "Robustheit", penaltyRisk: "Pönalerisiko", shift: "Zeitlage", compatibility: "Zulassung und Kompatibilität", provenance: "Datenherkunft" }, [...marketAlternatives, ...pathAlternatives]);
   return `<section class="journey-card m12-card" id="vehicle-market">
-    <div class="journey-heading"><div><p class="eyebrow">Persistenter Fahrzeugmarkt</p><h2>Angebot, Reservierung und Übergabe</h2></div><span class="state-word">${filtered.length} Treffer</span></div>
-    <form id="m12-listing-form" class="m12-form compact-form" data-preserve-draft>
+    <div class="journey-heading"><div><p class="eyebrow">DEINE FLOTTE WÄCHST</p><h2>Finde deinen nächsten Zug.</h2></div><span class="state-word">${filtered.length} Treffer</span></div>
+    <details class="market-compose" data-preserve-disclosure="listing-compose"><summary>Eigenes Fahrzeug anbieten</summary><form id="m12-listing-form" class="m12-form compact-form" data-preserve-draft>
       <label class="m12-field"><span>Eigenes Fahrzeug</span><select name="vehicleId" required>${state.ownedVehicles.map((vehicle) => `<option value="${escapeHtml(vehicle.vehicleId)}">${escapeHtml(vehicle.classDesignation)} · Zustand ${conditionPercent(vehicle.conditionBasisPoints)}</option>`).join("")}</select></label>
       <label class="m12-field"><span>Angebotsart</span><select name="listingType"><option value="sale">Verkauf</option><option value="rental">Vermietung</option></select></label>
       ${field("priceEuros", "Preis · Euro", { value: "1,00" })}
       ${field("expiresInDays", "Angebotsdauer · Tage", { type: "number", min: 1, value: "1" })}
       ${field("rentalDurationDays", "Mietdauer · Tage (nur Vermietung)", { type: "number", min: 1, value: "7", required: false })}
       <button type="submit"${state.ownedVehicles.length === 0 ? " disabled" : ""}>Fahrzeug verbindlich anbieten</button>
-    </form>
+    </form></details>
     <div class="m12-filter-row"><label class="m12-filter"><span>Marktansicht</span><select id="m12-listing-view"><option value="actionable"${state.listingPageView === "actionable" ? " selected" : ""}>Offen und reserviert</option><option value="archive"${state.listingPageView === "archive" ? " selected" : ""}>Abgeschlossenes Archiv</option></select></label><label class="m12-search"><span>Fahrzeugmarkt durchsuchen</span><input id="m12-market-query" type="search" value="${escapeHtml(state.marketQuery)}" placeholder="Baureihe, Fahrzeug, Zustand oder Schaden"></label></div>
-    ${comparison}<div class="m12-list">${filtered.length === 0 ? `<p class="m12-empty">Keine Marktangebote entsprechen der Suche.</p>` : filtered.map((listing) => listingCard(state, listing)).join("")}</div>${state.listings.length >= MAX_RENDERED_COOPERATION_ITEMS ? '<p class="m12-empty">Die Darstellungsgrenze ist erreicht. Nutzen Sie Suche oder Archivansicht, um den Bestand weiter einzugrenzen.</p>' : state.listingNextCursor === null ? "" : '<button id="m12-listing-more" class="secondary" type="button">Weitere Marktangebote laden</button>'}
+    <details class="market-comparison"><summary>Angebote im Detail vergleichen</summary>${comparison}</details><div class="m12-list">${filtered.length === 0 ? `<p class="m12-empty">Keine Marktangebote entsprechen der Suche.</p>` : filtered.map((listing) => listingCard(state, listing)).join("")}</div>${state.listings.length >= MAX_RENDERED_COOPERATION_ITEMS ? '<p class="m12-empty">Nutze die Suche oder das Archiv, um weitere Angebote zu finden.</p>' : state.listingNextCursor === null ? "" : '<button id="m12-listing-more" class="secondary" type="button">Weitere Marktangebote laden</button>'}
     ${historySurface(state)}
   </section>`;
 }
@@ -415,9 +416,9 @@ function operationsSurface(state: CooperationSurfaceState): string {
   const formations = state.resources?.formations ?? [];
   const formationOptions = formations.map((formation) => `<option value="${escapeHtml(formation.id)}">${escapeHtml(formation.label)}</option>`).join("");
   const stationOptions = (state.stationOptions ?? []).map((station) => `<option value="${escapeHtml(station.id)}">${escapeHtml(station.label)}</option>`).join("");
-  const stationInput = (name: string, label: string) => `<label class="m12-field"><span>${label}</span><input name="${name}" list="planning-stations" required maxlength="200" autocomplete="off" placeholder="Betriebsstellenkennung"></label>`;
-  const pathForm = (kind: "schedule" | "empty-run", title: string, leadMinutes: number) => `<form id="${kind === "schedule" ? "schedule-request-form" : "empty-run-request-form"}" class="m12-form compact-form" data-path-request="${kind}" data-preserve-draft><h3>${title}</h3><label class="m12-field"><span>Formation</span><select name="formationId" required>${formationOptions}</select></label><p class="form-hint">Die Zugnummer wird bei der Planung automatisch und eindeutig vergeben.</p>${stationInput("originStationId", "Start")}${stationInput("destinationStationId", "Ziel")}${field("departureInMinutes", "Abfahrt in Minuten", { type: "number", min: 1, value: String(leadMinutes) })}<button type="submit"${formations.length === 0 ? " disabled" : ""}>${kind === "schedule" ? "Fahrplan verbindlich anmelden" : "Leerfahrt konfliktgeprüft anfordern"}</button></form>`;
-  return `<section class="journey-card m12-card" id="betriebsplanung"><div class="journey-heading"><div><p class="eyebrow">BETRIEB</p><h2>Fahrten und Werkstatt</h2></div><span class="state-word">servergeprüft</span></div><datalist id="planning-stations">${stationOptions}</datalist><div class="m12-operating-grid">${pathForm("schedule", "Fahrplan planen", 30)}${pathForm("empty-run", "Spontane Leerfahrt", 5)}<form id="maintenance-form" class="m12-form compact-form" data-preserve-draft><h3>Formation in die Werkstatt</h3><label class="m12-field"><span>Formation</span><select name="formationId" required>${formationOptions}</select></label>${field("durationHours", "Werkstattdauer · Stunden", { type: "number", min: 1, value: "4" })}<p class="resource-note">Die öffentliche Werkstatt wird gegen den autoritativen Flottenzustand und bestehende Belegungen geprüft.</p><button type="submit"${formations.length === 0 ? " disabled" : ""}>Werkstattauftrag verbindlich erteilen</button></form></div></section>`;
+  const stationInput = (name: string, label: string) => `<label class="m12-field"><span>${label}</span><input name="${name}" list="planning-stations" required maxlength="200" autocomplete="off" placeholder="Bahnhof auswählen"></label>`;
+  const pathForm = (kind: "schedule" | "empty-run", title: string, leadMinutes: number) => `<form id="${kind === "schedule" ? "schedule-request-form" : "empty-run-request-form"}" class="m12-form compact-form" data-path-request="${kind}" data-preserve-draft><h3>${title}</h3><label class="m12-field"><span>Zugverband</span><select name="formationId" required>${formationOptions}</select></label><p class="form-hint">Deine Fahrt bekommt automatisch eine Zugnummer.</p>${stationInput("originStationId", "Start")}${stationInput("destinationStationId", "Ziel")}${field("departureInMinutes", "Abfahrt in Minuten", { type: "number", min: 1, value: String(leadMinutes) })}<button type="submit"${formations.length === 0 ? " disabled" : ""}>${kind === "schedule" ? "Fahrt anmelden" : "Leerfahrt anfragen"}</button></form>`;
+  return `<section class="journey-card m12-card" id="betriebsplanung"><div class="journey-heading"><div><p class="eyebrow">BETRIEB</p><h2>Fahrten und Werkstatt</h2></div><span class="state-word">Deine nächste Verbindung</span></div><datalist id="planning-stations">${stationOptions}</datalist><div class="m12-operating-grid">${pathForm("schedule", "Fahrplan planen", 30)}${pathForm("empty-run", "Spontane Leerfahrt", 5)}<form id="maintenance-form" class="m12-form compact-form" data-preserve-draft><h3>Ab in die Werkstatt</h3><label class="m12-field"><span>Zugverband</span><select name="formationId" required>${formationOptions}</select></label>${field("durationHours", "Werkstattdauer · Stunden", { type: "number", min: 1, value: "4" })}<p class="resource-note">Wir prüfen, ob dein Zug und die Werkstatt im gewählten Zeitraum frei sind.</p><button type="submit"${formations.length === 0 ? " disabled" : ""}>Werkstatttermin buchen</button></form></div></section>`;
 }
 
 function tenderLabel(tender: PublicTenderView): string {
@@ -428,18 +429,18 @@ function tenderLabel(tender: PublicTenderView): string {
 
 export function renderCooperationSurface(state: CooperationSurfaceState): string {
   if (state.activeOperatorId === "") {
-    return `<section class="journey-card m12-card" id="evu-gruenden" tabindex="-1"><p class="eyebrow">IHR UNTERNEHMEN</p><h2>EVU gründen</h2><p>Wählen Sie den sichtbaren Namen Ihres Eisenbahnverkehrsunternehmens. Die Gründung und das Startkapital werden serverseitig gemeinsam gebucht.</p><form id="operator-foundation-form" data-preserve-draft><label class="m12-field"><span>Name des EVU</span><input name="name" minlength="1" maxlength="64" required autocomplete="organization" placeholder="z. B. Elbe-Saale-Bahn"></label><button type="submit"${state.busy ? " disabled" : ""}>EVU verbindlich gründen</button></form></section>`;
+    return `<section class="journey-card m12-card" id="evu-gruenden" tabindex="-1"><p class="eyebrow">02 · DEINE EIGENE BAHN</p><h2>Unternehmen gründen</h2><p>Wie heißt deine Bahn? Diesen Namen sehen auch andere Spieler. Dein Startkapital erhältst du mit der Gründung.</p><form id="operator-foundation-form" data-preserve-draft><label class="m12-field"><span>Unternehmensname</span><input name="name" minlength="1" maxlength="64" required autocomplete="organization" placeholder="z. B. Nordlicht Bahn"></label><button type="submit"${state.busy ? " disabled" : ""}>Unternehmen gründen</button></form></section>`;
   }
   const own = state.operators.filter((operator) => state.ownOperatorIds.includes(operator.id));
   const openTenders = state.tendersUnavailable ? [] : (state.tenders ?? []).filter((tender) => tender.phase === "open");
-  const ownFormationOptions = (state.resources?.formations ?? []).map((formation) => `<option value="own:${escapeHtml(formation.id)}" data-lot-id="">Eigene Formation · ${escapeHtml(formation.label)}</option>`).join("");
+  const ownFormationOptions = (state.resources?.formations ?? []).map((formation) => `<option value="own:${escapeHtml(formation.id)}" data-lot-id="">Dein Zug · ${escapeHtml(formation.label)}</option>`).join("");
   const facilityOptions = (state.resources?.publicEntryFacilities ?? []).map((facility) => `<option value="public:${escapeHtml(facility.id)}" data-lot-id="${escapeHtml(facility.lotId)}">${escapeHtml(facility.label)}</option>`).join("");
   const resourcesReady = !state.busy && state.resources?.fleetRevision !== null && state.resources?.fleetRevision !== undefined && state.resources.fleetSnapshotHash !== null;
   const initialLotId = openTenders[0]?.lotId ?? "";
   const hasInitialTenderFormation = ownFormationOptions !== "" || (state.resources?.publicEntryFacilities ?? []).some((facility) => facility.lotId === initialLotId);
   const tenderSurface = state.tendersUnavailable
-    ? '<section class="journey-card m12-card" id="ausschreibungen"><h2>Ausschreibungen</h2><p role="alert">Ausschreibungen konnten nicht geladen werden. Bitte den Arbeitsraum aktualisieren.</p></section>'
-    : `<section class="journey-card m12-card" id="ausschreibungen"><div class="journey-heading"><div><p class="eyebrow">VERKEHRSVERTRÄGE</p><h2>An Ausschreibung teilnehmen</h2></div><span class="state-word">${openTenders.length} offen</span></div>${openTenders.length === 0 ? '<p class="m12-empty">Derzeit ist keine Ausschreibung zur Angebotsabgabe geöffnet.</p>' : `<form id="tender-bid-form" class="m12-form" data-preserve-draft><label class="m12-field"><span>Ausschreibung</span><select id="tender-bid-tender" name="tenderId">${openTenders.map((tender) => `<option value="${escapeHtml(tender.id)}" data-lot-id="${escapeHtml(tender.lotId)}">${escapeHtml(tenderLabel(tender))} · ${tender.bidCount} Angebot(e)</option>`).join("")}</select></label><label class="m12-field"><span>Betriebsbereitstellung</span><select id="tender-bid-formation" name="formationId">${ownFormationOptions}${facilityOptions}</select></label>${facilityOptions === "" ? "" : '<p class="resource-note">Der öffentliche Anschubvertrag ist ein zuschlagsgebundener Wet-Lease. Erst bei Zuschlag werden Formation, Personal und Trasse bereitgestellt; die Betriebskosten trägt Ihr EVU.</p>'}${field("orderingFeeEuros", "Bestellentgelt · Euro je Zug-km", { value: "10,00" })}${field("punctualityPercent", "Pünktlichkeitszusage · Prozent", { type: "number", min: 0, value: "95" })}${field("extraSeats", "Zusätzliche Sitzplätze", { type: "number", min: 0, value: "0" })}<button id="tender-bid-submit" type="submit" data-resources-ready="${resourcesReady}"${!resourcesReady || !hasInitialTenderFormation ? " disabled" : ""}>Angebot verbindlich abgeben</button></form>`}</section>`;
+    ? '<section class="journey-card m12-card" id="ausschreibungen"><h2>Ausschreibungen</h2><p role="alert">Ausschreibungen konnten nicht geladen werden. Versuche es mit „Aktualisieren“ noch einmal.</p></section>'
+    : `<section class="journey-card m12-card" id="ausschreibungen"><div class="journey-heading"><div><p class="eyebrow">VERKEHRSVERTRÄGE</p><h2>Finde deinen nächsten Auftrag.</h2></div><span class="state-word">${openTenders.length} offen</span></div>${openTenders.length === 0 ? '<p class="m12-empty">Derzeit ist keine Ausschreibung zur Angebotsabgabe geöffnet.</p>' : `<form id="tender-bid-form" class="m12-form" data-preserve-draft><label class="m12-field"><span>Ausschreibung</span><select id="tender-bid-tender" name="tenderId">${openTenders.map((tender) => `<option value="${escapeHtml(tender.id)}" data-lot-id="${escapeHtml(tender.lotId)}">${escapeHtml(tenderLabel(tender))} · ${tender.bidCount} Angebot(e)</option>`).join("")}</select></label><label class="m12-field"><span>Zug für diesen Auftrag</span><select id="tender-bid-formation" name="formationId">${ownFormationOptions}${facilityOptions}</select></label>${facilityOptions === "" ? "" : '<p class="resource-note">Bei einem Zuschlag erhältst du ein Startpaket aus Zug, Personal und Trasse. Dein Unternehmen trägt die laufenden Betriebskosten.</p>'}${field("orderingFeeEuros", "Dein Preis · Euro je Zug-km", { value: "10,00" })}${field("punctualityPercent", "Versprochene Pünktlichkeit · Prozent", { type: "number", min: 0, value: "95" })}${field("extraSeats", "Zusätzliche Sitzplätze", { type: "number", min: 0, value: "0" })}<button id="tender-bid-submit" type="submit" data-resources-ready="${resourcesReady}"${!resourcesReady || !hasInitialTenderFormation ? " disabled" : ""}>Angebot verbindlich abgeben</button></form>`}</section>`;
   const section = state.section ?? "all";
   const panels = section === "markets"
     ? `${tenderSurface}${contractSurface(state)}${marketSurface(state)}`
@@ -447,11 +448,11 @@ export function renderCooperationSurface(state: CooperationSurfaceState): string
       ? operationsSurface(state)
       : `${tenderSurface}${operationsSurface(state)}${contractSurface(state)}${marketSurface(state)}`;
   const operatorPicker = section === "all"
-    ? `<label><span>Handelndes EVU in ${escapeHtml(state.worldName)}</span><select id="m12-operator">${own.map((operator) => `<option value="${escapeHtml(operator.id)}"${operator.id === state.activeOperatorId ? " selected" : ""}>${escapeHtml(operator.name)}</option>`).join("")}</select></label>`
+    ? `<label><span>Dein Unternehmen in ${escapeHtml(state.worldName)}</span><select id="m12-operator">${own.map((operator) => `<option value="${escapeHtml(operator.id)}"${operator.id === state.activeOperatorId ? " selected" : ""}>${escapeHtml(operator.name)}</option>`).join("")}</select></label>`
     : "";
   const html = `<section class="m12-surface m12-surface--${section}" aria-busy="${state.busy}">
-    <div class="m12-toolbar">${operatorPicker}<div class="m12-clock"><span>Synchronisierte Weltzeit</span><output id="m12-time">Betriebstag ${Math.floor(state.atS / 86_400) + 1}</output></div><button id="m12-refresh" class="secondary" type="button">Arbeitsraum aktualisieren</button></div>
-    <div class="m12-grid">${panels}</div>
+    <div class="m12-toolbar">${operatorPicker}<div class="m12-clock"><span>SPIELTAG</span><output id="m12-time">Betriebstag ${Math.floor(state.atS / 86_400) + 1}</output></div><button id="m12-refresh" class="secondary" type="button">Aktualisieren</button></div>
+    ${section === "markets" ? railwayTabs([{id:"ausschreibungen",label:"Aufträge"},{id:"vehicle-market",label:"Fahrzeuge"},{id:"cooperation-contracts",label:"Zusammenarbeit"}]) : ""}<div class="m12-grid">${panels}</div>
   </section>`;
   return state.busy ? html.replace(/<button(?![^>]*\bdisabled\b)/g, '<button disabled aria-disabled="true"') : html;
 }
@@ -538,7 +539,7 @@ export function parseContractOfferFields(
   readonly terminationNoticeS: number;
 } {
   const offereeOperatorId = (fields["offereeOperatorId"] ?? "").trim();
-  if (offereeOperatorId === "") throw new Error("Empfangendes EVU fehlt.");
+  if (offereeOperatorId === "") throw new Error("Partnerunternehmen fehlt.");
   const responseDeadlineS = addSeconds(offeredAtS, secondsFromUnits(fields["responseHours"] ?? "", 3_600, "Antwortfrist"), "Antwortfrist");
   const validFromS = addSeconds(offeredAtS, secondsFromUnits(fields["startsInHours"] ?? "", 3_600, "Gültigkeitsbeginn"), "Gültigkeitsbeginn");
   const validUntilS = addSeconds(validFromS, secondsFromUnits(fields["durationDays"] ?? "", 86_400, "Laufzeit"), "Gültigkeitsende");

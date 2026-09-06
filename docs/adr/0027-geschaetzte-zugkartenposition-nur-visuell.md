@@ -5,7 +5,7 @@ Dieses ADR entspricht E27 und ist als historischer, abgelöster Vertrag erhalten
 - **Status:** Abgelöst durch ADR-0032; historischer Entscheidungsstand
 - **Bezug:** [../entscheidungen.md](../entscheidungen.md) · [../zugkartenprojektion.md](../zugkartenprojektion.md) · [../architektur.md](../architektur.md) · [../design.md](../design.md)
 - **Betrifft Milestones:** M4.8, M9.3, M14.2
-- **Verwandte ADRs:** [ADR-0009](0009-vollstaendige-transparenz-livemap.md), [ADR-0017](0017-design-domaenensprache-achromatisch-dunkel.md), [ADR-0019](0019-realismus-dient-dem-spiel.md), [ADR-0025](0025-gebietsueberschreitende-fahrtketten.md), [ADR-0026](0026-karte-als-spielzentrum.md), [ADR-0032](0032-eine-autoritative-betriebswirklichkeit.md)
+- **Verwandte ADRs:** [ADR-0009](0009-vollstaendige-transparenz-livemap.md), [ADR-0035](0035-deutschlandweite-spieleroberflaeche.md), [ADR-0017 – historisch](0017-design-domaenensprache-achromatisch-dunkel.md), [ADR-0019](0019-realismus-dient-dem-spiel.md), [ADR-0025](0025-gebietsueberschreitende-fahrtketten.md), [ADR-0026](0026-karte-als-spielzentrum.md), [ADR-0032](0032-eine-autoritative-betriebswirklichkeit.md)
 - **Ersetzt:** ausschließlich den Exact-only-Satz zur sichtbaren Zugposition in ADR-0026; alle übrigen Teile von E26 und ADR-0026 bleiben bindend
 
 > Seit E31 gilt wieder Exact-only: Korridor- und Anker-Estimates sind kein

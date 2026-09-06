@@ -6,6 +6,7 @@ import type {
   StationBoardCall,
   StationBoardV1,
 } from "@zugfolge/livemap-stream";
+import { formatEuroCents } from "@zugfolge/player-context";
 import { externalStatusLabel, operatingStatusLabel, railwayPlaceLabel } from "./presentation.js";
 import type { OperatingStatus, PublicExternalTrain } from "./protocol.js";
 
@@ -48,8 +49,8 @@ export function trainMapPositionSummary(train: PublicTrain): TrainMapPositionSum
     });
   }
   return Object.freeze({
-    definitions: Object.freeze([Object.freeze({ term: "Kartenlage", value: "sicher eingefroren" })]),
-    note: "Ohne exakte releasegebundene Position wird keine Kartenlage geschätzt.",
+    definitions: Object.freeze([Object.freeze({ term: "Kartenlage", value: "Letzte bestätigte Position" })]),
+    note: "Die aktuelle Position ist noch nicht bestätigt. Bis dahin bleibt der Zug an seinem letzten sicheren Standort.",
   });
 }
 
@@ -258,11 +259,11 @@ function fisPanel(detail: PublicTrainDetailV1): HTMLElement {
   title.id = "fis-title";
   top.append(title);
   if (detail.fis.delaySeconds !== undefined) {
-    top.append(element("span", minuteLabel(detail.fis.delaySeconds), detail.fis.delaySeconds > 60 ? "fis-delay" : "fis-ontime"));
+    top.append(element("span", minuteLabel(detail.fis.delaySeconds), detail.fis.delaySeconds >= 60 ? "fis-delay" : "fis-ontime"));
   }
   fis.append(top);
   if (detail.fis.destination !== undefined) fis.append(element("p", `Fahrtziel ${detail.fis.destination}`, "fis-destination"));
-  fis.append(element("p", detail.fis.nextStop === undefined ? "Nächster Halt wird noch nicht projiziert" : `Nächster Halt ${detail.fis.nextStop}`, "fis-next"));
+  fis.append(element("p", detail.fis.nextStop === undefined ? "Nächster Halt noch unbekannt" : `Nächster Halt ${detail.fis.nextStop}`, "fis-next"));
   if (detail.fis.followingStops.length > 0) {
     const heading = element("h3", "Weitere Halte");
     const list = document.createElement("ol");
@@ -278,21 +279,24 @@ export function trainPanel(detail: PublicTrainDetailV1, owner: OwnerTrainDetailV
   const fragment = document.createDocumentFragment();
   fragment.append(titleBlock("ZUGLAUF", train.trainNumber, `${train.operator} · ${train.category}`));
   const list = document.createElement("dl");
+  const positionDetails = element("details", undefined, "technical-object-details");
+  positionDetails.append(element("summary", "Positionsdaten ansehen"));
+  const positionList = document.createElement("dl");
   let estimateNote: HTMLElement | undefined;
   addDefinition(list, "Status", "progressBasisPoints" in train
     ? externalStatusLabel(train.status as PublicExternalTrain["status"])
     : operatingStatusLabel(train.status as OperatingStatus));
   if (train.delaySeconds !== undefined) {
-    addDefinition(list, "Verspätung", minuteLabel(train.delaySeconds), train.delaySeconds > 60 ? "warn" : undefined);
+    addDefinition(list, "Verspätung", minuteLabel(train.delaySeconds), train.delaySeconds >= 60 ? "warn" : undefined);
   }
   if (detail.movement === "network" && "speedMmPerSecond" in detail.train) {
     const networkTrain = detail.train;
     addDefinition(list, "Geschwindigkeit", `${Math.round((networkTrain.speedMmPerSecond * 36) / 10_000)} km/h`);
     if (networkTrain.nextOperatingPoint !== undefined) {
-      addDefinition(list, "Nächster Betriebspunkt", networkTrain.nextOperatingPoint);
+      addDefinition(list, "Nächster Halt", networkTrain.nextOperatingPoint);
     }
     const mapSummary = trainMapPositionSummary(networkTrain);
-    mapSummary.definitions.forEach(({ term, value }) => addDefinition(list, term, value));
+    mapSummary.definitions.forEach(({ term, value }) => addDefinition(positionList, term, value));
     if (mapSummary.note !== undefined) estimateNote = element("p", mapSummary.note, "position-estimate-note");
   } else if ("progressBasisPoints" in detail.train) {
     const externalTrain = detail.train;
@@ -303,19 +307,18 @@ export function trainPanel(detail: PublicTrainDetailV1, owner: OwnerTrainDetailV
   fragment.append(list);
   if (estimateNote !== undefined) fragment.append(estimateNote);
   fragment.append(fisPanel(detail));
+  if (positionList.children.length > 0) { positionDetails.append(positionList); fragment.append(positionDetails); }
   if (owner !== undefined) {
     const privateSection = element("section", undefined, "owner-details");
-    privateSection.append(element("h2", "Eigener Zug · interne Betriebsdaten"));
+    privateSection.append(element("h2", "Dein Zug im Einsatz"));
     const ownerList = document.createElement("dl");
-    if (owner.formationLabel !== undefined) addDefinition(ownerList, "Formation", owner.formationLabel);
+    if (owner.formationLabel !== undefined) addDefinition(ownerList, "Zugverband", owner.formationLabel);
     addDefinition(ownerList, "Fahrzeuge", owner.vehicleIds.join(", ") || "nicht gebunden");
     addDefinition(ownerList, "Personaldienste", owner.personnelDutyIds.join(", ") || "nicht gebunden");
     addDefinition(ownerList, "Fahrwegressourcen", String(owner.pathResourceIds.length));
-    if (owner.fixedCostCents !== undefined) addDefinition(ownerList, "Fixkosten", `${owner.fixedCostCents} ct`);
+    if (owner.fixedCostCents !== undefined) addDefinition(ownerList, "Fixkosten", formatEuroCents(owner.fixedCostCents));
     privateSection.append(ownerList);
     fragment.append(privateSection);
-  } else {
-    fragment.append(element("p", "Bei fremden Zügen werden ausschließlich öffentliche Betriebs- und Fahrgastinformationen angezeigt.", "privacy-note"));
   }
   return fragment;
 }

@@ -1,9 +1,23 @@
 # Zugfolge
 
-Persistentes, serverautoritäres Browsergame: Eisenbahn-Unternehmenssimulation
-mit hohem betrieblichem, infrastrukturellem und wirtschaftlichem Realismus.
-Öffentliche Welten laufen dauerhaft in 1:1-Echtzeit ohne Wipes. Erste
-Pilotregion: **Leipzig–Halle–Erfurt**.
+Eine Eisenbahn-Unternehmenssimulation für ganz Deutschland. Du gründest deine
+eigene Bahn, planst Fahrten und entwickelst dein Unternehmen in einer gemeinsamen,
+lebendigen Welt. Die **LiveMap** steht im Mittelpunkt: Züge beobachten, ihre Lage
+verstehen und die nächste Entscheidung treffen.
+
+Das persistente, serverautoritäre Browsergame verbindet betrieblichen,
+infrastrukturellen und wirtschaftlichen Realismus. Öffentliche Welten laufen in
+1:1-Echtzeit ohne Wipes. Leipzig–Halle–Erfurt ist der historische Pilotabschnitt;
+er begrenzt weder die deutschlandweite Oberfläche noch das Produktziel. Was
+bestellbar und befahrbar ist, bestimmt weiterhin das freigegebene Netz der Welt.
+
+![Deutschlandweite LiveMap mit gekennzeichneten Beispieldaten](docs/ui-redesign/screenshots/map.png)
+
+Die neue dunkle Oberfläche verbindet **LiveMap, Fahrplan, Betrieb, Markt und
+Unternehmen** durch eine eigene rote Gleismarke und eine gemeinsame Navigation.
+Kompakte Register halten Aufgaben übersichtlich; das Postfach bleibt im Kopf
+erreichbar. Die [Bildergalerie](docs/ui-redesign/README.md) zeigt die implementierten
+Ansichten mit ausdrücklich gekennzeichneten Beispieldaten.
 
 > **Stand September 2026:** M0 bis M8 sind fachlich abgenommen und
 > reproduzierbar nachgewiesen. Die unabhängige Release-Qualifizierung und
@@ -29,7 +43,9 @@ Pilotregion: **Leipzig–Halle–Erfurt**.
 | Tests und CI ausführen | [`docs/ci.md`](docs/ci.md) |
 | Begriffe nachschlagen | [`docs/glossar.md`](docs/glossar.md) |
 | die Reihenfolge kennen | [`docs/milestones.md`](docs/milestones.md) |
-| das UX-Zielbild und die künftigen Arbeitsräume verstehen | [`docs/ux-spieler-shell.md`](docs/ux-spieler-shell.md) |
+| die aktuelle Spieleroberfläche verstehen | [`docs/ux-spieler-shell.md`](docs/ux-spieler-shell.md) |
+| das neue Design mit Beispielbildern ansehen | [`docs/design.md`](docs/design.md), [`docs/ui-redesign/README.md`](docs/ui-redesign/README.md) |
+| die Einführung im Spiel verstehen | [`docs/spielhinweise.md`](docs/spielhinweise.md) |
 | den GTFS-Fahrplan-Referenzkorpus erzeugen | [`docs/referenzkorpus.md`](docs/referenzkorpus.md) |
 | verstehen, wie GTFS zu Linien und Ausschreibungen wird | [`docs/gtfs-angebotsplanung.md`](docs/gtfs-angebotsplanung.md) |
 
@@ -53,6 +69,9 @@ packages/   TypeScript — fachliche Bibliotheken (ab M2)
             privacy/               Auskunft, Löschung, Aufbewahrung (M2.6)
 apps/       TypeScript — Dienste und Frontend (ab M2 / M4)
             game-api/              Fastify-Dienst, Health, Replay- und Livemap-Adapter
+            livemap/               Deutschlandübersicht und öffentliche Zuglage
+            game-web/              Einstieg, Fahrplan, Markt, Unternehmen und Postfach
+            operations-center/     Betriebslage, Automatik und Tagesberichte
 spikes/     Wegwerf-Code mit Verfallsdatum — derzeit leer
 tools/      Werkzeuge für CI und Entwicklung
 docs/       Spezifikation, Entscheidungen, Glossar
@@ -85,6 +104,10 @@ pnpm guards
 
 Der letzte Befehl prüft die harten Invarianten, die kein Compiler sieht — etwa
 dass der Bezahlstatus eines Spielers keine spielentscheidende Domäne berührt.
+
+Eine lokale Vorschau der tatsächlichen Oberflächen mit Beispieldaten lässt sich
+über `tools/ui-preview` starten. Befehle, Screenshots und Umfang der
+Browserprüfungen stehen in der [UI-Dokumentation](docs/ui-redesign/README.md#lokal-ansehen-und-prüfen).
 
 Die PR-CI besteht aus vier Jobs für Rust, TypeScript, native Integration und
 Repository-Wächter samt Abhängigkeitsprüfung. Größere Last-, Infrastruktur- und

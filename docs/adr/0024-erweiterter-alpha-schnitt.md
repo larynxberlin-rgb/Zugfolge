@@ -11,6 +11,13 @@ zugfolge-alpha-scope:end -->
 
 ## Kontext
 
+**Einordnung seit ADR-0035:** Die regionale Auswahl in diesem ADR ist der
+historische Daten- und Abnahmevertrag für M14.1. Das aktuelle Produkt- und
+UI-Ziel ist deutschlandweit; der damalige Pilotausschnitt beschränkt die
+Spieleroberfläche nicht. Die vorgezogenen Fachpakete und ihre Nachweise
+bleiben gültig. Eine größere produktive Netzfreigabe benötigt weiterhin eigene
+Qualitäts- und Lastnachweise. Siehe [ADR-0035](0035-deutschlandweite-spieleroberflaeche.md).
+
 Der bisherige Alpha-Schnitt endete mit M9 und sollte 20–50 externe Spieler in
 der Pilotregion Leipzig–Halle–Erfurt prüfen. Damit wären Kooperation zwischen
 Spieler-EVU, ein echter Markt für bestehende Fahrzeuge und der Betrieb über

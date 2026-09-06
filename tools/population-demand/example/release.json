@@ -1,0 +1,761 @@
+{
+  "schemaVersion": "zugfolge-demand-release/v1",
+  "id": "population-mitteldeutschland-2026.1",
+  "provenance": "balanced",
+  "sources": [
+    {
+      "id": "bkg-vg250-ew-2024",
+      "url": "https://daten.gdz.bkg.bund.de/produkte/vg/vg250-ew_ebenen_1231/2024/vg250-ew_12-31.ee.excel.ebenen.zip",
+      "license": "dl-de/by-2-0",
+      "artifactSha256": "d5564af137d2dde65c23ceb8336f6c35fdf67260ba48058ced9004a2c5c000b3",
+      "rightsApproved": true
+    },
+    {
+      "id": "gtfs-de-fv",
+      "url": "https://download.gtfs.de/germany/fv_free/latest.zip",
+      "license": "CC BY 4.0",
+      "artifactSha256": "5e3efe3b3be69fb4bbbed0efc3fd8c2d8a0481c6a102a901ab1dc68219e45d40",
+      "rightsApproved": true
+    },
+    {
+      "id": "gtfs-de-rv",
+      "url": "https://download.gtfs.de/germany/rv_free/latest.zip",
+      "license": "CC BY 4.0",
+      "artifactSha256": "8ff77cb6bed7375d4cce5aa8f2027bfffe7e74bbc4bccd859237a96f2da24162",
+      "rightsApproved": true
+    }
+  ],
+  "zones": [
+    {
+      "id": "station-104445",
+      "population": 34392,
+      "workplaces": 0,
+      "poiWeight": 0,
+      "stations": [
+        {
+          "stationId": "104445",
+          "accessMs": 300000,
+          "serviceIntervalMs": 0,
+          "stepFree": false
+        }
+      ]
+    },
+    {
+      "id": "station-154282",
+      "population": 36592,
+      "workplaces": 0,
+      "poiWeight": 0,
+      "stations": [
+        {
+          "stationId": "154282",
+          "accessMs": 300000,
+          "serviceIntervalMs": 0,
+          "stepFree": false
+        }
+      ]
+    },
+    {
+      "id": "station-194454",
+      "population": 65954,
+      "workplaces": 0,
+      "poiWeight": 0,
+      "stations": [
+        {
+          "stationId": "194454",
+          "accessMs": 300000,
+          "serviceIntervalMs": 0,
+          "stepFree": false
+        }
+      ]
+    },
+    {
+      "id": "station-354639",
+      "population": 256596,
+      "workplaces": 0,
+      "poiWeight": 0,
+      "stations": [
+        {
+          "stationId": "354639",
+          "accessMs": 300000,
+          "serviceIntervalMs": 0,
+          "stepFree": false
+        }
+      ]
+    },
+    {
+      "id": "station-464080",
+      "population": 31940,
+      "workplaces": 0,
+      "poiWeight": 0,
+      "stations": [
+        {
+          "stationId": "464080",
+          "accessMs": 300000,
+          "serviceIntervalMs": 0,
+          "stepFree": false
+        }
+      ]
+    },
+    {
+      "id": "station-46758",
+      "population": 10807,
+      "workplaces": 0,
+      "poiWeight": 0,
+      "stations": [
+        {
+          "stationId": "46758",
+          "accessMs": 300000,
+          "serviceIntervalMs": 0,
+          "stepFree": false
+        }
+      ]
+    },
+    {
+      "id": "station-542001",
+      "population": 122977,
+      "workplaces": 0,
+      "poiWeight": 0,
+      "stations": [
+        {
+          "stationId": "542001",
+          "accessMs": 300000,
+          "serviceIntervalMs": 0,
+          "stepFree": false
+        }
+      ]
+    },
+    {
+      "id": "station-600951",
+      "population": 8098,
+      "workplaces": 0,
+      "poiWeight": 0,
+      "stations": [
+        {
+          "stationId": "600951",
+          "accessMs": 300000,
+          "serviceIntervalMs": 0,
+          "stepFree": false
+        }
+      ]
+    },
+    {
+      "id": "station-611502",
+      "population": 256803,
+      "workplaces": 0,
+      "poiWeight": 0,
+      "stations": [
+        {
+          "stationId": "611502",
+          "accessMs": 300000,
+          "serviceIntervalMs": 0,
+          "stepFree": false
+        }
+      ]
+    },
+    {
+      "id": "station-630508",
+      "population": 98451,
+      "workplaces": 0,
+      "poiWeight": 0,
+      "stations": [
+        {
+          "stationId": "630508",
+          "accessMs": 300000,
+          "serviceIntervalMs": 0,
+          "stepFree": false
+        }
+      ]
+    },
+    {
+      "id": "station-66393",
+      "population": 95816,
+      "workplaces": 0,
+      "poiWeight": 0,
+      "stations": [
+        {
+          "stationId": "66393",
+          "accessMs": 300000,
+          "serviceIntervalMs": 0,
+          "stepFree": false
+        }
+      ]
+    },
+    {
+      "id": "station-85981",
+      "population": 226767,
+      "workplaces": 0,
+      "poiWeight": 0,
+      "stations": [
+        {
+          "stationId": "85981",
+          "accessMs": 300000,
+          "serviceIntervalMs": 0,
+          "stepFree": false
+        }
+      ]
+    }
+  ],
+  "profiles": [
+    {
+      "id": "general",
+      "purpose": "daily-travel",
+      "dailyTripsBasisPoints": 100,
+      "workplaceWeight": 0,
+      "poiWeight": 0,
+      "populationWeight": 1,
+      "comfortClass": "standard",
+      "spaceNeeds": "ordinary",
+      "requiresReservation": false,
+      "maxFareCents": 10000,
+      "maxJourneyMs": 14400000,
+      "ranking": [
+        "time",
+        "fare",
+        "transfers",
+        "frequency",
+        "reliability",
+        "comfort"
+      ]
+    }
+  ],
+  "daySlices": [
+    {
+      "id": "night",
+      "startOffsetMs": 0,
+      "endOffsetMs": 21600000,
+      "shareBasisPoints": 500
+    },
+    {
+      "id": "morning",
+      "startOffsetMs": 21600000,
+      "endOffsetMs": 32400000,
+      "shareBasisPoints": 3000
+    },
+    {
+      "id": "day",
+      "startOffsetMs": 32400000,
+      "endOffsetMs": 54000000,
+      "shareBasisPoints": 2000
+    },
+    {
+      "id": "afternoon",
+      "startOffsetMs": 54000000,
+      "endOffsetMs": 64800000,
+      "shareBasisPoints": 3000
+    },
+    {
+      "id": "evening",
+      "startOffsetMs": 64800000,
+      "endOffsetMs": 86400000,
+      "shareBasisPoints": 1500
+    }
+  ],
+  "seasonBasisPoints": 10000,
+  "minimumTransferMs": 120000,
+  "maxTransfers": 2,
+  "maxGeneratedPassengers": 100000,
+  "maxConnectionsPerCohort": 128,
+  "fareCompliance": {
+    "schemaVersion": "fare-compliance-policy/v1",
+    "validBasisPoints": 9500,
+    "unpresentableBasisPoints": 300,
+    "provenance": "balanced",
+    "sourceIds": []
+  },
+  "populationModel": {
+    "schemaVersion": "zugfolge-station-population-demand/v1",
+    "settlements": [
+      {
+        "id": "14713000",
+        "name": "Leipzig",
+        "population": 611850,
+        "sourceId": "bkg-vg250-ew-2024"
+      },
+      {
+        "id": "14730270",
+        "name": "Schkeuditz",
+        "population": 18905,
+        "sourceId": "bkg-vg250-ew-2024"
+      },
+      {
+        "id": "15002000",
+        "name": "Halle (Saale)",
+        "population": 226767,
+        "sourceId": "bkg-vg250-ew-2024"
+      },
+      {
+        "id": "15082015",
+        "name": "Bitterfeld-Wolfen",
+        "population": 36592,
+        "sourceId": "bkg-vg250-ew-2024"
+      },
+      {
+        "id": "15084355",
+        "name": "Naumburg (Saale)",
+        "population": 31940,
+        "sourceId": "bkg-vg250-ew-2024"
+      },
+      {
+        "id": "15088220",
+        "name": "Merseburg",
+        "population": 34392,
+        "sourceId": "bkg-vg250-ew-2024"
+      },
+      {
+        "id": "16051000",
+        "name": "Erfurt",
+        "population": 218793,
+        "sourceId": "bkg-vg250-ew-2024"
+      },
+      {
+        "id": "16055000",
+        "name": "Weimar",
+        "population": 65954,
+        "sourceId": "bkg-vg250-ew-2024"
+      }
+    ],
+    "stationAreas": [
+      {
+        "zoneId": "station-104445",
+        "stationId": "104445",
+        "populationAllocations": [
+          {
+            "settlementId": "15088220",
+            "population": 34392
+          }
+        ],
+        "demandClass": 6
+      },
+      {
+        "zoneId": "station-154282",
+        "stationId": "154282",
+        "populationAllocations": [
+          {
+            "settlementId": "15082015",
+            "population": 36592
+          }
+        ],
+        "demandClass": 6
+      },
+      {
+        "zoneId": "station-194454",
+        "stationId": "194454",
+        "populationAllocations": [
+          {
+            "settlementId": "16055000",
+            "population": 65954
+          }
+        ],
+        "demandClass": 7
+      },
+      {
+        "zoneId": "station-354639",
+        "stationId": "354639",
+        "populationAllocations": [
+          {
+            "settlementId": "14713000",
+            "population": 256596
+          }
+        ],
+        "demandClass": 9
+      },
+      {
+        "zoneId": "station-464080",
+        "stationId": "464080",
+        "populationAllocations": [
+          {
+            "settlementId": "15084355",
+            "population": 31940
+          }
+        ],
+        "demandClass": 6
+      },
+      {
+        "zoneId": "station-46758",
+        "stationId": "46758",
+        "populationAllocations": [
+          {
+            "settlementId": "14730270",
+            "population": 10807
+          }
+        ],
+        "demandClass": 5
+      },
+      {
+        "zoneId": "station-542001",
+        "stationId": "542001",
+        "populationAllocations": [
+          {
+            "settlementId": "16051000",
+            "population": 122977
+          }
+        ],
+        "demandClass": 8
+      },
+      {
+        "zoneId": "station-600951",
+        "stationId": "600951",
+        "populationAllocations": [
+          {
+            "settlementId": "14730270",
+            "population": 8098
+          }
+        ],
+        "demandClass": 4
+      },
+      {
+        "zoneId": "station-611502",
+        "stationId": "611502",
+        "populationAllocations": [
+          {
+            "settlementId": "14713000",
+            "population": 256803
+          }
+        ],
+        "demandClass": 9
+      },
+      {
+        "zoneId": "station-630508",
+        "stationId": "630508",
+        "populationAllocations": [
+          {
+            "settlementId": "14713000",
+            "population": 98451
+          }
+        ],
+        "demandClass": 7
+      },
+      {
+        "zoneId": "station-66393",
+        "stationId": "66393",
+        "populationAllocations": [
+          {
+            "settlementId": "16051000",
+            "population": 95816
+          }
+        ],
+        "demandClass": 7
+      },
+      {
+        "zoneId": "station-85981",
+        "stationId": "85981",
+        "populationAllocations": [
+          {
+            "settlementId": "15002000",
+            "population": 226767
+          }
+        ],
+        "demandClass": 8
+      }
+    ],
+    "referenceTimetable": {
+      "id": "gtfs-mitteldeutschland-2026-09-07-13",
+      "artifactSha256": "e3f09dc268b46abc559385c48777d23bd461988d8b6a4d6051660eac557bc104",
+      "sourceIds": [
+        "gtfs-de-fv",
+        "gtfs-de-rv"
+      ],
+      "serviceDates": [
+        "2026-09-07",
+        "2026-09-08",
+        "2026-09-09",
+        "2026-09-10",
+        "2026-09-11",
+        "2026-09-12",
+        "2026-09-13"
+      ]
+    },
+    "destinationPreferences": [
+      {
+        "originZoneId": "station-104445",
+        "destinationZoneId": "station-194454",
+        "referenceConnections": 117
+      },
+      {
+        "originZoneId": "station-104445",
+        "destinationZoneId": "station-464080",
+        "referenceConnections": 262
+      },
+      {
+        "originZoneId": "station-104445",
+        "destinationZoneId": "station-542001",
+        "referenceConnections": 117
+      },
+      {
+        "originZoneId": "station-104445",
+        "destinationZoneId": "station-85981",
+        "referenceConnections": 223
+      },
+      {
+        "originZoneId": "station-154282",
+        "destinationZoneId": "station-354639",
+        "referenceConnections": 197
+      },
+      {
+        "originZoneId": "station-154282",
+        "destinationZoneId": "station-542001",
+        "referenceConnections": 72
+      },
+      {
+        "originZoneId": "station-154282",
+        "destinationZoneId": "station-611502",
+        "referenceConnections": 232
+      },
+      {
+        "originZoneId": "station-154282",
+        "destinationZoneId": "station-630508",
+        "referenceConnections": 355
+      },
+      {
+        "originZoneId": "station-154282",
+        "destinationZoneId": "station-85981",
+        "referenceConnections": 249
+      },
+      {
+        "originZoneId": "station-194454",
+        "destinationZoneId": "station-104445",
+        "referenceConnections": 110
+      },
+      {
+        "originZoneId": "station-194454",
+        "destinationZoneId": "station-464080",
+        "referenceConnections": 248
+      },
+      {
+        "originZoneId": "station-194454",
+        "destinationZoneId": "station-542001",
+        "referenceConnections": 490
+      },
+      {
+        "originZoneId": "station-194454",
+        "destinationZoneId": "station-611502",
+        "referenceConnections": 5
+      },
+      {
+        "originZoneId": "station-194454",
+        "destinationZoneId": "station-85981",
+        "referenceConnections": 4
+      },
+      {
+        "originZoneId": "station-354639",
+        "destinationZoneId": "station-154282",
+        "referenceConnections": 182
+      },
+      {
+        "originZoneId": "station-354639",
+        "destinationZoneId": "station-464080",
+        "referenceConnections": 208
+      },
+      {
+        "originZoneId": "station-354639",
+        "destinationZoneId": "station-542001",
+        "referenceConnections": 207
+      },
+      {
+        "originZoneId": "station-354639",
+        "destinationZoneId": "station-600951",
+        "referenceConnections": 188
+      },
+      {
+        "originZoneId": "station-354639",
+        "destinationZoneId": "station-630508",
+        "referenceConnections": 118
+      },
+      {
+        "originZoneId": "station-354639",
+        "destinationZoneId": "station-85981",
+        "referenceConnections": 31
+      },
+      {
+        "originZoneId": "station-464080",
+        "destinationZoneId": "station-104445",
+        "referenceConnections": 265
+      },
+      {
+        "originZoneId": "station-464080",
+        "destinationZoneId": "station-154282",
+        "referenceConnections": 7
+      },
+      {
+        "originZoneId": "station-464080",
+        "destinationZoneId": "station-194454",
+        "referenceConnections": 255
+      },
+      {
+        "originZoneId": "station-464080",
+        "destinationZoneId": "station-354639",
+        "referenceConnections": 207
+      },
+      {
+        "originZoneId": "station-464080",
+        "destinationZoneId": "station-542001",
+        "referenceConnections": 255
+      },
+      {
+        "originZoneId": "station-464080",
+        "destinationZoneId": "station-611502",
+        "referenceConnections": 5
+      },
+      {
+        "originZoneId": "station-464080",
+        "destinationZoneId": "station-85981",
+        "referenceConnections": 120
+      },
+      {
+        "originZoneId": "station-46758",
+        "destinationZoneId": "station-85981",
+        "referenceConnections": 276
+      },
+      {
+        "originZoneId": "station-542001",
+        "destinationZoneId": "station-104445",
+        "referenceConnections": 110
+      },
+      {
+        "originZoneId": "station-542001",
+        "destinationZoneId": "station-154282",
+        "referenceConnections": 66
+      },
+      {
+        "originZoneId": "station-542001",
+        "destinationZoneId": "station-194454",
+        "referenceConnections": 491
+      },
+      {
+        "originZoneId": "station-542001",
+        "destinationZoneId": "station-354639",
+        "referenceConnections": 210
+      },
+      {
+        "originZoneId": "station-542001",
+        "destinationZoneId": "station-464080",
+        "referenceConnections": 248
+      },
+      {
+        "originZoneId": "station-542001",
+        "destinationZoneId": "station-611502",
+        "referenceConnections": 5
+      },
+      {
+        "originZoneId": "station-542001",
+        "destinationZoneId": "station-85981",
+        "referenceConnections": 7
+      },
+      {
+        "originZoneId": "station-600951",
+        "destinationZoneId": "station-354639",
+        "referenceConnections": 188
+      },
+      {
+        "originZoneId": "station-600951",
+        "destinationZoneId": "station-611502",
+        "referenceConnections": 277
+      },
+      {
+        "originZoneId": "station-600951",
+        "destinationZoneId": "station-630508",
+        "referenceConnections": 284
+      },
+      {
+        "originZoneId": "station-600951",
+        "destinationZoneId": "station-85981",
+        "referenceConnections": 31
+      },
+      {
+        "originZoneId": "station-611502",
+        "destinationZoneId": "station-154282",
+        "referenceConnections": 234
+      },
+      {
+        "originZoneId": "station-611502",
+        "destinationZoneId": "station-194454",
+        "referenceConnections": 5
+      },
+      {
+        "originZoneId": "station-611502",
+        "destinationZoneId": "station-464080",
+        "referenceConnections": 5
+      },
+      {
+        "originZoneId": "station-611502",
+        "destinationZoneId": "station-542001",
+        "referenceConnections": 5
+      },
+      {
+        "originZoneId": "station-611502",
+        "destinationZoneId": "station-600951",
+        "referenceConnections": 265
+      },
+      {
+        "originZoneId": "station-611502",
+        "destinationZoneId": "station-630508",
+        "referenceConnections": 520
+      },
+      {
+        "originZoneId": "station-630508",
+        "destinationZoneId": "station-154282",
+        "referenceConnections": 346
+      },
+      {
+        "originZoneId": "station-630508",
+        "destinationZoneId": "station-354639",
+        "referenceConnections": 130
+      },
+      {
+        "originZoneId": "station-630508",
+        "destinationZoneId": "station-600951",
+        "referenceConnections": 271
+      },
+      {
+        "originZoneId": "station-630508",
+        "destinationZoneId": "station-611502",
+        "referenceConnections": 532
+      },
+      {
+        "originZoneId": "station-85981",
+        "destinationZoneId": "station-104445",
+        "referenceConnections": 231
+      },
+      {
+        "originZoneId": "station-85981",
+        "destinationZoneId": "station-154282",
+        "referenceConnections": 260
+      },
+      {
+        "originZoneId": "station-85981",
+        "destinationZoneId": "station-354639",
+        "referenceConnections": 42
+      },
+      {
+        "originZoneId": "station-85981",
+        "destinationZoneId": "station-464080",
+        "referenceConnections": 127
+      },
+      {
+        "originZoneId": "station-85981",
+        "destinationZoneId": "station-46758",
+        "referenceConnections": 265
+      },
+      {
+        "originZoneId": "station-85981",
+        "destinationZoneId": "station-542001",
+        "referenceConnections": 1
+      },
+      {
+        "originZoneId": "station-85981",
+        "destinationZoneId": "station-600951",
+        "referenceConnections": 57
+      },
+      {
+        "originZoneId": "station-85981",
+        "destinationZoneId": "station-611502",
+        "referenceConnections": 15
+      },
+      {
+        "originZoneId": "station-85981",
+        "destinationZoneId": "station-630508",
+        "referenceConnections": 18
+      }
+    ]
+  }
+}

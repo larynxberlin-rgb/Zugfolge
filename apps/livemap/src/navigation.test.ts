@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { railwayNavigation } from "@zugfolge/design-system";
 
 import { describe, expect, it } from "vitest";
 
@@ -59,16 +59,15 @@ describe("weltbewusste Hauptnavigation der Live-Lage", () => {
     }
   });
 
-  it("hält die vollständige Navigation mobil sichtbar und bietet ein echtes Skip-Ziel", () => {
-    const cssSource = readFileSync(new URL("./style.css", import.meta.url), "utf8");
+  it("bietet mit der gemeinsamen Navigation benannte Ziele und einen aktuellen Ort", () => {
     expect(mainSource).not.toContain('href="#"');
     expect(mainSource).not.toContain("worldLabel.textContent = worldId");
     expect(mainSource).toContain("worldLabel.textContent = mapConfig.worldName");
-    for (const label of ["Live-Lage", "Welt", "Märkte", "Fahrplan", "Betrieb", "Postfach"]) expect(mainSource).toContain(`>${label}</a>`);
+    const nav = railwayNavigation([{page:"map",href:"/live"},{page:"planner",href:"/game?view=diagram"},{page:"operations",href:"/operations"},{page:"markets",href:"/game?section=markets"},{page:"company",href:"/game?section=company"}], "map");
+    for (const label of ["LiveMap", "Fahrplan", "Betrieb", "Markt", "Unternehmen"]) expect(nav).toContain(`>${label}</span>`);
+    expect(nav.match(/aria-current="page"/g)).toHaveLength(1);
     expect(mainSource).toContain('href="#map-object-list"');
-    expect(mainSource).toContain('id="map-object-list" class="object-list" tabindex="-1" aria-labelledby="object-list-title"');
-    expect(cssSource).toContain(".topbar nav { grid-column: 1 / -1; width: 100%; display: flex;");
-    expect(cssSource).not.toMatch(/@media \(max-width: 900px\)[\s\S]*?\.topbar nav\s*\{[^}]*display:\s*none/);
+    expect(mainSource).toContain('id="map-object-list"');
   });
 
   it("führt Postfachentscheidungen weltkonkret auf Vertrag, Fahrzeugmarkt und Fahrplan", () => {

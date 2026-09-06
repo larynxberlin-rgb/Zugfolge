@@ -82,8 +82,8 @@ describe("zugängliche Editor-Operationen", () => {
     expect(html).toContain('href="#event-11"');
     expect(html).toContain("closure-short-turn");
     expect(html).toContain("capacity");
-    expect(html).toContain("Nächste Hebel");
-    expect(html).toContain("Der Leistungsnachweis ist unvollständig");
+    expect(html).toContain("Das kannst du verbessern");
+    expect(html).toContain("Für diesen Bericht fehlen noch Fahrtdaten");
   });
 
   it("trennt globale Navigation, feste Betriebstabs und lokal scrollenden Inhalt", () => {

@@ -262,15 +262,30 @@
       "goal": "Ein gemeinsames SPNV-/SPFV-Nachfragemodell mit Reiseketten, Zugwahl, Auslastung und autoritativen SPNV-Fahrgastmanifesten liefern.",
       "area": "area:economy",
       "dependsOn": ["M9"],
-      "status": { "core": "not_started", "integration": "not_started", "operations": "not_started", "acceptance": "not_started" },
-      "evidence": [],
+      "status": { "core": "verified", "integration": "verified", "operations": "blocked", "acceptance": "verified" },
+      "evidence": [
+        {"label": "M10 Implementierung und Abnahmegrenzen", "url": "docs/m10-abnahme.md"},
+        {"label": "Issue-Anforderungen, Code und PR-Zuordnung", "url": "docs/m10-issue-verknuepfung.md"},
+        {"label": "Historische freie Kalibrierungsquellen und Holdout-Diagnose", "url": "docs/m10-kalibrierungsquellen.md"},
+        {"label": "Native Haltbelege und kausale Manifestfortschreibung", "url": "docs/m10-haltbelege.md"},
+        {"label": "Einwohnernachfrage, Stationsklassen und direkte Odoo-Datenpflege", "url": "docs/m10-populationsnachfrage.md"},
+        {"label": "Freigegebene BKG- und GTFS-Quellen mit Namensnennung", "url": "docs/m10-populationsquellen.md"},
+        {"label": "Reproduzierbarer Bevölkerungskorpus und echter Rust-Nachweis", "url": "tools/population-demand/README.md"},
+        {"label": "Odoo-19-ORM/HTTP-Nachweis und native Datenübernahme", "url": "docs/m10-abnahme.md#reproduzieren"}
+      ],
       "items": [
         { "number": 169, "kind": "issue", "labels": ["area:economy", "type:enhancement", "priority:p1"] },
         { "number": 170, "kind": "issue", "labels": ["area:economy", "area:planning", "type:enhancement", "priority:p1"] },
         { "number": 171, "kind": "issue", "labels": ["area:economy", "type:enhancement", "priority:p1"] },
         { "number": 172, "kind": "issue", "labels": ["area:economy", "area:planning", "type:enhancement", "priority:p1"] },
         { "number": 173, "kind": "issue", "labels": ["area:economy", "type:enhancement", "priority:p1"] },
-        { "number": 210, "kind": "issue", "labels": ["area:economy", "area:simulation", "type:enhancement", "priority:p1"] }
+        { "number": 210, "kind": "issue", "labels": ["area:economy", "area:simulation", "type:enhancement", "priority:p1"] },
+        { "number": 361, "kind": "issue", "labels": ["area:livemap", "type:enhancement", "priority:p1"] },
+        { "number": 379, "kind": "issue", "labels": ["area:livemap", "type:enhancement", "priority:p1"] },
+        { "number": 532, "kind": "pull_request" },
+        { "number": 533, "kind": "pull_request" },
+        { "number": 534, "kind": "pull_request" },
+        { "number": 537, "kind": "pull_request" }
       ]
     },
     {

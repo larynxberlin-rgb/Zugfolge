@@ -202,7 +202,25 @@ export interface OperationalServiceOutcomePolicy {
   readonly vehicleCapacities: readonly Readonly<{ vehicleId: string; seats: number; sourceReference: string }>[];
 }
 
+export interface OperationalPassengerStopPlan {
+  readonly schemaVersion: "zugfolge-operational-passenger-stop-plan/v1";
+  readonly worldId: string;
+  readonly infrastructureReleaseId: string;
+  readonly timetableReleaseId: string;
+  readonly serviceId: string;
+  readonly serviceRunId: string;
+  readonly trainRunId: string;
+  readonly routeVersionId: string;
+  readonly sourceBindingHash: string;
+  /** Zwei bis 100 eindeutige, exakt gebundene Haltvorkommen. */
+  readonly stops: readonly Readonly<{
+    stopId: string; stationId: string; stopSequence: number; routeMm: number;
+    platformId: string; scheduledArrivalMs: number; scheduledDepartureMs: number; minimumDwellMs: number;
+  }>[];
+}
+
 export interface OperationalTrainInitialization {
+  readonly stopPlan?: OperationalPassengerStopPlan;
   readonly serviceOutcome?: OperationalServiceOutcomeBinding;
   readonly id: string;
   readonly trainNumber: string;

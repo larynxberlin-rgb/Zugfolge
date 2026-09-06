@@ -386,17 +386,17 @@ export const trainLayers: readonly LayerSpecification[] = Object.freeze([
     id: "train-halo",
     type: "circle",
     source: TRAIN_SOURCE_ID,
-    minzoom: 5,
-    paint: { "circle-radius": ["case", ["boolean", ["feature-state", "selected"], false], 12, 0], "circle-color": "#9fb8e8", "circle-opacity": 0.34 },
+    minzoom: 3,
+    paint: { "circle-radius": ["case", ["boolean", ["feature-state", "selected"], false], 12, 0], "circle-color": "#ed3b55", "circle-opacity": 0.34 },
   },
   {
     id: "trains",
     type: "circle",
     source: TRAIN_SOURCE_ID,
-    minzoom: 5,
+    minzoom: 3,
     paint: {
-      "circle-radius": ["interpolate", ["linear"], ["zoom"], 5, 3.5, 12, 6.5],
-      "circle-color": ["match", ["get", "status"], "cancelled", "#ff715f", "waiting", "#f0b75a", ["case", [">", ["coalesce", ["get", "delaySeconds"], 0], 900], "#ff715f", [">", ["coalesce", ["get", "delaySeconds"], 0], 60], "#f0b75a", "#e4e8ed"]],
+      "circle-radius": ["interpolate", ["linear"], ["zoom"], 3, 2.5, 5, 3.5, 12, 6.5],
+      "circle-color": ["match", ["get", "status"], "cancelled", "#ff715f", "waiting", "#f0b75a", ["case", [">", ["coalesce", ["get", "delaySeconds"], 0], 900], "#ff715f", [">=", ["coalesce", ["get", "delaySeconds"], 0], 60], "#f0b75a", ["has", "delaySeconds"], "#7cddba", "#e4e8ed"]],
       "circle-stroke-color": "#090b10",
       "circle-stroke-width": 2,
     },
@@ -405,15 +405,15 @@ export const trainLayers: readonly LayerSpecification[] = Object.freeze([
     id: "train-labels",
     type: "symbol",
     source: TRAIN_SOURCE_ID,
-    minzoom: 8,
+    minzoom: 4,
     layout: { "text-field": ["get", "markerLabel"], "text-font": ["Noto Sans Regular"], "text-size": 11, "text-offset": [0.9, 0], "text-anchor": "left", "text-optional": true },
-    paint: { "text-color": "#f1f3f7", "text-halo-color": "#090b10", "text-halo-width": 1.6 },
+    paint: { "text-color": "#f1f3f7", "text-halo-color": "#090b10", "text-halo-width": 2.8 },
   },
   {
     id: "train-hit",
     type: "circle",
     source: TRAIN_SOURCE_ID,
-    minzoom: 5,
+    minzoom: 3,
     paint: { "circle-radius": 18, "circle-opacity": 0 },
   },
 ]);
@@ -431,8 +431,8 @@ export function trainFeatureCollection(
     const markerLabel = [
       train.trainNumber,
       train.status === "cancelled" ? "Ausfall" : train.status === "waiting" ? "wartet" : undefined,
-      train.status !== "cancelled" && train.delaySeconds !== undefined && train.delaySeconds > 60
-        ? `+${Math.ceil(train.delaySeconds / 60)} min` : undefined,
+      train.status !== "cancelled" && train.delaySeconds !== undefined && train.delaySeconds >= 60
+        ? `+${Math.floor(train.delaySeconds / 60)} min` : undefined,
       positionFrozen ? "Lage eingefroren" : undefined,
     ].filter((part) => part !== undefined).join(" · ");
     features.push(Object.freeze({

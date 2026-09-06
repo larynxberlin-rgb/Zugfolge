@@ -3,7 +3,7 @@
 - **Status:** Angenommen — bindend (entspricht E9)
 - **Bezug:** [../entscheidungen.md](../entscheidungen.md) · [../infrastruktur.md](../infrastruktur.md)
 - **Betrifft Milestones:** M4.8 (Livemap, Sichtbarkeitsregeln), M2.6 (Datenschutz)
-- **Verwandte ADRs:** [ADR-0017](0017-design-domaenensprache-achromatisch-dunkel.md)
+- **Verwandte ADRs:** [ADR-0035](0035-deutschlandweite-spieleroberflaeche.md), [ADR-0017 – historisch](0017-design-domaenensprache-achromatisch-dunkel.md)
 
 ## Kontext
 

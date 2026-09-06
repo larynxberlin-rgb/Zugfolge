@@ -128,7 +128,10 @@ export function mountGameHints(root: HTMLElement, hints: readonly GameHint[]): (
       (target.closest("label") ?? target).after(button);
       bindings.set(target, { button, hint });
     }
-    for (const binding of bindings.values()) binding.button.hidden = !preferences.enabled;
+    for (const [target, binding] of bindings) {
+      const hidden = !preferences.enabled || target.getClientRects().length === 0;
+      if (binding.button.hidden !== hidden) binding.button.hidden = hidden;
+    }
     if (!automaticShown && preferences.enabled) {
       for (const [target, binding] of bindings) {
         const rect = binding.button.getBoundingClientRect();
@@ -146,7 +149,7 @@ export function mountGameHints(root: HTMLElement, hints: readonly GameHint[]): (
     pending = true;
     queueMicrotask(refresh);
   });
-  observer.observe(root, { childList: true, subtree: true });
+  observer.observe(root, { childList: true, subtree: true, attributes: true, attributeFilter: ["hidden", "class"] });
   const onKey = (event: KeyboardEvent): void => { if (event.key === "Escape") close(); };
   const onFocus = (event: FocusEvent): void => {
     if (active !== undefined && event.target !== bindings.get(active)?.button) close();
@@ -165,7 +168,7 @@ export function mountGameHints(root: HTMLElement, hints: readonly GameHint[]): (
   doc.addEventListener("keydown", onKey);
   doc.addEventListener("focusin", onFocus);
   doc.addEventListener("pointerdown", onPointer);
-  win.addEventListener("resize", place);
+  win.addEventListener("resize", refresh);
   doc.addEventListener("scroll", place, true);
   refresh();
   return () => {
@@ -180,7 +183,7 @@ export function mountGameHints(root: HTMLElement, hints: readonly GameHint[]): (
     doc.removeEventListener("keydown", onKey);
     doc.removeEventListener("focusin", onFocus);
     doc.removeEventListener("pointerdown", onPointer);
-    win.removeEventListener("resize", place);
+    win.removeEventListener("resize", refresh);
     doc.removeEventListener("scroll", place, true);
   };
 }

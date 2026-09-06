@@ -3,7 +3,7 @@
 - **Status:** Angenommen — bindend (entspricht E30)
 - **Bezug:** [../entscheidungen.md](../entscheidungen.md) · [../produkt.md](../produkt.md) · [../design.md](../design.md) · [../livemap-detailkatalog.md](../livemap-detailkatalog.md) · [../ux-spieler-shell.md](../ux-spieler-shell.md)
 - **Betrifft Milestones:** M9.3, M9.10, M10, M11, M13.5, M14.2
-- **Verwandte ADRs:** [ADR-0009](0009-vollstaendige-transparenz-livemap.md), [ADR-0017](0017-design-domaenensprache-achromatisch-dunkel.md), [ADR-0019](0019-realismus-dient-dem-spiel.md), [ADR-0026](0026-karte-als-spielzentrum.md), [ADR-0027](0027-geschaetzte-zugkartenposition-nur-visuell.md)
+- **Verwandte ADRs:** [ADR-0009](0009-vollstaendige-transparenz-livemap.md), [ADR-0035](0035-deutschlandweite-spieleroberflaeche.md), [ADR-0017 – historisch](0017-design-domaenensprache-achromatisch-dunkel.md), [ADR-0019](0019-realismus-dient-dem-spiel.md), [ADR-0026](0026-karte-als-spielzentrum.md), [ADR-0027](0027-geschaetzte-zugkartenposition-nur-visuell.md)
 - **Teilablösung:** Ersetzt für das normale Spielerprofil die Aussagen aus ADR-0026, nach denen jedes sichtbare Fachobjekt anklickbar sein muss. Präzisiert E26 zugleich auf einen A-/B-only-Releasevertrag: Unvollständige Pflichtdimensionen bleiben interne Builddiagnose und blockieren den Kandidaten. Vollständigkeit, Releasebindung, Selbsthosting und Spielbarkeitsmaske des Deutschland-Korpus bleiben unverändert.
 
 ## Kontext

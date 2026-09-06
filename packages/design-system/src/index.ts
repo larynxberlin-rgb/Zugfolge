@@ -1,7 +1,12 @@
 export type Density = "control" | "document";
+export { railwayBrand, railwayNavigation, railwayTabs, bindRailwayTabs, type RailwayPage, type RailwayLink } from "./railway.js";
 export { mountGameHints, readGameHintPreferences, type GameHint, type GameHintPreferences } from "./game-hints.js";
 export type StatusTone = "neutral" | "attention" | "danger" | "success";
 export type IconName =
+  | "map"
+  | "market"
+  | "company"
+  | "mail"
   | "alert"
   | "train"
   | "layers"
@@ -14,6 +19,10 @@ export type IconName =
   | "warning";
 
 const paths: Readonly<Record<IconName, string>> = {
+  map: '<path d="m3 6 6-3 6 3 6-3v15l-6 3-6-3-6 3V6Zm6-3v15m6-12v15"/>',
+  market: '<path d="M4 7h16M4 17h16m-4-4 4 4-4 4M8 3 4 7l4 4"/>',
+  company: '<path d="M3 21h18M5 21V5l8-2v18m0-13h6v13M8 8h2m-2 4h2m-2 4h2m5-4h2m-2 4h2"/>',
+  mail: '<rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3 6 9 7 9-7"/>',
   alert: '<path d="M12 3 2.8 20h18.4L12 3Z"/><path d="M12 8v6m0 3v.2"/>',
   train:
     '<rect x="5" y="3" width="14" height="15" rx="3"/><path d="M8 21l3-3m5 3-3-3M8 8h8m-8 4h2m4 0h2"/>',

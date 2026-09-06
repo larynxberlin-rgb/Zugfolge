@@ -270,6 +270,33 @@ pub struct BlockingTime {
 }
 
 impl BlockingTime {
+    /// Rekonstruiert eine bestätigte Gesamtbelegung für die Konfliktprüfung.
+    /// Die ursprünglichen sechs Phasen bleiben separat im Projektionsbeleg;
+    /// für die Reservierung zählt das exakte halboffene Gesamtintervall.
+    pub const fn reserved_interval(
+        resource: ConflictResource,
+        direction: TravelDirection,
+        governing_point: OperatingPointId,
+        start: SimTime,
+        end: SimTime,
+    ) -> Option<Self> {
+        if start.seconds() < 0 || end.seconds() <= start.seconds() {
+            return None;
+        }
+        Some(Self {
+            resource,
+            direction,
+            governing_point,
+            start,
+            sighting: start,
+            approach_start: start,
+            entry: start,
+            travel_end: end,
+            exit: end,
+            cleared: end,
+            end,
+        })
+    }
     /// Die gesperrte Konfliktressource.
     pub const fn resource(&self) -> ConflictResource {
         self.resource

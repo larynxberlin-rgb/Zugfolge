@@ -68,9 +68,9 @@
     {
       "id": "demand",
       "title": "Nachfrage- und Zugwahlmodell (M10, M11)",
-      "status": "planned",
+      "status": "active",
       "paths": ["packages/demand/**", "crates/zugfolge-demand/**"],
-      "rules": ["no-payment-tier", "no-wallclock", "no-random"]
+      "rules": ["no-payment-tier", "no-floats", "no-wallclock", "no-random", "no-unordered-iteration", "no-db-in-core"]
     },
     {
       "id": "economy",
@@ -102,6 +102,8 @@
         "tools/reference-corpus/**",
         "tools/reference-model/**",
         "tools/region-import/**",
+        "tools/demand-calibration/**",
+        "tools/population-demand/**",
         "tools/tiles/**"
       ],
       "rules": []
@@ -115,7 +117,8 @@
         "tools/guards/**",
         "tools/load/**",
         "tools/m7-acceptance/**",
-        "tools/m7-e2e/**"
+        "tools/m7-e2e/**",
+        "tools/ui-preview/**"
       ],
       "rules": []
     },

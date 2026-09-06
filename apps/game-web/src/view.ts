@@ -1,4 +1,4 @@
-import { badge, emptyState, escapeHtml, icon, type Density } from "@zugfolge/design-system";
+import { railwayBrand, railwayNavigation, badge, emptyState, escapeHtml, icon, type Density } from "@zugfolge/design-system";
 import type {
   PlanningConflictProjection,
   PlanningProjectionV1,
@@ -29,6 +29,10 @@ export interface ProjectionViewOptions {
   readonly messageTone?: "status" | "error";
   readonly applyingAlternativeId?: string;
   readonly demoMode?: boolean;
+  readonly livemapUrl?: string;
+  readonly operationsCenterUrl?: string;
+  readonly activeOperatorId?: string;
+  readonly navigationParameters?: string;
 }
 
 export function renderLoadState(
@@ -147,42 +151,58 @@ function renderInspector(
     available.find((candidate) => candidate.id === options.selectedConflictId) ?? available[0];
   const boundaryWindows = renderBoundaryWindows(train, projection);
   if (conflict === undefined) {
-    return `<aside class="inspector zf-surface"><div class="no-conflict">${badge("Konfliktfrei", "neutral", "check")}<h2>${escapeHtml(train.number)}</h2><p>Für diesen Zuglauf liegen keine Belegungsüberschneidungen vor.</p></div>${boundaryWindows}</aside>`;
+    return `<aside class="inspector zf-surface"><div class="no-conflict">${badge("Konfliktfrei", "neutral", "check")}<h2>${escapeHtml(train.number)}</h2><p>Die Strecke ist frei für diesen Zug. Dein Fahrplan passt zu den anderen Fahrten.</p></div>${boundaryWindows}</aside>`;
   }
   const firstTrain = trainById(projection, conflict.trainIds[0])!;
   const secondTrain = trainById(projection, conflict.trainIds[1])!;
   const alternative = conflict.alternative;
   const proposal =
     alternative === null
-      ? `<div class="proposal proposal--unavailable"><p class="eyebrow">Alternativangebot</p><h3>Keine zulässige Alternative</h3><p>Die Planung hat für diesen Befund innerhalb der beantragten Grenzen keine konfliktfreie Lage gefunden.</p></div>`
-      : `<div class="proposal"><p class="eyebrow">Zulässige Alternative</p><h3>Zeitlage ${formatSignedShiftS(alternative.departureShiftS)}</h3><p>${escapeHtml(alternative.explanation)}</p><button class="zf-button primary" data-apply-alternative="${escapeHtml(alternative.alternativeId)}"${options.applyingAlternativeId === alternative.alternativeId ? " disabled" : ""}>${options.applyingAlternativeId === alternative.alternativeId ? "Planung wird geprüft …" : "Alternative anwenden"} ${icon("chevron")}</button></div>`;
+      ? `<div class="proposal proposal--unavailable"><p class="eyebrow">DEINE OPTIONEN</p><h3>Noch keine passende Alternative</h3><p>Mit den gewählten Zeiten lässt sich dieser Konflikt noch nicht lösen. Passe deine Fahrtplanung an.</p></div>`
+      : `<div class="proposal"><p class="eyebrow">Zulässige Alternative</p><h3>Zeitlage ${formatSignedShiftS(alternative.departureShiftS)}</h3><p>${escapeHtml(alternative.explanation)}</p><button class="zf-button primary" data-apply-alternative="${escapeHtml(alternative.alternativeId)}"${options.applyingAlternativeId === alternative.alternativeId ? " disabled" : ""}>${options.applyingAlternativeId === alternative.alternativeId ? "Planung wird geprüft …" : "Neue Zeit übernehmen"} ${icon("chevron")}</button></div>`;
   return `<aside class="inspector zf-surface"><div class="inspector-head"><div>${badge(conflictLabels[conflict.kind], "danger", "alert")}<span class="counter">${available.indexOf(conflict) + 1} von ${available.length}</span></div><h2>${escapeHtml(conflict.resource.label)}</h2><p>${formatTimeS(conflict.window.startS, projection.timeBasis)}–${formatTimeS(conflict.window.endS, projection.timeBasis)}</p></div><div class="conflict-nav">${available
     .map(
       (candidate) =>
         `<button class="zf-button ${candidate.id === conflict.id ? "pressed" : ""}" aria-pressed="${candidate.id === conflict.id}" data-conflict="${escapeHtml(candidate.id)}">${escapeHtml(conflictLabels[candidate.kind])}</button>`,
     )
-    .join("")}</div><div class="cause"><p class="eyebrow">Beteiligte Zugläufe</p><div class="train-pair"><span>${icon("train")}<strong>${escapeHtml(firstTrain.number)}</strong></span><b aria-hidden="true">×</b><span>${icon("train")}<strong>${escapeHtml(secondTrain.number)}</strong></span></div></div><dl><div><dt>Konfliktressource</dt><dd><strong>${escapeHtml(conflict.resource.label)}</strong></dd></div><div><dt>Überlappung</dt><dd><strong>${formatDurationS(conflict.window.endS - conflict.window.startS)}</strong><br>${formatTimeS(conflict.window.startS, projection.timeBasis)}–${formatTimeS(conflict.window.endS, projection.timeBasis)}</dd></div><div><dt>Planungsstand</dt><dd><strong>${options.demoMode === true ? "Beispieldaten · nicht serverbestätigt" : "Vom Server bestätigt"}</strong><br><details><summary>Technische Details</summary><code>Welt ${escapeHtml(projection.worldId)} · Revision ${projection.projectionRevision} · Züge ${escapeHtml(firstTrain.id)}, ${escapeHtml(secondTrain.id)} · Ressourcentyp ${escapeHtml(conflict.resource.kind)}</code></details></dd></div></dl><div class="explanation"><h3>Warum entsteht der Konflikt?</h3><p>${escapeHtml(conflict.explanation)}</p></div>${proposal}${boundaryWindows}</aside>`;
+    .join("")}</div><div class="cause"><p class="eyebrow">Diese Züge treffen aufeinander</p><div class="train-pair"><span>${icon("train")}<strong>${escapeHtml(firstTrain.number)}</strong></span><b aria-hidden="true">×</b><span>${icon("train")}<strong>${escapeHtml(secondTrain.number)}</strong></span></div></div><dl><div><dt>Engstelle</dt><dd><strong>${escapeHtml(conflict.resource.label)}</strong></dd></div><div><dt>Überlappung</dt><dd><strong>${formatDurationS(conflict.window.endS - conflict.window.startS)}</strong><br>${formatTimeS(conflict.window.startS, projection.timeBasis)}–${formatTimeS(conflict.window.endS, projection.timeBasis)}</dd></div><div><dt>Planungsstand</dt><dd><strong>${options.demoMode === true ? "Beispieldaten · nicht serverbestätigt" : "Vom Server bestätigt"}</strong><br><details><summary>Technische Details</summary><code>Welt ${escapeHtml(projection.worldId)} · Revision ${projection.projectionRevision} · Züge ${escapeHtml(firstTrain.id)}, ${escapeHtml(secondTrain.id)} · Ressourcentyp ${escapeHtml(conflict.resource.kind)}</code></details></dd></div></dl><div class="explanation"><h3>Warum entsteht der Konflikt?</h3><p>${escapeHtml(conflict.explanation)}</p></div>${proposal}${boundaryWindows}</aside>`;
 }
 
-function renderHeader(projection: PlanningProjectionV1, demoMode: boolean): string {
-  const world = encodeURIComponent(projection.worldId);
-  const demo = demoMode ? "&amp;demo=1" : "";
-  return `<header class="topbar"><a class="wordmark" href="?view=journey&amp;world=${world}${demo}">Zugfolge</a><nav aria-label="Hauptnavigation"><a href="?view=journey&amp;world=${world}${demo}">Welt</a><a class="active" aria-current="page" href="?view=diagram&amp;world=${world}${demo}">Trassen</a><a href="?view=journey&amp;world=${world}${demo}#betrieb">Betrieb</a><a href="?view=journey&amp;world=${world}${demo}#postfach">Postfach</a></nav><div class="world">${escapeHtml(projection.corridor.name)}<details><summary>Technische Details</summary><code>Welt ${escapeHtml(projection.worldId)} · Revision ${projection.projectionRevision}</code></details></div></header>`;
+function renderHeader(projection: PlanningProjectionV1, options: ProjectionViewOptions): string {
+  const query = new URLSearchParams({world:projection.worldId});
+  if (options.demoMode) query.set("demo", "1");
+  if (options.activeOperatorId) query.set("operator",options.activeOperatorId);
+  const destination = (view: string, section?: string): string => {
+    const params = new URLSearchParams(query);
+    params.set("view",view);
+    if (section !== undefined) params.set("section",section);
+    return `?${params}`;
+  };
+  const live = options.livemapUrl || destination("journey","world");
+  const operations = options.operationsCenterUrl && options.activeOperatorId ? (() => {const url = new URL(options.operationsCenterUrl);url.searchParams.set("world",projection.worldId);url.searchParams.set("operator",options.activeOperatorId);return url.href;})() : destination("journey","operations");
+  return `<header class="topbar">${railwayBrand(live)}<span class="planner-header-title">FAHRPLANWERKSTATT</span><div class="world">${escapeHtml(projection.corridor.name)}</div></header>${railwayNavigation([{page:"map",href:live},{page:"planner",href:destination("diagram")},{page:"operations",href:operations},{page:"markets",href:destination("journey","markets")},{page:"company",href:destination("journey","company")}],"planner")}`;
 }
 
 export function renderProjection(
   projection: PlanningProjectionV1,
   options: ProjectionViewOptions,
 ): string {
+  const planningParameters = new URLSearchParams(options.navigationParameters);
+  for (const key of [...planningParameters.keys()]) if (!["focus", "trainScope", "trainQuery", "demand", "operator"].includes(key)) planningParameters.delete(key);
+  planningParameters.set("world", projection.worldId);
+  planningParameters.set("view", "spfv");
+  if (options.selectedTrainId) planningParameters.set("train", options.selectedTrainId);
+  if (options.activeOperatorId) planningParameters.set("operator", options.activeOperatorId);
+  const demandAction = `<a class="zf-button" href="?${escapeHtml(planningParameters.toString())}">Linie, Tarif & Plätze planen</a>`;
   const message =
     options.message === undefined || options.message === ""
       ? ""
       : `<p class="notice notice--${options.messageTone ?? "status"}" role="${options.messageTone === "error" ? "alert" : "status"}">${options.messageTone === "error" ? icon("alert") : icon("check")} ${escapeHtml(options.message)}</p>`;
   const demoBanner = options.demoMode === true ? '<p class="demo-banner" role="status"><strong>Demo · Beispieldaten</strong> Dieser Planungsstand ist nicht serverbestätigt.</p>' : "";
-  const context = `<section class="context"><div><p class="eyebrow">${options.demoMode === true ? "BEISPIEL-PLANUNGSSTAND" : "Bestätigter Planungsstand"}</p><h1>Bildfahrplan <span>${escapeHtml(projection.corridor.name)}</span></h1></div><div class="toolbar"><button class="zf-button" id="density">${icon("layers")} ${options.density === "control" ? "Leitstelle" : "Dokument"}</button><button class="zf-button ${options.showBlockingTimes ? "pressed" : ""}" id="steps" aria-pressed="${options.showBlockingTimes}">Sperrzeiten</button>${projection.trains.length === 0 ? "" : `<span class="period">${formatTimeS(timeExtentS(projection)[0], projection.timeBasis)}–${formatTimeS(timeExtentS(projection)[1], projection.timeBasis)}${projection.timeBasis === undefined ? "" : ` · Weltzeit ${escapeHtml(projection.timeBasis.timeZone)}`}</span>`}</div></section>`;
+  const context = `<section class="context"><div><p class="eyebrow">${options.demoMode === true ? "BEISPIEL-PLANUNGSSTAND" : "DEINE NÄCHSTE VERBINDUNG"}</p><h1>Bildfahrplan <span>${escapeHtml(projection.corridor.name)}</span></h1></div><div class="toolbar">${options.demoMode === true ? "" : demandAction}<button class="zf-button" id="density">${icon("layers")} ${options.density === "control" ? "Leitstelle" : "Dokument"}</button><button class="zf-button ${options.showBlockingTimes ? "pressed" : ""}" id="steps" aria-pressed="${options.showBlockingTimes}">Sperrzeiten</button>${projection.trains.length === 0 ? "" : `<span class="period">${formatTimeS(timeExtentS(projection)[0], projection.timeBasis)}–${formatTimeS(timeExtentS(projection)[1], projection.timeBasis)}${projection.timeBasis === undefined ? "" : ` · Weltzeit ${escapeHtml(projection.timeBasis.timeZone)}`}</span>`}</div></section>`;
   if (projection.stations.length === 0 || projection.trains.length === 0) {
-    return `<a class="skip" href="#planner-empty">Zum Inhalt</a><div class="shell">${renderHeader(projection, options.demoMode === true)}<main>${demoBanner}${context}${message}<section id="planner-empty" class="zf-surface empty-card" tabindex="-1">${emptyState("Keine Planner-Daten", "Für diesen Korridor ist noch kein Zuglauf projiziert. Es werden keine Beispieldaten eingesetzt.")}</section></main></div>`;
+    return `<a class="skip" href="#planner-empty">Zum Inhalt</a><div class="shell planner-shell">${renderHeader(projection, options)}<main>${demoBanner}${context}${message}<section id="planner-empty" class="zf-surface empty-card" tabindex="-1">${emptyState("Dein Fahrplan wartet auf dich.", "Für diese Strecke gibt es noch keine geplanten Fahrten. Melde im Bereich Betrieb deine erste Verbindung an.")}</section></main></div>`;
   }
   const selectedTrain = trainById(projection, options.selectedTrainId) ?? projection.trains[0]!;
-  return `<a class="skip" href="#diagram-card">Zum Bildfahrplan</a><div class="shell">${renderHeader(projection, options.demoMode === true)}<main>${demoBanner}${context}${message}<section class="workspace"><article id="diagram-card" class="diagram-card zf-surface" role="region" aria-labelledby="diagram-title" tabindex="-1"><div class="legend"><span><i class="line selected"></i> ausgewählt</span><span><i class="line"></i> Zuglauf</span><span><i class="hatch"></i> Konflikt !</span></div>${renderDiagram(projection, { ...options, selectedTrainId: selectedTrain.id })}</article>${renderInspector(projection, selectedTrain, options)}</section></main></div>`;
+  return `<a class="skip" href="#diagram-card">Zum Bildfahrplan</a><div class="shell planner-shell">${renderHeader(projection, options)}<main>${demoBanner}${context}${message}<section class="workspace"><article id="diagram-card" class="diagram-card zf-surface" role="region" aria-labelledby="diagram-title" tabindex="-1"><div class="legend"><span><i class="line selected"></i> ausgewählt</span><span><i class="line"></i> Zuglauf</span><span><i class="hatch"></i> Konflikt !</span></div>${renderDiagram(projection, { ...options, selectedTrainId: selectedTrain.id })}</article>${renderInspector(projection, selectedTrain, options)}</section></main></div>`;
 }

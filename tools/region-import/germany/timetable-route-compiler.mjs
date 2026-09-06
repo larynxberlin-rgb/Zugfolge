@@ -663,6 +663,8 @@ function deriveRoutes(graph, selectedSegments) {
       continue;
     }
     const rawLegs = [];
+    const passengerStopAnchors = Array(segment.stops.length).fill(null);
+    let routeMm = 0;
     let previousDestination = null;
     let complete = true;
     for (let index = 1; index < segment.stops.length; index += 1) {
@@ -689,10 +691,33 @@ function deriveRoutes(graph, selectedSegments) {
       const destination = anchorEvidence(destinations, routed.destination);
       invariant(origin !== undefined && destination !== undefined, `${segment.segmentId} besitzt eine Route ausserhalb seiner Stop-Anker.`);
       maximumAnchorDistanceMm = Math.max(maximumAnchorDistanceMm, origin.distanceMm, destination.distanceMm);
+      const bindAnchor = (stopIndex, anchor, routeLeg, isArrival, position) => Object.freeze({
+        stationId: segment.stops[stopIndex].stopId,
+        stopSequence: segment.stops[stopIndex].stopSequence,
+        edgeId: routeLeg.edgeId, direction: routeLeg.direction,
+        offsetMm: isArrival ? routeLeg.edgeExitMm : routeLeg.edgeEntryMm, routeMm: position,
+        sourceEdgeId: anchor.edgeId, sourceOffsetMm: anchor.offsetMm,
+      });
+      if (passengerStopAnchors[index - 1] === null) {
+        passengerStopAnchors[index - 1] = bindAnchor(index - 1, origin, routed.legs[0], false, routeMm);
+        // Repeated visits without movement remain separate occurrences, even at the same position.
+        for (let previous = index - 2; previous >= 0 && passengerStopAnchors[previous] === null; previous -= 1) {
+          invariant(segment.stops[previous].stopId === originStopId, `${segment.segmentId} verliert einen Zwischenhaltanker.`);
+          passengerStopAnchors[previous] = bindAnchor(previous, origin, routed.legs[0], false, routeMm);
+        }
+      }
       rawLegs.push(...routed.legs);
+      routeMm += routed.legs.reduce((sum, leg) => sum + Math.abs(leg.edgeExitMm - leg.edgeEntryMm), 0);
+      invariant(Number.isSafeInteger(routeMm), `${segment.segmentId} besitzt einen unsicheren Haltanker.`);
+      passengerStopAnchors[index] = bindAnchor(index, destination, routed.legs.at(-1), true, routeMm);
       previousDestination = destination;
     }
     if (!complete) continue;
+    for (let index = 1; index < passengerStopAnchors.length; index += 1) {
+      if (passengerStopAnchors[index] === null && passengerStopAnchors[index - 1] !== null
+        && segment.stops[index].stopId === segment.stops[index - 1].stopId)
+        passengerStopAnchors[index] = Object.freeze({...passengerStopAnchors[index - 1], stopSequence: segment.stops[index].stopSequence});
+    }
     const legs = mergeLegs(rawLegs).map((leg) => {
       const track = graph.edges.get(leg.edgeId);
       invariant(track !== undefined, `${segment.segmentId} verweist auf eine unbekannte Gleiskante.`);
@@ -712,6 +737,7 @@ function deriveRoutes(graph, selectedSegments) {
         predecessorId: null,
         transitionRouteMm: null,
         legs: Object.freeze(legs),
+        passengerStopAnchors: Object.freeze(passengerStopAnchors),
       }));
     } catch (error) {
       addFinding(findings, "segment-track-path-not-contiguous", `${segment.segmentId}:${error instanceof Error ? error.message : String(error)}`);

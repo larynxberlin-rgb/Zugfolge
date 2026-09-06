@@ -1071,12 +1071,19 @@ describe("produktive M3-Planning-Routen", () => {
     expect(collision.json()).toMatchObject({ code: "planning_worker_conflict" });
   });
 
-  it("sperrt reservierte Planning-Ereignisse und Kommandos fuer generische Adapter", async () => {
+  it("sperrt reservierte Planning- und Nachfrageereignisse sowie Kommandos fuer generische Adapter atomar", async () => {
     const first = await submitPath(
       "account-a",
       pathRequest("request-a", "train-a", 26801),
     );
     for (const eventType of [
+      "demand.evaluated",
+      "demand.pool-initialized",
+      "demand.pool-progressed",
+      "operations.passenger-stop-arrival",
+      "operations.passenger-stop-departure",
+      "spfv.preview",
+      "spfv.submitted",
       "planning.runtime-state",
       "planning.diagram",
       "livemap-operation-marked",
@@ -1093,6 +1100,12 @@ describe("produktive M3-Planning-Routen", () => {
           events: [
             {
               sequence: 1,
+              eventType: "simulation.time-advanced",
+              payload: { atS: 0 },
+              occurredAt: "2026-08-11T00:00:00.000Z",
+            },
+            {
+              sequence: 2,
               eventType,
               payload: {},
               occurredAt: "2026-08-11T00:00:00.000Z",
@@ -1101,7 +1114,7 @@ describe("produktive M3-Planning-Routen", () => {
         },
       });
       expect(reservedEvents.statusCode).toBe(409);
-    expect(reservedEvents.json()).toMatchObject({
+      expect(reservedEvents.json()).toMatchObject({
         code: "reserved_single_writer_event_type",
       });
     }

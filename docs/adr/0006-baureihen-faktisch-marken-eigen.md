@@ -3,7 +3,7 @@
 - **Status:** Angenommen — bindend (entspricht E6)
 - **Bezug:** [../entscheidungen.md](../entscheidungen.md) · [../geschaeft.md](../geschaeft.md)
 - **Betrifft Milestones:** M5.1 (getrennte Felder Baureihe/Handelsname)
-- **Verwandte ADRs:** [ADR-0016](0016-lizenz-polyform-shield.md), [ADR-0017](0017-design-domaenensprache-achromatisch-dunkel.md)
+- **Verwandte ADRs:** [ADR-0016](0016-lizenz-polyform-shield.md), [ADR-0035](0035-deutschlandweite-spieleroberflaeche.md), [ADR-0017 – historisch](0017-design-domaenensprache-achromatisch-dunkel.md)
 
 ## Kontext
 

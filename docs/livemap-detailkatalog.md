@@ -1,5 +1,11 @@
 # Livemap-Detailkatalog
 
+Die LiveMap ist das deutschlandweite Spielzentrum. Dieser Katalog beschreibt
+ihre releasegebundenen Daten und Berechtigungen. Die aktuelle Navigation,
+Spielertexte, Farben und kompakten Detailansichten stehen in
+[Design](design.md) und [Spieleroberfläche](ux-spieler-shell.md); die
+[Bildergalerie](ui-redesign/README.md) zeigt die Umsetzung mit Beispieldaten.
+
 ## Zweck und Bindung
 
 Die Vektorkacheln tragen nur die Eigenschaften, die MapLibre zum Zeichnen und
@@ -60,7 +66,7 @@ Diagnose und releasegebundene Detailauflösung erreichbar, ohne Kartenkontext
 zur Betriebswahrheit zu machen.
 
 Das normale Spielerprofil ist eine davon getrennte Projektion. Es zeichnet nur
-A-/B-Korridore beziehungsweise -Gleise, gruppierte Bahnhöfe, achromatische
+A-/B-Korridore beziehungsweise -Gleise, gruppierte Bahnhöfe, neutrale
 Signalicons, betriebliche Overlays und Züge. Interaktiv sind Zug, gruppierter
 Bahnhof und Strecke. `operating_points`, einzelne Bahnsteige, Weichen, Blöcke,
 `conflict_resources`, Anlagen und `rail_context` werden trotz ihrer
@@ -129,12 +135,21 @@ Ausfallmeldung. Browserwerte beeinflussen keine dieser Projektionen.
 Die Livemap bindet die selbst gehostete Basemap und das semantische
 Deutschland-PMTiles über MapLibre/PMTiles. Das normale Spielerprofil erzeugt
 nur für Zug, gruppierten Bahnhof und Strecke anklickbare Trefferflächen; bei
-Überlagerung entscheidet die in `design.md` festgelegte Fachpriorität. Die
-erste Detailebene verwendet Domänensprache und höchstens wenige
+Überlagerung öffnet sich eine Auswahl der getroffenen Objekte. Die
+erste Detailebene verwendet verständliche Spielertexte und wenige
 handlungsrelevante Fakten. Qualitätsklasse, Modellzustand, Releasekennung,
 technische ID und übrige freigegebene Fakten liegen standardmäßig geschlossen
 unter „Technische Details“. Das technische Diagnoseprofil darf weiterhin alle
 zehn Artefaktlayer per releasegebundenem Deep Link auflösen.
+
+Die Karte startet mit ganz Deutschland. „Gesamtes Spielnetz“ zentriert die
+serverseitig freigegebenen Netzgrenzen; diese Aktion erzeugt keine neue
+Spielbarkeit. „Meine Züge“ filtert nach der tatsächlichen Unternehmenskennung.
+Die Suche nach Zugnummer, Unternehmen oder nächstem Halt und die ausklappbare
+Zugübersicht bieten einen zweiten Weg zu denselben Zugdetails. Auf Desktop
+bleibt die Karte im Bildschirmrahmen, lange Detailinhalte scrollen innerhalb
+ihres Panels. Auf kleinen Geräten lässt sich der Überblick gezielt einblenden.
+Escape schließt ein Detail und stellt den Fokus am Ausgangspunkt wieder her.
 
 Ein Bahnhof öffnet zusätzlich eine generische Fallblattanzeige mit aktuellen
 Ankünften und Abfahrten sowie eine kompakte Grundauskunft aus Name, RIL 100,

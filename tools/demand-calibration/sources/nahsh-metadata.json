@@ -1,0 +1,146 @@
+{
+  "help": "https://opendata.schleswig-holstein.de/api/3/action/help_show?name=package_show",
+  "success": true,
+  "result": {
+    "author": null,
+    "author_email": null,
+    "creator_user_id": "7df583a3-350e-47ef-8738-3bbb68bdb954",
+    "id": "51c5484a-9eb3-4143-8e21-19b4677675d7",
+    "isopen": true,
+    "license_id": "http://dcat-ap.de/def/licenses/cc-by/4.0",
+    "license_title": "Creative Commons Namensnennung – 4.0 International (CC BY 4.0)",
+    "license_url": "http://dcat-ap.de/def/licenses/cc-by/4.0",
+    "maintainer": null,
+    "maintainer_email": null,
+    "metadata_created": "2022-03-10T07:55:01.740547",
+    "metadata_modified": "2023-01-23T13:12:51.96638",
+    "name": "querschnittsbesetzung",
+    "notes": "Über automatisierte und/oder manuelle Zählungen in den Zügen werden die Ein- und Aussteiger an den jeweiligen Stationen und daraus auch die Besetzung in den Zügen bzw. auf der Linie/den Abschnitten ermittelt. Die Zählungen erfolgen derzeit (noch) stichprobenartig über das Jahr und die gesamte Linie. Die hier aufgeführten Daten sind über das Kalenderjahr gemittelte Zählwerte, die nach den Tagestypen Montag-Freitag (Mo-Fr), Samstag (Sa), Sonntag/Feiertag (So) und Montag-Sonntag (Mo-So) unterschieden werden und sich auf die einzelnen Streckenabschnitte beziehen.\r\n\r\n# Felder\r\n- `np_str_id` - ID-Nummer des Streckenabschnitts\r\n- `durchschnitt_besetzung_tag` - Zahl der Fahrgäste auf dem Abschnitt pro Tag\r\n- `jahr` - Zähljahr (vierstellig)\r\n- `tage` - Tagestyp (`Mo-Fr`, `Sa`, `So` oder `Mo-So`)\r\n\r\n\r\nZeichensatz ist UTF-8, Spaltentrenner ist Semikolon",
+    "num_resources": 1,
+    "num_tags": 4,
+    "openness_score": 3,
+    "organization": {
+      "id": "822973d3-af00-4240-80dd-77d7a7e20801",
+      "name": "nah-sh",
+      "title": "nah.sh",
+      "type": "organization",
+      "description": "Die Nahverkehrsverbund Schleswig-Holstein GmbH (NAH.SH GmbH) mit Sitz in Kiel bietet den Fahrgästen im echten Norden Nahverkehr aus einer Hand: Im Auftrag des Landes Schleswig-Holstein organisiert sie als Aufgabenträger den Schienenpersonennahverkehr (SPNV). Im Verkehrsverbund wirken Kreise, kreisfreie Städte und das Land Schleswig-Holstein gemeinsam, um einen modernen und wirtschaftlichen Nahverkehr auf Schiene und Straße zu entwickeln. \r\n\r\nNAH.SH stellt eine kartenbasierte Abfrage zum Bahnverkehr zur Verfügung: https://www.nah.sh/de/karten/interaktive-karten-fuer-schleswig-holstein/",
+      "image_url": "nahsh-logo.svg",
+      "created": "2022-03-10T07:26:09.650013",
+      "is_organization": true,
+      "approval_status": "approved",
+      "state": "active"
+    },
+    "owner_org": "822973d3-af00-4240-80dd-77d7a7e20801",
+    "private": false,
+    "reference": "https://musterdatenkatalog.de/def/musterdatensatz/oepnv/fahrgastzahlen",
+    "state": "active",
+    "title": "Querschnittsbesetzung",
+    "type": "dataset",
+    "url": null,
+    "version": null,
+    "extras": [
+      {
+        "key": "groups",
+        "value": "tran"
+      },
+      {
+        "key": "issued",
+        "value": "2022-03-10T00:00:00"
+      },
+      {
+        "key": "licenseAttributionByText",
+        "value": "nah.sh"
+      },
+      {
+        "key": "spatial",
+        "value": "{\"type\":\"Polygon\",\"coordinates\":[[[7.869,53.36],[7.869,55.0583],[11.3126,55.0583],[11.3126,53.36],[7.869,53.36]]]}"
+      },
+      {
+        "key": "spatial_text",
+        "value": "Bundesland Schleswig-Holstein"
+      },
+      {
+        "key": "spatial_uri",
+        "value": "http://dcat-ap.de/def/politicalGeocoding/stateKey/01"
+      },
+      {
+        "key": "temporal_end",
+        "value": "2019-12-31T00:00:00"
+      },
+      {
+        "key": "temporal_start",
+        "value": "2010-01-01T00:00:00"
+      }
+    ],
+    "groups": [
+      {
+        "description": "",
+        "display_name": "Verkehr",
+        "id": "tran",
+        "image_display_url": "",
+        "name": "tran",
+        "title": "Verkehr"
+      }
+    ],
+    "resources": [
+      {
+        "archiver": "{'is_broken_printable': 'Downloaded OK', 'updated': '2022-03-10T08:55:14.864195', 'cache_filepath': u'/var/lib/ckan/default/archive/61/61a2569e-a1f4-4ecc-be89-fa62f6cf390c/querschnittsbesetzung.csv', 'last_success': '2022-03-10T08:55:14.864195', 'size': 24907L, 'is_broken': False, 'failure_count': 0, 'etag': None, 'status': 'Archived successfully', 'url_redirected_to': None, 'hash': u'b6102297a82528939fcddcf4376ec2487af84010', 'status_id': 0, 'reason': u'', 'last_modified': None, 'resource_timestamp': '2022-03-10T07:55:13.408722', 'mimetype': u'text/csv', 'cache_url': u'https://opendata.schleswig-holstein.de/resource_cache/61/61a2569e-a1f4-4ecc-be89-fa62f6cf390c/querschnittsbesetzung.csv', 'created': '2022-03-10T08:55:14.875353', 'first_failure': None}",
+        "cache_last_updated": null,
+        "cache_url": null,
+        "created": "2022-03-10T07:55:13.44672",
+        "description": "",
+        "format": "CSV",
+        "hash": "fa578a197e976900e3660e67d183c365",
+        "hash_algorithm": "http://dcat-ap.de/def/hashAlgorithms/md/5",
+        "id": "61a2569e-a1f4-4ecc-be89-fa62f6cf390c",
+        "last_modified": "2022-03-10T13:11:40.798939",
+        "metadata_modified": "2022-03-10T07:55:13.44672",
+        "mimetype": "text/csv",
+        "mimetype_inner": null,
+        "name": "querschnittsbesetzung.csv",
+        "package_id": "51c5484a-9eb3-4143-8e21-19b4677675d7",
+        "position": 0,
+        "qa": "{'updated': '2022-03-10T08:55:15.498415', 'openness_score': 3, 'archival_timestamp': '2022-03-10T08:55:14.864195', 'format': u'CSV', 'created': '2022-03-10T08:55:15.502910', 'resource_timestamp': None, 'openness_score_reason': u'Content of file appeared to be format \"CSV\" which receives openness score: 3.'}",
+        "resource_type": null,
+        "size": 333942,
+        "state": "active",
+        "url": "https://opendata.schleswig-holstein.de/dataset/51c5484a-9eb3-4143-8e21-19b4677675d7/resource/61a2569e-a1f4-4ecc-be89-fa62f6cf390c/download/querschnittsbesetzung.csv",
+        "url_type": "upload"
+      }
+    ],
+    "tags": [
+      {
+        "display_name": "Eisenbahn",
+        "id": "a1265d2f-0958-4b2a-be24-ce485f76a311",
+        "name": "Eisenbahn",
+        "state": "active",
+        "vocabulary_id": null
+      },
+      {
+        "display_name": "Fahrgastzahlen",
+        "id": "29c2894b-f8ec-4b57-8d68-a36ef18a55a9",
+        "name": "Fahrgastzahlen",
+        "state": "active",
+        "vocabulary_id": null
+      },
+      {
+        "display_name": "SPNV",
+        "id": "c3fa8ace-6a0a-4975-8add-7ac9e1b6eecc",
+        "name": "SPNV",
+        "state": "active",
+        "vocabulary_id": null
+      },
+      {
+        "display_name": "ÖPNV",
+        "id": "879a502d-c9ad-48d5-a2f9-a32d442e1816",
+        "name": "ÖPNV",
+        "state": "active",
+        "vocabulary_id": null
+      }
+    ],
+    "relationships_as_subject": [],
+    "relationships_as_object": [],
+    "is_new": false
+  }
+}

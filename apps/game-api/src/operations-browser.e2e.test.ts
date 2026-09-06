@@ -87,11 +87,15 @@ function decision(sequence = 1) {
     await expect.poll(() => streams.size).toBe(1);
   }
   async function event() {
+    const previousHeader = await page.locator(".topbar").elementHandle();
+    if (previousHeader === null) throw new Error("Betriebszentrale ist vor dem Live-Ereignis nicht sichtbar.");
     const reads = operationsReads; sequence++;
     decisions = [...decisions, { ...decision(sequence), decisionId: `decision-${sequence}` }];
     for (const stream of streams) stream.write(`data: ${JSON.stringify({ decision: { ...decision(), sequence } })}\n\n`);
     await expect.poll(() => operationsReads).toBeGreaterThan(reads);
-    await expect.poll(() => page.locator(".sidebar-note").textContent()).toContain(`Sequenz ${sequence}`);
+    // Erst nach dem Live-Neurender prüfen, dass Editor und Dialog erhalten bleiben.
+    await expect.poll(() => previousHeader.evaluate((element) => element.isConnected)).toBe(false);
+    await previousHeader.dispose();
     if (new URL(page.url()).searchParams.get("panel") === "operations") {
       await expect.poll(() => page.locator(".metrics-strip strong").first().textContent()).toBe(String(decisions.length));
     }
@@ -146,7 +150,7 @@ function decision(sequence = 1) {
     await event();
     expect(await page.locator("#event-1").evaluate((element) => element === document.activeElement)).toBe(true);
     await page.locator("[data-open-override]").first().click();
-    const dialog = page.getByRole("dialog", { name: "Entscheidung übersteuern" });
+    const dialog = page.getByRole("dialog", { name: "Selbst entscheiden" });
     await dialog.waitFor();
     await page.locator("#override-reason").fill("kurz");
     await page.locator("#submit-override").click();

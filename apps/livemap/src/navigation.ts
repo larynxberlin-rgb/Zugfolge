@@ -15,6 +15,20 @@ export interface MailboxDecisionReference {
 
 const OIDC_CALLBACK_PARAMETERS = ["code", "state", "session_state", "iss", "error", "error_description"] as const;
 
+/** Only recognized map state crosses applications; tokens and arbitrary return URLs never do. */
+export function demandPlanningDestination(gameWebUrl: string, pageUrl: string, worldId: string, trainId?: string, stationId?: string): string {
+  const destination = new URL(gameDestination(gameWebUrl, pageUrl, worldId, "diagram"));
+  const source = new URL(pageUrl);
+  destination.searchParams.set("view", "spfv");
+  for (const key of ["operator", "focus", "trainScope", "trainQuery", "demand"] as const) {
+    const value = source.searchParams.get(key);
+    if (value !== null) destination.searchParams.set(key, value);
+  }
+  if (trainId !== undefined) destination.searchParams.set("train", trainId);
+  if (stationId !== undefined) destination.searchParams.set("station", stationId);
+  return destination.href;
+}
+
 function withoutOidcCallback(url: URL): URL {
   for (const parameter of OIDC_CALLBACK_PARAMETERS) url.searchParams.delete(parameter);
   return url;

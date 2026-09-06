@@ -328,6 +328,46 @@ impl fmt::Display for OperatingDays {
     }
 }
 
+/// Absolutes, halboffenes Abfahrtsfenster seit Weltepoche.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ServiceWindow {
+    valid_from: SimTime,
+    valid_until: SimTime,
+}
+
+impl ServiceWindow {
+    /// Validiert eine nichtnegative, nichtleere Abfahrtsgültigkeit.
+    ///
+    /// # Errors
+    /// Ein leeres, negatives oder rückläufiges Fenster ist ungültig.
+    pub fn new(valid_from: SimTime, valid_until: SimTime) -> Result<Self, ConflictError> {
+        if valid_from.seconds() < 0 || valid_until <= valid_from {
+            return Err(ConflictError::NegativeDuration {
+                what: "absolutes Abfahrtsfenster",
+                seconds: valid_until.seconds().saturating_sub(valid_from.seconds()),
+            });
+        }
+        Ok(Self {
+            valid_from,
+            valid_until,
+        })
+    }
+
+    /// Erste zulässige Weltsekunde einschließlich.
+    pub const fn valid_from(self) -> SimTime {
+        self.valid_from
+    }
+    /// Erste nicht mehr zulässige Weltsekunde.
+    pub const fn valid_until(self) -> SimTime {
+        self.valid_until
+    }
+    /// Prüft die absolute Abfahrt ohne Tagesmodulo.
+    pub const fn contains(self, departure: SimTime) -> bool {
+        departure.seconds() >= self.valid_from.seconds()
+            && departure.seconds() < self.valid_until.seconds()
+    }
+}
+
 /// Ein wiederkehrendes Verkehrsangebot.
 ///
 /// Es trägt sein Belegungsprofil **relativ** — die Sperrzeiten sind an jedem
@@ -340,6 +380,7 @@ pub struct ServicePattern {
     profile: OccupationProfile,
     departure_time_s: i64,
     operating_days: OperatingDays,
+    service_window: Option<ServiceWindow>,
 }
 
 impl ServicePattern {
@@ -373,7 +414,19 @@ impl ServicePattern {
             profile,
             departure_time_s,
             operating_days,
+            service_window: None,
         })
+    }
+
+    /// Begrenzt die Wiederholung auf das autorisierte absolute Abfahrtsfenster.
+    pub const fn with_service_window(mut self, window: ServiceWindow) -> Self {
+        self.service_window = Some(window);
+        self
+    }
+
+    /// Absolute Abfahrtsgültigkeit; Altangebote ohne Fenster bleiben unverändert.
+    pub const fn service_window(&self) -> Option<ServiceWindow> {
+        self.service_window
     }
 
     /// Die Zugnummer.
@@ -409,6 +462,10 @@ impl ServicePattern {
     /// Ob am Tag mit diesem Index ab der Weltepoche gefahren wird.
     pub const fn runs_on(&self, day: i64) -> bool {
         self.operating_days.contains_day(day)
+            && match self.service_window {
+                None => true,
+                Some(window) => window.contains(self.departure_on(day)),
+            }
     }
 
     /// Die Abfahrt am Tag mit diesem Index — auch wenn dort nicht gefahren
@@ -473,6 +530,10 @@ impl ServicePattern {
         hasher.uint("train", u64::from(self.train.value()));
         hasher.int("departure_time_s", self.departure_time_s);
         hasher.uint("operating_days", u64::from(self.operating_days.0));
+        if let Some(window) = self.service_window {
+            hasher.int("valid_from_s", window.valid_from().seconds());
+            hasher.int("valid_until_s", window.valid_until().seconds());
+        }
         self.profile.write_canonical(hasher);
     }
 }
@@ -486,6 +547,19 @@ pub struct TrainRun {
 }
 
 impl TrainRun {
+    /// Stellt bereits bestätigte absolute Ressourcenintervalle wieder her.
+    /// Die Intervalle müssen aus dem autoritativen, weltgebundenen Zustand stammen.
+    pub fn from_blocking_times(
+        number: TrainNumber,
+        departure: SimTime,
+        steps: Vec<crate::blocking::BlockingTime>,
+    ) -> Self {
+        Self {
+            number,
+            departure,
+            staircase: BlockingTimeStaircase::new(departure, steps),
+        }
+    }
     /// Eine Fahrt aus Nummer, Abfahrt und Profil.
     pub fn new(number: TrainNumber, departure: SimTime, profile: &OccupationProfile) -> Self {
         Self {
@@ -586,6 +660,43 @@ mod tests {
             tage,
         )
         .expect("gültiges Verkehrsangebot")
+    }
+
+    #[test]
+    fn absolutes_abfahrtsfenster_verhindert_unbeabsichtigte_tageswiederholung() {
+        let departure = 7 * SECONDS_PER_DAY + 28_800;
+        let window = super::ServiceWindow::new(
+            SimTime::from_seconds(departure),
+            SimTime::from_seconds(departure + 1),
+        )
+        .unwrap();
+        let pattern = angebot(26802, 28_800, OperatingDays::DAILY).with_service_window(window);
+        assert!(pattern.materialise(6).is_none());
+        assert_eq!(
+            pattern.materialise(7).unwrap().departure().seconds(),
+            departure
+        );
+        assert!(pattern.materialise(8).is_none());
+        assert_eq!(
+            pattern
+                .runs_between(
+                    SimTime::from_seconds(0),
+                    SimTime::from_seconds(14 * SECONDS_PER_DAY)
+                )
+                .len(),
+            1
+        );
+        assert!(!window.contains(SimTime::from_seconds(departure + 1)));
+    }
+
+    #[test]
+    fn leere_und_negative_abfahrtsfenster_sind_ungueltig() {
+        assert!(
+            super::ServiceWindow::new(SimTime::from_seconds(0), SimTime::from_seconds(0)).is_err()
+        );
+        assert!(
+            super::ServiceWindow::new(SimTime::from_seconds(-1), SimTime::from_seconds(1)).is_err()
+        );
     }
 
     #[test]

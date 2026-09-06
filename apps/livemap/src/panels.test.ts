@@ -40,8 +40,8 @@ describe("Zugpanel-Kartenlage", () => {
 
   it("kennzeichnet fehlende Exact-Lage als sicheren Freeze ohne Schätzung", () => {
     const summary = trainMapPositionSummary(baseTrain);
-    expect(summary.definitions).toEqual([{ term: "Kartenlage", value: "sicher eingefroren" }]);
-    expect(summary.note).toMatch(/keine Kartenlage geschätzt/);
+    expect(summary.definitions).toEqual([{ term: "Kartenlage", value: "Letzte bestätigte Position" }]);
+    expect(summary.note).toContain("bleibt der Zug an seinem letzten sicheren Standort");
   });
 });
 
