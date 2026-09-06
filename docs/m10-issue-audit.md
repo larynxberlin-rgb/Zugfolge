@@ -6,6 +6,13 @@ PRs mit Review-, Inline- und Diskussionskommentaren wurden vertieft gelesen.
 Die Bestandsliste unten dokumentiert den Eingangsstand. Es wurden keine
 Issues als Ersatz für eine noch fehlende Abnahme geschlossen.
 
+Erneuter GitHub-Abgleich am 06.09.2026: 91 offene Issues, darunter unverändert
+alle acht M10-Issues, und sechs offene PRs (#531–#536), sämtlich Entwürfe.
+Alle derzeit offenen Issues sind bereits im unten dokumentierten Bestand
+enthalten; es kam kein weiterer Issue-Titel hinzu. Die Aktualisierung prüft
+Status, PR-Basen, Dateiumfang, Checks und schließende Referenzen; sie behauptet
+keine erneute vollständige Prüfung jedes historischen Issue-Kommentars.
+
 ## Umfang und Stackbasis
 
 Der bestätigte Auftrag bezeichnet M10 — Personenverkehrsnachfrage und SPFV
@@ -24,7 +31,21 @@ Der neue M10-Stack baut darauf in dieser Reihenfolge auf:
 [#532](https://github.com/larynxberlin-rgb/Zugfolge/pull/532) (Nachfragekern),
 [#533](https://github.com/larynxberlin-rgb/Zugfolge/pull/533) (Trassenplanung),
 [#534](https://github.com/larynxberlin-rgb/Zugfolge/pull/534) (API, Oberfläche,
-freie Kalibrierungsdaten und gemeinsame Abnahmematrix).
+freie Kalibrierungsdaten und gemeinsame Abnahmematrix), ergänzt um
+[Einwohnernachfrage und direkte Odoo-Datenpflege #537](https://github.com/larynxberlin-rgb/Zugfolge/pull/537)
+auf `codex/m10-population-demand` mit Basis `codex/m10-passenger-demand`.
+Dieser vierte Teil wurde nach dem oben beschriebenen Sechs-PR-Refresh
+veröffentlicht; damit sind sieben PRs offen. Die abschließenden CI- und Odoo-Läufe sind am PR mit dem jeweils geprüften
+Commit verknüpft.
+
+Der Nutzer hat #173 am 06.09.2026 ausdrücklich auf Einwohnernachfrage,
+Stationsklassen und ungefähre Wunschziele sowie direkte Odoo-Datenkorrekturen
+umgestellt. Die neue [Spezifikation](m10-populationsnachfrage.md) und
+[Issue-Verkabelung](m10-issue-verknuepfung.md) sind maßgeblich. Historische
+Holdoutberichte bleiben unverändert und behaupten weiterhin keine bestandene
+empirische Abnahme. Per GitHub-API sind am Head `f7dabd5` von #534 genau
+#169, #170, #171, #172, #210, #361 und #379 als schließend verknüpft;
+#173 ist dem vierten PR #537 zugeordnet.
 
 Während der Abschlussprüfung kam
 [#535](https://github.com/larynxberlin-rgb/Zugfolge/pull/535) hinzu. Dieser
@@ -59,7 +80,7 @@ Schema 35. M10 führt diese alten Konzepte nicht erneut ein. Die ausdrücklich
 abgenommene M9.1-Hinweisfunktion bleibt erhalten. #531 liefert Layout,
 Navigation und Gestaltungsregeln; seine Beispieldaten sind keine Nachfragequelle.
 
-Die erneute Prüfung vom 06.09.2026 umfasst auch
+Die frühere Prüfung vom 06.09.2026 umfasste auch
 [#536](https://github.com/larynxberlin-rgb/Zugfolge/pull/536),
 „M15.3: Pixelartkorpus, geprüfter Atlaszugriff und Browsergalerie“, Head
 `0a614ed2184f15033fba54828daca6575d855775`. Er baut auf #535 (`e00165b`) auf.
@@ -68,6 +89,27 @@ Atlasloader und Galerie ersetzen keine M10-Manifeste oder Haltbelege. Die
 schließenden Referenzen sind leer; #213 bleibt wegen ausstehender formaler
 Freigaben ausdrücklich offen. Seine zusätzlichen CI-Schritte und
 Roadmap-/Glossarergänzungen sind beim Stack-Abgleich zu bewahren.
+
+Der aktuelle Refresh ersetzt den zuletzt genannten #536-Stand: Der Titel
+lautet jetzt „M15.3: Pixelartkorpus mit sechs Wagenfamilien und Browsergalerie“,
+Head `db2242986511b0f3606fc3f5161b413bb7fe3586`, weiterhin auf
+`codex/m15-manifest-projection`. Sein Umfang ergänzt insbesondere sechs
+Wagenfamilien, Quellen-/Freigabebelege und Browserbilder. Die schließenden
+Issue-Referenzen sind weiterhin leer. Zum Abruf waren Rust, natives NAPI und
+Wächter grün; TypeScript lief noch. #535 heißt unverändert „M15.1/15.2:
+Schaffnervertrag und belegte Fahrgastprojektion“, Head `e00165b`, Basis
+`codex/m10-passenger-demand`, mit vier grünen CI-Jobs seines eigenen Stands.
+Das ist kein Integrationsnachweis des neuen vierten M10-Teils. Beide M15-PRs
+bleiben eigenständige offene Abhängigkeiten; ihre Manifest-/Haltverträge und
+ihre CI-Ergänzungen sind beim späteren Zusammenführen zu bewahren.
+
+Die übrigen offenen PRs bleiben #531 („UI/UX neu aufbauen: Deutschlandweite
+LiveMap als Spielzentrum“), #532 („[M10 1/3] Gemeinsamer Nachfragekern und
+SPNV-Fahrgastmanifeste“), #533 („[M10 2/3] Begrenzte SPFV-Trassen,
+Bestandskapazität und Linienänderungen“) und #534 („[M10 3/3] Nachfrage und
+SPFV in API, LiveMap und Spielerplanung“). Ihre Basen bilden weiterhin den
+oben angegebenen Stack. Für den neuen M10-Teil werden die finalen vier
+CI-Jobs und die echten Odoo-19-ORM-/HTTP-Prüfungen separat nachgetragen.
 
 ## Fachliche Abhängigkeiten
 
@@ -171,7 +213,7 @@ dadurch nicht wieder geöffnet.
 - #176 [M11 — SGV] [Roadmap 11.3] Verladerverträge — Spot und langfristig, Lieferqualität, Pönale
 - #175 [M11 — SGV] [Roadmap 11.2] Wagen als eigene Assets, Zugbildung, Behandlungszeiten — Rangieren bleibt automatisiert (E12)
 - #174 [M11 — SGV] [Roadmap 11.1] Warenstrom- und Industriemodell, Terminals, Anschlussgleise, Häfen
-- #173 [M10 — Personenverkehrsnachfrage und SPFV] [Roadmap 10.5] Gemeinsame SPNV-/SPFV-Kalibrierung
+- #173 [M10 — Personenverkehrsnachfrage und SPFV] [Roadmap 10.5] Einwohnerbasierte Stationsnachfrage und direkte Odoo-Datenpflege
 - #172 [M10 — Personenverkehrsnachfrage und SPFV] [Roadmap 10.4] SPFV-spezifische Linien-, Halte- und Taktplanung
 - #171 [M10 — Personenverkehrsnachfrage und SPFV] [Roadmap 10.3] Tarif, Vertrieb, Kapazität und Fahrberechtigungen
 - #170 [M10 — Personenverkehrsnachfrage und SPFV] [Roadmap 10.2] Verkehrsmittel-, Verbindungs- und Zugwahl im Personenverkehr
@@ -185,3 +227,13 @@ dadurch nicht wieder geöffnet.
 - #162 [M9 — Onboarding, Betriebsreife, geschlossene Alpha] [Roadmap 9.4] Admin- und Auditwerkzeuge, Vier-Augen-Prinzip bei Hochrisikoaktionen
 - #161 [M9 — Onboarding, Betriebsreife, geschlossene Alpha] [Roadmap 9.3] Onboarding in der öffentlichen Welt: tatsächliche StartingCapitalPolicy, Kapazitäts-Heatmap, Glossar-Layer und Betriebsassistent; keine automatische Startausstattung
 - #159 [M9 — Onboarding, Betriebsreife, geschlossene Alpha] [Roadmap 9.1] Neue Tooltipps an den echten Bedienelementen; per Tastatur und Touch erreichbar, lokal abschaltbar
+
+## Abschließender M15-Verbundnachweis
+
+M10-Code `8d20f7e` und #536 `db224298` einschließlich #535 wurden in einem
+isolierten Worktree konfliktfrei zusammengeführt, ohne die M15-Zweige zu ändern.
+Der Mergebaum `26a9999c6146b61f2df9eb3fc33acbcf33a4fde6` besteht
+`cargo test --locked -p zugfolge-conductor` mit zehn Tests sowie den Glossar-
+und Diffcheck. Getrennte CI-Schritte im vorhandenen NAPI-Job erhalten sowohl
+die neue Odoo-Datenprüfung als auch die M15-Projektionsprüfung; es entsteht
+kein fünfter regulärer CI-Job.

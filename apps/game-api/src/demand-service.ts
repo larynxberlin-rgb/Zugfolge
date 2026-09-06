@@ -5,11 +5,14 @@ import type { DemandRuntime } from "@zugfolge/runtime-native";
 import type { IdentityDatabase } from "@zugfolge/identity";
 import type { LivemapReadModel, LivemapRegistry } from "@zugfolge/livemap-stream";
 import type { PlanningInfrastructureRelease } from "@zugfolge/planning-worker";
-import { DemandError, DemandStore, demandHash, demandInteger, demandList, demandRecord, demandText, type DemandCheckpoint } from "./demand-store.js";
+import { worlds } from "@zugfolge/db";
+import { eq } from "drizzle-orm";
+import { DEMAND_PROGRESS_EVENT, DemandError, DemandStore, demandHash, demandInteger, demandList, demandRecord, demandText, type DemandCheckpoint } from "./demand-store.js";
 import type { SpfvEstimate, SpfvEstimateInput } from "./spfv-service.js";
 import { loadCommittedSpfvServices } from "./spfv-demand-projection.js";
-import { DemandProgressConsumer, demandRegionalWatermark, hasUnfinishedActualJourney, type DemandRegionBinding } from "./demand-progress.js";
+import { DemandProgressConsumer, demandProgressFromReceipts, demandRegionalWatermark, hasUnfinishedActualJourney, type DemandRegionBinding } from "./demand-progress.js";
 import { pinDemandPoolSeeds } from "./demand-pool-seeds.js";
+import { loadPopulationDataHistory, populationRevisionOf, savePopulationData, type PopulationDataCommand } from "./demand-population-data.js";
 
 export interface DemandDeployment {
   readonly schemaVersion: "zugfolge-demand-deployment/v1";
@@ -124,12 +127,24 @@ export class DemandService {
       if (demandInteger(this.pools[index]!["windowStartMs"]) < demandHorizon(this.pools[index - 1]!))
         throw new DemandError(503, "Fahrten verschiedener Nachfragereleases überlappen am Periodenwechsel; ein gemeinsamer Übergangsbeleg fehlt.");
     }
-    this.stations = new Map(deps.infrastructure.filter((release) => release.worldId === deps.deployment.worldId)
+    this.stations = new Map(deps.infrastructure.filter((release) => release.worldId === deps.deployment.worldId && release.releaseId === deps.deployment.infrastructureReleaseId)
       .flatMap((release) => release.stations).map((station) => [station.id, station]));
   }
 
   private assertWorld(worldId: string): void {
     if (worldId !== this.deps.deployment.worldId) throw new DemandError(404, "Für diese Welt liegen keine Nachfragedaten vor.");
+  }
+
+  /** Automatischer Odoo-Speichereffekt, innerhalb derselben Transaktion wie die
+   * signierte Queue-Quittierung. Kein manueller Freigabe- oder Exportpfad. */
+  async updateData(command: PopulationDataCommand, db: IdentityDatabase, occurredAt: Date) {
+    if (command.worldId !== this.deps.deployment.worldId) return { outcome: "rejected" as const, code: "world_scope" };
+    await db.select({ id: worlds.id }).from(worlds).where(eq(worlds.id, command.worldId)).for("update");
+    const previous = await new DemandStore(db, this.deps.runtime).latest(command.worldId);
+    const effectiveAtMs = this.deps.operationalRegions === undefined
+      ? Math.max(this.currentMs, previous === undefined ? 0 : demandInteger(previous.input["nowMs"]))
+      : (await demandRegionalWatermark(db, command.worldId, this.deps.operationalRegions())).nowMs;
+    return savePopulationData(db, this.deps.runtime, command, this.pools, effectiveAtMs, occurredAt);
   }
 
   /** Vor dem ersten Advance muss das gepinnte Anfangsmanifest existieren. */
@@ -247,15 +262,44 @@ export class DemandService {
       this.available = true; this.failure = "";
       return;
     }
-    const signature = demandHash({ ...template, services, nowMs: 0, revision: 0 });
-    if (signature === this.lastInputHash) { this.available = true; return; }
-    if (previous !== undefined && previous.deploymentHash === this.deps.deploymentHash
-      && signature === demandHash({ ...previous.input, nowMs: 0, revision: 0 })) {
-      this.lastInputHash = signature; this.available = true; return;
-    }
-    const input = { ...template, services, nowMs, revision: previous === undefined ? 1 : demandInteger(previous.input["revision"]) + 1 };
-    await this.store.commit(input, this.deps.deploymentHash, occurredAt, provenance);
-    this.lastInputHash = signature;
+    this.lastInputHash = await this.deps.db.transaction(async (tx) => {
+      await tx.select({ id: worlds.id }).from(worlds).where(eq(worlds.id, deployment.worldId)).for("update");
+      const store = new DemandStore(tx, this.deps.runtime);
+      const previous = await store.latest(deployment.worldId);
+      if (previous !== undefined && demandInteger(previous.input["nowMs"]) > nowMs) throw new DemandError(409, "Nachfragezeit darf nicht zurückgehen.");
+      const sameDataPool = previous?.input["periodId"] === template["periodId"];
+      let populationRevision = sameDataPool ? populationRevisionOf(previous!.input) : undefined;
+      const dataHistory = demandRecord(template["release"])["populationModel"] === undefined ? []
+        : (await loadPopulationDataHistory(tx, deployment.worldId, demandText(demandRecord(template["release"])["id"]),
+          populationRevision?.revision ?? 0, Number.MAX_SAFE_INTEGER, sameDataPool ? undefined : nowMs)).filter((event) => event.snapshot.effectiveAtMs <= nowMs);
+      const nextPopulation = dataHistory.at(-1)?.snapshot ?? populationRevision;
+      const signature = demandHash({ ...template, services, nowMs: 0, revision: 0,
+        ...(nextPopulation === undefined ? {} : { populationRevision: nextPopulation }) });
+      if (signature === this.lastInputHash) return signature;
+      if (previous !== undefined && previous.deploymentHash === this.deps.deploymentHash
+        && sameDataPool && signature === demandHash({ ...template, services: previous.input["services"], nowMs: 0, revision: 0,
+          ...(populationRevisionOf(previous.input) === undefined ? {} : { populationRevision: populationRevisionOf(previous.input) }) })) {
+        return signature;
+      }
+      let current = sameDataPool ? previous : undefined;
+      let revision = previous === undefined ? 0 : demandInteger(previous.input["revision"]);
+      if (current !== undefined) for (const event of dataHistory) {
+        populationRevision = event.snapshot;
+        const atMs = event.snapshot.effectiveAtMs;
+        current = await store.commit({ ...template, services: current.input["services"], nowMs: atMs, revision: ++revision,
+          populationRevision, previousEvaluation: { services: current.input["services"], result: current.result },
+          operationalProgress: demandProgressFromReceipts(deployment.worldId, atMs, []) }, this.deps.deploymentHash, occurredAt,
+        provenance, undefined, true, DEMAND_PROGRESS_EVENT);
+      }
+      const input = { ...template, services, nowMs, revision: ++revision,
+        ...(nextPopulation === undefined ? {} : { populationRevision: nextPopulation }),
+        ...(current === undefined || nextPopulation === undefined ? {} : {
+          previousEvaluation: { services: current.input["services"], result: current.result },
+          operationalProgress: demandProgressFromReceipts(deployment.worldId, nowMs, []),
+        }) };
+      await store.commit(input, this.deps.deploymentHash, occurredAt, provenance, undefined, true);
+      return signature;
+    });
     this.available = true;
     this.failure = "";
   }
@@ -264,6 +308,13 @@ export class DemandService {
     const { readModel, deployment } = this.deps;
     if (!this.verifiedWindows.has(template)) {
       if (readModel?.getScheduledCall === undefined) throw new DemandError(503, "Exakte Fahrplanreferenzen für Nachfrage fehlen.");
+      const model = demandRecord(template["release"])["populationModel"];
+      if (model !== undefined) {
+        const stations = new Set(this.deps.infrastructure.filter((release) => release.worldId === deployment.worldId
+          && release.releaseId === deployment.infrastructureReleaseId).flatMap((release) => release.stations.map((station) => station.id)));
+        if (demandList(demandRecord(model)["stationAreas"]).some((area) => !stations.has(demandText(area["stationId"]))))
+          throw new DemandError(503, "Einwohnernachfrage verweist auf Stationen außerhalb der gepinnten Spielkarte.");
+      }
       for (const service of demandList(template["services"])) {
         const stops = demandList(service["stops"]);
         for (const [index, stop] of stops.entries()) {
@@ -320,7 +371,15 @@ export class DemandService {
     const checkpoint = await this.checkpoint(worldId);
     const flows = demandList(checkpoint.result["stopFlows"]);
     const services = demandList(checkpoint.input["services"]);
+    const release = demandRecord(checkpoint.input["release"]);
+    const cohorts = demandList(checkpoint.result["cohorts"]);
+    const dataRevision = populationRevisionOf(checkpoint.input);
+    const populationModel = dataRevision?.populationModel ?? (release["populationModel"] === undefined ? undefined : demandRecord(release["populationModel"]));
+    const areas = populationModel === undefined ? [] : demandList(populationModel["stationAreas"]);
+    const preferences = populationModel === undefined ? [] : demandList(populationModel["destinationPreferences"]);
     const counts = new Map<string, number>();
+    // Auch ein unbedienter Zugang behält seine Einwohnerbasis und Wunschziele.
+    for (const area of areas) counts.set(demandText(area["stationId"]), 0);
     for (const flow of flows) {
       const service = services.find((candidate) => candidate["trainRunId"] === flow["trainRunId"]);
       const stop = service === undefined ? undefined : demandList(service["stops"]).find((candidate) => candidate["stopId"] === flow["stopId"]);
@@ -328,17 +387,37 @@ export class DemandService {
     }
     const items = [...counts.entries()].sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0).map(([stationId, servedPassengers]) => {
       const station = this.stations.get(stationId);
+      const area = areas.find((candidate) => candidate["stationId"] === stationId);
+      const wishes = new Map<string, number>();
+      if (area !== undefined) for (const cohort of cohorts) {
+        if (cohort["originZoneId"] !== area["zoneId"]) continue;
+        const destination = demandText(cohort["destinationZoneId"]);
+        wishes.set(destination, (wishes.get(destination) ?? 0) + demandInteger(cohort["passengers"]));
+      }
+      const populationDemand = area === undefined ? undefined : {
+        demandClass: demandInteger(area["demandClass"]),
+        catchmentPopulation: demandList(area["populationAllocations"]).reduce((sum, allocation) => sum + demandInteger(allocation["population"]), 0),
+        requestedPassengers: [...wishes.values()].reduce((sum, passengers) => sum + passengers, 0),
+        topDestinations: [...wishes.entries()].sort(([a, countA], [b, countB]) => countB - countA || (a < b ? -1 : a > b ? 1 : 0)).slice(0, 5).map(([zoneId, passengers]) => {
+          const destination = areas.find((candidate) => candidate["zoneId"] === zoneId)!;
+          const destinationStationId = demandText(destination["stationId"]);
+          const preference = preferences.find((candidate) => candidate["originZoneId"] === area["zoneId"] && candidate["destinationZoneId"] === zoneId);
+          return { stationId: destinationStationId, label: this.label(destinationStationId), passengers,
+            referenceConnections: preference === undefined ? 0 : demandInteger(preference["referenceConnections"]) };
+        }),
+      };
       return { stationId, label: station?.name ?? stationId,
         ...(station === undefined ? {} : { longitudeE7: station.longitudeE7, latitudeE7: station.latitudeE7 }),
+        ...(populationDemand === undefined ? {} : { populationDemand }),
         requestedPassengers: null, servedPassengers, unservedPassengers: null };
     });
-    const cohorts = demandList(checkpoint.result["cohorts"]);
     const choices = demandList(checkpoint.result["choices"]);
     const unserved = demandList(checkpoint.result["unserved"]);
-    const zones = demandList(demandRecord(checkpoint.input["release"])["zones"]).map((zone) => {
+    const zones = demandList(release["zones"]).map((zone) => {
       const origin = cohorts.filter((cohort) => cohort["originZoneId"] === zone["id"]);
       const ids = new Set(origin.map((cohort) => cohort["cohortId"]));
-      return { zoneId: demandText(zone["id"]), label: `Gebiet ${demandText(zone["id"])}`,
+      const area = areas.find((candidate) => candidate["zoneId"] === zone["id"]);
+      return { zoneId: demandText(zone["id"]), label: area === undefined ? `Gebiet ${demandText(zone["id"])}` : `Einzugsgebiet ${this.label(area["stationId"])}`,
         requestedPassengers: origin.reduce((sum, cohort) => sum + demandInteger(cohort["passengers"]), 0),
         servedPassengers: choices.filter((choice) => ids.has(choice["cohortId"]) && choice["alternativeMode"] === null).reduce((sum, choice) => sum + demandInteger(choice["passengers"]), 0),
         alternativePassengers: choices.filter((choice) => ids.has(choice["cohortId"]) && choice["alternativeMode"] !== null).reduce((sum, choice) => sum + demandInteger(choice["passengers"]), 0),
@@ -347,7 +426,22 @@ export class DemandService {
     }).sort((a, b) => a.zoneId < b.zoneId ? -1 : a.zoneId > b.zoneId ? 1 : 0);
     const length = Math.max(items.length, zones.length);
     const indices = this.page(Array.from({ length }, (_, index) => index), checkpoint, cursor, limit);
+    const referenceDates = populationModel === undefined ? [] : [...demandRecord(populationModel["referenceTimetable"])["serviceDates"] as string[]].sort();
     return { schemaVersion: "zugfolge-demand-overview/v1", ...this.period(checkpoint),
+      ...(populationModel === undefined ? {} : { populationBasis: {
+        referenceStartDate: referenceDates[0]!, referenceEndDate: referenceDates.at(-1)!,
+        ...(dataRevision === undefined ? {} : { dataRevision: dataRevision.revision, correctedAtS: Math.trunc(dataRevision.effectiveAtMs / 1000) }),
+        sources: demandList(release["sources"]).map((source) => ({ label: demandText(source["id"]), url: demandText(source["url"]), license: demandText(source["license"]),
+          ...(source["id"] === "bkg-vg250-ew-2024" ? {
+            attribution: "© BKG 2026; Datenquellen BKG / Statistisches Bundesamt; Auswahl und Modellableitung: Zugfolge",
+            licenseUrl: "https://www.govdata.de/dl-de/by-2-0",
+            attributionUrl: "https://sgx.geodatenzentrum.de/web_public/gdz/datenquellen/datenquellen_vg_nuts.pdf",
+          } : source["id"] === "gtfs-de-rv" || source["id"] === "gtfs-de-fv" ? {
+            attribution: "GTFS.DE / DELFI e.V.; Auswahl und Modellableitung: Zugfolge",
+            licenseUrl: "https://creativecommons.org/licenses/by/4.0/",
+          } : {}),
+        })),
+      } }),
       items: indices.items.flatMap((index) => items[index] === undefined ? [] : [items[index]!]),
       zones: indices.items.flatMap((index) => zones[index] === undefined ? [] : [zones[index]!]), nextCursor: indices.nextCursor };
   }

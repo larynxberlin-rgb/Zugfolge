@@ -950,7 +950,7 @@ Fahrgäste, die M15 später im Schaffnermodus 1:1 projiziert.
 | 10.3 | Tarif-, Vertriebs-, Kapazitäts- und Komfortmodell einschließlich SPNV-Fahrberechtigungen, Überbelegung, zurückbleibender Fahrgäste, Reservierungen und Komfortklassen | L | in Arbeit |
 | 10.3a | **Autoritative SPNV-Fahrgastmanifeste** je Zuglaufabschnitt mit stabilen pseudonymen Fahrgastschlüsseln, Reise-/Umstiegskette, Ein- und Ausstieg, exakter Belegung sowie deterministischem Fahrberechtigungsstatus mit Herkunft `observed` oder `balanced` | L | in Arbeit |
 | 10.4 | SPFV-spezifische Linien-, Halte- und Taktplanung als Spielerwerkzeug | M | in Arbeit |
-| 10.5 | Gemeinsame Kalibrierung von SPNV und SPFV gegen freigegebene öffentliche Größenordnungen | M | in Arbeit |
+| 10.5 | Einwohnerbasierte Stationsklassen und gemeinsame SPNV-/SPFV-Nachfrage; ungefähre Wunschziele aus frei nutzbaren Referenzverbindungen | M | in Arbeit |
 
 > **Beweis:** Ein SPNV-Zug erhält über mehrere Halte reproduzierbare Ein- und
 > Aussteiger, Auslastung und Fahrgastmanifeste; Ausfall und Anschlussverlust
@@ -959,8 +959,10 @@ Fahrgäste, die M15 später im Schaffnermodus 1:1 projiziert.
 > sinnvoll reagieren.
 
 Der [Implementierungs- und Abnahmebericht](m10-abnahme.md) trennt den
-getesteten Rust-Kern und die Spielerintegration von der noch offenen
-Produktions- und gemeinsamen SPNV-/SPFV-Kalibrierungsabnahme.
+getesteten Rust-Kern und die Spielerintegration von der gesonderten
+Produktionsabnahme. Auf Nutzerauftrag vom 06.09.2026 ersetzt die
+[einwohnerbasierte Näherung](m10-populationsnachfrage.md) die zuvor für 10.5
+geforderte gemeinsame Messdatenkalibrierung; ihr Schätzcharakter bleibt sichtbar.
 
 ---
 

@@ -289,7 +289,17 @@ Holdout-WAPE **52,38 %** für stündliche Einsteiger und **45,34 %** für
 gerichtete Abschnittsbesetzung; nur 6/21 beziehungsweise 31/105 Vergleiche
 liegen innerhalb der Diagnosegrenze. Freie Vergleichsdaten für SPNV-Umstiege
 sowie SPFV-Tagesgang, -Querschnitt und -Umstiege fehlen weiterhin.
-[#173](https://github.com/larynxberlin-rgb/Zugfolge/issues/173) bleibt deshalb
-ausdrücklich offen. Die implementierte Haltbelegkette verändert weder diese
-Messwerte noch die Kalibrierungstoleranzen; Quelle und reproduzierbarer
+Diese historische Diagnose bleibt unverändert; Quelle und reproduzierbarer
 Vergleich stehen in [M10-Kalibrierungsquellen](m10-kalibrierungsquellen.md).
+
+Der Nutzerauftrag vom 06.09.2026 ändert den Umfang von
+[#173](https://github.com/larynxberlin-rgb/Zugfolge/issues/173):
+Die [einwohnerbasierte Stationsnachfrage](m10-populationsnachfrage.md)
+verwendet frei nutzbare amtliche Ortsbevölkerung, konservierte Einwohneranteile,
+eigene Nachfrageklassen und ungefähr geschätzte Wunschziele aus bestehenden
+Referenzverbindungen. Der optionale Releaseblock wird im selben Rust-Kern
+ausgewertet und bleibt `balanced`. Die API und Karte zeigen Einwohnerbasis,
+Klasse und häufigste Wünsche auch für unbediente Stationen. Aktuelle Spielerzüge
+vergrößern das exogene Budget nicht. Gemessene Holdouts sind für diesen
+ausdrücklich geänderten Modellumfang keine Abschlussbedingung; die Methode
+behauptet keine empirische Kalibrierung.

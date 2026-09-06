@@ -75,6 +75,21 @@ Kalibrierwerkzeug (E10) und wird nie eine Laufzeitabhängigkeit.
 
 ## 3. Die Quellen
 
+Für den geänderten M10.5-Nutzerauftrag vom 06.09.2026 ist zusätzlich
+`bkg-vg250-ew-2024` unter Datenlizenz Deutschland – Namensnennung 2.0
+freigegeben: amtliche Gemeinde-Einwohner und Ortskernkoordinaten aus dem
+unveränderten BKG-Excel-ZIP zum 31.12.2024. Die zugehörigen Nutzungsbedingungen
+und Herkunftsbelege sind im ZIP archiviert und per SHA-256 dokumentiert.
+`gtfs-de-fv` ergänzt unter CC BY 4.0 den freien Fernverkehrs-Referenzfahrplan;
+die Nutzung von `gtfs-de-rv` wird um die offline gepinnte Ableitung ungefährer
+Wunschziele erweitert. Beide Lizenzen erlauben kommerzielle Bearbeitung mit
+Namens-/Lizenzangabe und Änderungsvermerk. Konkrete Downloadpins, Attribution,
+Feldmapping und Aussagegrenzen stehen in
+[`m10-populationsquellen.md`](m10-populationsquellen.md). Ortskerne beweisen keine
+administrative Stationszuordnung; Fahrplandaten beweisen keine tatsächlichen
+Fahrgast- oder Umsteigeströme. Die Stationsklassen und Einzugsgebiete sind eigene
+Modellannahmen, keine importierten Werte einer Vergleichssimulation.
+
 Für M10.5 wurden am 05.09.2026 im ausdrücklichen Nutzerauftrag ausschließlich
 frei weiterverwendbare Quellen geprüft. `nvbw-fahrgastzaehlung-2025` und
 `hvv-sbahn-fahrgastzahlen-2025` weisen im offiziellen Datenportal die
@@ -94,6 +109,8 @@ der Überblick; die Spalte `id` ist die Kennung, die auch der Importmarker nennt
 
 | `id` | Quelle | Status | ab |
 |------|--------|--------|----|
+| `bkg-vg250-ew-2024` | BKG / Statistisches Bundesamt, Einwohner und Ortskerne 31.12.2024, dl-de/by-2-0 | `freigegeben` | M10.5 |
+| `gtfs-de-fv` | GTFS.DE/DELFI, freier Fernverkehr als gepinnte Verbindungsreferenz, CC BY 4.0 | `freigegeben` | M10.5 |
 | `nvbw-fahrgastzaehlung-2025` | NVBW/MobiData BW AFZS-/RES-Zählungen 2025 H1, dl-de/by-2-0 | `freigegeben` | M10.5 |
 | `hvv-sbahn-fahrgastzahlen-2025` | hvv S-Bahn-Stationen 2025, dl-de/by-2-0 | `freigegeben` | M10.5 |
 | `nahsh-querschnittsbesetzung` | NAH.SH SPNV-Querschnitte 2010–2019, CC BY 4.0 | `freigegeben` | M10.5 |

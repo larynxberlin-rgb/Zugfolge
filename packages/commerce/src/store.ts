@@ -34,6 +34,8 @@ import {
 import { validateAdminCommand } from "./admin-workflow.js";
 import { WebhookValidationError, type OdooWebhookReceiptStore } from "./receiver.js";
 import { validatePublicWorldSnapshot, type PublicWorldSnapshotV1 } from "./public-world-snapshot.js";
+import type { DemandDataCommandHandler } from "./demand-data.js";
+import { processDemandDataCommand } from "./demand-data-worker.js";
 
 /** Gemeinsamer Drizzle-Typ fuer Postgres und PGlite-Integrationstests. */
 export type CommerceDatabase = PgDatabase<PgQueryResultHKT, Record<string, unknown>, any>;
@@ -430,6 +432,8 @@ export interface OdooCommandProcessingOptions {
   readonly adminHandlers?: Readonly<Partial<Record<AdminActionType, GameAdminCommandHandler>>>;
   /** Autoritativer, weltgebundener Game-Handler fuer kommerzielle Teilnahmen. */
   readonly participationHandler?: WorldParticipationCommandHandler;
+  /** Normale Datenpflege ohne Adminfreigabe; Handler und Quittierung committen gemeinsam. */
+  readonly demandDataHandler?: DemandDataCommandHandler;
   /** Begrenzte Wiederanlaufzeit nach einem Prozessabbruch. */
   readonly claimLeaseMs?: number;
   /** Erneuerungsintervall waehrend eines externen Game-Handlers; muss kuerzer als der Lease sein. */
@@ -585,6 +589,9 @@ export async function processNextOdooCommand(
       if (rejected.length !== 1) throw new OdooCommandClaimLostError(command.id);
       return { id: command.id, outcome: "rejected" };
     }
+  }
+  if (command.commandType === "demand.data.update") {
+    return processDemandDataCommand(db, command, claimToken, now, options.demandDataHandler);
   }
   let adminRequestId: string | undefined;
   let adminRequestPersisted = false;

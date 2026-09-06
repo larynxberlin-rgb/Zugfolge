@@ -6,6 +6,7 @@ import { DEMAND_PROGRESS_EVENT, DemandError, DemandStore, demandHash, demandInte
 import { decodeOperationalPassengerStop, type OperationalPassengerStopReceipt } from "./operational-passenger-stop.js";
 import { loadDemandPoolSeed } from "./demand-pool-seeds.js";
 import { demandOfferBoundaries, loadDemandOfferHistory, retainDemandOfferHistory, type DemandOfferRevision } from "./demand-offer-history.js";
+import { loadPopulationDataHistory, populationRevisionOf } from "./demand-population-data.js";
 
 export interface DemandRegionBinding {
   readonly worldId: string;
@@ -154,6 +155,8 @@ export class DemandProgressConsumer {
   async advance(template: Readonly<Record<string, unknown>>, proposedServices: readonly Record<string, unknown>[], deploymentHash: string,
     occurredAt: Date, provenance: Readonly<Record<string, unknown>>): Promise<DemandCheckpoint> {
     const worldId = demandText(template["worldId"]);
+    const firstGenerationStart = template["generationWindows"] === undefined ? demandInteger(template["windowStartMs"])
+      : Math.min(...demandList(template["generationWindows"]).map((window) => demandInteger(window["windowStartMs"])));
     return this.db.transaction(async (tx) => {
       await tx.select({ id: worlds.id }).from(worlds).where(eq(worlds.id, worldId)).for("update");
       const watermark = await demandRegionalWatermark(tx, worldId, this.bindings());
@@ -187,15 +190,29 @@ export class DemandProgressConsumer {
         if (seed !== undefined && seed.templateHash !== demandHash(template)) throw new DemandError(409, "Nachfragepool widerspricht seinem gepinnten Anfang.");
         // Auch ohne vorab gespeichertes Seed beginnt die Basis ohne spätere
         // Planner-Angebote; diese werden unten aus ihren Commitzeiten geladen.
-        const input = seed?.input ?? { ...template, nowMs: watermark.nowMs, revision: revision + 1 };
+        // Das gespeicherte Seed bleibt unverändert. Auch eine bei derselben
+        // Weltzeit erfolgte Datenkorrektur folgt unten ihrer Journalreihenfolge;
+        // sie darf bereits bei Zeit null gestellte Wünsche nicht neu erzeugen.
+        let input = seed?.input ?? { ...template, nowMs: watermark.nowMs, revision: revision + 1 };
+        if (seed !== undefined && firstGenerationStart > demandInteger(seed.input["nowMs"])
+          && demandRecord(template["release"])["populationModel"] !== undefined) {
+          // Ein bereits VOR dem Seed gespeicherter Datenstand darf die reine
+          // Zukunftsprognose vorbereiten. Die Seedbytes bleiben unverändert;
+          // nachträgliche Saves werden niemals in diesen Anfang zurückverlegt.
+          const earlier = await loadPopulationDataHistory(tx, worldId, demandText(demandRecord(template["release"])["id"]),
+            0, seed.throughWorldSequence, demandInteger(seed.input["nowMs"]));
+          const baseline = earlier.filter((event) => event.snapshot.effectiveAtMs <= demandInteger(seed.input["nowMs"])).at(-1);
+          if (baseline !== undefined) input = { ...input, populationRevision: baseline.snapshot };
+        }
         cursor = { schemaVersion: "zugfolge-demand-progress-cursor/v1", worldId, initialInputHash: demandHash(input), throughWorldSequence: seed?.startWorldSequence ?? 0,
           safeThroughMs: demandInteger(input["nowMs"]), receiptSetHash: demandHash([]), regions: seed?.initialWatermark.regions ?? watermark.regions, receipts: [], pendingReceipts: [] };
         if (seed === undefined || published === undefined) {
           previous = await store.commit({ ...input, revision: ++revision }, deploymentHash, occurredAt, provenance,
             cursor as unknown as Record<string, unknown>, true, DEMAND_PROGRESS_EVENT);
         } else {
-          previous = { schemaVersion: "zugfolge-demand-checkpoint/v1", worldId, deploymentHash, inputHash: seed.inputHash,
-            input: seed.input, result: seed.result, progressCursor: cursor as unknown as Record<string, unknown>, progressCursorHash: demandHash(cursor) };
+          previous = { schemaVersion: "zugfolge-demand-checkpoint/v1", worldId, deploymentHash, inputHash: demandHash(input),
+            input, result: demandHash(input) === seed.inputHash ? seed.result : this.runtime.evaluate(input),
+            progressCursor: cursor as unknown as Record<string, unknown>, progressCursorHash: demandHash(cursor) };
         }
       }
       const before = previous!;
@@ -203,6 +220,19 @@ export class DemandProgressConsumer {
         .where(eq(domainEvents.worldId, worldId)).orderBy(desc(domainEvents.sequence)).limit(1);
       const history = await loadDemandOfferHistory(tx, worldId, template, cursor!.throughWorldSequence, head?.sequence ?? 0,
         initializing || cursor!.offerServices === undefined ? demandInteger(before.input["nowMs"]) : undefined);
+      let populationRevision = populationRevisionOf(before.input);
+      // Vor dem ersten Erzeugungsfenster gibt es noch keine Wünsche dieses
+      // Pools. Dafür genügt der letzte frühere Datenstand. Änderungen genau
+      // am Fensterbeginn bleiben einzeln, weil dort bereits Wünsche bestehen.
+      const populationBaselineAtMs = initializing && firstGenerationStart > demandInteger(before.input["nowMs"])
+        ? Math.min(firstGenerationStart - 1, watermark.safeThroughMs) : undefined;
+      const populationHistory = demandRecord(template["release"])["populationModel"] === undefined ? []
+        : await loadPopulationDataHistory(tx, worldId, demandText(demandRecord(template["release"])["id"]),
+          populationRevision?.revision ?? 0, head?.sequence ?? 0, populationBaselineAtMs);
+      const confirmedPopulation = populationHistory.filter((event) => event.snapshot.revision > (populationRevision?.revision ?? 0)
+        && event.snapshot.effectiveAtMs <= watermark.safeThroughMs);
+      if (confirmedPopulation.some((event) => event.snapshot.effectiveAtMs < demandInteger(before.input["nowMs"])))
+        throw new DemandError(503, "Eine Einwohnerkorrektur liegt vor dem kausal gesicherten Nachfragecheckpoint.");
       let offerServices = cursor!.offerServices ?? demandList(template["services"]);
       const offers = [...cursor!.pendingOffers ?? [], ...history].sort((a, b) => a.effectiveAtMs - b.effectiveAtMs || a.worldSequence - b.worldSequence);
       if (offers.length > 256 || offers.some((offer) => offer.schemaVersion !== "zugfolge-demand-offer-revision/v1"
@@ -253,10 +283,11 @@ export class DemandProgressConsumer {
       const pendingOffers = offers.filter((offer) => watermark.nowMs === 0 || offer.effectiveAtMs > watermark.safeThroughMs);
       const boundaries = demandOfferBoundaries(newReceipts.map((receipt) => {
         const worldSequence = receiptWorldSequences[receipt.receiptId];
-        if (worldSequence === undefined && confirmedOffers.some((offer) => offer.effectiveAtMs === receipt.actualTimeMs))
+        if (worldSequence === undefined && (confirmedOffers.some((offer) => offer.effectiveAtMs === receipt.actualTimeMs)
+          || confirmedPopulation.some((event) => event.snapshot.effectiveAtMs === receipt.actualTimeMs)))
           throw new DemandError(503, "Historischer Haltbeleg besitzt keine eindeutige Reihenfolge zum Angebotscommit.");
         return { receipt, worldSequence: worldSequence ?? 0 };
-      }), confirmedOffers, demandInteger(before.input["nowMs"]));
+      }), confirmedOffers, demandInteger(before.input["nowMs"]), confirmedPopulation);
       let current = before;
       let currentProvenance = before.serviceProvenance ?? provenance;
       const appliedReceipts = new Map(cursor!.receipts.map((receipt) => [receipt.receiptId, receipt]));
@@ -268,8 +299,10 @@ export class DemandProgressConsumer {
           offerServices = retainDemandOfferHistory(offerServices, boundary.offer.services);
           currentProvenance = boundary.offer.provenance;
         }
+        if (boundary.population !== undefined) populationRevision = boundary.population.snapshot;
         const atReceipts = orderReceipts([...appliedReceipts.values()]);
         const input = { ...template, nowMs: boundary.atMs, revision: ++revision,
+          ...(populationRevision === undefined ? {} : { populationRevision }),
           services: servicesWithConfirmedStops(offerServices, atReceipts),
           previousEvaluation: { services: current.input["services"], result: current.result },
           operationalProgress: demandProgressFromReceipts(worldId, boundary.atMs, atReceipts) };
@@ -287,7 +320,8 @@ export class DemandProgressConsumer {
       const targetTime = Math.max(demandInteger(current.input["nowMs"]), watermark.safeThroughMs,
         published === undefined ? 0 : demandInteger(published.input["nowMs"]));
       const input = { ...template, nowMs: targetTime, revision: ++revision,
-        services: nextServices, ...(confirmed.length === 0 ? {} : {
+        ...(populationRevision === undefined ? {} : { populationRevision }),
+        services: nextServices, ...(confirmed.length === 0 && populationRevision === undefined ? {} : {
           previousEvaluation: { services: current.input["services"], result: current.result },
           operationalProgress: demandProgressFromReceipts(worldId, targetTime, confirmed) }) };
       // Jede Zeitgrenze hat einen nativen Replayinput; alle werden gemeinsam
