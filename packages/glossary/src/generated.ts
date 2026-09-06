@@ -261,6 +261,11 @@ export const GENERATED_GLOSSARY_ENTRIES = Object.freeze([
     "definition": "Frist nach der Koordinierung, in der ein Trassenangebot beanstandet werden kann"
   },
   {
+    "term": "Einwohnerbasiertes Stationsnachfragemodell",
+    "code": "StationPopulationDemandV1",
+    "definition": "optionaler, gepinnter Releaseblock mit amtlichen Ortsbevölkerungen, erhaltenen Stationsanteilen und gerichteten Referenzpräferenzen; bleibt eine Modellannahme"
+  },
+  {
     "term": "Eisenbahnverkehrsunternehmen (EVU)",
     "code": "Operator",
     "definition": "das Unternehmen eines Spielers; Träger von Fahrzeugen, Personal, Trassen und Verträgen"
@@ -626,6 +631,11 @@ export const GENERATED_GLOSSARY_ENTRIES = Object.freeze([
     "definition": "Kanonisches Ergebnis des gemeinsamen SPNV-/SPFV-Kerns mit Wahlbegründungen, Belegungen und privaten Manifesten"
   },
   {
+    "term": "Nachfragedatenkorrektur",
+    "code": "PopulationRevision",
+    "definition": "automatisch übernommener Zahlenstand der direkt gepflegten Odoo-Datenbankinhalte; schützt bereits entstandene Reisewünsche und begonnene Fahrten über Restore"
+  },
+  {
     "term": "Nachfragefensterpool",
     "code": "DemandGenerationWindowV1",
     "definition": "Zeitlich begrenzte Kohortenerzeugung innerhalb eines gemeinsamen Kapazitätspools"
@@ -909,6 +919,11 @@ export const GENERATED_GLOSSARY_ENTRIES = Object.freeze([
     "term": "Stationsausstattung",
     "code": "StationAmenities",
     "definition": "Menge der an einer Betriebsstelle vorhandenen Ausstattungsmerkmale — Barrierefreiheit, Wetterschutz, Fahrgastinformation und mehr"
+  },
+  {
+    "term": "Stationsnachfrageklasse",
+    "code": "StationDemandClass",
+    "definition": "eigene Größenklasse 0 bis 10 aus zugeteilter Bevölkerung; keine Infrastrukturkategorie und kein zusätzlicher Einwohnerfaktor"
   },
   {
     "term": "Stellwerksbauart",

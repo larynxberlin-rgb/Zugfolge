@@ -3,6 +3,7 @@ import { isAdminActionType, isOdooCommandType, ODOO_CONTRACT_VERSION, validateEn
 import { validateAdminCommand } from "./admin-workflow.js";
 import type { SignedPayload, SigningKey } from "./signing.js";
 import { verifyPayload } from "./signing.js";
+import { validateDemandDataUpdate } from "./demand-data.js";
 
 export class WebhookValidationError extends Error {
   constructor(readonly code: "schema" | "tenant" | "authorization" | "command" | "world_scope") {
@@ -45,6 +46,12 @@ function validateShape(envelope: OdooWebhookEnvelope): void {
     }
     return;
   }
+  if (envelope.command.kind === "demand.data.update") {
+    try { validateDemandDataUpdate(envelope.command); } catch {
+      throw new WebhookValidationError("command");
+    }
+    return;
+  }
   if (envelope.command.worldId.length === 0 || !isAdminActionType(envelope.command.actionType)) throw new WebhookValidationError("command");
   validateAdminCommand(envelope.command);
 }
@@ -55,6 +62,12 @@ export async function receiveOdooWebhook(
   options: OdooWebhookReceiverOptions,
   now = new Date(),
 ): Promise<{ readonly accepted: boolean; readonly duplicate: boolean }> {
+  // Begrenzte Nachfragedaten zuerst auf Form prüfen, bevor die rekursive HMAC-Kanonisierung läuft.
+  if (signed.payload?.command?.kind === "demand.data.update") {
+    try { validateDemandDataUpdate(signed.payload.command); } catch {
+      throw new WebhookValidationError("command");
+    }
+  }
   const envelope = verifyPayload(signed, options.keys, now, options.maximumAgeMs);
   validateShape(envelope);
   if (envelope.tenantId !== options.tenantId) throw new WebhookValidationError("tenant");

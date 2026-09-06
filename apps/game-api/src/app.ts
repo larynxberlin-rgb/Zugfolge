@@ -1558,6 +1558,7 @@ export function buildApp(deps: AppDependencies): FastifyInstance {
   app.post<{ Body: OdooWebhookEnvelope }>(
     "/integrations/odoo/webhooks",
     {
+      bodyLimit: 16 * 1024 * 1024,
       schema: {
         body: {
           type: "object",

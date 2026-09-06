@@ -4,6 +4,7 @@ import { and, asc, desc, eq, gt, lte } from "drizzle-orm";
 import type { OperationalPassengerStopReceipt } from "./operational-passenger-stop.js";
 import { DemandError, demandHash, demandInteger, demandList, demandText } from "./demand-store.js";
 import { loadCommittedSpfvServices } from "./spfv-demand-projection.js";
+import type { PopulationDataEvent } from "./demand-population-data.js";
 
 const MAX_OFFER_REVISIONS = 256;
 
@@ -92,24 +93,27 @@ export interface DemandOfferBoundary {
   readonly atMs: number;
   readonly receipts: readonly OperationalPassengerStopReceipt[];
   readonly offer?: DemandOfferRevision;
+  readonly population?: PopulationDataEvent;
 }
 
 /** Gleichzeitige regionale Belege bleiben gemeinsam; ein dazwischen liegender
  * Planungscommit trennt die Grenze anhand der dauerhaften Weltsequenz. */
 export function demandOfferBoundaries(receipts: readonly { readonly receipt: OperationalPassengerStopReceipt; readonly worldSequence: number }[],
-  offers: readonly DemandOfferRevision[], earliestMs: number): readonly DemandOfferBoundary[] {
-  type Item = { atMs: number; sequence: number; receipt?: OperationalPassengerStopReceipt; offer?: DemandOfferRevision };
+  offers: readonly DemandOfferRevision[], earliestMs: number, population: readonly PopulationDataEvent[] = []): readonly DemandOfferBoundary[] {
+  type Item = { atMs: number; sequence: number; receipt?: OperationalPassengerStopReceipt; offer?: DemandOfferRevision; population?: PopulationDataEvent };
   const items: Item[] = [
     ...receipts.map(({ receipt, worldSequence }) => ({ atMs: Math.max(earliestMs, receipt.actualTimeMs), sequence: worldSequence, receipt })),
     ...offers.map((offer) => ({ atMs: Math.max(earliestMs, offer.effectiveAtMs), sequence: offer.worldSequence, offer })),
+    ...population.map((event) => ({ atMs: Math.max(earliestMs, event.snapshot.effectiveAtMs), sequence: event.worldSequence, population: event })),
   ];
   items.sort((a, b) => a.atMs - b.atMs || a.sequence - b.sequence);
-  const boundaries: { atMs: number; receipts: OperationalPassengerStopReceipt[]; offer?: DemandOfferRevision }[] = [];
+  const boundaries: { atMs: number; receipts: OperationalPassengerStopReceipt[]; offer?: DemandOfferRevision; population?: PopulationDataEvent }[] = [];
   for (const item of items) {
-    if (item.offer !== undefined) boundaries.push({ atMs: item.atMs, receipts: [], offer: item.offer });
+    if (item.population !== undefined) boundaries.push({ atMs: item.atMs, receipts: [], population: item.population });
+    else if (item.offer !== undefined) boundaries.push({ atMs: item.atMs, receipts: [], offer: item.offer });
     else {
       const previous = boundaries.at(-1);
-      if (previous !== undefined && previous.atMs === item.atMs && previous.offer === undefined) previous.receipts.push(item.receipt!);
+      if (previous !== undefined && previous.atMs === item.atMs && previous.offer === undefined && previous.population === undefined) previous.receipts.push(item.receipt!);
       else boundaries.push({ atMs: item.atMs, receipts: [item.receipt!] });
     }
   }

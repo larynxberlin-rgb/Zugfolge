@@ -130,7 +130,7 @@ werden im Secret Store der jeweils getrennten Betriebsumgebung hinterlegt.
 # Game API: Odoo -> Game
 ODOO_WEBHOOK_TENANT_ID=production-tenant-id
 ODOO_WEBHOOK_KEYS_JSON=[{"id":"2026-08","secret":"<secret>","activeFrom":"2026-08-01T00:00:00Z"},{"id":"2026-09","secret":"<next-secret>","activeFrom":"2026-09-01T00:00:00Z"}]
-ODOO_WEBHOOK_AUTHORIZED_ACTORS_JSON={"commerce-service":["entitlement.change","world.participation.change"],"admin-service":["admin.world_deploy","admin.world_access_revoke","admin.infra_release_adoption","admin.manual_disruption_create","admin.disruption_policy_schedule"]}
+ODOO_WEBHOOK_AUTHORIZED_ACTORS_JSON={"commerce-service":["entitlement.change","world.participation.change"],"admin-service":["demand.data.update","admin.world_deploy","admin.world_access_revoke","admin.infra_release_adoption","admin.manual_disruption_create","admin.disruption_policy_schedule"]}
 
 # Game API: Game -> Odoo
 ODOO_PROJECTION_URL=https://odoo.example.invalid/zugfolge/projection
@@ -287,8 +287,9 @@ Abnahmenachweis ausführbar.
 
 ## Vollständige Administration und vorbereitete Fähigkeiten
 
-Die Zielarchitektur lässt alle menschlichen administrativen Game-Wirkungen als
-`zugfolge.admin.request` in Odoo beginnen. Die bestehenden M0–M7-Entwicklungs-
+Administrative Aktionen beginnen als `zugfolge.admin.request` in Odoo. Die
+direkte Pflege von Nachfragezahlen erfolgt in den unten beschriebenen
+Datenbanktabellen mit automatischer Übertragung beim Speichern. Die bestehenden M0–M7-Entwicklungs-
 und Bootstraprouten werden vor ihrer produktiven Administrationsfreigabe
 einzeln überführt; spielereigene, regelgebundene Dispositionsentscheidungen
 bleiben ausdrücklich im Game. Odoo erhält dafür keinen Generalschlüssel:
@@ -305,6 +306,67 @@ deklarierte Wirkung. Solange der M8-Worktree keinen echten Game-Handler und
 dessen Capability-Projektion liefert, entsteht daraus **keine** Störung und
 keine Simulations-, Konflikt- oder Dispositionswirkung. M8.3 bleibt daher in
 `docs/milestones.md` offen.
+
+## Einwohner und Nachfragedaten direkt korrigieren
+
+Ab Add-on-Version `19.0.2.0.8` führt **Zugfolge → Nachfragedaten** normale
+Odoo-Datenbanktabellen für Orte und Einwohner, Stationsanteile und gerichtete
+Verbindungshinweise. Die bestehende Gruppe `zugfolge_admin.group_zugfolge_admin`
+darf diese Daten bearbeiten. Portal-, Telemetrie- und gewöhnliche interne
+Benutzer erhalten weder das Menü noch Schreibrechte; die Prüfung gilt auch für
+direkte RPC-Aufrufe und verschachtelte Tabellenänderungen.
+
+Beim erstmaligen Anlegen werden Weltkennung und die bereits verwendete
+einwohnerbasierte Datengrundlage (`zugfolge-demand-release/v1`, Herkunft
+`balanced`) eingelesen. Danach sind die Zahlen unmittelbar in den Odoo-Tabellen
+änderbar. **Speichern** erzeugt automatisch eine Übertragung; ein Entwurf,
+Freigabeschritt, Korrekturpaket oder Export ist dafür nicht erforderlich.
+Originaldatei, Quellen, Orts- und Stationskennungen und Referenzwoche bleiben
+als unveränderlicher Vergleich erhalten. Wirksame Einwohner und
+Verbindungszahlen sind bearbeitbare Modellannahmen und überschreiben keine
+amtlichen Quellenfakten.
+
+Eine Einwohnerkorrektur verteilt die neue Zahl automatisch proportional auf
+die vorhandenen Stationsanteile des Ortes. Ganzzahlige Restwerte werden stabil
+nach dem größten Rest und anschließend der Gebietskennung verteilt. Bei zuvor
+vollständig null gesetzten Anteilen erfolgt die Verteilung gleichmäßig. Anteile
+lassen sich auch gemeinsam im Formular ändern: Ihre Summe muss beim Speichern
+genau die Einwohnerzahl des Ortes ergeben. Neue Anteile dürfen ausschließlich
+bereits bekannte Orte und Stationen derselben Datengrundlage verbinden. Null
+setzt einen Anteil außer Wirkung. Nachfrageklassen entstehen automatisch aus
+der Summe der zugeordneten Einwohner; sie erhöhen das Nachfragebudget nicht.
+
+Verbindungshinweise zählen ungefähre Direktfahrten je fester Referenzwoche.
+Hin- und Rückrichtung sind getrennte Zeilen. Ein Wert null entfernt den
+zusätzlichen Zielhinweis; das Ziel bleibt im Grundmodell weiterhin möglich.
+Stationsnamen, Fahrplanreferenz und Quellbelege werden dabei nicht geändert.
+
+Die Datenbankänderung und ihr unveränderlicher Änderungsbeleg werden in einer
+Transaktion gespeichert. Eine Zeilensperre und eine eindeutige Revision je
+Welt/Datengrundlage verhindern verlorene oder doppelt nummerierte Änderungen.
+`queue_job` überträgt automatisch den gespeicherten Stand als signierten Befehl
+`demand.data.update` mit Schema `zugfolge-demand-data-update/v1`. Derselbe
+Beleg, Hash und dieselbe Korrelation werden bei einem Transport-Retry erneut
+verwendet; nachträgliche Änderungen verändern keinen laufenden Auftrag.
+
+Die bestehende Weltserverzuordnung und die HMAC-Konfiguration müssen eingerichtet
+sein. Die Game-seitige Actor-Allowlist muss `demand.data.update` für
+`admin-service` erlauben. Odoo zeigt zunächst **Übertragung läuft**, nach dem
+HTTP-Empfang **Vom Weltserver empfangen** und erst nach der signierten Rückmeldung
+`demand.data.result` **Wirksam** oder **Vom Weltserver abgelehnt** samt Fehlertext.
+Die Rückmeldung bindet Welt, Datengrundlage, Revision und Korrelation. Der
+Änderungsverlauf enthält Bearbeiter, Zeitpunkt und jeden gespeicherten Stand.
+Transportfehler werden über den bestehenden `queue_job`-Betrieb untersucht und
+mit dem unveränderten Auftrag erneut zugestellt.
+
+Die Offline-Vertragsprüfungen laufen mit
+`python -m unittest discover -s odoo/addons/zugfolge_admin/tests -p test_demand_data_contract.py`.
+Die echten ORM-/ACL-, Formular- und signierten HTTP-Ingress-Tests gehören zum
+vorhandenen Odoo-19-Dienstnachweis in `extended.yml` (manueller Parameter
+`suite=odoo`). Sie prüfen direkte und gemeinsame Tabellenänderungen,
+Originalschutz, unzulässige Rollen/RPC-Kontexte, unveränderte Retries sowie
+weltgebundene idempotente Rückmeldungen. Die lokale Python-Suite ersetzt diesen
+echten Odoo-Lauf nicht.
 
 ## Öffentliche Website, Snippets und Cache
 

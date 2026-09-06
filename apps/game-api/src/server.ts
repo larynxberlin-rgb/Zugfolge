@@ -956,6 +956,8 @@ const runCommerce = () => {
   commerceCycle = (async () => {
     while (await processNextOdooCommand(db, new Date(), {
       assertWorldScope: assertCommerceWorldScope,
+      ...(demand === undefined ? {} : { demandDataHandler: (context: import("@zugfolge/commerce").DemandDataCommandContext) =>
+        demand.updateData(context.payload, context.db, context.now) }),
       participationHandler: worldParticipationHandler,
       adminHandlers: {
         manual_disruption_create: manualDisruptionAdminHandler,

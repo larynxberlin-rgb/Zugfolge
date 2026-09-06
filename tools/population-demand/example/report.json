@@ -1,0 +1,320 @@
+{
+  "schemaVersion": "zugfolge-population-demand-build-report/v1",
+  "releaseId": "population-mitteldeutschland-2026.1",
+  "releaseSha256": "238159745bf0df372fc752c8a8f801452e4f82fccaa4ca5a560da05dc8add6be",
+  "inputBinding": {
+    "configSha256": "62277bfbf54e270c880c8ce9fe6c3fcfa409a385f5f39fed5dba2cea889c5f81",
+    "populationSha256": "7fa77fb6c708cf474947435e5a4490280326e109c3b1d41e5a605e420dd760d2",
+    "referenceSha256": "d5218855d73edd8778102c7667893c5f2422b1197e0c48ff2252d9c574423d5f",
+    "sourceArtifacts": {
+      "bkg-vg250-ew-2024": "d5564af137d2dde65c23ceb8336f6c35fdf67260ba48058ced9004a2c5c000b3",
+      "gtfs-de-fv": "5e3efe3b3be69fb4bbbed0efc3fd8c2d8a0481c6a102a901ab1dc68219e45d40",
+      "gtfs-de-rv": "8ff77cb6bed7375d4cce5aa8f2027bfffe7e74bbc4bccd859237a96f2da24162"
+    }
+  },
+  "scope": "explicit-regional-station-selection",
+  "populationProvenance": "official-statistics",
+  "modelProvenance": "balanced",
+  "distanceRule": {
+    "id": "germany-e7-fixed-scale-integer-distance/v1",
+    "latitudeMmPer1000E7": 11132,
+    "longitudeMmPer1000E7": 7000,
+    "squareRoot": "floor-isqrt"
+  },
+  "allocationRule": {
+    "id": "linear-distance-largest-remainder/v1",
+    "radiusMm": 10000000,
+    "weight": "max(1, radiusMm - distanceMm)",
+    "tie": "stationId-ascending"
+  },
+  "selectedSettlements": 9,
+  "includedSettlements": 8,
+  "uncoveredSettlements": [
+    {
+      "settlementId": "15088305",
+      "population": 10007,
+      "reason": "no-selected-station-within-radius"
+    }
+  ],
+  "populationInput": 1255200,
+  "populationAllocated": 1245193,
+  "populationUncovered": 10007,
+  "allocations": [
+    {
+      "settlementId": "14713000",
+      "population": 611850,
+      "allocations": [
+        {
+          "stationId": "354639",
+          "distanceMm": 850235,
+          "weight": 9149765,
+          "population": 256596,
+          "remainder": 9979302
+        },
+        {
+          "stationId": "611502",
+          "distanceMm": 842869,
+          "weight": 9157131,
+          "population": 256803,
+          "remainder": 651561
+        },
+        {
+          "stationId": "630508",
+          "distanceMm": 6489433,
+          "weight": 3510567,
+          "population": 98451,
+          "remainder": 11186600
+        }
+      ]
+    },
+    {
+      "settlementId": "14730270",
+      "population": 18905,
+      "allocations": [
+        {
+          "stationId": "46758",
+          "distanceMm": 688589,
+          "weight": 9311411,
+          "population": 10807,
+          "remainder": 12977581
+        },
+        {
+          "stationId": "600951",
+          "distanceMm": 3022382,
+          "weight": 6977618,
+          "population": 8098,
+          "remainder": 3311448
+        }
+      ]
+    },
+    {
+      "settlementId": "15002000",
+      "population": 226767,
+      "allocations": [
+        {
+          "stationId": "85981",
+          "distanceMm": 1275464,
+          "weight": 8724536,
+          "population": 226767,
+          "remainder": 0
+        }
+      ]
+    },
+    {
+      "settlementId": "15082015",
+      "population": 36592,
+      "allocations": [
+        {
+          "stationId": "154282",
+          "distanceMm": 648572,
+          "weight": 9351428,
+          "population": 36592,
+          "remainder": 0
+        }
+      ]
+    },
+    {
+      "settlementId": "15084355",
+      "population": 31940,
+      "allocations": [
+        {
+          "stationId": "464080",
+          "distanceMm": 1434273,
+          "weight": 8565727,
+          "population": 31940,
+          "remainder": 0
+        }
+      ]
+    },
+    {
+      "settlementId": "15088220",
+      "population": 34392,
+      "allocations": [
+        {
+          "stationId": "104445",
+          "distanceMm": 158773,
+          "weight": 9841227,
+          "population": 34392,
+          "remainder": 0
+        }
+      ]
+    },
+    {
+      "settlementId": "16051000",
+      "population": 218793,
+      "allocations": [
+        {
+          "stationId": "542001",
+          "distanceMm": 918100,
+          "weight": 9081900,
+          "population": 122977,
+          "remainder": 2635044
+        },
+        {
+          "stationId": "66393",
+          "distanceMm": 2923972,
+          "weight": 7076028,
+          "population": 95816,
+          "remainder": 13522884
+        }
+      ]
+    },
+    {
+      "settlementId": "16055000",
+      "population": 65954,
+      "allocations": [
+        {
+          "stationId": "194454",
+          "distanceMm": 1215823,
+          "weight": 8784177,
+          "population": 65954,
+          "remainder": 0
+        }
+      ]
+    }
+  ],
+  "stations": [
+    {
+      "stationId": "104445",
+      "name": "Merseburg Hbf",
+      "parentStationId": "427393",
+      "latitudeE7": 513568880,
+      "longitudeE7": 119905510,
+      "population": 34392,
+      "demandClass": 6
+    },
+    {
+      "stationId": "154282",
+      "name": "Bitterfeld",
+      "parentStationId": "313087",
+      "latitudeE7": 516228600,
+      "longitudeE7": 123168500,
+      "population": 36592,
+      "demandClass": 6
+    },
+    {
+      "stationId": "194454",
+      "name": "Weimar",
+      "parentStationId": "612732",
+      "latitudeE7": 509914860,
+      "longitudeE7": 113264580,
+      "population": 65954,
+      "demandClass": 7
+    },
+    {
+      "stationId": "354639",
+      "name": "Leipzig Hbf",
+      "parentStationId": "27464",
+      "latitudeE7": 513454700,
+      "longitudeE7": 123820640,
+      "population": 256596,
+      "demandClass": 9
+    },
+    {
+      "stationId": "464080",
+      "name": "Naumburg(Saale)Hbf",
+      "parentStationId": "356222",
+      "latitudeE7": 511630700,
+      "longitudeE7": 117969840,
+      "population": 31940,
+      "demandClass": 6
+    },
+    {
+      "stationId": "46758",
+      "name": "Schkeuditz",
+      "parentStationId": "478031",
+      "latitudeE7": 514023900,
+      "longitudeE7": 122221690,
+      "population": 10807,
+      "demandClass": 5
+    },
+    {
+      "stationId": "542001",
+      "name": "Hauptbahnhof",
+      "parentStationId": "293900",
+      "latitudeE7": 509719280,
+      "longitudeE7": 110374240,
+      "population": 122977,
+      "demandClass": 8
+    },
+    {
+      "stationId": "600951",
+      "name": "Leipzig/Halle Flughafen",
+      "parentStationId": "257846",
+      "latitudeE7": 514233400,
+      "longitudeE7": 122234260,
+      "population": 8098,
+      "demandClass": 4
+    },
+    {
+      "stationId": "611502",
+      "name": "Leipzig Hbf (tief)",
+      "parentStationId": "361875",
+      "latitudeE7": 513456950,
+      "longitudeE7": 123804280,
+      "population": 256803,
+      "demandClass": 9
+    },
+    {
+      "stationId": "630508",
+      "name": "Leipzig Messe",
+      "parentStationId": "209567",
+      "latitudeE7": 513961450,
+      "longitudeE7": 123892780,
+      "population": 98451,
+      "demandClass": 7
+    },
+    {
+      "stationId": "66393",
+      "name": "Erfurt Nord",
+      "parentStationId": "528897",
+      "latitudeE7": 510033570,
+      "longitudeE7": 110292770,
+      "population": 95816,
+      "demandClass": 7
+    },
+    {
+      "stationId": "85981",
+      "name": "Halle(Saale)Hbf",
+      "parentStationId": "719",
+      "latitudeE7": 514775100,
+      "longitudeE7": 119870850,
+      "population": 226767,
+      "demandClass": 8
+    }
+  ],
+  "referenceMetrics": {
+    "uniqueReferenceTrips": 2710,
+    "directedPairs": 58,
+    "directConnectionsBySource": {
+      "gtfs-de-fv": 886,
+      "gtfs-de-rv": 9365
+    },
+    "afterMidnightSelectedCalls": 309
+  },
+  "limitations": [
+    "No administrative territory or measured catchment claim; municipal representative points and configured station selection only.",
+    "No observed OD, ridership, workplaces, interchange flows or exact forecast; population, source service and own balancing remain distinct.",
+    "Original GTFS stop IDs are retained. Other platforms and stations are outside this explicit selection.",
+    "GTFS services are reference evidence only and are never activated as player services by this adapter."
+  ],
+  "deploymentSha256": "f2cab4ee9e9f4491b2207dff8e80c28405984ad374abaada5119812041c847bb",
+  "nativeRuns": [
+    {
+      "windowIndex": 0,
+      "inputSha256": "2e5611f9741a80d01dbdf893732954b51628ebaa1edf23a6cb16a101493392a5",
+      "resultSha256": "1f1e95acd6de96ebe7a6e414791bf96ef8b3d88a1d9a81236ca302b7cf5b850d",
+      "stateHash": "ad281fa81b932a4d9ebef9c2871d43d622d0c437d73402c66c619903ce7d4432",
+      "binarySha256": "87f1f3fd42ceb11b3255c5e5a577ddd1bf5f53308a8fd702775ff55dfbbcd41e",
+      "replayEqual": true,
+      "totals": {
+        "generated": 3729,
+        "rail": 2562,
+        "alternative": 0,
+        "unserved": 1167,
+        "stranded": 0,
+        "forecastRevenueCents": 655400
+      }
+    }
+  ]
+}

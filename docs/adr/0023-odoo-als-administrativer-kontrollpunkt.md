@@ -2,7 +2,7 @@
 
 - **Status:** Angenommen — bindend (entspricht E23)
 - **Bezug:** [../entscheidungen.md](../entscheidungen.md) · [../geschaeft.md](../geschaeft.md) · [../odoo-betrieb.md](../odoo-betrieb.md) · [GitHub-Decision-Issue #197](https://github.com/larynxberlin-rgb/Zugfolge/issues/197)
-- **Betrifft Milestones:** M8.3, M9.4, M9.7, M9.10, M13.1, M13.2, M13.3
+- **Betrifft Milestones:** M8.3, M9.4, M9.7, M9.10, M10.5, M13.1, M13.2, M13.3
 - **Verwandte ADRs:** [ADR-0005](0005-rust-kern-typescript-plattform.md), [ADR-0013](0013-automatikmodus-kostenlos.md), [ADR-0022](0022-jaehrliche-infrastrukturaktualisierung.md)
 
 ## Kontext
@@ -30,6 +30,23 @@ Verifikation und Staging sind keine Freigabe. Ein unsignierter Kandidat bleibt
 Approver-Rechte noch die Fähigkeit, eine Welt umzuschalten. Erst ein signierter,
 vom Game erneut qualifizierter Kandidat darf den bestehenden hochriskanten
 Vier-Augen-Antrag für einen Periodenwechsel vorbereiten.
+
+### Präzisierung: normale Nachfrage-Stammdatenpflege
+
+Gemäß ausdrücklicher Produktvorgabe werden Einwohnerzahlen, Stationszuweisungen
+und gerichtete Verbindungshinweise aus M10 als normale Odoo-Datenbankinhalte
+gepflegt. Berechtigte Administratoren ändern sie direkt in den nativen Tabellen.
+Speichern überträgt automatisch einen signierten, weltgebundenen
+`demand.data.update`-Befehl; dafür gibt es keinen Antrag, Freigabestatus,
+Korrekturexport oder Periodenwechsel als Voraussetzung. Diese Stammdatenpflege
+ist eine ausdrücklich begrenzte Ausnahme vom administrativen Antragsworkflow.
+
+Odoo verwaltet die eingegebenen Zahlen und unveränderliche Änderungsbelege;
+amtliche Originalwerte und Quellpins bleiben getrennt erhalten. Das Game prüft
+die Datenbindung und Konsistenz und bleibt allein autoritativ für Simulation,
+wirksame Nachfrage und persistierte Snapshots. Der Transportstatus dokumentiert
+Zustellung und Game-Ergebnis, keine zusätzliche Freigabe. Sensible andere
+Aktionen behalten die bestehenden Antrags-, Vier-Augen- und Periodenregeln.
 
 ## Begründung
 

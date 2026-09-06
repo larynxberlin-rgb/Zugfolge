@@ -68,7 +68,7 @@ describe("Simulationsevent-Spielerprojektion", () => {
   });
 
   it("verwirft Nachfrage-Seeds, Cursor, Haltbelege und Angebotshistorie auch bei eigenem Operator in beiden Streamprojektionen", () => {
-    const types = ["demand.evaluated", "demand.pool-initialized", "demand.pool-progressed",
+    const types = ["demand.evaluated", "demand.pool-initialized", "demand.pool-progressed", "demand.population-data-updated",
       "operations.passenger-stop-arrival", "operations.passenger-stop-departure",
       "planning.runtime-state", "planning.diagram"];
     const raw = types.map((eventType, index) => event(30 + index, eventType, {
@@ -81,14 +81,14 @@ describe("Simulationsevent-Spielerprojektion", () => {
     }));
     for (const ownedOperators of [new Set<string>(), new Set(["operator-a"]), new Set(["other-operator"])]) {
       expect(projectSimulationEventBatch(raw, ownedOperators, 29)).toEqual({
-        schemaVersion: "zugfolge-simulation-event-projection/v1", after: 29, nextAfter: 36, events: [],
+        schemaVersion: "zugfolge-simulation-event-projection/v1", after: 29, nextAfter: 37, events: [],
       });
     }
     // Diese Projektion speist in app.ts die tatsächliche Operator-SSE.
     // Selbst passende Eigentümerfelder und entscheidungsähnliche Nutzdaten
     // dürfen einen privaten Ereignistyp nicht für die Veröffentlichung öffnen.
     for (const operatorId of ["operator-a", "other-operator"]) {
-      expect(projectOperations(raw, operatorId)).toEqual({ throughSequence: 36, decisions: [], cancellations: [],
+      expect(projectOperations(raw, operatorId)).toEqual({ throughSequence: 37, decisions: [], cancellations: [],
         manualInterventions: [], majorEvents: [] });
       for (const row of raw) expect(projectOperations([row], operatorId).decisions).toEqual([]);
     }

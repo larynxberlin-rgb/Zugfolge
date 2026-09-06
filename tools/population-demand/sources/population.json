@@ -1,0 +1,76 @@
+{
+  "referenceDate": "2024-12-31",
+  "schemaVersion": "zugfolge-settlement-population/v1",
+  "settlements": [
+    {
+      "id": "14713000",
+      "latitudeE7": 513382880,
+      "longitudeE7": 123779310,
+      "name": "Leipzig",
+      "population": 611850
+    },
+    {
+      "id": "14730270",
+      "latitudeE7": 513962110,
+      "longitudeE7": 122217120,
+      "name": "Schkeuditz",
+      "population": 18905
+    },
+    {
+      "id": "15002000",
+      "latitudeE7": 514824780,
+      "longitudeE7": 119706660,
+      "name": "Halle (Saale)",
+      "population": 226767
+    },
+    {
+      "id": "15082015",
+      "latitudeE7": 516250790,
+      "longitudeE7": 123254170,
+      "name": "Bitterfeld-Wolfen",
+      "population": 36592
+    },
+    {
+      "id": "15084355",
+      "latitudeE7": 511528140,
+      "longitudeE7": 118093860,
+      "name": "Naumburg (Saale)",
+      "population": 31940
+    },
+    {
+      "id": "15088220",
+      "latitudeE7": 513571000,
+      "longitudeE7": 119927940,
+      "name": "Merseburg",
+      "population": 34392
+    },
+    {
+      "id": "15088305",
+      "latitudeE7": 513786300,
+      "longitudeE7": 115974330,
+      "name": "Querfurt",
+      "population": 10007
+    },
+    {
+      "id": "16051000",
+      "latitudeE7": 509771220,
+      "longitudeE7": 110272360,
+      "name": "Erfurt",
+      "population": 218793
+    },
+    {
+      "id": "16055000",
+      "latitudeE7": 509807610,
+      "longitudeE7": 113297410,
+      "name": "Weimar",
+      "population": 65954
+    }
+  ],
+  "source": {
+    "artifactSha256": "d5564af137d2dde65c23ceb8336f6c35fdf67260ba48058ced9004a2c5c000b3",
+    "id": "bkg-vg250-ew-2024",
+    "license": "dl-de/by-2-0",
+    "rightsApproved": true,
+    "url": "https://daten.gdz.bkg.bund.de/produkte/vg/vg250-ew_ebenen_1231/2024/vg250-ew_12-31.ee.excel.ebenen.zip"
+  }
+}

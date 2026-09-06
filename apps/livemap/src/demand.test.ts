@@ -8,6 +8,26 @@ const period = { worldId: "fixture-world", periodId: "fixture-period", periodSta
 const overview: DemandOverview = { ...period, schemaVersion: "zugfolge-demand-overview/v1", items: [{ stationId: "s1", label: "<Station>", requestedPassengers: null, servedPassengers: 0, unservedPassengers: null, latitudeE7: 520_000_000, longitudeE7: 130_000_000 }, { stationId: "s2", label: "Missing", requestedPassengers: null, servedPassengers: null, unservedPassengers: null }], zones: [{zoneId: "z1", label: "Gebiet 1", requestedPassengers: 20, servedPassengers: 0, alternativePassengers: 4, unservedPassengers: 16}], nextCursor: "page:2" };
 
 describe("Nachfrageansichten mit belegten Zeitfenstern", () => {
+  it("zeigt geschätzte Stationsklassen und begrenzte Wunschziele auch ohne Einsteiger", () => {
+    const model: DemandOverview = { ...overview, source: "assumption", populationBasis: {
+      referenceStartDate: "2026-09-07", referenceEndDate: "2026-09-13",
+      sources: [{ label: "Freie Quelle", url: "https://example.org/population", license: "CC BY 4.0" }],
+    }, items: [{ ...overview.items[0]!, populationDemand: { demandClass: 5, catchmentPopulation: 12000,
+      requestedPassengers: 60, topDestinations: [{ stationId: "s2", label: "<Wunschziel>", passengers: 50, referenceConnections: 7 }] } }] };
+    const html = demandOverviewMarkup(parseDemandOverview(model, period.worldId));
+    expect(html).toContain("Klasse 5/10"); expect(html).toContain("12.000 zugeteilte Einwohner");
+    expect(html).toContain("ca. 50"); expect(html).toContain("&lt;Wunschziel&gt;");
+    expect(html).toContain("7 Direktfahrten in der Referenzwoche"); expect(html).toContain("Modellannahme");
+    expect(() => parseDemandOverview({ ...model, source: "observed" }, period.worldId)).toThrow();
+    for (const populationDemand of [
+      { ...model.items[0]!.populationDemand, demandClass: 11 },
+      { ...model.items[0]!.populationDemand, catchmentPopulation: null },
+      { ...model.items[0]!.populationDemand, requestedPassengers: 1 },
+      { ...model.items[0]!.populationDemand, topDestinations: Array(6).fill(model.items[0]!.populationDemand!.topDestinations[0]) },
+    ]) expect(() => parseDemandOverview({ ...model, items: [{ ...model.items[0], populationDemand }] }, period.worldId)).toThrow();
+    expect(() => parseDemandOverview({ ...model, populationBasis: { ...model.populationBasis,
+      sources: [{ label: "Unsafe", url: "javascript:alert(1)", license: "CC0" }] } }, period.worldId)).toThrow();
+  });
   it("unterscheidet Null, fehlende Stationsdaten und gebietsbezogene offene Reisen", () => {
     const result = parseDemandOverview(overview, period.worldId);
     const html = demandOverviewMarkup(result);
