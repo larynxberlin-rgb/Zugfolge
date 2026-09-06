@@ -1,0 +1,51 @@
+{
+  "schemaVersion": "conductor-art-generation-evidence/v1",
+  "source": "sources/vehicle-intercity-double.png",
+  "sourceSha256": "f595af0873d3c4d82ce474176fdf9559705388fe291d6bd7cb947726f13bcde8",
+  "tool": "image_gen.imagegen",
+  "prompt": "Use case: stylized-concept. Project-bound sprite art for Zugfolge railway game. Input image1 is ONLY a style reference for our own graphite/red pixel art; do NOT copy its cab layout, dimensions or pantographs. Create a NEW generic European non-powered passenger coach. Strict flat orthographic TOP-DOWN floor plan, camera straight vertically down, no perspective/isometric tilt/vanishing point. Crisp square pixel clusters, restrained flat texture. Full vehicle long axis vertical, gangways/couplers at top and bottom, width:length approximately1:9 (3mx27m), identical full-length outlines across panels. Portrait canvas1024x1536 or similar. Equal-width columns with wide EMPTY transparent gutters, 40px outer padding, no clipping. Genuine transparent background. Graphite #181e25 bodywork, red #e5233d accents, silver edging, graphite #303b46 floors. Clean legible furnishings. NO text, logos, letters, numbers, labels, people, scenery, tracks, cast shadows or painted checkerboard. No cab, separate nose or locomotive pantograph. Each panel depicts the same full-length coach, roof open or closed.\nPRIMARY REQUEST: Doppelstockwagen Fernverkehr / double-deck intercity coach. THREE parallel full-height panels LEFT to RIGHT: LOWER DECK open cutaway, UPPER DECK open cutaway, CLOSED ROOF. Distinct premium long-distance double-deck coach, flat gangway ends. LOWER: end vestibules with comparatively narrow side doors, WC and luggage service spaces, stairs at both ends, spacious blue-grey2+1 seats and cream tables in facing groups. UPPER: matching stairwells at both ends, comfortable red2+2 reclining-seat blocks interspersed with four-seat table groups, middle aisle, luggage shelves. No large commuter bicycle bay. Lower/upper layouts clearly differ, stairs align longitudinally. Roof clean silver/graphite cap with two compact HVAC enclosures. Identical full-length outline across all3panels, equal-width columns.",
+  "metadata": {
+    "container": "PNG/caBX/JUMBF/c2pa.actions.v2",
+    "cborSha256": "240ed05494cc3b525aa83b377611b8072281e000029d87b9b502108cd1fa3ac8",
+    "actions": {
+      "actions": [
+        {
+          "action": "c2pa.created",
+          "when": "2026-09-06T00:00:00Z",
+          "softwareAgent": {
+            "name": "gpt-image",
+            "version": "2.0"
+          },
+          "digitalSourceType": "http://cv.iptc.org/newscodes/digitalsourcetype/trainedAlgorithmicMedia"
+        },
+        {
+          "action": "c2pa.converted",
+          "when": "2026-09-06T00:00:00Z"
+        },
+        {
+          "action": "c2pa.watermarked.unbound",
+          "when": "2026-09-06T00:00:00Z"
+        }
+      ],
+      "allActionsIncluded": false
+    },
+    "softwareAgent": {
+      "name": "gpt-image",
+      "version": "2.0"
+    },
+    "interpretation": "Providerdeklarierte Modellangabe; keine Prüfung der C2PA-Signatur oder Aussage über interne Gewichte."
+  },
+  "technicalProcessing": {
+    "script": "tools/art-atlas/prepare.py",
+    "pillowVersion": "12.3.0",
+    "operations": [
+      "crop",
+      "edge-connected-neutral-checkerboard-removal",
+      "alpha-threshold-128",
+      "nearest-neighbor-resize",
+      "fixed-palette-no-dither",
+      "atlas-pack"
+    ],
+    "authorization": "Auftraggeber: Ja, technisch aufbereiten (06.09.2026)."
+  }
+}

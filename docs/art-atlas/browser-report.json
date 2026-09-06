@@ -1,0 +1,436 @@
+{
+  "schemaVersion": "art-atlas-browser-review/v1",
+  "browser": "153.0.4234.19",
+  "recordedAt": "2026-09-06T09:20:43.880Z",
+  "browserChannel": "msedge",
+  "preparedSha256": "b7624271bb9ba6e3248294bac40312934f3a3edf6b4638714c188f6ff06c3b0b",
+  "observedManifestSha256": "1503e2a3199d7f7b217e83b346e7ed3af8664e6b692642e9b140d312164453a3",
+  "observedManifestStatus": "approved",
+  "assets": 186,
+  "animations": 60,
+  "catalogVersion": "conductor-art-catalog/v2",
+  "vehicleVariants": [
+    "regional-double",
+    "intercity-single",
+    "regional-single",
+    "intercity-double",
+    "dining",
+    "sleeper"
+  ],
+  "vehicleDeckAndRoofSelectionVerified": true,
+  "files": [
+    {
+      "id": "passenger-red",
+      "sha256": "7f0cd9c264bc5404d957675bc84ed886039dc84f2faab54b8e8d8a1e72b4b346"
+    },
+    {
+      "id": "passenger-teal",
+      "sha256": "3aaadd3f90131877bd5f482c6d96b292b8f42471ef699bf4c4ea0e8cdd9c33ad"
+    },
+    {
+      "id": "passenger-amber",
+      "sha256": "e781ead10d891f00ea99b744c2232441311bb70b8b53b1a5ab3c99fb7653ad04"
+    },
+    {
+      "id": "passenger-slate",
+      "sha256": "c1807f78b0318d07ec1000004a4035600f82640f211c6455e04acec2ee998480"
+    },
+    {
+      "id": "conductor",
+      "sha256": "e42490973eb0ea458a500b0b5278382d48fdbcdd1ed83424263151d1422a8c4a"
+    },
+    {
+      "id": "modules",
+      "sha256": "9ddda097bed0c264600f1416cf3b7ce708e56201096be699cbb6e316ded1eb3c"
+    },
+    {
+      "id": "vehicles",
+      "sha256": "9af3e9b1add565fe91e248db0b3e7c99c9d97a1627f15def8404672eae266323"
+    }
+  ],
+  "proof": "Local graphics review only; no game world, M10 operations or release activation proof.",
+  "reducedMotionStartsPaused": true,
+  "pausePreservesFrame": true,
+  "missingMotifHasNoReplacement": true,
+  "declaredHashesVerifiedAgainstServedBytes": true,
+  "integerZooms": [
+    1,
+    2,
+    3,
+    4
+  ],
+  "layouts": [
+    {
+      "name": "desktop-scene",
+      "width": 1440,
+      "scrollWidth": 1440
+    },
+    {
+      "name": "desktop-zoom-1",
+      "width": 1440,
+      "scrollWidth": 1440
+    },
+    {
+      "name": "desktop-zoom-2",
+      "width": 1440,
+      "scrollWidth": 1440
+    },
+    {
+      "name": "desktop-zoom-3",
+      "width": 1440,
+      "scrollWidth": 1440
+    },
+    {
+      "name": "desktop-zoom-4",
+      "width": 1440,
+      "scrollWidth": 1440
+    },
+    {
+      "name": "mobile-390-scene-1x",
+      "width": 390,
+      "scrollWidth": 390
+    },
+    {
+      "name": "mobile-390-scene-2x",
+      "width": 390,
+      "scrollWidth": 390
+    },
+    {
+      "name": "mobile-390-scene-3x",
+      "width": 390,
+      "scrollWidth": 390
+    },
+    {
+      "name": "mobile-390-scene-4x",
+      "width": 390,
+      "scrollWidth": 390
+    },
+    {
+      "name": "mobile-390-vehicles-1x",
+      "width": 390,
+      "scrollWidth": 390
+    },
+    {
+      "name": "mobile-390-vehicles-2x",
+      "width": 390,
+      "scrollWidth": 390
+    },
+    {
+      "name": "mobile-390-vehicles-3x",
+      "width": 390,
+      "scrollWidth": 390
+    },
+    {
+      "name": "mobile-390-vehicles-4x",
+      "width": 390,
+      "scrollWidth": 390
+    },
+    {
+      "name": "mobile-390-actors-1x",
+      "width": 390,
+      "scrollWidth": 390
+    },
+    {
+      "name": "mobile-390-actors-2x",
+      "width": 390,
+      "scrollWidth": 390
+    },
+    {
+      "name": "mobile-390-actors-3x",
+      "width": 390,
+      "scrollWidth": 390
+    },
+    {
+      "name": "mobile-390-actors-4x",
+      "width": 390,
+      "scrollWidth": 390
+    },
+    {
+      "name": "mobile-390-gallery-1x",
+      "width": 390,
+      "scrollWidth": 390
+    },
+    {
+      "name": "mobile-390-gallery-2x",
+      "width": 390,
+      "scrollWidth": 390
+    },
+    {
+      "name": "mobile-390-gallery-3x",
+      "width": 390,
+      "scrollWidth": 390
+    },
+    {
+      "name": "mobile-390-gallery-4x",
+      "width": 390,
+      "scrollWidth": 390
+    },
+    {
+      "name": "mobile-390-evidence-1x",
+      "width": 390,
+      "scrollWidth": 390
+    },
+    {
+      "name": "mobile-390-evidence-2x",
+      "width": 390,
+      "scrollWidth": 390
+    },
+    {
+      "name": "mobile-390-evidence-3x",
+      "width": 390,
+      "scrollWidth": 390
+    },
+    {
+      "name": "mobile-390-evidence-4x",
+      "width": 390,
+      "scrollWidth": 390
+    },
+    {
+      "name": "mobile-320-scene-1x",
+      "width": 320,
+      "scrollWidth": 320
+    },
+    {
+      "name": "mobile-320-scene-2x",
+      "width": 320,
+      "scrollWidth": 320
+    },
+    {
+      "name": "mobile-320-scene-3x",
+      "width": 320,
+      "scrollWidth": 320
+    },
+    {
+      "name": "mobile-320-scene-4x",
+      "width": 320,
+      "scrollWidth": 320
+    },
+    {
+      "name": "mobile-320-vehicles-1x",
+      "width": 320,
+      "scrollWidth": 320
+    },
+    {
+      "name": "mobile-320-vehicles-2x",
+      "width": 320,
+      "scrollWidth": 320
+    },
+    {
+      "name": "mobile-320-vehicles-3x",
+      "width": 320,
+      "scrollWidth": 320
+    },
+    {
+      "name": "mobile-320-vehicles-4x",
+      "width": 320,
+      "scrollWidth": 320
+    },
+    {
+      "name": "mobile-320-actors-1x",
+      "width": 320,
+      "scrollWidth": 320
+    },
+    {
+      "name": "mobile-320-actors-2x",
+      "width": 320,
+      "scrollWidth": 320
+    },
+    {
+      "name": "mobile-320-actors-3x",
+      "width": 320,
+      "scrollWidth": 320
+    },
+    {
+      "name": "mobile-320-actors-4x",
+      "width": 320,
+      "scrollWidth": 320
+    },
+    {
+      "name": "mobile-320-gallery-1x",
+      "width": 320,
+      "scrollWidth": 320
+    },
+    {
+      "name": "mobile-320-gallery-2x",
+      "width": 320,
+      "scrollWidth": 320
+    },
+    {
+      "name": "mobile-320-gallery-3x",
+      "width": 320,
+      "scrollWidth": 320
+    },
+    {
+      "name": "mobile-320-gallery-4x",
+      "width": 320,
+      "scrollWidth": 320
+    },
+    {
+      "name": "mobile-320-evidence-1x",
+      "width": 320,
+      "scrollWidth": 320
+    },
+    {
+      "name": "mobile-320-evidence-2x",
+      "width": 320,
+      "scrollWidth": 320
+    },
+    {
+      "name": "mobile-320-evidence-3x",
+      "width": 320,
+      "scrollWidth": 320
+    },
+    {
+      "name": "mobile-320-evidence-4x",
+      "width": 320,
+      "scrollWidth": 320
+    }
+  ],
+  "pageErrors": [],
+  "screenshots": [
+    {
+      "file": "scene-small-rural-1x.png",
+      "sha256": "3832cc2c68b0d1bb76e495d285d0fbbce3cd5389e32a69c07174bc173a69bea3",
+      "viewport": {
+        "width": 1440,
+        "height": 1100
+      }
+    },
+    {
+      "file": "scene-medium-suburban-1x.png",
+      "sha256": "d9ae5732d12f15156063876ca4fce66d7af383f797b3441600c0fcfdba4c14d5",
+      "viewport": {
+        "width": 1440,
+        "height": 1100
+      }
+    },
+    {
+      "file": "scene-large-urban-1x.png",
+      "sha256": "c1db4d0d70c98c306178c8b4825a384efa08163fd58bec8ab64a6d3de1043361",
+      "viewport": {
+        "width": 1440,
+        "height": 1100
+      }
+    },
+    {
+      "file": "scene-roofs-1x.png",
+      "sha256": "1dbc0bdd5da7626fbdef65dd125943bbdf16c8fa2210fc914a55ec52f03e9e7d",
+      "viewport": {
+        "width": 1440,
+        "height": 1100
+      }
+    },
+    {
+      "file": "vehicles-six-lower-1x.png",
+      "sha256": "28fd1adc89d1d4c478d9f6179174c38e0281d0f94130d289815819a4d170ed4b",
+      "viewport": {
+        "width": 1440,
+        "height": 1100
+      }
+    },
+    {
+      "file": "vehicles-six-upper-1x.png",
+      "sha256": "fb085061c41689bcf70583d172c98547ffe8a204ac55995f4d97ca0a4aef7bb7",
+      "viewport": {
+        "width": 1440,
+        "height": 1100
+      }
+    },
+    {
+      "file": "vehicles-six-roof-1x.png",
+      "sha256": "bcbc8a7034b52feff2d2055d59dcf14087f90aa3a68c406c83bd4e8e6948b9fe",
+      "viewport": {
+        "width": 1440,
+        "height": 1100
+      }
+    },
+    {
+      "file": "actors-walk-paused-2x.png",
+      "sha256": "b85000f7eea3ec45719c80ce0d2c4342c25d4f7ce1eb6b73612fbb07b8f2f9d4",
+      "viewport": {
+        "width": 1440,
+        "height": 1100
+      }
+    },
+    {
+      "file": "actors-sitting-2x.png",
+      "sha256": "5c288a6a76ce80e5b6f12ff0d05b7821071d403bd2ad1475874ed0ae0ad6d779",
+      "viewport": {
+        "width": 1440,
+        "height": 1100
+      }
+    },
+    {
+      "file": "gallery-complete-1x.png",
+      "sha256": "dd676453964b46c35a27d5d171c04587386456daef6e657c3d9997afd2874583",
+      "viewport": {
+        "width": 1440,
+        "height": 1100
+      }
+    },
+    {
+      "file": "gallery-stations-2x.png",
+      "sha256": "b3946586682339254f3d247d69fc046fef6462e382818c59f9d3a1f89087c1c3",
+      "viewport": {
+        "width": 1440,
+        "height": 1100
+      }
+    },
+    {
+      "file": "release-evidence.png",
+      "sha256": "fe4a301a26a7b2636f7f70432457d9b333a07ed5b212b68101b21cb633b937b1",
+      "viewport": {
+        "width": 1440,
+        "height": 1100
+      }
+    },
+    {
+      "file": "mobile-390-scene.png",
+      "sha256": "94a53b82823c2c887b004c7bb617c3d860da957a58f8927ffc66a7c75e0066fd",
+      "viewport": {
+        "width": 390,
+        "height": 900
+      }
+    },
+    {
+      "file": "mobile-390-actors.png",
+      "sha256": "fc9dbe426543cefc0437b87385c18546219ec1071c19b4097e20a7eb270fd69e",
+      "viewport": {
+        "width": 390,
+        "height": 900
+      }
+    },
+    {
+      "file": "mobile-390-vehicles.png",
+      "sha256": "088517a026714dafaebb20367997f760fd3b0a239e7c5e391bed5b745e0e838f",
+      "viewport": {
+        "width": 390,
+        "height": 900
+      }
+    },
+    {
+      "file": "mobile-320-scene.png",
+      "sha256": "48f1c95a712e0650041d0505d2d1c22e9fedf80f678c9ae9035a07e5145a19d2",
+      "viewport": {
+        "width": 320,
+        "height": 900
+      }
+    },
+    {
+      "file": "mobile-320-actors.png",
+      "sha256": "4beec3887ae6bee862344f3100e08510991229a26329faff9891df135779b00f",
+      "viewport": {
+        "width": 320,
+        "height": 900
+      }
+    },
+    {
+      "file": "mobile-320-vehicles.png",
+      "sha256": "0b617316fe0a17e680ea62576968eb9e89ee5964cbaf5d16bd1cb4ed86822c49",
+      "viewport": {
+        "width": 320,
+        "height": 900
+      }
+    }
+  ]
+}

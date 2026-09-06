@@ -1,0 +1,51 @@
+{
+  "schemaVersion": "conductor-art-generation-evidence/v1",
+  "source": "sources/interior-topdown.png",
+  "sourceSha256": "ccd3f77500e4fed0dd998d31c392eab6a14462d2a62173790a366aeaf533a4e1",
+  "tool": "image_gen.imagegen",
+  "prompt": "Use case: stylized-concept. Create an original Zugfolge railway FLOOR-PLAN pixel-art tile sheet, using the attached cutaway train only as style/color reference. The first previous interior attempt is unsuitable; do not reproduce wall elevations. ABSOLUTE TOP VIEW: the camera looks straight vertically down at floor and TOP SURFACES. Doors and windows appear as THIN BARS in wall footprints, NOT tall front-facing rectangles. No horizon, no facade view, no foreshortening. 1024x1024 PNG, transparent background,4columns4rows ofindividualsquaretiles. Deliberate low-resolutionpixelart, logicaltile64x64 displayed4x withnearestneighbor. Exactorder: row1 darkfloor square; thinwall horizontalbar seenfromabove; thinwindow horizontalbar embeddedinwall seenfromabove; closedredslidingdoor thin horizontalbar seenfromabove. row2 open slidingdoor two separated red short horizontalbars with emptycenter passage; two seats backrestalongtop+cushionsbelow directlyfromabove; two palegrey premiumseats directlyfromabove; multipurposefloorwithfoldedseatsalongwall. row3 bathroomfloorplan toiletoval+washbasin; drivercabfloorplan seatbelowarcdesk; flexiblegangway floorconnector; luggage rack topplan. row4 standingfloorzonewiththinhandrailsalongedges; striplight topplan; vestibuleglasspartition thinbar; emergencycabinet topplan. Sharedownpalettegraphite#101419#181e25#202830#303b46 lightgrey#f5f7fa#b5c0cc#93a2b1 red#e5233d cream#e8b894. No scenery inwindows, no front-facing doors, no WCsymbol, text,numbers,logos,emblems,watermark,people. Everymoduleisfinalusableorthogonaltopdownfloorplanartwithpixelshading; no perspective elevations, no decorative montage. Transparentgapsbetweenmodules.",
+  "metadata": {
+    "container": "PNG/caBX/JUMBF/c2pa.actions.v2",
+    "cborSha256": "593d1456d51672f78e73ecdabfac519dfd5a7dbb3be77f3e7808bbd95cf9a4bb",
+    "actions": {
+      "actions": [
+        {
+          "action": "c2pa.created",
+          "when": "2026-09-05T00:00:00Z",
+          "softwareAgent": {
+            "name": "gpt-image",
+            "version": "2.0"
+          },
+          "digitalSourceType": "http://cv.iptc.org/newscodes/digitalsourcetype/trainedAlgorithmicMedia"
+        },
+        {
+          "action": "c2pa.converted",
+          "when": "2026-09-05T00:00:00Z"
+        },
+        {
+          "action": "c2pa.watermarked.unbound",
+          "when": "2026-09-05T00:00:00Z"
+        }
+      ],
+      "allActionsIncluded": false
+    },
+    "softwareAgent": {
+      "name": "gpt-image",
+      "version": "2.0"
+    },
+    "interpretation": "Providerdeklarierte Modellangabe; keine Prüfung der C2PA-Signatur oder Aussage über interne Gewichte."
+  },
+  "technicalProcessing": {
+    "script": "tools/art-atlas/prepare.py",
+    "pillowVersion": "12.3.0",
+    "operations": [
+      "crop",
+      "edge-connected-neutral-checkerboard-removal",
+      "alpha-threshold-128",
+      "nearest-neighbor-resize",
+      "fixed-palette-no-dither",
+      "atlas-pack"
+    ],
+    "authorization": "Auftraggeber: Ja, technisch aufbereiten (06.09.2026)."
+  }
+}

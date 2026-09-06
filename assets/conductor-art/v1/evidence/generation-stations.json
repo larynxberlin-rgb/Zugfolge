@@ -1,0 +1,51 @@
+{
+  "schemaVersion": "conductor-art-generation-evidence/v1",
+  "source": "sources/stations.png",
+  "sourceSha256": "de643ef0917d487c983098f1efa147598809ef14d29ebdc43586a2d6162d56bd",
+  "tool": "image_gen.imagegen",
+  "prompt": "Use case: stylized-concept. Asset type: final original top-down orthogonal game tileset for Zugfolge railway management. Exact1536x1536transparentPNG. Organized as3columns x5rows equal512x~307cells (each object centered separatewithampletransparentgap,neveroverlap). Columns represent small ruralstation, medium suburbanstation, large citystation. Rows represent platform segment, platform canopy roof, entrance hall/building, stairway down, undergroundpassage cutaway. Thus15differentisolatedassets. Strict small flat pixel palette #101419 #181e25 #202830 #303b46 #f5f7fa #b5c0cc #93a2b1 #e5233d #7cddba #f5bf65 #e8b894 #be8060 #805342 #382c28. Pixelart withdeliberatehardblock edges, noantialiasing. Directlyoverheadcamera and strictnorth-south/east-west aligned rectangulararchitecture, no isometricangles/no vanishingpoint. Each stationclass shares the same physicalrails/pavingwidth butprogressivelylarger infrastructure: smallplatformsimplepaving/railing, shelter woodenroof andsmallbrickreceptionhut; medium wideplatform,redframedsteelcanopy andbrickglazedhall; large broadplatform,curved-glassroofseenfromabove andgrandmodernrailwayhall. Roofs independent assets sohallcanbevisible ascutaway too. Wide stairs andundergroundcutaway corridors highlyreadable. Deliberatelydifferent threeclassmotifs, cohesegraphitepalegrey withredarchitectural trim, nosignalcolormeansoperationalstatus. No trains,nopeople,no logos,no foreignbrands,notext/noletters/nonumbers on signs. EmptydisplaypanelsareblankgraphicspacefordynamicUItext, notplaceholderart. Transparentbackgroundoutside everymotif. Final sharp gameplayassets,notperspectiveillustration or moodboard.",
+  "metadata": {
+    "container": "PNG/caBX/JUMBF/c2pa.actions.v2",
+    "cborSha256": "593d1456d51672f78e73ecdabfac519dfd5a7dbb3be77f3e7808bbd95cf9a4bb",
+    "actions": {
+      "actions": [
+        {
+          "action": "c2pa.created",
+          "when": "2026-09-05T00:00:00Z",
+          "softwareAgent": {
+            "name": "gpt-image",
+            "version": "2.0"
+          },
+          "digitalSourceType": "http://cv.iptc.org/newscodes/digitalsourcetype/trainedAlgorithmicMedia"
+        },
+        {
+          "action": "c2pa.converted",
+          "when": "2026-09-05T00:00:00Z"
+        },
+        {
+          "action": "c2pa.watermarked.unbound",
+          "when": "2026-09-05T00:00:00Z"
+        }
+      ],
+      "allActionsIncluded": false
+    },
+    "softwareAgent": {
+      "name": "gpt-image",
+      "version": "2.0"
+    },
+    "interpretation": "Providerdeklarierte Modellangabe; keine Prüfung der C2PA-Signatur oder Aussage über interne Gewichte."
+  },
+  "technicalProcessing": {
+    "script": "tools/art-atlas/prepare.py",
+    "pillowVersion": "12.3.0",
+    "operations": [
+      "crop",
+      "edge-connected-neutral-checkerboard-removal",
+      "alpha-threshold-128",
+      "nearest-neighbor-resize",
+      "fixed-palette-no-dither",
+      "atlas-pack"
+    ],
+    "authorization": "Auftraggeber: Ja, technisch aufbereiten (06.09.2026)."
+  }
+}

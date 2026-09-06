@@ -114,6 +114,7 @@
       "status": "active",
       "paths": [
         "tools/alpha-ops/**",
+        "tools/art-atlas/**",
         "tools/guards/**",
         "tools/load/**",
         "tools/m7-acceptance/**",
@@ -130,6 +131,7 @@
         "packages/alpha/**",
         "packages/browser-identity/**",
         "packages/commerce/**",
+        "packages/conductor-art/**",
         "packages/design-system/**",
         "packages/disruption-provider/**",
         "packages/glossary/**",

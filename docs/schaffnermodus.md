@@ -310,6 +310,11 @@ Minigames, ohne den Betrieb künstlich anzuhalten.
 
 ### 5.1 Eigene Pixelart
 
+Der vollständige Motivekatalog, der `ArtAtlasManifestV1`-Vertrag und die
+getrennten Raster-, Bild-, Herkunfts- und Freigabegates stehen kanonisch in
+[Pixelart-Korpus und Atlas](art-atlas.md). Die folgenden Punkte benennen die
+grundsätzliche Gestaltung und Autoritätsgrenze.
+
 - orthogonale Draufsicht mit 32 Pixeln pro Meter;
 - ganzzahlige Zoomstufen und Nearest-Neighbor-Skalierung;
 - dunkle Graphitflächen und eigene rote Bahnmarke gemäß dem gemeinsamen Design;
