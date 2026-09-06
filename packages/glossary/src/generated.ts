@@ -333,7 +333,12 @@ export const GENERATED_GLOSSARY_ENTRIES = Object.freeze([
   {
     "term": "Fahrgastmanifest",
     "code": "PassengerManifestV1",
-    "definition": "revisionierte M10-Zuteilung der Fahrgäste eines Zuglaufabschnitts einschließlich Ein-/Ausstieg und verdecktem Fahrberechtigungsstatus; tatsächlicher Bestand nur mit nativen Haltbelegen, sonst Prognose"
+    "definition": "revisionierte M10-Projektion der tatsächlich reisenden Fahrgäste eines Zuglaufabschnitts einschließlich Ein-/Ausstieg und verdecktem Fahrberechtigungsstatus"
+  },
+  {
+    "term": "Fahrgastprojektion",
+    "code": "PassengerProjectionV1",
+    "definition": "private 1:1-Innenraumprojektion eines quittierten M10-Zugabschnitts mit stabilen Plätzen und ausschließlich sichtbaren Merkmalen; erzeugt keine Nachfrage oder Fahrberechtigung"
   },
   {
     "term": "Fahrplanperiode",

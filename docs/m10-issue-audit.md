@@ -48,7 +48,11 @@ kompatible Manifest- und Fortschrittsfelder. Seine Projektion liest nur den
 jüngsten abgeschlossenen Nachfragecheckpoint aus dem privaten Store; zusätzliche
 Poolanfänge, Zwischenrevisionen und Cursor ändern den M15-Vertrag nicht.
 Die M10-API zeigt Fahrgäste während eines aktiven Abschnitts, während M15
-zusätzlich den belegten Ausstieg am Halt projizieren darf.
+zusätzlich den belegten Ausstieg am Halt projizieren darf. Die gemeinsame
+Glossardefinition der M15-Projektion und die Datenschutzbeschreibung sind
+textgleich vorgelagert, damit die ergänzte M10-Dokumentation beim Merge keine
+redaktionellen Konflikte erzeugt. Die Implementierung der Innenraumprojektion
+bleibt Bestandteil von #535.
 
 #530 entfernt Tutorialwelten, erzwingt eine Welt je Server und verwendet
 Schema 35. M10 führt diese alten Konzepte nicht erneut ein. Die ausdrücklich

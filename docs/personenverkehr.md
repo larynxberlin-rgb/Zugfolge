@@ -132,6 +132,17 @@ Eine prognostizierte Endzeit beendet keine laufende oder gestrandete Reise.
 Der bereits gepinnte Folgepool holt seine historischen Belege beim Übergang
 nach; die öffentlich sichtbare Nachfragezeit geht dabei nicht zurück.
 
+Die eigentümergeprüfte, paginierte SPNV-Manifestroute zeigt Fahrgastkennungen, Ein-/Ausstiegsbezeichnungen,
+Sitzklasse und Platzbedarf. `fareFact`, Tarifpolicy, interne Sitznummern und
+Reiseketten bleiben im geschützten serverseitigen Manifest.
+
+Für ein tatsächliches Abschnittsmanifest müssen die Abfahrt am Ausgangshalt
+und die noch ausstehende Ankunft am Folgehalt belegt sein. Nur dann trägt die
+Ansicht `source: confirmed`. Ein Signalhalt ändert den Abschnitt nicht;
+am Fahrgasthalt, vor Beginn und nach Ende antwortet die Route mit 409.
+Künftige Belegungen und nachgeführte Fahrplanzeiten bleiben Prognosen, auch
+wenn die Gesamtauswertung `projectionMode = progress_bound` verwendet.
+
 ## 2. Release und gemeinsame Kohorten
 
 Ein Release enthält mindestens zwei eindeutige `DemandZoneV1`, Nachfrageprofile,
@@ -239,17 +250,19 @@ erzeugt keinen zweiten Reisenden. Je Zugabschnitt sind Personenkennungen eindeut
 `StopPassengerFlowV1` beweist je Halt `vorher + Einsteiger − Aussteiger = nachher`;
 die Abschnittsbelegung stimmt mit Manifest und Kapazitätszuteilung überein.
 Die öffentliche Projektion enthält ausschließlich aggregierte Auslastung,
-Ein-/Aussteiger und erklärbare Nachfragegründe. Nur die eigentümergeprüfte,
-paginierte SPNV-Manifestroute zeigt Fahrgastkennungen, Ein-/Ausstiegsbezeichnungen,
-Sitzklasse und Platzbedarf. `fareFact`, Tarifpolicy, interne Sitznummern und
-Reiseketten bleiben im geschützten serverseitigen Manifest.
+Ein-/Aussteiger und erklärbare Nachfragegründe. `fareFact` bleibt ausschließlich
+serverseitig. Individuelle Personenschlüssel bleiben außerhalb der
+autorisierten privaten Zugansicht serverseitig. Die eng begrenzte Weitergabe
+synthetischer Schlüssel an M15
+folgt [Schaffnermodus](schaffnermodus.md) 3.3 und 11.1.
 
-Für ein tatsächliches Abschnittsmanifest müssen die Abfahrt am Ausgangshalt
-und die noch ausstehende Ankunft am Folgehalt belegt sein. Nur dann trägt die
-Ansicht `source: confirmed`. Ein Signalhalt ändert den Abschnitt nicht;
-am Fahrgasthalt, vor Beginn und nach Ende antwortet die Route mit 409.
-Künftige Belegungen und nachgeführte Fahrplanzeiten bleiben Prognosen, auch
-wenn die Gesamtauswertung `projectionMode = progress_bound` verwendet.
+M15.2 übernimmt den vorhandenen Vertrag direkt. Eine `PassengerProjectionV1`
+ist eine abgeleitete Innenraumansicht eines tatsächlich quittierten Abschnitts;
+sie ist weder ein neues Manifest noch ein neuer Beleg über eingestiegene
+Personen. `forecast` und fehlende Haltquittungen bleiben ausdrücklich
+ungeeignet. Nachfragezustand, Betriebsquittung, Zug und Release müssen
+zusammenpassen. Revidierte M10-Fakten ändern ausschließlich die zugehörige
+Projektion; ein begonnener Kontrollfall behält seinen ursprünglichen Pin.
 
 ## 6. Kalibrierung und Abnahmegrenze
 
