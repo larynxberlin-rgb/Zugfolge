@@ -48,7 +48,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use zugfolge_determinism::{SimTime, StateHasher};
 use zugfolge_infra::{
-    Length, RunPath, TrackId, TrainCharacteristics, TravelDirection,
+    Length, OperatingPointId, RunPath, TrackId, TrainCharacteristics, TravelDirection,
     derive_running_time_table_with_exit,
 };
 
@@ -66,9 +66,27 @@ pub struct OccupationProfile {
     occupations: Vec<RelativeOccupation>,
     running_time_s: i64,
     length: Length,
+    station_calls: Vec<RelativeStationCall>,
+}
+
+/// Fahrdynamisch berechnete Ankunft und Abfahrt einer Betriebsstelle.
+/// Die Fachschicht entscheidet, welche dieser Stellen Verkehrshalte sind.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct RelativeStationCall {
+    /// Betriebsstelle im geprüften Laufweg.
+    pub station: OperatingPointId,
+    /// Ankunft in Sekunden ab Abfahrt des Zuglaufs.
+    pub arrival_s: i64,
+    /// Abfahrt einschließlich der tatsächlichen Haltezeit.
+    pub departure_s: i64,
 }
 
 impl OccupationProfile {
+    /// Betriebsstellenzeiten aus derselben Zeitachse wie die Sperrzeiten.
+    pub fn station_calls(&self) -> &[RelativeStationCall] {
+        &self.station_calls
+    }
+
     /// Die Belegungen in Fahrtreihenfolge.
     pub fn occupations(&self) -> &[RelativeOccupation] {
         &self.occupations
@@ -218,10 +236,28 @@ pub fn derive_occupation_profile(
         occupations.push(belegung);
     }
 
+    let mut station_calls = vec![RelativeStationCall {
+        station: itinerary.origin(),
+        arrival_s: 0,
+        departure_s: 0,
+    }];
+    let mut position = Length::ZERO;
+    for (index, leg) in itinerary.legs().iter().enumerate() {
+        position = position + leg.length();
+        if index > 0 && leg.is_in_station() {
+            station_calls.push(RelativeStationCall {
+                station: leg.to(),
+                arrival_s: zeitachse.arrival(position),
+                departure_s: zeitachse.departure(position),
+            });
+        }
+    }
+
     Ok(OccupationProfile {
         occupations,
         running_time_s: zeitachse.arrival(total),
         length: total,
+        station_calls,
     })
 }
 

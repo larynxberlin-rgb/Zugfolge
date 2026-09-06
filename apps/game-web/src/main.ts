@@ -51,6 +51,8 @@ import { captureWorkspaceView } from "./workspace-view.js";
 import "./styles.css";
 import "@zugfolge/design-system/railway.css";
 import "./railway-game.css";
+import "./spfv.css";
+import { mountSpfv } from "./spfv-controller.js";
 
 const root = document.querySelector<HTMLDivElement>("#root");
 if (root === null) throw new Error("App-Wurzel fehlt");
@@ -306,6 +308,7 @@ function render(): void {
     message,
     messageTone,
     applyingAlternativeId: applyingAlternativeId === "" ? undefined : applyingAlternativeId,
+    navigationParameters: window.location.search,
     demoMode,
     livemapUrl,
     operationsCenterUrl,
@@ -1094,4 +1097,5 @@ async function boot(): Promise<void> {
   render();
 }
 
-if (primaryDestination === undefined) void boot();
+if (requestedView === "spfv") void mountSpfv(app);
+else if (primaryDestination === undefined) void boot();

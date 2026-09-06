@@ -398,6 +398,10 @@ impl OperationalWorld {
             return Ok(());
         };
         let input = TrainMaterialization {
+            stop_plan: train
+                .passenger_stops
+                .as_ref()
+                .map(|progress| progress.plan.clone()),
             service_outcome: Some(progress.binding.clone()),
             id: train.id.clone(),
             train_number: train.train_number.clone(),

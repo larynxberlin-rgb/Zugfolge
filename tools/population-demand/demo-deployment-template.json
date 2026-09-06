@@ -1,0 +1,1234 @@
+{
+  "schemaVersion": "zugfolge-demand-deployment/v1",
+  "worldId": "population-demand-demo",
+  "infrastructureReleaseId": "population-demo-infrastructure-unapproved",
+  "windows": [
+    {
+      "schemaVersion": "zugfolge-demand-evaluation/v1",
+      "worldId": "population-demand-demo",
+      "periodId": "population-demo-day-1",
+      "seed": "173",
+      "nowMs": 0,
+      "revision": 1,
+      "windowStartMs": 21600000,
+      "windowEndMs": 32400000,
+      "daySliceId": "morning",
+      "release": {},
+      "services": [
+        {
+          "worldId": "population-demand-demo",
+          "trainRunId": "demo-regional-0-6",
+          "operatorId": "demo-spnv-operator",
+          "mode": "spnv",
+          "cancelled": false,
+          "stops": [
+            {
+              "stopId": "demo-regional-0-6:0",
+              "stationId": "354639",
+              "arrivalMs": 22200000,
+              "departureMs": 22200000,
+              "passengerStop": true
+            },
+            {
+              "stopId": "demo-regional-0-6:1",
+              "stationId": "85981",
+              "arrivalMs": 23880000,
+              "departureMs": 23940000,
+              "passengerStop": true
+            },
+            {
+              "stopId": "demo-regional-0-6:2",
+              "stationId": "104445",
+              "arrivalMs": 24540000,
+              "departureMs": 24600000,
+              "passengerStop": true
+            },
+            {
+              "stopId": "demo-regional-0-6:3",
+              "stationId": "464080",
+              "arrivalMs": 26400000,
+              "departureMs": 26460000,
+              "passengerStop": true
+            },
+            {
+              "stopId": "demo-regional-0-6:4",
+              "stationId": "194454",
+              "arrivalMs": 28560000,
+              "departureMs": 28620000,
+              "passengerStop": true
+            },
+            {
+              "stopId": "demo-regional-0-6:5",
+              "stationId": "542001",
+              "arrivalMs": 29520000,
+              "departureMs": 29580000,
+              "passengerStop": true
+            },
+            {
+              "stopId": "demo-regional-0-6:6",
+              "stationId": "66393",
+              "arrivalMs": 30180000,
+              "departureMs": 30180000,
+              "passengerStop": true
+            }
+          ],
+          "fares": [
+            {
+              "id": "regional-standard",
+              "comfortClass": "standard",
+              "centsPerSegment": 100,
+              "salesAvailable": true,
+              "onboardSales": false,
+              "reservationRequired": false
+            }
+          ],
+          "capacity": {
+            "standardSeats": 120,
+            "standardStanding": 80,
+            "premiumSeats": 0,
+            "wheelchairSpaces": 2,
+            "bicycleSpaces": 8,
+            "strollerSpaces": 4
+          },
+          "serviceIntervalMs": 3600000,
+          "reliabilityBasisPoints": 9500,
+          "comfortBasisPoints": 6000
+        },
+        {
+          "worldId": "population-demand-demo",
+          "trainRunId": "demo-regional-0-7",
+          "operatorId": "demo-spnv-operator",
+          "mode": "spnv",
+          "cancelled": false,
+          "stops": [
+            {
+              "stopId": "demo-regional-0-7:0",
+              "stationId": "354639",
+              "arrivalMs": 25800000,
+              "departureMs": 25800000,
+              "passengerStop": true
+            },
+            {
+              "stopId": "demo-regional-0-7:1",
+              "stationId": "85981",
+              "arrivalMs": 27480000,
+              "departureMs": 27540000,
+              "passengerStop": true
+            },
+            {
+              "stopId": "demo-regional-0-7:2",
+              "stationId": "104445",
+              "arrivalMs": 28140000,
+              "departureMs": 28200000,
+              "passengerStop": true
+            },
+            {
+              "stopId": "demo-regional-0-7:3",
+              "stationId": "464080",
+              "arrivalMs": 30000000,
+              "departureMs": 30060000,
+              "passengerStop": true
+            },
+            {
+              "stopId": "demo-regional-0-7:4",
+              "stationId": "194454",
+              "arrivalMs": 32160000,
+              "departureMs": 32220000,
+              "passengerStop": true
+            },
+            {
+              "stopId": "demo-regional-0-7:5",
+              "stationId": "542001",
+              "arrivalMs": 33120000,
+              "departureMs": 33180000,
+              "passengerStop": true
+            },
+            {
+              "stopId": "demo-regional-0-7:6",
+              "stationId": "66393",
+              "arrivalMs": 33780000,
+              "departureMs": 33780000,
+              "passengerStop": true
+            }
+          ],
+          "fares": [
+            {
+              "id": "regional-standard",
+              "comfortClass": "standard",
+              "centsPerSegment": 100,
+              "salesAvailable": true,
+              "onboardSales": false,
+              "reservationRequired": false
+            }
+          ],
+          "capacity": {
+            "standardSeats": 120,
+            "standardStanding": 80,
+            "premiumSeats": 0,
+            "wheelchairSpaces": 2,
+            "bicycleSpaces": 8,
+            "strollerSpaces": 4
+          },
+          "serviceIntervalMs": 3600000,
+          "reliabilityBasisPoints": 9500,
+          "comfortBasisPoints": 6000
+        },
+        {
+          "worldId": "population-demand-demo",
+          "trainRunId": "demo-regional-0-8",
+          "operatorId": "demo-spnv-operator",
+          "mode": "spnv",
+          "cancelled": false,
+          "stops": [
+            {
+              "stopId": "demo-regional-0-8:0",
+              "stationId": "354639",
+              "arrivalMs": 29400000,
+              "departureMs": 29400000,
+              "passengerStop": true
+            },
+            {
+              "stopId": "demo-regional-0-8:1",
+              "stationId": "85981",
+              "arrivalMs": 31080000,
+              "departureMs": 31140000,
+              "passengerStop": true
+            },
+            {
+              "stopId": "demo-regional-0-8:2",
+              "stationId": "104445",
+              "arrivalMs": 31740000,
+              "departureMs": 31800000,
+              "passengerStop": true
+            },
+            {
+              "stopId": "demo-regional-0-8:3",
+              "stationId": "464080",
+              "arrivalMs": 33600000,
+              "departureMs": 33660000,
+              "passengerStop": true
+            },
+            {
+              "stopId": "demo-regional-0-8:4",
+              "stationId": "194454",
+              "arrivalMs": 35760000,
+              "departureMs": 35820000,
+              "passengerStop": true
+            },
+            {
+              "stopId": "demo-regional-0-8:5",
+              "stationId": "542001",
+              "arrivalMs": 36720000,
+              "departureMs": 36780000,
+              "passengerStop": true
+            },
+            {
+              "stopId": "demo-regional-0-8:6",
+              "stationId": "66393",
+              "arrivalMs": 37380000,
+              "departureMs": 37380000,
+              "passengerStop": true
+            }
+          ],
+          "fares": [
+            {
+              "id": "regional-standard",
+              "comfortClass": "standard",
+              "centsPerSegment": 100,
+              "salesAvailable": true,
+              "onboardSales": false,
+              "reservationRequired": false
+            }
+          ],
+          "capacity": {
+            "standardSeats": 120,
+            "standardStanding": 80,
+            "premiumSeats": 0,
+            "wheelchairSpaces": 2,
+            "bicycleSpaces": 8,
+            "strollerSpaces": 4
+          },
+          "serviceIntervalMs": 3600000,
+          "reliabilityBasisPoints": 9500,
+          "comfortBasisPoints": 6000
+        },
+        {
+          "worldId": "population-demand-demo",
+          "trainRunId": "demo-regional-1-6",
+          "operatorId": "demo-spnv-operator",
+          "mode": "spnv",
+          "cancelled": false,
+          "stops": [
+            {
+              "stopId": "demo-regional-1-6:0",
+              "stationId": "66393",
+              "arrivalMs": 22500000,
+              "departureMs": 22500000,
+              "passengerStop": true
+            },
+            {
+              "stopId": "demo-regional-1-6:1",
+              "stationId": "542001",
+              "arrivalMs": 23100000,
+              "departureMs": 23160000,
+              "passengerStop": true
+            },
+            {
+              "stopId": "demo-regional-1-6:2",
+              "stationId": "194454",
+              "arrivalMs": 24060000,
+              "departureMs": 24120000,
+              "passengerStop": true
+            },
+            {
+              "stopId": "demo-regional-1-6:3",
+              "stationId": "464080",
+              "arrivalMs": 26220000,
+              "departureMs": 26280000,
+              "passengerStop": true
+            },
+            {
+              "stopId": "demo-regional-1-6:4",
+              "stationId": "104445",
+              "arrivalMs": 28080000,
+              "departureMs": 28140000,
+              "passengerStop": true
+            },
+            {
+              "stopId": "demo-regional-1-6:5",
+              "stationId": "85981",
+              "arrivalMs": 28740000,
+              "departureMs": 28800000,
+              "passengerStop": true
+            },
+            {
+              "stopId": "demo-regional-1-6:6",
+              "stationId": "354639",
+              "arrivalMs": 30480000,
+              "departureMs": 30480000,
+              "passengerStop": true
+            }
+          ],
+          "fares": [
+            {
+              "id": "regional-standard",
+              "comfortClass": "standard",
+              "centsPerSegment": 100,
+              "salesAvailable": true,
+              "onboardSales": false,
+              "reservationRequired": false
+            }
+          ],
+          "capacity": {
+            "standardSeats": 120,
+            "standardStanding": 80,
+            "premiumSeats": 0,
+            "wheelchairSpaces": 2,
+            "bicycleSpaces": 8,
+            "strollerSpaces": 4
+          },
+          "serviceIntervalMs": 3600000,
+          "reliabilityBasisPoints": 9500,
+          "comfortBasisPoints": 6000
+        },
+        {
+          "worldId": "population-demand-demo",
+          "trainRunId": "demo-regional-1-7",
+          "operatorId": "demo-spnv-operator",
+          "mode": "spnv",
+          "cancelled": false,
+          "stops": [
+            {
+              "stopId": "demo-regional-1-7:0",
+              "stationId": "66393",
+              "arrivalMs": 26100000,
+              "departureMs": 26100000,
+              "passengerStop": true
+            },
+            {
+              "stopId": "demo-regional-1-7:1",
+              "stationId": "542001",
+              "arrivalMs": 26700000,
+              "departureMs": 26760000,
+              "passengerStop": true
+            },
+            {
+              "stopId": "demo-regional-1-7:2",
+              "stationId": "194454",
+              "arrivalMs": 27660000,
+              "departureMs": 27720000,
+              "passengerStop": true
+            },
+            {
+              "stopId": "demo-regional-1-7:3",
+              "stationId": "464080",
+              "arrivalMs": 29820000,
+              "departureMs": 29880000,
+              "passengerStop": true
+            },
+            {
+              "stopId": "demo-regional-1-7:4",
+              "stationId": "104445",
+              "arrivalMs": 31680000,
+              "departureMs": 31740000,
+              "passengerStop": true
+            },
+            {
+              "stopId": "demo-regional-1-7:5",
+              "stationId": "85981",
+              "arrivalMs": 32340000,
+              "departureMs": 32400000,
+              "passengerStop": true
+            },
+            {
+              "stopId": "demo-regional-1-7:6",
+              "stationId": "354639",
+              "arrivalMs": 34080000,
+              "departureMs": 34080000,
+              "passengerStop": true
+            }
+          ],
+          "fares": [
+            {
+              "id": "regional-standard",
+              "comfortClass": "standard",
+              "centsPerSegment": 100,
+              "salesAvailable": true,
+              "onboardSales": false,
+              "reservationRequired": false
+            }
+          ],
+          "capacity": {
+            "standardSeats": 120,
+            "standardStanding": 80,
+            "premiumSeats": 0,
+            "wheelchairSpaces": 2,
+            "bicycleSpaces": 8,
+            "strollerSpaces": 4
+          },
+          "serviceIntervalMs": 3600000,
+          "reliabilityBasisPoints": 9500,
+          "comfortBasisPoints": 6000
+        },
+        {
+          "worldId": "population-demand-demo",
+          "trainRunId": "demo-regional-1-8",
+          "operatorId": "demo-spnv-operator",
+          "mode": "spnv",
+          "cancelled": false,
+          "stops": [
+            {
+              "stopId": "demo-regional-1-8:0",
+              "stationId": "66393",
+              "arrivalMs": 29700000,
+              "departureMs": 29700000,
+              "passengerStop": true
+            },
+            {
+              "stopId": "demo-regional-1-8:1",
+              "stationId": "542001",
+              "arrivalMs": 30300000,
+              "departureMs": 30360000,
+              "passengerStop": true
+            },
+            {
+              "stopId": "demo-regional-1-8:2",
+              "stationId": "194454",
+              "arrivalMs": 31260000,
+              "departureMs": 31320000,
+              "passengerStop": true
+            },
+            {
+              "stopId": "demo-regional-1-8:3",
+              "stationId": "464080",
+              "arrivalMs": 33420000,
+              "departureMs": 33480000,
+              "passengerStop": true
+            },
+            {
+              "stopId": "demo-regional-1-8:4",
+              "stationId": "104445",
+              "arrivalMs": 35280000,
+              "departureMs": 35340000,
+              "passengerStop": true
+            },
+            {
+              "stopId": "demo-regional-1-8:5",
+              "stationId": "85981",
+              "arrivalMs": 35940000,
+              "departureMs": 36000000,
+              "passengerStop": true
+            },
+            {
+              "stopId": "demo-regional-1-8:6",
+              "stationId": "354639",
+              "arrivalMs": 37680000,
+              "departureMs": 37680000,
+              "passengerStop": true
+            }
+          ],
+          "fares": [
+            {
+              "id": "regional-standard",
+              "comfortClass": "standard",
+              "centsPerSegment": 100,
+              "salesAvailable": true,
+              "onboardSales": false,
+              "reservationRequired": false
+            }
+          ],
+          "capacity": {
+            "standardSeats": 120,
+            "standardStanding": 80,
+            "premiumSeats": 0,
+            "wheelchairSpaces": 2,
+            "bicycleSpaces": 8,
+            "strollerSpaces": 4
+          },
+          "serviceIntervalMs": 3600000,
+          "reliabilityBasisPoints": 9500,
+          "comfortBasisPoints": 6000
+        },
+        {
+          "worldId": "population-demand-demo",
+          "trainRunId": "demo-city-0-6",
+          "operatorId": "demo-spnv-operator",
+          "mode": "spnv",
+          "cancelled": false,
+          "stops": [
+            {
+              "stopId": "demo-city-0-6:0",
+              "stationId": "46758",
+              "arrivalMs": 22200000,
+              "departureMs": 22200000,
+              "passengerStop": true
+            },
+            {
+              "stopId": "demo-city-0-6:1",
+              "stationId": "611502",
+              "arrivalMs": 23100000,
+              "departureMs": 23160000,
+              "passengerStop": true
+            },
+            {
+              "stopId": "demo-city-0-6:2",
+              "stationId": "630508",
+              "arrivalMs": 23760000,
+              "departureMs": 23820000,
+              "passengerStop": true
+            },
+            {
+              "stopId": "demo-city-0-6:3",
+              "stationId": "600951",
+              "arrivalMs": 24540000,
+              "departureMs": 24600000,
+              "passengerStop": true
+            },
+            {
+              "stopId": "demo-city-0-6:4",
+              "stationId": "85981",
+              "arrivalMs": 25500000,
+              "departureMs": 25560000,
+              "passengerStop": true
+            },
+            {
+              "stopId": "demo-city-0-6:5",
+              "stationId": "154282",
+              "arrivalMs": 26760000,
+              "departureMs": 26760000,
+              "passengerStop": true
+            }
+          ],
+          "fares": [
+            {
+              "id": "city-standard",
+              "comfortClass": "standard",
+              "centsPerSegment": 100,
+              "salesAvailable": true,
+              "onboardSales": false,
+              "reservationRequired": false
+            }
+          ],
+          "capacity": {
+            "standardSeats": 120,
+            "standardStanding": 80,
+            "premiumSeats": 0,
+            "wheelchairSpaces": 2,
+            "bicycleSpaces": 8,
+            "strollerSpaces": 4
+          },
+          "serviceIntervalMs": 3600000,
+          "reliabilityBasisPoints": 9500,
+          "comfortBasisPoints": 6000
+        },
+        {
+          "worldId": "population-demand-demo",
+          "trainRunId": "demo-city-0-7",
+          "operatorId": "demo-spnv-operator",
+          "mode": "spnv",
+          "cancelled": false,
+          "stops": [
+            {
+              "stopId": "demo-city-0-7:0",
+              "stationId": "46758",
+              "arrivalMs": 25800000,
+              "departureMs": 25800000,
+              "passengerStop": true
+            },
+            {
+              "stopId": "demo-city-0-7:1",
+              "stationId": "611502",
+              "arrivalMs": 26700000,
+              "departureMs": 26760000,
+              "passengerStop": true
+            },
+            {
+              "stopId": "demo-city-0-7:2",
+              "stationId": "630508",
+              "arrivalMs": 27360000,
+              "departureMs": 27420000,
+              "passengerStop": true
+            },
+            {
+              "stopId": "demo-city-0-7:3",
+              "stationId": "600951",
+              "arrivalMs": 28140000,
+              "departureMs": 28200000,
+              "passengerStop": true
+            },
+            {
+              "stopId": "demo-city-0-7:4",
+              "stationId": "85981",
+              "arrivalMs": 29100000,
+              "departureMs": 29160000,
+              "passengerStop": true
+            },
+            {
+              "stopId": "demo-city-0-7:5",
+              "stationId": "154282",
+              "arrivalMs": 30360000,
+              "departureMs": 30360000,
+              "passengerStop": true
+            }
+          ],
+          "fares": [
+            {
+              "id": "city-standard",
+              "comfortClass": "standard",
+              "centsPerSegment": 100,
+              "salesAvailable": true,
+              "onboardSales": false,
+              "reservationRequired": false
+            }
+          ],
+          "capacity": {
+            "standardSeats": 120,
+            "standardStanding": 80,
+            "premiumSeats": 0,
+            "wheelchairSpaces": 2,
+            "bicycleSpaces": 8,
+            "strollerSpaces": 4
+          },
+          "serviceIntervalMs": 3600000,
+          "reliabilityBasisPoints": 9500,
+          "comfortBasisPoints": 6000
+        },
+        {
+          "worldId": "population-demand-demo",
+          "trainRunId": "demo-city-0-8",
+          "operatorId": "demo-spnv-operator",
+          "mode": "spnv",
+          "cancelled": false,
+          "stops": [
+            {
+              "stopId": "demo-city-0-8:0",
+              "stationId": "46758",
+              "arrivalMs": 29400000,
+              "departureMs": 29400000,
+              "passengerStop": true
+            },
+            {
+              "stopId": "demo-city-0-8:1",
+              "stationId": "611502",
+              "arrivalMs": 30300000,
+              "departureMs": 30360000,
+              "passengerStop": true
+            },
+            {
+              "stopId": "demo-city-0-8:2",
+              "stationId": "630508",
+              "arrivalMs": 30960000,
+              "departureMs": 31020000,
+              "passengerStop": true
+            },
+            {
+              "stopId": "demo-city-0-8:3",
+              "stationId": "600951",
+              "arrivalMs": 31740000,
+              "departureMs": 31800000,
+              "passengerStop": true
+            },
+            {
+              "stopId": "demo-city-0-8:4",
+              "stationId": "85981",
+              "arrivalMs": 32700000,
+              "departureMs": 32760000,
+              "passengerStop": true
+            },
+            {
+              "stopId": "demo-city-0-8:5",
+              "stationId": "154282",
+              "arrivalMs": 33960000,
+              "departureMs": 33960000,
+              "passengerStop": true
+            }
+          ],
+          "fares": [
+            {
+              "id": "city-standard",
+              "comfortClass": "standard",
+              "centsPerSegment": 100,
+              "salesAvailable": true,
+              "onboardSales": false,
+              "reservationRequired": false
+            }
+          ],
+          "capacity": {
+            "standardSeats": 120,
+            "standardStanding": 80,
+            "premiumSeats": 0,
+            "wheelchairSpaces": 2,
+            "bicycleSpaces": 8,
+            "strollerSpaces": 4
+          },
+          "serviceIntervalMs": 3600000,
+          "reliabilityBasisPoints": 9500,
+          "comfortBasisPoints": 6000
+        },
+        {
+          "worldId": "population-demand-demo",
+          "trainRunId": "demo-city-1-6",
+          "operatorId": "demo-spnv-operator",
+          "mode": "spnv",
+          "cancelled": false,
+          "stops": [
+            {
+              "stopId": "demo-city-1-6:0",
+              "stationId": "154282",
+              "arrivalMs": 22500000,
+              "departureMs": 22500000,
+              "passengerStop": true
+            },
+            {
+              "stopId": "demo-city-1-6:1",
+              "stationId": "85981",
+              "arrivalMs": 23700000,
+              "departureMs": 23760000,
+              "passengerStop": true
+            },
+            {
+              "stopId": "demo-city-1-6:2",
+              "stationId": "600951",
+              "arrivalMs": 24660000,
+              "departureMs": 24720000,
+              "passengerStop": true
+            },
+            {
+              "stopId": "demo-city-1-6:3",
+              "stationId": "630508",
+              "arrivalMs": 25440000,
+              "departureMs": 25500000,
+              "passengerStop": true
+            },
+            {
+              "stopId": "demo-city-1-6:4",
+              "stationId": "611502",
+              "arrivalMs": 26100000,
+              "departureMs": 26160000,
+              "passengerStop": true
+            },
+            {
+              "stopId": "demo-city-1-6:5",
+              "stationId": "46758",
+              "arrivalMs": 27060000,
+              "departureMs": 27060000,
+              "passengerStop": true
+            }
+          ],
+          "fares": [
+            {
+              "id": "city-standard",
+              "comfortClass": "standard",
+              "centsPerSegment": 100,
+              "salesAvailable": true,
+              "onboardSales": false,
+              "reservationRequired": false
+            }
+          ],
+          "capacity": {
+            "standardSeats": 120,
+            "standardStanding": 80,
+            "premiumSeats": 0,
+            "wheelchairSpaces": 2,
+            "bicycleSpaces": 8,
+            "strollerSpaces": 4
+          },
+          "serviceIntervalMs": 3600000,
+          "reliabilityBasisPoints": 9500,
+          "comfortBasisPoints": 6000
+        },
+        {
+          "worldId": "population-demand-demo",
+          "trainRunId": "demo-city-1-7",
+          "operatorId": "demo-spnv-operator",
+          "mode": "spnv",
+          "cancelled": false,
+          "stops": [
+            {
+              "stopId": "demo-city-1-7:0",
+              "stationId": "154282",
+              "arrivalMs": 26100000,
+              "departureMs": 26100000,
+              "passengerStop": true
+            },
+            {
+              "stopId": "demo-city-1-7:1",
+              "stationId": "85981",
+              "arrivalMs": 27300000,
+              "departureMs": 27360000,
+              "passengerStop": true
+            },
+            {
+              "stopId": "demo-city-1-7:2",
+              "stationId": "600951",
+              "arrivalMs": 28260000,
+              "departureMs": 28320000,
+              "passengerStop": true
+            },
+            {
+              "stopId": "demo-city-1-7:3",
+              "stationId": "630508",
+              "arrivalMs": 29040000,
+              "departureMs": 29100000,
+              "passengerStop": true
+            },
+            {
+              "stopId": "demo-city-1-7:4",
+              "stationId": "611502",
+              "arrivalMs": 29700000,
+              "departureMs": 29760000,
+              "passengerStop": true
+            },
+            {
+              "stopId": "demo-city-1-7:5",
+              "stationId": "46758",
+              "arrivalMs": 30660000,
+              "departureMs": 30660000,
+              "passengerStop": true
+            }
+          ],
+          "fares": [
+            {
+              "id": "city-standard",
+              "comfortClass": "standard",
+              "centsPerSegment": 100,
+              "salesAvailable": true,
+              "onboardSales": false,
+              "reservationRequired": false
+            }
+          ],
+          "capacity": {
+            "standardSeats": 120,
+            "standardStanding": 80,
+            "premiumSeats": 0,
+            "wheelchairSpaces": 2,
+            "bicycleSpaces": 8,
+            "strollerSpaces": 4
+          },
+          "serviceIntervalMs": 3600000,
+          "reliabilityBasisPoints": 9500,
+          "comfortBasisPoints": 6000
+        },
+        {
+          "worldId": "population-demand-demo",
+          "trainRunId": "demo-city-1-8",
+          "operatorId": "demo-spnv-operator",
+          "mode": "spnv",
+          "cancelled": false,
+          "stops": [
+            {
+              "stopId": "demo-city-1-8:0",
+              "stationId": "154282",
+              "arrivalMs": 29700000,
+              "departureMs": 29700000,
+              "passengerStop": true
+            },
+            {
+              "stopId": "demo-city-1-8:1",
+              "stationId": "85981",
+              "arrivalMs": 30900000,
+              "departureMs": 30960000,
+              "passengerStop": true
+            },
+            {
+              "stopId": "demo-city-1-8:2",
+              "stationId": "600951",
+              "arrivalMs": 31860000,
+              "departureMs": 31920000,
+              "passengerStop": true
+            },
+            {
+              "stopId": "demo-city-1-8:3",
+              "stationId": "630508",
+              "arrivalMs": 32640000,
+              "departureMs": 32700000,
+              "passengerStop": true
+            },
+            {
+              "stopId": "demo-city-1-8:4",
+              "stationId": "611502",
+              "arrivalMs": 33300000,
+              "departureMs": 33360000,
+              "passengerStop": true
+            },
+            {
+              "stopId": "demo-city-1-8:5",
+              "stationId": "46758",
+              "arrivalMs": 34260000,
+              "departureMs": 34260000,
+              "passengerStop": true
+            }
+          ],
+          "fares": [
+            {
+              "id": "city-standard",
+              "comfortClass": "standard",
+              "centsPerSegment": 100,
+              "salesAvailable": true,
+              "onboardSales": false,
+              "reservationRequired": false
+            }
+          ],
+          "capacity": {
+            "standardSeats": 120,
+            "standardStanding": 80,
+            "premiumSeats": 0,
+            "wheelchairSpaces": 2,
+            "bicycleSpaces": 8,
+            "strollerSpaces": 4
+          },
+          "serviceIntervalMs": 3600000,
+          "reliabilityBasisPoints": 9500,
+          "comfortBasisPoints": 6000
+        },
+        {
+          "worldId": "population-demand-demo",
+          "trainRunId": "demo-express-0-6",
+          "operatorId": "demo-spfv-operator",
+          "mode": "spfv",
+          "cancelled": false,
+          "stops": [
+            {
+              "stopId": "demo-express-0-6:0",
+              "stationId": "354639",
+              "arrivalMs": 22200000,
+              "departureMs": 22200000,
+              "passengerStop": true
+            },
+            {
+              "stopId": "demo-express-0-6:1",
+              "stationId": "85981",
+              "arrivalMs": 23700000,
+              "departureMs": 23760000,
+              "passengerStop": true
+            },
+            {
+              "stopId": "demo-express-0-6:2",
+              "stationId": "542001",
+              "arrivalMs": 26160000,
+              "departureMs": 26160000,
+              "passengerStop": true
+            }
+          ],
+          "fares": [
+            {
+              "id": "express-standard",
+              "comfortClass": "standard",
+              "centsPerSegment": 200,
+              "salesAvailable": true,
+              "onboardSales": false,
+              "reservationRequired": false
+            }
+          ],
+          "capacity": {
+            "standardSeats": 100,
+            "standardStanding": 0,
+            "premiumSeats": 0,
+            "wheelchairSpaces": 2,
+            "bicycleSpaces": 8,
+            "strollerSpaces": 4
+          },
+          "serviceIntervalMs": 3600000,
+          "reliabilityBasisPoints": 9500,
+          "comfortBasisPoints": 8000
+        },
+        {
+          "worldId": "population-demand-demo",
+          "trainRunId": "demo-express-0-7",
+          "operatorId": "demo-spfv-operator",
+          "mode": "spfv",
+          "cancelled": false,
+          "stops": [
+            {
+              "stopId": "demo-express-0-7:0",
+              "stationId": "354639",
+              "arrivalMs": 25800000,
+              "departureMs": 25800000,
+              "passengerStop": true
+            },
+            {
+              "stopId": "demo-express-0-7:1",
+              "stationId": "85981",
+              "arrivalMs": 27300000,
+              "departureMs": 27360000,
+              "passengerStop": true
+            },
+            {
+              "stopId": "demo-express-0-7:2",
+              "stationId": "542001",
+              "arrivalMs": 29760000,
+              "departureMs": 29760000,
+              "passengerStop": true
+            }
+          ],
+          "fares": [
+            {
+              "id": "express-standard",
+              "comfortClass": "standard",
+              "centsPerSegment": 200,
+              "salesAvailable": true,
+              "onboardSales": false,
+              "reservationRequired": false
+            }
+          ],
+          "capacity": {
+            "standardSeats": 100,
+            "standardStanding": 0,
+            "premiumSeats": 0,
+            "wheelchairSpaces": 2,
+            "bicycleSpaces": 8,
+            "strollerSpaces": 4
+          },
+          "serviceIntervalMs": 3600000,
+          "reliabilityBasisPoints": 9500,
+          "comfortBasisPoints": 8000
+        },
+        {
+          "worldId": "population-demand-demo",
+          "trainRunId": "demo-express-0-8",
+          "operatorId": "demo-spfv-operator",
+          "mode": "spfv",
+          "cancelled": false,
+          "stops": [
+            {
+              "stopId": "demo-express-0-8:0",
+              "stationId": "354639",
+              "arrivalMs": 29400000,
+              "departureMs": 29400000,
+              "passengerStop": true
+            },
+            {
+              "stopId": "demo-express-0-8:1",
+              "stationId": "85981",
+              "arrivalMs": 30900000,
+              "departureMs": 30960000,
+              "passengerStop": true
+            },
+            {
+              "stopId": "demo-express-0-8:2",
+              "stationId": "542001",
+              "arrivalMs": 33360000,
+              "departureMs": 33360000,
+              "passengerStop": true
+            }
+          ],
+          "fares": [
+            {
+              "id": "express-standard",
+              "comfortClass": "standard",
+              "centsPerSegment": 200,
+              "salesAvailable": true,
+              "onboardSales": false,
+              "reservationRequired": false
+            }
+          ],
+          "capacity": {
+            "standardSeats": 100,
+            "standardStanding": 0,
+            "premiumSeats": 0,
+            "wheelchairSpaces": 2,
+            "bicycleSpaces": 8,
+            "strollerSpaces": 4
+          },
+          "serviceIntervalMs": 3600000,
+          "reliabilityBasisPoints": 9500,
+          "comfortBasisPoints": 8000
+        },
+        {
+          "worldId": "population-demand-demo",
+          "trainRunId": "demo-express-1-6",
+          "operatorId": "demo-spfv-operator",
+          "mode": "spfv",
+          "cancelled": false,
+          "stops": [
+            {
+              "stopId": "demo-express-1-6:0",
+              "stationId": "542001",
+              "arrivalMs": 22500000,
+              "departureMs": 22500000,
+              "passengerStop": true
+            },
+            {
+              "stopId": "demo-express-1-6:1",
+              "stationId": "85981",
+              "arrivalMs": 24900000,
+              "departureMs": 24960000,
+              "passengerStop": true
+            },
+            {
+              "stopId": "demo-express-1-6:2",
+              "stationId": "354639",
+              "arrivalMs": 26460000,
+              "departureMs": 26460000,
+              "passengerStop": true
+            }
+          ],
+          "fares": [
+            {
+              "id": "express-standard",
+              "comfortClass": "standard",
+              "centsPerSegment": 200,
+              "salesAvailable": true,
+              "onboardSales": false,
+              "reservationRequired": false
+            }
+          ],
+          "capacity": {
+            "standardSeats": 100,
+            "standardStanding": 0,
+            "premiumSeats": 0,
+            "wheelchairSpaces": 2,
+            "bicycleSpaces": 8,
+            "strollerSpaces": 4
+          },
+          "serviceIntervalMs": 3600000,
+          "reliabilityBasisPoints": 9500,
+          "comfortBasisPoints": 8000
+        },
+        {
+          "worldId": "population-demand-demo",
+          "trainRunId": "demo-express-1-7",
+          "operatorId": "demo-spfv-operator",
+          "mode": "spfv",
+          "cancelled": false,
+          "stops": [
+            {
+              "stopId": "demo-express-1-7:0",
+              "stationId": "542001",
+              "arrivalMs": 26100000,
+              "departureMs": 26100000,
+              "passengerStop": true
+            },
+            {
+              "stopId": "demo-express-1-7:1",
+              "stationId": "85981",
+              "arrivalMs": 28500000,
+              "departureMs": 28560000,
+              "passengerStop": true
+            },
+            {
+              "stopId": "demo-express-1-7:2",
+              "stationId": "354639",
+              "arrivalMs": 30060000,
+              "departureMs": 30060000,
+              "passengerStop": true
+            }
+          ],
+          "fares": [
+            {
+              "id": "express-standard",
+              "comfortClass": "standard",
+              "centsPerSegment": 200,
+              "salesAvailable": true,
+              "onboardSales": false,
+              "reservationRequired": false
+            }
+          ],
+          "capacity": {
+            "standardSeats": 100,
+            "standardStanding": 0,
+            "premiumSeats": 0,
+            "wheelchairSpaces": 2,
+            "bicycleSpaces": 8,
+            "strollerSpaces": 4
+          },
+          "serviceIntervalMs": 3600000,
+          "reliabilityBasisPoints": 9500,
+          "comfortBasisPoints": 8000
+        },
+        {
+          "worldId": "population-demand-demo",
+          "trainRunId": "demo-express-1-8",
+          "operatorId": "demo-spfv-operator",
+          "mode": "spfv",
+          "cancelled": false,
+          "stops": [
+            {
+              "stopId": "demo-express-1-8:0",
+              "stationId": "542001",
+              "arrivalMs": 29700000,
+              "departureMs": 29700000,
+              "passengerStop": true
+            },
+            {
+              "stopId": "demo-express-1-8:1",
+              "stationId": "85981",
+              "arrivalMs": 32100000,
+              "departureMs": 32160000,
+              "passengerStop": true
+            },
+            {
+              "stopId": "demo-express-1-8:2",
+              "stationId": "354639",
+              "arrivalMs": 33660000,
+              "departureMs": 33660000,
+              "passengerStop": true
+            }
+          ],
+          "fares": [
+            {
+              "id": "express-standard",
+              "comfortClass": "standard",
+              "centsPerSegment": 200,
+              "salesAvailable": true,
+              "onboardSales": false,
+              "reservationRequired": false
+            }
+          ],
+          "capacity": {
+            "standardSeats": 100,
+            "standardStanding": 0,
+            "premiumSeats": 0,
+            "wheelchairSpaces": 2,
+            "bicycleSpaces": 8,
+            "strollerSpaces": 4
+          },
+          "serviceIntervalMs": 3600000,
+          "reliabilityBasisPoints": 9500,
+          "comfortBasisPoints": 8000
+        }
+      ],
+      "alternatives": []
+    }
+  ]
+}

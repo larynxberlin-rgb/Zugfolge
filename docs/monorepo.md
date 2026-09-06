@@ -242,7 +242,7 @@ Liste ist keine vollständige Karte des Repositoriums, sondern die Zuordnung
 | `simulation-core` | `crates/zugfolge-sim/**`, `crates/zugfolge-sim-runtime/**`, `crates/zugfolge-runtime{,-napi}/**`, `crates/zugfolge-conflict/**`, `crates/zugfolge-fleet/**`, `crates/zugfolge-disruption/**`, `packages/runtime-native/**`, `spikes/**` | aktiv | vollständiger Kernvertrag: kein Bezahlstatus, keine Uhr, keine Datenbank |
 | `path-allocation` | `crates/zugfolge-planner/**`, `crates/zugfolge-planning-runtime{,-napi}/**`, `packages/path-allocation/**`, `packages/planning-{projection,runtime-native,worker}/**` | aktiv | Reihenfolge und Bezahlstatus beeinflussen das Ergebnis nicht (E4, `infrastruktur.md` 2) |
 | `dispatch` | `crates/zugfolge-rules/**`, `packages/dispatch/**` | aktiv | das Betriebsprogramm wirkt offline und für alle gleich (E2, E13) |
-| `demand` | `packages/demand/**`, `crates/zugfolge-demand/**` | geplant | Nachfrage folgt dem Angebot, nie dem Vertrag des Spielers |
+| `demand` | `packages/demand/**`, `crates/zugfolge-demand/**` | aktiv | Ganzzahlige, uhrfreie Nachfrage folgt dem Angebot, nie dem Vertrag des Spielers; kein Datenbankzugriff |
 | `economy` | `packages/economy/**`, `packages/cooperation/**`, `packages/tender/**`, `apps/economy-service/**` | aktiv | Ledger und Kooperation in Integer-Cent; Wertung deterministisch aus dem `EconomyRelease` (M6/M12) |
 | `infra-pipeline` | `crates/zugfolge-infra/**` | aktiv | **der einzige Ort mit Gleitkommarechnung** — sie endet in ganzzahligen Fahrzeittabellen |
 | `world-isolation` | `packages/db/**` | aktiv | Postgres-Zugriff der Game-Services; Wurzel der Weltisolation — `worlds`, das Event-Log und das weltgebundene Repository (M2.2) |

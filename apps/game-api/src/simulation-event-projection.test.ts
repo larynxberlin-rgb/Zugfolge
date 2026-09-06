@@ -1,4 +1,5 @@
 import type { DomainEvent } from "@zugfolge/db";
+import { projectOperations } from "@zugfolge/dispatch";
 import { describe, expect, it } from "vitest";
 
 import { projectSimulationEventBatch } from "./simulation-event-projection.js";
@@ -64,6 +65,33 @@ describe("Simulationsevent-Spielerprojektion", () => {
     const replay = projectSimulationEventBatch(raw, new Set(["operator-a"]), 10);
     expect(first).toEqual(replay);
     expect(first).toMatchObject({ after: 10, nextAfter: 12, events: [] });
+  });
+
+  it("verwirft Nachfrage-Seeds, Cursor, Haltbelege und Angebotshistorie auch bei eigenem Operator in beiden Streamprojektionen", () => {
+    const types = ["demand.evaluated", "demand.pool-initialized", "demand.pool-progressed", "demand.population-data-updated",
+      "operations.passenger-stop-arrival", "operations.passenger-stop-departure",
+      "planning.runtime-state", "planning.diagram"];
+    const raw = types.map((eventType, index) => event(30 + index, eventType, {
+      operatorId: "operator-a", operator_id: "operator-a", trainRunId: "own-train",
+      seed: "private-seed", initialInputHash: "private-input-hash",
+      progressCursor: { pendingReceipts: [{ receiptId: "private-receipt" }], pendingOffers: [{ revision: 42 }] },
+      fareFact: { status: "private-fare-status" }, passengers: [{ passengerKey: "private-passenger" }],
+      detail: "private-native-stop-receipt", state: { reservations: { "own-train": { privateOffer: true } } },
+      action: "cancel_run", decisionId: "must-not-be-published", costCents: "1234",
+    }));
+    for (const ownedOperators of [new Set<string>(), new Set(["operator-a"]), new Set(["other-operator"])]) {
+      expect(projectSimulationEventBatch(raw, ownedOperators, 29)).toEqual({
+        schemaVersion: "zugfolge-simulation-event-projection/v1", after: 29, nextAfter: 37, events: [],
+      });
+    }
+    // Diese Projektion speist in app.ts die tatsächliche Operator-SSE.
+    // Selbst passende Eigentümerfelder und entscheidungsähnliche Nutzdaten
+    // dürfen einen privaten Ereignistyp nicht für die Veröffentlichung öffnen.
+    for (const operatorId of ["operator-a", "other-operator"]) {
+      expect(projectOperations(raw, operatorId)).toEqual({ throughSequence: 37, decisions: [], cancellations: [],
+        manualInterventions: [], majorEvents: [] });
+      for (const row of raw) expect(projectOperations([row], operatorId).decisions).toEqual([]);
+    }
   });
 
   it("projiziert Aktivierung und technische Freigabe einer v2-Stoerung ohne interne Wirkungspayload", () => {

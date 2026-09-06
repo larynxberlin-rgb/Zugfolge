@@ -105,6 +105,10 @@ describe("geheftetes Livemap-Read-Model", () => {
     database.prepare("INSERT INTO object_details VALUES (?, ?, ?, ?, ?, ?, ?)").run(WORLD_ID, "infra-de-2026", "track", "track-1", "Streckengleis 1", "B", '[{"label":"Laenge","value":"250","unit":"m"}]');
     database.prepare("INSERT INTO station_schedule_calls VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)").run(WORLD_ID, "station-1", "departure", "train-1", 120, "RE 1", "Regional-Express", "8", "Leipzig Hbf", "Erfurt Hbf");
     database.prepare("INSERT INTO passenger_information VALUES (?, ?, ?, ?, ?)").run(WORLD_ID, "train-1", "Erfurt Hbf", '["Merseburg Hbf","Erfurt Hbf"]', "[]");
+    database.prepare("INSERT INTO object_details VALUES (?, ?, ?, ?, ?, ?, ?)").run(WORLD_ID, "infra-de-2026", "station", "dense-station", "Dichter Knoten", "B", "[]");
+    for (let index = 0; index < 200; index += 1) {
+      database.prepare("INSERT INTO station_schedule_calls VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)").run(WORLD_ID, "dense-station", "departure", `dense-${String(index).padStart(3, "0")}`, 120, `${index + 1}`, "Regional-Express", null, null, null);
+    }
     database.close();
 
     const model = await loadLivemapReadModel(path);
@@ -142,6 +146,14 @@ describe("geheftetes Livemap-Read-Model", () => {
       });
       await expect(model.getPassengerInformation(WORLD_ID, "train-1")).resolves.toMatchObject({ destination: "Erfurt Hbf" });
       await expect(model.getPassengerInformation(WORLD_ID, "train-1:day-1")).resolves.toBeUndefined();
+      const denseBoard = await model.getStationBoard(WORLD_ID, "dense-station", { streamId: "live", sequence: 8, atS: 100 });
+      expect(denseBoard?.departures).toHaveLength(160);
+      expect(denseBoard?.departures.some((call) => call.trainId === "dense-199")).toBe(false);
+      await expect(model.getScheduledCall!(WORLD_ID, "dense-station", "dense-199", 120, "departure")).resolves.toMatchObject({ trainId: "dense-199", scheduledTimeS: 120 });
+      await expect(model.getScheduledCall!(WORLD_ID, "dense-station", "dense-199:day-1", 86_520, "departure")).resolves.toMatchObject({ trainId: "dense-199:day-1" });
+      await expect(model.getScheduledCall!(WORLD_ID, "dense-station", "dense-199", 121, "departure")).resolves.toBeUndefined();
+      await expect(model.getScheduledCall!(WORLD_ID, "dense-station", "dense-199", 120, "arrival")).resolves.toBeUndefined();
+      await expect(model.getScheduledCall!("foreign", "dense-station", "dense-199", 120, "departure")).resolves.toBeUndefined();
       await expect(model.getOwnerTrainDetail(WORLD_ID, "operator", "train-1", { streamId: "live", sequence: 5, atS: 100 })).resolves.toBeUndefined();
     } finally {
       model.close();

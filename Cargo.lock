@@ -408,6 +408,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "zugfolge-demand"
+version = "0.0.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "sha2",
+]
+
+[[package]]
 name = "zugfolge-determinism"
 version = "0.0.0"
 dependencies = [
@@ -544,6 +553,7 @@ dependencies = [
  "napi-build",
  "napi-derive",
  "serde_json",
+ "zugfolge-demand",
  "zugfolge-rules",
  "zugfolge-runtime",
  "zugfolge-sim-runtime",
@@ -555,6 +565,7 @@ version = "0.0.0"
 dependencies = [
  "serde",
  "serde_json",
+ "sha2",
  "zugfolge-determinism",
 ]
 

@@ -12,6 +12,7 @@ export const PLANNING_PLAYER_PATH_REQUEST_SCHEMA = "planning.player-path-request
 export const PLANNING_PATH_REQUEST_SCHEMA_V3 = "planning.path-request/v3" as const;
 export const PLANNING_PATH_REQUEST_SCHEMA = "planning.path-request/v4" as const;
 export const PLANNING_COORDINATE_AUTHORITY_SCHEMA = "planning.coordinate/v1" as const;
+export const PLANNING_COORDINATE_BATCH_AUTHORITY_SCHEMA = "planning.coordinate/v2" as const;
 export const PLANNING_INFRASTRUCTURE_RELEASE_SCHEMA = "planning.infrastructure-release/v1" as const;
 
 export interface PlanningPlayerPathRequestBody extends Omit<PlanningCoordinateRequestV2, "requestNumericId" | "boundaryWindows" | "train" | "trainId" | "trainNumber"> {
@@ -66,14 +67,16 @@ export type BoundPlanningPathRequest = AnyPlanningPathRequestBody & Readonly<{
  * request facts through this payload.
  */
 export interface PlanningCoordinateAuthorityCommand {
-  readonly schemaVersion: typeof PLANNING_COORDINATE_AUTHORITY_SCHEMA;
+  readonly schemaVersion: typeof PLANNING_COORDINATE_AUTHORITY_SCHEMA | typeof PLANNING_COORDINATE_BATCH_AUTHORITY_SCHEMA;
   readonly worldId: string;
   readonly runId: string;
   readonly expectedProjectionRevision: number | null;
   readonly seedWorld: string;
   readonly seedPeriod: number;
   readonly infrastructureReleaseId: string;
-  readonly requestCommandIds: readonly [string, string];
+  readonly requestCommandIds: readonly string[];
+  readonly replaceTrainIds?: readonly string[];
+  readonly effectiveFromS?: number;
 }
 
 export type PlanningCoordinateAuthorityBody = Omit<PlanningCoordinateAuthorityCommand, "worldId">;
@@ -160,6 +163,13 @@ function validatePlayerRequestFacts(input: Record<string, unknown>, name: string
   );
   invariant(["daily", "workdays", "weekend"].includes(input["operatingDays"] as string), `${name}.operatingDays ist unbekannt.`);
   integer(input["desiredDepartureS"], `${name}.desiredDepartureS`);
+  if (Object.hasOwn(input, "serviceWindow")) {
+    const window = exactRecord(input["serviceWindow"], `${name}.serviceWindow`, ["validFromS", "validUntilS"]);
+    integer(window["validFromS"], `${name}.serviceWindow.validFromS`);
+    integer(window["validUntilS"], `${name}.serviceWindow.validUntilS`, 1);
+    invariant(window["validFromS"] <= input["desiredDepartureS"]
+      && input["desiredDepartureS"] < window["validUntilS"], `${name}.serviceWindow enthaelt die Abfahrt nicht.`);
+  }
   integer(input["earlierS"], `${name}.earlierS`);
   integer(input["laterS"], `${name}.laterS`);
   integer(input["stepS"], `${name}.stepS`, 1);
@@ -213,6 +223,7 @@ export function bindPlanningPlayerPathRequest(value: unknown): PlanningPlayerPat
     "schemaVersion",
     ...PLAYER_REQUEST_KEYS,
     ...(withBoundaryReference ? ["boundaryPlanningWindowId"] : []),
+    ...(typeof value === "object" && value !== null && "serviceWindow" in value ? ["serviceWindow"] : []),
   ]);
   invariant(
     input["schemaVersion"] === PLANNING_PLAYER_PATH_REQUEST_SCHEMA,
@@ -239,6 +250,7 @@ function bindPlanningPathRequestForRead(
     "schemaVersion",
     ...REQUEST_KEYS,
     ...(withBoundaryReference ? ["boundaryPlanningWindowId"] : []),
+    ...(typeof value === "object" && value !== null && "serviceWindow" in value ? ["serviceWindow"] : []),
   ]);
   invariant(
     input["schemaVersion"] === PLANNING_PATH_REQUEST_SCHEMA
@@ -289,8 +301,18 @@ export function bindPlanningCoordinateAuthorityCommand(
     "seedPeriod",
     "infrastructureReleaseId",
     "requestCommandIds",
+    ...(typeof value === "object" && value !== null && "replaceTrainIds" in value ? ["replaceTrainIds"] : []),
+    ...(typeof value === "object" && value !== null && "effectiveFromS" in value ? ["effectiveFromS"] : []),
   ]);
-  invariant(input["schemaVersion"] === PLANNING_COORDINATE_AUTHORITY_SCHEMA, "planning.coordinate hat ein unbekanntes Schema.");
+  invariant(input["schemaVersion"] === PLANNING_COORDINATE_AUTHORITY_SCHEMA
+    || input["schemaVersion"] === PLANNING_COORDINATE_BATCH_AUTHORITY_SCHEMA, "planning.coordinate hat ein unbekanntes Schema.");
+  if (Object.hasOwn(input, "replaceTrainIds") || Object.hasOwn(input, "effectiveFromS")) {
+    invariant(input["schemaVersion"] === PLANNING_COORDINATE_BATCH_AUTHORITY_SCHEMA
+      && Array.isArray(input["replaceTrainIds"]) && input["replaceTrainIds"].length >= 1 && input["replaceTrainIds"].length <= 256
+      && input["replaceTrainIds"].every((id) => typeof id === "string" && id.length > 0)
+      && new Set(input["replaceTrainIds"]).size === input["replaceTrainIds"].length, "Ersetzung braucht v2 und verschiedene Zug-IDs.");
+    integer(input["effectiveFromS"], "planning.coordinate.effectiveFromS");
+  }
   for (const key of ["runId", "seedWorld", "infrastructureReleaseId"] as const) text(input[key], `planning.coordinate.${key}`);
   invariant(/^[0-9]+$/.test(input["seedWorld"] as string), "planning.coordinate.seedWorld ist keine u64-Dezimalzahl.");
   integer(input["seedPeriod"], "planning.coordinate.seedPeriod");
@@ -299,10 +321,12 @@ export function bindPlanningCoordinateAuthorityCommand(
   }
   invariant(
     Array.isArray(input["requestCommandIds"])
-      && input["requestCommandIds"].length === 2
+      && (input["schemaVersion"] === PLANNING_COORDINATE_AUTHORITY_SCHEMA
+        ? input["requestCommandIds"].length === 2
+        : input["requestCommandIds"].length >= 1 && input["requestCommandIds"].length <= 256)
       && input["requestCommandIds"].every((item) => typeof item === "string" && item.length > 0)
-      && input["requestCommandIds"][0] !== input["requestCommandIds"][1],
-    "planning.coordinate muss exakt zwei verschiedene Antragskommando-IDs referenzieren.",
+      && new Set(input["requestCommandIds"]).size === input["requestCommandIds"].length,
+    "planning.coordinate braucht verschiedene Antragskommando-IDs: v1 exakt zwei, v2 1 bis 256.",
   );
   return { worldId, ...input } as unknown as PlanningCoordinateAuthorityCommand;
 }
@@ -419,6 +443,10 @@ const pathRequestProperties = {
   destinationStationId: nonEmptyString,
   desiredDepartureS: nonNegativeInteger,
   operatingDays: { enum: ["daily", "workdays", "weekend"] },
+  serviceWindow: {
+    type: "object", additionalProperties: false, required: ["validFromS", "validUntilS"],
+    properties: { validFromS: nonNegativeInteger, validUntilS: positiveInteger },
+  },
   stops: {
     type: "array",
     items: {

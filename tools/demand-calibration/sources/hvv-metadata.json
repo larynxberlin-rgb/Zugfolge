@@ -1,0 +1,206 @@
+{
+  "help": "http://suche.transparenz.hamburg.de/api/3/action/help_show?name=package_show",
+  "success": true,
+  "result": {
+    "author": "Hamburger Verkehrsverbund GmbH",
+    "creator_user_id": "4637397f-623e-4e44-a078-cf2989efc69b",
+    "id": "333cf7b4-7014-4167-9ff9-d88fbefccfa4",
+    "isopen": false,
+    "license_id": "dl-de-by-2.0",
+    "license_title": "Datenlizenz Deutschland - Namensnennung - 2.0",
+    "license_url": "http://www.govdata.de/dl-de/by-2-0",
+    "maintainer": "Fachliche Leitstelle Transparenzportal",
+    "metadata_created": "2026-06-02T16:04:37.954808",
+    "metadata_modified": "2026-06-02T16:04:37.954812",
+    "name": "hvv-fahrgastzahlen-2025",
+    "notes": "Im Rahmen des Hamburgischen Transparenzgesetzes veröffentlicht die hvv GmbH Fahrgastzahlen in Form von Ein- und Aussteigern pro Haltestelle und Linie.\nVeröffentlicht werden nur Linien, die mindestens zwei Haltestellen in Hamburg bedienen und deren Fahrzeuge mit automatischen Fahrgastzählsystemen (AFZS) ausgestattet sind. Die Ausstattungsquote beträgt dabei mindestens 20 %. Die Zähldaten wurden auf durchschnittliche Tageswerte (Montag bis Freitag) hochgerechnet.",
+    "num_resources": 4,
+    "num_tags": 1,
+    "organization": {
+      "id": "9d1fd8c6-f9d5-401f-b61e-84d7f386f2f3",
+      "name": "workflows",
+      "title": "Workflows",
+      "type": "organization",
+      "description": "",
+      "image_url": "",
+      "created": "2016-07-25T11:07:43.635046",
+      "is_organization": true,
+      "approval_status": "approved",
+      "state": "active"
+    },
+    "owner_org": "9d1fd8c6-f9d5-401f-b61e-84d7f386f2f3",
+    "private": false,
+    "state": "active",
+    "title": "hvv Fahrgastzahlen 2025",
+    "type": "dataset",
+    "url": null,
+    "extras": [
+      {
+        "key": "dates",
+        "value": "[{\"date\": \"2026-06-02T00:00:00\", \"role\": \"veroeffentlicht\"}]"
+      },
+      {
+        "key": "dcatgroups",
+        "value": "[{\"name\": \"TRAN\"}]"
+      },
+      {
+        "key": "exact_publishing_date",
+        "value": "2026-06-02T18:04:37"
+      },
+      {
+        "key": "latestVersion",
+        "value": "true"
+      },
+      {
+        "key": "mainDocument",
+        "value": "true"
+      },
+      {
+        "key": "metadata_original_id",
+        "value": "ELDORADO_:132d6820-db62-42ea-8d16-98c558298c6d"
+      },
+      {
+        "key": "metadata_zs_original_id",
+        "value": "7eef52b4-fe09-4a40-851b-6567d4a7ff67"
+      },
+      {
+        "key": "offline_date",
+        "value": "2036-07-01T00:00:00"
+      },
+      {
+        "key": "publishing_date",
+        "value": "2026-06-02T00:00:00"
+      },
+      {
+        "key": "registerobject_type",
+        "value": "statistiken"
+      },
+      {
+        "key": "source",
+        "value": "ELDORADO_"
+      },
+      {
+        "key": "temporal_granularity_factor",
+        "value": "1"
+      },
+      {
+        "key": "terms_of_use",
+        "value": "{\"license_id\": \"dl-de-by-2.0\", \"license_url\": \"http://www.govdata.de/dl-de/by-2-0\", \"attribution_text\": \"Namensnennung: Freie und Hansestadt Hamburg\", \"is_free_to_use\": true}"
+      }
+    ],
+    "groups": [
+      {
+        "description": "",
+        "display_name": "Transport & Verkehr",
+        "id": "941f0dd2-6c02-403c-9df6-5e994364d3a8",
+        "image_display_url": "",
+        "name": "transport-und-verkehr",
+        "title": "Transport & Verkehr"
+      }
+    ],
+    "resources": [
+      {
+        "cache_last_updated": null,
+        "cache_url": null,
+        "created": "2026-06-02T16:04:37.96092",
+        "description": null,
+        "file_size": 219394,
+        "format": "XLSX",
+        "hash": "2aad5a6431796898cc86ef850eb8649e3d6a2ce0d82c2921fd8b8a8b441d48ba",
+        "id": "8b51e992-c13c-48ec-a4d8-9386c5c64ff8",
+        "language": "de",
+        "last_modified": null,
+        "metadata_modified": "2026-06-02T16:04:37.952273",
+        "mimetype": null,
+        "mimetype_inner": null,
+        "name": "Upload: hvv Bus 2025",
+        "package_id": "333cf7b4-7014-4167-9ff9-d88fbefccfa4",
+        "position": 0,
+        "resource_type": null,
+        "size": 219394,
+        "state": "active",
+        "url": "https://daten.transparenz.hamburg.de/Dataport.HmbTG.ZS.Webservice.GetRessource100/GetRessource100.svc/390f654b-f46e-4e3d-8cdd-de4b36c50591/Upload__hvv_Bus_2025.XLSX",
+        "url_type": null
+      },
+      {
+        "cache_last_updated": null,
+        "cache_url": null,
+        "created": "2026-06-02T16:04:37.960923",
+        "description": null,
+        "file_size": 17514,
+        "format": "XLSX",
+        "hash": "bc6dfb50d0b90ee514641f7479e60d034d7fcdc59d4c21dc092e23e0f4b6d27e",
+        "id": "e970d1c2-5219-4977-84f0-1fb25fee09c7",
+        "language": "de",
+        "last_modified": null,
+        "metadata_modified": "2026-06-02T16:04:37.952364",
+        "mimetype": null,
+        "mimetype_inner": null,
+        "name": "Upload: hvv Fähre 2025",
+        "package_id": "333cf7b4-7014-4167-9ff9-d88fbefccfa4",
+        "position": 1,
+        "resource_type": null,
+        "size": 17514,
+        "state": "active",
+        "url": "https://daten.transparenz.hamburg.de/Dataport.HmbTG.ZS.Webservice.GetRessource100/GetRessource100.svc/91c6e7e8-07f7-418b-83c7-211357bc694d/Upload__hvv_Faehre_2025.XLSX",
+        "url_type": null
+      },
+      {
+        "cache_last_updated": null,
+        "cache_url": null,
+        "created": "2026-06-02T16:04:37.960923",
+        "description": null,
+        "file_size": 22196,
+        "format": "XLSX",
+        "hash": "b5657e0047e9e923151a8bb77ceea4a20291b6d5a2881071d949aa338220b85f",
+        "id": "3ef260a4-c8a1-4ad4-9c28-261446ab7295",
+        "language": "de",
+        "last_modified": null,
+        "metadata_modified": "2026-06-02T16:04:37.952425",
+        "mimetype": null,
+        "mimetype_inner": null,
+        "name": "Upload: hvv S-Bahn 2025",
+        "package_id": "333cf7b4-7014-4167-9ff9-d88fbefccfa4",
+        "position": 2,
+        "resource_type": null,
+        "size": 22196,
+        "state": "active",
+        "url": "https://daten.transparenz.hamburg.de/Dataport.HmbTG.ZS.Webservice.GetRessource100/GetRessource100.svc/95ffae6c-5017-49be-9ac0-e68d7330b7c2/Upload__hvv_S-Bahn_2025.XLSX",
+        "url_type": null
+      },
+      {
+        "cache_last_updated": null,
+        "cache_url": null,
+        "created": "2026-06-02T16:04:37.960924",
+        "description": null,
+        "file_size": 20615,
+        "format": "XLSX",
+        "hash": "2bd665696371c7f80e3baa873952c936fc0255bc7d4cc8fdce84c7cd1ad42c4f",
+        "id": "3afba370-5b62-49bd-8d5b-036f95eaa129",
+        "language": "de",
+        "last_modified": null,
+        "metadata_modified": "2026-06-02T16:04:37.952484",
+        "mimetype": null,
+        "mimetype_inner": null,
+        "name": "Upload: hvv U-Bahn 2025",
+        "package_id": "333cf7b4-7014-4167-9ff9-d88fbefccfa4",
+        "position": 3,
+        "resource_type": null,
+        "size": 20615,
+        "state": "active",
+        "url": "https://daten.transparenz.hamburg.de/Dataport.HmbTG.ZS.Webservice.GetRessource100/GetRessource100.svc/93b17d2c-bf04-41dd-a1cd-9453f8c20751/Upload__hvv_U-Bahn_2025.XLSX",
+        "url_type": null
+      }
+    ],
+    "tags": [
+      {
+        "display_name": "Fahrgäste  Einsteiger  hvv",
+        "id": "8fb7b32c-d391-47b7-8d9d-47d477dbc1bb",
+        "name": "Fahrgäste  Einsteiger  hvv",
+        "state": "active"
+      }
+    ],
+    "relationships_as_subject": [],
+    "relationships_as_object": []
+  }
+}

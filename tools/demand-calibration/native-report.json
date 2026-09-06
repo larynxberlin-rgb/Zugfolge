@@ -1,0 +1,2719 @@
+{
+  "schemaVersion": "zugfolge-demand-limited-native-calibration/v1",
+  "comparisonVersion": "nvbw-re7-native-comparison/v2",
+  "sourceId": "nvbw-fahrgastzaehlung-2025",
+  "nativeBinarySha256": "4f675dc694f2e8c661d23375da53cc3b64554c22aaf581d0f400b339f01d2816",
+  "trainingParametersSha256": "33e41155084ae3ef142e5795771180d89213468953a12eecc1ca021c2fd8bfd6",
+  "observationsSha256": "983073229a9c6e0603ad32ef927403ba615fc79b0a37a3d44c96b33399f26747",
+  "tolerance": {
+    "absolutePassengers": 20,
+    "relativeBasisPoints": 2500
+  },
+  "nativeOutcomes": {
+    "training": {
+      "stateHash": "ed807d5954fcf9ed168624f66414da769b643316a84777986a71cf3fac5d41e8",
+      "releaseHash": "8dd396d5d6d3301a2ea5413c83b295a2c6daf9bffc10e394beaa6f2e3ead0f44",
+      "totals": {
+        "generated": 29166,
+        "rail": 25230,
+        "alternative": 0,
+        "unserved": 3936,
+        "stranded": 0,
+        "forecastRevenueCents": 0
+      },
+      "inputSha256": "8bcc7e0c8fca9e10929389e8c3663cd93908d0e7455b2ee499f1605a46217c14",
+      "replayEqual": true,
+      "services": 40
+    },
+    "holdout": {
+      "stateHash": "a89ee4055f40f78beb8407abd3bede9d8b08dee6b0506e901c520a18b47e6d35",
+      "releaseHash": "8dd396d5d6d3301a2ea5413c83b295a2c6daf9bffc10e394beaa6f2e3ead0f44",
+      "totals": {
+        "generated": 29166,
+        "rail": 26704,
+        "alternative": 0,
+        "unserved": 2462,
+        "stranded": 0,
+        "forecastRevenueCents": 0
+      },
+      "inputSha256": "4eb2ad66277960d32ce393163151aa5492036dbc6c89256c40f65f2e29b18d2f",
+      "replayEqual": true,
+      "services": 42
+    }
+  },
+  "summary": [
+    {
+      "split": "training",
+      "metric": "daily_profile",
+      "observations": 21,
+      "acceptedObservations": 7,
+      "observedSum": 16046,
+      "simulatedSum": 13237,
+      "absoluteDeviationSum": 6439,
+      "weightedAbsolutePercentageErrorBasisPoints": 4012
+    },
+    {
+      "split": "training",
+      "metric": "cross_section",
+      "observations": 115,
+      "acceptedObservations": 40,
+      "observedSum": 70301,
+      "simulatedSum": 92003,
+      "absoluteDeviationSum": 34098,
+      "weightedAbsolutePercentageErrorBasisPoints": 4850
+    },
+    {
+      "split": "holdout",
+      "metric": "daily_profile",
+      "observations": 21,
+      "acceptedObservations": 6,
+      "observedSum": 9198,
+      "simulatedSum": 5474,
+      "absoluteDeviationSum": 4818,
+      "weightedAbsolutePercentageErrorBasisPoints": 5238
+    },
+    {
+      "split": "holdout",
+      "metric": "cross_section",
+      "observations": 105,
+      "acceptedObservations": 31,
+      "observedSum": 42987,
+      "simulatedSum": 39338,
+      "absoluteDeviationSum": 19491,
+      "weightedAbsolutePercentageErrorBasisPoints": 4534
+    }
+  ],
+  "deviations": [
+    {
+      "observationId": "nvbw:2025-01-14:re7:cross_section:ch:23005:300:ch:23005:6",
+      "split": "training",
+      "metric": "cross_section",
+      "observedPassengers": 147,
+      "simulatedPassengers": 114,
+      "absoluteDeviation": 33,
+      "allowedDeviation": 36,
+      "accepted": true
+    },
+    {
+      "observationId": "nvbw:2025-01-14:re7:cross_section:ch:23005:6:ch:23005:300",
+      "split": "training",
+      "metric": "cross_section",
+      "observedPassengers": 197,
+      "simulatedPassengers": 153,
+      "absoluteDeviation": 44,
+      "allowedDeviation": 49,
+      "accepted": true
+    },
+    {
+      "observationId": "nvbw:2025-01-14:re7:cross_section:ch:23005:6:de:08336:6639",
+      "split": "training",
+      "metric": "cross_section",
+      "observedPassengers": 1155,
+      "simulatedPassengers": 1012,
+      "absoluteDeviation": 143,
+      "allowedDeviation": 288,
+      "accepted": true
+    },
+    {
+      "observationId": "nvbw:2025-01-14:re7:cross_section:de:08211:1847:de:08216:1844",
+      "split": "training",
+      "metric": "cross_section",
+      "observedPassengers": 725,
+      "simulatedPassengers": 635,
+      "absoluteDeviation": 90,
+      "allowedDeviation": 181,
+      "accepted": true
+    },
+    {
+      "observationId": "nvbw:2025-01-14:re7:cross_section:de:08211:1847:de:08216:32227",
+      "split": "training",
+      "metric": "cross_section",
+      "observedPassengers": 747,
+      "simulatedPassengers": 637,
+      "absoluteDeviation": 110,
+      "allowedDeviation": 186,
+      "accepted": true
+    },
+    {
+      "observationId": "nvbw:2025-01-14:re7:cross_section:de:08212:90:de:08216:1844",
+      "split": "training",
+      "metric": "cross_section",
+      "observedPassengers": 820,
+      "simulatedPassengers": 383,
+      "absoluteDeviation": 437,
+      "allowedDeviation": 205,
+      "accepted": false
+    },
+    {
+      "observationId": "nvbw:2025-01-14:re7:cross_section:de:08216:1844:de:08211:1847",
+      "split": "training",
+      "metric": "cross_section",
+      "observedPassengers": 852,
+      "simulatedPassengers": 539,
+      "absoluteDeviation": 313,
+      "allowedDeviation": 213,
+      "accepted": false
+    },
+    {
+      "observationId": "nvbw:2025-01-14:re7:cross_section:de:08216:1844:de:08212:90",
+      "split": "training",
+      "metric": "cross_section",
+      "observedPassengers": 730,
+      "simulatedPassengers": 458,
+      "absoluteDeviation": 272,
+      "allowedDeviation": 182,
+      "accepted": false
+    },
+    {
+      "observationId": "nvbw:2025-01-14:re7:cross_section:de:08216:32227:de:08211:1847",
+      "split": "training",
+      "metric": "cross_section",
+      "observedPassengers": 702,
+      "simulatedPassengers": 744,
+      "absoluteDeviation": 42,
+      "allowedDeviation": 175,
+      "accepted": true
+    },
+    {
+      "observationId": "nvbw:2025-01-14:re7:cross_section:de:08216:32227:de:08317:33013",
+      "split": "training",
+      "metric": "cross_section",
+      "observedPassengers": 531,
+      "simulatedPassengers": 753,
+      "absoluteDeviation": 222,
+      "allowedDeviation": 132,
+      "accepted": false
+    },
+    {
+      "observationId": "nvbw:2025-01-14:re7:cross_section:de:08311:6508:de:08311:6510",
+      "split": "training",
+      "metric": "cross_section",
+      "observedPassengers": 82,
+      "simulatedPassengers": 453,
+      "absoluteDeviation": 371,
+      "allowedDeviation": 20,
+      "accepted": false
+    },
+    {
+      "observationId": "nvbw:2025-01-14:re7:cross_section:de:08311:6508:de:08311:6589",
+      "split": "training",
+      "metric": "cross_section",
+      "observedPassengers": 94,
+      "simulatedPassengers": 85,
+      "absoluteDeviation": 9,
+      "allowedDeviation": 23,
+      "accepted": true
+    },
+    {
+      "observationId": "nvbw:2025-01-14:re7:cross_section:de:08311:6508:de:08315:6501",
+      "split": "training",
+      "metric": "cross_section",
+      "observedPassengers": 826,
+      "simulatedPassengers": 1138,
+      "absoluteDeviation": 312,
+      "allowedDeviation": 206,
+      "accepted": false
+    },
+    {
+      "observationId": "nvbw:2025-01-14:re7:cross_section:de:08311:6508:de:08315:6677",
+      "split": "training",
+      "metric": "cross_section",
+      "observedPassengers": 1782,
+      "simulatedPassengers": 1853,
+      "absoluteDeviation": 71,
+      "allowedDeviation": 445,
+      "accepted": true
+    },
+    {
+      "observationId": "nvbw:2025-01-14:re7:cross_section:de:08311:6508:de:08316:6505",
+      "split": "training",
+      "metric": "cross_section",
+      "observedPassengers": 2703,
+      "simulatedPassengers": 3542,
+      "absoluteDeviation": 839,
+      "allowedDeviation": 675,
+      "accepted": false
+    },
+    {
+      "observationId": "nvbw:2025-01-14:re7:cross_section:de:08311:6510:de:08311:6508",
+      "split": "training",
+      "metric": "cross_section",
+      "observedPassengers": 190,
+      "simulatedPassengers": 64,
+      "absoluteDeviation": 126,
+      "allowedDeviation": 47,
+      "accepted": false
+    },
+    {
+      "observationId": "nvbw:2025-01-14:re7:cross_section:de:08311:6510:de:08311:6512",
+      "split": "training",
+      "metric": "cross_section",
+      "observedPassengers": 84,
+      "simulatedPassengers": 440,
+      "absoluteDeviation": 356,
+      "allowedDeviation": 21,
+      "accepted": false
+    },
+    {
+      "observationId": "nvbw:2025-01-14:re7:cross_section:de:08311:6512:de:08311:6510",
+      "split": "training",
+      "metric": "cross_section",
+      "observedPassengers": 209,
+      "simulatedPassengers": 64,
+      "absoluteDeviation": 145,
+      "allowedDeviation": 52,
+      "accepted": false
+    },
+    {
+      "observationId": "nvbw:2025-01-14:re7:cross_section:de:08311:6512:de:08315:6514",
+      "split": "training",
+      "metric": "cross_section",
+      "observedPassengers": 86,
+      "simulatedPassengers": 440,
+      "absoluteDeviation": 354,
+      "allowedDeviation": 21,
+      "accepted": false
+    },
+    {
+      "observationId": "nvbw:2025-01-14:re7:cross_section:de:08311:6589:de:08311:6508",
+      "split": "training",
+      "metric": "cross_section",
+      "observedPassengers": 497,
+      "simulatedPassengers": 130,
+      "absoluteDeviation": 367,
+      "allowedDeviation": 124,
+      "accepted": false
+    },
+    {
+      "observationId": "nvbw:2025-01-14:re7:cross_section:de:08311:6589:de:08315:6661",
+      "split": "training",
+      "metric": "cross_section",
+      "observedPassengers": 98,
+      "simulatedPassengers": 85,
+      "absoluteDeviation": 13,
+      "allowedDeviation": 24,
+      "accepted": true
+    },
+    {
+      "observationId": "nvbw:2025-01-14:re7:cross_section:de:08315:6501:de:08311:6508",
+      "split": "training",
+      "metric": "cross_section",
+      "observedPassengers": 1285,
+      "simulatedPassengers": 1322,
+      "absoluteDeviation": 37,
+      "allowedDeviation": 321,
+      "accepted": true
+    },
+    {
+      "observationId": "nvbw:2025-01-14:re7:cross_section:de:08315:6501:de:08315:6665",
+      "split": "training",
+      "metric": "cross_section",
+      "observedPassengers": 2014,
+      "simulatedPassengers": 2339,
+      "absoluteDeviation": 325,
+      "allowedDeviation": 503,
+      "accepted": true
+    },
+    {
+      "observationId": "nvbw:2025-01-14:re7:cross_section:de:08315:6501:de:08315:6670",
+      "split": "training",
+      "metric": "cross_section",
+      "observedPassengers": 442,
+      "simulatedPassengers": 124,
+      "absoluteDeviation": 318,
+      "allowedDeviation": 110,
+      "accepted": false
+    },
+    {
+      "observationId": "nvbw:2025-01-14:re7:cross_section:de:08315:6501:de:08315:6677",
+      "split": "training",
+      "metric": "cross_section",
+      "observedPassengers": 1070,
+      "simulatedPassengers": 1409,
+      "absoluteDeviation": 339,
+      "allowedDeviation": 267,
+      "accepted": false
+    },
+    {
+      "observationId": "nvbw:2025-01-14:re7:cross_section:de:08315:6514:de:08311:6512",
+      "split": "training",
+      "metric": "cross_section",
+      "observedPassengers": 211,
+      "simulatedPassengers": 64,
+      "absoluteDeviation": 147,
+      "allowedDeviation": 52,
+      "accepted": false
+    },
+    {
+      "observationId": "nvbw:2025-01-14:re7:cross_section:de:08315:6514:de:08316:6505",
+      "split": "training",
+      "metric": "cross_section",
+      "observedPassengers": 83,
+      "simulatedPassengers": 431,
+      "absoluteDeviation": 348,
+      "allowedDeviation": 20,
+      "accepted": false
+    },
+    {
+      "observationId": "nvbw:2025-01-14:re7:cross_section:de:08315:6522:de:08315:6642",
+      "split": "training",
+      "metric": "cross_section",
+      "observedPassengers": 176,
+      "simulatedPassengers": 228,
+      "absoluteDeviation": 52,
+      "allowedDeviation": 44,
+      "accepted": false
+    },
+    {
+      "observationId": "nvbw:2025-01-14:re7:cross_section:de:08315:6522:de:08315:6644",
+      "split": "training",
+      "metric": "cross_section",
+      "observedPassengers": 357,
+      "simulatedPassengers": 296,
+      "absoluteDeviation": 61,
+      "allowedDeviation": 89,
+      "accepted": true
+    },
+    {
+      "observationId": "nvbw:2025-01-14:re7:cross_section:de:08315:6522:de:08315:6665",
+      "split": "training",
+      "metric": "cross_section",
+      "observedPassengers": 1625,
+      "simulatedPassengers": 1918,
+      "absoluteDeviation": 293,
+      "allowedDeviation": 406,
+      "accepted": true
+    },
+    {
+      "observationId": "nvbw:2025-01-14:re7:cross_section:de:08315:6522:de:08336:6639",
+      "split": "training",
+      "metric": "cross_section",
+      "observedPassengers": 459,
+      "simulatedPassengers": 474,
+      "absoluteDeviation": 15,
+      "allowedDeviation": 114,
+      "accepted": true
+    },
+    {
+      "observationId": "nvbw:2025-01-14:re7:cross_section:de:08315:6522:de:08336:6678",
+      "split": "training",
+      "metric": "cross_section",
+      "observedPassengers": 604,
+      "simulatedPassengers": 788,
+      "absoluteDeviation": 184,
+      "allowedDeviation": 151,
+      "accepted": false
+    },
+    {
+      "observationId": "nvbw:2025-01-14:re7:cross_section:de:08315:6642:de:08315:6522",
+      "split": "training",
+      "metric": "cross_section",
+      "observedPassengers": 535,
+      "simulatedPassengers": 603,
+      "absoluteDeviation": 68,
+      "allowedDeviation": 133,
+      "accepted": true
+    },
+    {
+      "observationId": "nvbw:2025-01-14:re7:cross_section:de:08315:6642:de:08336:6678",
+      "split": "training",
+      "metric": "cross_section",
+      "observedPassengers": 174,
+      "simulatedPassengers": 228,
+      "absoluteDeviation": 54,
+      "allowedDeviation": 43,
+      "accepted": false
+    },
+    {
+      "observationId": "nvbw:2025-01-14:re7:cross_section:de:08315:6644:de:08315:6522",
+      "split": "training",
+      "metric": "cross_section",
+      "observedPassengers": 534,
+      "simulatedPassengers": 328,
+      "absoluteDeviation": 206,
+      "allowedDeviation": 133,
+      "accepted": false
+    },
+    {
+      "observationId": "nvbw:2025-01-14:re7:cross_section:de:08315:6644:de:08315:6665",
+      "split": "training",
+      "metric": "cross_section",
+      "observedPassengers": 391,
+      "simulatedPassengers": 319,
+      "absoluteDeviation": 72,
+      "allowedDeviation": 97,
+      "accepted": true
+    },
+    {
+      "observationId": "nvbw:2025-01-14:re7:cross_section:de:08315:6661:de:08311:6589",
+      "split": "training",
+      "metric": "cross_section",
+      "observedPassengers": 491,
+      "simulatedPassengers": 128,
+      "absoluteDeviation": 363,
+      "allowedDeviation": 122,
+      "accepted": false
+    },
+    {
+      "observationId": "nvbw:2025-01-14:re7:cross_section:de:08315:6661:de:08315:6677",
+      "split": "training",
+      "metric": "cross_section",
+      "observedPassengers": 95,
+      "simulatedPassengers": 85,
+      "absoluteDeviation": 10,
+      "allowedDeviation": 23,
+      "accepted": true
+    },
+    {
+      "observationId": "nvbw:2025-01-14:re7:cross_section:de:08315:6665:de:08315:6501",
+      "split": "training",
+      "metric": "cross_section",
+      "observedPassengers": 2277,
+      "simulatedPassengers": 2398,
+      "absoluteDeviation": 121,
+      "allowedDeviation": 569,
+      "accepted": true
+    },
+    {
+      "observationId": "nvbw:2025-01-14:re7:cross_section:de:08315:6665:de:08315:6522",
+      "split": "training",
+      "metric": "cross_section",
+      "observedPassengers": 1156,
+      "simulatedPassengers": 1642,
+      "absoluteDeviation": 486,
+      "allowedDeviation": 289,
+      "accepted": false
+    },
+    {
+      "observationId": "nvbw:2025-01-14:re7:cross_section:de:08315:6665:de:08315:6644",
+      "split": "training",
+      "metric": "cross_section",
+      "observedPassengers": 544,
+      "simulatedPassengers": 334,
+      "absoluteDeviation": 210,
+      "allowedDeviation": 136,
+      "accepted": false
+    },
+    {
+      "observationId": "nvbw:2025-01-14:re7:cross_section:de:08315:6670:de:08315:6501",
+      "split": "training",
+      "metric": "cross_section",
+      "observedPassengers": 91,
+      "simulatedPassengers": 79,
+      "absoluteDeviation": 12,
+      "allowedDeviation": 22,
+      "accepted": true
+    },
+    {
+      "observationId": "nvbw:2025-01-14:re7:cross_section:de:08315:6670:de:08315:6677",
+      "split": "training",
+      "metric": "cross_section",
+      "observedPassengers": 449,
+      "simulatedPassengers": 124,
+      "absoluteDeviation": 325,
+      "allowedDeviation": 112,
+      "accepted": false
+    },
+    {
+      "observationId": "nvbw:2025-01-14:re7:cross_section:de:08315:6677:de:08311:6508",
+      "split": "training",
+      "metric": "cross_section",
+      "observedPassengers": 1084,
+      "simulatedPassengers": 1441,
+      "absoluteDeviation": 357,
+      "allowedDeviation": 271,
+      "accepted": false
+    },
+    {
+      "observationId": "nvbw:2025-01-14:re7:cross_section:de:08315:6677:de:08315:6501",
+      "split": "training",
+      "metric": "cross_section",
+      "observedPassengers": 1715,
+      "simulatedPassengers": 1788,
+      "absoluteDeviation": 73,
+      "allowedDeviation": 428,
+      "accepted": true
+    },
+    {
+      "observationId": "nvbw:2025-01-14:re7:cross_section:de:08315:6677:de:08315:6661",
+      "split": "training",
+      "metric": "cross_section",
+      "observedPassengers": 472,
+      "simulatedPassengers": 126,
+      "absoluteDeviation": 346,
+      "allowedDeviation": 118,
+      "accepted": false
+    },
+    {
+      "observationId": "nvbw:2025-01-14:re7:cross_section:de:08315:6677:de:08315:6670",
+      "split": "training",
+      "metric": "cross_section",
+      "observedPassengers": 93,
+      "simulatedPassengers": 79,
+      "absoluteDeviation": 14,
+      "allowedDeviation": 23,
+      "accepted": true
+    },
+    {
+      "observationId": "nvbw:2025-01-14:re7:cross_section:de:08316:5290:de:08316:6518",
+      "split": "training",
+      "metric": "cross_section",
+      "observedPassengers": 1828,
+      "simulatedPassengers": 3101,
+      "absoluteDeviation": 1273,
+      "allowedDeviation": 457,
+      "accepted": false
+    },
+    {
+      "observationId": "nvbw:2025-01-14:re7:cross_section:de:08316:5290:de:08316:6668",
+      "split": "training",
+      "metric": "cross_section",
+      "observedPassengers": 166,
+      "simulatedPassengers": 37,
+      "absoluteDeviation": 129,
+      "allowedDeviation": 41,
+      "accepted": false
+    },
+    {
+      "observationId": "nvbw:2025-01-14:re7:cross_section:de:08316:5290:de:08316:90",
+      "split": "training",
+      "metric": "cross_section",
+      "observedPassengers": 1316,
+      "simulatedPassengers": 2439,
+      "absoluteDeviation": 1123,
+      "allowedDeviation": 329,
+      "accepted": false
+    },
+    {
+      "observationId": "nvbw:2025-01-14:re7:cross_section:de:08316:6505:de:08311:6508",
+      "split": "training",
+      "metric": "cross_section",
+      "observedPassengers": 1734,
+      "simulatedPassengers": 2772,
+      "absoluteDeviation": 1038,
+      "allowedDeviation": 433,
+      "accepted": false
+    },
+    {
+      "observationId": "nvbw:2025-01-14:re7:cross_section:de:08316:6505:de:08315:6514",
+      "split": "training",
+      "metric": "cross_section",
+      "observedPassengers": 213,
+      "simulatedPassengers": 64,
+      "absoluteDeviation": 149,
+      "allowedDeviation": 53,
+      "accepted": false
+    },
+    {
+      "observationId": "nvbw:2025-01-14:re7:cross_section:de:08316:6505:de:08316:6667",
+      "split": "training",
+      "metric": "cross_section",
+      "observedPassengers": 26,
+      "simulatedPassengers": 354,
+      "absoluteDeviation": 328,
+      "allowedDeviation": 20,
+      "accepted": false
+    },
+    {
+      "observationId": "nvbw:2025-01-14:re7:cross_section:de:08316:6505:de:08316:90",
+      "split": "training",
+      "metric": "cross_section",
+      "observedPassengers": 2642,
+      "simulatedPassengers": 3451,
+      "absoluteDeviation": 809,
+      "allowedDeviation": 660,
+      "accepted": false
+    },
+    {
+      "observationId": "nvbw:2025-01-14:re7:cross_section:de:08316:6518:de:08316:5290",
+      "split": "training",
+      "metric": "cross_section",
+      "observedPassengers": 1361,
+      "simulatedPassengers": 2421,
+      "absoluteDeviation": 1060,
+      "allowedDeviation": 340,
+      "accepted": false
+    },
+    {
+      "observationId": "nvbw:2025-01-14:re7:cross_section:de:08316:6518:de:08316:6562",
+      "split": "training",
+      "metric": "cross_section",
+      "observedPassengers": 1538,
+      "simulatedPassengers": 2922,
+      "absoluteDeviation": 1384,
+      "allowedDeviation": 384,
+      "accepted": false
+    },
+    {
+      "observationId": "nvbw:2025-01-14:re7:cross_section:de:08316:6562:de:08316:6518",
+      "split": "training",
+      "metric": "cross_section",
+      "observedPassengers": 1213,
+      "simulatedPassengers": 2348,
+      "absoluteDeviation": 1135,
+      "allowedDeviation": 303,
+      "accepted": false
+    },
+    {
+      "observationId": "nvbw:2025-01-14:re7:cross_section:de:08316:6562:de:08317:12103",
+      "split": "training",
+      "metric": "cross_section",
+      "observedPassengers": 536,
+      "simulatedPassengers": 1158,
+      "absoluteDeviation": 622,
+      "allowedDeviation": 134,
+      "accepted": false
+    },
+    {
+      "observationId": "nvbw:2025-01-14:re7:cross_section:de:08316:6562:de:08317:16700",
+      "split": "training",
+      "metric": "cross_section",
+      "observedPassengers": 675,
+      "simulatedPassengers": 1471,
+      "absoluteDeviation": 796,
+      "allowedDeviation": 168,
+      "accepted": false
+    },
+    {
+      "observationId": "nvbw:2025-01-14:re7:cross_section:de:08316:6667:de:08316:6505",
+      "split": "training",
+      "metric": "cross_section",
+      "observedPassengers": 214,
+      "simulatedPassengers": 57,
+      "absoluteDeviation": 157,
+      "allowedDeviation": 53,
+      "accepted": false
+    },
+    {
+      "observationId": "nvbw:2025-01-14:re7:cross_section:de:08316:6667:de:08316:90",
+      "split": "training",
+      "metric": "cross_section",
+      "observedPassengers": 24,
+      "simulatedPassengers": 354,
+      "absoluteDeviation": 330,
+      "allowedDeviation": 20,
+      "accepted": false
+    },
+    {
+      "observationId": "nvbw:2025-01-14:re7:cross_section:de:08316:6668:de:08316:5290",
+      "split": "training",
+      "metric": "cross_section",
+      "observedPassengers": 13,
+      "simulatedPassengers": 281,
+      "absoluteDeviation": 268,
+      "allowedDeviation": 20,
+      "accepted": false
+    },
+    {
+      "observationId": "nvbw:2025-01-14:re7:cross_section:de:08316:6668:de:08316:729",
+      "split": "training",
+      "metric": "cross_section",
+      "observedPassengers": 171,
+      "simulatedPassengers": 37,
+      "absoluteDeviation": 134,
+      "allowedDeviation": 42,
+      "accepted": false
+    },
+    {
+      "observationId": "nvbw:2025-01-14:re7:cross_section:de:08316:729:de:08316:6668",
+      "split": "training",
+      "metric": "cross_section",
+      "observedPassengers": 17,
+      "simulatedPassengers": 284,
+      "absoluteDeviation": 267,
+      "allowedDeviation": 20,
+      "accepted": false
+    },
+    {
+      "observationId": "nvbw:2025-01-14:re7:cross_section:de:08316:729:de:08316:90",
+      "split": "training",
+      "metric": "cross_section",
+      "observedPassengers": 180,
+      "simulatedPassengers": 37,
+      "absoluteDeviation": 143,
+      "allowedDeviation": 45,
+      "accepted": false
+    },
+    {
+      "observationId": "nvbw:2025-01-14:re7:cross_section:de:08316:90:de:08316:5290",
+      "split": "training",
+      "metric": "cross_section",
+      "observedPassengers": 2076,
+      "simulatedPassengers": 3001,
+      "absoluteDeviation": 925,
+      "allowedDeviation": 519,
+      "accepted": false
+    },
+    {
+      "observationId": "nvbw:2025-01-14:re7:cross_section:de:08316:90:de:08316:6505",
+      "split": "training",
+      "metric": "cross_section",
+      "observedPassengers": 1713,
+      "simulatedPassengers": 2741,
+      "absoluteDeviation": 1028,
+      "allowedDeviation": 428,
+      "accepted": false
+    },
+    {
+      "observationId": "nvbw:2025-01-14:re7:cross_section:de:08316:90:de:08316:6667",
+      "split": "training",
+      "metric": "cross_section",
+      "observedPassengers": 212,
+      "simulatedPassengers": 57,
+      "absoluteDeviation": 155,
+      "allowedDeviation": 53,
+      "accepted": false
+    },
+    {
+      "observationId": "nvbw:2025-01-14:re7:cross_section:de:08316:90:de:08316:729",
+      "split": "training",
+      "metric": "cross_section",
+      "observedPassengers": 21,
+      "simulatedPassengers": 288,
+      "absoluteDeviation": 267,
+      "allowedDeviation": 20,
+      "accepted": false
+    },
+    {
+      "observationId": "nvbw:2025-01-14:re7:cross_section:de:08317:12103:de:08316:6562",
+      "split": "training",
+      "metric": "cross_section",
+      "observedPassengers": 329,
+      "simulatedPassengers": 742,
+      "absoluteDeviation": 413,
+      "allowedDeviation": 82,
+      "accepted": false
+    },
+    {
+      "observationId": "nvbw:2025-01-14:re7:cross_section:de:08317:12103:de:08317:14506",
+      "split": "training",
+      "metric": "cross_section",
+      "observedPassengers": 965,
+      "simulatedPassengers": 1854,
+      "absoluteDeviation": 889,
+      "allowedDeviation": 241,
+      "accepted": false
+    },
+    {
+      "observationId": "nvbw:2025-01-14:re7:cross_section:de:08317:12103:de:08317:16220",
+      "split": "training",
+      "metric": "cross_section",
+      "observedPassengers": 128,
+      "simulatedPassengers": 182,
+      "absoluteDeviation": 54,
+      "allowedDeviation": 32,
+      "accepted": false
+    },
+    {
+      "observationId": "nvbw:2025-01-14:re7:cross_section:de:08317:12103:de:08317:16700",
+      "split": "training",
+      "metric": "cross_section",
+      "observedPassengers": 199,
+      "simulatedPassengers": 410,
+      "absoluteDeviation": 211,
+      "allowedDeviation": 49,
+      "accepted": false
+    },
+    {
+      "observationId": "nvbw:2025-01-14:re7:cross_section:de:08317:12103:de:08317:18601",
+      "split": "training",
+      "metric": "cross_section",
+      "observedPassengers": 534,
+      "simulatedPassengers": 1012,
+      "absoluteDeviation": 478,
+      "allowedDeviation": 133,
+      "accepted": false
+    },
+    {
+      "observationId": "nvbw:2025-01-14:re7:cross_section:de:08317:13554:de:08317:14120",
+      "split": "training",
+      "metric": "cross_section",
+      "observedPassengers": 527,
+      "simulatedPassengers": 882,
+      "absoluteDeviation": 355,
+      "allowedDeviation": 131,
+      "accepted": false
+    },
+    {
+      "observationId": "nvbw:2025-01-14:re7:cross_section:de:08317:13554:de:08317:33013",
+      "split": "training",
+      "metric": "cross_section",
+      "observedPassengers": 508,
+      "simulatedPassengers": 1014,
+      "absoluteDeviation": 506,
+      "allowedDeviation": 127,
+      "accepted": false
+    },
+    {
+      "observationId": "nvbw:2025-01-14:re7:cross_section:de:08317:14120:de:08317:13554",
+      "split": "training",
+      "metric": "cross_section",
+      "observedPassengers": 541,
+      "simulatedPassengers": 1033,
+      "absoluteDeviation": 492,
+      "allowedDeviation": 135,
+      "accepted": false
+    },
+    {
+      "observationId": "nvbw:2025-01-14:re7:cross_section:de:08317:14120:de:08317:14506",
+      "split": "training",
+      "metric": "cross_section",
+      "observedPassengers": 478,
+      "simulatedPassengers": 897,
+      "absoluteDeviation": 419,
+      "allowedDeviation": 119,
+      "accepted": false
+    },
+    {
+      "observationId": "nvbw:2025-01-14:re7:cross_section:de:08317:14506:de:08317:12103",
+      "split": "training",
+      "metric": "cross_section",
+      "observedPassengers": 929,
+      "simulatedPassengers": 1731,
+      "absoluteDeviation": 802,
+      "allowedDeviation": 232,
+      "accepted": false
+    },
+    {
+      "observationId": "nvbw:2025-01-14:re7:cross_section:de:08317:14506:de:08317:14120",
+      "split": "training",
+      "metric": "cross_section",
+      "observedPassengers": 541,
+      "simulatedPassengers": 1082,
+      "absoluteDeviation": 541,
+      "allowedDeviation": 135,
+      "accepted": false
+    },
+    {
+      "observationId": "nvbw:2025-01-14:re7:cross_section:de:08317:14506:de:08317:16220",
+      "split": "training",
+      "metric": "cross_section",
+      "observedPassengers": 37,
+      "simulatedPassengers": 7,
+      "absoluteDeviation": 30,
+      "allowedDeviation": 20,
+      "accepted": false
+    },
+    {
+      "observationId": "nvbw:2025-01-14:re7:cross_section:de:08317:16220:de:08317:12103",
+      "split": "training",
+      "metric": "cross_section",
+      "observedPassengers": 48,
+      "simulatedPassengers": 7,
+      "absoluteDeviation": 41,
+      "allowedDeviation": 20,
+      "accepted": false
+    },
+    {
+      "observationId": "nvbw:2025-01-14:re7:cross_section:de:08317:16220:de:08317:14506",
+      "split": "training",
+      "metric": "cross_section",
+      "observedPassengers": 129,
+      "simulatedPassengers": 187,
+      "absoluteDeviation": 58,
+      "allowedDeviation": 32,
+      "accepted": false
+    },
+    {
+      "observationId": "nvbw:2025-01-14:re7:cross_section:de:08317:16700:de:08316:6562",
+      "split": "training",
+      "metric": "cross_section",
+      "observedPassengers": 733,
+      "simulatedPassengers": 1506,
+      "absoluteDeviation": 773,
+      "allowedDeviation": 183,
+      "accepted": false
+    },
+    {
+      "observationId": "nvbw:2025-01-14:re7:cross_section:de:08317:16700:de:08317:12103",
+      "split": "training",
+      "metric": "cross_section",
+      "observedPassengers": 122,
+      "simulatedPassengers": 193,
+      "absoluteDeviation": 71,
+      "allowedDeviation": 30,
+      "accepted": false
+    },
+    {
+      "observationId": "nvbw:2025-01-14:re7:cross_section:de:08317:16700:de:08317:18601",
+      "split": "training",
+      "metric": "cross_section",
+      "observedPassengers": 536,
+      "simulatedPassengers": 1214,
+      "absoluteDeviation": 678,
+      "allowedDeviation": 134,
+      "accepted": false
+    },
+    {
+      "observationId": "nvbw:2025-01-14:re7:cross_section:de:08317:18601:de:08317:12103",
+      "split": "training",
+      "metric": "cross_section",
+      "observedPassengers": 490,
+      "simulatedPassengers": 1100,
+      "absoluteDeviation": 610,
+      "allowedDeviation": 122,
+      "accepted": false
+    },
+    {
+      "observationId": "nvbw:2025-01-14:re7:cross_section:de:08317:18601:de:08317:16700",
+      "split": "training",
+      "metric": "cross_section",
+      "observedPassengers": 540,
+      "simulatedPassengers": 1053,
+      "absoluteDeviation": 513,
+      "allowedDeviation": 135,
+      "accepted": false
+    },
+    {
+      "observationId": "nvbw:2025-01-14:re7:cross_section:de:08317:33013:de:08216:32227",
+      "split": "training",
+      "metric": "cross_section",
+      "observedPassengers": 552,
+      "simulatedPassengers": 939,
+      "absoluteDeviation": 387,
+      "allowedDeviation": 138,
+      "accepted": false
+    },
+    {
+      "observationId": "nvbw:2025-01-14:re7:cross_section:de:08317:33013:de:08317:13554",
+      "split": "training",
+      "metric": "cross_section",
+      "observedPassengers": 528,
+      "simulatedPassengers": 875,
+      "absoluteDeviation": 347,
+      "allowedDeviation": 132,
+      "accepted": false
+    },
+    {
+      "observationId": "nvbw:2025-01-14:re7:cross_section:de:08336:6628:de:08315:6522",
+      "split": "training",
+      "metric": "cross_section",
+      "observedPassengers": 18,
+      "simulatedPassengers": 151,
+      "absoluteDeviation": 133,
+      "allowedDeviation": 20,
+      "accepted": false
+    },
+    {
+      "observationId": "nvbw:2025-01-14:re7:cross_section:de:08336:6628:de:08336:6629",
+      "split": "training",
+      "metric": "cross_section",
+      "observedPassengers": 184,
+      "simulatedPassengers": 212,
+      "absoluteDeviation": 28,
+      "allowedDeviation": 46,
+      "accepted": true
+    },
+    {
+      "observationId": "nvbw:2025-01-14:re7:cross_section:de:08336:6628:de:08336:6631",
+      "split": "training",
+      "metric": "cross_section",
+      "observedPassengers": 596,
+      "simulatedPassengers": 717,
+      "absoluteDeviation": 121,
+      "allowedDeviation": 149,
+      "accepted": true
+    },
+    {
+      "observationId": "nvbw:2025-01-14:re7:cross_section:de:08336:6628:de:08336:6678",
+      "split": "training",
+      "metric": "cross_section",
+      "observedPassengers": 729,
+      "simulatedPassengers": 821,
+      "absoluteDeviation": 92,
+      "allowedDeviation": 182,
+      "accepted": true
+    },
+    {
+      "observationId": "nvbw:2025-01-14:re7:cross_section:de:08336:6629:de:08336:6628",
+      "split": "training",
+      "metric": "cross_section",
+      "observedPassengers": 354,
+      "simulatedPassengers": 355,
+      "absoluteDeviation": 1,
+      "allowedDeviation": 88,
+      "accepted": true
+    },
+    {
+      "observationId": "nvbw:2025-01-14:re7:cross_section:de:08336:6629:de:08336:6633",
+      "split": "training",
+      "metric": "cross_section",
+      "observedPassengers": 184,
+      "simulatedPassengers": 212,
+      "absoluteDeviation": 28,
+      "allowedDeviation": 46,
+      "accepted": true
+    },
+    {
+      "observationId": "nvbw:2025-01-14:re7:cross_section:de:08336:6631:de:08336:6628",
+      "split": "training",
+      "metric": "cross_section",
+      "observedPassengers": 376,
+      "simulatedPassengers": 548,
+      "absoluteDeviation": 172,
+      "allowedDeviation": 94,
+      "accepted": false
+    },
+    {
+      "observationId": "nvbw:2025-01-14:re7:cross_section:de:08336:6631:de:08336:6632",
+      "split": "training",
+      "metric": "cross_section",
+      "observedPassengers": 341,
+      "simulatedPassengers": 349,
+      "absoluteDeviation": 8,
+      "allowedDeviation": 85,
+      "accepted": true
+    },
+    {
+      "observationId": "nvbw:2025-01-14:re7:cross_section:de:08336:6631:de:08336:6634",
+      "split": "training",
+      "metric": "cross_section",
+      "observedPassengers": 600,
+      "simulatedPassengers": 314,
+      "absoluteDeviation": 286,
+      "allowedDeviation": 150,
+      "accepted": false
+    },
+    {
+      "observationId": "nvbw:2025-01-14:re7:cross_section:de:08336:6631:de:08336:6638",
+      "split": "training",
+      "metric": "cross_section",
+      "observedPassengers": 251,
+      "simulatedPassengers": 522,
+      "absoluteDeviation": 271,
+      "allowedDeviation": 62,
+      "accepted": false
+    },
+    {
+      "observationId": "nvbw:2025-01-14:re7:cross_section:de:08336:6632:de:08336:6631",
+      "split": "training",
+      "metric": "cross_section",
+      "observedPassengers": 184,
+      "simulatedPassengers": 212,
+      "absoluteDeviation": 28,
+      "allowedDeviation": 46,
+      "accepted": true
+    },
+    {
+      "observationId": "nvbw:2025-01-14:re7:cross_section:de:08336:6632:de:08336:6633",
+      "split": "training",
+      "metric": "cross_section",
+      "observedPassengers": 347,
+      "simulatedPassengers": 352,
+      "absoluteDeviation": 5,
+      "allowedDeviation": 86,
+      "accepted": true
+    },
+    {
+      "observationId": "nvbw:2025-01-14:re7:cross_section:de:08336:6633:de:08336:6629",
+      "split": "training",
+      "metric": "cross_section",
+      "observedPassengers": 347,
+      "simulatedPassengers": 352,
+      "absoluteDeviation": 5,
+      "allowedDeviation": 86,
+      "accepted": true
+    },
+    {
+      "observationId": "nvbw:2025-01-14:re7:cross_section:de:08336:6633:de:08336:6632",
+      "split": "training",
+      "metric": "cross_section",
+      "observedPassengers": 184,
+      "simulatedPassengers": 212,
+      "absoluteDeviation": 28,
+      "allowedDeviation": 46,
+      "accepted": true
+    },
+    {
+      "observationId": "nvbw:2025-01-14:re7:cross_section:de:08336:6634:de:08336:6631",
+      "split": "training",
+      "metric": "cross_section",
+      "observedPassengers": 354,
+      "simulatedPassengers": 303,
+      "absoluteDeviation": 51,
+      "allowedDeviation": 88,
+      "accepted": true
+    },
+    {
+      "observationId": "nvbw:2025-01-14:re7:cross_section:de:08336:6634:de:08336:6638",
+      "split": "training",
+      "metric": "cross_section",
+      "observedPassengers": 609,
+      "simulatedPassengers": 309,
+      "absoluteDeviation": 300,
+      "allowedDeviation": 152,
+      "accepted": false
+    },
+    {
+      "observationId": "nvbw:2025-01-14:re7:cross_section:de:08336:6638:de:08336:6631",
+      "split": "training",
+      "metric": "cross_section",
+      "observedPassengers": 406,
+      "simulatedPassengers": 497,
+      "absoluteDeviation": 91,
+      "allowedDeviation": 101,
+      "accepted": true
+    },
+    {
+      "observationId": "nvbw:2025-01-14:re7:cross_section:de:08336:6638:de:08336:6634",
+      "split": "training",
+      "metric": "cross_section",
+      "observedPassengers": 345,
+      "simulatedPassengers": 281,
+      "absoluteDeviation": 64,
+      "allowedDeviation": 86,
+      "accepted": true
+    },
+    {
+      "observationId": "nvbw:2025-01-14:re7:cross_section:de:08336:6638:de:08336:6639",
+      "split": "training",
+      "metric": "cross_section",
+      "observedPassengers": 898,
+      "simulatedPassengers": 773,
+      "absoluteDeviation": 125,
+      "allowedDeviation": 224,
+      "accepted": true
+    },
+    {
+      "observationId": "nvbw:2025-01-14:re7:cross_section:de:08336:6639:ch:23005:6",
+      "split": "training",
+      "metric": "cross_section",
+      "observedPassengers": 952,
+      "simulatedPassengers": 809,
+      "absoluteDeviation": 143,
+      "allowedDeviation": 238,
+      "accepted": true
+    },
+    {
+      "observationId": "nvbw:2025-01-14:re7:cross_section:de:08336:6639:de:08315:6522",
+      "split": "training",
+      "metric": "cross_section",
+      "observedPassengers": 788,
+      "simulatedPassengers": 747,
+      "absoluteDeviation": 41,
+      "allowedDeviation": 197,
+      "accepted": true
+    },
+    {
+      "observationId": "nvbw:2025-01-14:re7:cross_section:de:08336:6639:de:08336:6638",
+      "split": "training",
+      "metric": "cross_section",
+      "observedPassengers": 738,
+      "simulatedPassengers": 674,
+      "absoluteDeviation": 64,
+      "allowedDeviation": 184,
+      "accepted": true
+    },
+    {
+      "observationId": "nvbw:2025-01-14:re7:cross_section:de:08336:6678:de:08315:6522",
+      "split": "training",
+      "metric": "cross_section",
+      "observedPassengers": 276,
+      "simulatedPassengers": 315,
+      "absoluteDeviation": 39,
+      "allowedDeviation": 69,
+      "accepted": true
+    },
+    {
+      "observationId": "nvbw:2025-01-14:re7:cross_section:de:08336:6678:de:08315:6642",
+      "split": "training",
+      "metric": "cross_section",
+      "observedPassengers": 510,
+      "simulatedPassengers": 584,
+      "absoluteDeviation": 74,
+      "allowedDeviation": 127,
+      "accepted": true
+    },
+    {
+      "observationId": "nvbw:2025-01-14:re7:cross_section:de:08336:6678:de:08336:6628",
+      "split": "training",
+      "metric": "cross_section",
+      "observedPassengers": 763,
+      "simulatedPassengers": 970,
+      "absoluteDeviation": 207,
+      "allowedDeviation": 190,
+      "accepted": false
+    },
+    {
+      "observationId": "nvbw:2025-01-14:re7:daily_profile:10",
+      "split": "training",
+      "metric": "daily_profile",
+      "observedPassengers": 600,
+      "simulatedPassengers": 531,
+      "absoluteDeviation": 69,
+      "allowedDeviation": 150,
+      "accepted": true
+    },
+    {
+      "observationId": "nvbw:2025-01-14:re7:daily_profile:11",
+      "split": "training",
+      "metric": "daily_profile",
+      "observedPassengers": 495,
+      "simulatedPassengers": 400,
+      "absoluteDeviation": 95,
+      "allowedDeviation": 123,
+      "accepted": true
+    },
+    {
+      "observationId": "nvbw:2025-01-14:re7:daily_profile:12",
+      "split": "training",
+      "metric": "daily_profile",
+      "observedPassengers": 1388,
+      "simulatedPassengers": 1032,
+      "absoluteDeviation": 356,
+      "allowedDeviation": 347,
+      "accepted": false
+    },
+    {
+      "observationId": "nvbw:2025-01-14:re7:daily_profile:13",
+      "split": "training",
+      "metric": "daily_profile",
+      "observedPassengers": 821,
+      "simulatedPassengers": 519,
+      "absoluteDeviation": 302,
+      "allowedDeviation": 205,
+      "accepted": false
+    },
+    {
+      "observationId": "nvbw:2025-01-14:re7:daily_profile:14",
+      "split": "training",
+      "metric": "daily_profile",
+      "observedPassengers": 967,
+      "simulatedPassengers": 1143,
+      "absoluteDeviation": 176,
+      "allowedDeviation": 241,
+      "accepted": true
+    },
+    {
+      "observationId": "nvbw:2025-01-14:re7:daily_profile:15",
+      "split": "training",
+      "metric": "daily_profile",
+      "observedPassengers": 1797,
+      "simulatedPassengers": 990,
+      "absoluteDeviation": 807,
+      "allowedDeviation": 449,
+      "accepted": false
+    },
+    {
+      "observationId": "nvbw:2025-01-14:re7:daily_profile:16",
+      "split": "training",
+      "metric": "daily_profile",
+      "observedPassengers": 1285,
+      "simulatedPassengers": 609,
+      "absoluteDeviation": 676,
+      "allowedDeviation": 321,
+      "accepted": false
+    },
+    {
+      "observationId": "nvbw:2025-01-14:re7:daily_profile:17",
+      "split": "training",
+      "metric": "daily_profile",
+      "observedPassengers": 1660,
+      "simulatedPassengers": 1209,
+      "absoluteDeviation": 451,
+      "allowedDeviation": 415,
+      "accepted": false
+    },
+    {
+      "observationId": "nvbw:2025-01-14:re7:daily_profile:18",
+      "split": "training",
+      "metric": "daily_profile",
+      "observedPassengers": 1295,
+      "simulatedPassengers": 1614,
+      "absoluteDeviation": 319,
+      "allowedDeviation": 323,
+      "accepted": true
+    },
+    {
+      "observationId": "nvbw:2025-01-14:re7:daily_profile:19",
+      "split": "training",
+      "metric": "daily_profile",
+      "observedPassengers": 317,
+      "simulatedPassengers": 466,
+      "absoluteDeviation": 149,
+      "allowedDeviation": 79,
+      "accepted": false
+    },
+    {
+      "observationId": "nvbw:2025-01-14:re7:daily_profile:20",
+      "split": "training",
+      "metric": "daily_profile",
+      "observedPassengers": 285,
+      "simulatedPassengers": 652,
+      "absoluteDeviation": 367,
+      "allowedDeviation": 71,
+      "accepted": false
+    },
+    {
+      "observationId": "nvbw:2025-01-14:re7:daily_profile:21",
+      "split": "training",
+      "metric": "daily_profile",
+      "observedPassengers": 204,
+      "simulatedPassengers": 444,
+      "absoluteDeviation": 240,
+      "allowedDeviation": 51,
+      "accepted": false
+    },
+    {
+      "observationId": "nvbw:2025-01-14:re7:daily_profile:22",
+      "split": "training",
+      "metric": "daily_profile",
+      "observedPassengers": 29,
+      "simulatedPassengers": 43,
+      "absoluteDeviation": 14,
+      "allowedDeviation": 20,
+      "accepted": true
+    },
+    {
+      "observationId": "nvbw:2025-01-14:re7:daily_profile:23",
+      "split": "training",
+      "metric": "daily_profile",
+      "observedPassengers": 26,
+      "simulatedPassengers": 212,
+      "absoluteDeviation": 186,
+      "allowedDeviation": 20,
+      "accepted": false
+    },
+    {
+      "observationId": "nvbw:2025-01-14:re7:daily_profile:24",
+      "split": "training",
+      "metric": "daily_profile",
+      "observedPassengers": 41,
+      "simulatedPassengers": 209,
+      "absoluteDeviation": 168,
+      "allowedDeviation": 20,
+      "accepted": false
+    },
+    {
+      "observationId": "nvbw:2025-01-14:re7:daily_profile:25",
+      "split": "training",
+      "metric": "daily_profile",
+      "observedPassengers": 0,
+      "simulatedPassengers": 0,
+      "absoluteDeviation": 0,
+      "allowedDeviation": 20,
+      "accepted": true
+    },
+    {
+      "observationId": "nvbw:2025-01-14:re7:daily_profile:5",
+      "split": "training",
+      "metric": "daily_profile",
+      "observedPassengers": 511,
+      "simulatedPassengers": 141,
+      "absoluteDeviation": 370,
+      "allowedDeviation": 127,
+      "accepted": false
+    },
+    {
+      "observationId": "nvbw:2025-01-14:re7:daily_profile:6",
+      "split": "training",
+      "metric": "daily_profile",
+      "observedPassengers": 929,
+      "simulatedPassengers": 274,
+      "absoluteDeviation": 655,
+      "allowedDeviation": 232,
+      "accepted": false
+    },
+    {
+      "observationId": "nvbw:2025-01-14:re7:daily_profile:7",
+      "split": "training",
+      "metric": "daily_profile",
+      "observedPassengers": 861,
+      "simulatedPassengers": 440,
+      "absoluteDeviation": 421,
+      "allowedDeviation": 215,
+      "accepted": false
+    },
+    {
+      "observationId": "nvbw:2025-01-14:re7:daily_profile:8",
+      "split": "training",
+      "metric": "daily_profile",
+      "observedPassengers": 1597,
+      "simulatedPassengers": 1175,
+      "absoluteDeviation": 422,
+      "allowedDeviation": 399,
+      "accepted": false
+    },
+    {
+      "observationId": "nvbw:2025-01-14:re7:daily_profile:9",
+      "split": "training",
+      "metric": "daily_profile",
+      "observedPassengers": 938,
+      "simulatedPassengers": 1134,
+      "absoluteDeviation": 196,
+      "allowedDeviation": 234,
+      "accepted": true
+    },
+    {
+      "observationId": "nvbw:2025-01-21:re7:cross_section:ch:23005:300:ch:23005:6",
+      "split": "holdout",
+      "metric": "cross_section",
+      "observedPassengers": 122,
+      "simulatedPassengers": 59,
+      "absoluteDeviation": 63,
+      "allowedDeviation": 30,
+      "accepted": false
+    },
+    {
+      "observationId": "nvbw:2025-01-21:re7:cross_section:ch:23005:6:ch:23005:300",
+      "split": "holdout",
+      "metric": "cross_section",
+      "observedPassengers": 18,
+      "simulatedPassengers": 77,
+      "absoluteDeviation": 59,
+      "allowedDeviation": 20,
+      "accepted": false
+    },
+    {
+      "observationId": "nvbw:2025-01-21:re7:cross_section:ch:23005:6:de:08336:6639",
+      "split": "holdout",
+      "metric": "cross_section",
+      "observedPassengers": 623,
+      "simulatedPassengers": 331,
+      "absoluteDeviation": 292,
+      "allowedDeviation": 155,
+      "accepted": false
+    },
+    {
+      "observationId": "nvbw:2025-01-21:re7:cross_section:de:08211:1847:de:08216:1844",
+      "split": "holdout",
+      "metric": "cross_section",
+      "observedPassengers": 398,
+      "simulatedPassengers": 250,
+      "absoluteDeviation": 148,
+      "allowedDeviation": 99,
+      "accepted": false
+    },
+    {
+      "observationId": "nvbw:2025-01-21:re7:cross_section:de:08211:1847:de:08216:32227",
+      "split": "holdout",
+      "metric": "cross_section",
+      "observedPassengers": 262,
+      "simulatedPassengers": 196,
+      "absoluteDeviation": 66,
+      "allowedDeviation": 65,
+      "accepted": false
+    },
+    {
+      "observationId": "nvbw:2025-01-21:re7:cross_section:de:08212:90:de:08215:1840",
+      "split": "holdout",
+      "metric": "cross_section",
+      "observedPassengers": 27,
+      "simulatedPassengers": 0,
+      "absoluteDeviation": 27,
+      "allowedDeviation": 20,
+      "accepted": false
+    },
+    {
+      "observationId": "nvbw:2025-01-21:re7:cross_section:de:08212:90:de:08216:1844",
+      "split": "holdout",
+      "metric": "cross_section",
+      "observedPassengers": 302,
+      "simulatedPassengers": 90,
+      "absoluteDeviation": 212,
+      "allowedDeviation": 75,
+      "accepted": false
+    },
+    {
+      "observationId": "nvbw:2025-01-21:re7:cross_section:de:08215:1840:de:08215:1841",
+      "split": "holdout",
+      "metric": "cross_section",
+      "observedPassengers": 27,
+      "simulatedPassengers": 0,
+      "absoluteDeviation": 27,
+      "allowedDeviation": 20,
+      "accepted": false
+    },
+    {
+      "observationId": "nvbw:2025-01-21:re7:cross_section:de:08215:1841:de:08215:8306",
+      "split": "holdout",
+      "metric": "cross_section",
+      "observedPassengers": 27,
+      "simulatedPassengers": 0,
+      "absoluteDeviation": 27,
+      "allowedDeviation": 20,
+      "accepted": false
+    },
+    {
+      "observationId": "nvbw:2025-01-21:re7:cross_section:de:08215:8306:de:08216:1843",
+      "split": "holdout",
+      "metric": "cross_section",
+      "observedPassengers": 27,
+      "simulatedPassengers": 0,
+      "absoluteDeviation": 27,
+      "allowedDeviation": 20,
+      "accepted": false
+    },
+    {
+      "observationId": "nvbw:2025-01-21:re7:cross_section:de:08216:1843:de:08216:1844",
+      "split": "holdout",
+      "metric": "cross_section",
+      "observedPassengers": 31,
+      "simulatedPassengers": 0,
+      "absoluteDeviation": 31,
+      "allowedDeviation": 20,
+      "accepted": false
+    },
+    {
+      "observationId": "nvbw:2025-01-21:re7:cross_section:de:08216:1844:de:08211:1847",
+      "split": "holdout",
+      "metric": "cross_section",
+      "observedPassengers": 321,
+      "simulatedPassengers": 149,
+      "absoluteDeviation": 172,
+      "allowedDeviation": 80,
+      "accepted": false
+    },
+    {
+      "observationId": "nvbw:2025-01-21:re7:cross_section:de:08216:1844:de:08212:90",
+      "split": "holdout",
+      "metric": "cross_section",
+      "observedPassengers": 390,
+      "simulatedPassengers": 193,
+      "absoluteDeviation": 197,
+      "allowedDeviation": 97,
+      "accepted": false
+    },
+    {
+      "observationId": "nvbw:2025-01-21:re7:cross_section:de:08216:32227:de:08211:1847",
+      "split": "holdout",
+      "metric": "cross_section",
+      "observedPassengers": 370,
+      "simulatedPassengers": 346,
+      "absoluteDeviation": 24,
+      "allowedDeviation": 92,
+      "accepted": true
+    },
+    {
+      "observationId": "nvbw:2025-01-21:re7:cross_section:de:08216:32227:de:08317:33013",
+      "split": "holdout",
+      "metric": "cross_section",
+      "observedPassengers": 192,
+      "simulatedPassengers": 232,
+      "absoluteDeviation": 40,
+      "allowedDeviation": 48,
+      "accepted": true
+    },
+    {
+      "observationId": "nvbw:2025-01-21:re7:cross_section:de:08311:6508:de:08311:6589",
+      "split": "holdout",
+      "metric": "cross_section",
+      "observedPassengers": 111,
+      "simulatedPassengers": 101,
+      "absoluteDeviation": 10,
+      "allowedDeviation": 27,
+      "accepted": true
+    },
+    {
+      "observationId": "nvbw:2025-01-21:re7:cross_section:de:08311:6508:de:08315:6501",
+      "split": "holdout",
+      "metric": "cross_section",
+      "observedPassengers": 814,
+      "simulatedPassengers": 734,
+      "absoluteDeviation": 80,
+      "allowedDeviation": 203,
+      "accepted": true
+    },
+    {
+      "observationId": "nvbw:2025-01-21:re7:cross_section:de:08311:6508:de:08315:6677",
+      "split": "holdout",
+      "metric": "cross_section",
+      "observedPassengers": 790,
+      "simulatedPassengers": 307,
+      "absoluteDeviation": 483,
+      "allowedDeviation": 197,
+      "accepted": false
+    },
+    {
+      "observationId": "nvbw:2025-01-21:re7:cross_section:de:08311:6508:de:08316:6505",
+      "split": "holdout",
+      "metric": "cross_section",
+      "observedPassengers": 1478,
+      "simulatedPassengers": 1761,
+      "absoluteDeviation": 283,
+      "allowedDeviation": 369,
+      "accepted": true
+    },
+    {
+      "observationId": "nvbw:2025-01-21:re7:cross_section:de:08311:6510:de:08311:6508",
+      "split": "holdout",
+      "metric": "cross_section",
+      "observedPassengers": 156,
+      "simulatedPassengers": 0,
+      "absoluteDeviation": 156,
+      "allowedDeviation": 39,
+      "accepted": false
+    },
+    {
+      "observationId": "nvbw:2025-01-21:re7:cross_section:de:08311:6512:de:08311:6510",
+      "split": "holdout",
+      "metric": "cross_section",
+      "observedPassengers": 157,
+      "simulatedPassengers": 0,
+      "absoluteDeviation": 157,
+      "allowedDeviation": 39,
+      "accepted": false
+    },
+    {
+      "observationId": "nvbw:2025-01-21:re7:cross_section:de:08311:6589:de:08311:6508",
+      "split": "holdout",
+      "metric": "cross_section",
+      "observedPassengers": 626,
+      "simulatedPassengers": 120,
+      "absoluteDeviation": 506,
+      "allowedDeviation": 156,
+      "accepted": false
+    },
+    {
+      "observationId": "nvbw:2025-01-21:re7:cross_section:de:08311:6589:de:08315:6661",
+      "split": "holdout",
+      "metric": "cross_section",
+      "observedPassengers": 111,
+      "simulatedPassengers": 101,
+      "absoluteDeviation": 10,
+      "allowedDeviation": 27,
+      "accepted": true
+    },
+    {
+      "observationId": "nvbw:2025-01-21:re7:cross_section:de:08315:6501:de:08315:6665",
+      "split": "holdout",
+      "metric": "cross_section",
+      "observedPassengers": 1234,
+      "simulatedPassengers": 943,
+      "absoluteDeviation": 291,
+      "allowedDeviation": 308,
+      "accepted": true
+    },
+    {
+      "observationId": "nvbw:2025-01-21:re7:cross_section:de:08315:6501:de:08315:6670",
+      "split": "holdout",
+      "metric": "cross_section",
+      "observedPassengers": 560,
+      "simulatedPassengers": 120,
+      "absoluteDeviation": 440,
+      "allowedDeviation": 140,
+      "accepted": false
+    },
+    {
+      "observationId": "nvbw:2025-01-21:re7:cross_section:de:08315:6501:de:08315:6677",
+      "split": "holdout",
+      "metric": "cross_section",
+      "observedPassengers": 1364,
+      "simulatedPassengers": 1043,
+      "absoluteDeviation": 321,
+      "allowedDeviation": 341,
+      "accepted": true
+    },
+    {
+      "observationId": "nvbw:2025-01-21:re7:cross_section:de:08315:6514:de:08311:6512",
+      "split": "holdout",
+      "metric": "cross_section",
+      "observedPassengers": 157,
+      "simulatedPassengers": 0,
+      "absoluteDeviation": 157,
+      "allowedDeviation": 39,
+      "accepted": false
+    },
+    {
+      "observationId": "nvbw:2025-01-21:re7:cross_section:de:08315:6522:de:08315:6642",
+      "split": "holdout",
+      "metric": "cross_section",
+      "observedPassengers": 84,
+      "simulatedPassengers": 70,
+      "absoluteDeviation": 14,
+      "allowedDeviation": 21,
+      "accepted": true
+    },
+    {
+      "observationId": "nvbw:2025-01-21:re7:cross_section:de:08315:6522:de:08315:6644",
+      "split": "holdout",
+      "metric": "cross_section",
+      "observedPassengers": 572,
+      "simulatedPassengers": 291,
+      "absoluteDeviation": 281,
+      "allowedDeviation": 143,
+      "accepted": false
+    },
+    {
+      "observationId": "nvbw:2025-01-21:re7:cross_section:de:08315:6522:de:08315:6665",
+      "split": "holdout",
+      "metric": "cross_section",
+      "observedPassengers": 746,
+      "simulatedPassengers": 667,
+      "absoluteDeviation": 79,
+      "allowedDeviation": 186,
+      "accepted": true
+    },
+    {
+      "observationId": "nvbw:2025-01-21:re7:cross_section:de:08315:6522:de:08336:6639",
+      "split": "holdout",
+      "metric": "cross_section",
+      "observedPassengers": 389,
+      "simulatedPassengers": 446,
+      "absoluteDeviation": 57,
+      "allowedDeviation": 97,
+      "accepted": true
+    },
+    {
+      "observationId": "nvbw:2025-01-21:re7:cross_section:de:08315:6522:de:08336:6678",
+      "split": "holdout",
+      "metric": "cross_section",
+      "observedPassengers": 210,
+      "simulatedPassengers": 25,
+      "absoluteDeviation": 185,
+      "allowedDeviation": 52,
+      "accepted": false
+    },
+    {
+      "observationId": "nvbw:2025-01-21:re7:cross_section:de:08315:6642:de:08315:6522",
+      "split": "holdout",
+      "metric": "cross_section",
+      "observedPassengers": 496,
+      "simulatedPassengers": 594,
+      "absoluteDeviation": 98,
+      "allowedDeviation": 124,
+      "accepted": true
+    },
+    {
+      "observationId": "nvbw:2025-01-21:re7:cross_section:de:08315:6642:de:08336:6678",
+      "split": "holdout",
+      "metric": "cross_section",
+      "observedPassengers": 79,
+      "simulatedPassengers": 70,
+      "absoluteDeviation": 9,
+      "allowedDeviation": 20,
+      "accepted": true
+    },
+    {
+      "observationId": "nvbw:2025-01-21:re7:cross_section:de:08315:6644:de:08315:6522",
+      "split": "holdout",
+      "metric": "cross_section",
+      "observedPassengers": 569,
+      "simulatedPassengers": 308,
+      "absoluteDeviation": 261,
+      "allowedDeviation": 142,
+      "accepted": false
+    },
+    {
+      "observationId": "nvbw:2025-01-21:re7:cross_section:de:08315:6644:de:08315:6665",
+      "split": "holdout",
+      "metric": "cross_section",
+      "observedPassengers": 600,
+      "simulatedPassengers": 318,
+      "absoluteDeviation": 282,
+      "allowedDeviation": 150,
+      "accepted": false
+    },
+    {
+      "observationId": "nvbw:2025-01-21:re7:cross_section:de:08315:6661:de:08311:6589",
+      "split": "holdout",
+      "metric": "cross_section",
+      "observedPassengers": 624,
+      "simulatedPassengers": 118,
+      "absoluteDeviation": 506,
+      "allowedDeviation": 156,
+      "accepted": false
+    },
+    {
+      "observationId": "nvbw:2025-01-21:re7:cross_section:de:08315:6661:de:08315:6677",
+      "split": "holdout",
+      "metric": "cross_section",
+      "observedPassengers": 113,
+      "simulatedPassengers": 101,
+      "absoluteDeviation": 12,
+      "allowedDeviation": 28,
+      "accepted": true
+    },
+    {
+      "observationId": "nvbw:2025-01-21:re7:cross_section:de:08315:6665:de:08315:6501",
+      "split": "holdout",
+      "metric": "cross_section",
+      "observedPassengers": 1533,
+      "simulatedPassengers": 1057,
+      "absoluteDeviation": 476,
+      "allowedDeviation": 383,
+      "accepted": false
+    },
+    {
+      "observationId": "nvbw:2025-01-21:re7:cross_section:de:08315:6665:de:08315:6522",
+      "split": "holdout",
+      "metric": "cross_section",
+      "observedPassengers": 417,
+      "simulatedPassengers": 483,
+      "absoluteDeviation": 66,
+      "allowedDeviation": 104,
+      "accepted": true
+    },
+    {
+      "observationId": "nvbw:2025-01-21:re7:cross_section:de:08315:6665:de:08315:6644",
+      "split": "holdout",
+      "metric": "cross_section",
+      "observedPassengers": 605,
+      "simulatedPassengers": 313,
+      "absoluteDeviation": 292,
+      "allowedDeviation": 151,
+      "accepted": false
+    },
+    {
+      "observationId": "nvbw:2025-01-21:re7:cross_section:de:08315:6670:de:08315:6501",
+      "split": "holdout",
+      "metric": "cross_section",
+      "observedPassengers": 111,
+      "simulatedPassengers": 93,
+      "absoluteDeviation": 18,
+      "allowedDeviation": 27,
+      "accepted": true
+    },
+    {
+      "observationId": "nvbw:2025-01-21:re7:cross_section:de:08315:6670:de:08315:6677",
+      "split": "holdout",
+      "metric": "cross_section",
+      "observedPassengers": 577,
+      "simulatedPassengers": 120,
+      "absoluteDeviation": 457,
+      "allowedDeviation": 144,
+      "accepted": false
+    },
+    {
+      "observationId": "nvbw:2025-01-21:re7:cross_section:de:08315:6677:de:08311:6508",
+      "split": "holdout",
+      "metric": "cross_section",
+      "observedPassengers": 1354,
+      "simulatedPassengers": 1069,
+      "absoluteDeviation": 285,
+      "allowedDeviation": 338,
+      "accepted": true
+    },
+    {
+      "observationId": "nvbw:2025-01-21:re7:cross_section:de:08315:6677:de:08315:6501",
+      "split": "holdout",
+      "metric": "cross_section",
+      "observedPassengers": 742,
+      "simulatedPassengers": 296,
+      "absoluteDeviation": 446,
+      "allowedDeviation": 185,
+      "accepted": false
+    },
+    {
+      "observationId": "nvbw:2025-01-21:re7:cross_section:de:08315:6677:de:08315:6661",
+      "split": "holdout",
+      "metric": "cross_section",
+      "observedPassengers": 615,
+      "simulatedPassengers": 116,
+      "absoluteDeviation": 499,
+      "allowedDeviation": 153,
+      "accepted": false
+    },
+    {
+      "observationId": "nvbw:2025-01-21:re7:cross_section:de:08315:6677:de:08315:6670",
+      "split": "holdout",
+      "metric": "cross_section",
+      "observedPassengers": 111,
+      "simulatedPassengers": 93,
+      "absoluteDeviation": 18,
+      "allowedDeviation": 27,
+      "accepted": true
+    },
+    {
+      "observationId": "nvbw:2025-01-21:re7:cross_section:de:08316:5290:de:08316:6518",
+      "split": "holdout",
+      "metric": "cross_section",
+      "observedPassengers": 1045,
+      "simulatedPassengers": 1565,
+      "absoluteDeviation": 520,
+      "allowedDeviation": 261,
+      "accepted": false
+    },
+    {
+      "observationId": "nvbw:2025-01-21:re7:cross_section:de:08316:5290:de:08316:6668",
+      "split": "holdout",
+      "metric": "cross_section",
+      "observedPassengers": 70,
+      "simulatedPassengers": 0,
+      "absoluteDeviation": 70,
+      "allowedDeviation": 20,
+      "accepted": false
+    },
+    {
+      "observationId": "nvbw:2025-01-21:re7:cross_section:de:08316:5290:de:08316:90",
+      "split": "holdout",
+      "metric": "cross_section",
+      "observedPassengers": 436,
+      "simulatedPassengers": 857,
+      "absoluteDeviation": 421,
+      "allowedDeviation": 109,
+      "accepted": false
+    },
+    {
+      "observationId": "nvbw:2025-01-21:re7:cross_section:de:08316:6505:de:08311:6508",
+      "split": "holdout",
+      "metric": "cross_section",
+      "observedPassengers": 588,
+      "simulatedPassengers": 968,
+      "absoluteDeviation": 380,
+      "allowedDeviation": 147,
+      "accepted": false
+    },
+    {
+      "observationId": "nvbw:2025-01-21:re7:cross_section:de:08316:6505:de:08315:6514",
+      "split": "holdout",
+      "metric": "cross_section",
+      "observedPassengers": 147,
+      "simulatedPassengers": 0,
+      "absoluteDeviation": 147,
+      "allowedDeviation": 36,
+      "accepted": false
+    },
+    {
+      "observationId": "nvbw:2025-01-21:re7:cross_section:de:08316:6505:de:08316:90",
+      "split": "holdout",
+      "metric": "cross_section",
+      "observedPassengers": 1407,
+      "simulatedPassengers": 1741,
+      "absoluteDeviation": 334,
+      "allowedDeviation": 351,
+      "accepted": true
+    },
+    {
+      "observationId": "nvbw:2025-01-21:re7:cross_section:de:08316:6518:de:08316:5290",
+      "split": "holdout",
+      "metric": "cross_section",
+      "observedPassengers": 471,
+      "simulatedPassengers": 845,
+      "absoluteDeviation": 374,
+      "allowedDeviation": 117,
+      "accepted": false
+    },
+    {
+      "observationId": "nvbw:2025-01-21:re7:cross_section:de:08316:6518:de:08316:6562",
+      "split": "holdout",
+      "metric": "cross_section",
+      "observedPassengers": 929,
+      "simulatedPassengers": 1471,
+      "absoluteDeviation": 542,
+      "allowedDeviation": 232,
+      "accepted": false
+    },
+    {
+      "observationId": "nvbw:2025-01-21:re7:cross_section:de:08316:6562:de:08316:6518",
+      "split": "holdout",
+      "metric": "cross_section",
+      "observedPassengers": 435,
+      "simulatedPassengers": 815,
+      "absoluteDeviation": 380,
+      "allowedDeviation": 108,
+      "accepted": false
+    },
+    {
+      "observationId": "nvbw:2025-01-21:re7:cross_section:de:08316:6562:de:08317:16700",
+      "split": "holdout",
+      "metric": "cross_section",
+      "observedPassengers": 801,
+      "simulatedPassengers": 1345,
+      "absoluteDeviation": 544,
+      "allowedDeviation": 200,
+      "accepted": false
+    },
+    {
+      "observationId": "nvbw:2025-01-21:re7:cross_section:de:08316:6667:de:08316:6505",
+      "split": "holdout",
+      "metric": "cross_section",
+      "observedPassengers": 110,
+      "simulatedPassengers": 0,
+      "absoluteDeviation": 110,
+      "allowedDeviation": 27,
+      "accepted": false
+    },
+    {
+      "observationId": "nvbw:2025-01-21:re7:cross_section:de:08316:6668:de:08316:729",
+      "split": "holdout",
+      "metric": "cross_section",
+      "observedPassengers": 72,
+      "simulatedPassengers": 0,
+      "absoluteDeviation": 72,
+      "allowedDeviation": 20,
+      "accepted": false
+    },
+    {
+      "observationId": "nvbw:2025-01-21:re7:cross_section:de:08316:729:de:08316:90",
+      "split": "holdout",
+      "metric": "cross_section",
+      "observedPassengers": 78,
+      "simulatedPassengers": 0,
+      "absoluteDeviation": 78,
+      "allowedDeviation": 20,
+      "accepted": false
+    },
+    {
+      "observationId": "nvbw:2025-01-21:re7:cross_section:de:08316:90:de:08316:5290",
+      "split": "holdout",
+      "metric": "cross_section",
+      "observedPassengers": 1232,
+      "simulatedPassengers": 1659,
+      "absoluteDeviation": 427,
+      "allowedDeviation": 308,
+      "accepted": false
+    },
+    {
+      "observationId": "nvbw:2025-01-21:re7:cross_section:de:08316:90:de:08316:6505",
+      "split": "holdout",
+      "metric": "cross_section",
+      "observedPassengers": 608,
+      "simulatedPassengers": 948,
+      "absoluteDeviation": 340,
+      "allowedDeviation": 152,
+      "accepted": false
+    },
+    {
+      "observationId": "nvbw:2025-01-21:re7:cross_section:de:08316:90:de:08316:6667",
+      "split": "holdout",
+      "metric": "cross_section",
+      "observedPassengers": 105,
+      "simulatedPassengers": 0,
+      "absoluteDeviation": 105,
+      "allowedDeviation": 26,
+      "accepted": false
+    },
+    {
+      "observationId": "nvbw:2025-01-21:re7:cross_section:de:08317:12103:de:08316:6562",
+      "split": "holdout",
+      "metric": "cross_section",
+      "observedPassengers": 332,
+      "simulatedPassengers": 771,
+      "absoluteDeviation": 439,
+      "allowedDeviation": 83,
+      "accepted": false
+    },
+    {
+      "observationId": "nvbw:2025-01-21:re7:cross_section:de:08317:12103:de:08317:14506",
+      "split": "holdout",
+      "metric": "cross_section",
+      "observedPassengers": 290,
+      "simulatedPassengers": 711,
+      "absoluteDeviation": 421,
+      "allowedDeviation": 72,
+      "accepted": false
+    },
+    {
+      "observationId": "nvbw:2025-01-21:re7:cross_section:de:08317:12103:de:08317:16220",
+      "split": "holdout",
+      "metric": "cross_section",
+      "observedPassengers": 384,
+      "simulatedPassengers": 290,
+      "absoluteDeviation": 94,
+      "allowedDeviation": 96,
+      "accepted": true
+    },
+    {
+      "observationId": "nvbw:2025-01-21:re7:cross_section:de:08317:12103:de:08317:18601",
+      "split": "holdout",
+      "metric": "cross_section",
+      "observedPassengers": 18,
+      "simulatedPassengers": 0,
+      "absoluteDeviation": 18,
+      "allowedDeviation": 20,
+      "accepted": true
+    },
+    {
+      "observationId": "nvbw:2025-01-21:re7:cross_section:de:08317:13554:de:08317:14120",
+      "split": "holdout",
+      "metric": "cross_section",
+      "observedPassengers": 165,
+      "simulatedPassengers": 273,
+      "absoluteDeviation": 108,
+      "allowedDeviation": 41,
+      "accepted": false
+    },
+    {
+      "observationId": "nvbw:2025-01-21:re7:cross_section:de:08317:13554:de:08317:33013",
+      "split": "holdout",
+      "metric": "cross_section",
+      "observedPassengers": 359,
+      "simulatedPassengers": 477,
+      "absoluteDeviation": 118,
+      "allowedDeviation": 89,
+      "accepted": false
+    },
+    {
+      "observationId": "nvbw:2025-01-21:re7:cross_section:de:08317:14120:de:08317:13554",
+      "split": "holdout",
+      "metric": "cross_section",
+      "observedPassengers": 364,
+      "simulatedPassengers": 486,
+      "absoluteDeviation": 122,
+      "allowedDeviation": 91,
+      "accepted": false
+    },
+    {
+      "observationId": "nvbw:2025-01-21:re7:cross_section:de:08317:14120:de:08317:14506",
+      "split": "holdout",
+      "metric": "cross_section",
+      "observedPassengers": 137,
+      "simulatedPassengers": 283,
+      "absoluteDeviation": 146,
+      "allowedDeviation": 34,
+      "accepted": false
+    },
+    {
+      "observationId": "nvbw:2025-01-21:re7:cross_section:de:08317:14506:de:08317:12103",
+      "split": "holdout",
+      "metric": "cross_section",
+      "observedPassengers": 351,
+      "simulatedPassengers": 596,
+      "absoluteDeviation": 245,
+      "allowedDeviation": 87,
+      "accepted": false
+    },
+    {
+      "observationId": "nvbw:2025-01-21:re7:cross_section:de:08317:14506:de:08317:14120",
+      "split": "holdout",
+      "metric": "cross_section",
+      "observedPassengers": 355,
+      "simulatedPassengers": 512,
+      "absoluteDeviation": 157,
+      "allowedDeviation": 88,
+      "accepted": false
+    },
+    {
+      "observationId": "nvbw:2025-01-21:re7:cross_section:de:08317:14506:de:08317:16220",
+      "split": "holdout",
+      "metric": "cross_section",
+      "observedPassengers": 9,
+      "simulatedPassengers": 0,
+      "absoluteDeviation": 9,
+      "allowedDeviation": 20,
+      "accepted": true
+    },
+    {
+      "observationId": "nvbw:2025-01-21:re7:cross_section:de:08317:16220:de:08317:12103",
+      "split": "holdout",
+      "metric": "cross_section",
+      "observedPassengers": 11,
+      "simulatedPassengers": 0,
+      "absoluteDeviation": 11,
+      "allowedDeviation": 20,
+      "accepted": true
+    },
+    {
+      "observationId": "nvbw:2025-01-21:re7:cross_section:de:08317:16220:de:08317:14506",
+      "split": "holdout",
+      "metric": "cross_section",
+      "observedPassengers": 420,
+      "simulatedPassengers": 291,
+      "absoluteDeviation": 129,
+      "allowedDeviation": 105,
+      "accepted": false
+    },
+    {
+      "observationId": "nvbw:2025-01-21:re7:cross_section:de:08317:16700:de:08316:6562",
+      "split": "holdout",
+      "metric": "cross_section",
+      "observedPassengers": 32,
+      "simulatedPassengers": 0,
+      "absoluteDeviation": 32,
+      "allowedDeviation": 20,
+      "accepted": false
+    },
+    {
+      "observationId": "nvbw:2025-01-21:re7:cross_section:de:08317:16700:de:08317:18601",
+      "split": "holdout",
+      "metric": "cross_section",
+      "observedPassengers": 813,
+      "simulatedPassengers": 1294,
+      "absoluteDeviation": 481,
+      "allowedDeviation": 203,
+      "accepted": false
+    },
+    {
+      "observationId": "nvbw:2025-01-21:re7:cross_section:de:08317:18601:de:08317:12103",
+      "split": "holdout",
+      "metric": "cross_section",
+      "observedPassengers": 814,
+      "simulatedPassengers": 1157,
+      "absoluteDeviation": 343,
+      "allowedDeviation": 203,
+      "accepted": false
+    },
+    {
+      "observationId": "nvbw:2025-01-21:re7:cross_section:de:08317:18601:de:08317:16700",
+      "split": "holdout",
+      "metric": "cross_section",
+      "observedPassengers": 27,
+      "simulatedPassengers": 0,
+      "absoluteDeviation": 27,
+      "allowedDeviation": 20,
+      "accepted": false
+    },
+    {
+      "observationId": "nvbw:2025-01-21:re7:cross_section:de:08317:33013:de:08216:32227",
+      "split": "holdout",
+      "metric": "cross_section",
+      "observedPassengers": 327,
+      "simulatedPassengers": 440,
+      "absoluteDeviation": 113,
+      "allowedDeviation": 81,
+      "accepted": false
+    },
+    {
+      "observationId": "nvbw:2025-01-21:re7:cross_section:de:08317:33013:de:08317:13554",
+      "split": "holdout",
+      "metric": "cross_section",
+      "observedPassengers": 174,
+      "simulatedPassengers": 269,
+      "absoluteDeviation": 95,
+      "allowedDeviation": 43,
+      "accepted": false
+    },
+    {
+      "observationId": "nvbw:2025-01-21:re7:cross_section:de:08336:6628:de:08336:6629",
+      "split": "holdout",
+      "metric": "cross_section",
+      "observedPassengers": 87,
+      "simulatedPassengers": 57,
+      "absoluteDeviation": 30,
+      "allowedDeviation": 21,
+      "accepted": false
+    },
+    {
+      "observationId": "nvbw:2025-01-21:re7:cross_section:de:08336:6628:de:08336:6631",
+      "split": "holdout",
+      "metric": "cross_section",
+      "observedPassengers": 250,
+      "simulatedPassengers": 22,
+      "absoluteDeviation": 228,
+      "allowedDeviation": 62,
+      "accepted": false
+    },
+    {
+      "observationId": "nvbw:2025-01-21:re7:cross_section:de:08336:6628:de:08336:6678",
+      "split": "holdout",
+      "metric": "cross_section",
+      "observedPassengers": 856,
+      "simulatedPassengers": 773,
+      "absoluteDeviation": 83,
+      "allowedDeviation": 214,
+      "accepted": true
+    },
+    {
+      "observationId": "nvbw:2025-01-21:re7:cross_section:de:08336:6629:de:08336:6628",
+      "split": "holdout",
+      "metric": "cross_section",
+      "observedPassengers": 286,
+      "simulatedPassengers": 338,
+      "absoluteDeviation": 52,
+      "allowedDeviation": 71,
+      "accepted": true
+    },
+    {
+      "observationId": "nvbw:2025-01-21:re7:cross_section:de:08336:6629:de:08336:6633",
+      "split": "holdout",
+      "metric": "cross_section",
+      "observedPassengers": 89,
+      "simulatedPassengers": 57,
+      "absoluteDeviation": 32,
+      "allowedDeviation": 22,
+      "accepted": false
+    },
+    {
+      "observationId": "nvbw:2025-01-21:re7:cross_section:de:08336:6631:de:08336:6628",
+      "split": "holdout",
+      "metric": "cross_section",
+      "observedPassengers": 554,
+      "simulatedPassengers": 376,
+      "absoluteDeviation": 178,
+      "allowedDeviation": 138,
+      "accepted": false
+    },
+    {
+      "observationId": "nvbw:2025-01-21:re7:cross_section:de:08336:6631:de:08336:6632",
+      "split": "holdout",
+      "metric": "cross_section",
+      "observedPassengers": 284,
+      "simulatedPassengers": 318,
+      "absoluteDeviation": 34,
+      "allowedDeviation": 71,
+      "accepted": true
+    },
+    {
+      "observationId": "nvbw:2025-01-21:re7:cross_section:de:08336:6631:de:08336:6634",
+      "split": "holdout",
+      "metric": "cross_section",
+      "observedPassengers": 102,
+      "simulatedPassengers": 43,
+      "absoluteDeviation": 59,
+      "allowedDeviation": 25,
+      "accepted": false
+    },
+    {
+      "observationId": "nvbw:2025-01-21:re7:cross_section:de:08336:6631:de:08336:6638",
+      "split": "holdout",
+      "metric": "cross_section",
+      "observedPassengers": 265,
+      "simulatedPassengers": 23,
+      "absoluteDeviation": 242,
+      "allowedDeviation": 66,
+      "accepted": false
+    },
+    {
+      "observationId": "nvbw:2025-01-21:re7:cross_section:de:08336:6632:de:08336:6631",
+      "split": "holdout",
+      "metric": "cross_section",
+      "observedPassengers": 89,
+      "simulatedPassengers": 57,
+      "absoluteDeviation": 32,
+      "allowedDeviation": 22,
+      "accepted": false
+    },
+    {
+      "observationId": "nvbw:2025-01-21:re7:cross_section:de:08336:6632:de:08336:6633",
+      "split": "holdout",
+      "metric": "cross_section",
+      "observedPassengers": 285,
+      "simulatedPassengers": 327,
+      "absoluteDeviation": 42,
+      "allowedDeviation": 71,
+      "accepted": true
+    },
+    {
+      "observationId": "nvbw:2025-01-21:re7:cross_section:de:08336:6633:de:08336:6629",
+      "split": "holdout",
+      "metric": "cross_section",
+      "observedPassengers": 284,
+      "simulatedPassengers": 327,
+      "absoluteDeviation": 43,
+      "allowedDeviation": 71,
+      "accepted": true
+    },
+    {
+      "observationId": "nvbw:2025-01-21:re7:cross_section:de:08336:6633:de:08336:6632",
+      "split": "holdout",
+      "metric": "cross_section",
+      "observedPassengers": 89,
+      "simulatedPassengers": 57,
+      "absoluteDeviation": 32,
+      "allowedDeviation": 22,
+      "accepted": false
+    },
+    {
+      "observationId": "nvbw:2025-01-21:re7:cross_section:de:08336:6634:de:08336:6631",
+      "split": "holdout",
+      "metric": "cross_section",
+      "observedPassengers": 308,
+      "simulatedPassengers": 284,
+      "absoluteDeviation": 24,
+      "allowedDeviation": 77,
+      "accepted": true
+    },
+    {
+      "observationId": "nvbw:2025-01-21:re7:cross_section:de:08336:6634:de:08336:6638",
+      "split": "holdout",
+      "metric": "cross_section",
+      "observedPassengers": 111,
+      "simulatedPassengers": 39,
+      "absoluteDeviation": 72,
+      "allowedDeviation": 27,
+      "accepted": false
+    },
+    {
+      "observationId": "nvbw:2025-01-21:re7:cross_section:de:08336:6638:de:08336:6631",
+      "split": "holdout",
+      "metric": "cross_section",
+      "observedPassengers": 560,
+      "simulatedPassengers": 331,
+      "absoluteDeviation": 229,
+      "allowedDeviation": 140,
+      "accepted": false
+    },
+    {
+      "observationId": "nvbw:2025-01-21:re7:cross_section:de:08336:6638:de:08336:6634",
+      "split": "holdout",
+      "metric": "cross_section",
+      "observedPassengers": 311,
+      "simulatedPassengers": 236,
+      "absoluteDeviation": 75,
+      "allowedDeviation": 77,
+      "accepted": true
+    },
+    {
+      "observationId": "nvbw:2025-01-21:re7:cross_section:de:08336:6638:de:08336:6639",
+      "split": "holdout",
+      "metric": "cross_section",
+      "observedPassengers": 405,
+      "simulatedPassengers": 55,
+      "absoluteDeviation": 350,
+      "allowedDeviation": 101,
+      "accepted": false
+    },
+    {
+      "observationId": "nvbw:2025-01-21:re7:cross_section:de:08336:6639:ch:23005:6",
+      "split": "holdout",
+      "metric": "cross_section",
+      "observedPassengers": 580,
+      "simulatedPassengers": 349,
+      "absoluteDeviation": 231,
+      "allowedDeviation": 145,
+      "accepted": false
+    },
+    {
+      "observationId": "nvbw:2025-01-21:re7:cross_section:de:08336:6639:de:08336:6638",
+      "split": "holdout",
+      "metric": "cross_section",
+      "observedPassengers": 854,
+      "simulatedPassengers": 476,
+      "absoluteDeviation": 378,
+      "allowedDeviation": 213,
+      "accepted": false
+    },
+    {
+      "observationId": "nvbw:2025-01-21:re7:cross_section:de:08336:6678:de:08315:6522",
+      "split": "holdout",
+      "metric": "cross_section",
+      "observedPassengers": 399,
+      "simulatedPassengers": 277,
+      "absoluteDeviation": 122,
+      "allowedDeviation": 99,
+      "accepted": false
+    },
+    {
+      "observationId": "nvbw:2025-01-21:re7:cross_section:de:08336:6678:de:08315:6642",
+      "split": "holdout",
+      "metric": "cross_section",
+      "observedPassengers": 471,
+      "simulatedPassengers": 568,
+      "absoluteDeviation": 97,
+      "allowedDeviation": 117,
+      "accepted": true
+    },
+    {
+      "observationId": "nvbw:2025-01-21:re7:cross_section:de:08336:6678:de:08336:6628",
+      "split": "holdout",
+      "metric": "cross_section",
+      "observedPassengers": 310,
+      "simulatedPassengers": 83,
+      "absoluteDeviation": 227,
+      "allowedDeviation": 77,
+      "accepted": false
+    },
+    {
+      "observationId": "nvbw:2025-01-21:re7:daily_profile:0",
+      "split": "holdout",
+      "metric": "daily_profile",
+      "observedPassengers": 38,
+      "simulatedPassengers": 0,
+      "absoluteDeviation": 38,
+      "allowedDeviation": 20,
+      "accepted": false
+    },
+    {
+      "observationId": "nvbw:2025-01-21:re7:daily_profile:1",
+      "split": "holdout",
+      "metric": "daily_profile",
+      "observedPassengers": 0,
+      "simulatedPassengers": 0,
+      "absoluteDeviation": 0,
+      "allowedDeviation": 20,
+      "accepted": true
+    },
+    {
+      "observationId": "nvbw:2025-01-21:re7:daily_profile:10",
+      "split": "holdout",
+      "metric": "daily_profile",
+      "observedPassengers": 251,
+      "simulatedPassengers": 128,
+      "absoluteDeviation": 123,
+      "allowedDeviation": 62,
+      "accepted": false
+    },
+    {
+      "observationId": "nvbw:2025-01-21:re7:daily_profile:11",
+      "split": "holdout",
+      "metric": "daily_profile",
+      "observedPassengers": 480,
+      "simulatedPassengers": 181,
+      "absoluteDeviation": 299,
+      "allowedDeviation": 120,
+      "accepted": false
+    },
+    {
+      "observationId": "nvbw:2025-01-21:re7:daily_profile:12",
+      "split": "holdout",
+      "metric": "daily_profile",
+      "observedPassengers": 197,
+      "simulatedPassengers": 198,
+      "absoluteDeviation": 1,
+      "allowedDeviation": 49,
+      "accepted": true
+    },
+    {
+      "observationId": "nvbw:2025-01-21:re7:daily_profile:13",
+      "split": "holdout",
+      "metric": "daily_profile",
+      "observedPassengers": 802,
+      "simulatedPassengers": 248,
+      "absoluteDeviation": 554,
+      "allowedDeviation": 200,
+      "accepted": false
+    },
+    {
+      "observationId": "nvbw:2025-01-21:re7:daily_profile:14",
+      "split": "holdout",
+      "metric": "daily_profile",
+      "observedPassengers": 392,
+      "simulatedPassengers": 486,
+      "absoluteDeviation": 94,
+      "allowedDeviation": 98,
+      "accepted": true
+    },
+    {
+      "observationId": "nvbw:2025-01-21:re7:daily_profile:15",
+      "split": "holdout",
+      "metric": "daily_profile",
+      "observedPassengers": 1608,
+      "simulatedPassengers": 832,
+      "absoluteDeviation": 776,
+      "allowedDeviation": 402,
+      "accepted": false
+    },
+    {
+      "observationId": "nvbw:2025-01-21:re7:daily_profile:16",
+      "split": "holdout",
+      "metric": "daily_profile",
+      "observedPassengers": 768,
+      "simulatedPassengers": 375,
+      "absoluteDeviation": 393,
+      "allowedDeviation": 192,
+      "accepted": false
+    },
+    {
+      "observationId": "nvbw:2025-01-21:re7:daily_profile:17",
+      "split": "holdout",
+      "metric": "daily_profile",
+      "observedPassengers": 1335,
+      "simulatedPassengers": 908,
+      "absoluteDeviation": 427,
+      "allowedDeviation": 333,
+      "accepted": false
+    },
+    {
+      "observationId": "nvbw:2025-01-21:re7:daily_profile:18",
+      "split": "holdout",
+      "metric": "daily_profile",
+      "observedPassengers": 206,
+      "simulatedPassengers": 351,
+      "absoluteDeviation": 145,
+      "allowedDeviation": 51,
+      "accepted": false
+    },
+    {
+      "observationId": "nvbw:2025-01-21:re7:daily_profile:19",
+      "split": "holdout",
+      "metric": "daily_profile",
+      "observedPassengers": 279,
+      "simulatedPassengers": 313,
+      "absoluteDeviation": 34,
+      "allowedDeviation": 69,
+      "accepted": true
+    },
+    {
+      "observationId": "nvbw:2025-01-21:re7:daily_profile:20",
+      "split": "holdout",
+      "metric": "daily_profile",
+      "observedPassengers": 118,
+      "simulatedPassengers": 217,
+      "absoluteDeviation": 99,
+      "allowedDeviation": 29,
+      "accepted": false
+    },
+    {
+      "observationId": "nvbw:2025-01-21:re7:daily_profile:21",
+      "split": "holdout",
+      "metric": "daily_profile",
+      "observedPassengers": 181,
+      "simulatedPassengers": 355,
+      "absoluteDeviation": 174,
+      "allowedDeviation": 45,
+      "accepted": false
+    },
+    {
+      "observationId": "nvbw:2025-01-21:re7:daily_profile:22",
+      "split": "holdout",
+      "metric": "daily_profile",
+      "observedPassengers": 2,
+      "simulatedPassengers": 0,
+      "absoluteDeviation": 2,
+      "allowedDeviation": 20,
+      "accepted": true
+    },
+    {
+      "observationId": "nvbw:2025-01-21:re7:daily_profile:4",
+      "split": "holdout",
+      "metric": "daily_profile",
+      "observedPassengers": 87,
+      "simulatedPassengers": 0,
+      "absoluteDeviation": 87,
+      "allowedDeviation": 21,
+      "accepted": false
+    },
+    {
+      "observationId": "nvbw:2025-01-21:re7:daily_profile:5",
+      "split": "holdout",
+      "metric": "daily_profile",
+      "observedPassengers": 421,
+      "simulatedPassengers": 77,
+      "absoluteDeviation": 344,
+      "allowedDeviation": 105,
+      "accepted": false
+    },
+    {
+      "observationId": "nvbw:2025-01-21:re7:daily_profile:6",
+      "split": "holdout",
+      "metric": "daily_profile",
+      "observedPassengers": 631,
+      "simulatedPassengers": 449,
+      "absoluteDeviation": 182,
+      "allowedDeviation": 157,
+      "accepted": false
+    },
+    {
+      "observationId": "nvbw:2025-01-21:re7:daily_profile:7",
+      "split": "holdout",
+      "metric": "daily_profile",
+      "observedPassengers": 664,
+      "simulatedPassengers": 139,
+      "absoluteDeviation": 525,
+      "allowedDeviation": 166,
+      "accepted": false
+    },
+    {
+      "observationId": "nvbw:2025-01-21:re7:daily_profile:8",
+      "split": "holdout",
+      "metric": "daily_profile",
+      "observedPassengers": 584,
+      "simulatedPassengers": 99,
+      "absoluteDeviation": 485,
+      "allowedDeviation": 146,
+      "accepted": false
+    },
+    {
+      "observationId": "nvbw:2025-01-21:re7:daily_profile:9",
+      "split": "holdout",
+      "metric": "daily_profile",
+      "observedPassengers": 154,
+      "simulatedPassengers": 118,
+      "absoluteDeviation": 36,
+      "allowedDeviation": 38,
+      "accepted": true
+    }
+  ],
+  "spnvMeasuredSubsetAccepted": false,
+  "fullM10CalibrationAccepted": false,
+  "missingRequiredHoldouts": [
+    "spnv/transfer_flow",
+    "spfv/daily_profile",
+    "spfv/cross_section",
+    "spfv/transfer_flow"
+  ],
+  "limitations": [
+    "See README native comparison v2: balanced OD/marginals and training-derived hourly shares on the source operating-day axis, zero fares/dwell/standing, observed train mask, cross-border RE7 only."
+  ]
+}

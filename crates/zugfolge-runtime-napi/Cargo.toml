@@ -21,6 +21,7 @@ napi-derive = { version = "=3.2.5", optional = true }
 zugfolge-runtime = { path = "../zugfolge-runtime", version = "0.0.0" }
 zugfolge-sim-runtime = { path = "../zugfolge-sim-runtime", version = "0.0.0" }
 zugfolge-rules = { path = "../zugfolge-rules", version = "0.0.0" }
+zugfolge-demand = { path = "../zugfolge-demand", version = "0.0.0" }
 serde_json.workspace = true
 
 [build-dependencies]
