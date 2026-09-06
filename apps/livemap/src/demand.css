@@ -1,0 +1,48 @@
+.demand-view { color: var(--zf-text, #f5f7fa); min-width: 0; }
+.demand-view h1 { font-size: 24px; }
+.demand-view h2 { font-size: 18px; }
+.population-stations { list-style: none; padding: 0; display: grid; gap: 14px; }
+.population-stations > li { border: 1px solid #465360; border-radius: 6px; padding: 12px; min-width: 0; }
+.population-stations h3, .population-stations h4 { margin: 0 0 10px; font-size: 13px; }
+.population-stations h4 { margin-top: 16px; }
+.population-stations h3 button { background: transparent; border: 0; padding: 4px 0; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.population-stations p, .population-stations ol { font-size: 12px; color: #b5c0cc; }
+.population-stations ol { padding-left: 20px; }
+.population-stations ol li { padding: 6px 0; }
+.population-stations ol strong { float: right; padding-left: 8px; color: #f5f7fa; }
+.population-stations small { display: block; margin-top: 4px; }
+.population-class { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; font-size: 12px; }
+.population-bars { display: flex; gap: 3px; }
+.population-bars i { width: 9px; height: 17px; background: #303b46; border: 1px solid #687783; border-radius: 2px; }
+.population-bars i.filled { background: #75d4ef; border-color: #75d4ef; }
+.population-demand details { font-size: 12px; overflow-wrap: anywhere; }
+.population-demand a { color: #75d4ef; }
+.demand-provenance { border-left: 3px solid #a9a1ff; padding: 8px 12px; background: #242338; font-size: 12px; line-height: 1.65; }
+.demand-provenance--observed { border-color: #75d4ef; background: #172b36; }
+.demand-provenance--assumption { border-style: dashed; }
+.demand-legend { display: grid; gap: 8px; padding: 0; list-style: none; font-size: 12px; }
+.demand-dot { width: 10px; height: 10px; display: inline-block; border-radius: 50%; margin-right: 8px; }
+.demand-dot.unserved { background: #b5a6ff; }
+.demand-dot.served { background: #75d4ef; }
+.demand-dot.unknown { border: 2px dashed #a9b3c3; background: transparent; }
+.demand-note { color: #b5c0cc; font-size: 12px; line-height: 1.55; }
+.demand-table-scroll { overflow-x: auto; max-width: 100%; }
+.demand-table-scroll table { width: 100%; font-size: 12px; border-collapse: collapse; }
+.demand-table-scroll caption { text-align: left; margin: 12px 0; color: #b5c0cc; }
+.demand-table-scroll th, .demand-table-scroll td { text-align: left; padding: 10px 7px; border-bottom: 1px solid #303b46; font-variant-numeric: tabular-nums; }
+.demand-table-scroll button { text-align: left; color: #f5f7fa; background: #202830; border: 1px solid #465360; padding: 8px; border-radius: 5px; }
+.demand-pagination { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0; }
+.demand-pagination button, [data-manifest-next] { background: #202830; border: 1px solid #465360; color: #f5f7fa; padding: 10px; border-radius: 5px; }
+.demand-segments { list-style: none; margin: 12px 0; padding: 0; display: grid; gap: 12px; }
+.demand-segments li { display: grid; gap: 5px; font-size: 12px; border-bottom: 1px solid #303b46; padding-bottom: 10px; overflow-wrap: anywhere; }
+.demand-segments span, .demand-segments small { color: #b5c0cc; }
+.demand-segments meter { width: 100%; height: 14px; accent-color: #a9a1ff; }
+.train-demand details, .passenger-manifest { margin: 12px 0; padding: 10px; border: 1px solid #303b46; border-radius: 6px; }
+.train-demand summary, .passenger-manifest summary { cursor: pointer; font-size: 13px; }
+.demand-plan-link { display: block; padding: 12px; margin: 14px 0; background: #e5233d; color: #fff; border-radius: 6px; text-align: center; text-decoration: none; font-size: 13px; font-weight: 650; }
+.railway-map #toggle-demand { color: #c8bfff; }
+.railway-map #toggle-demand[aria-pressed="true"] { border-color: #a9a1ff; background: #302a48; }
+.demand-map-key { position: absolute; left: 12px; bottom: 120px; z-index: 3; max-width: calc(100% - 24px); padding: 10px 12px; background: #181e25ee; border: 1px solid #605b81; border-radius: 6px; display: grid; gap: 7px; font-size: 11px; color: #f5f7fa; pointer-events: none; }
+.demand-map-key[hidden] { display: none; }
+.demand-map-key small { overflow-wrap: anywhere; color: #b5c0cc; }
+@media(max-width: 620px) { .railway-map .map-toolbar { flex-wrap: wrap; max-width: calc(100% - 20px); gap: 6px; } .railway-map .map-toolbar .train-scope { flex-wrap: wrap; } }

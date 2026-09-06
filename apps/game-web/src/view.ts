@@ -32,6 +32,7 @@ export interface ProjectionViewOptions {
   readonly livemapUrl?: string;
   readonly operationsCenterUrl?: string;
   readonly activeOperatorId?: string;
+  readonly navigationParameters?: string;
 }
 
 export function renderLoadState(
@@ -186,12 +187,19 @@ export function renderProjection(
   projection: PlanningProjectionV1,
   options: ProjectionViewOptions,
 ): string {
+  const planningParameters = new URLSearchParams(options.navigationParameters);
+  for (const key of [...planningParameters.keys()]) if (!["focus", "trainScope", "trainQuery", "demand", "operator"].includes(key)) planningParameters.delete(key);
+  planningParameters.set("world", projection.worldId);
+  planningParameters.set("view", "spfv");
+  if (options.selectedTrainId) planningParameters.set("train", options.selectedTrainId);
+  if (options.activeOperatorId) planningParameters.set("operator", options.activeOperatorId);
+  const demandAction = `<a class="zf-button" href="?${escapeHtml(planningParameters.toString())}">Linie, Tarif & Plätze planen</a>`;
   const message =
     options.message === undefined || options.message === ""
       ? ""
       : `<p class="notice notice--${options.messageTone ?? "status"}" role="${options.messageTone === "error" ? "alert" : "status"}">${options.messageTone === "error" ? icon("alert") : icon("check")} ${escapeHtml(options.message)}</p>`;
   const demoBanner = options.demoMode === true ? '<p class="demo-banner" role="status"><strong>Demo · Beispieldaten</strong> Dieser Planungsstand ist nicht serverbestätigt.</p>' : "";
-  const context = `<section class="context"><div><p class="eyebrow">${options.demoMode === true ? "BEISPIEL-PLANUNGSSTAND" : "DEINE NÄCHSTE VERBINDUNG"}</p><h1>Bildfahrplan <span>${escapeHtml(projection.corridor.name)}</span></h1></div><div class="toolbar"><button class="zf-button" id="density">${icon("layers")} ${options.density === "control" ? "Leitstelle" : "Dokument"}</button><button class="zf-button ${options.showBlockingTimes ? "pressed" : ""}" id="steps" aria-pressed="${options.showBlockingTimes}">Sperrzeiten</button>${projection.trains.length === 0 ? "" : `<span class="period">${formatTimeS(timeExtentS(projection)[0], projection.timeBasis)}–${formatTimeS(timeExtentS(projection)[1], projection.timeBasis)}${projection.timeBasis === undefined ? "" : ` · Weltzeit ${escapeHtml(projection.timeBasis.timeZone)}`}</span>`}</div></section>`;
+  const context = `<section class="context"><div><p class="eyebrow">${options.demoMode === true ? "BEISPIEL-PLANUNGSSTAND" : "DEINE NÄCHSTE VERBINDUNG"}</p><h1>Bildfahrplan <span>${escapeHtml(projection.corridor.name)}</span></h1></div><div class="toolbar">${options.demoMode === true ? "" : demandAction}<button class="zf-button" id="density">${icon("layers")} ${options.density === "control" ? "Leitstelle" : "Dokument"}</button><button class="zf-button ${options.showBlockingTimes ? "pressed" : ""}" id="steps" aria-pressed="${options.showBlockingTimes}">Sperrzeiten</button>${projection.trains.length === 0 ? "" : `<span class="period">${formatTimeS(timeExtentS(projection)[0], projection.timeBasis)}–${formatTimeS(timeExtentS(projection)[1], projection.timeBasis)}${projection.timeBasis === undefined ? "" : ` · Weltzeit ${escapeHtml(projection.timeBasis.timeZone)}`}</span>`}</div></section>`;
   if (projection.stations.length === 0 || projection.trains.length === 0) {
     return `<a class="skip" href="#planner-empty">Zum Inhalt</a><div class="shell planner-shell">${renderHeader(projection, options)}<main>${demoBanner}${context}${message}<section id="planner-empty" class="zf-surface empty-card" tabindex="-1">${emptyState("Dein Fahrplan wartet auf dich.", "Für diese Strecke gibt es noch keine geplanten Fahrten. Melde im Bereich Betrieb deine erste Verbindung an.")}</section></main></div>`;
   }

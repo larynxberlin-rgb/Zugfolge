@@ -21,7 +21,10 @@ const input = {
   corridorName: "Korridor",
   stations: [],
   segments: [],
-  requests: [],
+  requests: [{ requestNumericId: 1, trainId: "train-1", trainCategory: "regional", trainNumber: 26802,
+    originStationId: "a", destinationStationId: "b", desiredDepartureS: 100, operatingDays: "daily", stops: [],
+    earlierS: 0, laterS: 0, stepS: 1, extraRunningTimeS: 0, maxOperationalStops: 0,
+    train: { numericId: 1, name: "Test", massKg: 1000, lengthMm: 1000, maximumSpeedMmps: 10000, accelerationMmPerS2: 100, decelerationMmPerS2: 100 } }],
 } satisfies PlanningCoordinateCommand;
 
 function result(worldId: string, revision = 1): string {
@@ -52,6 +55,17 @@ function result(worldId: string, revision = 1): string {
 }
 
 describe("native M3 ABI boundary", () => {
+  it("rejects foreign baselines, invalid validity and unbound replacements before entering Rust", () => {
+    let calls = 0;
+    const runtime = planningRuntimeFromAddon({ coordinatePlanningRun: () => { calls += 1; return result(input.worldId); },
+      applyPlanningAlternative: () => result(input.worldId, 2) });
+    const previousState = JSON.parse(result("foreign")).state as PlanningRuntimeState;
+    expect(() => runtime.coordinate({ ...input, expectedProjectionRevision: 1, previousState })).toThrow(/Welt-/);
+    expect(() => runtime.coordinate({ ...input, replaceTrainIds: ["train-1"], effectiveFromS: 0 })).toThrow(/Ausgangszustand/);
+    expect(() => runtime.coordinate({ ...input, requests: [{ ...input.requests[0]!, serviceWindow: { validFromS: 0, validUntilS: 100 } }] })).toThrow(/serviceWindow/);
+    expect(() => runtime.coordinate({ ...input, requests: [] })).toThrow(/1 bis 256/);
+    expect(calls).toBe(0);
+  });
   it("transports v2 mm/s exactly and keeps the v1 KPH path explicit", () => {
     const seen: unknown[] = [];
     const runtime = planningRuntimeFromAddon({

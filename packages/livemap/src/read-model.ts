@@ -158,6 +158,10 @@ export interface LivemapProjectionCursor {
  * und serverautoritative Projektionen; Browserwerte sind niemals Eingabe.
  */
 export interface LivemapReadModel {
+  /** Exakte indizierte Fahrplanreferenz ohne das 160-Zeilen-Fenster einer Spielertafel. */
+  getScheduledCall?(
+    worldId: string, stationId: string, trainId: string, atS: number, callType: "arrival" | "departure",
+  ): Promise<StationBoardCall | undefined>;
   getConfig(worldId: string): Promise<LivemapConfigV2 | undefined>;
   getObjectDetail(
     worldId: string,

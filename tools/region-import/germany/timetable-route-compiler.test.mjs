@@ -351,6 +351,10 @@ test("routet jede Zwischenstation deterministisch auf vorhandenen realen OSM-Kan
     assert.equal(routes.length, 1);
     assert.equal(routes[0].routeVersionId, `route:gtfs:${snapshot.segments[0].segmentId}:v1`);
     assert.deepEqual(routes[0].legs.map((leg) => leg.edgeId), ["edge-west", "edge-east"]);
+    assert.deepEqual(routes[0].passengerStopAnchors.map(({stationId, stopSequence, routeMm}) => ({stationId, stopSequence, routeMm})), [
+      {stationId: "S1", stopSequence: 0, routeMm: 0}, {stationId: "S2", stopSequence: 1, routeMm: 4_000_000},
+      {stationId: "S3", stopSequence: 2, routeMm: 8_000_000},
+    ]);
     assert.deepEqual(routes[0].legs.map((leg) => ({
       availableProtectionSystems: leg.availableProtectionSystems,
       simultaneouslyRequiredProtectionSystems: leg.simultaneouslyRequiredProtectionSystems,
@@ -372,6 +376,37 @@ test("routet jede Zwischenstation deterministisch auf vorhandenen realen OSM-Kan
   } finally {
     await rm(root, { recursive: true, force: true });
   }
+});
+
+test("bewahrt einen ungleich verteilten Zwischenhalt nach mergeLegs auf derselben gerichteten Kante", async () => {
+  const root = await mkdtemp(join(tmpdir(), "zugfolge-gtfs-merged-stop-"));
+  try {
+    const {spec, snapshot} = await materialize(root, {intermediate: true});
+    snapshot.stations[1].longitudeE7 = 130_200_000;
+    const snapshotHash = sha256(canonicalJson(snapshot));
+    const envelopeText = `${JSON.stringify({snapshot, snapshotHash})}\n`;
+    await writeFile(join(root, "snapshot.json"), envelopeText);
+    Object.assign(spec.gtfsSnapshot, {expectedSnapshotHash: snapshotHash, expectedFileSha256: sha256(envelopeText), expectedBytes: Buffer.byteLength(envelopeText)});
+    await writeFile(join(root, "tracks.geojsonseq"), `${JSON.stringify(track("edge", 1, 2, [[13, 51], [13.1, 51]], 10_000_000))}\n`);
+    const result = await analyzeGermanyTimetableRoutes(spec, root);
+    assert.equal(result.routes[0].legs.length, 1);
+    const anchors = result.routes[0].passengerStopAnchors;
+    assert.deepEqual(anchors.map((anchor) => anchor.routeMm), [0, 2_000_000, 10_000_000]);
+    assert.deepEqual(anchors.map((anchor) => [anchor.edgeId, anchor.offsetMm, anchor.direction]),
+      [["edge", 0, "along"], ["edge", 2_000_000, "along"], ["edge", 10_000_000, "along"]]);
+    assert.equal(anchors[1].sourceEdgeId, "edge"); assert.equal(anchors[1].sourceOffsetMm, 2_000_000);
+    assert.deepEqual((await analyzeGermanyTimetableRoutes(spec, root)).routes, result.routes);
+  } finally { await rm(root, {recursive: true, force: true}); }
+});
+
+test("verliert wiederholte Haltevorkommen ohne Bewegung nicht bei der Routenzusammenfuehrung", async () => {
+  const root = await mkdtemp(join(tmpdir(), "zugfolge-gtfs-repeated-stop-"));
+  try {
+    const {spec} = await materialize(root, {sameStop: true});
+    const result = await analyzeGermanyTimetableRoutes(spec, root);
+    assert.deepEqual(result.routes[0].passengerStopAnchors.map((anchor) => [anchor.stationId, anchor.stopSequence, anchor.routeMm]),
+      [["S1", 0, 0], ["S1", 1, 0], ["S2", 2, 8_000_000]]);
+  } finally { await rm(root, {recursive: true, force: true}); }
 });
 
 test("waehlt am Zwischenhalt einen weiterfahrbaren Anker statt der guenstigeren gerichteten Sackgasse", async () => {

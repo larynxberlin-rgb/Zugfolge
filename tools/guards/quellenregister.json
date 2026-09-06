@@ -10,6 +10,84 @@
   },
   "quellen": [
     {
+      "id": "bkg-vg250-ew-2024",
+      "titel": "BKG / Statistisches Bundesamt – Verwaltungsgebiete mit Einwohnerzahlen 31.12.2024",
+      "status": "freigegeben",
+      "lizenz": "dl-de/by-2-0",
+      "bereitstellung": "https://daten.gdz.bkg.bund.de/produkte/vg/vg250-ew_ebenen_1231/2024/vg250-ew_12-31.ee.excel.ebenen.zip; unveränderter Excel-ZIP-Stand 31.12.2024, abgerufen am 2026-09-06, SHA-256 d5564af137d2dde65c23ceb8336f6c35fdf67260ba48058ced9004a2c5c000b3. VGTB_ATT_VG (ADE=6) liefert Einwohner und AGS/ARS; VG250_PK liefert zugehörige Ortskernkoordinaten.",
+      "attribution": "© BKG 2026 dl-de/by-2-0 (https://www.govdata.de/dl-de/by-2-0), https://www.bkg.bund.de, Datenquellen: https://sgx.geodatenzentrum.de/web_public/gdz/datenquellen/datenquellen_vg_nuts.pdf; Auswahl, Normalisierung und einwohnerbasierte Modellableitung durch Zugfolge.",
+      "nutzung": "Offline-Import amtlicher Gemeinde-Einwohnerzahlen und Ortskernkoordinaten für den eigenständigen M10.5-Nachfragedatensatz. Vollständiger Quellenbestand bleibt von Stationszuordnung, Einzugsgebieten, Nachfrageklassen und Reiseannahmen getrennt; keine externe Laufzeitabhängigkeit.",
+      "entscheidung": {
+        "datum": "2026-09-06",
+        "pruefer": "Codex – Quellenprüfung im ausdrücklichen Nutzerauftrag, ausschließlich frei nutzbare Daten"
+      },
+      "hinweis": "Produktseite und dem unveränderten ZIP beiliegende Nutzungsbedingungen weisen dl-de/by-2-0 ausdrücklich für VG250-EW ab Produktstand 31.12.2023 aus. Kommerzielle Nutzung und Bearbeitung sind mit Quellen-/Lizenzangabe und Änderungsvermerk erlaubt. Die konkrete Attribution, Lizenzdatei-Hashes und Quellenprüfung stehen in docs/m10-populationsquellen.md. Gemeinde-Ortskerne sind keine feinräumige Bevölkerungsverteilung oder territorial genaue Stationszuordnung. Die Freigabe erlaubt keine Umdeklaration anderer Daten.",
+      "milestone": "M10.5"
+    },
+    {
+      "id": "gtfs-de-fv",
+      "titel": "GTFS.DE / DELFI – freier Schienenfernverkehr Deutschland",
+      "status": "freigegeben",
+      "lizenz": "CC BY 4.0",
+      "bereitstellung": "Offiziell frei bereitgestellter statischer GTFS-Feed https://download.gtfs.de/germany/fv_free/latest.zip; Produkt-/Lizenzseite https://gtfs.de/de/feeds/de_fv/. Der am 2026-09-06 geladene Snapshot hat SHA-256 5e3efe3b3be69fb4bbbed0efc3fd8c2d8a0481c6a102a901ab1dc68219e45d40. Feedtabellen, Abrufzeit, ZIP-Hashes, aktive Verkehrstage und Transformationskonfiguration werden im Nachfragedatenpaket gepinnt.",
+      "attribution": "Datenquelle: DELFI e.V. / GTFS.DE, https://gtfs.de/de/feeds/de_fv/, CC BY 4.0 (https://creativecommons.org/licenses/by/4.0/); durch Zugfolge gefiltert, normalisiert und für ungefähre Zielpräferenzen ausgewertet.",
+      "nutzung": "Offline-Referenz bestehender Bahnverbindungen für M10.5 aus stops.txt, stop_times.txt, trips.txt, routes.txt und Kalenderdateien. Ein gerichtetes Stationspaar zählt pro eindeutiger Quellfahrt und Verkehrstag höchstens einmal. Sollverbindungen gewichten ausschließlich die ungefähre Wunschzielverteilung; keine beobachteten Fahrgäste oder Umstiegsströme.",
+      "entscheidung": {
+        "datum": "2026-09-06",
+        "pruefer": "Codex – Quellenprüfung im ausdrücklichen Nutzerauftrag, ausschließlich frei nutzbare Daten"
+      },
+      "hinweis": "Die offizielle Feedseite verlinkt ausdrücklich CC BY 4.0; diese erlaubt auch kommerzielle Speicherung, Bearbeitung und Weitergabe mit Attribution und Änderungskennzeichnung. Die Feedrolle ist ein Herkunftshinweis und kein Beweis der Verkehrskategorie jeder einzelnen Fahrt. Keine Ableitung technischer Zugmerkmale aus route_type oder Liniennamen. Keine fremden oder gesperrten Fahrplandaten werden als freie GTFS-Fakten umetikettiert.",
+      "milestone": "M10.5"
+    },
+    {
+      "id": "maplibre-demotiles-noto-browserfixture",
+      "titel": "Noto Sans Regular Glyphen aus MapLibre demotiles für Browserprüfungen",
+      "status": "freigegeben",
+      "lizenz": "OFL-1.1",
+      "bereitstellung": "https://demotiles.maplibre.org/font/Noto%20Sans%20Regular/0-255.pbf, unverändert am 2026-09-06 geladen; SHA-256 ef1f38a3f1978591e846e9eaddf8a54f7047f546fc6aaed7872cc53151a5de78. Lizenztext aus https://raw.githubusercontent.com/notofonts/noto-fonts/main/LICENSE, SHA-256 0dab92d0544f7b233403f14b84a663bdbfa746982eda629e7f4f9ffe1b036feb.",
+      "attribution": "Noto Project Authors; SIL Open Font License 1.1. Vollständiger Copyright- und Lizenztext liegt unverändert bei den Testglyphen.",
+      "nutzung": "Ausschließlich lokaler, reproduzierbarer M10-MapLibre-Browsertest. Keine externe Abhängigkeit im Testlauf und keine Änderung des produktiven Kartenreleases.",
+      "entscheidung": { "datum": "2026-09-06", "pruefer": "Codex – Quellenprüfung im ausdrücklichen Nutzerauftrag für frei nutzbare Quellen" },
+      "hinweis": "OFL erlaubt unveränderte Weitergabe mit Copyright- und Lizenztext. Keine Änderung von Glyphen oder Schriftnamen. Apps/game-api/src/fixtures/demand-map-font dokumentiert Quelle, unveränderte Bytes und Hashes.",
+      "milestone": "M10"
+    },
+    {
+      "id": "nvbw-fahrgastzaehlung-2025",
+      "titel": "NVBW AFZS-/RES-Fahrgastzählungen Baden-Württemberg, 1. Halbjahr 2025",
+      "status": "freigegeben",
+      "lizenz": "dl-de/by-2-0",
+      "bereitstellung": "https://mobidata-bw.de/dataset/automatische-fahrgast-zahldaten-baden-wurttemberg; CSV-GZip 2025_1.HJ_20241215-20250614, SHA-256 74de5f8b36d8b9819d30cfc2a435cf26595bdae49d09c184375a2e45b6af63ff. Offizielles CKAN-Metadatum weist dl-de/by-2-0 aus.",
+      "attribution": "NVBW / MobiData BW, Fahrgast-Zähldaten im Schienenpersonennahverkehr Baden-Württemberg, https://mobidata-bw.de/dataset/automatische-fahrgast-zahldaten-baden-wurttemberg, Datenlizenz Deutschland – Namensnennung – Version 2.0, https://www.govdata.de/dl-de/by-2-0; Auswahl, Normalisierung und Aggregation durch Zugfolge.",
+      "nutzung": "Offline-Nachfragekalibrierung: getrennte beobachtete AFZS-Zählfahrten und rechnerisch ergänzte Fahrplanfahrten. Keine personenbezogenen Rohsensoren, kein externer Laufzeitdienst.",
+      "entscheidung": { "datum": "2026-09-05", "pruefer": "Codex – Quellenprüfung im ausdrücklichen Nutzerauftrag, nur frei nutzbare Quellen" },
+      "hinweis": "Lizenz erlaubt kommerzielle und nichtkommerzielle Nutzung, Weitergabe und Bearbeitung mit Attribution. Quellen- und Lizenzangabe sowie Änderungsvermerk werden im getrennten Datenpaket mitgeführt. Diese Rechteentscheidung ist keine fachliche Kalibrierabnahme oder Freigabe eines produktiven DemandRelease.",
+      "milestone": "M10.5"
+    },
+    {
+      "id": "hvv-sbahn-fahrgastzahlen-2025",
+      "titel": "hvv S-Bahn Fahrgastzahlen 2025",
+      "status": "freigegeben",
+      "lizenz": "dl-de/by-2-0",
+      "bereitstellung": "https://suche.transparenz.hamburg.de/dataset/hvv-fahrgastzahlen-2025; S-Bahn-XLSX vom 02.06.2026, SHA-256 b5657e0047e9e923151a8bb77ceea4a20291b6d5a2881071d949aa338220b85f. CKAN terms_of_use nennt is_free_to_use=true und dl-de-by-2.0.",
+      "attribution": "Freie und Hansestadt Hamburg, hvv Fahrgastzahlen 2025, https://suche.transparenz.hamburg.de/dataset/hvv-fahrgastzahlen-2025, Datenlizenz Deutschland – Namensnennung – Version 2.0, https://www.govdata.de/dl-de/by-2-0; Aufbereitung durch Zugfolge.",
+      "nutzung": "Durchschnittliche werktägliche Ein- und Aussteiger je S-Bahn-Haltestelle und Richtung als eigenständige Entwicklungsbeobachtungen. U-Bahn, Bus und Fähre werden nicht als SPNV übernommen.",
+      "entscheidung": { "datum": "2026-09-05", "pruefer": "Codex – Quellenprüfung im ausdrücklichen Nutzerauftrag, nur frei nutzbare Quellen" },
+      "hinweis": "Lizenzmetadaten einschließlich vorgeschriebener Attribution archiviert. Tagesmittel belegen weder Stundengänge noch tatsächliche Umstiege. Keine fachliche Kalibrierabnahme oder produktive Releasefreigabe.",
+      "milestone": "M10.5"
+    },
+    {
+      "id": "nahsh-querschnittsbesetzung",
+      "titel": "NAH.SH Querschnittsbesetzung 2010–2019",
+      "status": "freigegeben",
+      "lizenz": "CC-BY-4.0",
+      "bereitstellung": "https://opendata.schleswig-holstein.de/dataset/querschnittsbesetzung; offizieller CSV-Download und CKAN package_show, archiviert mit SHA-256 im M10-Quellenmanifest.",
+      "attribution": "NAH.SH / Land Schleswig-Holstein, Querschnittsbesetzung, https://opendata.schleswig-holstein.de/dataset/querschnittsbesetzung, Creative Commons Namensnennung 4.0 International, https://creativecommons.org/licenses/by/4.0/; Auswahl und Normalisierung durch Zugfolge.",
+      "nutzung": "Gemittelte jährliche SPNV-Abschnittsbesetzung je Tagtyp für zeitlich getrennte Referenzen und Holdouts.",
+      "entscheidung": { "datum": "2026-09-05", "pruefer": "Codex – Quellenprüfung im ausdrücklichen Nutzerauftrag, nur frei nutzbare Quellen" },
+      "hinweis": "Offizielle Metadaten und GovData bestätigen CC BY 4.0, einschließlich kommerzieller Bearbeitung mit Quellen-/Lizenzangabe und Änderungsvermerk. np_str_id braucht eine explizite Infrastrukturzuordnung. Kein Nachweis von SPFV, Tagesstunden oder Umstiegen.",
+      "milestone": "M10.5"
+    },
+    {
       "id": "osm-pbf-lhe",
       "titel": "OSM-PBF-Extract Leipzig–Halle–Erfurt",
       "status": "freigegeben",
@@ -184,7 +262,7 @@
       "lizenz": "CC BY 4.0",
       "bereitstellung": "Kostenfreier, tagesaktuell erzeugter statischer GTFS-Feed 'Schienenregionalverkehr Deutschland' unter https://download.gtfs.de/germany/rv_free/latest.zip. Der Feed deckt laut Anbieter die nächsten 30 Tage ab. ZIP, GTFS-Tabellen, Abrufzeit, Konfiguration und SHA-256-Prüfsummen werden in einem Capture-Manifest versioniert.",
       "attribution": "Datenquelle: DELFI e.V. / GTFS.DE, lizenziert unter CC BY 4.0 (https://creativecommons.org/licenses/by/4.0/). Durch Zugfolge gefiltert, gruppiert und statistisch ausgewertet; Änderungen werden als solche gekennzeichnet.",
-      "nutzung": "Offline-Fahrplan-Holdout für M1.13 aus stop_times.txt, trips.txt, routes.txt, stops.txt und Kalenderdateien. P20, Median und Mittelwert beschreiben ausschließlich veröffentlichte Sollfahrzeiten; Zwischenhalte werden separat ausgewiesen. GTFS ist keine technische Fahrzeitreferenz und keine Laufzeitabhängigkeit des Spiels.",
+      "nutzung": "Offline-Fahrplan-Holdout für M1.13 aus stop_times.txt, trips.txt, routes.txt, stops.txt und Kalenderdateien. P20, Median und Mittelwert beschreiben ausschließlich veröffentlichte Sollfahrzeiten; Zwischenhalte werden separat ausgewiesen. GTFS ist keine technische Fahrzeitreferenz und keine Laufzeitabhängigkeit des Spiels. Zusätzlich seit 2026-09-06 im ausdrücklichen Nutzerauftrag freigegeben: offline gepinnte bestehende Direktverbindungen und Stationskoordinaten für die ungefähre M10.5-Wunschzielverteilung. Einwohnerbudget und reale Fahrgastbeobachtungen werden nicht aus GTFS abgeleitet; aktive Verkehrstage und gerichtete Verbindungszählung bleiben nachvollziehbar.",
       "entscheidung": { "datum": "2026-08-09", "pruefer": "Sebastian Barowski" },
       "hinweis": "CC BY 4.0 erlaubt Speicherung, Bearbeitung und Weitergabe mit Namensnennung und Änderungskennzeichnung. Das Projekt bewahrt Attribution, Feed-URL, Abrufzeit, ZIP-/Tabellen-Hashes und Transformationskonfiguration. Die Zuordnung auf eine TrainCharacteristics ist eine eigene, geprüfte Projektentscheidung und wird nicht aus route_type oder Linienname geraten. Fahrplanreserve und technische Mindestlaufzeit dürfen nicht gleichgesetzt werden.",
       "milestone": "M1.13"

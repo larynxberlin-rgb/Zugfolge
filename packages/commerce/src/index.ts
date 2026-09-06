@@ -8,3 +8,4 @@ export * from "./signing.js";
 export * from "./store.js";
 export * from "./bridge.js";
 export * from "./public-world-snapshot.js";
+export * from "./demand-data.js";
