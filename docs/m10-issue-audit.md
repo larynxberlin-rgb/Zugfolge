@@ -45,7 +45,7 @@ umgestellt. Die neue [Spezifikation](m10-populationsnachfrage.md) und
 Holdoutberichte bleiben unverändert und behaupten weiterhin keine bestandene
 empirische Abnahme. Per GitHub-API sind am Head `f7dabd5` von #534 genau
 #169, #170, #171, #172, #210, #361 und #379 als schließend verknüpft;
-#173 ist für den vierten PR nach Abschluss der Tests vorgesehen.
+#173 ist dem vierten PR #537 zugeordnet.
 
 Während der Abschlussprüfung kam
 [#535](https://github.com/larynxberlin-rgb/Zugfolge/pull/535) hinzu. Dieser
@@ -227,3 +227,13 @@ dadurch nicht wieder geöffnet.
 - #162 [M9 — Onboarding, Betriebsreife, geschlossene Alpha] [Roadmap 9.4] Admin- und Auditwerkzeuge, Vier-Augen-Prinzip bei Hochrisikoaktionen
 - #161 [M9 — Onboarding, Betriebsreife, geschlossene Alpha] [Roadmap 9.3] Onboarding in der öffentlichen Welt: tatsächliche StartingCapitalPolicy, Kapazitäts-Heatmap, Glossar-Layer und Betriebsassistent; keine automatische Startausstattung
 - #159 [M9 — Onboarding, Betriebsreife, geschlossene Alpha] [Roadmap 9.1] Neue Tooltipps an den echten Bedienelementen; per Tastatur und Touch erreichbar, lokal abschaltbar
+
+## Abschließender M15-Verbundnachweis
+
+M10-Code `8d20f7e` und #536 `db224298` einschließlich #535 wurden in einem
+isolierten Worktree konfliktfrei zusammengeführt, ohne die M15-Zweige zu ändern.
+Der Mergebaum `26a9999c6146b61f2df9eb3fc33acbcf33a4fde6` besteht
+`cargo test --locked -p zugfolge-conductor` mit zehn Tests sowie den Glossar-
+und Diffcheck. Getrennte CI-Schritte im vorhandenen NAPI-Job erhalten sowohl
+die neue Odoo-Datenprüfung als auch die M15-Projektionsprüfung; es entsteht
+kein fünfter regulärer CI-Job.

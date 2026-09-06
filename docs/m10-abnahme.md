@@ -19,7 +19,8 @@ Der ergänzende [Abgleich aller acht Issue-Anforderungen mit Code und Tests](m10
 unterscheidet die vollständig implementierten Fachumfänge #169–#172,
 #210, #361 und #379 von der ausdrücklich geänderten Anforderung in #173.
 Die sieben bisherigen Issues sind schließend mit #534 verknüpft; #173 ist
-nach den abschließenden Tests dem vierten Stack-PR zugeordnet.
+dem vierten Stack-PR #537 zugeordnet. Eine Verknüpfung ersetzt weder dessen
+CI-Prüfung noch den späteren Merge.
 
 ## Fachlicher Umfang
 
@@ -158,6 +159,8 @@ Mit dem zusätzlichen Einwohnerfall sind neun M10-Browserfälle vorhanden.
 
 Die schmalen Ansichten sind als [Fernverkehr auf Mobilgeräten](screenshots/m10/spfv-mobile.png)
 und [Nachfrageliste auf Mobilgeräten](screenshots/m10/demand-mobile.png) dokumentiert.
+Der neue [Einwohner- und Wunschzielfall](screenshots/m10/population-demand-mobile.png)
+stammt ebenfalls aus dem tatsächlich gebauten Browserclient mit gekennzeichneten Beispieldaten.
 
 Historischer Basisnachweis vor dem vierten Stack-Teil: 835 Rust-Workspace-Tests (ohne die beiden
 Linux-NAPI-Crates) sowie drei ergänzte Issue-Akzeptanztests. Die neue Haltbelegkette wurde
@@ -176,16 +179,26 @@ Für den vierten Teil sind lokal Build, Typprüfung und Repositorywächter grün
 ebenso 21 Python-Tests einschließlich drei echter Rust-Integrationen,
 fünf Odoo-Vertragshelfer, sieben UI-Tests und sechs Browserfälle. Die
 Einwohnerinitialisierung, signierte Odoo-Übernahme und der Fortschrittslebenszyklus
-sind zusammen mit 17 nativen Integrationsfällen geprüft. Die Commerce-Regression
+sind zusammen mit 20 nativen Integrationsfällen geprüft, einschließlich
+retryfähigem Rückstau mit und ohne Checkpoint. Die Commerce-Regression
 und sieben gezielte Datenkommando-Tests prüfen insbesondere Welt-/Akteursbindung,
-Replay, Transaktionsrollback und minimale Ergebnisbelege. Acht Odoo-ORM- und
-zwei HTTP-Tests sind für den echten Odoo-19-Dienst vorbereitet; der
-[Odoo-Lauf](https://github.com/larynxberlin-rgb/Zugfolge/actions/runs/34025161638)
-und die regulären vier CI-Jobs wurden gestartet, ihre Ergebnisse stehen noch aus.
+Replay, Transaktionsrollback und minimale Ergebnisbelege. Neun Odoo-ORM- und
+zwei HTTP-Tests prüfen den tatsächlichen Odoo-19-Dienst, einschließlich
+eines Zugfolge-Administrators ohne System- oder Freigaberechte. Der
+[Odoo-Code-Nachweis](https://github.com/larynxberlin-rgb/Zugfolge/actions/runs/34025478372)
+ist dem Implementierungsstand `8d20f7e` zugeordnet; die finalen vier regulären
+CI-Ergebnisse und ihr Commit sind am PR verlinkt. Nur erfolgreich abgeschlossene
+Läufe gelten als Abnahmebeleg.
 Der breitere API-Lauf wurde lokal ebenfalls geprüft; die einzig angepasste
 Privacy-Erwartung berücksichtigt den zusätzlichen privaten Datenrevisionsbeleg,
 und die betreffende Testdatei besteht anschließend vollständig.
 Frühere grüne CI-Läufe werden nicht als Nachweis der neuen Änderungen verwendet.
+
+Der unabhängige Verbund aus M10-Code `8d20f7e` und M15-PR #536
+`db224298` einschließlich #535 ist konfliktfrei (Mergebaum
+`26a9999c6146b61f2df9eb3fc33acbcf33a4fde6`). Darauf bestehen
+alle zehn nativen Conductor-Tests mit echten M10-Projektionen, Restore und
+4.096 Fahrgästen; die erzeugte Glossarprojektion ist konsistent.
 
 Die echten Quelldaten und den wiederholbaren nativen Vergleich beschreibt
 [tools/demand-calibration](../tools/demand-calibration/README.md).

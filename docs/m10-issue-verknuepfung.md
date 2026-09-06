@@ -11,7 +11,7 @@ Der Stack besteht aus [#532](https://github.com/larynxberlin-rgb/Zugfolge/pull/5
 
 Die schließenden Verknüpfungen für #169–#172, #210, #361 und #379 sind per
 GitHub-API an #534 bestätigt. #173 erhält wegen des geänderten Nutzerumfangs
-seine schließende Verknüpfung am vierten PR nach den abschließenden Tests.
+seinen schließenden PR #537.
 Die unteren PRs bleiben als Implementierungsreferenzen verknüpft. Voraussetzung
 für die Schließung ist ein grüner CI-Lauf des endgültigen Stacks. Kein Issue wird
 allein durch diesen Bericht oder einen bestandenen Teiltest geschlossen.
@@ -23,7 +23,7 @@ allein durch diesen Bericht oder einen bestandenen Teiltest geschlossen.
 | [#171](https://github.com/larynxberlin-rgb/Zugfolge/issues/171) | Tarif-/Vertriebsstörung, Kapazität, Reservierung, Komfort, freie Quellenbindung und unabhängiger Fahrberechtigungsstatus abgedeckt | #532, #534 | Schließend mit #534 verknüpft |
 | [#172](https://github.com/larynxberlin-rgb/Zugfolge/issues/172) | Spielerplanung mit nativer Nachfrage, echter Trassenkonkurrenz und wirtschaftlicher Prognose verbunden; Gesamtnachweis im Native-HTTP-Test | #533, #534 | Schließend mit #534 verknüpft |
 | [#210](https://github.com/larynxberlin-rgb/Zugfolge/issues/210) | Signierte Haltanker, native Ankunft/Abfahrt, geschützte Anfangspools und kausaler Journalconsumer mit Drei-Halt-/Restore-Beweis implementiert | #532, #534 | Schließend mit #534 verknüpft |
-| [#173](https://github.com/larynxberlin-rgb/Zugfolge/issues/173) | Geänderter Nutzerumfang: Einwohnererhaltung, Stationsklassen, ungefähre Wunschziele und normale Odoo-Datenpflege sind im gemeinsamen Kern integriert | #537 | Schließende Verknüpfung nach finalen Tests vorgesehen |
+| [#173](https://github.com/larynxberlin-rgb/Zugfolge/issues/173) | Geänderter Nutzerumfang: Einwohnererhaltung, Stationsklassen, ungefähre Wunschziele und normale Odoo-Datenpflege sind im gemeinsamen Kern integriert | #537 | Schließender PR #537 |
 | [#361](https://github.com/larynxberlin-rgb/Zugfolge/issues/361) | Planungsablauf, Datenzustände, Datenschutz, Rücknavigation und tatsächliche Deutschland-/Knoten-Kartenprüfung mit deklariertem Lastkorpus belegt | #534 | Schließend mit #534 verknüpft |
 | [#379](https://github.com/larynxberlin-rgb/Zugfolge/issues/379) | Gestaltung, Legenden, gestufte Details, Kartenklick und mobile Listen unter Deutschland-/Knotenlast nachgewiesen | #534 | Schließend mit #534 verknüpft |
 
@@ -178,8 +178,8 @@ verbindlichen Umfang.
 Die lokalen Prüfungen sind in [der Abnahmematrix](m10-abnahme.md) aufgeführt.
 Der finale CI-Lauf sowie neun ORM- und zwei HTTP-Tests im echten Odoo 19
 werden am PR mit ihrem tatsächlich geprüften Commit und Lauf verknüpft.
-Die Verknüpfung an #537 ist deshalb vorgesehen und wird hier
-nicht als bereits ausgeführt behauptet.
+Die Issue-Zuordnung ist #537; die GitHub-Verknüpfung schließt das Issue erst
+bei Übernahme in den Hauptzweig. Die endgültigen Prüfungen bleiben Voraussetzung.
 
 Die historischen [Kalibrierungsquellen](m10-kalibrierungsquellen.md) und
 [AFZS-Holdoutberichte](../tools/demand-calibration/README.md) bleiben unverändert:
