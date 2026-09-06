@@ -13,6 +13,13 @@ use std::sync::Arc;
 use serde::{Deserialize, Serialize};
 use zugfolge_determinism::{StateHash, StateHasher};
 
+mod passenger_stops;
+use passenger_stops::ScheduledPassengerDeparture;
+pub use passenger_stops::{
+    MAX_PASSENGER_STOPS_PER_TRAIN, OperationalPassengerStop, OperationalPassengerStopFact,
+    OperationalPassengerStopPlan, OperationalPassengerStopProgress,
+    OperationalPassengerStopReceipt,
+};
 mod service_outcomes;
 use service_outcomes::ServiceOutcomeState;
 pub use service_outcomes::{
@@ -1160,6 +1167,8 @@ impl Eq for AttachedOperationalInfrastructure {}
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct OperationalTrain {
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub passenger_stops: Option<OperationalPassengerStopProgress>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub service_outcome: Option<ServiceOutcomeProgress>,
     pub id: String,
     pub train_number: String,
@@ -1185,6 +1194,8 @@ pub struct OperationalTrain {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct TrainMaterialization {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stop_plan: Option<OperationalPassengerStopPlan>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub service_outcome: Option<ServiceOutcomeBinding>,
     pub id: String,
@@ -1629,6 +1640,8 @@ pub struct OperationalWorld {
     #[serde(skip)]
     infra: Option<AttachedOperationalInfrastructure>,
     scheduled_motion_ends: BTreeSet<ScheduledMotionEnd>,
+    #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
+    scheduled_passenger_departures: BTreeSet<ScheduledPassengerDeparture>,
     scheduled_continuation_due: BTreeSet<ScheduledContinuationDue>,
     waiting_by_resource: BTreeMap<String, BTreeSet<String>>,
     continuations_waiting_by_resource: BTreeMap<String, BTreeSet<String>>,
@@ -2025,6 +2038,7 @@ impl OperationalWorld {
             processed_command_ids: BTreeSet::new(),
             infra: Some(AttachedOperationalInfrastructure(infra)),
             scheduled_motion_ends: BTreeSet::new(),
+            scheduled_passenger_departures: BTreeSet::new(),
             scheduled_continuation_due: BTreeSet::new(),
             waiting_by_resource: BTreeMap::new(),
             continuations_waiting_by_resource: BTreeMap::new(),
@@ -2503,6 +2517,7 @@ impl OperationalWorld {
         selection_policy: &str,
         selection_runs: &[ProtectionModeSelectionRun],
     ) -> Result<OperationalProgramTemplatePredicates, OperationalError> {
+        self.validate_passenger_stop_plan(train)?;
         if train.id.is_empty()
             || operational_train_number_numeric_part(&train.train_number).is_none()
             || train.operator_id.is_empty()
@@ -2604,8 +2619,10 @@ impl OperationalWorld {
         if self.trains.contains_key(&input.id) {
             return Err(OperationalError::DuplicateId(input.id));
         }
+        self.validate_passenger_stop_plan(&input)?;
         let service_input = input.clone();
         let TrainMaterialization {
+            stop_plan,
             service_outcome: _,
             id,
             train_number,
@@ -2654,6 +2671,7 @@ impl OperationalWorld {
         let service_outcome =
             self.start_service_outcome(&service_input, &service_input.formation_version_id)?;
         let train = OperationalTrain {
+            passenger_stops: stop_plan.map(OperationalPassengerStopProgress::new),
             service_outcome,
             id: id.clone(),
             train_number,
@@ -2682,6 +2700,7 @@ impl OperationalWorld {
                 .insert(block, ResourceLifecycle::OccupiedByFormation);
         }
         self.record("movement-materialized", &id, "exact-route-and-formation")?;
+        self.record_passenger_arrival(&id)?;
         self.refresh_route_completion(&id)?;
         self.progress_movement_continuations()?;
         Ok(())
@@ -2706,6 +2725,7 @@ impl OperationalWorld {
         public_passenger_stop: bool,
     ) -> Result<(), OperationalError> {
         self.materialize(TrainMaterialization {
+            stop_plan: None,
             service_outcome: None,
             id: id.into(),
             train_number: train_number.into(),
@@ -2787,6 +2807,8 @@ impl OperationalWorld {
             self.signal_aspects.remove(signal_id);
         }
         self.trains.remove(train_id);
+        self.scheduled_passenger_departures
+            .retain(|entry| entry.train_id != train_id);
         self.handover_protection_by_train.remove(train_id);
         self.scheduled_motion_ends
             .retain(|scheduled| scheduled.train_id != train_id);
@@ -3504,6 +3526,11 @@ impl OperationalWorld {
         let service_outcome =
             self.start_service_outcome(&continuation.successor, &predecessor.formation_version_id)?;
         let successor = OperationalTrain {
+            passenger_stops: continuation
+                .successor
+                .stop_plan
+                .clone()
+                .map(OperationalPassengerStopProgress::new),
             service_outcome,
             id: continuation.successor.id.clone(),
             train_number: continuation.successor.train_number.clone(),
@@ -3571,6 +3598,7 @@ impl OperationalWorld {
                 continuation.continuity.contract_name()
             ),
         )?;
+        self.record_passenger_arrival(&continuation.successor.id)?;
         self.rebuild_resource_lifecycle();
         self.rebuild_signal_aspects()?;
         self.wake_movement_continuations_for_resources(&released_resources)?;
@@ -3977,6 +4005,9 @@ impl OperationalWorld {
                 completed.push(train.id.clone());
                 continue;
             }
+            if self.passenger_stop_waiting(&request.train_id) {
+                continue;
+            }
             if train.speed_mmps != 0
                 || !matches!(train.motion_state, MotionState::Standing)
                 || train.motion_segment.is_some()
@@ -4051,6 +4082,9 @@ impl OperationalWorld {
         {
             return Err(OperationalError::InvalidHandover);
         }
+        if self.passenger_stop_waiting(train_id) {
+            return Err(OperationalError::PassengerDepartureTooEarly);
+        }
         let train = self
             .trains
             .get(train_id)
@@ -4069,6 +4103,14 @@ impl OperationalWorld {
             .authority
             .as_ref()
             .ok_or(OperationalError::NoAuthority)?;
+        if train.passenger_stops.is_some() && train.motion_segment.is_some() {
+            return Err(OperationalError::UnsafeState);
+        }
+        let motion_end_route_mm = self
+            .passenger_braking_target(train)
+            .map_or(authority.end_route_mm, |stop| {
+                stop.min(authority.end_route_mm)
+            });
         if authority.route_version_id != train.route_version_id
             || authority.end_route_mm < train.head_route_mm
             || !formation.performance.mobile
@@ -4152,11 +4194,11 @@ impl OperationalWorld {
         let brake = u32::try_from(brake).map_err(|_| OperationalError::ArithmeticOverflow)?;
         // Jede folgende Vmax bildet ein Bremsziel. Der aequivalente Weg bis
         // Geschwindigkeit null erlaubt dieselbe Integer-Huellkurve wie ein Halt.
-        let mut remaining = authority.end_route_mm.saturating_sub(train.head_route_mm);
+        let mut remaining = motion_end_route_mm.saturating_sub(train.head_route_mm);
         let mut target_speed = 0;
         for profile in &route.legs {
             if profile.route_start_mm > train.head_route_mm
-                && profile.route_start_mm < authority.end_route_mm
+                && profile.route_start_mm < motion_end_route_mm
             {
                 let target_limit = leg_limit(profile);
                 let equivalent = profile
@@ -4192,6 +4234,7 @@ impl OperationalWorld {
         // Ereignisgrenze ist Geschwindigkeitswechsel, Kantenende oder Fahrberechtigungsende.
         let infrastructure_boundary = authority
             .end_route_mm
+            .min(motion_end_route_mm)
             .min(leg.route_end_mm())
             .min(next_tail_boundary)
             .saturating_sub(train.head_route_mm)
@@ -4278,6 +4321,7 @@ impl OperationalWorld {
             train_id: train_id.to_owned(),
             segment_started_at_ms: self.now_ms,
         });
+        self.record_passenger_departure(train_id)?;
         self.record(
             "motion-segment-started",
             train_id,
@@ -4288,6 +4332,14 @@ impl OperationalWorld {
 
     /// Verarbeitet ausschliesslich faellige Ereignisse; kein Zug-Vollscan.
     pub fn advance_to(&mut self, target_ms: SimMillis) -> Result<(), OperationalError> {
+        if target_ms > passenger_stops::MAX_STOP_CONTRACT_INTEGER
+            && self
+                .trains
+                .values()
+                .any(|train| train.passenger_stops.is_some())
+        {
+            return Err(OperationalError::InvalidPassengerStopPlan);
+        }
         // Prepare friert den regionalen Writer bis zum bestaetigten Commit ein.
         // Der Zielwriter ist ab Accept die einzige bewegliche Autoritaet.
         if !self.prepared_handovers.is_empty() && target_ms != self.now_ms {
@@ -4306,10 +4358,16 @@ impl OperationalWorld {
                 .scheduled_continuation_due
                 .first()
                 .map(|scheduled| scheduled.at_ms);
-            let next_at_ms = match (next_motion_ms, next_continuation_ms) {
-                (Some(left), Some(right)) => left.min(right),
-                (Some(at_ms), None) | (None, Some(at_ms)) => at_ms,
-                (None, None) => break,
+            let next_passenger_ms = self
+                .scheduled_passenger_departures
+                .first()
+                .map(|scheduled| scheduled.at_ms);
+            let Some(next_at_ms) = [next_motion_ms, next_continuation_ms, next_passenger_ms]
+                .into_iter()
+                .flatten()
+                .min()
+            else {
+                break;
             };
             if next_at_ms > target_ms {
                 break;
@@ -4332,6 +4390,7 @@ impl OperationalWorld {
                     self.finish_motion_segment(&next.train_id)?;
                 }
             }
+            self.progress_passenger_departures()?;
             self.progress_movement_continuations()?;
         }
         self.now_ms = target_ms;
@@ -4435,6 +4494,7 @@ impl OperationalWorld {
             train_id,
             format!("head={head};tail={tail}"),
         )?;
+        self.record_passenger_arrival(train_id)?;
         let (authority_remaining, residual_speed) = {
             let train = self.trains.get(train_id).expect("train exists");
             (
@@ -4445,8 +4505,10 @@ impl OperationalWorld {
                 train.speed_mmps,
             )
         };
-        if authority_remaining {
+        if authority_remaining && !self.passenger_stop_waiting(train_id) {
             self.plan_motion(train_id)?;
+            self.dispatch_waiting_for_resources(&released_resources)?;
+        } else if authority_remaining {
             self.dispatch_waiting_for_resources(&released_resources)?;
         } else if residual_speed > 0 {
             self.safe_stop(train_id, "authority-ended-with-residual-speed")?;
@@ -4661,6 +4723,8 @@ impl OperationalWorld {
         train.authority = None;
         self.scheduled_motion_ends
             .retain(|scheduled| scheduled.train_id != train_id);
+        self.scheduled_passenger_departures
+            .retain(|scheduled| scheduled.train_id != train_id);
         self.pending_dispatch_requests.remove(train_id);
         self.waiting_by_resource.retain(|_, waiting| {
             waiting.remove(train_id);
@@ -4707,6 +4771,13 @@ impl OperationalWorld {
         self.ensure_vehicles_available(train_id, &vehicle_ids)?;
         let formation =
             self.derive_formation(new_formation_id.into(), Some(predecessor), vehicle_ids)?;
+        if let Some(progress) = &train.passenger_stops {
+            self.validate_stop_geometry_for_formation(
+                &progress.plan,
+                &formation,
+                progress.next_stop_index,
+            )?;
+        }
         let route = self
             .infrastructure()?
             .route_version(&route_id)?
@@ -4750,6 +4821,11 @@ impl OperationalWorld {
             .trains
             .get(train_id)
             .ok_or_else(|| OperationalError::UnknownTrain(train_id.to_owned()))?;
+        // Ein anderer Laufweg benoetigt einen neu zertifizierten Haltplan.
+        // Das bisherige Reroute-Kommando darf seine Anker nicht still umdeuten.
+        if train.passenger_stops.is_some() {
+            return Err(OperationalError::InvalidPassengerStopPlan);
+        }
         if train.speed_mmps != 0 || train.motion_segment.is_some() {
             return Err(OperationalError::RouteChangeWhileMoving);
         }
@@ -5445,6 +5521,7 @@ impl OperationalWorld {
         candidate
             .trains
             .insert(handover.train.id.clone(), handover.train.clone());
+        candidate.schedule_passenger_departure(&handover.train.id);
         candidate
             .trains
             .get_mut(&handover.train.id)
@@ -5531,6 +5608,9 @@ impl OperationalWorld {
             .scheduled_motion_ends
             .retain(|event| event.train_id != handover.train.id);
         candidate
+            .scheduled_passenger_departures
+            .retain(|event| event.train_id != handover.train.id);
+        candidate
             .pending_dispatch_requests
             .remove(&handover.train.id);
         candidate.route_completed_at_ms.remove(&handover.train.id);
@@ -5568,6 +5648,7 @@ impl OperationalWorld {
     }
 
     pub fn verify_invariants(&self) -> Result<(), OperationalError> {
+        self.verify_passenger_stops()?;
         self.verify_service_outcomes()?;
         for (id, handover) in &self.prepared_handovers {
             if id != &handover.id
@@ -6350,6 +6431,7 @@ fn first_boundary_or_event_ms(
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum OperationalError {
+    InvalidPassengerStopPlan,
     InvalidServiceOutcome,
     ArithmeticOverflow,
     EventBudgetExceeded,
@@ -6494,6 +6576,7 @@ mod invariant_tests {
         occupied_intervals: Vec<TrackInterval>,
     ) -> OperationalTrain {
         OperationalTrain {
+            passenger_stops: None,
             service_outcome: None,
             id: id.to_owned(),
             train_number: train_number.to_owned(),
@@ -6562,6 +6645,7 @@ mod invariant_tests {
             accepted_handovers: BTreeMap::new(),
             finished_handovers: BTreeMap::new(),
             scheduled_motion_ends: BTreeSet::new(),
+            scheduled_passenger_departures: BTreeSet::new(),
             scheduled_continuation_due: BTreeSet::new(),
             waiting_by_resource: BTreeMap::new(),
             continuations_waiting_by_resource: BTreeMap::new(),

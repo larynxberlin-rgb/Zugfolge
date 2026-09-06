@@ -200,6 +200,8 @@ import type { FleetAuthorityWorldConfiguration } from "./fleet-configuration.js"
 import { registerInfraPackageUploadRoutes } from "./infra-package-routes.js";
 import type { InfraPackageStaging, InfraUploadSigningKey } from "./infra-package-staging.js";
 import { registerLivemapReadRoutes } from "./livemap-read-routes.js";
+import { registerDemandRoutes, type DemandReadService } from "./demand-routes.js";
+import type { SpfvService } from "./spfv-service.js";
 import { ApiObservability, requestCorrelationId, type PrometheusMetricSource } from "./observability.js";
 import { PlanningAuthorityError, resolveAuthoritativePlanningPathRequest } from "./planning-authority.js";
 import {
@@ -232,6 +234,8 @@ export interface AppDependencies {
   readonly livemap?: LivemapRegistry;
   /** Gepinnte Infrastrukturdetails und serverautoritative FIS-/Tafelprojektionen. */
   readonly livemapReadModel?: LivemapReadModel;
+  readonly demand?: DemandReadService;
+  readonly spfv?: Pick<SpfvService, "catalog" | "preview" | "confirm">;
   /** Authentifizierter, je EVU getrennter Betriebsereignis-Fanout (M7.5/M7.6). */
   readonly operations?: OperationsRegistry;
   /** Nur ein tatsaechlich angeschlossener M7-Consumer darf Kommandos annehmen. */
@@ -411,6 +415,13 @@ const fleetCommandBody = {
 } as const;
 
 const RESERVED_SINGLE_WRITER_EVENT_TYPES = new Set([
+  "demand.evaluated",
+  "demand.pool-initialized",
+  "demand.pool-progressed",
+  "operations.passenger-stop-arrival",
+  "operations.passenger-stop-departure",
+  "spfv.preview",
+  "spfv.submitted",
   "planning.runtime-state",
   "planning.diagram",
   "livemap-operation-marked",
@@ -420,6 +431,7 @@ const RESERVED_SINGLE_WRITER_EVENT_TYPES = new Set([
   "train-operation-assigned",
 ]);
 const RESERVED_PLANNING_COMMAND_TYPES = [
+  "spfv.confirm",
   "planning.coordinate",
   "planning.path-request",
   "planning.apply-alternative",
@@ -1509,6 +1521,9 @@ export function buildApp(deps: AppDependencies): FastifyInstance {
     readModel: deps.livemapReadModel,
     authenticate,
   });
+  registerDemandRoutes(app, { db: deps.db, authenticate, demand: deps.demand, spfv: deps.spfv,
+    guardPlanning: (request, worldId, target, replayKey) => guardSensitiveAction(request, request.identity!.keycloakSubject, worldId, "path-window", target, replayKey),
+  });
   if (deps.infraPackageStaging !== undefined || deps.infraUploadKeys !== undefined) {
     if (deps.infraPackageStaging === undefined || deps.infraUploadKeys === undefined || deps.infraUploadKeys.length === 0) {
       throw new Error("Infra-Paketstaging braucht gemeinsam eine lokale Wurzel und mindestens einen Uploadschlüssel.");
@@ -1543,6 +1558,7 @@ export function buildApp(deps: AppDependencies): FastifyInstance {
   app.post<{ Body: OdooWebhookEnvelope }>(
     "/integrations/odoo/webhooks",
     {
+      bodyLimit: 16 * 1024 * 1024,
       schema: {
         body: {
           type: "object",

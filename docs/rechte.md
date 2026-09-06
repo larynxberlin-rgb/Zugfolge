@@ -18,6 +18,15 @@ Bei Widerspruch gilt das Register; dieses Dokument erklärt es.
 
 ## 1. Wie das Gate funktioniert
 
+Für den lokalen M10-Kartenbrowsertest ist zusätzlich
+`maplibre-demotiles-noto-browserfixture` freigegeben: unveränderte Noto Sans
+Regular PBF-Glyphen 0–255 aus MapLibre demotiles, unter SIL OFL 1.1 mit
+vollständigem Copyright-/Lizenztext und SHA-256-Belegen in
+`apps/game-api/src/fixtures/demand-map-font`. Die OFL erlaubt diese Weitergabe
+mit Lizenz und Copyright. Die am 06.09.2026 im ausdrücklichen Nutzerauftrag
+geprüfte Nutzung betrifft ausschließlich offline reproduzierbare Browsertests;
+sie verändert weder Schriftnamen noch Glyphen oder den produktiven Kartenrelease.
+
 Das Gate hat zwei Hälften, und der Wächter `rights-gate` prüft beide.
 
 **Erste Hälfte — das Register muss halten, was es verspricht.** Jede Quelle
@@ -66,11 +75,45 @@ Kalibrierwerkzeug (E10) und wird nie eine Laufzeitabhängigkeit.
 
 ## 3. Die Quellen
 
+Für den geänderten M10.5-Nutzerauftrag vom 06.09.2026 ist zusätzlich
+`bkg-vg250-ew-2024` unter Datenlizenz Deutschland – Namensnennung 2.0
+freigegeben: amtliche Gemeinde-Einwohner und Ortskernkoordinaten aus dem
+unveränderten BKG-Excel-ZIP zum 31.12.2024. Die zugehörigen Nutzungsbedingungen
+und Herkunftsbelege sind im ZIP archiviert und per SHA-256 dokumentiert.
+`gtfs-de-fv` ergänzt unter CC BY 4.0 den freien Fernverkehrs-Referenzfahrplan;
+die Nutzung von `gtfs-de-rv` wird um die offline gepinnte Ableitung ungefährer
+Wunschziele erweitert. Beide Lizenzen erlauben kommerzielle Bearbeitung mit
+Namens-/Lizenzangabe und Änderungsvermerk. Konkrete Downloadpins, Attribution,
+Feldmapping und Aussagegrenzen stehen in
+[`m10-populationsquellen.md`](m10-populationsquellen.md). Ortskerne beweisen keine
+administrative Stationszuordnung; Fahrplandaten beweisen keine tatsächlichen
+Fahrgast- oder Umsteigeströme. Die Stationsklassen und Einzugsgebiete sind eigene
+Modellannahmen, keine importierten Werte einer Vergleichssimulation.
+
+Für M10.5 wurden am 05.09.2026 im ausdrücklichen Nutzerauftrag ausschließlich
+frei weiterverwendbare Quellen geprüft. `nvbw-fahrgastzaehlung-2025` und
+`hvv-sbahn-fahrgastzahlen-2025` weisen im offiziellen Datenportal die
+Datenlizenz Deutschland – Namensnennung 2.0 aus; `nahsh-querschnittsbesetzung`
+weist CC BY 4.0 aus. Alle drei erlauben kommerzielle Nutzung und Bearbeitung
+mit den dokumentierten Namens-/Lizenzangaben. Die Prüferangabe benennt
+transparent Codex als ausführenden Prüfer, keinen nicht beteiligten Menschen.
+Originale beziehungsweise reproduzierbare Quellauswahl, Metadaten und SHA-256
+stehen in `tools/demand-calibration/sources`. Die Daten behalten dort ihre
+eigenen Lizenzen. Die Quellenfreigabe bestätigt weder eine bestandene
+Kalibrierung noch einen produktiven Welt-Release. Umfang, Einschränkungen
+und ausgeschlossene nichtkommerzielle Quellen erklärt
+[`m10-kalibrierungsquellen.md`](m10-kalibrierungsquellen.md).
+
 Vollständig mit Bereitstellungsweg, Attribution und Hinweis im Register. Hier
 der Überblick; die Spalte `id` ist die Kennung, die auch der Importmarker nennt.
 
 | `id` | Quelle | Status | ab |
 |------|--------|--------|----|
+| `bkg-vg250-ew-2024` | BKG / Statistisches Bundesamt, Einwohner und Ortskerne 31.12.2024, dl-de/by-2-0 | `freigegeben` | M10.5 |
+| `gtfs-de-fv` | GTFS.DE/DELFI, freier Fernverkehr als gepinnte Verbindungsreferenz, CC BY 4.0 | `freigegeben` | M10.5 |
+| `nvbw-fahrgastzaehlung-2025` | NVBW/MobiData BW AFZS-/RES-Zählungen 2025 H1, dl-de/by-2-0 | `freigegeben` | M10.5 |
+| `hvv-sbahn-fahrgastzahlen-2025` | hvv S-Bahn-Stationen 2025, dl-de/by-2-0 | `freigegeben` | M10.5 |
+| `nahsh-querschnittsbesetzung` | NAH.SH SPNV-Querschnitte 2010–2019, CC BY 4.0 | `freigegeben` | M10.5 |
 | `osm-pbf-lhe` | OSM-PBF-Extract Leipzig–Halle–Erfurt | `freigegeben` | M1.2 |
 | `osm-pbf-mitteldeutschland-b` | OSM-PBF-Extract der freigegebenen Alpha-Variante B | `freigegeben` | M14.1 |
 | `osm-pbf-deutschland` | OSM-PBF-Extract Deutschland | `freigegeben` | M14.2 |

@@ -6,10 +6,12 @@
 
 mod calibration;
 mod engine;
+mod population;
 mod types;
 
 pub use calibration::*;
 pub use engine::{evaluate_demand, evaluate_demand_json, release_hash};
+pub use population::station_demand_class;
 pub use types::*;
 
 /// Strukturierter Fehler ohne individuelle Fahrgastdaten.

@@ -1,0 +1,124 @@
+{
+  "schemaVersion": "zugfolge-population-demand-build/v1",
+  "releaseId": "population-mitteldeutschland-2026.1",
+  "referenceId": "gtfs-mitteldeutschland-2026-09-07-13",
+  "serviceDates": [
+    "2026-09-07",
+    "2026-09-08",
+    "2026-09-09",
+    "2026-09-10",
+    "2026-09-11",
+    "2026-09-12",
+    "2026-09-13"
+  ],
+  "stationIds": [
+    "104445",
+    "154282",
+    "194454",
+    "354639",
+    "464080",
+    "46758",
+    "542001",
+    "600951",
+    "611502",
+    "630508",
+    "66393",
+    "85981"
+  ],
+  "settlementIds": [
+    "14713000",
+    "14730270",
+    "15002000",
+    "15082015",
+    "15084355",
+    "15088220",
+    "15088305",
+    "16051000",
+    "16055000"
+  ],
+  "catchmentRadiusMm": 10000000,
+  "accessMs": 300000,
+  "gtfsSources": [
+    {
+      "id": "gtfs-de-fv",
+      "url": "https://download.gtfs.de/germany/fv_free/latest.zip",
+      "artifactSha256": "5e3efe3b3be69fb4bbbed0efc3fd8c2d8a0481c6a102a901ab1dc68219e45d40"
+    },
+    {
+      "id": "gtfs-de-rv",
+      "url": "https://download.gtfs.de/germany/rv_free/latest.zip",
+      "artifactSha256": "8ff77cb6bed7375d4cce5aa8f2027bfffe7e74bbc4bccd859237a96f2da24162"
+    }
+  ],
+  "populationSha256": "7fa77fb6c708cf474947435e5a4490280326e109c3b1d41e5a605e420dd760d2",
+  "referenceSha256": "d5218855d73edd8778102c7667893c5f2422b1197e0c48ff2252d9c574423d5f",
+  "demandPolicy": {
+    "profiles": [
+      {
+        "id": "general",
+        "purpose": "daily-travel",
+        "dailyTripsBasisPoints": 100,
+        "workplaceWeight": 0,
+        "poiWeight": 0,
+        "populationWeight": 1,
+        "comfortClass": "standard",
+        "spaceNeeds": "ordinary",
+        "requiresReservation": false,
+        "maxFareCents": 10000,
+        "maxJourneyMs": 14400000,
+        "ranking": [
+          "time",
+          "fare",
+          "transfers",
+          "frequency",
+          "reliability",
+          "comfort"
+        ]
+      }
+    ],
+    "daySlices": [
+      {
+        "id": "night",
+        "startOffsetMs": 0,
+        "endOffsetMs": 21600000,
+        "shareBasisPoints": 500
+      },
+      {
+        "id": "morning",
+        "startOffsetMs": 21600000,
+        "endOffsetMs": 32400000,
+        "shareBasisPoints": 3000
+      },
+      {
+        "id": "day",
+        "startOffsetMs": 32400000,
+        "endOffsetMs": 54000000,
+        "shareBasisPoints": 2000
+      },
+      {
+        "id": "afternoon",
+        "startOffsetMs": 54000000,
+        "endOffsetMs": 64800000,
+        "shareBasisPoints": 3000
+      },
+      {
+        "id": "evening",
+        "startOffsetMs": 64800000,
+        "endOffsetMs": 86400000,
+        "shareBasisPoints": 1500
+      }
+    ],
+    "seasonBasisPoints": 10000,
+    "minimumTransferMs": 120000,
+    "maxTransfers": 2,
+    "maxGeneratedPassengers": 100000,
+    "maxConnectionsPerCohort": 128,
+    "fareCompliance": {
+      "schemaVersion": "fare-compliance-policy/v1",
+      "validBasisPoints": 9500,
+      "unpresentableBasisPoints": 300,
+      "provenance": "balanced",
+      "sourceIds": []
+    }
+  }
+}

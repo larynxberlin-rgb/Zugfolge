@@ -244,6 +244,12 @@ test("Generatorprovenienz bindet Hauptskript, Binder und Fleet-v2-Migrationscomp
     baseline,
   );
   assert.throws(() => alphaWorldGenerationSourcesSha256(main, binder), /Migrationscompiler/u);
+  const stops = Buffer.from("passenger-stop-binding:v1"), movement = Buffer.from("movement-allocation:v2");
+  const withStops = alphaWorldGenerationSourcesSha256(main, binder, migration, stops, movement);
+  assert.notEqual(withStops, baseline);
+  assert.notEqual(alphaWorldGenerationSourcesSha256(main, binder, migration, Buffer.from("changed"), movement), withStops);
+  assert.notEqual(alphaWorldGenerationSourcesSha256(main, binder, migration, stops, Buffer.from("changed")), withStops);
+  assert.throws(() => alphaWorldGenerationSourcesSha256(main, binder, migration, stops), /Fahrgasthaltcompiler/u);
 });
 
 test("Pre-Sign-Binder prueft Receipt, Inventar und Formationsperformance exakt", async () => {

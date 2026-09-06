@@ -214,6 +214,21 @@ struct TimetableRouteInput {
     predecessor_id: Option<String>,
     transition_route_mm: Option<i64>,
     legs: Vec<TimetableLegInput>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    passenger_stop_anchors: Vec<PassengerStopAnchorInput>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct PassengerStopAnchorInput {
+    station_id: String,
+    stop_sequence: i64,
+    edge_id: String,
+    direction: String,
+    offset_mm: i64,
+    route_mm: i64,
+    source_edge_id: String,
+    source_offset_mm: i64,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -3009,6 +3024,149 @@ fn validate_timetable_leg(
     Ok(i64::try_from(leg.edge_entry_mm.abs_diff(leg.edge_exit_mm)).unwrap_or(i64::MAX))
 }
 
+fn validate_timetable_route_input_keys(value: &Value, context: &str) -> Result<()> {
+    let mut keys = vec![
+        "routeVersionId",
+        "templateId",
+        "predecessorId",
+        "transitionRouteMm",
+        "legs",
+    ];
+    if let Some(anchors) = value.get("passengerStopAnchors") {
+        keys.push("passengerStopAnchors");
+        let anchors = anchors.as_array().ok_or_else(|| {
+            GermanyOperationalV2Error::new(format!(
+                "{context}.passengerStopAnchors muss eine Liste sein."
+            ))
+        })?;
+        require(
+            (2..=100).contains(&anchors.len()),
+            format!("{context}.passengerStopAnchors muss 2 bis 100 Halte enthalten."),
+        )?;
+        for (index, anchor) in anchors.iter().enumerate() {
+            exact_keys(
+                anchor,
+                &[
+                    "stationId",
+                    "stopSequence",
+                    "edgeId",
+                    "direction",
+                    "offsetMm",
+                    "routeMm",
+                    "sourceEdgeId",
+                    "sourceOffsetMm",
+                ],
+                &format!("{context}.passengerStopAnchors[{index}]"),
+            )?;
+        }
+    }
+    exact_keys(value, &keys, context)?;
+    if let Some(legs) = value.get("legs").and_then(Value::as_array) {
+        for (index, leg) in legs.iter().enumerate() {
+            exact_keys(
+                leg,
+                &[
+                    "edgeId",
+                    "direction",
+                    "edgeEntryMm",
+                    "edgeExitMm",
+                    "availableProtectionSystems",
+                    "simultaneouslyRequiredProtectionSystems",
+                ],
+                &format!("{context}.legs[{index}]"),
+            )?;
+        }
+    }
+    Ok(())
+}
+
+fn validate_passenger_stop_anchors(
+    route: &TimetableRouteInput,
+    context: &str,
+    mut get_track: impl FnMut(&str) -> Result<TrackRecord>,
+) -> Result<()> {
+    if route.passenger_stop_anchors.is_empty() {
+        return Ok(());
+    }
+    require(
+        (2..=100).contains(&route.passenger_stop_anchors.len()),
+        format!("{context}.passengerStopAnchors muss 2 bis 100 Halte enthalten."),
+    )?;
+    let mut previous: Option<&PassengerStopAnchorInput> = None;
+    for (index, anchor) in route.passenger_stop_anchors.iter().enumerate() {
+        let anchor_context = format!("{context}.passengerStopAnchors[{index}]");
+        require(
+            !anchor.station_id.trim().is_empty()
+                && !anchor.edge_id.trim().is_empty()
+                && !anchor.source_edge_id.trim().is_empty()
+                && [
+                    anchor.stop_sequence,
+                    anchor.offset_mm,
+                    anchor.route_mm,
+                    anchor.source_offset_mm,
+                ]
+                .into_iter()
+                .all(|value| (0..=MAX_SAFE_INTEGER).contains(&value)),
+            format!("{anchor_context} besitzt fehlende Kennungen oder unsichere Ganzzahlen."),
+        )?;
+        if let Some(previous) = previous {
+            require(
+                previous.stop_sequence < anchor.stop_sequence
+                    && previous.route_mm <= anchor.route_mm,
+                format!("{anchor_context} besitzt keine geordnete Haltefolge."),
+            )?;
+        }
+        let mut cursor_mm = 0_i64;
+        let mut matched = false;
+        for leg in &route.legs {
+            let length = i64::try_from(leg.edge_entry_mm.abs_diff(leg.edge_exit_mm))
+                .map_err(|_| GermanyOperationalV2Error::new("Unsichere Laufweglaenge."))?;
+            let end_mm = cursor_mm
+                .checked_add(length)
+                .ok_or_else(|| GermanyOperationalV2Error::new("Laufweglaenge laeuft ueber."))?;
+            require(end_mm <= MAX_SAFE_INTEGER, "Unsichere Laufweglaenge.")?;
+            if leg.edge_id == anchor.edge_id
+                && leg.direction == anchor.direction
+                && (cursor_mm..=end_mm).contains(&anchor.route_mm)
+                && (leg.edge_entry_mm.min(leg.edge_exit_mm)
+                    ..=leg.edge_entry_mm.max(leg.edge_exit_mm))
+                    .contains(&anchor.offset_mm)
+                && anchor.offset_mm.abs_diff(leg.edge_entry_mm)
+                    == u64::try_from(anchor.route_mm - cursor_mm).unwrap_or(u64::MAX)
+            {
+                matched = true;
+                break;
+            }
+            cursor_mm = end_mm;
+        }
+        require(
+            matched,
+            format!("{anchor_context} liegt nicht exakt auf dem gerichteten Laufweg."),
+        )?;
+        let track = get_track(&anchor.edge_id)?;
+        let source = get_track(&anchor.source_edge_id)?;
+        require(
+            (0..=track.length_mm).contains(&anchor.offset_mm)
+                && (0..=source.length_mm).contains(&anchor.source_offset_mm),
+            format!("{anchor_context} liegt ausserhalb seiner Quell- oder Laufwegkante."),
+        )?;
+        if anchor.edge_id == anchor.source_edge_id {
+            require(
+                anchor.offset_mm == anchor.source_offset_mm,
+                format!("{anchor_context} veraendert den exakten Quellenoffset."),
+            )?;
+        } else {
+            let source_node = node_at_offset(&source, anchor.source_offset_mm);
+            require(
+                source_node.is_some() && source_node == node_at_offset(&track, anchor.offset_mm),
+                format!("{anchor_context} besitzt keinen identischen belegten Quellenendknoten."),
+            )?;
+        }
+        previous = Some(anchor);
+    }
+    Ok(())
+}
+
 fn ingest_timetable_routes(
     database: &Database,
     path: &Path,
@@ -3026,33 +3184,7 @@ fn ingest_timetable_routes(
     let mut resources = transaction.open_table(BLOCK_RESOURCES).map_err(db_error)?;
     let evidence = scan_sequence(path, relative, |value, record| {
         let context = format!("timetableRoutes Datensatz {record}");
-        exact_keys(
-            &value,
-            &[
-                "routeVersionId",
-                "templateId",
-                "predecessorId",
-                "transitionRouteMm",
-                "legs",
-            ],
-            &context,
-        )?;
-        if let Some(legs) = value.get("legs").and_then(Value::as_array) {
-            for (index, leg) in legs.iter().enumerate() {
-                exact_keys(
-                    leg,
-                    &[
-                        "edgeId",
-                        "direction",
-                        "edgeEntryMm",
-                        "edgeExitMm",
-                        "availableProtectionSystems",
-                        "simultaneouslyRequiredProtectionSystems",
-                    ],
-                    &format!("{context}.legs[{index}]"),
-                )?;
-            }
-        }
+        validate_timetable_route_input_keys(&value, &context)?;
         let route: TimetableRouteInput = serde_json::from_value(value).map_err(|error| {
             GermanyOperationalV2Error::new(format!("{context} ist ungueltig: {error}"))
         })?;
@@ -3122,6 +3254,14 @@ fn ingest_timetable_routes(
             previous = Some((leg.clone(), track));
             counts.timetable_legs = counts.timetable_legs.saturating_add(1);
         }
+        validate_passenger_stop_anchors(&route, &context, |edge_id| {
+            let serialized = tracks.get(edge_id).map_err(db_error)?.ok_or_else(|| {
+                GermanyOperationalV2Error::new(format!(
+                    "{context}.passengerStopAnchors verweist auf unbekannte Kante `{edge_id}`."
+                ))
+            })?;
+            track_from_json(serialized.value(), "Halteanker-Kantenreferenz")
+        })?;
         if let Some(transition) = route.transition_route_mm {
             require(
                 (0..=route_length).contains(&transition),
@@ -3200,33 +3340,7 @@ fn ingest_preflight_timetable_routes(
     let mut routes = transaction.open_table(TIMETABLE_ROUTES).map_err(db_error)?;
     let evidence = scan_sequence(path, relative, |value, record| {
         let context = format!("timetableRoutes Preflight-Datensatz {record}");
-        exact_keys(
-            &value,
-            &[
-                "routeVersionId",
-                "templateId",
-                "predecessorId",
-                "transitionRouteMm",
-                "legs",
-            ],
-            &context,
-        )?;
-        if let Some(legs) = value.get("legs").and_then(Value::as_array) {
-            for (index, leg) in legs.iter().enumerate() {
-                exact_keys(
-                    leg,
-                    &[
-                        "edgeId",
-                        "direction",
-                        "edgeEntryMm",
-                        "edgeExitMm",
-                        "availableProtectionSystems",
-                        "simultaneouslyRequiredProtectionSystems",
-                    ],
-                    &format!("{context}.legs[{index}]"),
-                )?;
-            }
-        }
+        validate_timetable_route_input_keys(&value, &context)?;
         let route: TimetableRouteInput = serde_json::from_value(value).map_err(|error| {
             GermanyOperationalV2Error::new(format!("{context} ist ungueltig: {error}"))
         })?;
@@ -3284,6 +3398,14 @@ fn ingest_preflight_timetable_routes(
             previous = Some((leg.clone(), track));
             counts.timetable_legs = counts.timetable_legs.saturating_add(1);
         }
+        validate_passenger_stop_anchors(&route, &context, |edge_id| {
+            let serialized = tracks.get(edge_id).map_err(db_error)?.ok_or_else(|| {
+                GermanyOperationalV2Error::new(format!(
+                    "{context}.passengerStopAnchors verweist auf unbekannte Kante `{edge_id}`."
+                ))
+            })?;
+            track_from_json(serialized.value(), "Halteanker-Kantenreferenz")
+        })?;
         if let Some(transition) = route.transition_route_mm {
             require(
                 (0..=route_length).contains(&transition),
@@ -5973,6 +6095,7 @@ fn direct_preflight_reason(
     let mut through_legs = inbound_seed;
     through_legs.extend(outbound_seed.iter().cloned());
     let through = TimetableRouteInput {
+        passenger_stop_anchors: Vec::new(),
         route_version_id: through_route_version_id.clone(),
         template_id: format!("template:{through_route_version_id}"),
         predecessor_id: Some(inbound.route_version_id.clone()),
@@ -5997,6 +6120,7 @@ fn direct_preflight_reason(
     let mut qualified_legs = outbound_seed;
     qualified_legs.extend(outbound_remainder);
     let qualified = TimetableRouteInput {
+        passenger_stop_anchors: Vec::new(),
         route_version_id: qualified_route_version_id.clone(),
         template_id: format!("template:{qualified_route_version_id}"),
         predecessor_id: Some(through_route_version_id),
@@ -6854,6 +6978,7 @@ fn berth_transfer_route(
         ));
     }
     let route = TimetableRouteInput {
+        passenger_stop_anchors: Vec::new(),
         route_version_id,
         template_id,
         predecessor_id: Some(predecessor_id),
@@ -6948,6 +7073,7 @@ fn build_stabling_routes(
     }
     append_path_to_berth(&mut shunt_in_legs, &candidate.inbound_path, &arrival_berth)?;
     let shunt_in = TimetableRouteInput {
+        passenger_stop_anchors: Vec::new(),
         route_version_id: ids.shunt_in_route_id.clone(),
         template_id: ids.shunt_in_template_id.clone(),
         predecessor_id: Some(inbound.route_version_id.clone()),
@@ -7009,6 +7135,7 @@ fn build_stabling_routes(
     }
     shunt_out_legs.extend(outbound_seed.iter().cloned());
     let shunt_out = TimetableRouteInput {
+        passenger_stop_anchors: Vec::new(),
         route_version_id: ids.shunt_out_route_id.clone(),
         template_id: ids.shunt_out_template_id.clone(),
         predecessor_id: Some(shunt_out_predecessor.route_version_id.clone()),
@@ -7051,6 +7178,7 @@ fn build_stabling_routes(
         ),
     )?;
     let outbound = TimetableRouteInput {
+        passenger_stop_anchors: Vec::new(),
         route_version_id: ids.outbound_route_id.clone(),
         template_id: ids.outbound_template_id.clone(),
         predecessor_id: Some(shunt_out.route_version_id.clone()),
@@ -7455,6 +7583,7 @@ fn derive_direct_templates(
                 let mut legs = inbound_seed.clone();
                 legs.extend(outbound_seed.iter().cloned());
                 let route = TimetableRouteInput {
+                    passenger_stop_anchors: Vec::new(),
                     route_version_id: through_route_id.clone(),
                     template_id: through_template_id,
                     predecessor_id: Some(inbound.route_version_id.clone()),
@@ -7499,6 +7628,7 @@ fn derive_direct_templates(
                 ),
             )?;
             let qualified = TimetableRouteInput {
+                passenger_stop_anchors: Vec::new(),
                 route_version_id: route_id.clone(),
                 template_id,
                 predecessor_id: Some(predecessor_id),
@@ -7732,6 +7862,7 @@ fn validate_transfer_input_base(
     drop(target_serialized);
     drop(routes);
     let raw = TimetableRouteInput {
+        passenger_stop_anchors: Vec::new(),
         route_version_id: input.route_version_id.clone(),
         template_id: input.template_id.clone(),
         predecessor_id: None,
@@ -7830,6 +7961,7 @@ fn build_transfer_routes(
     transfer_legs.extend(validated.raw.legs.iter().cloned());
     transfer_legs.extend(target_seed.iter().cloned());
     let transfer = TimetableRouteInput {
+        passenger_stop_anchors: Vec::new(),
         route_version_id: transfer_route_id,
         template_id: transfer_template_id,
         predecessor_id: Some(validated.source.route_version_id.clone()),
@@ -7854,6 +7986,7 @@ fn build_transfer_routes(
         ),
     )?;
     let target_outbound = TimetableRouteInput {
+        passenger_stop_anchors: Vec::new(),
         route_version_id: target_outbound_route_id,
         template_id: target_outbound_template_id,
         predecessor_id: Some(transfer.route_version_id.clone()),
@@ -8446,6 +8579,7 @@ fn local_route(track: &TrackRecord, direction: &str) -> TimetableRouteInput {
         (track.length_mm, 0)
     };
     TimetableRouteInput {
+        passenger_stop_anchors: Vec::new(),
         route_version_id: local_route_id(&track.id, direction),
         template_id: local_template_id(&track.id, direction),
         predecessor_id: None,
@@ -9822,6 +9956,7 @@ mod publish_tests {
         edge_exit_mm: i64,
     ) -> TimetableRouteInput {
         TimetableRouteInput {
+            passenger_stop_anchors: Vec::new(),
             route_version_id: route_version_id.to_owned(),
             template_id: format!("template:{route_version_id}"),
             predecessor_id: predecessor_id.map(str::to_owned),
@@ -9844,6 +9979,223 @@ mod publish_tests {
                     simultaneously_required_protection_systems: Vec::new(),
                 },
             ],
+        }
+    }
+
+    fn passenger_anchor_fixture() -> Value {
+        json!({
+            "routeVersionId": "route:anchors",
+            "templateId": "template:anchors",
+            "predecessorId": null,
+            "transitionRouteMm": null,
+            "legs": [
+                {"edgeId": "anchor:a", "direction": "along", "edgeEntryMm": 200, "edgeExitMm": 1000,
+                 "availableProtectionSystems": ["pzb"], "simultaneouslyRequiredProtectionSystems": []},
+                {"edgeId": "anchor:b", "direction": "against", "edgeEntryMm": 600, "edgeExitMm": 100,
+                 "availableProtectionSystems": ["pzb"], "simultaneouslyRequiredProtectionSystems": []}
+            ],
+            "passengerStopAnchors": [
+                {"stationId": "station:repeat", "stopSequence": 5, "edgeId": "anchor:a", "direction": "along",
+                 "offsetMm": 200, "routeMm": 0, "sourceEdgeId": "anchor:a", "sourceOffsetMm": 200},
+                {"stationId": "station:middle", "stopSequence": 11, "edgeId": "anchor:b", "direction": "against",
+                 "offsetMm": 600, "routeMm": 800, "sourceEdgeId": "anchor:a", "sourceOffsetMm": 1000},
+                {"stationId": "station:middle", "stopSequence": 14, "edgeId": "anchor:b", "direction": "against",
+                 "offsetMm": 600, "routeMm": 800, "sourceEdgeId": "anchor:b", "sourceOffsetMm": 600},
+                {"stationId": "station:repeat", "stopSequence": 29, "edgeId": "anchor:b", "direction": "against",
+                 "offsetMm": 100, "routeMm": 1300, "sourceEdgeId": "anchor:b", "sourceOffsetMm": 100}
+            ]
+        })
+    }
+
+    fn ingest_passenger_anchor_fixture(
+        value: &Value,
+        preflight: bool,
+    ) -> std::result::Result<Value, String> {
+        let root = ScratchDirectory::create(&std::env::temp_dir()).expect("Anker-Testverzeichnis");
+        let database = Database::create(root.join("anchors.redb")).expect("Anker-Testdatenbank");
+        initialize_database(&database).expect("Anker-Tabellen");
+        let write = database.begin_write().expect("Anker-Schreibtransaktion");
+        {
+            let mut tracks = write.open_table(TRACKS).expect("Anker-Kanten");
+            for track in [
+                stabling_test_track("anchor:a", 1, 2, 1000, None),
+                stabling_test_track("anchor:b", 3, 2, 600, None),
+                stabling_test_track("anchor:other", 8, 9, 1000, None),
+            ] {
+                let serialized = serde_json::to_string(&track).expect("Anker-Kante serialisieren");
+                tracks
+                    .insert(track.id.as_str(), serialized.as_str())
+                    .expect("Anker-Kante speichern");
+            }
+        }
+        write.commit().expect("Anker-Kanten committen");
+        let path = root.join("routes.geojsonseq");
+        fs::write(&path, format!("\u{1e}{value}\n")).expect("Anker-JSONSeq schreiben");
+        let mut counts = super::Counts::default();
+        let result = if preflight {
+            super::ingest_preflight_timetable_routes(
+                &database,
+                &path,
+                "routes.geojsonseq",
+                &mut counts,
+            )
+        } else {
+            super::ingest_timetable_routes(&database, &path, "routes.geojsonseq", &mut counts)
+        };
+        let read = database.begin_read().expect("Anker-Lesetransaktion");
+        let routes = read
+            .open_table(super::TIMETABLE_ROUTES)
+            .expect("Anker-Routen");
+        match result {
+            Ok(_) => {
+                assert_eq!(counts.timetable_routes, 1);
+                let serialized = routes
+                    .get("route:anchors")
+                    .expect("Anker-Route lesen")
+                    .expect("Anker-Route vorhanden");
+                Ok(serde_json::from_str(serialized.value()).expect("Anker-Route deserialisieren"))
+            }
+            Err(error) => {
+                assert!(
+                    routes
+                        .get("route:anchors")
+                        .expect("Abgelehnte Route lesen")
+                        .is_none(),
+                    "Fehlerhafte Anker duerfen nicht persistieren"
+                );
+                Err(error.to_string())
+            }
+        }
+    }
+
+    #[test]
+    fn passenger_stop_anchors_preserve_exact_partial_legs_nodes_occurrences_and_legacy() {
+        let value = passenger_anchor_fixture();
+        for preflight in [false, true] {
+            let stored = ingest_passenger_anchor_fixture(&value, preflight)
+                .expect("Exakte Halteanker akzeptieren");
+            assert_eq!(
+                stored, value,
+                "Quellanker, Folgenummern und wiederholte Positionen bleiben erhalten"
+            );
+            let mut legacy = value.clone();
+            legacy
+                .as_object_mut()
+                .expect("Legacy-Objekt")
+                .remove("passengerStopAnchors");
+            let stored = ingest_passenger_anchor_fixture(&legacy, preflight)
+                .expect("Alten Vertrag akzeptieren");
+            assert_eq!(
+                stored, legacy,
+                "Alte DTOs erhalten kein neues leeres Pflichtfeld"
+            );
+        }
+    }
+
+    #[test]
+    fn passenger_stop_anchors_reject_unproven_sources_order_offsets_and_json_in_both_imports() {
+        let baseline = passenger_anchor_fixture();
+        let mut invalid = Vec::new();
+        for (label, index, key, bad) in [
+            ("empty station", 0, "stationId", json!(" ")),
+            ("unknown direction", 0, "direction", json!("both")),
+            (
+                "wrong directed occurrence",
+                0,
+                "direction",
+                json!("against"),
+            ),
+            ("wrong cumulative mm", 1, "routeMm", json!(801)),
+            ("wrong partial-leg offset", 0, "offsetMm", json!(201)),
+            ("wrong reverse offset", 3, "offsetMm", json!(99)),
+            ("decreasing route position", 3, "routeMm", json!(799)),
+            ("duplicate stop sequence", 1, "stopSequence", json!(5)),
+            ("negative sequence", 0, "stopSequence", json!(-1)),
+            (
+                "unsafe sequence",
+                0,
+                "stopSequence",
+                json!(9_007_199_254_740_992_i64),
+            ),
+            (
+                "unsafe route mm",
+                3,
+                "routeMm",
+                json!(9_007_199_254_740_992_i64),
+            ),
+            (
+                "unsafe offset",
+                0,
+                "offsetMm",
+                json!(9_007_199_254_740_992_i64),
+            ),
+            (
+                "unsafe source offset",
+                0,
+                "sourceOffsetMm",
+                json!(9_007_199_254_740_992_i64),
+            ),
+            ("fractional offset", 0, "offsetMm", json!(200.5)),
+            ("unknown operational edge", 0, "edgeId", json!("missing")),
+            ("unknown source edge", 0, "sourceEdgeId", json!("missing")),
+            ("shifted same-edge source", 0, "sourceOffsetMm", json!(199)),
+            ("source outside edge", 1, "sourceOffsetMm", json!(1001)),
+            (
+                "interior source cannot snap",
+                1,
+                "sourceOffsetMm",
+                json!(999),
+            ),
+            ("different source node", 1, "sourceOffsetMm", json!(0)),
+            (
+                "unrelated source edge",
+                1,
+                "sourceEdgeId",
+                json!("anchor:other"),
+            ),
+            (
+                "unknown anchor field",
+                0,
+                "approximationAllowed",
+                json!(true),
+            ),
+        ] {
+            let mut value = baseline.clone();
+            value["passengerStopAnchors"][index][key] = bad;
+            invalid.push((label, value));
+        }
+        for (label, anchors) in [
+            ("null anchors", Value::Null),
+            ("empty anchors", json!([])),
+            (
+                "single anchor",
+                json!([baseline["passengerStopAnchors"][0].clone()]),
+            ),
+            (
+                "excess anchors",
+                json!(vec![baseline["passengerStopAnchors"][0].clone(); 101]),
+            ),
+        ] {
+            let mut value = baseline.clone();
+            value["passengerStopAnchors"] = anchors;
+            invalid.push((label, value));
+        }
+        let mut missing = baseline.clone();
+        missing["passengerStopAnchors"][0]
+            .as_object_mut()
+            .expect("Anker-Objekt")
+            .remove("sourceOffsetMm");
+        invalid.push(("missing source offset", missing));
+        let mut foreign = baseline.clone();
+        foreign["unapprovedSource"] = json!(true);
+        invalid.push(("unknown route field", foreign));
+        for (label, value) in invalid {
+            for preflight in [false, true] {
+                assert!(
+                    ingest_passenger_anchor_fixture(&value, preflight).is_err(),
+                    "{label} accepted; preflight={preflight}"
+                );
+            }
         }
     }
 
@@ -10575,6 +10927,7 @@ mod publish_tests {
         }
         write.commit().expect("Cross-Berth-Testdaten committen");
         let inbound = TimetableRouteInput {
+            passenger_stop_anchors: Vec::new(),
             route_version_id: "passenger:source".to_owned(),
             template_id: "template:passenger:source".to_owned(),
             predecessor_id: None,
@@ -10582,6 +10935,7 @@ mod publish_tests {
             legs: vec![super::derived_leg(&source_terminal, "along", 0, 100_000)],
         };
         let outbound = TimetableRouteInput {
+            passenger_stop_anchors: Vec::new(),
             route_version_id: "passenger:target".to_owned(),
             template_id: "template:passenger:target".to_owned(),
             predecessor_id: None,

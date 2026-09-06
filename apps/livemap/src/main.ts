@@ -70,13 +70,15 @@ import {
   type PublicTrain,
   type RenderSamples,
 } from "./protocol.js";
-import { livemapNavigationDestinations, mailboxDecisionDestination, operationsCenterDestination } from "./navigation.js";
+import { livemapNavigationDestinations, mailboxDecisionDestination, operationsCenterDestination, demandPlanningDestination } from "./navigation.js";
+import { demandOverviewMarkup, demandGeoJson, trainDemandMarkup, passengerManifestMarkup, type DemandOverview } from "./demand.js";
 import { externalStatusLabel, localizeMapControls, operatingStatusLabel, railwayPlaceLabel, setMapViewButtons, visibleExternalTrains, type MapView } from "./presentation.js";
 import { rzueMarkup } from "./rzue.js";
 import "./style.css";
 import "./external-runs.css";
 import "@zugfolge/design-system/railway.css";
 import "./railway-map.css";
+import "./demand.css";
 import { filterTrains, liveOverview, watchMarkup, trainSituation, type TrainScope } from "./live-overview.js";
 
 const root = document.querySelector<HTMLDivElement>("#root");
@@ -115,12 +117,13 @@ root.innerHTML = `
         <div id="map" role="application" aria-label="Deutschlandkarte mit Eisenbahnnetz und aktuellen Zügen"></div>
         <section id="rzue" class="rzue" aria-label="Schematische Betriebsübersicht" hidden></section>
         <div class="map-toolbar">
-          <div class="train-scope" role="group" aria-label="Züge auf der Karte filtern"><button data-train-scope="all" aria-pressed="true">Alle Züge</button><button data-train-scope="own" aria-pressed="false">Meine Züge</button></div>
+          <div class="train-scope" role="group" aria-label="Züge auf der Karte filtern"><button data-train-scope="all" aria-pressed="true">Alle Züge</button><button data-train-scope="own" aria-pressed="false">Meine Züge</button><button id="toggle-demand" type="button" aria-pressed="false" aria-controls="details">Nachfrage</button></div>
           <div class="mode-switch" role="group" aria-label="Kartenansicht"><button id="mode-livemap" type="button" aria-pressed="true">Karte</button><button id="mode-rzue" type="button" aria-pressed="false">Gleisbild</button><button id="rzue-level" type="button" aria-pressed="false" hidden>Details</button></div>
         </div>
         <div id="map-state" class="map-state" role="status" aria-live="polite">Das Schienennetz wird geladen …</div>
         <div class="map-tools" aria-label="Kartenausschnitt"><button id="show-germany" data-map-view="germany" type="button" aria-pressed="true">Deutschland</button><button id="fit-playable" data-map-view="playable" type="button" aria-pressed="false">Gesamtes Spielnetz</button><button id="show-world" data-map-view="world" type="button" aria-pressed="false">Umgebung</button></div>
         <section id="selection-menu" class="selection-menu" aria-label="Kartenobjekt auswählen" hidden></section>
+        <div id="demand-map-key" class="demand-map-key" hidden><strong>Einsteiger · aktuelle Seite</strong><span><i class="demand-dot served"></i> vorhanden <i class="demand-dot unserved"></i> null <i class="demand-dot unknown"></i> unbekannt</span><small id="demand-map-period"></small></div>
         <section id="external-runs" aria-label="Weitere Zugfahrten"></section>
         <div class="legend" aria-label="Legende"><span><i class="legend-line active"></i> Bahnnetz</span><span><i class="legend-line restriction"></i> Einschränkung</span><span><i class="legend-line closure"></i> Gesperrt</span><span><i class="legend-line construction"></i> Bauarbeiten</span></div>
       </section>
@@ -200,11 +203,112 @@ let renderWakeup: ReturnType<typeof setTimeout> | undefined;
 let liveRenderingFrozen = false;
 let currentLiveState: LiveState | undefined;
 let rzueExpert = false;
-let trainScope: TrainScope = "all";
+let trainScope: TrainScope = parameters.get("trainScope") === "own" ? "own" : "all";
 let ownOperatorId = "";
-let trainQuery = "";
+let trainQuery = (parameters.get("trainQuery") ?? "").slice(0, 100);
 let trainListLimit = 80;
 let detailReturnFocus: HTMLElement | undefined;
+let demandEnabled = false;
+let demandPage: DemandOverview | undefined;
+let demandRequest = 0;
+
+function retainMapFilters(): void {
+  const url = new URL(window.location.href);
+  url.searchParams.set("trainScope", trainScope);
+  if (trainQuery === "") url.searchParams.delete("trainQuery"); else url.searchParams.set("trainQuery", trainQuery);
+  if (demandEnabled) url.searchParams.set("demand", "1"); else url.searchParams.delete("demand");
+  window.history.replaceState({}, "", url);
+  const planner = new URL(document.querySelector<HTMLAnchorElement>("#planner-link")!.href);
+  for (const key of ["focus", "trainScope", "trainQuery", "demand"] as const) {
+    const value = url.searchParams.get(key);
+    if (value === null) planner.searchParams.delete(key); else planner.searchParams.set(key, value);
+  }
+  if (selected?.kind === "train") planner.searchParams.set("train", selected.id);
+  document.querySelector<HTMLAnchorElement>("#planner-link")!.href = planner.href;
+}
+
+function renderDemandLayer(): void {
+  document.querySelector<HTMLElement>("#demand-map-key")!.hidden = !demandEnabled || demandPage === undefined;
+  document.querySelector<HTMLElement>("#demand-map-period")!.textContent = demandPage === undefined ? "" : `${demandPage.source === "observed" ? "Messwert" : demandPage.source === "assumption" ? "Modellannahme" : "Prognose"} · ${demandPage.periodId} · Stand ${demandPage.asOfS} Weltsekunden`;
+  if (map === undefined) return;
+  const data = demandGeoJson(demandEnabled ? demandPage?.items ?? [] : []);
+  const source = map.getSource<GeoJSONSource>("passenger-demand");
+  if (source !== undefined) { source.setData(data); return; }
+  map.addSource("passenger-demand", { type: "geojson", data });
+  map.addLayer({ id: "passenger-demand-points", type: "circle", source: "passenger-demand", paint: { "circle-radius": 8, "circle-color": ["match", ["get", "tone"], "unserved", "#b5a6ff", "served", "#75d4ef", "#596575"], "circle-opacity": 0.6, "circle-stroke-color": "#f5f7fa", "circle-stroke-width": 1 } }, map.getLayer("trains") !== undefined ? "trains" : undefined);
+}
+
+function planningLink(trainId?: string, stationId?: string): HTMLAnchorElement {
+  const link = document.createElement("a");
+  link.className = "demand-plan-link";
+  link.textContent = "Fernverkehr: Linie, Tarif & Plätze planen";
+  link.href = demandPlanningDestination(runtime.gameWebUrl, window.location.href, worldId, trainId, stationId);
+  return link;
+}
+
+async function showDemand(cursor?: string, openPanel = true): Promise<void> {
+  if (api === undefined) return;
+  const request = ++demandRequest;
+  demandEnabled = true;
+  retainMapFilters();
+  document.querySelector("#toggle-demand")!.setAttribute("aria-pressed", "true");
+  if (openPanel) setPanel(loadingPanel("Nachfrage"));
+  try {
+    const page = await api.demandOverview(worldId, cursor);
+    if (request !== demandRequest || !demandEnabled) return;
+    demandPage = page;
+    renderDemandLayer();
+    if (!openPanel) return;
+    const section = document.createElement("div");
+    section.innerHTML = demandOverviewMarkup(page);
+    section.querySelector("[data-demand-next]")?.addEventListener("click", () => void showDemand(page.nextCursor ?? undefined));
+    section.querySelector("[data-demand-first]")?.addEventListener("click", () => void showDemand());
+    section.querySelectorAll<HTMLButtonElement>("[data-demand-station]").forEach((button) => button.addEventListener("click", () => {
+      const station = page.items.find((item) => item.stationId === button.dataset["demandStation"]);
+      if (station !== undefined) void selectObject({ kind: "station", id: station.stationId, label: station.label });
+    }));
+    section.append(planningLink());
+    setPanel(section);
+  } catch (error) {
+    if (request !== demandRequest) return;
+    demandPage = undefined;
+    renderDemandLayer();
+    if (openPanel) setPanel(messagePanel(`Nachfrage nicht verfügbar. ${error instanceof Error ? error.message : "Versuche es erneut."}`, "error"));
+  }
+}
+
+async function appendTrainDemand(trainId: string, ownerOperatorId?: string): Promise<void> {
+  const section = document.createElement("section");
+  section.className = "train-demand";
+  section.textContent = "Fahrgastdaten werden geladen …";
+  detailsContent.append(section);
+  try {
+    const data = await api!.trainDemand(worldId, trainId);
+    if (selected?.id !== trainId || selected.kind !== "train" || !section.isConnected) return;
+    section.innerHTML = trainDemandMarkup(data);
+  } catch { if (section.isConnected) section.textContent = "Fahrgastdaten nicht verfügbar. Eine fehlende Nachfrageangabe bedeutet keinen leeren Zug."; }
+  if (selected?.id !== trainId || selected.kind !== "train" || !section.isConnected) return;
+  if (ownerOperatorId !== undefined) {
+    const manifest = document.createElement("details");
+    manifest.className = "passenger-manifest";
+    manifest.append(text("summary", "Fahrgastliste deines Unternehmens"));
+    const body = document.createElement("div"); manifest.append(body);
+    let loaded = false;
+    const loadManifest = async (cursor?: string): Promise<void> => {
+      body.textContent = "Fahrgastliste wird geladen …";
+      try {
+        const page = await api!.passengerManifest(worldId, ownerOperatorId, trainId, cursor);
+        if (!manifest.isConnected) return;
+        body.innerHTML = passengerManifestMarkup(page);
+        body.querySelector("[data-manifest-next]")?.addEventListener("click", () => void loadManifest(page.nextCursor ?? undefined));
+        loaded = true;
+      } catch { body.textContent = "Die berechtigte Fahrgastliste ist gerade nicht verfügbar."; loaded = false; }
+    };
+    manifest.addEventListener("toggle", () => { if (manifest.open && !loaded) void loadManifest(); });
+    section.append(manifest);
+  }
+  section.append(planningLink(trainId));
+}
 
 function scopedTrains(trains: readonly PublicTrain[]): readonly PublicTrain[] {
   return filterTrains(trains, trainScope, ownOperatorId, trainQuery);
@@ -361,6 +465,7 @@ function setPanel(content: Node): void {
 }
 
 function closePanel(updateUrl = true): void {
+  ++demandRequest;
   selected = undefined;
   updateSelectionState();
   details.classList.remove("open");
@@ -375,6 +480,7 @@ function closePanel(updateUrl = true): void {
     const url = new URL(window.location.href);
     url.searchParams.delete("focus");
     window.history.replaceState({}, "", url);
+    retainMapFilters();
   }
 }
 
@@ -399,9 +505,11 @@ function updateFocusUrl(selection: MapSelection): void {
   const url = new URL(window.location.href);
   url.searchParams.set("focus", focusParameter(selection));
   window.history.replaceState({}, "", url);
+  retainMapFilters();
 }
 
 async function selectObject(selection: MapSelection): Promise<void> {
+  ++demandRequest;
   if (document.activeElement instanceof HTMLElement && !details.contains(document.activeElement)) detailReturnFocus = document.activeElement;
   selected = selection;
   updateSelectionState();
@@ -423,15 +531,20 @@ async function selectObject(selection: MapSelection): Promise<void> {
       const ownerDetail = operatorId === undefined
         ? undefined
         : await client.ownerTrain(worldId, operatorId, selection.id);
-      if (selected?.id === selection.id && selected.kind === "train") setPanel(trainPanel(publicDetail, ownerDetail));
+      if (selected?.id === selection.id && selected.kind === "train") {
+        setPanel(trainPanel(publicDetail, ownerDetail));
+        void appendTrainDemand(selection.id, ownerDetail === undefined ? undefined : operatorId);
+      }
       return;
     }
     const objectDetail = await client.object(worldId, selection.kind, selection.id);
     if (selection.kind === "station") {
       const board = await client.stationBoard(worldId, selection.id);
-      if (selected?.id === selection.id && selected.kind === "station") setPanel(stationPanel(objectDetail, board));
+      if (selected?.id === selection.id && selected.kind === "station") {
+        const panel = stationPanel(objectDetail, board); panel.append(planningLink(undefined, selection.id)); setPanel(panel);
+      }
     } else if (selected?.id === selection.id && selected.kind === selection.kind) {
-      setPanel(objectDetailPanel(objectDetail));
+      const panel = objectDetailPanel(objectDetail); if (selection.kind === "track") panel.append(planningLink()); setPanel(panel);
     }
   } catch (error) {
     if (selected?.id !== selection.id) return;
@@ -764,14 +877,25 @@ async function createMap(config: LivemapConfigV2): Promise<MapLibreMap> {
 }
 
 function bindShell(): void {
+  document.querySelector<HTMLInputElement>("#train-search")!.value = trainQuery;
+  document.querySelectorAll<HTMLElement>("[data-train-scope]").forEach((item) => item.setAttribute("aria-pressed", String(item.dataset["trainScope"] === trainScope)));
+  document.querySelector<HTMLButtonElement>("#toggle-demand")!.addEventListener("click", () => {
+    detailReturnFocus = document.querySelector<HTMLButtonElement>("#toggle-demand")!;
+    if (demandEnabled && detailsContent.querySelector(".demand-view:not(.train-demand)") !== null) {
+      demandEnabled = false; ++demandRequest; retainMapFilters(); renderDemandLayer();
+      document.querySelector("#toggle-demand")!.setAttribute("aria-pressed", "false"); closePanel();
+    } else void showDemand();
+  });
   document.querySelectorAll<HTMLButtonElement>("[data-train-scope]").forEach((button) => button.addEventListener("click", () => {
     trainScope = button.dataset["trainScope"] === "own" ? "own" : "all";
     trainListLimit = 80;
+    retainMapFilters();
     document.querySelectorAll("[data-train-scope]").forEach((item) => item.setAttribute("aria-pressed", String((item as HTMLElement).dataset["trainScope"] === trainScope)));
     applyTrainFilter();
   }));
   document.querySelector<HTMLInputElement>("#train-search")!.addEventListener("input", (event) => {
     trainQuery = (event.currentTarget as HTMLInputElement).value;
+    retainMapFilters();
     trainListLimit = 80;
     applyTrainFilter();
     (document.querySelector("#map-object-list") as HTMLDetailsElement).open = trainQuery.trim() !== "";
@@ -846,8 +970,13 @@ async function boot(): Promise<void> {
     mapConfig = await api.config(worldId);
     worldLabel.textContent = mapConfig.worldName;
     map = await createMap(mapConfig);
+    retainMapFilters();
     const focus = parseFocusParameter(parameters.get("focus"));
-    if (focus !== undefined) void selectObject(focus);
+    if (focus !== undefined) {
+      void selectObject(focus);
+      if (parameters.get("demand") === "1") void showDemand(undefined, false);
+    }
+    else if (parameters.get("demand") === "1") void showDemand();
     connection = new LivemapConnection(runtime.gameApiUrl, worldId, tokenProvider, scheduleLiveRender, {
       onFreeze: freezeLiveRender,
       onError: () => {

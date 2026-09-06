@@ -3,6 +3,9 @@ use serde::{Deserialize, Serialize};
 pub const INPUT_SCHEMA: &str = "zugfolge-demand-evaluation/v1";
 pub const RESULT_SCHEMA: &str = "zugfolge-demand-result/v1";
 pub const RELEASE_SCHEMA: &str = "zugfolge-demand-release/v1";
+pub const POPULATION_MODEL_SCHEMA: &str = "zugfolge-station-population-demand/v1";
+pub const POPULATION_REVISION_SCHEMA: &str = "zugfolge-demand-population-revision/v1";
+pub type StationDemandClass = u8;
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -38,6 +41,76 @@ pub struct DemandZoneV1 {
     pub workplaces: u32,
     pub poi_weight: u32,
     pub stations: Vec<StationTransitAccessV1>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct DemandSettlementV1 {
+    pub id: String,
+    pub name: String,
+    pub population: u32,
+    pub source_id: String,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct StationPopulationAllocationV1 {
+    pub settlement_id: String,
+    pub population: u32,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct StationDemandAreaV1 {
+    pub zone_id: String,
+    pub station_id: String,
+    pub population_allocations: Vec<StationPopulationAllocationV1>,
+    pub demand_class: StationDemandClass,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct DemandReferenceTimetableV1 {
+    pub id: String,
+    pub artifact_sha256: String,
+    pub source_ids: Vec<String>,
+    pub service_dates: Vec<String>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct DemandDestinationPreferenceV1 {
+    pub origin_zone_id: String,
+    pub destination_zone_id: String,
+    pub reference_connections: u32,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct StationPopulationDemandV1 {
+    pub schema_version: String,
+    pub settlements: Vec<DemandSettlementV1>,
+    pub station_areas: Vec<StationDemandAreaV1>,
+    pub reference_timetable: DemandReferenceTimetableV1,
+    pub destination_preferences: Vec<DemandDestinationPreferenceV1>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct StationPopulationRevisionV1 {
+    pub zone_id: String,
+    pub population: u32,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct DemandPopulationRevisionV1 {
+    pub schema_version: String,
+    pub world_id: String,
+    pub revision: u64,
+    pub effective_at_ms: i64,
+    pub population_model: StationPopulationDemandV1,
+    pub zone_populations: Vec<StationPopulationRevisionV1>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
@@ -119,6 +192,8 @@ pub struct DemandReleaseV1 {
     pub max_generated_passengers: u32,
     pub max_connections_per_cohort: u32,
     pub fare_compliance: FareCompliancePolicyV1,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub population_model: Option<StationPopulationDemandV1>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
@@ -223,6 +298,8 @@ pub struct DemandEvaluationInputV1 {
     pub previous_evaluation: Option<Box<PreviousDemandEvaluationV1>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub operational_progress: Option<DemandOperationalProgressV1>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub population_revision: Option<DemandPopulationRevisionV1>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -431,6 +508,8 @@ pub struct DemandEvaluationV1 {
     pub projection_mode: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub operational_progress: Option<DemandOperationalProgressV1>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub population_revision: Option<DemandPopulationRevisionV1>,
     pub cohorts: Vec<JourneyDemandV1>,
     pub choices: Vec<ConnectionChoiceV1>,
     pub unserved: Vec<UnservedDemandV1>,

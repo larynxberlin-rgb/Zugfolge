@@ -10,3 +10,4 @@ from . import infra_release_import
 from . import public_world
 from . import participation
 from . import res_users
+from . import demand_data

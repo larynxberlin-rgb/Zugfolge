@@ -111,7 +111,7 @@ def game_command_targets(env, command):
 
 
 def dispatch_signed_game_command(env, correlation_id, actor_reference, command):
-    """Only called after Odoo-native approval. Game validates again independently."""
+    """Send an authorized Odoo action or automatic data update; Game validates again."""
     targets = game_command_targets(env, command)
     tenant_id = _parameter(env, "zugfolge_admin.tenant_id")
     key_id = _parameter(env, "zugfolge_admin.webhook_key_id")

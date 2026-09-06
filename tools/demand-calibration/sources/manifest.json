@@ -1,0 +1,102 @@
+{
+  "schemaVersion": "zugfolge-demand-source-pack/v1",
+  "generatedAt": "2026-09-05",
+  "rightsRegister": "tools/guards/quellenregister.json",
+  "sources": [
+    {
+      "id": "nvbw-fahrgastzaehlung-2025",
+      "title": "NVBW AFZS-/RES-Fahrgastzählungen Baden-Württemberg, 1. Halbjahr 2025",
+      "url": "https://mobidata-bw.de/dataset/automatische-fahrgast-zahldaten-baden-wurttemberg",
+      "artifactUrl": "https://mobidata-bw.de/portal/opnv/afzs/2025_1.HJ_20241215-20250614.csv.gz",
+      "artifactSha256": "74de5f8b36d8b9819d30cfc2a435cf26595bdae49d09c184375a2e45b6af63ff",
+      "artifactBytes": 457658999,
+      "validity": "2024-12-15/2025-06-14",
+      "license": "dl-de/by-2-0",
+      "licenseUrl": "https://www.govdata.de/dl-de/by-2-0",
+      "attribution": "NVBW / MobiData BW, Fahrgast-Zähldaten im Schienenpersonennahverkehr Baden-Württemberg, https://mobidata-bw.de/dataset/automatische-fahrgast-zahldaten-baden-wurttemberg, Datenlizenz Deutschland – Namensnennung – Version 2.0, https://www.govdata.de/dl-de/by-2-0; Auswahl, Normalisierung und Aggregation durch Zugfolge.",
+      "rightsApproved": true,
+      "rightsDecision": {
+        "datum": "2026-09-05",
+        "pruefer": "Codex – Quellenprüfung im ausdrücklichen Nutzerauftrag, nur frei nutzbare Quellen"
+      },
+      "retrievedAt": "2026-09-05",
+      "scope": "Offline-Nachfragekalibrierung: getrennte beobachtete AFZS-Zählfahrten und rechnerisch ergänzte Fahrplanfahrten. Keine personenbezogenen Rohsensoren, kein externer Laufzeitdienst."
+    },
+    {
+      "id": "hvv-sbahn-fahrgastzahlen-2025",
+      "title": "hvv S-Bahn Fahrgastzahlen 2025",
+      "url": "https://suche.transparenz.hamburg.de/dataset/hvv-fahrgastzahlen-2025",
+      "artifactUrl": "https://daten.transparenz.hamburg.de/Dataport.HmbTG.ZS.Webservice.GetRessource100/GetRessource100.svc/95ffae6c-5017-49be-9ac0-e68d7330b7c2/Upload__hvv_S-Bahn_2025.XLSX",
+      "artifactSha256": "b5657e0047e9e923151a8bb77ceea4a20291b6d5a2881071d949aa338220b85f",
+      "artifactBytes": 22196,
+      "validity": "2025-01-01/2025-12-31",
+      "license": "dl-de/by-2-0",
+      "licenseUrl": "https://www.govdata.de/dl-de/by-2-0",
+      "attribution": "Freie und Hansestadt Hamburg, hvv Fahrgastzahlen 2025, https://suche.transparenz.hamburg.de/dataset/hvv-fahrgastzahlen-2025, Datenlizenz Deutschland – Namensnennung – Version 2.0, https://www.govdata.de/dl-de/by-2-0; Aufbereitung durch Zugfolge.",
+      "rightsApproved": true,
+      "rightsDecision": {
+        "datum": "2026-09-05",
+        "pruefer": "Codex – Quellenprüfung im ausdrücklichen Nutzerauftrag, nur frei nutzbare Quellen"
+      },
+      "retrievedAt": "2026-09-05",
+      "scope": "Durchschnittliche werktägliche Ein- und Aussteiger je S-Bahn-Haltestelle und Richtung als eigenständige Entwicklungsbeobachtungen. U-Bahn, Bus und Fähre werden nicht als SPNV übernommen."
+    },
+    {
+      "id": "nahsh-querschnittsbesetzung",
+      "title": "NAH.SH Querschnittsbesetzung 2010–2019",
+      "url": "https://opendata.schleswig-holstein.de/dataset/querschnittsbesetzung",
+      "artifactUrl": "https://opendata.schleswig-holstein.de/dataset/51c5484a-9eb3-4143-8e21-19b4677675d7/resource/61a2569e-a1f4-4ecc-be89-fa62f6cf390c/download/querschnittsbesetzung.csv",
+      "artifactSha256": "f8a709bcc68fafd6489fa2ad9fbc657abc97aae0eb8cb6d9ef7975b6e85c48e1",
+      "artifactBytes": 333942,
+      "validity": "2010-01-01/2019-12-31",
+      "license": "CC-BY-4.0",
+      "licenseUrl": "https://creativecommons.org/licenses/by/4.0/",
+      "attribution": "NAH.SH / Land Schleswig-Holstein, Querschnittsbesetzung, https://opendata.schleswig-holstein.de/dataset/querschnittsbesetzung, Creative Commons Namensnennung 4.0 International, https://creativecommons.org/licenses/by/4.0/; Auswahl und Normalisierung durch Zugfolge.",
+      "rightsApproved": true,
+      "rightsDecision": {
+        "datum": "2026-09-05",
+        "pruefer": "Codex – Quellenprüfung im ausdrücklichen Nutzerauftrag, nur frei nutzbare Quellen"
+      },
+      "retrievedAt": "2026-09-05",
+      "scope": "Gemittelte jährliche SPNV-Abschnittsbesetzung je Tagtyp für zeitlich getrennte Referenzen und Holdouts."
+    }
+  ],
+  "bundledArtifacts": [
+    {
+      "path": "sources/hvv-metadata.json",
+      "sha256": "3c3ce0a87084ad1768626b626cd00c1a572c34c90d13afd6d98f3bd877959b17",
+      "bytes": 7710
+    },
+    {
+      "path": "sources/hvv-sbahn-2025.xlsx",
+      "sha256": "b5657e0047e9e923151a8bb77ceea4a20291b6d5a2881071d949aa338220b85f",
+      "bytes": 22196
+    },
+    {
+      "path": "sources/nahsh-metadata.json",
+      "sha256": "d00152f4542758f68136222984d3249bff4c857ff646f0a7a7586b1749ab8b49",
+      "bytes": 7106
+    },
+    {
+      "path": "sources/nahsh-querschnittsbesetzung.csv",
+      "sha256": "f8a709bcc68fafd6489fa2ad9fbc657abc97aae0eb8cb6d9ef7975b6e85c48e1",
+      "bytes": 333942
+    },
+    {
+      "path": "sources/nvbw-metadata.json",
+      "sha256": "a0886b7aca6074b18ed0aabb894e9668729d6f5f3fd232e7d9d9fde866a97671",
+      "bytes": 13938
+    },
+    {
+      "path": "sources/nvbw-re7-selection.csv",
+      "sha256": "297d483e1feae90f761711f968860fb58bbe178807ba374f93fdd71731b3e368",
+      "bytes": 271893
+    }
+  ],
+  "notes": [
+    "NVBW full raw GZip is external hash-pinned cache. Bundled selection re-encodes cp1252 into UTF-8 and adds original sourceRowNumber; numeric strings remain unchanged.",
+    "Publisher CKAN metadata responses are archived as formatted JSON, preserving license terms; these hashes identify the local evidence snapshots.",
+    "These data retain their source license independently from the project software license.",
+    "Rights approval is a documented technical source review authorized by the user; no unperformed human review or scientific model acceptance is claimed."
+  ]
+}

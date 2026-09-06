@@ -3,6 +3,7 @@ import { createReadStream } from "node:fs";
 import { lstat, readFile } from "node:fs/promises";
 import { basename, isAbsolute, relative, resolve } from "node:path";
 import { createInterface } from "node:readline";
+import { validatePassengerStopAnchors } from "../passenger-stop-binding-v1.mjs";
 
 import {
   GERMANY_TIMETABLE_ROUTE_REPORT_SCHEMA,
@@ -1212,11 +1213,13 @@ export async function syntheticOperationalTimetableRoutesProof(path, label = "ti
     } catch (error) {
       throw new Error(`${label} enthaelt in Zeile ${lineNumber} kein gueltiges JSON: ${error instanceof Error ? error.message : String(error)}`);
     }
-    exactKeys(route, ["routeVersionId", "templateId", "predecessorId", "transitionRouteMm", "legs"], `${label}[${lineNumber}]`);
+    exactKeys(route, ["routeVersionId", "templateId", "predecessorId", "transitionRouteMm", "legs",
+      ...(route.passengerStopAnchors === undefined ? [] : ["passengerStopAnchors"])], `${label}[${lineNumber}]`);
     invariant(typeof route.routeVersionId === "string" && route.routeVersionId.startsWith("route:gtfs:") && route.routeVersionId.endsWith(":v1"), `${label}[${lineNumber}].routeVersionId verletzt den freien GTFS-Vertrag.`);
     const segmentId = route.routeVersionId.slice("route:gtfs:".length, -":v1".length);
     invariant(segmentId !== "" && route.templateId === `template:gtfs:${segmentId}:v1`, `${label}[${lineNumber}] bindet Segment und Template nicht 1:1.`);
     invariant(route.predecessorId === null && route.transitionRouteMm === null && Array.isArray(route.legs), `${label}[${lineNumber}] besitzt unerwartete Versions- oder Leg-Felder.`);
+    validatePassengerStopAnchors(route);
     invariant(previousRouteVersionId === null || compareText(previousRouteVersionId, route.routeVersionId) < 0, `${label} ist nicht streng und eindeutig nach routeVersionId geordnet.`);
     previousRouteVersionId = route.routeVersionId;
     segmentIds.push(segmentId);
