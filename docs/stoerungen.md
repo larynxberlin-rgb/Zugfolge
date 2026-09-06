@@ -428,25 +428,13 @@ Ablehnungsgrund. Nach Störungsende steigt die Logik kontrolliert hoch.
 ### 6.1 Kontrollbedingter Betriebshalt (M15.9)
 
 Eine bindende Polizeianforderung aus dem Schaffnermodus erzeugt unter der
-Feinursache `authority.police.fare-control` am nächsten noch nicht erreichten
-planmäßigen Fahrgasthalt einen `FareControlHoldV1`. Sie bremst den Zug nicht auf
-freier Strecke. Der zusätzliche Halt beginnt erst, wenn Mindesthaltezeit und
-Fahrgastwechsel erfüllt sind und der Zug sonst abfahrbereit wäre.
-
-Das belegte Bahnsteig- oder Bahnhofsgleis und alle noch nicht sicher geräumten
-Fahrstraßen- und Ausschlussressourcen bleiben im gemeinsamen `CapacityLedger`
-belegt. Bereits geräumte Ressourcen werden nicht erneut reserviert. Der Halt
-endet nach abgeschlossenem Polizeivorgang oder nach der weltvertraglichen
-Höchstwartezeit. Pro Zuglauf ist im ersten Release höchstens ein solcher Halt
-zulässig; mehrere offene geeignete Fälle werden gebündelt.
-
-Nach Freigabe entsteht kein automatisches Abfahrtsrecht. Der virtuelle
-Fahrdienstleiter prüft Fahrweg, Zustimmung und Konfliktlage neu und reiht die
-Fahrt ohne Sondervorrang gemeinsam mit Personen-, Güter-, Leer-, Zusatz- und
-Rangierfahrten ein. Folgeverspätungen, Anschlüsse, Umläufe, M10-Nachfrage und
-Pönalen tragen dieselbe Kausalitätskennung. Fremde EVU und öffentliche
-Projektionen sehen datensparsam „behördliche Maßnahme“, nicht den Fahrgastfall.
-Details: [`schaffnermodus.md`](schaffnermodus.md) 9.
+Feinursache `authority.police.fare-control` einen `FareControlHoldV1`. Dieser
+verwendet dieselbe Ressourcen- und Abfahrtsautorität wie der übrige Betrieb.
+Policy, zulässiger Zielhalt, Aktivierung, Ressourcenweiterbelegung,
+Höchstwartezeit, erneute Abfahrtsprüfung und öffentliche Sichtbarkeit sind
+kanonisch in [`schaffnermodus.md`](schaffnermodus.md) 9 definiert. Der dortige
+Mehrzugnachweis gehört zu M15.9/M15.12; der M15.2-Fahrgastprojektor erteilt
+keinen Betriebshalt und schließt diesen Nachweis nicht ab.
 
 ## 7. Ersatzplanung und Wirtschaft
 

@@ -1,5 +1,10 @@
 # M15 — Schaffnermodus
 
+Vertragsversion: `zugfolge-conductor/v1`. Dies ist die bindende Spezifikation;
+sie ist kein Nachweis bereits implementierter Sitzungen, Assets oder Betriebshalte.
+Der Lieferumfang von M15.1/M15.2 und offene Gates stehen in der
+[Teilabnahme](m15-abnahme.md).
+
 Der Schaffnermodus ist eine optionale, serverautoritative Vertiefung des
 regulären SPNV-Betriebs. Der Spieler betritt einen eigenen aktiven Zug in einer
 orthogonalen Top-down-Pixelart-Ansicht, bewegt sich durch dessen Innenraum und
@@ -21,6 +26,8 @@ Pflichtschleife.
 
 - Einstieg erfolgt aus der privaten Zugdetailansicht eines eigenen, aktiven
   SPNV-Zuges. Geleaste Fahrzeuge zählen als eigene Betriebsleistung.
+  Weltzugang und eigenes EVU müssen aktiv sein; ausgeschiedene oder gelöschte
+  Unternehmen erhalten auch über die interne Projektionsgrenze keinen Zugriff.
 - Die LiveMap bleibt der Ausgangspunkt der deutschlandweiten Spielwelt.
   Der spätere Modus öffnet den ausgewählten Zug und bietet einen klaren
   Rückweg zur Karte; eine zusätzliche regionale Welt oder ein sechster
@@ -58,15 +65,54 @@ Der Browser erhält nur eine Projektion. Er entscheidet weder über Fahrgastzahl
 und Fahrberechtigung noch über Dialogausgang, EBE-Höhe, Betriebshalt,
 Ressourcenbelegung, Abfahrtsrecht, Polizeireaktion oder Buchung.
 
-Jeder Vertrag, jedes Kommando und jedes Event trägt `world_id`, explizite
-Simulationszeit, Schema- beziehungsweise Releaseversion und eine stabile
-Kausalitätskennung. Im Simulationskern gibt es kein `now()`, keine
-Gleitkommazahl im zustandsrelevanten Pfad und keinen Datenbankzugriff.
+Jeder zustandsführende Vertrag, jedes Kommando und jedes Event trägt Weltbindung
+(`world_id` in Persistenz/Rust, `worldId` an der JSON-Grenze), explizite
+Simulationszeit in ganzzahligen Millisekunden, Schema- beziehungsweise
+Releaseversion und eine stabile Kausalitätskennung. Unterobjekte erben diese
+Bindung ausschließlich aus ihrem validierten Container; sie dürfen nicht
+weltlos einzeln übernommen werden. Geld ist Integer-Cent, Innenraumpositionen
+sind Integer-Millimeter. JSON-Werte müssen sichere Ganzzahlen sein. Im
+Simulationskern gibt es kein `now()`, keine Gleitkommazahl im zustandsrelevanten
+Pfad und keinen Datenbankzugriff. Unbekannte Schemas, Felder, Referenzen und
+Releasebindungen werden abgelehnt.
+
+Eine reine Ableitung besitzt keinen eigenen Geschäftsübergang. Ihre
+`demandStateHash`-/`operationalReceiptId`-Bindung verweist auf den verursachenden
+M10-/Betriebsbeleg; sie erzeugt kein zusätzliches Domain-Event nur für einen
+Leseaufruf. Assetdefinitionen erhalten ihre Weltbindung erst beim Pin der Welt.
+
+### 2.1 Nachvollziehbare Aktions- und Autoritätsgrenzen
+
+Die folgende Matrix definiert die erforderlichen Domainübergänge. Die
+Ereignisnamen sind der M15-Vertrag für die folgenden Arbeitspakete, keine
+Behauptung einer bereits vorhandenen produktiven Ereigniskette.
+
+| Sichtbarer Vorgang | Source of Truth und Eingang | Domain-Event / Ergebnis | Ressourcenwirkung | Buchung |
+|---|---|---|---|---|
+| Eigenen Zug betreten | M2-Zugang, M4-Zuglauf, M5-Nutzungsrecht, M10-Manifest; Sitzungsanlage | `ConductorSessionStarted` | Keine neue Betriebsbelegung | Keine |
+| Fahrgäste erscheinen, steigen ein oder aus | M10 und bestätigter M4-Betriebsfortschritt; Projektion ohne Spielerkommando | `demand.evaluated` → `PassengerProjectionV1` | Übernimmt den belegten Zug, ändert keine Zugkapazität | Keine |
+| Im Zug bewegen | M15-Sitzungszustand und M5-abgeleitetes Layout; `move` | `ConductorPositionChanged` | Nur Innenraumkollision, keine Gleis- oder Signalentscheidung | Keine |
+| Fahrkarte prüfen | M10-Sachverhalt, M15-Kontrollzustand; `start_inspection` | `FareInspectionStarted` | Keine zusätzliche Haltezeit | Keine |
+| Nachfragen oder Kontrolle ohne Maßnahme beenden | Gepinnter Dialog, verdeckter Fall; `choose_dialogue_option` | `PassengerEncounterAdvanced` / `FareInspectionClosed` | Die Weltzeit läuft weiter; kein Abfahrtsverbot | Keine |
+| Reguläre oder vorläufige EBE ausstellen | M15-Feststellung und M6-Tarif-/Wirtschaftsregeln; zulässige `choose_dialogue_option` | `FareClaimOpened` | Kein Betriebshalt | Einmalige offene Forderung durch M6 |
+| Polizei anfordern | M15-Fall, M4-Zielhalt und Weltpolicy; `request_police` | `FareControlHoldRequested` | Bindende künftige Warteentscheidung; noch kein Anhalten auf Strecke | Keine sofortige Zahlung oder Prämie |
+| Zusätzlicher Aufenthalt am Zielhalt | M8-Abfahrtsprüfung und M4-Istlage; expliziter Simulationsfortschritt | `FareControlHoldActivated`, `DepartureAuthorityWithheld` | Tatsächliche Ressourcen bleiben belegt | Kosten-/Verspätungsbelege für spätere M6-Abrechnung |
+| Polizeivorgang oder Höchstwartezeit endet | Gepinnte M15-Reaktion und explizite Zeit | `PoliceResponseResolved`, `FareControlHoldReleased` | Wartegrund entfällt; M8 muss erneut Abfahrt erlauben | Fallabschluss ist Eingabe der M6-Abrechnung |
+| Folgezüge warten, Anschlüsse ändern sich | Gemeinsame M8/M4-Ressourcenautorität, danach M10 | Bestehende Belegungs-/Verspätungsereignisse, revidiertes `demand.evaluated` | Normale Priorisierung aller EVU und Zugarten | M6 bewertet nachgewiesene Vertragsfolgen und Pönalen |
+| Späterer Nachweis, Zahlung oder Ausfall | Gepinnter Fall und `EconomyRelease`; fälliger Weltzeitpunkt | `FareClaimReduced`, `FarePaymentReceived`, `FareClaimWrittenOff`, `FareControlRewardSettled` | Keine | Ausgeglichene, idempotente M6-Buchung nach Abschnitt 10 |
+| Zur Karte zurückkehren, Lease ablaufen oder Fahrt beenden | M15-Sitzung; `end_session` oder expliziter Ablauf | `ConductorSessionEnded` | Bindender Halt und bestehende Ressourcen bleiben bestehen | Bereits entstandene Forderungen bleiben bestehen |
+
+Abgelehnte Kommandos erzeugen weder Fachzustand noch Buchung. Die
+autorisierende Stelle darf ihren Erfolg erst nach atomarem Zustands-/Eventcommit
+quittieren. M15 kann keine Abfahrtsfreigabe, Nachfragekorrektur oder Ledgerzeile
+direkt setzen. Die technische Ausführung der M8/M4-Regeln folgt der gemeinsamen
+[Operational-v2-Betriebsengine](betriebsengine.md); eine zweite M15-Engine ist
+ausgeschlossen.
 
 ## 3. Erweiterung des Personenverkehrsmodells M10
 
-M10 wird vom reinen SPFV-Ausbau zu einem gemeinsamen
-Personenverkehrsnachfragemodell für SPNV und SPFV erweitert. Es bleibt die
+M10 liefert das gemeinsame Personenverkehrsnachfragemodell für SPNV und SPFV.
+Der versionierte Eingang steht in [Personenverkehr](personenverkehr.md). Es bleibt die
 einzige fachliche Quelle für Reisen, Zugwahl, Ein- und Aussteiger, Auslastung
 und objektiven Fahrberechtigungsstatus. M15 darf keine zusätzlichen Fahrgäste
 oder Fälle ohne Fahrberechtigung erfinden.
@@ -90,6 +136,18 @@ M10 erzeugt pro Zuglaufabschnitt ein unveränderliches `PassengerManifestV1`:
 | `fareFact` | gültig, gültig aber momentan nicht vorzeigbar oder ungültig |
 | `farePolicyProvenance` | `observed` oder `balanced` |
 
+Die Tabelle beschreibt Container und Fahrgasteinträge zusammen. Die konkreten
+Feldnamen, Schachtelung und Fahrberechtigungswerte folgen dem M10-Vertrag;
+M15 definiert keinen zweiten Manifesttyp. Eine Revision ersetzt den aktuellen
+Snapshot atomar, verändert jedoch keine vorherige Revision im Journal.
+
+`projectionMode = forecast` ist ausschließlich Prognose. Selbst nach Ablauf
+der Planabfahrt ist sie kein Beweis eingestiegener Personen. Eine tatsächliche
+Innenraumprojektion verlangt ein `progress_bound`-Ergebnis mit passenden
+`DemandOperationalProgressV1`-Haltquittungen. Fehlende oder widersprüchliche
+Quittungen sperren die Tatsachendarstellung; weder Browserzeit noch ein
+planmäßiger Streckenabschnitt ersetzen sie.
+
 M10 darf die Gesamtnachfrage als Kohorten berechnen. Einzelne
 `passengerKey`-Werte werden für einen konkreten Zuglauf deterministisch aus
 Kohorte und laufender Nummer materialisiert; Millionen dauerhafte
@@ -104,12 +162,101 @@ Manifestprojektion. Ein bereits begonnener Fall bleibt über den
 ### 3.2 FareCompliancePolicyV1
 
 Eine `FareCompliancePolicyV1` ist Teil des gepinnten `DemandRelease`. Sie legt
-die Verteilung der Fahrberechtigungszustände deterministisch nach Tarif- und
-Vertriebszugang fest. Belastbare, rechtlich freigegebene Daten werden als
+die Verteilung der Fahrberechtigungszustände deterministisch gemäß dem
+M10-Vertrag fest. Tarif- und Vertriebsfakten beeinflussen die Reise- und
+Erwerbslage, erzeugen aber keine zweite Kontrollverteilung.
+Belastbare, rechtlich freigegebene Daten werden als
 `observed` ausgewiesen; ersatzweise verwendete Spielwerte heißen sichtbar
 `balanced` und dürfen nicht als reale Schwarzfahrerstatistik bezeichnet
 werden. Erscheinungsbild, Alter, Geschlecht, Herkunft, Behinderung oder andere
 geschützte Merkmale beeinflussen den Status nie.
+
+### 3.3 PassengerProjectionV1: Übergabe an den Innenraum
+
+`ProjectConductorPassengersInputV1` enthält die serverseitige
+`ConductorPassengerBindingV1`, das vollständige `DemandEvaluationV1`, den
+zugehörigen `TrainServiceV1`, `InteriorPassengerPlacesV1` und optional die
+bisherige `PassengerProjectionV1`. Die Bindung pinnt Welt, Periode, M10-Release
+und -Seedhash, Zuglauf, EVU, Revision, Nachfragezustand und Betriebsquittung.
+Ein selbst angegebener Hash ist kein Herkunftsnachweis. Nur der autorisierte
+Plattformdienst darf diese Eingänge aus committed Weltzuständen zusammenstellen;
+Clientparameter dürfen weder Manifest noch Layout oder Vorprojektion ersetzen.
+
+Der reine Rust-Projektor ermittelt den aktuellen Zugabschnitt aus den
+tatsächlichen Haltquittungen. Er prüft die M10-Erhaltung und übernimmt genau
+dessen Personen, Komfortklasse, Platzbedarf und Sitz-/Stehplatzzuteilung. Er
+erzeugt keine Nachfrage, Tarifverteilung, Betriebsquittung oder Geometrie.
+Fehlende Plätze, doppelte Kennungen, falsche Bindungen und widersprüchliche
+Abschnittsbelegung führen zum Fehler, niemals zur Kürzung des Manifests.
+
+`InteriorPassengerPlacesV1` ist die schmale M15.2-Eingangsgrenze für das in
+M15.4 zu erzeugende Layout: stabile Platz- und Fahrzeugkennungen, ganzzahlige
+Millimeterposition, Sitz/Stehplatz, Komfortklasse und zulässiger Sonderbedarf.
+Der Kapazitätsnachweis muss den verwendeten M10-Angebotsfakten entsprechen.
+Ein technisch gültiges Platzinventar ersetzt keinen Nachweis seiner Herkunft
+aus der wirklichen Fahrzeugkonfiguration.
+
+`PassengerProjectionV1` enthält ausschließlich sichtbare Fahrgastdaten:
+`passengerKey`, `placeId`, `vehicleId`, `xMm`, `yMm`, `comfortClass`,
+`spaceNeeds`, `posture`, `appearanceVariant` und `activity`, außerdem die
+gemeinsame Zustandsbindung, Abschnitt, Phase, expliziten Zeitstand und
+Integritätshash. Personenzahlen werden exakt aus dieser Liste gelesen.
+`fareFact`, `journeyChainId`, Reiseanlass,
+Tarifgewichte, Seed und zukünftige Dialoge gehören nicht in den Clientzustand.
+Die synthetischen Fahrgastkennungen sind nur über die private, autorisierte
+Zugansicht zugänglich; öffentliche Belegungsansichten bleiben aggregiert.
+
+Verbleibende Fahrgäste behalten bei Abschnitts- oder Nachfragewechsel ihren
+passenden Platz aus der vorherigen Projektion, soweit die vollständige neue
+Belegung damit zulässig ist. Neue Fahrgäste erhalten freie, passende Plätze
+deterministisch; Eingabereihenfolge darf die Zuteilung nicht beeinflussen.
+Blockiert ein Fahrgast ohne Sonderbedarf den einzig passenden Sonderplatz,
+darf eine deterministische Umplatzierung einen freien kompatiblen Platz für
+ihn nutzen. Kein Fahrgast verschwindet dabei; unveränderte Belegungen bleiben
+stabil, erforderliche Ortsänderungen erscheinen in der neuen Projektion.
+Die bisherige Projektion und ihre Bindung sind Teil des Restores.
+Ein Integritätshash erkennt beschädigte Snapshots, authentifiziert
+aber keine vom Browser eingesandten Daten. Geschütztes Erscheinungsbild und
+Fahrberechtigung besitzen keine kausale Kopplung; die Darstellung verwendet
+einen getrennten, ausschließlich visuellen Hash-Teilstrom.
+
+Die Revision ersetzt die vollständige logische Personenmenge atomar. Eine
+spätere Renderansicht darf Figuren außerhalb des Ausschnitts ausblenden oder
+Animation vereinfachen; sie muss jede Person weiter adressieren und erreichen
+können. Kollisionsfreie Wege und Interaktionsreichweite sind der nachgelagerte
+M15.4-/M15.8-Nachweis, kein Resultat des Platzprojektors allein.
+
+Die Transportschemas heißen `conductor-passenger-projection-input/v1`,
+`interior-passenger-places/v1` und `passenger-projection/v1`. Vor der ersten
+bestätigten Abfahrt ist kein belegter Abschnitt verfügbar. Bei bestätigter
+Ankunft vor der nächsten Abfahrt bleibt die ankommende Personenmenge erhalten;
+`phase = at_stop` und `activity = alighting` kennzeichnen beginnende Ausstiege.
+Diese Personen dürfen nicht erneut kontrolliert werden. Die bestätigte
+Weiterfahrt wechselt atomar auf den folgenden Abschnitt und dessen
+Ein-/Aussteiger. Nach bestätigter Endankunft liefert der Projektor
+`train_completed`; der spätere Sitzungsdienst beendet die Sitzung kontrolliert.
+M15.2 behauptet keine zusätzliche Tür- oder Boardingquittung.
+
+Die V1-Grenze akzeptiert höchstens 128 MiB JSON, 100 Halte je Zug,
+300.000 Innenraumplätze und insgesamt eine Million Manifesteinträge.
+Die M10-Kapazitätsfelder sind jeweils auf 100.000 begrenzt; Sitz-, Steh-
+und Premiumplätze müssen dem Platzinventar exakt entsprechen. Jeder Platz
+besitzt ein bis vier eindeutige zugelassene Bedarfe. Diese technischen
+Obergrenzen sind keine Freigabe einer entsprechenden realen Formation.
+Der bestehende Plattform-Checkpoint behält seine engere 16-MiB-Grenze.
+Kennungen umfassen höchstens 128 UTF-8-Bytes ohne Steuerzeichen, Hashes
+64 kleingeschriebene Hexadezimalzeichen. Zeiten und nichtnegative
+Millimeterkoordinaten bleiben sichere JSON-Ganzzahlen bis 2^53−1.
+
+Der Layouthash ist SHA-256 über den vollständigen V1-Datensatz in der
+Feldreihenfolge seines Rust-Vertrags, mit leerem `layoutHash`, nach `placeId`
+sortierten Plätzen und sortierter Bedarfsliste. Der Projektionshash verwendet
+entsprechend den vollständigen Datensatz mit leerem `stateHash`; die Ausgabe
+sortiert Fahrgäste nach `passengerKey`. Die Darstellung zieht aus dem
+getrennten Teilstrom `conductor_appearance_v1` eine Variante von 0 bis 255.
+Diese Kennung bezeichnet noch kein freigegebenes Grafikasset. Platzwahl
+verwendet den eigenen Teilstrom `conductor_places_v1`. Identische Eingänge
+erzeugen identische Ergebnisse ohne Systemzeit oder Zufallsquelle.
 
 ## 4. Zug, Sitzung und Fahrgastprojektion
 
@@ -122,8 +269,29 @@ geschützte Merkmale beeinflussen den Status nie.
   Nutzungsberechtigung erneut.
 - Reconnect und Seitenneuladen stellen Spielerposition, Zugzustand,
   Manifestrevision und aktiven Dialog wieder her.
-- Endet die Fahrt oder wechselt sie in einen `ExternalLeg`, endet die Sitzung
+- Fahrtende oder entfallende Nutzungsberechtigung beendet die Sitzung
   kontrolliert. Ein bereits bindender Betriebshalt bleibt bestehen.
+- Neue Spielangebote besitzen nach E33 keine Außenläufe. Nur ein historischer
+  Replay mit `ExternalLeg` verwendet den alten kontrollierten Sitzungsabschluss;
+  M15 führt keinen neuen Außenlaufpfad ein.
+
+Die Sitzung führt `sessionId`, `worldId`, `operatorId`, `accountId`,
+`trainRunId`, Revision, expliziten Zeitstand, Spielerposition, Manifest- und
+Projektionsbindung, aktiven Fall, Releasepins, Lease-Ende und SSE-Sequenz.
+`active` kann durch Verbindungsverlust zu `detached` werden; nur derselbe
+berechtigte Spieler darf innerhalb der Lease dieselbe Sitzung fortsetzen.
+`ended` ist endgültig. Eine getrennte Sitzung reserviert bis zum expliziten
+Lease-Ende weiterhin Zug und Spieler. Ein zweiter Browser erhält keine zweite
+Sitzung und keinen zweiten Dialogfortschritt. Lease-Dauer und Kommandogrenzen
+sind versionierte Weltparameter; eine Clientuhr verlängert sie nicht.
+
+Erneuter Einstieg und jedes Kommando prüfen die Berechtigung im selben
+serialisierten Weltübergang wie die Mutation. Gleicher Idempotenzschlüssel
+und gleicher Inhalt liefern das ursprüngliche Ergebnis; anderer Inhalt unter
+derselben Kennung wird abgelehnt. Eine veraltete Revision erfordert einen neuen
+Snapshot. Fehlende SSE-Sequenzen werden aus dem Journal nachgeliefert oder
+durch einen vollständigen Snapshot ersetzt. Offline-Kommandos werden nicht
+nachträglich gegen einen inzwischen anderen Fahrgastzustand ausgeführt.
 
 ### 4.2 1:1-Darstellung
 
@@ -273,10 +441,28 @@ laufende Begegnung behält ihren gepinnten Release über einen Periodenwechsel.
 
 Das erhöhte Beförderungsentgelt wird als EBE beziehungsweise Forderung
 bezeichnet, nicht als Bußgeld. Die Grundforderung beträgt das Doppelte des
-Fahrpreises, mindestens 60 Euro. Wird ein bei der Kontrolle gültiger
-persönlicher Fahrausweis innerhalb einer Woche nachgewiesen, wird die Forderung
+gewöhnlichen Fahrpreises der belegten Strecke, mindestens 60 Euro. Wird ein
+bei der Kontrolle gültiger Fahrausweis innerhalb einer Woche nachgewiesen, wird die Forderung
 automatisiert auf 7 Euro reduziert. Grundlage ist
 [§ 6 EVO](https://www.gesetze-im-internet.de/evo_2023/__6.html).
+
+Der Fall trennt `open`, `closed_without_claim`, `claim_open` und
+`settled`. `claim_open` kann regulär oder vorläufig sein. Der gespeicherte
+Kontrollbeginn pinnt Fahrgast, Zugteilreise, Manifestrevision, objektiven
+Sachverhalt, offenbare Hinweise, Dialogrelease, Tarifbasis, Nachweisfrist und
+Kausalitätskennung. Ein späterer Nachfrage- oder Periodenwechsel darf diese
+Fakten nicht rückwirkend verändern. M15 erfasst keine echten Namen,
+Ausweisnummern oder Adressen; eine Identitätsfeststellung ist ein synthetisches
+Ergebnis des Falls.
+
+Ein reiner Vertriebsausfall oder eine technische Präsentationsstörung beweist
+keine fehlende Fahrberechtigung. Die Erwerbsausnahme aus § 6 Absatz 4 EVO wird
+als eigener, aus den gepinnten Vertriebsfakten belegter Befund berücksichtigt;
+sie darf nicht aus Aussehen, Dialogton oder einer bloßen Behauptung abgeleitet
+werden. Fehlt die notwendige Tarif-/Erwerbslage, wird keine reguläre Forderung
+behauptet. Die Nachweisfrist verwendet explizite Weltzeit und die gepinnte
+Tagesdefinition. Ein Nachweis des bei der Kontrolle gültigen Fahrausweises
+innerhalb dieser Frist reduziert auch bei späterer automatisierter Verarbeitung.
 
 Eine EBE wird zunächst als offene Forderung gebucht. Zahlung, Reduzierung,
 Bearbeitungskosten und Zahlungsausfall folgen später deterministisch aus dem
@@ -285,6 +471,30 @@ Forderung kann reduziert, abgeschrieben oder mit Bearbeitungskosten belastet
 werden.
 
 ## 9. FareControlHoldV1 und betriebliche Wirkung
+
+### 9.0 FareControlPolicyV1
+
+Die Welt pinnt vor Aktivierung einen unveränderlichen Vertrag mit folgenden
+Pflichtfeldern. Es gibt keinen stillen Standard bei fehlender Policy.
+
+| Feld | Verbindliche Bedeutung |
+|---|---|
+| `schema`, `policyId`, `revision` | `zugfolge-fare-control-policy/v1`, stabile Kennung und positive Revision |
+| `worldId`, `schedulePeriodId`, `contentHash` | Welt-/Periodenpin und Prüfsumme der freigegebenen Policybytes |
+| `maxPoliceHoldsPerTrainRun` | In V1 genau `1`, unabhängig von Spieler- oder Sitzungswechsel |
+| `eligibleReasons` | Genau `identity_refusal` und `concrete_danger`; Betrunkenheit oder ungültiges Ticket allein reichen nicht |
+| `targetRule` | `next_unreached_scheduled_passenger_stop`; kein Streckenhalt oder erfundener Ersatzbahnhof |
+| `providerByStopId` | Freigegebene Zuständigkeit für den konkreten Zielhalt; fehlender Eintrag sperrt die Anforderung |
+| `maxWaitMs` | Positive sichere Ganzzahl; maximale zusätzliche Wartezeit ab betrieblicher Aktivierung |
+| `policeResponseModelId`, `policeResponseModelHash` | Gepinntes lokales Modell für Verfügbarkeit, Reaktionszeit und Ergebnis; Auswahl aus benanntem Seed-Teilstrom |
+| `publicCause` | Genau `authority.police.fare-control`; öffentliche Texte bleiben datensparsam |
+
+Eine laufende Anforderung behält ihre Policy und ihr Reaktionsmodell auch
+über den Periodenwechsel. Die neue Periode darf weder einen zweiten Halt für
+denselben Zuglauf erlauben noch die alte Höchstwartezeit verlängern. Ein
+Polizeimodell definiert ganzzahlige Wahrscheinlichkeiten in Basispunkten und
+Weltzeitdauern, keine externen Dienstaufrufe oder Echtzeitverfügbarkeitsabfrage.
+Tarifbeträge und Belohnungssätze bleiben ausschließlich im `EconomyRelease`.
 
 ### 9.1 Anforderung und Bündelung
 
@@ -305,6 +515,15 @@ Zuglauf, Fallkennungen, Zielhalt, Anforderungszeit, Ursache
 `authority.police.fare-control`, maximaler Wartefrist, deterministischem
 Polizeiergebnis, Zustandsrevision und Kausalitätskennung. Sitzungsende,
 Reconnect oder Browserabbruch heben ihn nicht auf.
+
+Der Haltzustand ist `requested` → `active` → `released`; ein vor Aktivierung
+entfallener Zielhalt oder Fahrtabbruch beendet die Anforderung mit erklärtem
+Ergebnis `target_unavailable`. Das verbraucht die einmalige Anforderung des
+Zuglaufes; M15 sucht nicht eigenmächtig einen anderen Zielhalt. Der autoritative
+Betrieb entscheidet weiterhin über eine sichere Räumung oder Ersatzplanung.
+Ein aktiver Halt wird durch UI-Abbruch niemals freigegeben. Aktivierung und
+Höchstwartefrist beziehen sich auf explizite Ist-Betriebsbereitschaft; normale
+Haltezeit zählt nicht zusätzlich als kontrollbedingte Wartezeit.
 
 ### 9.2 Aktivierung und Ressourcen
 
@@ -385,22 +604,42 @@ Kontrollprämie <= 4 * positive nettoEBE
 ```
 
 Der gesamte positive Tagesbeitrag aus Netto-EBE und Kontrollprämie ist auf
-0,5 Prozent der relevanten täglichen SPNV-Vertragserlöse begrenzt. Negative
+0,5 Prozent der relevanten täglichen SPNV-Vertragserlöse begrenzt.
 Bearbeitungskosten, Polizeihaltfolgen und Pönalen bleiben vollständig wirksam.
 Alle Werte liegen als Integer-Cent im `EconomyRelease`; es gibt keinen externen
 Dienst im heißen Pfad.
+
+Der Tagesdeckel gilt gemeinsam für alle Zugläufe, Spieler und Sitzungen eines
+EVU in derselben Welt. Bezugsgröße sind die belegten SPNV-Vertragserlöse des
+expliziten Welttages vor Kontrollfolgen; Forderungen, Nachfrageprognosen,
+Kontrollprämien und andere Geschäftsfelder erhöhen diese Grundlage nicht.
+Der Deckel in Cent ist `floor(max(0, VertragserlöseCent) * 50 / 10000)`;
+bei null Erlösen entsteht kein positiver Kontrollbeitrag. Fehlende
+Vertragsabrechnungsbelege erlauben keine vorgezogene Prämienfreigabe.
+Ganzzahlige Rechnung prüft Überläufe und rundet erst am Ergebnis ab.
+
+Der gepinnte M6-Abrechnungsvertrag weist offene Forderung, Zahlung, Reduzierung,
+Kosten, Abschreibung, Prämie und einen gegebenenfalls erforderlichen
+Deckelausgleich getrennt aus. Der Ausgleich begrenzt ausschließlich einen
+positiven Kontrollbeitrag; er erstattet keine negativen Folgen. Tagesabschluss
+und spätere Korrektur referenzieren Welt, EVU, Welttag, Fallbelege und
+Releaseversion. Wiederholung erzeugt keine zweite Prämie; Korrekturen erfolgen
+als zusätzliche ausgeglichene Ledgertransaktion, niemals durch Umschreiben
+eines früheren Belegs. Diese Ledgerwirkung bleibt M15.11-Abnahme.
 
 ## 11. Öffentliche Verträge und API
 
 M15 führt mindestens folgende versionierte Verträge ein:
 
 - `PassengerManifestV1`
+- `PassengerProjectionV1`
 - `FareCompliancePolicyV1`
 - `FareInspectionCaseV1`
 - `FareControlPolicyV1`
 - `FareControlHoldV1`
 - `ArtAtlasManifestV1`
 - `InteriorLayoutV1`
+- `InteriorPassengerPlacesV1`
 - `StationSceneV1`
 - `DialogueReleaseV1`
 - `PassengerEncounterV1`
@@ -420,6 +659,44 @@ trägt Sitzungs-ID, erwartete Revision und Idempotenzschlüssel.
 `PassengerEncounterV1` enthält nur bereits sichtbare Äußerungen, zulässige
 Antworten und offenbarte Hinweise. Verdeckter Ticketstatus, Gewichte und
 zukünftige Dialogknoten verlassen den Server nicht.
+
+Die API ist der Zielvertrag für M15.7/M15.8. Eine interne M15.2-Projektionsfunktion
+oder ein Test-CLI darf nicht als bereits betretbarer Modus angeboten werden.
+Die Vertragsgrenzen sind:
+
+| Vertragsfamilie | Autorität | Freigabe zur Darstellung |
+|---|---|---|
+| `PassengerManifestV1`, `FareCompliancePolicyV1` | M10 | Nur validierte Ableitungen; kein rohes Manifest |
+| `PassengerProjectionV1` | M15.2 aus M10 und M5-Fakten | Private autorisierte Ansicht; Abschnitt 3.3 |
+| `InteriorLayoutV1`, `InteriorPassengerPlacesV1` | M15.4 aus M5 | Geprüfte Geometrie und Platzinventar, keine Kapazitätserfindung |
+| `ArtAtlasManifestV1`, `StationSceneV1` | M15.3/M15.5 aus freigegebenen Releases | Nur freigegebene Assets und betriebliche Fakten |
+| `DialogueReleaseV1`, `FareInspectionCaseV1`, `FareControlPolicyV1` | M15-Server | Nur offenbarte Hinweise und zulässige Optionen |
+| `PassengerEncounterV1`, `ConductorSessionSnapshotV1`, `ConductorCommandV1` | M15-Sitzung | Eigener Spieler und Zug; Revision, Lease und Sequenz |
+| `FareControlHoldV1` | M15-Anforderung, M8/M4-Betriebsübergänge | Öffentlich nur betriebliche Ursache und Auswirkung |
+
+### 11.1 Datenschutz, Protokollierung und Aufbewahrung
+
+Synthetische Fahrgäste werden nicht mit realen Menschen verknüpft. Die
+kontobezogene Sitzungszuordnung ist dagegen personenbezogener Plattformzustand.
+Sie gehört zur Auskunfts-/Löschgrenze aus [Weltgerüst](weltgeruest.md) 10 und
+darf nicht untrennbar in einen unveränderlichen Betriebs- oder Ledgerbeleg
+eingebettet werden. Rechte werden auch für Wiederaufnahme, Export und
+Nachlieferung alter Deltas erneut geprüft. Zugwechsel oder Berechtigungsverlust
+räumt den privaten Clientcache.
+
+Allgemeine Logs und Metriken enthalten keine Fahrgastschlüssel, Kontokennungen,
+Dialogtexte, Rohmanifeste, Nachweisdaten oder SQL-Parameter. Geeignete Metriken
+sind aggregierte Anzahl projizierter Personen, Projektionsdauer,
+Ablehnungsgrund, Reconnect-/Snapshotbedarf und Kontrollhaltdauer. Labels sind
+begrenzte Kategorien; Welt-/Zug-/Fallkennungen sind keine Metriklabels.
+Private Diagnose darf nur über die vorhandene autorisierte Auditgrenze laufen.
+
+Manifest- und Fallsnapshots bleiben für bitgleiches Replay an ihre Releases
+gebunden. Die Kontozuordnung wird getrennt nach der veröffentlichten
+Aufbewahrungsregel entfernt; verbindliche Betriebs-, Ressourcen- und
+Buchungsbelege bleiben fachlich nachvollziehbar. Die noch offene
+Archiv-Purge-Grenze [#520](https://github.com/larynxberlin-rgb/Zugfolge/issues/520)
+wird durch diesen Vertrag nicht umgangen und bleibt ein Produktionsgate.
 
 ## 12. Nichtfunktionale Anforderungen
 

@@ -24,6 +24,7 @@ lesen, nicht raten.
 | `docs/infrastruktur.md` | Konfliktressourcen, Trassenvergabe, Fahrplanperiode, Kapazitätsschutz, Simulation, Livemap | Solver, Sperrzeiten, Planner, Livemap |
 | `docs/betrieb.md` | Betriebsprogramm, Fahrzeuge, Personal, Versorgung, Zusatzfahrten, Störungen, Baustellenfahrplan | Disposition, Flotte, Umläufe, Wartung, Baustellen |
 | `docs/fahrzeugkatalog.md` | Exakte Fahrzeugtypen, Feldbelege, Rechte-Gate, Welt-Seed und gemeinsame Fleet-/Operational-Projektion | Fahrzeugdaten recherchieren, freigeben, kompilieren oder an Operational v2 anbinden |
+| `docs/personenverkehr.md`, `docs/schaffnermodus.md` | M10-Nachfrage und Manifeste; kanonischer versionierter M15-Fachvertrag mit Autoritäts-, Projektions-, Kontroll- und Abnahmegrenzen | Nachfrage, Fahrgastprojektion oder Schaffnermodus bearbeiten |
 | `docs/stoerungen.md` | M8-Fachvertrag: Policies, Ursachenkennungen, Abfahrtsrechte, virtuelle Fahrdienstleiter, Ersatzplanung | Störungen, Baustellen, Ersatzverkehr, Verspätungsursachen |
 | `docs/betriebsengine.md` | Exakte Betriebswirklichkeit: Bewegung, Belegung, Stellwerk, FDL, Lokführer, Rangieren, Projektionen und Cutover | Simulationskern, LiveMap, RZÜ, operative InfraRelease-Artefakte |
 | `docs/betriebsengine-lastnachweis.md` | Reproduzierbarer E31-Kernbenchmark, Messergebnis und offene Systemlast-Gates | Lasttest oder Cutover-Abnahme der Betriebsengine |

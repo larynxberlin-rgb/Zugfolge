@@ -4,6 +4,7 @@ import { isAbsolute } from "node:path";
 
 export * from "./operational-simulation.js";
 export * from "./demand.js";
+export * from "./conductor.js";
 
 export const OPERATING_INITIALIZE_SCHEMA = "zugfolge-operating-world-initialize/v1" as const;
 export const OPERATING_STATE_SCHEMA = "zugfolge-operating-world-state/v1" as const;

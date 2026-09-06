@@ -19,6 +19,7 @@
         "crates/zugfolge-conflict/**",
         "crates/zugfolge-fleet/**",
         "crates/zugfolge-disruption/**",
+        "crates/zugfolge-conductor/**",
         "packages/runtime-native/**",
         "spikes/**"
       ],

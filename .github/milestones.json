@@ -333,7 +333,8 @@
       "status": { "core": "in_progress", "integration": "not_started", "operations": "not_started", "acceptance": "not_started" },
       "evidence": [
         { "label": "E29 und Autoritätsentscheidung", "url": "docs/adr/0029-schaffnermodus-als-serverautoritative-betriebsvertiefung.md" },
-        { "label": "Versionierter Fachvertrag", "url": "docs/schaffnermodus.md" }
+        { "label": "Versionierter Fachvertrag", "url": "docs/schaffnermodus.md" },
+        { "label": "M15.1/M15.2 Teilabnahme und offene Abhängigkeiten", "url": "docs/m15-abnahme.md" }
       ],
       "items": [
         { "number": 211, "kind": "issue", "labels": ["area:roadmap", "type:documentation", "priority:p1"] },

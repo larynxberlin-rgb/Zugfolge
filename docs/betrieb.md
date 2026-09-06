@@ -356,15 +356,11 @@ einen noch laufenden Leasingvertrag.
 
 Der Schaffnermodus leitet ein `InteriorLayoutV1` aus der tatsächlichen
 Formation sowie `StructuralConfiguration` und `InteriorConfiguration` ab.
-Wagenlänge, Übergänge, Türen, Sitz- und Stehplätze, Mehrzweckflächen, WC,
-Fahrrad- und Barrierefreiheitsbereiche bestimmen Geometrie, Begehbarkeit und
-Kapazitätsnachweis. Die Darstellung ist generisch-konfigurationsgetreu und
-behauptet keine exakte reale Baureihenarchitektur.
-
-Ein Fahrzeug ohne vollständige Konfiguration ist nicht betretbar; der fehlende
-Nachweis wird sichtbar ausgewiesen. Die Innenraumprojektion ändert weder die
-Formation noch die betriebliche Kapazität. Vollständiger Vertrag:
-[`schaffnermodus.md`](schaffnermodus.md) 4 und 5.
+M5 bleibt Quelle für Konfiguration und Kapazität. Der vollständige
+Geometrie-, Platz- und Begehbarkeitsvertrag einschließlich fehlender
+Konfigurationen steht in [`schaffnermodus.md`](schaffnermodus.md) 3.3, 4 und 5.
+Der M15.2-Projektor nimmt das belegte Platzinventar nur entgegen; dessen
+Erzeugung und Freigabe bleibt M15.4.
 
 ## 4. Versorgung, Instandhaltung und Zusatzfahrten
 

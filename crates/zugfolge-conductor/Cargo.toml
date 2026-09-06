@@ -1,0 +1,17 @@
+[package]
+name = "zugfolge-conductor"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+zugfolge-demand = { path = "../zugfolge-demand", version = "0.0.0" }
+
+[lints]
+workspace = true
