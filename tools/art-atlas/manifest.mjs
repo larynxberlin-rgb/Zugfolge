@@ -2,7 +2,7 @@
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { ART_DIRECTIONS, PASSENGER_APPEARANCES, artSha256, parseArtAtlasManifest } from "../../packages/conductor-art/dist/index.js";
+import { ART_DIRECTIONS, PASSENGER_APPEARANCES, VEHICLE_VARIANTS, artSha256, parseArtAtlasManifest } from "../../packages/conductor-art/dist/index.js";
 
 export const RELEASE_DIRECTORY = resolve(dirname(fileURLToPath(import.meta.url)), "../../assets/conductor-art/v1");
 const RELEASE_ID = "conductor-art-2026.1";
@@ -10,6 +10,9 @@ const REFERENCE_KEYS = {
   seated: ["passenger-red", "passenger-teal", "passenger-amber", "passenger-slate", "conductor"],
   "interior-topdown": ["train"],
   "accessories-north-south": ["accessories"],
+  ...Object.fromEntries(VEHICLE_VARIANTS.map((variant) => [`vehicle-${variant.id}`, ["train"]])),
+  "vehicle-regional-double": ["vehicle-regional-double-initial"],
+  "vehicle-regional-double-initial": ["train"],
 };
 const PENDING = { status: "pending", reviewerId: null, evidenceId: null };
 
@@ -29,7 +32,7 @@ function assembleArtManifest(directory, includeReview) {
   const evidence = [{ id: "technical-preparation", path: "prepared.json", sha256: artSha256(readFileSync(preparedPath)), mediaType: "application/json" }];
   const generations = new Map();
   const sourceKeys = new Set(prepared.assets.map((asset) => asset.sourceKey));
-  for (const key of [...sourceKeys]) for (const reference of REFERENCE_KEYS[key] ?? []) sourceKeys.add(reference);
+  for (const key of sourceKeys) for (const reference of REFERENCE_KEYS[key] ?? []) sourceKeys.add(reference);
   for (const key of [...sourceKeys].sort()) {
     check(/^[a-z0-9-]+$/.test(key), "Ungültige Generierungskennung.");
     const generationPath = `evidence/generation-${key}.json`, generation = readJson(resolve(directory, generationPath));
@@ -54,7 +57,7 @@ function assembleArtManifest(directory, includeReview) {
         model: { provider: "openai", name: declared ? model.name : null, revision: declared ? model.version : null, verification: declared ? "provider_declared" : "provider_undisclosed", evidenceId: `generation-${asset.sourceKey}` }, evidenceId: `generation-${asset.sourceKey}` },
       review: { visual: PENDING, logoAndText: PENDING, contrast: PENDING, provenance: PENDING } };
   });
-  const manifest = parseArtAtlasManifest({ schemaVersion: "art-atlas-manifest/v1", releaseId: RELEASE_ID, status: "candidate", catalogVersion: "conductor-art-catalog/v1", pixelsPerMetre: 32,
+  const manifest = parseArtAtlasManifest({ schemaVersion: "art-atlas-manifest/v1", releaseId: RELEASE_ID, status: "candidate", catalogVersion: "conductor-art-catalog/v2", pixelsPerMetre: 32,
     rendering: { projection: "orthogonal_top_down", zoomSteps: [1, 2, 3, 4], sampling: "nearest_neighbor" }, palette: { id: "zugfolge-graphite-art-v1", colors: prepared.palette },
     files: prepared.files, references, evidence, assets, animations: prepared.animations,
     appearanceVariants: Array.from({ length: 256 }, (_, variant) => ({ variant, appearanceId: PASSENGER_APPEARANCES[variant % 4] })),

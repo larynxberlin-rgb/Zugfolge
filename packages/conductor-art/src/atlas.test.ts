@@ -1,7 +1,7 @@
 import { generateKeyPairSync, sign } from "node:crypto";
 import { deflateSync } from "node:zlib";
 import { describe, expect, it } from "vitest";
-import { ART_BRAND_COLORS, ART_DIRECTIONS, CONDUCTOR_APPEARANCE, PASSENGER_APPEARANCES, REQUIRED_STATIC_ASSETS } from "./catalog.js";
+import { ART_BRAND_COLORS, ART_DIRECTIONS, CONDUCTOR_APPEARANCE, PASSENGER_APPEARANCES, REQUIRED_STATIC_ASSETS, VEHICLE_VARIANT_ASSETS } from "./catalog.js";
 import { loadArtAtlasForWorld } from "./loader.js";
 import { parseArtAtlasManifest } from "./parse.js";
 import { decodeArtPng } from "./png.js";
@@ -71,6 +71,22 @@ function fixture(): { manifest: ArtAtlasManifestV1; resources: ArtAtlasResources
   return { manifest, resources: { files: new Map([["test-atlas.png", file]]), evidence: new Map([["test-evidence.json", evidence]]) } };
 }
 
+/** Ergänzt ausschließlich technische Testpixel für die generischen v2-Wagenrahmen. */
+function vehicleFixture(): { manifest: ArtAtlasManifestV1; resources: ArtAtlasResources } {
+  const { manifest, resources } = fixture();
+  manifest.catalogVersion = "conductor-art-catalog/v2";
+  const width = 96 * VEHICLE_VARIANT_ASSETS.length, height = 864;
+  const rgba = new Uint8Array(width * height * 4);
+  VEHICLE_VARIANT_ASSETS.forEach((id, index) => {
+    manifest.assets.push({ ...structuredClone(manifest.assets[0]!), id, fileId: "synthetic-vehicles", category: "vehicle",
+      rect: { x: index * 96, y: 0, width: 96, height: 864 }, worldWidthMm: 3000, worldHeightMm: 27000, pivot: { x: 48, y: 432 } });
+    for (let y = 20; y < 40; y++) for (let x = 20; x < 40; x++) rgba.set([16, 20, 25, 255], (y * width + index * 96 + x) * 4);
+  });
+  const file = png(width, height, rgba);
+  manifest.files.push({ id: "synthetic-vehicles", path: "test-vehicles.png", sha256: artSha256(file), widthPx: width, heightPx: height, sourceScale: 1 });
+  return { manifest, resources: { ...resources, files: new Map([...resources.files, ["test-vehicles.png", file]]) } };
+}
+
 const bytes = (manifest: ArtAtlasManifestV1): Uint8Array => Buffer.from(JSON.stringify(manifest));
 const codes = (manifest: ArtAtlasManifestV1, resources: ArtAtlasResources): string[] => inspectArtAtlas(bytes(manifest), resources).issues.map((issue) => issue.code);
 
@@ -116,6 +132,41 @@ describe("Vollständiger versionierter Grafikvertrag", () => {
     const reversed = inspectArtAtlas(bytes(manifest), resources);
     expect(reversed.issues).toEqual(first.issues); expect(reversed.statistics).toEqual(first.statistics);
     expect(reversed.manifestSha256).not.toBe(first.manifestSha256);
+  });
+
+  it("verlangt für v2 alle 14 Wagenfamilienteile zusätzlich zum unveränderten v1-Korpus", () => {
+    const { manifest, resources } = vehicleFixture();
+    const report = inspectArtAtlas(bytes(manifest), resources);
+    expect(report.issues).toEqual([]);
+    expect(report.activationEligible).toBe(true);
+    expect(report.statistics.assets).toBe(186);
+    expect(report.statistics.animations).toBe(60);
+    const legacy = fixture();
+    legacy.manifest.catalogVersion = "conductor-art-catalog/v2";
+    const missing = inspectArtAtlas(bytes(legacy.manifest), legacy.resources).issues.filter((issue) => issue.code === "catalog_asset_missing");
+    expect(missing.map((issue) => issue.path).sort()).toEqual(VEHICLE_VARIANT_ASSETS.map((id) => `catalog.${id}`).sort());
+    expect(() => parseArtAtlasManifest({ ...manifest, catalogVersion: "conductor-art-catalog/v3" })).toThrow("schema_enum_invalid");
+  });
+
+  it("blockiert fehlende Oberdecks, falsche Familienteile, Rahmenmaße und verschobene Deckpivots", () => {
+    const { manifest: original, resources } = vehicleFixture();
+    const mutate = (id: string, change: (asset: ArtAtlasAssetV1) => void): ArtAtlasManifestV1 => {
+      const manifest = structuredClone(original); change(manifest.assets.find((asset) => asset.id === id)!); return manifest;
+    };
+    for (const family of ["regional-double", "intercity-double"]) {
+      const manifest = structuredClone(original), id = `vehicle.${family}.upper`;
+      manifest.assets = manifest.assets.filter((asset) => asset.id !== id);
+      expect(inspectArtAtlas(bytes(manifest), resources).issues).toContainEqual({ code: "catalog_asset_missing", path: `catalog.${id}` });
+      const wrong = mutate(id, (asset) => { asset.id = `vehicle.${family}.body`; });
+      expect(codes(wrong, resources)).toContain("vehicle_variant_part_unknown");
+      expect(codes(wrong, resources)).toContain("catalog_asset_missing");
+    }
+    const singleUpper = mutate("vehicle.intercity-single.body", (asset) => { asset.id = "vehicle.intercity-single.upper"; });
+    expect(codes(singleUpper, resources)).toContain("vehicle_variant_part_unknown");
+    const dimensions = mutate("vehicle.dining.body", (asset) => { asset.rect.width = 64; asset.worldWidthMm = 2000; });
+    expect(codes(dimensions, resources)).toContain("vehicle_frame_dimensions_invalid");
+    const pivot = mutate("vehicle.regional-double.upper", (asset) => { asset.pivot.x++; });
+    expect(codes(pivot, resources)).toContain("vehicle_variant_geometry_mismatch");
   });
 
   it("blockiert unbekannte Felder, Pfadausbruch, Bruchzahlen und unbekannte Modellrevisionen", () => {

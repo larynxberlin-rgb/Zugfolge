@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { ART_BRAND_COLORS, ART_DIRECTIONS, CONDUCTOR_APPEARANCE, PASSENGER_APPEARANCES, REQUIRED_STATIC_ASSETS } from "./catalog.js";
+import { ART_BRAND_COLORS, ART_DIRECTIONS, CONDUCTOR_APPEARANCE, PASSENGER_APPEARANCES, VEHICLE_VARIANTS, VEHICLE_VARIANT_ASSETS, requiredStaticAssets } from "./catalog.js";
 import { ArtAtlasError, invariant } from "./errors.js";
 import { parseArtAtlasManifest } from "./parse.js";
 import { decodeArtPng } from "./png.js";
@@ -123,9 +123,24 @@ function inspectParsed(manifest: ArtAtlasManifestV1, bytes: Uint8Array, resource
       frameHashes.set(asset.id, digest.digest("hex"));
     }
   }
-  for (const required of REQUIRED_STATIC_ASSETS) {
+  for (const required of requiredStaticAssets(manifest.catalogVersion)) {
     const asset = assets.get(required);
     if (!asset || asset.category !== required.split(".")[0]) add("catalog_asset_missing", `catalog.${required}`);
+  }
+  if (manifest.catalogVersion === "conductor-art-catalog/v2") {
+    for (const asset of manifest.assets) {
+      if (asset.id.startsWith("vehicle.") && asset.id.split(".").length > 2 && !VEHICLE_VARIANT_ASSETS.includes(asset.id)) add("vehicle_variant_part_unknown", `assets.${asset.id}`);
+    }
+    for (const variant of VEHICLE_VARIANTS) {
+      const pivots = new Set<string>();
+      for (const part of variant.parts) {
+        const asset = assets.get(`vehicle.${variant.id}.${part}`), file = asset && files.get(asset.fileId);
+        if (!asset || !file) continue;
+        if (asset.rect.width !== 96 * file.sourceScale || asset.rect.height !== 864 * file.sourceScale || asset.worldWidthMm !== 3000 || asset.worldHeightMm !== 27000) add("vehicle_frame_dimensions_invalid", `assets.${asset.id}`);
+        pivots.add(`${asset.pivot.x / file.sourceScale}.${asset.pivot.y / file.sourceScale}`);
+      }
+      if (pivots.size > 1) add("vehicle_variant_geometry_mismatch", `vehicles.${variant.id}`);
+    }
   }
   const appearances = [...PASSENGER_APPEARANCES, CONDUCTOR_APPEARANCE];
   const animationKeys = manifest.animations.map((animation) => `${animation.appearanceId}.${animation.direction}.${animation.state}`);

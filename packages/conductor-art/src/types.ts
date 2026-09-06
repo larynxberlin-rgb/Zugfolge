@@ -2,6 +2,7 @@
 export type ArtReviewStatus = "pending" | "approved" | "rejected";
 export type ArtDirection = "north" | "east" | "south" | "west";
 export type ArtCategory = "actor" | "interior" | "vehicle" | "station" | "environment" | "signal" | "accessory";
+export type ArtCatalogVersion = "conductor-art-catalog/v1" | "conductor-art-catalog/v2";
 
 export interface ArtReviewV1 {
   status: ArtReviewStatus;
@@ -87,7 +88,7 @@ export interface ArtAtlasManifestV1 {
   schemaVersion: "art-atlas-manifest/v1";
   releaseId: string;
   status: "candidate" | "approved" | "rejected";
-  catalogVersion: "conductor-art-catalog/v1";
+  catalogVersion: ArtCatalogVersion;
   pixelsPerMetre: 32;
   rendering: {
     projection: "orthogonal_top_down";

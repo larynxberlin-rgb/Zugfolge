@@ -1,6 +1,7 @@
 # M15.3 — Pixelart-Korpus und ArtAtlasManifestV1
 
-Vertragsversion: `conductor-art-catalog/v1`. Der Atlas konkretisiert den
+Vertragsversionen: `conductor-art-catalog/v1` und die ergänzende Fassung
+`conductor-art-catalog/v2`. Der Atlas konkretisiert den
 [Schaffnervertrag](schaffnermodus.md) 5.1 und die gemeinsame Gestaltung aus
 [Design](design.md) und [ADR-0035](adr/0035-deutschlandweite-spieleroberflaeche.md).
 Er enthält eigenständig erzeugte Grafiken und deren prüfbare Herkunft. Er
@@ -85,7 +86,7 @@ Werte dürfen dasselbe Set verwenden; es werden keine 256 einzigartigen
 Figuren behauptet. `conductor-01` wird ausschließlich für die Spielerfigur
 verwendet. Fehlende Zuordnung darf keine unsichtbaren Fahrgäste erzeugen.
 
-### 2.2 Statische Motive
+### 2.2 Statische Motive des v1-Grundkatalogs
 
 Die folgenden Platzhalter in Kennungen bezeichnen jeweils das vollständige
 kartesische Produkt, keine frei wählbare Teilmenge.
@@ -104,6 +105,48 @@ Der Gesamtkorpus umfasst somit mindestens **172 zugeordnete Motive/Frames**.
 Ein Atlas darf sie auf mehrere PNG-Dateien verteilen. Die Anzahl von Dateien
 ist kein Vollständigkeitsmaß. Der ausführbare Katalog steht in
 [`catalog.ts`](../packages/conductor-art/src/catalog.ts).
+
+### 2.3 Generische Wagenfamilien in Katalog v2
+
+Katalog v2 behält die vollständige Pflichtmenge von v1 und ergänzt die folgenden
+**14 Fahrzeugteile**. Damit verlangt v2 insgesamt **186 Motive/Frames**, darunter
+66 statische Motive und unverändert 120 Figurenframes in 60 Animationen.
+Ein v1-Manifest bleibt mit seinem bisherigen Pflichtumfang gültig; ein als v2
+bezeichneter Atlas muss jede neue Kennung enthalten. Keine fehlende Oberetage
+darf durch Unteretage, Dach oder einen einstöckigen Wagen ersetzt werden.
+
+| Wagenfamilie | Kennung | Innenebenen | Pflichtteile |
+|---|---|---|---|
+| Regionaler Doppelstockwagen | `regional-double` | `lower`, `upper` | `lower`, `upper`, `roof` |
+| Einstöckiger Fernverkehrswagen | `intercity-single` | `body` | `body`, `roof` |
+| Einstöckiger Regionalwagen | `regional-single` | `body` | `body`, `roof` |
+| Fernverkehrs-Doppelstockwagen | `intercity-double` | `lower`, `upper` | `lower`, `upper`, `roof` |
+| Speisewagen | `dining` | `body` | `body`, `roof` |
+| Schlafwagen | `sleeper` | `body` | `body`, `roof` |
+
+Die Assetkennung lautet `vehicle.{Wagenfamilie}.{Pflichtteil}`. Dieser Namensraum
+ist in v2 auf die angegebenen Kombinationen beschränkt: Ein `body` ersetzt bei
+einem Doppelstockwagen kein Deck; `upper` oder `lower` sind bei den einstöckigen
+Familien ungültig. Die bisherigen Kennungen `vehicle.body`, `vehicle.front` und
+`vehicle.roof` bleiben zusätzlich erhalten. `VEHICLE_VARIANTS` exportiert die
+Tabelle als `id`, deutsches `label`, `decks` und `parts`; die Galerie und spätere
+Ansichten können ihre Auswahl daraus ableiten.
+
+Jedes der 14 neuen Teile besitzt einen Rahmen von **96 × 864 logischen Pixeln**
+und damit eine gepinnte generische Bildfläche von **3000 × 27000 Millimetern**.
+`sourceScale` gilt unverändert. Decks und Dach einer Familie haben denselben
+Pivot, damit ein Ansichtswechsel den Wagen nicht verschiebt. Diese Maße und
+grafischen Einrichtungen beschreiben keine reale Baureihe, keine M5-Konfiguration
+und keine Sitz-, Steh-, Schlafplatz- oder Bewirtungskapazität. Solche Fachwerte
+kommen weiterhin ausschließlich aus den zuständigen Fahrzeugdaten und dem
+Betrieb. Die Auswahl in einer Grafikprüfung erzeugt keine begehbare Ebene.
+
+Die sechs eigenen Generierungen gehen auf das vorhandene Original `train`
+zurück. Ihre Quellkennungen lauten `vehicle-{Wagenfamilie}`. Fünf verwenden
+`train` direkt; der gezielt korrigierte Regionaldoppelstockwagen verwendet
+`vehicle-regional-double-initial`, dessen tatsächliche Referenz wiederum
+`train` ist. Alle Stufen bewahren eigene Prompts, Originale und Herkunftsbelege.
+Die Erweiterung vergibt keine Rechte- oder Bildfreigabe.
 
 Innenraummodule zeigen begehbare Flächen, eindeutige Türen, Sitze, Steh- und
 Mehrzweckbereiche, WC, Führerstand und Wagenübergang. Fenster und Außenhülle
@@ -147,7 +190,7 @@ Referenzen werden abgelehnt. Kennungen sind innerhalb ihres Namensraums eindeuti
 | Feld | Erforderlicher Inhalt und Prüfung |
 |---|---|
 | `schemaVersion`, `releaseId`, `status` | `art-atlas-manifest/v1`, stabile Releasekennung und `candidate`, `approved` oder `rejected` |
-| `catalogVersion`, `pixelsPerMetre`, `rendering` | `conductor-art-catalog/v1`, genau 32, orthogonale Draufsicht, ganzzahlige Zoomstufen und `nearest_neighbor` |
+| `catalogVersion`, `pixelsPerMetre`, `rendering` | `conductor-art-catalog/v1` oder `/v2` mit jeweils eigenem Pflichtumfang, genau 32, orthogonale Draufsicht, ganzzahlige Zoomstufen und `nearest_neighbor` |
 | `palette` | Stabile Kennung und vollständige RGBA-Allowlist |
 | `files` | Lokaler relativer Pfad, SHA-256 der exakten PNG-Bytes, tatsächliche `widthPx`/`heightPx` und `sourceScale`; keine externen Laufzeit-URLs |
 | `assets` | `id`, `category`, `fileId`, ganzzahliges `rect`, `worldWidthMm`/`worldHeightMm`, `pivot`, `generation` und getrennte `review`-Ergebnisse |

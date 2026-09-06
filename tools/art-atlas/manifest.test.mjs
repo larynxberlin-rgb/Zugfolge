@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "nod
 import { tmpdir } from "node:os";
 import { resolve, sep } from "node:path";
 import { test } from "node:test";
-import { artSha256, inspectArtAtlas } from "../../packages/conductor-art/dist/index.js";
+import { VEHICLE_VARIANTS, artSha256, inspectArtAtlas } from "../../packages/conductor-art/dist/index.js";
 import { checkArtRelease } from "./check.mjs";
 import { artReviewInputSha256, buildArtManifest, readArtResources } from "./manifest.mjs";
 
@@ -86,4 +86,34 @@ test("Kandidatenscan duldet ausstehende Sichtungen, aber keine technische Lücke
   prepared.assets[0].pivot.x = 1; json("prepared.json", prepared);
   assert.throws(() => checkArtRelease({ allowPending: true, directory }), /Committed Manifest passt nicht/);
   assert.deepEqual(readFileSync(resolve(directory, "manifest.json")), oldBytes);
+});
+
+test("Der v2-Builder bindet direkte und bearbeitete Wagenquellen an ihre tatsächliche Referenzkette", (t) => {
+  const { directory, json, prepared, generations } = fixture(t);
+  const writeSource = (key) => {
+    const source = `sources/${key}.png`;
+    const sourceBytes = Buffer.from(`Synthetische Metadaten-Testquelle ${key}; keine Bilddatei.`);
+    writeFileSync(resolve(directory, source), sourceBytes);
+    json(`evidence/generation-${key}.json`, { ...generations.train, source, sourceSha256: artSha256(sourceBytes) });
+  };
+  writeSource("vehicle-regional-double-initial");
+  for (const variant of VEHICLE_VARIANTS) {
+    const key = `vehicle-${variant.id}`; writeSource(key);
+    for (const part of variant.parts) prepared.assets.push({ ...prepared.assets[0], id: `vehicle.${variant.id}.${part}`, category: "vehicle", sourceKey: key });
+  }
+  json("prepared.json", prepared);
+  const manifest = buildArtManifest(directory);
+  assert.equal(manifest.catalogVersion, "conductor-art-catalog/v2");
+  const vehicles = manifest.assets.filter((asset) => asset.category === "vehicle");
+  assert.equal(vehicles.length, 14);
+  for (const asset of vehicles) assert.deepEqual(asset.generation.referenceIds, [asset.id.startsWith("vehicle.regional-double.") ? "reference-vehicle-regional-double-initial" : "reference-train"]);
+  assert.equal(manifest.references.filter((reference) => reference.id === "reference-train").length, 1);
+  assert.ok(manifest.references.some((reference) => reference.id === "reference-vehicle-regional-double-initial"));
+  // Die zweite Stufe muss auch ohne eine weitere direkte Zugreferenz enthalten sein.
+  prepared.assets = prepared.assets.filter((asset) => asset.sourceKey === "vehicle-regional-double");
+  json("prepared.json", prepared);
+  json("review.json", { schemaVersion: "conductor-art-review/v1", releaseId: "conductor-art-2026.1", status: "candidate" });
+  const nested = buildArtManifest(directory);
+  assert.ok(nested.evidence.some((item) => item.id === "generation-train"));
+  assert.ok(nested.references.some((reference) => reference.id === "reference-train"));
 });

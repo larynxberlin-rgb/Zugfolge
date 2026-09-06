@@ -1,4 +1,4 @@
-import { ART_DIRECTIONS } from "./catalog.js";
+import { ART_CATALOG_VERSIONS, ART_DIRECTIONS } from "./catalog.js";
 import { invariant } from "./errors.js";
 import type { ArtAtlasManifestV1, ArtAtlasSignatureV1, ArtAtlasWorldPinV1, ArtReviewV1 } from "./types.js";
 
@@ -52,7 +52,7 @@ export function parseArtAtlasManifest(value: unknown): ArtAtlasManifestV1 {
   const palette = object(row["palette"], ["id", "colors"]);
   return {
     schemaVersion: oneOf(row["schemaVersion"], ["art-atlas-manifest/v1"]), releaseId: id(row["releaseId"]),
-    status: oneOf(row["status"], ["candidate", "approved", "rejected"]), catalogVersion: oneOf(row["catalogVersion"], ["conductor-art-catalog/v1"]),
+    status: oneOf(row["status"], ["candidate", "approved", "rejected"]), catalogVersion: oneOf(row["catalogVersion"], ART_CATALOG_VERSIONS),
     pixelsPerMetre: integer(row["pixelsPerMetre"], 32, 32) as 32,
     rendering: { projection: oneOf(rendering["projection"], ["orthogonal_top_down"]), zoomSteps: list(rendering["zoomSteps"], (zoom) => integer(zoom, 1, 8), 8), sampling: oneOf(rendering["sampling"], ["nearest_neighbor"]) },
     palette: { id: id(palette["id"]), colors: list(palette["colors"], (color) => { const value = text(color); invariant(/^#[0-9a-f]{6}(00|ff)$/.test(value), "schema_palette_invalid"); return value; }, 64) },
