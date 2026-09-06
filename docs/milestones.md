@@ -1102,12 +1102,14 @@ freigegebene Innenraumlayouts und die spielbare Browserabnahme bleiben offen;
 M15.2 und M15 insgesamt werden dadurch nicht geschlossen. Reproduzierbare
 Prüfungen, Issue-/PR-Abgleich und Grenzen: [Teilabnahme](m15-abnahme.md).
 
-**M15.3-Stand:** [Atlasvertrag](art-atlas.md) und versionierter Pflichtkatalog
-definieren 120 Figurenframes und 52 statische Motive, tatsächliche
-Generierungsherkunft, Raster, Palette und getrennte Freigabegates. Ein
-vollständiger Kandidat kann technisch und visuell geprüft werden; fehlende
-Modell-, Herkunfts-, Bild- oder Signaturbelege werden nicht als Freigabe
-ausgegeben. M15.3 bleibt bis zum vollständigen konkreten Korpusnachweis offen.
+**M15.3-Stand:** [Atlasvertrag](art-atlas.md) und Pflichtkatalog v2 umfassen
+186 Motive (120 Figurenframes und 66 statische Motive), sieben Atlanten und
+sechs zusätzliche Wagenfamilien. Der Auftraggeber hat alle Asset-, Referenz-
+und Releasefreigaben erteilt; der [Prüfnachweis](art-atlas/README.md) enthält
+die an den Inhalt gebundene Erklärung und den strengen Check ohne Befunde.
+M15.3 bleibt für die kryptografische Auslieferung mit tatsächlich verfügbarem
+Signierschlüssel und autorisiertem Art-Weltpin offen. Die Freigabe selbst ist
+abgeschlossen; die spätere Geometrie und Betriebsanbindung gehören zu M15.4/15.5.
 
 > **Beweis:** Ein eigener ausgelasteter SPNV-Zug wird mit den tatsächlichen
 > M10-Fahrgästen betreten. Der Spieler läuft durch den konfigurationsgetreuen

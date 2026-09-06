@@ -1,11 +1,11 @@
 {
   "schemaVersion": "art-atlas-browser-review/v1",
   "browser": "153.0.4234.19",
-  "recordedAt": "2026-09-06T08:52:17.483Z",
+  "recordedAt": "2026-09-06T09:20:43.880Z",
   "browserChannel": "msedge",
   "preparedSha256": "b7624271bb9ba6e3248294bac40312934f3a3edf6b4638714c188f6ff06c3b0b",
-  "observedManifestSha256": "47d8c75ebb06cc290ce2efb239909edc4fa7d7464e78ab662c2490171b7532aa",
-  "observedManifestStatus": "candidate",
+  "observedManifestSha256": "1503e2a3199d7f7b217e83b346e7ed3af8664e6b692642e9b140d312164453a3",
+  "observedManifestStatus": "approved",
   "assets": 186,
   "animations": 60,
   "catalogVersion": "conductor-art-catalog/v2",
@@ -290,7 +290,7 @@
   "screenshots": [
     {
       "file": "scene-small-rural-1x.png",
-      "sha256": "66df5d512de0ed14c1f303653b469da6814f07563a4fae8e48a1513b536a292a",
+      "sha256": "3832cc2c68b0d1bb76e495d285d0fbbce3cd5389e32a69c07174bc173a69bea3",
       "viewport": {
         "width": 1440,
         "height": 1100
@@ -298,7 +298,7 @@
     },
     {
       "file": "scene-medium-suburban-1x.png",
-      "sha256": "0d13f786992f732303eebd39739c3b871ce4423588e6f03b7cff4eb0ca5e9f79",
+      "sha256": "d9ae5732d12f15156063876ca4fce66d7af383f797b3441600c0fcfdba4c14d5",
       "viewport": {
         "width": 1440,
         "height": 1100
@@ -306,7 +306,7 @@
     },
     {
       "file": "scene-large-urban-1x.png",
-      "sha256": "9a2269beddebe2f6fcb4c6c14cbf8a15e4aa235eb10e2c8f8baf9eb35de4b68f",
+      "sha256": "c1db4d0d70c98c306178c8b4825a384efa08163fd58bec8ab64a6d3de1043361",
       "viewport": {
         "width": 1440,
         "height": 1100
@@ -314,7 +314,7 @@
     },
     {
       "file": "scene-roofs-1x.png",
-      "sha256": "2a8b632b013d3fa8d6af4f324950fccc6330acd12f32f0e2eb8fe14ba4ee5a56",
+      "sha256": "1dbc0bdd5da7626fbdef65dd125943bbdf16c8fa2210fc914a55ec52f03e9e7d",
       "viewport": {
         "width": 1440,
         "height": 1100
@@ -322,7 +322,7 @@
     },
     {
       "file": "vehicles-six-lower-1x.png",
-      "sha256": "6047e54dec89ffd5c2cd9f4dfa62029386d4e8fb498b6eda0e31f943ebd3a97e",
+      "sha256": "28fd1adc89d1d4c478d9f6179174c38e0281d0f94130d289815819a4d170ed4b",
       "viewport": {
         "width": 1440,
         "height": 1100
@@ -330,7 +330,7 @@
     },
     {
       "file": "vehicles-six-upper-1x.png",
-      "sha256": "ef227f427a154584148b28ec6b1072ace7093801b254d72a499bfeccf98e6de3",
+      "sha256": "fb085061c41689bcf70583d172c98547ffe8a204ac55995f4d97ca0a4aef7bb7",
       "viewport": {
         "width": 1440,
         "height": 1100
@@ -338,7 +338,7 @@
     },
     {
       "file": "vehicles-six-roof-1x.png",
-      "sha256": "7cac83848ab1e425de9bf9eb2f219c733f177bd0281e99701065e737d1d39d5a",
+      "sha256": "bcbc8a7034b52feff2d2055d59dcf14087f90aa3a68c406c83bd4e8e6948b9fe",
       "viewport": {
         "width": 1440,
         "height": 1100
@@ -346,7 +346,7 @@
     },
     {
       "file": "actors-walk-paused-2x.png",
-      "sha256": "73b55d04e8eb04f1282745408a0647d43a1f51c043d3b155ff7dca3f616eae62",
+      "sha256": "b85000f7eea3ec45719c80ce0d2c4342c25d4f7ce1eb6b73612fbb07b8f2f9d4",
       "viewport": {
         "width": 1440,
         "height": 1100
@@ -354,7 +354,7 @@
     },
     {
       "file": "actors-sitting-2x.png",
-      "sha256": "e7b711fe5851587f134d6fbf68d2934ced6b346e9d190cfa6cad49723b8f0b3c",
+      "sha256": "5c288a6a76ce80e5b6f12ff0d05b7821071d403bd2ad1475874ed0ae0ad6d779",
       "viewport": {
         "width": 1440,
         "height": 1100
@@ -362,7 +362,7 @@
     },
     {
       "file": "gallery-complete-1x.png",
-      "sha256": "d19e53a5ba7dc9d5944052b82c4a264ce29e41386c08b2f416a9e9ac9d034d0d",
+      "sha256": "dd676453964b46c35a27d5d171c04587386456daef6e657c3d9997afd2874583",
       "viewport": {
         "width": 1440,
         "height": 1100
@@ -370,7 +370,7 @@
     },
     {
       "file": "gallery-stations-2x.png",
-      "sha256": "d6bae4ecceb10ea726ea0b533fcb648aa9ce940733ce904fc68d176b410d98db",
+      "sha256": "b3946586682339254f3d247d69fc046fef6462e382818c59f9d3a1f89087c1c3",
       "viewport": {
         "width": 1440,
         "height": 1100
@@ -378,7 +378,7 @@
     },
     {
       "file": "release-evidence.png",
-      "sha256": "1b81fc7b4d91d706af3683826e868274e77545e9476852237727a486300c7122",
+      "sha256": "fe4a301a26a7b2636f7f70432457d9b333a07ed5b212b68101b21cb633b937b1",
       "viewport": {
         "width": 1440,
         "height": 1100
@@ -386,7 +386,7 @@
     },
     {
       "file": "mobile-390-scene.png",
-      "sha256": "1bf926f942cc5994c85249734d3f97674f45f22d3f45015b2341c709293e2fc0",
+      "sha256": "94a53b82823c2c887b004c7bb617c3d860da957a58f8927ffc66a7c75e0066fd",
       "viewport": {
         "width": 390,
         "height": 900
@@ -394,7 +394,7 @@
     },
     {
       "file": "mobile-390-actors.png",
-      "sha256": "3dbf35cf504183e1bc25cc48750741b50977162e107a4e43cc6bd51539f00259",
+      "sha256": "fc9dbe426543cefc0437b87385c18546219ec1071c19b4097e20a7eb270fd69e",
       "viewport": {
         "width": 390,
         "height": 900
@@ -402,7 +402,7 @@
     },
     {
       "file": "mobile-390-vehicles.png",
-      "sha256": "1514a13278ff66365de39b332f99b9c3e328f6586f0e36cf0908f86e1997a097",
+      "sha256": "088517a026714dafaebb20367997f760fd3b0a239e7c5e391bed5b745e0e838f",
       "viewport": {
         "width": 390,
         "height": 900
@@ -410,7 +410,7 @@
     },
     {
       "file": "mobile-320-scene.png",
-      "sha256": "60fbd5bfaed5c4c59ac5610c6df4608c51559f49d9a07002cfd247d1eed5ce31",
+      "sha256": "48f1c95a712e0650041d0505d2d1c22e9fedf80f678c9ae9035a07e5145a19d2",
       "viewport": {
         "width": 320,
         "height": 900
@@ -418,7 +418,7 @@
     },
     {
       "file": "mobile-320-actors.png",
-      "sha256": "1a70537dad5a6435c1cc12be1ae24fd944d9c3cd1b0f48014ae5904892c2c0c2",
+      "sha256": "4beec3887ae6bee862344f3100e08510991229a26329faff9891df135779b00f",
       "viewport": {
         "width": 320,
         "height": 900
@@ -426,7 +426,7 @@
     },
     {
       "file": "mobile-320-vehicles.png",
-      "sha256": "4b7542c1d8d46acf040016b3bc64d03c323ae9e999d7db9ccd7b8a2b2c94359d",
+      "sha256": "0b617316fe0a17e680ea62576968eb9e89ee5964cbaf5d16bd1cb4ed86822c49",
       "viewport": {
         "width": 320,
         "height": 900

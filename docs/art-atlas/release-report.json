@@ -1,0 +1,13 @@
+{
+  "schemaVersion": "art-atlas-report/v1",
+  "releaseId": "conductor-art-2026.1",
+  "manifestSha256": "1503e2a3199d7f7b217e83b346e7ed3af8664e6b692642e9b140d312164453a3",
+  "activationEligible": true,
+  "issues": [],
+  "statistics": {
+    "files": 7,
+    "assets": 186,
+    "animations": 60,
+    "decodedPixels": 6701056
+  }
+}

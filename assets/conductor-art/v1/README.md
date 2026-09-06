@@ -1,9 +1,12 @@
-# Zugfolge — Grafikkandidat 2026.1
+# Zugfolge — Freigegebener Grafikkorpus 2026.1
 
 Der Korpus enthält **186 Motive und 60 Animationssequenzen** auf sieben PNG-Atlanten.
-Er ist vollständig technisch vorbereitet, aber **noch nicht produktiv freigegeben
-oder signiert**. [Fachvertrag](../../../docs/art-atlas.md) und
-[Prüfbericht](evidence/technical-visual-review.md) beschreiben Umfang und Grenzen.
+Der Auftraggeber hat am 06.09.2026 sämtliche Asset-, Referenz- und
+Releasefreigaben erteilt: [Freigabebeleg](evidence/project-owner-approval.md).
+Der strenge Inhaltscheck besteht mit `activationEligible: true` und ohne
+Befunde. Die kryptografische Signatur und der autorisierte Weltpin sind der
+verbleibende technische Auslieferungsschritt. [Fachvertrag](../../../docs/art-atlas.md)
+und [Prüfnachweis](../../../docs/art-atlas/README.md) beschreiben die Grenzen.
 
 - Vier Fahrgastfiguren und ein Schaffner: je vier Richtungen, Stillstand,
   vier Gehphasen und Sitzpose — insgesamt 120 Figurenframes.
@@ -39,15 +42,15 @@ Im Repository-Stamm:
 pnpm --filter @zugfolge/conductor-art build
 python tools/art-atlas/prepare.py
 node tools/art-atlas/manifest.mjs
-node tools/art-atlas/check.mjs --allow-pending
+node tools/art-atlas/check.mjs
 node tools/art-atlas/server.mjs
 ```
 
 Die Aufbereitung benötigt Pillow 12.3.0. Sie verwendet ausschließlich bestehende
-Originale; Bildgenerierung ist kein Buildschritt. Der Checker ohne
-`--allow-pending` lehnt den noch nicht freigegebenen Kandidaten ab. Die CI erlaubt
-ausschließlich die explizit fehlenden Freigaben, keine Katalog-, Raster-, Hash-
-oder Herkunftsfehler.
+Originale; Bildgenerierung ist kein Buildschritt. Die CI verwendet den strengen
+Checker ohne `--allow-pending`: fehlende Freigaben und Katalog-, Raster-, Hash-
+oder Herkunftsfehler werden abgelehnt. Jede Inhaltsänderung nach dieser
+Freigabe benötigt eine neue, an den geänderten Prüfeingang gebundene Entscheidung.
 
 Die Galerie läuft ausschließlich unter `http://127.0.0.1:4186`. Sie zeigt eine
 Grafikkomposition, keine M5-Konfigurations- oder M10-Betriebsabnahme. Die
@@ -60,4 +63,5 @@ ART_PREVIEW_BROWSER_TEST=1 node --test tools/art-atlas/preview.test.mjs
 ```
 
 Für Freigabe und Signatur gilt der öffentliche Vertrag in `docs/art-atlas.md`.
-Die Hashbindung eines Kandidaten ersetzt weder Freigabe noch Signatur.
+Die Inhaltsfreigabe ist im Manifest belegt; sie ersetzt keine kryptografische
+Signatur und aktiviert allein keine Welt.

@@ -220,6 +220,34 @@ Eine Signatur authentifiziert den Inhalt, ersetzt aber kein fehlendes
 Bild-, Herkunfts- oder Freigabegate. Die Prüffunktion schafft keine neuen
 Schlüssel und keine neue Schlüsselverwaltung.
 
+Der konkrete Signiereinstieg ist `tools/art-atlas/release.mjs`:
+
+```sh
+node tools/art-atlas/release.mjs --directory assets/conductor-art/v1 \
+  --private-key /extern/art-private.pem --key-id art-release-key \
+  --trusted-keys /extern/trusted-art-keys.json \
+  --world-pin /extern/art-world-pin.json --world-id bestehende-welt \
+  --output /ausgabe/art-signature.json
+```
+
+Die Pfade und Kennungen sind Eingabeplatzhalter, keine vorhandene
+Produktionskonfiguration. Das unabhängig bereitgestellte Vertrauensverzeichnis
+verwendet das bestehende JSON-Mapping `{ "Schlüsselkennung": "öffentlicher PEM" }`.
+Der private Schlüssel muss extern vorliegen, Ed25519 verwenden und zu diesem
+Eintrag passen. Der ebenfalls bestehende `ArtAtlasWorldPinV1` muss dieselbe
+Weltkennung, Releasekennung und die exakten Manifestbytes pinnen. Vor dem
+Signieren werden der aktuelle Builder-/Reviewstand und sämtliche tatsächlichen
+Manifest-, Bild- und Belegbytes streng geprüft. Offene Freigaben, falsche Pins,
+fremde Schlüssel und veränderte Inhalte erzeugen keine Signaturdatei.
+
+Die CLI schreibt ausschließlich eine neue getrennte `ArtAtlasSignatureV1`;
+bestehende Ausgabedateien werden nicht überschrieben. Sie erzeugt keine Schlüssel,
+ändert kein Vertrauen, legt keinen Weltpin an und aktiviert keine Welt. Ihre
+Ausgabe enthält nur öffentliche Kennungen und den Manifesthash. Private
+Schlüssel bleiben außerhalb der Ausgabe und der Freigabebelege. Die zugehörigen
+Tests verwenden ausdrücklich synthetische Inhalte und temporäre Testschlüssel;
+sie sind kein Produktionssignaturnachweis.
+
 ## 4. Herkunft ohne erfundene Metadaten
 
 `generation.prompt` bewahrt die tatsächlich gesendete Generierungsanweisung
@@ -327,15 +355,22 @@ fehlende Referenzfreigabe und `approved` trotz ausstehender Prüfungen.
 
 ## 8. Abnahme und Grenzen
 
-M15.3 ist **in Arbeit**. Dieses Dokument fixiert den vollständigen Sollkatalog
-und die Freigaberegeln; es behauptet keine bereits bestandene Bild-, Modell-,
-Herkunfts- oder Produktionsfreigabe. Die reale Lieferung muss für jedes Gate
-ihre eigenen Artefakte und Ergebnisse referenzieren. Reproduzierbare Befehle
-und tatsächlich gemessene Ergebnisse gehören in den Atlas-Prüfbericht.
+Der Auftraggeber hat den gelieferten v2-Korpus mit **186 Motiven/Frames und
+acht Referenzen** einschließlich Asset-, Referenzrechte- und Releasefreigaben
+ausdrücklich freigegeben. Diese Entscheidungen sind an den geprüften Inhalt
+gebunden und mit ihrem tatsächlichen Beleg in der Lieferung dokumentiert.
+Die strenge Inhaltsprüfung ist grün: `activationEligible: true`, `issues: []`.
+Reproduzierbare Befehle und tatsächlich gemessene Ergebnisse stehen im
+Atlas-Prüfbericht. Eine erneute allgemeine Freigabe wird dafür nicht benötigt.
 
-Der [Prüfnachweis des vorhandenen Kandidaten](art-atlas/README.md) verlinkt
+Der [Prüfnachweis des vorhandenen Korpus](art-atlas/README.md) verlinkt
 den vollständigen Korpus, Herkunftsbelege, die lokale Galerie und tatsächliche
-Browserbilder. Die expliziten Freigabegates bleiben darin sichtbar offen.
+Browserbilder. Für den produktiven Abschluss fehlen noch der extern
+bereitgestellte Art-Signierschlüssel, sein unabhängig vertrauter öffentlicher
+Eintrag, ein bestehender passender Weltpin und die damit erzeugte gültige
+Signatur. Diese Eingaben werden weder aus anderen Releases übernommen noch
+automatisch erzeugt. Der vorbereitete Signiereinstieg ist ein prüfbares Werkzeug;
+er behauptet keine bereits erfolgte Signierung oder Aktivierung.
 
 M15.4 [#214](https://github.com/larynxberlin-rgb/Zugfolge/issues/214) bleibt
 für die aus Fahrzeugkonfigurationen abgeleitete begehbare Innenraumgeometrie

@@ -1,15 +1,21 @@
-# M15.3 — Prüfnachweis des Grafikkandidaten
+# M15.3 — Prüfnachweis und Freigabe des Grafikkorpus
 
-Der vollständige Katalog v2 liegt als technisch geprüfter Kandidat vor: **186
-Motive, 60 Animationssequenzen, sieben PNG-Atlanten**. Die finale Freigabe und
-produktive Signatur fehlen noch; [#213](https://github.com/larynxberlin-rgb/Zugfolge/issues/213)
-bleibt deshalb offen. Der [Fachvertrag](../art-atlas.md) gilt unverändert.
+Der vollständige Katalog v2 ist vom Auftraggeber freigegeben: **186 Motive,
+60 Animationssequenzen, sieben PNG-Atlanten**. Die ausdrückliche Freigabe vom
+06.09.2026 ist an den tatsächlich gelieferten Inhalt gebunden. Der strenge
+Checker meldet `activationEligible: true` und keine Befunde. Für den
+Abschluss von [#213](https://github.com/larynxberlin-rgb/Zugfolge/issues/213)
+fehlt technisch noch die Signierung mit unabhängig vertrautem Schlüssel und
+autorisiertem Weltpin. Eine weitere inhaltliche Freigabe steht nicht aus.
+Der [Fachvertrag](../art-atlas.md) gilt unverändert.
 
 ## Artefakte und Herkunft
 
 - [Korpus, Originale und tatsächliche Prompts](../../assets/conductor-art/v1/README.md)
 - [Manifest](../../assets/conductor-art/v1/manifest.json) und
-  [explizit ausstehende Freigaben](../../assets/conductor-art/v1/review.json)
+  [eingetragene Freigaben](../../assets/conductor-art/v1/review.json)
+- [Erklärung des Auftraggebers mit Inhalts- und Referenzhashes](../../assets/conductor-art/v1/evidence/project-owner-approval.md)
+- [Strenger Inhaltsprüfbericht](release-report.json)
 - [Technische Bildsichtung mit Korrekturen und Dateihashes](../../assets/conductor-art/v1/evidence/technical-visual-review.md)
 - [Sichtung der sechs neuen Wagenfamilien und Herkunft der Treppenkorrektur](../../assets/conductor-art/v1/evidence/vehicle-visual-review.md)
 - [Browsernachweis mit Screenshot- und PNG-Hashes](browser-report.json)
@@ -65,10 +71,17 @@ Baureihenabmessungen, Sitzkapazitäten oder begehbare Fahrzeugkonfiguration.
   auf geänderte Inhalte, automatische Ersatzbelege für Rechtefreigaben und
   die Annahme technischer Lücken durch den Kandidatenscan. Die vollständige
   Referenzkette der korrigierten Doppelstockgrafik wird ebenfalls geprüft.
+- Fünf Signierwerkzeugtests prüfen vorhandene Pins und unabhängige Schlüssel,
+  die exakte UTF-8-Hashsignatur mit anschließendem Loaderzugriff sowie falsche
+  Welten, Schlüssel, Algorithmen, veraltete Reviews, beschädigte Bytes und
+  Fehlermeldungen ohne versehentlich ausgegebene Dateiinhalte.
+  Diese Tests verwenden ausschließlich temporäre synthetische Fixtures;
+  sie stellen keinen produktiven Signaturbeleg dar.
 - Die reale Korpusprüfung dekodiert alle sieben PNGs mit zusammen 6.701.056
   Pixeln. Sie prüft die vollständigen 186 Motive und 60 Animationen sowie
-  sämtliche referenzierten Belegbytes. Offen bleiben ausschließlich die
-  ausdrücklich ausgewiesenen Freigaben; `activationEligible` ist `false`.
+  sämtliche referenzierten Belegbytes. Alle 744 Assetgate-Entscheidungen, acht
+  Referenzfreigaben und der Release-Review sind belegt; `activationEligible`
+  ist `true` und `issues` ist leer. Der Bericht bindet den finalen Manifesthash.
 - Zwei Browser-/Servertests mit echtem Edge prüfen unter anderem geladene
   Originalhashes, Zoom 1–4, Pause, reduzierte Bewegung, Tastaturbedienung und
   390/320-Pixel-Ansichten ohne äußeren horizontalen Überlauf. Der versionierte
@@ -76,8 +89,8 @@ Baureihenabmessungen, Sitzkapazitäten oder begehbare Fahrzeugkonfiguration.
   Alle 14 neuen Fahrzeugteile werden gewechselt; fehlende Oberdecks erhalten
   kein Ersatzmotiv.
 - Die wiederholte technische Aufbereitung aus vorhandenen Originalen liefert
-  alle 74 Korpus- und Belegdateien ohne README bytegleich. Auch die tatsächlich committed Bytes
-  stimmen mit der geprüften Arbeitskopie überein. JSON und Text verwenden
+  alle 75 Korpus-/Belegdateien ohne README bytegleich, einschließlich
+  Freigabebeleg und freigegebener Metadaten. JSON und Text verwenden
   feste LF-Zeilenenden, damit Git-Checkouts unter Windows und Linux die
   Dateihashes nicht verändern.
 
@@ -88,12 +101,21 @@ erteiltes Freigabeurteil und kein plattformübergreifender Pixelvergleich.
 
 ## Verbleibende Abnahme
 
-Die vier formalen Assetgates, Referenzrechtefreigaben und der Release-Review
-sind in `review.json` noch ausstehend. Der dokumentierte Codex-Sichtbefund
-ersetzt diese Einträge nicht. Erst ein belegter Review, der strenge Checker
-ohne `--allow-pending` und eine gültige Signatur über den exakten Manifesthash
-erlauben dem weltgebundenen Loader, den Atlas zu aktivieren. Es wurde kein
-Produktionsschlüssel erzeugt oder Weltpin geändert.
+Die vier formalen Assetgates, die acht Referenzfreigaben und der Release-Review
+sind durch die ausdrückliche Auftraggeberentscheidung in `review.json`
+abgeschlossen. Der Beleg unterscheidet die ausgeführte Codex-Sichtung von
+der späteren Abnahme des Auftraggebers. Die Entscheidung erlaubt auch die
+Signierung. Der strenge Checker ohne `--allow-pending` besteht.
+
+Eine tatsächlich gültige Ed25519-Signatur über die finalen Manifestbytes
+und ein autorisierter Weltpin sind weiterhin erforderlich, bevor der
+weltgebundene Loader aktiviert. Die verfügbaren öffentlichen Alpha-/Map-Schlüssel
+und ihre getrennten Trust-Scopes belegen keine Art-Signierberechtigung; ein
+passender privater Signierschlüssel und Art-Weltpin liegen im Arbeitskontext
+nicht vor. Der [Signiereinstieg](../art-atlas.md#3-manifest-und-dateibindung)
+ist implementiert und getestet; er schreibt mit diesen externen Eingaben
+ausschließlich die getrennte Signatur. Es wurde kein Produktionsvertrauen
+erfunden oder Weltpin geändert.
 
 Vor einer formalen Sichtung liefert `node tools/art-atlas/manifest.mjs
 --review-input` den zu prüfenden `inputSha256`. Dieser bindet den vollständig
