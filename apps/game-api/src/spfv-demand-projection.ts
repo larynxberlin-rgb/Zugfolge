@@ -1,6 +1,6 @@
 import { domainEvents, operators, simulationCommands } from "@zugfolge/db";
 import type { IdentityDatabase } from "@zugfolge/identity";
-import { and, desc, eq, inArray, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, lte, sql } from "drizzle-orm";
 
 import { DemandError, demandHash, demandInteger, demandList, demandRecord, demandText } from "./demand-store.js";
 
@@ -40,12 +40,17 @@ function texts(value: unknown): readonly string[] {
  * Nutzdatenabgleiche lesen höchstens 2000 bestätigte Fahrten pro Revision.
  */
 export async function loadCommittedSpfvServices(db: IdentityDatabase, worldId: string,
-  baseServices: readonly RecordValue[], window?: { readonly windowStartMs: number; readonly windowEndMs: number }): Promise<CommittedSpfvServices> {
+  baseServices: readonly RecordValue[], window?: { readonly windowStartMs: number; readonly windowEndMs: number },
+  /** Inklusive Weltsequenz des vollständigen State-/Diagramm-Commits. */
+  asOfWorldSequence?: number): Promise<CommittedSpfvServices> {
   if (window !== undefined) requireFact(demandInteger(window.windowStartMs) < demandInteger(window.windowEndMs), "Nachfragefenster ist leer oder rückläufig.");
-  const [row] = await db.select({ sequence: domainEvents.sequence, payload: domainEvents.payload }).from(domainEvents)
-    .where(and(eq(domainEvents.worldId, worldId), eq(domainEvents.eventType, "planning.runtime-state")))
+  if (asOfWorldSequence !== undefined) demandInteger(asOfWorldSequence);
+  const [row] = await db.select({ sequence: domainEvents.sequence, payload: domainEvents.payload, occurredAt: domainEvents.occurredAt }).from(domainEvents)
+    .where(and(eq(domainEvents.worldId, worldId), eq(domainEvents.eventType, "planning.runtime-state"),
+      asOfWorldSequence === undefined ? undefined : lte(domainEvents.sequence, asOfWorldSequence)))
     .orderBy(desc(domainEvents.sequence)).limit(1);
   if (row === undefined) return { services: [], provenance: { kind: "forecast", planningRevision: null, planningStateHash: null, referenceTrainIds: [] } };
+  requireFact(asOfWorldSequence === undefined || row.sequence + 1 <= asOfWorldSequence, "Historische Fernverkehrsplanung besitzt keinen vollständigen atomaren Commit.");
   const event = demandRecord(row.payload), state = demandRecord(event["state"]), projection = demandRecord(state["projection"]);
   const revision = demandInteger(event["projectionRevision"]), stateHash = demandText(event["stateHash"]);
   requireFact(event["schemaVersion"] === "planning-runtime-state-event/v1" && event["worldId"] === worldId
@@ -62,9 +67,10 @@ export async function loadCommittedSpfvServices(db: IdentityDatabase, worldId: s
     if (cache.size >= 256) cache.delete(cache.keys().next().value!);
     cache.set(cacheSlot, { key, result: structuredClone(result) });
   };
-  const [diagram] = await db.select({ payload: domainEvents.payload }).from(domainEvents).where(and(eq(domainEvents.worldId, worldId),
+  const [diagram] = await db.select({ payload: domainEvents.payload, occurredAt: domainEvents.occurredAt }).from(domainEvents).where(and(eq(domainEvents.worldId, worldId),
     eq(domainEvents.eventType, "planning.diagram"), eq(domainEvents.sequence, row.sequence + 1))).limit(1);
-  requireFact(diagram !== undefined && demandHash(diagram.payload) === demandHash(projection), "Fernverkehrsplanung besitzt keinen identischen veröffentlichten Fahrplan.");
+  requireFact(diagram !== undefined && diagram.occurredAt.getTime() === row.occurredAt.getTime()
+    && demandHash(diagram.payload) === demandHash(projection), "Fernverkehrsplanung besitzt keinen identischen veröffentlichten Fahrplan.");
   const reservations = state["reservations"] === undefined ? {} : demandRecord(state["reservations"]);
   const trainIds = bounded(Object.keys(reservations).filter((trainId) => {
     if (window === undefined) return true;

@@ -7,7 +7,8 @@ Odoo Community läuft selbst gehostet und vollständig getrennt vom Spiel.
 **Odoo verwaltet:** Kontakte und Rechnungsempfänger; Produkte, Zahlungen und
 Erstattungen; Support, CRM und Helpdesk; freiwillige Abonnements und
 Kosmetikprodukte; read-only Projektionen von Spielern und Welten; auditierte
-administrative Befehle.
+administrative Befehle; direkt bearbeitbare Nachfrage-Stammdaten für Einwohner,
+Stationszuweisungen und gerichtete Verbindungshinweise.
 
 **Das Game-System verwaltet:** Loginberechtigungen und Spielerstatus; Welten,
 EVUs, Fahrzeuge und Verträge; Fahrpläne, Trassen und Simulation; Wirtschaft,
@@ -16,6 +17,15 @@ Credits und Entitlements; operative Historie und Auditlog.
 **Integration:** Game-Outbox → Odoo-Bridge → Odoo; Odoo-Webhook → signierter
 Receiver → Queue → Game-Command/Entitlement-API; ein nächtlicher Reconciler
 erkennt verlorene oder doppelte Nachrichten.
+
+Die Nachfrage-Stammdaten sind normale Odoo-Datenbankinhalte. Berechtigte
+Administratoren korrigieren sie direkt; Speichern überträgt die Änderung
+automatisch über die signierte Brücke. Dafür gelten weder Antrag/Freigabe noch
+Korrekturexport oder Periodenwechsel. Odoo bewahrt Originalwerte und
+Änderungsbelege, während das Game Datenbindung und Konsistenz prüft und allein
+Simulation, wirksame Nachfrage und Snapshots verantwortet. Diese begrenzte
+Ausnahme verändert die Vier-Augen- und Freigaberegeln anderer sensibler
+Administrationsaktionen nicht.
 
 Die Anlage einer Welt folgt derselben Autoritätsgrenze in zwei Phasen: Odoo
 konfiguriert und prüft Weltdefinition einschließlich `StartingCapitalPolicy`

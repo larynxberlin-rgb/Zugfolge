@@ -5,30 +5,10 @@
   "seed": "42",
   "nowMs": 0,
   "revision": 1,
-  "windowStartMs": 0,
-  "windowEndMs": 86400000,
+  "windowStartMs": 14400000,
+  "windowEndMs": 93600000,
   "daySliceId": "pooled",
   "generationWindows": [
-    {
-      "windowStartMs": 0,
-      "windowEndMs": 3600000,
-      "daySliceId": "hour-00"
-    },
-    {
-      "windowStartMs": 3600000,
-      "windowEndMs": 7200000,
-      "daySliceId": "hour-01"
-    },
-    {
-      "windowStartMs": 7200000,
-      "windowEndMs": 10800000,
-      "daySliceId": "hour-02"
-    },
-    {
-      "windowStartMs": 10800000,
-      "windowEndMs": 14400000,
-      "daySliceId": "hour-03"
-    },
     {
       "windowStartMs": 14400000,
       "windowEndMs": 18000000,
@@ -128,6 +108,16 @@
       "windowStartMs": 82800000,
       "windowEndMs": 86400000,
       "daySliceId": "hour-23"
+    },
+    {
+      "windowStartMs": 86400000,
+      "windowEndMs": 90000000,
+      "daySliceId": "hour-00"
+    },
+    {
+      "windowStartMs": 90000000,
+      "windowEndMs": 93600000,
+      "daySliceId": "hour-01"
     }
   ],
   "release": {

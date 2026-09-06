@@ -104,6 +104,7 @@
         "tools/reference-model/**",
         "tools/region-import/**",
         "tools/demand-calibration/**",
+        "tools/population-demand/**",
         "tools/tiles/**"
       ],
       "rules": []

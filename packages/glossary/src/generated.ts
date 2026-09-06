@@ -261,6 +261,11 @@ export const GENERATED_GLOSSARY_ENTRIES = Object.freeze([
     "definition": "Frist nach der Koordinierung, in der ein Trassenangebot beanstandet werden kann"
   },
   {
+    "term": "Einwohnerbasiertes Stationsnachfragemodell",
+    "code": "StationPopulationDemandV1",
+    "definition": "optionaler, gepinnter Releaseblock mit amtlichen Ortsbevölkerungen, erhaltenen Stationsanteilen und gerichteten Referenzpräferenzen; bleibt eine Modellannahme"
+  },
+  {
     "term": "Eisenbahnverkehrsunternehmen (EVU)",
     "code": "Operator",
     "definition": "das Unternehmen eines Spielers; Träger von Fahrzeugen, Personal, Trassen und Verträgen"
@@ -309,6 +314,16 @@ export const GENERATED_GLOSSARY_ENTRIES = Object.freeze([
     "term": "Fahrgastbetriebsbeleg",
     "code": "DemandOperationalProgressV1",
     "definition": "Expliziter weltgebundener Beleg tatsächlicher Ankunft und Abfahrt; schützt bereits gereiste Reiseabschnitte"
+  },
+  {
+    "term": "Fahrgasthaltbeleg",
+    "code": "OperationalPassengerStopReceipt",
+    "definition": "einmaliger nativer Ankunfts- oder Abfahrtsbeleg eines signiert gebundenen Haltvorkommens mit tatsächlicher Zeit, Planhash und Zug-/Formationsbezug; ein Signalhalt genügt nicht"
+  },
+  {
+    "term": "Fahrgasthaltplan",
+    "code": "OperationalPassengerStopPlan",
+    "definition": "optionaler signierter Plan mit zwei bis 100 geordneten Haltvorkommen, exakten gerichteten Positionen, Plattformbindung und Mindestaufenthalt"
   },
   {
     "term": "Fahrgastinformationsanzeige",
@@ -656,14 +671,34 @@ export const GENERATED_GLOSSARY_ENTRIES = Object.freeze([
     "definition": "Zeit zwischen Zuschlag und Betriebsaufnahme; nachweispflichtig auf Fahrzeuge, Personal und Trassen"
   },
   {
+    "term": "Nachfrageanfangspool",
+    "code": "DemandPoolSeed",
+    "definition": "vor Betriebsfortschritt persistierte private Anfangsauswertung eines freigegebenen Pools mit vollständigen Eingaben, nativer Ergebnisprüfung und gebundener Journal-/Regionsgrenze"
+  },
+  {
+    "term": "Nachfrageangebotsrevision",
+    "code": "DemandOfferRevision",
+    "definition": "bestätigter historischer Angebotsstand mit Welt-/Periodenbindung, wirksamer Zeit und Planungssequenz; beeinflusst keine zuvor abgefahrene Reise rückwirkend"
+  },
+  {
     "term": "Nachfrageauswertung",
     "code": "DemandEvaluationV1",
     "definition": "Kanonisches Ergebnis des gemeinsamen SPNV-/SPFV-Kerns mit Wahlbegründungen, Belegungen und privaten Manifesten"
   },
   {
+    "term": "Nachfragedatenkorrektur",
+    "code": "PopulationRevision",
+    "definition": "automatisch übernommener Zahlenstand der direkt gepflegten Odoo-Datenbankinhalte; schützt bereits entstandene Reisewünsche und begonnene Fahrten über Restore"
+  },
+  {
     "term": "Nachfragefensterpool",
     "code": "DemandGenerationWindowV1",
     "definition": "Zeitlich begrenzte Kohortenerzeugung innerhalb eines gemeinsamen Kapazitätspools"
+  },
+  {
+    "term": "Nachfragefortschrittscursor",
+    "code": "DemandProgressCursor",
+    "definition": "persistierter kausaler Verarbeitungsstand mit Journalgrenze, Regionspins sowie bestätigten und noch wartenden nativen Haltbelegen"
   },
   {
     "term": "Nachfragefreigabe",
@@ -939,6 +974,11 @@ export const GENERATED_GLOSSARY_ENTRIES = Object.freeze([
     "term": "Stationsausstattung",
     "code": "StationAmenities",
     "definition": "Menge der an einer Betriebsstelle vorhandenen Ausstattungsmerkmale — Barrierefreiheit, Wetterschutz, Fahrgastinformation und mehr"
+  },
+  {
+    "term": "Stationsnachfrageklasse",
+    "code": "StationDemandClass",
+    "definition": "eigene Größenklasse 0 bis 10 aus zugeteilter Bevölkerung; keine Infrastrukturkategorie und kein zusätzlicher Einwohnerfaktor"
   },
   {
     "term": "Stellwerksbauart",

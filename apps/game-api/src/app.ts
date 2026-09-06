@@ -418,6 +418,10 @@ const fleetCommandBody = {
 
 const RESERVED_SINGLE_WRITER_EVENT_TYPES = new Set([
   "demand.evaluated",
+  "demand.pool-initialized",
+  "demand.pool-progressed",
+  "operations.passenger-stop-arrival",
+  "operations.passenger-stop-departure",
   "spfv.preview",
   "spfv.submitted",
   "planning.runtime-state",
@@ -1557,6 +1561,7 @@ export function buildApp(deps: AppDependencies): FastifyInstance {
   app.post<{ Body: OdooWebhookEnvelope }>(
     "/integrations/odoo/webhooks",
     {
+      bodyLimit: 16 * 1024 * 1024,
       schema: {
         body: {
           type: "object",

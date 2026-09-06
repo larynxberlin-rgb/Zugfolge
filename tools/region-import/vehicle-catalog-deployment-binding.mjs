@@ -322,8 +322,13 @@ export async function verifyVehicleCatalogCompilerReplay({
 }
 
 /** Domain-separierter Provenienz-Hash aller sicherheitsrelevanten Buildquellen. */
-export function alphaWorldGenerationSourcesSha256(buildAlphaWorldBytes, vehicleBinderBytes, vehicleMigrationBytes) {
+export function alphaWorldGenerationSourcesSha256(buildAlphaWorldBytes, vehicleBinderBytes, vehicleMigrationBytes, passengerStopBinderBytes, movementAllocatorBytes) {
   invariant(Buffer.isBuffer(vehicleMigrationBytes) && vehicleMigrationBytes.length > 0, "Fleet-v2-Migrationscompiler fehlt in der Buildprovenienz.");
+  const passengerSources = passengerStopBinderBytes === undefined && movementAllocatorBytes === undefined ? [] : [
+    {path: "tools/region-import/passenger-stop-binding-v1.mjs", bytes: passengerStopBinderBytes},
+    {path: "tools/region-import/movement-route-allocation-v2.mjs", bytes: movementAllocatorBytes},
+  ];
+  invariant(passengerSources.every((source) => Buffer.isBuffer(source.bytes) && source.bytes.length > 0), "Fahrgasthaltcompiler fehlt in der Buildprovenienz.");
   return compilerPrettyJsonSha256({
     schemaVersion: GENERATION_SOURCES_SCHEMA,
     sources: [
@@ -339,6 +344,7 @@ export function alphaWorldGenerationSourcesSha256(buildAlphaWorldBytes, vehicleB
         path: "tools/region-import/migrate-alpha-fleet-v1-to-v2.mjs",
         sha256: bytesSha256(vehicleMigrationBytes),
       },
+      ...passengerSources.map((source) => ({path: source.path, sha256: bytesSha256(source.bytes)})),
     ],
   });
 }

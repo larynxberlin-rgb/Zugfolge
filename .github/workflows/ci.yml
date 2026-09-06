@@ -44,6 +44,14 @@ jobs:
       - name: Freie Nachfragequellen und Holdout-Trennung
         run: python3 -m unittest discover -s tools/demand-calibration -p 'test_*.py'
 
+      - name: Einwohnerimport und Stationsnachfrage mit echtem Rust-Kern
+        run: |
+          cargo build --locked -p zugfolge-demand --example evaluate_json
+          ZUGFOLGE_DEMAND_TEST_BINARY="$GITHUB_WORKSPACE/target/debug/examples/evaluate_json" python3 -m unittest discover -s tools/population-demand -p 'test_*.py'
+
+      - name: Direkte Odoo-Nachfragedaten ohne Odoo-Laufzeit pruefen
+        run: python3 odoo/addons/zugfolge_admin/tests/test_demand_data_contract.py
+
       - name: Rust-Abhaengigkeiten pruefen
         uses: EmbarkStudios/cargo-deny-action@v2.1.1
         with:
@@ -184,6 +192,12 @@ jobs:
           pnpm --filter @zugfolge/game-api exec vitest run --no-file-parallelism src/operations-browser.e2e.test.ts src/game-hints.browser.test.ts src/demand-browser.e2e.test.ts
           # Echter Alpha-Builder -> serialisierter Compact-v2-Vertrag -> Serverstart-Registry.
           node --test tools/region-import/build-alpha-world-runtime.integration.test.mjs
+
+      - name: Direkte Odoo-Nachfragedaten mit echtem Rust, PGlite und Restore
+        run: pnpm --filter @zugfolge/game-api exec vitest run --no-file-parallelism src/demand-population-data.integration.test.ts src/demand-population-initialization.test.ts
+
+      - name: M10-Haltbelege, Journalcursor und native Fahrgastfortschreibung
+        run: pnpm --filter @zugfolge/game-api exec vitest run --no-file-parallelism src/demand-progress.test.ts src/demand-pool-seeds.test.ts src/demand-pool-lifecycle.test.ts src/demand-offer-history.test.ts src/demand-operational-native.integration.test.ts
 
       - name: PostgreSQL-Migration, Weltisolation und Autorisierung
         env:

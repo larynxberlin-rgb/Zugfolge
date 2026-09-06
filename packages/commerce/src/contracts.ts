@@ -13,6 +13,7 @@ export type ProductKind = (typeof PRODUCT_KINDS)[number];
 export const COMMAND_TYPES = [
   "entitlement.change",
   "world.participation.change",
+  "demand.data.update",
   "admin.world_access_revoke",
   "admin.infra_release_adoption",
   "admin.manual_disruption_create",
@@ -151,7 +152,7 @@ export interface DisruptionPolicySchedule {
 }
 
 export interface AdminCommandPayload {
-  readonly kind: Exclude<OdooCommandType, "entitlement.change" | "world.participation.change">;
+  readonly kind: Exclude<OdooCommandType, "entitlement.change" | "world.participation.change" | "demand.data.update">;
   readonly worldId: string;
   readonly actionType: AdminActionType;
   readonly riskClass: RiskClass;
@@ -184,7 +185,18 @@ export interface AdminCommandPayload {
   readonly disruptionPolicy?: DisruptionPolicySchedule;
 }
 
-export type OdooCommandPayload = EntitlementChangePayload | WorldParticipationChangePayload | AdminCommandPayload;
+/** Normales Speichern von Nachfragestammdaten; kein administrativer Freigabeantrag. */
+export interface DemandDataUpdatePayload {
+  readonly kind: "demand.data.update";
+  readonly schemaVersion: "zugfolge-demand-data-update/v1";
+  readonly worldId: string;
+  readonly sourceRevision: number;
+  readonly baseReleaseId: string;
+  readonly populationModel: Readonly<Record<string, unknown>>;
+  readonly zonePopulations: readonly { readonly zoneId: string; readonly population: number }[];
+}
+
+export type OdooCommandPayload = EntitlementChangePayload | WorldParticipationChangePayload | DemandDataUpdatePayload | AdminCommandPayload;
 
 export interface OdooWebhookEnvelope {
   readonly schemaVersion: typeof ODOO_CONTRACT_VERSION;
@@ -200,7 +212,7 @@ export interface OdooWebhookEnvelope {
 export interface OdooProjectionEnvelope {
   readonly schemaVersion: typeof ODOO_CONTRACT_VERSION;
   readonly messageId: string;
-  readonly messageType: "world.projection" | "public.world.snapshot" | "world.participation.result" | "alpha.feedback.projection" | "admin.command.result" | "admin.capability.projection" | "reconciliation.task";
+  readonly messageType: "world.projection" | "public.world.snapshot" | "world.participation.result" | "demand.data.result" | "alpha.feedback.projection" | "admin.command.result" | "admin.capability.projection" | "reconciliation.task";
   readonly worldId: string;
   readonly occurredAt: string;
   readonly correlationId: string;

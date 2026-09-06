@@ -658,6 +658,7 @@ if (demandConfiguration !== undefined && demandInfrastructure === undefined) thr
 const demand = demandConfiguration === undefined ? undefined : new DemandService({
   db, runtime: loadDemandRuntime(), deployment: demandConfiguration.deployment, deploymentHash: demandConfiguration.hash,
   readModel: livemapReadModel, livemap, infrastructure: demandInfrastructure === undefined ? [] : [demandInfrastructure],
+  operationalRegions: () => deploymentRuntime.realtimeRegions().filter((region) => region.worldId === worldScope.worldId),
 });
 const spfv = demand === undefined ? undefined : new SpfvService({
   db, fleetRuntime: operatingRuntime,
@@ -939,23 +940,16 @@ const regionalAdvanceCoordinator = new RegionalSimulationCycleCoordinator({
       return source;
     }));
     await manualDisruptionCatalog.refresh();
-    return advanceRegionalSimulations(regionalSimulation, regions, worldEpochs, at, manualDisruptionCatalog, reportProgress);
+    await demand?.prepareOperationalCycle(at);
+    const advanced = await advanceRegionalSimulations(regionalSimulation, regions, worldEpochs, at, manualDisruptionCatalog, reportProgress);
+    await demand?.prepareOperationalCycle(at);
+    return advanced;
   }),
 });
-let nextDemandRefreshAtMs = 0;
 const runRegionalAdvance = () => {
   void regionalAdvanceCoordinator.run(new Date()).then((result) => {
     if (result.status === "completed") {
       regionalSimulationStartupReady = true;
-      const epoch = worldEpochs.get(worldScope.worldId);
-      if (demand !== undefined && epoch !== undefined) {
-        const at = new Date();
-        if (at.getTime() >= nextDemandRefreshAtMs) {
-          nextDemandRefreshAtMs = at.getTime() + 30_000;
-          void demand.refresh(Math.max(0, at.getTime() - epoch.getTime()), at)
-            .catch(() => app.log.warn({ failure: "demand_refresh_failed" }, "Nachfrage wartet auf konsistente Betriebsdaten"));
-        }
-      }
     }
   }).catch(() => undefined);
 };
@@ -978,6 +972,8 @@ const runCommerce = () => {
   commerceCycle = (async () => {
     while (await processNextOdooCommand(db, new Date(), {
       assertWorldScope: assertCommerceWorldScope,
+      ...(demand === undefined ? {} : { demandDataHandler: (context: import("@zugfolge/commerce").DemandDataCommandContext) =>
+        demand.updateData(context.payload, context.db, context.now) }),
       participationHandler: worldParticipationHandler,
       adminHandlers: {
         manual_disruption_create: manualDisruptionAdminHandler,

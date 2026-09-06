@@ -945,12 +945,12 @@ Fahrgäste, die M15 später im Schaffnermodus 1:1 projiziert.
 
 | # | Teilabschnitt | Größe | Status |
 |---|---------------|-------|--------|
-| 10.1 | Gemeinsames Zonen- und Reisenachfragemodell für SPNV und SPFV aus Bevölkerung, Arbeitsplätzen, POIs, Reiseanlässen, Saison und Tageszeit; **ÖPNV-Anbindung je Station als statisches Attribut** | **XL** | in Arbeit |
-| 10.2 | Verkehrsmittel-, Verbindungs- und Zugwahl für beide Personenverkehrsarten: Preis, Reisezeit, Umstiege, Takt, Zuverlässigkeit, Komfort und verfügbare Kapazität | **XL** | in Arbeit |
-| 10.3 | Tarif-, Vertriebs-, Kapazitäts- und Komfortmodell einschließlich SPNV-Fahrberechtigungen, Überbelegung, zurückbleibender Fahrgäste, Reservierungen und Komfortklassen | L | in Arbeit |
-| 10.3a | **Autoritative SPNV-Fahrgastmanifeste** je Zuglaufabschnitt mit stabilen pseudonymen Fahrgastschlüsseln, Reise-/Umstiegskette, Ein- und Ausstieg, exakter Belegung sowie deterministischem Fahrberechtigungsstatus mit Herkunft `observed` oder `balanced` | L | in Arbeit |
-| 10.4 | SPFV-spezifische Linien-, Halte- und Taktplanung als Spielerwerkzeug | M | in Arbeit |
-| 10.5 | Gemeinsame Kalibrierung von SPNV und SPFV gegen freigegebene öffentliche Größenordnungen | M | in Arbeit |
+| 10.1 | Gemeinsames Zonen- und Reisenachfragemodell für SPNV und SPFV aus Bevölkerung, Arbeitsplätzen, POIs, Reiseanlässen, Saison und Tageszeit; **ÖPNV-Anbindung je Station als statisches Attribut** | **XL** | erledigt |
+| 10.2 | Verkehrsmittel-, Verbindungs- und Zugwahl für beide Personenverkehrsarten: Preis, Reisezeit, Umstiege, Takt, Zuverlässigkeit, Komfort und verfügbare Kapazität | **XL** | erledigt |
+| 10.3 | Tarif-, Vertriebs-, Kapazitäts- und Komfortmodell einschließlich SPNV-Fahrberechtigungen, Überbelegung, zurückbleibender Fahrgäste, Reservierungen und Komfortklassen | L | erledigt |
+| 10.3a | **Autoritative SPNV-Fahrgastmanifeste** je Zuglaufabschnitt mit stabilen pseudonymen Fahrgastschlüsseln, Reise-/Umstiegskette, Ein- und Ausstieg, exakter Belegung sowie deterministischem Fahrberechtigungsstatus mit Herkunft `observed` oder `balanced` | L | erledigt |
+| 10.4 | SPFV-spezifische Linien-, Halte- und Taktplanung als Spielerwerkzeug | M | erledigt |
+| 10.5 | Einwohnerbasierte Stationsklassen und gemeinsame SPNV-/SPFV-Nachfrage; ungefähre Wunschziele aus frei nutzbaren Referenzverbindungen und direkte Datenpflege durch normales Speichern in Odoo | M | erledigt |
 
 > **Beweis:** Ein SPNV-Zug erhält über mehrere Halte reproduzierbare Ein- und
 > Aussteiger, Auslastung und Fahrgastmanifeste; Ausfall und Anschlussverlust
@@ -959,8 +959,19 @@ Fahrgäste, die M15 später im Schaffnermodus 1:1 projiziert.
 > sinnvoll reagieren.
 
 Der [Implementierungs- und Abnahmebericht](m10-abnahme.md) trennt den
-getesteten Rust-Kern und die Spielerintegration von der noch offenen
-Produktions- und gemeinsamen SPNV-/SPFV-Kalibrierungsabnahme.
+getesteten Rust-Kern und die Spielerintegration von der gesonderten
+Produktionsabnahme. Auf Nutzerauftrag vom 06.09.2026 ersetzt die
+[einwohnerbasierte Näherung](m10-populationsnachfrage.md) die zuvor für 10.5
+geforderte gemeinsame Messdatenkalibrierung; ihr Schätzcharakter bleibt sichtbar.
+
+**Fachlicher Abschluss vom 06.09.2026:** Die Teilpunkte 10.1–10.5 einschließlich
+10.3a sind umgesetzt, integriert und im geänderten Umfang abgenommen. Der
+Nutzer hat das Zusammenführen der vier M10-PRs #532, #533, #534 und #537
+beauftragt. Der [Abnahmebericht](m10-abnahme.md) bindet die technischen
+Nachweise an ihre geprüften Commits; der finale Merge setzt weiterhin die
+vier regulären grünen CI-Jobs voraus. Die Produktionsreife bleibt wegen
+der offenen M9-/Betriebsabnahmen blockiert. Deshalb bleibt der GitHub-
+Milestone auch nach dem Abschluss seiner acht Issues und vier PRs offen.
 
 ---
 

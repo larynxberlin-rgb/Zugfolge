@@ -2,9 +2,10 @@ import { createHash } from "node:crypto";
 import { domainEvents, worldEventLog, worlds } from "@zugfolge/db";
 import type { IdentityDatabase } from "@zugfolge/identity";
 import type { DemandRuntime } from "@zugfolge/runtime-native";
-import { and, desc, eq, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, sql } from "drizzle-orm";
 
 export const DEMAND_CHECKPOINT_EVENT = "demand.evaluated";
+export const DEMAND_PROGRESS_EVENT = "demand.pool-progressed";
 export const DEMAND_MAX_BYTES = 16 * 1024 * 1024;
 
 export class DemandError extends Error {
@@ -53,6 +54,8 @@ export interface DemandCheckpoint {
   readonly input: Readonly<Record<string, unknown>>;
   readonly result: Readonly<Record<string, unknown>>;
   readonly serviceProvenance?: Readonly<Record<string, unknown>>;
+  readonly progressCursor?: Readonly<Record<string, unknown>>;
+  readonly progressCursorHash?: string;
 }
 
 /** Vorhandenes append-only Weltlog mit Welt-/Typindex, Writer-Fence und Backupabdeckung. */
@@ -72,7 +75,8 @@ export class DemandStore {
     if (checkpoint.schemaVersion !== "zugfolge-demand-checkpoint/v1" || checkpoint.worldId !== worldId
       || checkpoint.input["worldId"] !== worldId || checkpoint.result["worldId"] !== worldId
       || (deploymentHash !== undefined && checkpoint.deploymentHash !== deploymentHash)
-      || demandHash(checkpoint.input) !== checkpoint.inputHash) throw new DemandError(503, "Nachfrage-Checkpoint verletzt Herkunft oder Weltbindung.");
+      || demandHash(checkpoint.input) !== checkpoint.inputHash
+      || (checkpoint.progressCursor !== undefined && demandHash(checkpoint.progressCursor) !== checkpoint.progressCursorHash)) throw new DemandError(503, "Nachfrage-Checkpoint verletzt Herkunft oder Weltbindung.");
     // JSONB bewahrt keine Objektfeldreihenfolge; beide Hashes vergleichen Werte.
     const replay = this.runtime.evaluate(checkpoint.input);
     if (demandHash(replay) !== demandHash(checkpoint.result)) throw new DemandError(503, "Nachfrage-Checkpoint besteht den Rust-Replay nicht.");
@@ -81,32 +85,45 @@ export class DemandStore {
   }
 
   async commit(input: Readonly<Record<string, unknown>>, deploymentHash: string, occurredAt: Date,
-    serviceProvenance?: Readonly<Record<string, unknown>>): Promise<DemandCheckpoint> {
+    serviceProvenance?: Readonly<Record<string, unknown>>, progressCursor?: Readonly<Record<string, unknown>>,
+    /** Nur ein Aufrufer mit bereits gehaltenem Weltmutex darf die Transaktion übernehmen. */
+    worldMutexHeld = false, eventType: typeof DEMAND_CHECKPOINT_EVENT | typeof DEMAND_PROGRESS_EVENT = DEMAND_CHECKPOINT_EVENT): Promise<DemandCheckpoint> {
     const worldId = demandText(input["worldId"]);
     const result = this.runtime.evaluate(input);
     const checkpoint: DemandCheckpoint = {
       schemaVersion: "zugfolge-demand-checkpoint/v1", worldId, deploymentHash,
       inputHash: demandHash(input), input, result,
       ...(serviceProvenance === undefined ? {} : { serviceProvenance }),
+      ...(progressCursor === undefined ? {} : { progressCursor, progressCursorHash: demandHash(progressCursor) }),
     };
     if (Buffer.byteLength(JSON.stringify(checkpoint)) > DEMAND_MAX_BYTES) throw new DemandError(503, "Nachfragefenster überschreitet die freigegebene Größe.");
-    await this.db.transaction(async (tx) => {
+    const persist = async (tx: IdentityDatabase) => {
       const [world] = await tx.select().from(worlds).where(eq(worlds.id, worldId)).for("update");
       if (world === undefined || world.lifecycleStatus !== "active") throw new DemandError(409, "Spielwelt ist nicht aktiv.");
-      const previous = await worldEventLog(tx, worldId).latestOfType(DEMAND_CHECKPOINT_EVENT);
+      const [previous] = await tx.select().from(domainEvents).where(and(eq(domainEvents.worldId, worldId),
+        inArray(domainEvents.eventType, [DEMAND_CHECKPOINT_EVENT, DEMAND_PROGRESS_EVENT])))
+        .orderBy(desc(domainEvents.sequence)).limit(1);
       if (previous !== undefined) {
         const before = demandRecord(previous.payload) as unknown as DemandCheckpoint;
-        if (before.inputHash === checkpoint.inputHash && before.deploymentHash === deploymentHash) return;
+        if (previous.eventType === eventType && before.inputHash === checkpoint.inputHash && before.deploymentHash === deploymentHash
+          && before.progressCursorHash === checkpoint.progressCursorHash) return;
         if (demandInteger(input["revision"]) !== demandInteger(before.input["revision"]) + 1
-          || demandInteger(input["nowMs"]) < demandInteger(before.input["nowMs"])
+          || (before.input["periodId"] === input["periodId"] && demandInteger(input["nowMs"]) < demandInteger(before.input["nowMs"]))
           || demandInteger(input["windowStartMs"]) < demandInteger(before.input["windowStartMs"])) throw new DemandError(409, "Nachfragevorschau ist veraltet.");
         if (before.deploymentHash !== deploymentHash && before.input["periodId"] === input["periodId"]) throw new DemandError(409, "Nachfragedaten sind innerhalb der Fahrplanperiode gepinnt.");
       } else if (input["revision"] !== 1) throw new DemandError(409, "Erste Nachfragerevision muss eins sein.");
+      if (eventType === DEMAND_CHECKPOINT_EVENT) {
+        const published = await worldEventLog(tx, worldId).latestOfType(DEMAND_CHECKPOINT_EVENT);
+        if (published !== undefined && demandInteger(input["nowMs"]) < demandInteger(demandRecord(demandRecord(published.payload)["input"])["nowMs"]))
+          throw new DemandError(409, "Öffentliche Nachfragezeit darf nicht zurückgehen.");
+      }
       const [head] = await tx.select({ sequence: domainEvents.sequence }).from(domainEvents)
         .where(eq(domainEvents.worldId, worldId)).orderBy(desc(domainEvents.sequence)).limit(1);
       await worldEventLog(tx, worldId).append({ sequence: (head?.sequence ?? 0) + 1,
-        eventType: DEMAND_CHECKPOINT_EVENT, payload: checkpoint, occurredAt });
-    });
+        eventType, payload: checkpoint, occurredAt });
+    };
+    if (worldMutexHeld) await persist(this.db);
+    else await this.db.transaction(persist);
     this.verified.delete(worldId);
     return checkpoint;
   }

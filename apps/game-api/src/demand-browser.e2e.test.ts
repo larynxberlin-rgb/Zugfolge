@@ -11,6 +11,14 @@ const operatorId = "22222222-2222-4222-8222-222222222222";
 // Labelled synthetic fixtures exercise browser behaviour; no claim about live-world demand.
 const period = {worldId, periodId: "Beispielperiode", periodStartS: 0, periodEndS: 86_400, asOfS: 600, releaseId: "Beispielrelease", source: "forecast" as const};
 const overview: DemandOverview = {...period, schemaVersion: "zugfolge-demand-overview/v1", items: Array.from({length: 50}, (_, index) => ({stationId: `station-${index}`, label: index === 0 ? "Berlin Hauptbahnhof" : `Beispielbahnhof ${index}`, requestedPassengers: null, servedPassengers: index % 3 === 0 ? null : index * 21, unservedPassengers: null})), zones: Array.from({length: 50}, (_, index) => ({zoneId: `zone-${index}`, label: `Beispielgebiet ${index}`, requestedPassengers: 400, servedPassengers: 210, unservedPassengers: 40, alternativePassengers: 150})), nextCursor: "next-fixture-page"};
+const populationOverview: DemandOverview = { ...overview, source: "assumption", populationBasis: {
+  referenceStartDate: "2026-09-07", referenceEndDate: "2026-09-13",
+  sources: [{ label: "Synthetische Browserfixture", url: "https://example.org/fixture", license: "CC0-1.0" }],
+}, items: [{ ...overview.items[0]!, servedPassengers: 0, populationDemand: {
+  demandClass: 8, catchmentPopulation: 180000, requestedPassengers: 1200,
+  topDestinations: [{ stationId: "destination-1", label: "Leipzig Hauptbahnhof", passengers: 510, referenceConnections: 120 },
+    { stationId: "destination-2", label: "Erfurt Hauptbahnhof", passengers: 320, referenceConnections: 0 }],
+} }], zones: overview.zones.slice(0, 1), nextCursor: null };
 const catalog = {schemaVersion: "zugfolge-spfv-catalog/v1", ...period, operatorId, defaultHeadwayS: 3_600, stops: [{id: "berlin", label: "Berlin Hauptbahnhof"}, {id: "leipzig", label: "Leipzig Hauptbahnhof"}, {id: "erfurt", label: "Erfurt Hauptbahnhof"}], formations: [{id: "formation-1", label: "Beispielzugverband", seats: 240, firstClassSeats: 32, bicyclePlaces: 8, wheelchairPlaces: 2}], lines: [{id: "existing-line", referenceTrainId: "release-reference-1", name: "Bestehende Beispielleinie", stopIds: ["berlin", "leipzig", "erfurt"], headwayS: 3600, fareCents: "2990", formationId: "formation-1", validFromS: 21600, validUntilS: 79200}]};
 
 (process.env["ZUGFOLGE_BROWSER_E2E"] === "1" ? describe : describe.skip)("M10 Nachfrage und Fernverkehr im Browser", () => {
@@ -49,7 +57,7 @@ const catalog = {schemaVersion: "zugfolge-spfv-catalog/v1", ...period, operatorI
       if (rejectFirstConfirmation) { rejectFirstConfirmation = false; return reply.code(503).send({error: "Beispiel: Bestätigungsantwort verloren. Wiederhole die gleiche Einreichung."}); }
       return {lineId: "Beispiel-Fernlinie", status: "submitted", planningRequestIds: ["planning-request-1"]};
     });
-    app.get("/demand-preview", async (_request, reply) => reply.type("text/html").send(`<!doctype html><html lang="de"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>${readFileSync(resolve(repo, "packages/design-system/src/railway.css"), "utf8")}${readFileSync(resolve(repo, "apps/livemap/src/demand.css"), "utf8")}body{margin:0;background:#101419;font-family:Arial,sans-serif;color:#f5f7fa}main{box-sizing:border-box;width:min(100%,520px);padding:20px;margin:auto}button{font:inherit}button:focus-visible{outline:2px solid #fff}</style><body><main><p>Browserprüfung · ausdrücklich synthetische Beispieldaten</p>${demandOverviewMarkup(overview)}${trainDemandMarkup({...period, schemaVersion: "zugfolge-train-demand/v1", trainId: "fixture-train", segments: [{fromStationId: "berlin",fromStationLabel: "Berlin",toStationId: "leipzig",toStationLabel: "Leipzig",onboard: null,capacity: 240}],stops: [{stationId: "leipzig", label: "Leipzig Hauptbahnhof", arrivalS: 39_600,departureS: 39_720}]})}</main></body></html>`));
+    app.get("/demand-preview", async (request, reply) => reply.type("text/html").send(`<!doctype html><html lang="de"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>${readFileSync(resolve(repo, "packages/design-system/src/railway.css"), "utf8")}${readFileSync(resolve(repo, "apps/livemap/src/demand.css"), "utf8")}body{margin:0;background:#101419;font-family:Arial,sans-serif;color:#f5f7fa}main{box-sizing:border-box;width:min(100%,520px);padding:20px;margin:auto}button{font:inherit}button:focus-visible{outline:2px solid #fff}</style><body><main><p>Browserprüfung · ausdrücklich synthetische Beispieldaten</p>${demandOverviewMarkup((request.query as { population?: string }).population === "1" ? populationOverview : overview)}${trainDemandMarkup({...period, schemaVersion: "zugfolge-train-demand/v1", trainId: "fixture-train", segments: [{fromStationId: "berlin",fromStationLabel: "Berlin",toStationId: "leipzig",toStationLabel: "Leipzig",onboard: null,capacity: 240}],stops: [{stationId: "leipzig", label: "Leipzig Hauptbahnhof", arrivalS: 39_600,departureS: 39_720}]})}</main></body></html>`));
     origin = await app.listen({host: "127.0.0.1", port: 0});
     const executablePath = [process.env["ZUGFOLGE_BROWSER_EXECUTABLE"], "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe", "C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe", "/usr/bin/google-chrome", "/usr/bin/chromium"].find((path) => path !== undefined && existsSync(path));
     if (!executablePath) throw new Error("M10-Browserprüfung benötigt Chrome oder Chromium.");
@@ -143,6 +151,23 @@ const catalog = {schemaVersion: "zugfolge-spfv-catalog/v1", ...period, operatorI
         await page.locator("#spfv-confirm").scrollIntoViewIfNeeded();
         const box = await page.locator("#spfv-confirm").boundingBox(); expect(box).not.toBeNull(); expect(box!.x).toBeGreaterThanOrEqual(0); expect(box!.x + box!.width).toBeLessThanOrEqual(width + 1);
         if (screenshots && width === 390) await page.screenshot({path: resolve(screenshots, "spfv-mobile.png")});
+      }
+    } finally { await page.close(); }
+  });
+  it("zeigt Nachfrageklassen und Wunschziele auf schmalen Displays ohne horizontales Überlaufen", {timeout: 20_000}, async () => {
+    const page = await browser.newPage();
+    try {
+      for (const width of [1366, 390, 320]) {
+        await page.setViewportSize({width, height: 1100}); await page.goto(`${origin}/demand-preview?population=1`);
+        expect(await page.locator(".population-class").innerText()).toContain("Klasse 8/10");
+        expect(await page.locator(".population-bars i.filled").count()).toBe(8);
+        expect(await page.locator(".population-stations").innerText()).toContain("180.000 zugeteilte Einwohner");
+        expect(await page.locator(".population-stations").innerText()).toContain("ca. 510");
+        expect(await page.locator(".population-stations").innerText()).toContain("0 Direktfahrten in der Referenzwoche");
+        await page.locator(".population-stations button").focus();
+        expect(await page.locator(".population-stations button").evaluate((element) => document.activeElement === element)).toBe(true);
+        expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1)).toBe(true);
+        if (screenshots && width === 390) { await page.evaluate(() => window.scrollTo(0, 0)); await page.screenshot({path: resolve(screenshots, "population-demand-mobile.png")}); }
       }
     } finally { await page.close(); }
   });

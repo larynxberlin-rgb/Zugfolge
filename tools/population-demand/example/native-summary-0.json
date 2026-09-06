@@ -1,0 +1,369 @@
+{
+  "schemaVersion": "zugfolge-population-native-summary/v1",
+  "worldId": "population-demand-demo",
+  "stateHash": "ad281fa81b932a4d9ebef9c2871d43d622d0c437d73402c66c619903ce7d4432",
+  "releaseHash": "59df15821e377af671a8f295fa144dafd15572e8966b2087478a26adc6f2b246",
+  "projectionMode": "forecast",
+  "totals": {
+    "generated": 3729,
+    "rail": 2562,
+    "alternative": 0,
+    "unserved": 1167,
+    "stranded": 0,
+    "forecastRevenueCents": 655400
+  },
+  "passengerJourneysUsingMode": {
+    "spfv": 540,
+    "spnv": 2146
+  },
+  "stations": [
+    {
+      "stationId": "104445",
+      "zoneId": "station-104445",
+      "demandClass": 6,
+      "allocatedPopulation": 34392,
+      "generatedPassengers": 103,
+      "topDestinations": [
+        {
+          "destinationZoneId": "station-85981",
+          "passengers": 37
+        },
+        {
+          "destinationZoneId": "station-542001",
+          "passengers": 20
+        },
+        {
+          "destinationZoneId": "station-194454",
+          "passengers": 11
+        },
+        {
+          "destinationZoneId": "station-354639",
+          "passengers": 10
+        },
+        {
+          "destinationZoneId": "station-611502",
+          "passengers": 10
+        }
+      ]
+    },
+    {
+      "stationId": "154282",
+      "zoneId": "station-154282",
+      "demandClass": 6,
+      "allocatedPopulation": 36592,
+      "generatedPassengers": 109,
+      "topDestinations": [
+        {
+          "destinationZoneId": "station-354639",
+          "passengers": 28
+        },
+        {
+          "destinationZoneId": "station-611502",
+          "passengers": 28
+        },
+        {
+          "destinationZoneId": "station-85981",
+          "passengers": 25
+        },
+        {
+          "destinationZoneId": "station-630508",
+          "passengers": 11
+        },
+        {
+          "destinationZoneId": "station-542001",
+          "passengers": 10
+        }
+      ]
+    },
+    {
+      "stationId": "194454",
+      "zoneId": "station-194454",
+      "demandClass": 7,
+      "allocatedPopulation": 65954,
+      "generatedPassengers": 197,
+      "topDestinations": [
+        {
+          "destinationZoneId": "station-542001",
+          "passengers": 54
+        },
+        {
+          "destinationZoneId": "station-611502",
+          "passengers": 32
+        },
+        {
+          "destinationZoneId": "station-354639",
+          "passengers": 28
+        },
+        {
+          "destinationZoneId": "station-85981",
+          "passengers": 27
+        },
+        {
+          "destinationZoneId": "station-104445",
+          "passengers": 14
+        }
+      ]
+    },
+    {
+      "stationId": "354639",
+      "zoneId": "station-354639",
+      "demandClass": 9,
+      "allocatedPopulation": 256596,
+      "generatedPassengers": 769,
+      "topDestinations": [
+        {
+          "destinationZoneId": "station-542001",
+          "passengers": 184
+        },
+        {
+          "destinationZoneId": "station-85981",
+          "passengers": 151
+        },
+        {
+          "destinationZoneId": "station-630508",
+          "passengers": 145
+        },
+        {
+          "destinationZoneId": "station-611502",
+          "passengers": 96
+        },
+        {
+          "destinationZoneId": "station-154282",
+          "passengers": 55
+        }
+      ]
+    },
+    {
+      "stationId": "464080",
+      "zoneId": "station-464080",
+      "demandClass": 6,
+      "allocatedPopulation": 31940,
+      "generatedPassengers": 95,
+      "topDestinations": [
+        {
+          "destinationZoneId": "station-354639",
+          "passengers": 29
+        },
+        {
+          "destinationZoneId": "station-85981",
+          "passengers": 26
+        },
+        {
+          "destinationZoneId": "station-542001",
+          "passengers": 14
+        },
+        {
+          "destinationZoneId": "station-611502",
+          "passengers": 8
+        },
+        {
+          "destinationZoneId": "station-194454",
+          "passengers": 7
+        }
+      ]
+    },
+    {
+      "stationId": "46758",
+      "zoneId": "station-46758",
+      "demandClass": 5,
+      "allocatedPopulation": 10807,
+      "generatedPassengers": 32,
+      "topDestinations": [
+        {
+          "destinationZoneId": "station-85981",
+          "passengers": 15
+        },
+        {
+          "destinationZoneId": "station-354639",
+          "passengers": 4
+        },
+        {
+          "destinationZoneId": "station-611502",
+          "passengers": 4
+        },
+        {
+          "destinationZoneId": "station-542001",
+          "passengers": 2
+        },
+        {
+          "destinationZoneId": "station-630508",
+          "passengers": 2
+        }
+      ]
+    },
+    {
+      "stationId": "542001",
+      "zoneId": "station-542001",
+      "demandClass": 8,
+      "allocatedPopulation": 122977,
+      "generatedPassengers": 368,
+      "topDestinations": [
+        {
+          "destinationZoneId": "station-354639",
+          "passengers": 156
+        },
+        {
+          "destinationZoneId": "station-611502",
+          "passengers": 44
+        },
+        {
+          "destinationZoneId": "station-85981",
+          "passengers": 41
+        },
+        {
+          "destinationZoneId": "station-194454",
+          "passengers": 40
+        },
+        {
+          "destinationZoneId": "station-104445",
+          "passengers": 20
+        }
+      ]
+    },
+    {
+      "stationId": "600951",
+      "zoneId": "station-600951",
+      "demandClass": 4,
+      "allocatedPopulation": 8098,
+      "generatedPassengers": 24,
+      "topDestinations": [
+        {
+          "destinationZoneId": "station-354639",
+          "passengers": 8
+        },
+        {
+          "destinationZoneId": "station-611502",
+          "passengers": 8
+        },
+        {
+          "destinationZoneId": "station-630508",
+          "passengers": 3
+        },
+        {
+          "destinationZoneId": "station-85981",
+          "passengers": 3
+        },
+        {
+          "destinationZoneId": "station-542001",
+          "passengers": 1
+        }
+      ]
+    },
+    {
+      "stationId": "611502",
+      "zoneId": "station-611502",
+      "demandClass": 9,
+      "allocatedPopulation": 256803,
+      "generatedPassengers": 770,
+      "topDestinations": [
+        {
+          "destinationZoneId": "station-630508",
+          "passengers": 210
+        },
+        {
+          "destinationZoneId": "station-354639",
+          "passengers": 137
+        },
+        {
+          "destinationZoneId": "station-85981",
+          "passengers": 121
+        },
+        {
+          "destinationZoneId": "station-154282",
+          "passengers": 78
+        },
+        {
+          "destinationZoneId": "station-542001",
+          "passengers": 74
+        }
+      ]
+    },
+    {
+      "stationId": "630508",
+      "zoneId": "station-630508",
+      "demandClass": 7,
+      "allocatedPopulation": 98451,
+      "generatedPassengers": 295,
+      "topDestinations": [
+        {
+          "destinationZoneId": "station-611502",
+          "passengers": 108
+        },
+        {
+          "destinationZoneId": "station-354639",
+          "passengers": 107
+        },
+        {
+          "destinationZoneId": "station-85981",
+          "passengers": 24
+        },
+        {
+          "destinationZoneId": "station-154282",
+          "passengers": 15
+        },
+        {
+          "destinationZoneId": "station-542001",
+          "passengers": 13
+        }
+      ]
+    },
+    {
+      "stationId": "66393",
+      "zoneId": "station-66393",
+      "demandClass": 7,
+      "allocatedPopulation": 95816,
+      "generatedPassengers": 287,
+      "topDestinations": [
+        {
+          "destinationZoneId": "station-354639",
+          "passengers": 64
+        },
+        {
+          "destinationZoneId": "station-611502",
+          "passengers": 64
+        },
+        {
+          "destinationZoneId": "station-85981",
+          "passengers": 57
+        },
+        {
+          "destinationZoneId": "station-542001",
+          "passengers": 31
+        },
+        {
+          "destinationZoneId": "station-630508",
+          "passengers": 24
+        }
+      ]
+    },
+    {
+      "stationId": "85981",
+      "zoneId": "station-85981",
+      "demandClass": 8,
+      "allocatedPopulation": 226767,
+      "generatedPassengers": 680,
+      "topDestinations": [
+        {
+          "destinationZoneId": "station-354639",
+          "passengers": 200
+        },
+        {
+          "destinationZoneId": "station-611502",
+          "passengers": 135
+        },
+        {
+          "destinationZoneId": "station-154282",
+          "passengers": 56
+        },
+        {
+          "destinationZoneId": "station-630508",
+          "passengers": 54
+        },
+        {
+          "destinationZoneId": "station-104445",
+          "passengers": 52
+        }
+      ]
+    }
+  ]
+}
