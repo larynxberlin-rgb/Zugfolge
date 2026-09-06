@@ -114,6 +114,15 @@ Runtime-Native-Transportsuite (65 Tests), Workspace-Build und Typprüfung
 sowie alle 15 Repository-Wächter sind grün. Clippy behandelt Warnungen als
 Fehler. Die Linux-CI baut zusätzlich die aktivierten echten NAPI-Exporte.
 
+Die vollständige Runtime-Suite mit 54 Tests bestätigt außerdem den
+Konfigurationscompiler, M5-Formation und Restore. Der reguläre lokale
+TypeScript-Testumfang ist für alle 28 Pakete belegt. Der erste Gesamtlauf
+traf beim parallelen PGlite-Kaltstart fünf 10-Sekunden-Hooktimeouts im
+Wirtschaftspaket; dessen unveränderte 92 Tests bestanden mit zwei Workern.
+Die danach noch fehlenden 14 Pakete bestanden ebenfalls mit zwei Workern
+(461 Tests, zwei vorgesehene Umgebungsskips). Fachcode und Timeouts wurden
+dafür nicht verändert.
+
 Der [Browserbericht](browser-report.json) vom 6. September 2026,
 20:20:41 UTC, dokumentiert den tatsächlich ausgeführten Edge-Durchlauf
 mit Version 153.0.4234.19. Drei vollständige Konfigurationen und der

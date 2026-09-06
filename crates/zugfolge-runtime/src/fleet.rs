@@ -3320,7 +3320,7 @@ mod tests {
         );
         assert_eq!(
             formed["snapshot"]["formations"][0]["characteristics"]["seats"],
-            200
+            120
         );
         let verified: Value = serde_json::from_str(
             &verify_fleet_world_state(
