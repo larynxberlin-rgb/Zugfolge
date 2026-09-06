@@ -122,6 +122,42 @@ fn reseal_output_hashes(compilation: &mut VehicleCatalogCompilation) {
     });
 }
 
+#[test]
+fn neuversiegelte_m5_konfiguration_bleibt_an_katalogfakten_und_welt_seed_gebunden() {
+    let source = parse_source_catalog(include_str!(
+        "fixtures/vehicle-catalog-source-v2-interior.json"
+    ))
+    .unwrap();
+    let seed =
+        parse_world_seed(include_str!("fixtures/vehicle-world-seed-v3-interior.json")).unwrap();
+    let original = compile_vehicle_catalog(&source, &seed).unwrap();
+    let mut wrong_length = original.clone();
+    wrong_length.fleet_authority.assets[0]
+        .vehicle_configuration
+        .as_mut()
+        .unwrap()
+        .structural
+        .body_length_mm += 1;
+    reseal_compilation(&mut wrong_length);
+    assert!(
+        validate_compilation(&wrong_length)
+            .unwrap_err()
+            .to_string()
+            .contains("LengthMismatch")
+    );
+    let mut other_interior = original;
+    other_interior.fleet_authority.assets[0]
+        .vehicle_configuration
+        .as_mut()
+        .unwrap()
+        .interior
+        .toilets += 1;
+    reseal_compilation(&mut other_interior);
+    // Die Fachwerte können in sich gültig sein; ihr echter Seed bleibt dennoch nötig.
+    validate_compilation(&other_interior).unwrap();
+    assert!(validate_compilation_against_inputs(&source, &seed, &other_interior).is_err());
+}
+
 fn configured_type(
     base: &Value,
     type_id: &str,

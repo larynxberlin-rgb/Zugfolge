@@ -16,8 +16,9 @@ use zugfolge_fleet::{
     MobilizationDutyStatus, MobilizationFormation, MobilizationPathReservation,
     MobilizationPathStatus, MobilizationPersonnelDuty, MobilizationProcurement,
     MobilizationSnapshot, NeedLimits, PersonnelPool, PlannedService, ProcurementChannel,
-    RotationActivity, RotationLeg, RotationPlan, VehicleApproval, VehicleAsset, VehicleNeeds,
-    VehicleOrientation, VehicleReadiness, VehicleTechnicalData, validate_timetable_release,
+    RotationActivity, RotationLeg, RotationPlan, VehicleApproval, VehicleAsset,
+    VehicleConfigurationFacts, VehicleConfigurationV1, VehicleNeeds, VehicleOrientation,
+    VehicleReadiness, VehicleTechnicalData, validate_timetable_release,
 };
 use zugfolge_infra::{
     Acceleration, ElectricSystems, Electrification, FleetClass, Force, Length, Mass, Power,
@@ -288,6 +289,13 @@ struct AuthorityVehicleAsset {
     history: Option<Vec<String>>,
     technical: AuthorityTechnicalData,
     passenger: AuthorityPassengerData,
+    /// Vollständige M5-Konfiguration; fehlende Altdaten werden nicht ergänzt.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "zugfolge_fleet::deserialize_optional_vehicle_configuration"
+    )]
+    vehicle_configuration: Option<VehicleConfigurationV1>,
     delivered_at: u64,
     retired_at: u64,
 }
@@ -866,6 +874,9 @@ fn normalize_release(release: &mut FleetAuthorityRelease) {
         asset.installed_protection.sort();
         asset.technical.electric_systems.sort();
         asset.passenger.equipment.sort();
+        if let Some(configuration) = &mut asset.vehicle_configuration {
+            configuration.normalize();
+        }
         asset
             .maintenance_deadlines
             .sort_by(|left, right| left.kind.cmp(&right.kind));
@@ -1214,6 +1225,21 @@ fn validate_release(release: &FleetAuthorityRelease) -> Result<(), RuntimeError>
             || asset.passenger.first_class_seats > asset.passenger.seats
         {
             return Err(invalid("Authority-Asset besitzt ungueltige Fahrgastdaten"));
+        }
+        if let Some(configuration) = &asset.vehicle_configuration {
+            configuration
+                .validate_against(VehicleConfigurationFacts {
+                    length_mm: asset.technical.length_mm,
+                    seats: asset.passenger.seats,
+                    first_class_seats: asset.passenger.first_class_seats,
+                    bicycle_places: asset.passenger.bicycle_places,
+                    wheelchair_places: asset.passenger.wheelchair_places,
+                    accessible: asset.passenger.accessible,
+                })
+                .and_then(|()| configuration.validate_equipment(&asset.passenger.equipment))
+                .map_err(|error| {
+                    invalid(format!("M5-Fahrzeugkonfiguration ist ungültig: {error}"))
+                })?;
         }
     }
     if release
@@ -3238,6 +3264,127 @@ mod tests {
             .expect("Flottenkommando gelingt"),
         )
         .expect("gueltiges Kommandoergebnis")
+    }
+
+    #[test]
+    fn m5_konfiguration_kommt_vom_compiler_und_bleibt_nach_formation_und_restore_gepinnt() {
+        use zugfolge_fleet::release_catalog::{
+            compile_vehicle_catalog, parse_source_catalog, parse_world_seed,
+        };
+        let source = parse_source_catalog(include_str!(
+            "../../zugfolge-fleet/tests/fixtures/vehicle-catalog-source-v2-interior.json"
+        ))
+        .unwrap();
+        let seed = parse_world_seed(include_str!(
+            "../../zugfolge-fleet/tests/fixtures/vehicle-world-seed-v3-interior.json"
+        ))
+        .unwrap();
+        let compilation = compile_vehicle_catalog(&source, &seed).unwrap();
+        let initialization = json!({
+            "schemaVersion": "zugfolge-fleet-world-initialize/v2",
+            "worldId": seed.world_id, "producedAt": seed.produced_at,
+            "authorityRelease": compilation.fleet_authority
+        });
+        let initialized: Value =
+            serde_json::from_str(&initialize_fleet_world(&initialization.to_string()).unwrap())
+                .unwrap();
+        // Öffentlicher Compiler-v2-Typ und privater Runtime-Typ müssen denselben
+        // kompakten Authority-Hash liefern, damit nachgelagerte Projektionen pinnen.
+        assert_eq!(
+            initialized["state"]["authorityReleaseHash"],
+            super::sha256_json(&compilation.fleet_authority).unwrap()
+        );
+        for asset in &compilation.fleet_authority.assets {
+            let actual = initialized["state"]["authorityRelease"]["assets"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|value| value["id"] == asset.id)
+                .unwrap();
+            assert_eq!(
+                actual["vehicleConfiguration"],
+                serde_json::to_value(&asset.vehicle_configuration).unwrap()
+            );
+        }
+        let command = json!({
+            "schemaVersion": "zugfolge-fleet-form-vehicles-command/v2",
+            "worldId": seed.world_id, "commandId": "fixture-interior-formation-command",
+            "expectedStateHash": initialized["stateHash"], "expectedRevision": 0,
+            "atS": seed.produced_at + 1, "formationId": "fixture-interior-formation-1",
+            "vehicleIds": ["fixture-interior-vehicle-1"], "pathReceiptId": "fixture-path-1"
+        });
+        let formed = apply(&initialized["state"], &command, None);
+        assert_eq!(
+            formed["state"]["authorityRelease"],
+            initialized["state"]["authorityRelease"]
+        );
+        assert_eq!(
+            formed["snapshot"]["formations"][0]["characteristics"]["seats"],
+            120
+        );
+        let verified: Value = serde_json::from_str(
+            &verify_fleet_world_state(
+                &formed["state"].to_string(),
+                formed["stateHash"].as_str().unwrap(),
+            )
+            .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(verified["stateHash"], formed["stateHash"]);
+        assert_eq!(verified["snapshotHash"], formed["snapshotHash"]);
+        let mut tampered = formed["state"].clone();
+        tampered["authorityRelease"]["assets"][0]["vehicleConfiguration"]["interior"]["toilets"] =
+            json!(3);
+        assert!(
+            verify_fleet_world_state(&tampered.to_string(), formed["stateHash"].as_str().unwrap())
+                .is_err()
+        );
+        let resealed: FleetWorldState = serde_json::from_value(tampered).unwrap();
+        assert!(
+            verify_fleet_world_state(
+                &serde_json::to_string(&resealed).unwrap(),
+                &state_hash(&resealed).unwrap()
+            )
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn m5_konfiguration_wird_auch_an_der_native_grenze_fachlich_revalidiert() {
+        let mut config: Value = serde_json::from_str(include_str!(
+            "../../zugfolge-fleet/tests/fixtures/vehicle-world-seed-v3-interior.json"
+        ))
+        .unwrap();
+        let mut valid = config["assets"][0]["vehicleConfiguration"].take();
+        valid["interior"]["firstClassSeats"] = json!(12);
+        valid["interior"]["secondClassSeats"] = json!(108);
+        valid["interior"]["multipurpose"]["bicycles"] = json!(8);
+        valid["interior"]["amenities"] = json!(["passenger_information"]);
+        for (pointer, value) in [
+            ("/structural/bodyLengthMm", json!(1)),
+            ("/structural/doorCountPerSide", json!(0)),
+            ("/interior/secondClassSeats", json!(109)),
+            ("/interior/multipurpose/wheelchairs", json!(3)),
+            ("/interior/accessibleToilets", json!(3)),
+            ("/interior/amenities", json!(["wifi", "wifi"])),
+        ] {
+            let mut release = authority_release_v2();
+            let mut invalid_config = valid.clone();
+            *invalid_config.pointer_mut(pointer).unwrap() = value;
+            release["assets"][0]["vehicleConfiguration"] = invalid_config;
+            let error = initialize_fleet_world(
+                &json!({
+                    "schemaVersion": "zugfolge-fleet-world-initialize/v2",
+                    "worldId": WORLD, "producedAt": 10, "authorityRelease": release
+                })
+                .to_string(),
+            )
+            .unwrap_err();
+            assert!(
+                error.to_string().contains("M5-Fahrzeugkonfiguration"),
+                "{pointer}: {error}"
+            );
+        }
     }
 
     #[test]

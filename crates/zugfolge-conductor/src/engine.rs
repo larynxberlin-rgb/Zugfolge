@@ -132,7 +132,9 @@ fn validate_interior(input: &ProjectConductorPassengersInputV1) -> Result<(), Co
     )
 }
 
-fn validate_source(input: &ProjectConductorPassengersInputV1) -> Result<(), ConductorError> {
+pub(crate) fn validate_source(
+    input: &ProjectConductorPassengersInputV1,
+) -> Result<(), ConductorError> {
     let result = &input.evaluation;
     let binding = &input.binding;
     ensure(
@@ -281,7 +283,7 @@ fn validate_source(input: &ProjectConductorPassengersInputV1) -> Result<(), Cond
     Ok(())
 }
 
-fn active_section(
+pub(crate) fn active_section(
     input: &ProjectConductorPassengersInputV1,
 ) -> Result<(usize, bool), ConductorError> {
     let progress = input
@@ -364,7 +366,7 @@ fn active_section(
     Ok((section, arrival == Some(section + 1)))
 }
 
-fn train_manifests(
+pub(crate) fn train_manifests(
     input: &ProjectConductorPassengersInputV1,
 ) -> Result<Vec<&PassengerManifestV1>, ConductorError> {
     let result = &input.evaluation;
@@ -571,7 +573,7 @@ pub(crate) fn appearance(binding: &ConductorPassengerBindingV1, passenger: &str)
         % 256
 }
 
-fn validate_previous(
+pub(crate) fn validate_previous(
     input: &ProjectConductorPassengersInputV1,
     active: usize,
     manifests: &[&PassengerManifestV1],

@@ -331,6 +331,11 @@ export const GENERATED_GLOSSARY_ENTRIES = Object.freeze([
     "definition": "private 1:1-Innenraumprojektion eines quittierten M10-Zugabschnitts mit stabilen Plätzen und ausschließlich sichtbaren Merkmalen; erzeugt keine Nachfrage oder Fahrberechtigung"
   },
   {
+    "term": "Fahrgastprojektion mit Deckbindung",
+    "code": "PassengerProjectionV2",
+    "definition": "M15.2-Projektion mit Wagenkasten-/Deckkennungen, exklusiver Sonderflächenzuordnung und Hash des geprüften M15.4-Quelllayouts; unveränderte Fahrgäste und Kapazitätszuweisungen"
+  },
+  {
     "term": "Fahrplanperiode",
     "code": "SchedulePeriod",
     "definition": "Saison aus Anmeldung, Koordinierung, Veröffentlichung und Betrieb; Länge ist Weltparameter, 3 bis 8 Wochen"
@@ -398,7 +403,7 @@ export const GENERATED_GLOSSARY_ENTRIES = Object.freeze([
   {
     "term": "Fahrzeugkonfiguration",
     "code": "VehicleConfiguration",
-    "definition": "Sitzaufteilung, Bestuhlung, Mehrzweckbereiche, Türen und Ausstattung eines Fahrzeugs"
+    "definition": "Sitzaufteilung, Bestuhlung, Mehrzweckbereiche, Türen und Ausstattung eines Fahrzeugs; vollständiger nativer Transport als vehicleConfiguration im individuellen Authority-Asset"
   },
   {
     "term": "Fahrzeuglebenslauf",
@@ -501,9 +506,29 @@ export const GENERATED_GLOSSARY_ENTRIES = Object.freeze([
     "definition": "unveränderliches, versioniertes Netz- und Betriebsartefakt mit Graph, gerichteten Kanten, Sicherungselementen, Laufwegvorlagen, RZÜ-Layout, Herkunft, Lizenz, Prüfsumme und Confidence"
   },
   {
+    "term": "Innenraumgeometriepolicy",
+    "code": "InteriorGeometryPolicyV1",
+    "definition": "releasegebundene generische Kasten-, Deck-, Tür-, Gang- und Treppengeometrie zur unveränderten M5-Konfiguration; keine Maße aus Grafikdateien"
+  },
+  {
+    "term": "Innenraumlayout",
+    "code": "InteriorLayoutV1",
+    "definition": "welt- und formationsgebundene Millimetergeometrie mit zusammenhängendem Passagiernetz, Kollisionen und exaktem M5-Platzinventar; keine erfundene Zuglaufzuordnung"
+  },
+  {
     "term": "Innenraumplatzinventar",
     "code": "InteriorPassengerPlacesV1",
     "definition": "gepinnte welt- und zuggebundene Liste belegter Sitz-, Steh- und Sonderplätze mit stabilen Kennungen und Millimeterpositionen; M15.2-Eingang aus dem M15.4-Layout"
+  },
+  {
+    "term": "Innenraumplatzinventar mit Deckbindung",
+    "code": "InteriorPassengerPlacesV2",
+    "definition": "aus einem geprüften M15.4-Layout und einer unabhängig belegten Zugzuordnung abgeleitete Kapazitätsplätze und getrennte Sonderflächen mit Kasten-/Deckidentität, Quelllayouthash und eigenem Inventarhash"
+  },
+  {
+    "term": "Innenraumsonderfläche",
+    "code": "InteriorSpecialBayV1",
+    "definition": "exklusive reale Rollstuhl-, Fahrrad- oder Kinderwagenfläche zusätzlich zum M10-Sitz-/Stehkapazitätsplatz; zählt keine weitere Person und bleibt an dasselbe individuelle Fahrzeug gebunden"
   },
   {
     "term": "Insolvenz",

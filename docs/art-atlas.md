@@ -220,6 +220,26 @@ Eine Signatur authentifiziert den Inhalt, ersetzt aber kein fehlendes
 Bild-, Herkunfts- oder Freigabegate. Die Prüffunktion schafft keine neuen
 Schlüssel und keine neue Schlüsselverwaltung.
 
+Der Node-Dateisystemeinstieg für den Weltserver ist
+`loadArtAtlasFromDirectory({ directory, worldId, expectedPin, signature, trustedKeys })`
+aus `@zugfolge/conductor-art`. Er liefert asynchron `LoadedArtAtlas` und liest
+ausschließlich `manifest.json` sowie dessen streng geparste relative PNG- und
+Belegpfade. Jede Pfadkomponente muss lokal und frei von symbolischen Links oder
+Junctions sein; Verzeichnisausbruch, externe URLs und nichtreguläre Dateien
+werden abgelehnt. Der Releaseordner ist ein vom Betreiber unveränderlich
+bereitgestelltes Verzeichnis. Größen und Dateistabilität werden beim Lesen
+geprüft: maximal 32 MiB Manifest, je 64 MiB PNG/128 MiB PNG gesamt und je
+16 MiB Beleg/64 MiB Belege gesamt. Bei Fehlern erscheinen nur stabile
+Fehlerkennungen, keine lokalen Pfade oder Dateiinhalte.
+
+Dieser Einstieg liest weder einen beigelegten Vertrauensschlüssel noch einen
+Weltpin oder eine Signatur automatisch ein. Diese drei Werte sind ausdrückliche,
+unabhängig bereitgestellte Servereingaben. Die geladenen Bytes durchlaufen
+unverändert `loadArtAtlasForWorld` mit sämtlichen Inhalts-, Freigabe-, Ed25519-
+und Weltpinprüfungen. Der Dateieinstieg erzeugt keine Ersatzbilder oder
+Freigaben. Seine Integrationstests lesen den wirklichen freigegebenen Korpus;
+ihre temporären Testschlüssel und Testweltpins sind keine Produktivsignatur.
+
 Der konkrete Signiereinstieg ist `tools/art-atlas/release.mjs`:
 
 ```sh

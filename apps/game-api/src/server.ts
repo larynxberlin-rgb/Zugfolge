@@ -70,6 +70,7 @@ import {
   FLEET_INITIALIZE_SCHEMA,
   loadOperatingRuntime,
   loadDemandRuntime,
+  loadConductorInteriorRuntime,
   loadOperationalSimulationRuntime,
   type OperatingRuntimeEvent,
 } from "@zugfolge/runtime-native";
@@ -77,6 +78,8 @@ import { and, asc, eq } from "drizzle-orm";
 
 import { buildApp } from "./app.js";
 import { DemandService, loadDemandDeployment } from "./demand-service.js";
+import { committedInteriorTime, loadConductorInteriorDeployment } from "./conductor-interior-configuration.js";
+import { ConductorInteriorService } from "./conductor-interior.js";
 import { SpfvService } from "./spfv-service.js";
 import {
   createDisruptionProviderHealthCheck,
@@ -666,6 +669,18 @@ const spfv = demand === undefined ? undefined : new SpfvService({
   },
   estimate: (input, tx) => demand.estimateSpfv(input, tx),
 });
+const interiorDeploymentPath = optionalEnv("ZUGFOLGE_CONDUCTOR_INTERIOR_DEPLOYMENT_PATH");
+const interiorDeploymentHash = optionalEnv("ZUGFOLGE_CONDUCTOR_INTERIOR_DEPLOYMENT_SHA256");
+const interiorTrustedKeysPath = optionalEnv("ZUGFOLGE_CONDUCTOR_ART_TRUSTED_KEYS_PATH");
+const interiorConfigured = [interiorDeploymentPath, interiorDeploymentHash, interiorTrustedKeysPath].some((value) => value !== undefined);
+if (interiorConfigured && [interiorDeploymentPath, interiorDeploymentHash, interiorTrustedKeysPath].some((value) => value === undefined))
+  throw new Error("Innenraumdeployment benötigt gemeinsam Pfad, SHA-256-Pin und unabhängigen öffentlichen Schlüsselring.");
+const conductorInterior = !interiorConfigured ? undefined : new ConductorInteriorService({
+  db, fleetRuntime: operatingRuntime, interiorRuntime: loadConductorInteriorRuntime(),
+  deployment: await loadConductorInteriorDeployment({ path: interiorDeploymentPath!, expectedSha256: interiorDeploymentHash!,
+    trustedKeysPath: interiorTrustedKeysPath!, worldId: worldScope.worldId }),
+  committedTimeForWorld: (worldId) => committedInteriorTime(worldId, deploymentRuntime.realtimeRegions(), regionalSimulation.readyRegions()),
+});
 const app = buildApp({
   worldScope,
   metricsApp,
@@ -674,6 +689,7 @@ const app = buildApp({
   livemap,
   livemapReadModel,
   demand,
+  conductorInterior,
   spfv,
   operations,
   simulationIngestToken: requireEnv("SIMULATION_INGEST_TOKEN"),
