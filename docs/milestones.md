@@ -1078,7 +1078,7 @@ Alpha-Schnitt. Vollständiger Fachvertrag:
 | 15.1 | **E29, ADR und versionierter Fachvertrag** einschließlich M10-/M8-Autoritätsgrenzen, Kontrolle, Dialog, Wirtschaft, Datenschutz und Abnahme | M | erledigt |
 | 15.2 | **M10-Fahrgastmanifeste und deterministische 1:1-Projektion**: jeder tatsächlich reisende Fahrgast wird logisch materialisiert, stabil platziert und kontrollierbar; Rendering darf nur optisch degradieren | L | in Arbeit |
 | 15.3 | **Eigene Pixelart-Designsprache und freigegebener Asset-Korpus**: finale erzeugte Figuren-, Innenraum-, Bahnhof- und Umgebungsassets mit `ArtAtlasManifestV1`, Herkunft, Hash und Rechtegates | **XL** | in Arbeit |
-| 15.4 | **Konfigurationsgetreue begehbare Fahrzeuginnenräume**: `InteriorLayoutV1` aus Formation und Fahrzeugkonfiguration, Begehbarkeits-, Kollisions- und Kapazitätsnachweis | **XL** | offen |
+| 15.4 | **Konfigurationsgetreue begehbare Fahrzeuginnenräume**: `InteriorLayoutV1` aus Formation und Fahrzeugkonfiguration, Begehbarkeits-, Kollisions- und Kapazitätsnachweis | **XL** | erledigt |
 | 15.5 | **Fließende Umgebung und modulare Bahnhofsszenen**: Umland/Vorstadt/Stadt, Tageszeit, tatsächliche Geschwindigkeit, Signal-/Bahnhofshalte, kleine/mittlere/große Stationen und dynamische Namen | **XL** | offen |
 | 15.6 | **Versionierter Sprechblasen-Dialogkorpus**: mindestens 150 geprüfte Dialogbäume und 600 Fahrgastäußerungen, verdeckter Sachverhalt, mindestens zwölf Situationsfamilien, kein Laufzeit-Sprachmodell | L | offen |
 | 15.7 | **Autoritative Schaffnersitzung**: Eigentümerberechtigung, Exklusivität, Kommandorevision, Idempotenz, Reconnect, Restore und bitgleiches Replay | L | offen |
@@ -1097,8 +1097,9 @@ M15.11 folgt M15.10 und M6; M15.12 schließt alle Teile zusammen.
 **M15.1/M15.2-Stand:** Der versionierte Fachvertrag und seine
 Aktions-/Autoritätsmatrix sind vollständig dokumentiert. E28 ist mit #530
 auf `main` veröffentlicht. M15.2 liefert den Rust-Projektionskern und eine
-autorisierte interne Plattformgrenze. Produktive M10-Haltquittungen,
-freigegebene Innenraumlayouts und die spielbare Browserabnahme bleiben offen;
+autorisierte interne Plattformgrenze. M15.4 liefert inzwischen belegte
+Innenraumlayouts und deckgebundene V2-Plätze. Produktive M10-Haltquittungen
+und die zusammenhängende spielbare Browserabnahme bleiben offen;
 M15.2 und M15 insgesamt werden dadurch nicht geschlossen. Reproduzierbare
 Prüfungen, Issue-/PR-Abgleich und Grenzen: [Teilabnahme](m15-abnahme.md).
 
@@ -1110,6 +1111,19 @@ die an den Inhalt gebundene Erklärung und den strengen Check ohne Befunde.
 M15.3 bleibt für die kryptografische Auslieferung mit tatsächlich verfügbarem
 Signierschlüssel und autorisiertem Art-Weltpin offen. Die Freigabe selbst ist
 abgeschlossen; die spätere Geometrie und Betriebsanbindung gehören zu M15.4/15.5.
+
+**M15.4-Stand:** Vollständige M5-Konfigurationen gelangen verlustfrei durch
+Katalogcompiler, native Flottenkommandos und gespeicherte Checkpoints in
+`InteriorLayoutV1`. Der autorisierte API-Dienst bindet Welt, aktuelle Periode,
+EVU, Halter, Formation, Revision und Releasepins. Rust erzeugt exakte Plätze,
+Türen, Sonderflächen, Sitzrichtungen, Decks, Übergänge und Kollisionsgeometrie.
+52 Konfigurationsvarianten, echte M10-Vollbelegung mit exklusiven Sonderflächen,
+Restore und konkrete Ablehnungen sind geprüft. Drei verschieden konfigurierte
+SPNV-Formationen sind im echten Browser begehbar; ein fehlender Beleg sperrt
+den Einstieg. [Vertrag](conductor-interior.md), [Plattformintegration](conductor-interior-platform.md)
+und [reproduzierbarer Beweis mit Screenshots](conductor-interior/README.md)
+dokumentieren den Abschluss. Produktive Art-Signatur und nachfolgende
+Schaffnersitzung bleiben den eigenen Arbeitspaketen zugeordnet.
 
 > **Beweis:** Ein eigener ausgelasteter SPNV-Zug wird mit den tatsächlichen
 > M10-Fahrgästen betreten. Der Spieler läuft durch den konfigurationsgetreuen

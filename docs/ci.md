@@ -85,6 +85,13 @@ Arbeit auf diesen Hosts.
 Ein grüner regulärer Prüflauf belegt den dort getesteten Code. Eine reale
 Betriebsabnahme wird mit ihrem eigenen Prüflauf und Protokoll dokumentiert.
 
+M15.4 wird im bestehenden Native-ABI-Job über den echten Katalogcompiler,
+M5-Checkpoints in PGlite, das Linux-NAPI-Addon und den installierten Browser
+geprüft. Der [reproduzierbare Innenraumbeweis](conductor-interior/README.md)
+umfasst drei Konfigurationen, Deck- und Wagenübergänge, Kollisionen und den
+konkret abgelehnten unvollständigen Beleg. Seine temporäre Testsignatur
+belegt die Auslieferungsprüfung; sie aktiviert keinen Produktivschlüssel.
+
 ## Welche Tests bleiben sinnvoll?
 
 - Konfliktfreiheit, Determinismus, Autorisierung, Weltisolation und korrekte

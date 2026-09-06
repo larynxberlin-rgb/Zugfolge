@@ -142,6 +142,14 @@ jobs:
       - name: Initialize-, Apply-, Hash- und Idempotenz-Smoke
         run: pnpm --filter @zugfolge/runtime-native smoke:native
 
+      - name: M15.4-Katalogcompiler und native Geometrie-Hashgrenze bereitstellen
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo build --release --locked -p zugfolge-fleet --bin zugfolge-vehicle-catalog -p zugfolge-conductor --example interior_json
+          printf 'ZUGFOLGE_VEHICLE_CATALOG_TEST_BINARY=%s/target/release/zugfolge-vehicle-catalog\n' "$GITHUB_WORKSPACE" >> "$GITHUB_ENV"
+          printf 'ZUGFOLGE_INTERIOR_TEST_BINARY=%s/target/release/examples/interior_json\n' "$GITHUB_WORKSPACE" >> "$GITHUB_ENV"
+
       - name: M3-Planning-Worker und TypeScript-Grenzen bauen
         run: pnpm --filter @zugfolge/planning-worker... build
 
@@ -172,7 +180,7 @@ jobs:
           pnpm --filter @zugfolge/game-web... build
           pnpm --filter @zugfolge/operations-center... build
           # Echte NAPI-Registries und PGlite-Welten nicht zwischen Vitest-Worker-Isolates parallelisieren.
-          pnpm --filter @zugfolge/game-api exec vitest run --no-file-parallelism src/world-deployment-runtime.test.ts src/fleet-configuration.native.integration.test.ts src/economy-native.integration.test.ts src/disruption-policy-admin.test.ts src/manual-disruption-catalog.native.integration.test.ts src/demand-service.test.ts src/spfv-native.integration.test.ts src/conductor-projection.native.integration.test.ts
+          pnpm --filter @zugfolge/game-api exec vitest run --no-file-parallelism src/world-deployment-runtime.test.ts src/fleet-configuration.native.integration.test.ts src/economy-native.integration.test.ts src/disruption-policy-admin.test.ts src/manual-disruption-catalog.native.integration.test.ts src/demand-service.test.ts src/spfv-native.integration.test.ts src/conductor-projection.native.integration.test.ts src/conductor-interior.native.integration.test.ts
           pnpm --filter @zugfolge/game-api exec vitest run --no-file-parallelism src/operations-browser.e2e.test.ts src/game-hints.browser.test.ts src/demand-browser.e2e.test.ts
           # Echter Alpha-Builder -> serialisierter Compact-v2-Vertrag -> Serverstart-Registry.
           node --test tools/region-import/build-alpha-world-runtime.integration.test.mjs
@@ -214,6 +222,23 @@ jobs:
             exit 1
           fi
           node --test tools/art-atlas/preview.test.mjs
+
+      - name: M15.4-Innenräume aus M5 im echten Browser begehen
+        shell: bash
+        env:
+          CONDUCTOR_INTERIOR_BROWSER_TEST: "1"
+          CONDUCTOR_INTERIOR_SCREENSHOT_DIR: ${{ runner.temp }}/conductor-interior/screenshots
+          CONDUCTOR_INTERIOR_REPORT_PATH: ${{ runner.temp }}/conductor-interior/browser-report.json
+        run: |
+          set -euo pipefail
+          for interior_browser in "${ZUGFOLGE_BROWSER_EXECUTABLE:-}" /usr/bin/google-chrome /usr/bin/chromium; do
+            if [[ -n "${interior_browser}" && -x "${interior_browser}" ]]; then
+              export PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH="${interior_browser}"
+              break
+            fi
+          done
+          test -n "${PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH:-}"
+          node --test tools/conductor-interior/server.test.mjs tools/conductor-interior/preview.test.mjs
 
   guards:
     # ASCII-only: GitHub branch protection compares this check name byte-for-byte.

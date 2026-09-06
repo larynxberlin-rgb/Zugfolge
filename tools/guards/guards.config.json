@@ -115,6 +115,7 @@
       "paths": [
         "tools/alpha-ops/**",
         "tools/art-atlas/**",
+        "tools/conductor-interior/**",
         "tools/guards/**",
         "tools/load/**",
         "tools/m7-acceptance/**",

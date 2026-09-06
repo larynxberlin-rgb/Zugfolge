@@ -1,0 +1,757 @@
+{
+  "schemaVersion": "conductor-interior-browser-report/v1",
+  "executedAt": "2026-09-06T20:20:41.688Z",
+  "browser": {
+    "engine": "chromium",
+    "channel": "msedge",
+    "version": "153.0.4234.19",
+    "platform": "win32"
+  },
+  "source": "Echte M5-Initialisierung und committed DB-Prüfung mit fiktiven vollständigen Spielkonfigurationen; native Rust-Geometrie und Bewegungsprüfung.",
+  "scope": {
+    "productionCatalog": false,
+    "productionArtSignature": false,
+    "persistentConductorSession": false,
+    "trainRunBinding": false
+  },
+  "artManifestSha256": "1503e2a3199d7f7b217e83b346e7ed3af8664e6b692642e9b140d312164453a3",
+  "artVerification": "Freigegebener Korpus mit geprüftem temporärem Testschlüssel; keine produktive Signatur",
+  "atlasFiles": [
+    {
+      "fileId": "passenger-red",
+      "path": "atlases/passenger-red.png",
+      "sha256": "7f0cd9c264bc5404d957675bc84ed886039dc84f2faab54b8e8d8a1e72b4b346",
+      "bytes": 11308
+    },
+    {
+      "fileId": "passenger-teal",
+      "path": "atlases/passenger-teal.png",
+      "sha256": "3aaadd3f90131877bd5f482c6d96b292b8f42471ef699bf4c4ea0e8cdd9c33ad",
+      "bytes": 13615
+    },
+    {
+      "fileId": "passenger-amber",
+      "path": "atlases/passenger-amber.png",
+      "sha256": "e781ead10d891f00ea99b744c2232441311bb70b8b53b1a5ab3c99fb7653ad04",
+      "bytes": 11031
+    },
+    {
+      "fileId": "passenger-slate",
+      "path": "atlases/passenger-slate.png",
+      "sha256": "c1807f78b0318d07ec1000004a4035600f82640f211c6455e04acec2ee998480",
+      "bytes": 15462
+    },
+    {
+      "fileId": "conductor",
+      "path": "atlases/conductor.png",
+      "sha256": "e42490973eb0ea458a500b0b5278382d48fdbcdd1ed83424263151d1422a8c4a",
+      "bytes": 10679
+    },
+    {
+      "fileId": "modules",
+      "path": "atlases/modules.png",
+      "sha256": "9ddda097bed0c264600f1416cf3b7ce708e56201096be699cbb6e316ded1eb3c",
+      "bytes": 840551
+    },
+    {
+      "fileId": "vehicles",
+      "path": "atlases/vehicles.png",
+      "sha256": "9af3e9b1add565fe91e248db0b3e7c99c9d97a1627f15def8404672eae266323",
+      "bytes": 546571
+    }
+  ],
+  "results": [
+    {
+      "caseId": "regional-row",
+      "label": "Nahverkehr · Reihensitze",
+      "binding": {
+        "worldId": "00000000-0000-4000-8000-000000000387",
+        "periodId": "interior-fixture-period",
+        "operatorId": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        "formationId": "fixture-interior-formation-1",
+        "formationRevision": 3,
+        "fleetStateHash": "c1c13cd18c709a82b1858904fcb473ee0797b1830017a052ca033f1b96f9d869",
+        "fleetAuthorityReleaseId": "fixture-fleet-authority-interior-configurations",
+        "fleetAuthorityReleaseHash": "c750653f8bdd093d743e911e76494581915fbd5dd1be248c91af609662df68ba",
+        "mobilizationSnapshotHash": "a81cc0bf16b8c2efc8a95d37346b1b843739012bb06eba4980672c79add0a8b7",
+        "geometryPolicyHash": "7d09994d550a6ee6fe4685e1d73fbdb1e669b707648030c427c0435889194c84",
+        "artReleaseId": "conductor-art-2026.1",
+        "artManifestHash": "1503e2a3199d7f7b217e83b346e7ed3af8664e6b692642e9b140d312164453a3"
+      },
+      "layoutHash": "bf7b72838b558845dd9d54fc12d642e3a2b6a0e80c8bab1d7b6f7fba5b5df801",
+      "capacity": {
+        "standardSeats": 104,
+        "standardStanding": 40,
+        "premiumSeats": 16,
+        "wheelchairSpaces": 2,
+        "bicycleSpaces": 12,
+        "strollerSpaces": 4
+      },
+      "passengerPlaces": 160,
+      "specialBays": 18,
+      "nativePath": {
+        "edgeCount": 51,
+        "lengthMm": 46950,
+        "crossedGangways": 2
+      },
+      "evidence": {
+        "source": "Explizit fiktive M5-Spielkonfigurationen; keine realen Baureihendaten",
+        "compiler": "zugfolge-vehicle-catalog · tatsächliche kompilierte Source- und Seeddateien",
+        "compilerOutputSetHash": "1101264b01048231b9e3401ccc123ce3fffc6d1c48a5204817e6bf7c512ca170",
+        "persistence": "PGlite mit echten Migrationen und FleetProducer-Checkpoints",
+        "worldId": "00000000-0000-4000-8000-000000000387",
+        "periodId": "interior-fixture-period",
+        "simulationTimeMs": 110000,
+        "fleetRevision": 3,
+        "fleetStateHash": "c1c13cd18c709a82b1858904fcb473ee0797b1830017a052ca033f1b96f9d869",
+        "snapshotHash": "a81cc0bf16b8c2efc8a95d37346b1b843739012bb06eba4980672c79add0a8b7",
+        "authorityReleaseHash": "c750653f8bdd093d743e911e76494581915fbd5dd1be248c91af609662df68ba",
+        "artManifestHash": "1503e2a3199d7f7b217e83b346e7ed3af8664e6b692642e9b140d312164453a3",
+        "artVerification": "Freigegebener Korpus mit geprüftem temporärem Testschlüssel; keine produktive Signatur",
+        "nativeGeometry": true,
+        "browserSuppliedLayout": false,
+        "layoutHash": "bf7b72838b558845dd9d54fc12d642e3a2b6a0e80c8bab1d7b6f7fba5b5df801",
+        "formationId": "fixture-interior-formation-1"
+      },
+      "browserState": {
+        "caseId": "regional-row",
+        "layoutHash": "bf7b72838b558845dd9d54fc12d642e3a2b6a0e80c8bab1d7b6f7fba5b5df801",
+        "currentNodeId": "node-86ad0a46d4f845b3450f894329b7614d",
+        "currentPoint": {
+          "vehicleId": "fixture-interior-vehicle-1",
+          "bodyId": "body-3",
+          "deckId": "main",
+          "xMm": 5950,
+          "yMm": 1500
+        },
+        "view": {
+          "bodyKey": "fixture-interior-vehicle-1/body-3",
+          "deckId": "main",
+          "zoom": 1
+        },
+        "movements": 51,
+        "rejected": 1,
+        "lastIssue": "interior_movement_blocked",
+        "capacity": {
+          "standardSeats": 104,
+          "standardStanding": 40,
+          "premiumSeats": 16,
+          "wheelchairSpaces": 2,
+          "bicycleSpaces": 12,
+          "strollerSpaces": 4
+        },
+        "artManifestSha256": "1503e2a3199d7f7b217e83b346e7ed3af8664e6b692642e9b140d312164453a3"
+      }
+    },
+    {
+      "caseId": "regional-double",
+      "label": "Doppelstock · Gegenübersitze",
+      "binding": {
+        "worldId": "00000000-0000-4000-8000-000000000387",
+        "periodId": "interior-fixture-period",
+        "operatorId": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        "formationId": "fixture-interior-formation-2",
+        "formationRevision": 3,
+        "fleetStateHash": "c1c13cd18c709a82b1858904fcb473ee0797b1830017a052ca033f1b96f9d869",
+        "fleetAuthorityReleaseId": "fixture-fleet-authority-interior-configurations",
+        "fleetAuthorityReleaseHash": "c750653f8bdd093d743e911e76494581915fbd5dd1be248c91af609662df68ba",
+        "mobilizationSnapshotHash": "a81cc0bf16b8c2efc8a95d37346b1b843739012bb06eba4980672c79add0a8b7",
+        "geometryPolicyHash": "7d09994d550a6ee6fe4685e1d73fbdb1e669b707648030c427c0435889194c84",
+        "artReleaseId": "conductor-art-2026.1",
+        "artManifestHash": "1503e2a3199d7f7b217e83b346e7ed3af8664e6b692642e9b140d312164453a3"
+      },
+      "layoutHash": "4ed91b3b885f1f2ecda50eb0daff47f00c4e9ec78e066ad48cf2c0006ef77da1",
+      "capacity": {
+        "standardSeats": 184,
+        "standardStanding": 20,
+        "premiumSeats": 16,
+        "wheelchairSpaces": 2,
+        "bicycleSpaces": 12,
+        "strollerSpaces": 2
+      },
+      "passengerPlaces": 220,
+      "specialBays": 16,
+      "nativePath": {
+        "edgeCount": 33,
+        "lengthMm": 40000,
+        "crossedGangways": 1
+      },
+      "evidence": {
+        "source": "Explizit fiktive M5-Spielkonfigurationen; keine realen Baureihendaten",
+        "compiler": "zugfolge-vehicle-catalog · tatsächliche kompilierte Source- und Seeddateien",
+        "compilerOutputSetHash": "1101264b01048231b9e3401ccc123ce3fffc6d1c48a5204817e6bf7c512ca170",
+        "persistence": "PGlite mit echten Migrationen und FleetProducer-Checkpoints",
+        "worldId": "00000000-0000-4000-8000-000000000387",
+        "periodId": "interior-fixture-period",
+        "simulationTimeMs": 110000,
+        "fleetRevision": 3,
+        "fleetStateHash": "c1c13cd18c709a82b1858904fcb473ee0797b1830017a052ca033f1b96f9d869",
+        "snapshotHash": "a81cc0bf16b8c2efc8a95d37346b1b843739012bb06eba4980672c79add0a8b7",
+        "authorityReleaseHash": "c750653f8bdd093d743e911e76494581915fbd5dd1be248c91af609662df68ba",
+        "artManifestHash": "1503e2a3199d7f7b217e83b346e7ed3af8664e6b692642e9b140d312164453a3",
+        "artVerification": "Freigegebener Korpus mit geprüftem temporärem Testschlüssel; keine produktive Signatur",
+        "nativeGeometry": true,
+        "browserSuppliedLayout": false,
+        "layoutHash": "4ed91b3b885f1f2ecda50eb0daff47f00c4e9ec78e066ad48cf2c0006ef77da1",
+        "formationId": "fixture-interior-formation-2"
+      },
+      "browserState": {
+        "caseId": "regional-double",
+        "layoutHash": "4ed91b3b885f1f2ecda50eb0daff47f00c4e9ec78e066ad48cf2c0006ef77da1",
+        "currentNodeId": "node-c8e265994bddfbbdf213e37dda7dd13e",
+        "currentPoint": {
+          "vehicleId": "fixture-interior-vehicle-2",
+          "bodyId": "body-3",
+          "deckId": "lower",
+          "xMm": 19500,
+          "yMm": 1500
+        },
+        "view": {
+          "bodyKey": "fixture-interior-vehicle-2/body-3",
+          "deckId": "lower",
+          "zoom": 1
+        },
+        "movements": 54,
+        "rejected": 1,
+        "lastIssue": "interior_movement_blocked",
+        "capacity": {
+          "standardSeats": 184,
+          "standardStanding": 20,
+          "premiumSeats": 16,
+          "wheelchairSpaces": 2,
+          "bicycleSpaces": 12,
+          "strollerSpaces": 2
+        },
+        "artManifestSha256": "1503e2a3199d7f7b217e83b346e7ed3af8664e6b692642e9b140d312164453a3"
+      }
+    },
+    {
+      "caseId": "regional-folding",
+      "label": "Nahverkehr · Klappsitze",
+      "binding": {
+        "worldId": "00000000-0000-4000-8000-000000000387",
+        "periodId": "interior-fixture-period",
+        "operatorId": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        "formationId": "fixture-interior-formation-3",
+        "formationRevision": 3,
+        "fleetStateHash": "c1c13cd18c709a82b1858904fcb473ee0797b1830017a052ca033f1b96f9d869",
+        "fleetAuthorityReleaseId": "fixture-fleet-authority-interior-configurations",
+        "fleetAuthorityReleaseHash": "c750653f8bdd093d743e911e76494581915fbd5dd1be248c91af609662df68ba",
+        "mobilizationSnapshotHash": "a81cc0bf16b8c2efc8a95d37346b1b843739012bb06eba4980672c79add0a8b7",
+        "geometryPolicyHash": "7d09994d550a6ee6fe4685e1d73fbdb1e669b707648030c427c0435889194c84",
+        "artReleaseId": "conductor-art-2026.1",
+        "artManifestHash": "1503e2a3199d7f7b217e83b346e7ed3af8664e6b692642e9b140d312164453a3"
+      },
+      "layoutHash": "32acaafba810572678d79b2deb40343806fa31bbd43ba886fbe52ba93f136db4",
+      "capacity": {
+        "standardSeats": 80,
+        "standardStanding": 48,
+        "premiumSeats": 16,
+        "wheelchairSpaces": 2,
+        "bicycleSpaces": 12,
+        "strollerSpaces": 8
+      },
+      "passengerPlaces": 144,
+      "specialBays": 22,
+      "nativePath": {
+        "edgeCount": 53,
+        "lengthMm": 46625,
+        "crossedGangways": 2
+      },
+      "evidence": {
+        "source": "Explizit fiktive M5-Spielkonfigurationen; keine realen Baureihendaten",
+        "compiler": "zugfolge-vehicle-catalog · tatsächliche kompilierte Source- und Seeddateien",
+        "compilerOutputSetHash": "1101264b01048231b9e3401ccc123ce3fffc6d1c48a5204817e6bf7c512ca170",
+        "persistence": "PGlite mit echten Migrationen und FleetProducer-Checkpoints",
+        "worldId": "00000000-0000-4000-8000-000000000387",
+        "periodId": "interior-fixture-period",
+        "simulationTimeMs": 110000,
+        "fleetRevision": 3,
+        "fleetStateHash": "c1c13cd18c709a82b1858904fcb473ee0797b1830017a052ca033f1b96f9d869",
+        "snapshotHash": "a81cc0bf16b8c2efc8a95d37346b1b843739012bb06eba4980672c79add0a8b7",
+        "authorityReleaseHash": "c750653f8bdd093d743e911e76494581915fbd5dd1be248c91af609662df68ba",
+        "artManifestHash": "1503e2a3199d7f7b217e83b346e7ed3af8664e6b692642e9b140d312164453a3",
+        "artVerification": "Freigegebener Korpus mit geprüftem temporärem Testschlüssel; keine produktive Signatur",
+        "nativeGeometry": true,
+        "browserSuppliedLayout": false,
+        "layoutHash": "32acaafba810572678d79b2deb40343806fa31bbd43ba886fbe52ba93f136db4",
+        "formationId": "fixture-interior-formation-3"
+      },
+      "browserState": {
+        "caseId": "regional-folding",
+        "layoutHash": "32acaafba810572678d79b2deb40343806fa31bbd43ba886fbe52ba93f136db4",
+        "currentNodeId": "node-e723b7b1768dad2bb39528afa4719d43",
+        "currentPoint": {
+          "vehicleId": "fixture-interior-vehicle-3",
+          "bodyId": "body-3",
+          "deckId": "main",
+          "xMm": 3625,
+          "yMm": 1500
+        },
+        "view": {
+          "bodyKey": "fixture-interior-vehicle-3/body-3",
+          "deckId": "main",
+          "zoom": 1
+        },
+        "movements": 53,
+        "rejected": 1,
+        "lastIssue": "interior_movement_blocked",
+        "capacity": {
+          "standardSeats": 80,
+          "standardStanding": 48,
+          "premiumSeats": 16,
+          "wheelchairSpaces": 2,
+          "bicycleSpaces": 12,
+          "strollerSpaces": 8
+        },
+        "artManifestSha256": "1503e2a3199d7f7b217e83b346e7ed3af8664e6b692642e9b140d312164453a3"
+      }
+    },
+    {
+      "caseId": "configuration-missing",
+      "label": "Unvollständiger Konfigurationsbeleg",
+      "issue": {
+        "code": "interior_configuration_missing",
+        "message": "Fahrzeug fixture-interior-vehicle-1: vollständiger M5-Beleg vehicleConfiguration fehlt."
+      },
+      "evidence": {
+        "source": "Explizit fiktive M5-Spielkonfigurationen; keine realen Baureihendaten",
+        "compiler": "zugfolge-vehicle-catalog · tatsächliche kompilierte Source- und Seeddateien",
+        "compilerOutputSetHash": "6a78a3554b77e4f84485358c44c659b8ad7a2257211f166ab4f605cc0e7dc19d",
+        "persistence": "PGlite mit echten Migrationen und FleetProducer-Checkpoints",
+        "worldId": "00000000-0000-4000-8000-000000000387",
+        "periodId": "interior-fixture-period",
+        "simulationTimeMs": 110000,
+        "fleetRevision": 3,
+        "fleetStateHash": "93b1484ad24106eedf2f9c4aa89609a14effeca6a5d318b7c5fea6ca4842a37f",
+        "snapshotHash": "a81cc0bf16b8c2efc8a95d37346b1b843739012bb06eba4980672c79add0a8b7",
+        "authorityReleaseHash": "1aecb4d0d96d6ea15b5c311a6afef88892001f99dcba1fab924425f390539d9f",
+        "artManifestHash": "1503e2a3199d7f7b217e83b346e7ed3af8664e6b692642e9b140d312164453a3",
+        "artVerification": "Freigegebener Korpus mit geprüftem temporärem Testschlüssel; keine produktive Signatur",
+        "nativeGeometry": true,
+        "browserSuppliedLayout": false,
+        "rejectedVehicleId": "fixture-interior-vehicle-1"
+      }
+    }
+  ],
+  "checks": {
+    "positiveCases": 3,
+    "blockedCases": 1,
+    "stairTransitions": 1,
+    "gangways": 5,
+    "approvedMovements": 158,
+    "blockedMovements": 3,
+    "mobileWidths": [
+      390,
+      320
+    ],
+    "pageErrors": []
+  },
+  "screenshots": [
+    {
+      "name": "regional-row-entry",
+      "file": "screenshots/regional-row-entry.png",
+      "sha256": "1c58c6669612ce66c5f9667af7a66723d6eb7842d8040e0425046b6e91fb3ab5",
+      "viewport": {
+        "width": 1440,
+        "height": 1080
+      },
+      "state": {
+        "caseId": "regional-row",
+        "layoutHash": "bf7b72838b558845dd9d54fc12d642e3a2b6a0e80c8bab1d7b6f7fba5b5df801",
+        "currentNodeId": "node-19d75f080d0323d7f155804f53815677",
+        "currentPoint": {
+          "vehicleId": "fixture-interior-vehicle-1",
+          "bodyId": "body-1",
+          "deckId": "main",
+          "xMm": 7000,
+          "yMm": 1500
+        },
+        "view": {
+          "bodyKey": "fixture-interior-vehicle-1/body-1",
+          "deckId": "main",
+          "zoom": 1
+        },
+        "movements": 0,
+        "rejected": 0,
+        "lastIssue": null,
+        "capacity": {
+          "standardSeats": 104,
+          "standardStanding": 40,
+          "premiumSeats": 16,
+          "wheelchairSpaces": 2,
+          "bicycleSpaces": 12,
+          "strollerSpaces": 4
+        },
+        "artManifestSha256": "1503e2a3199d7f7b217e83b346e7ed3af8664e6b692642e9b140d312164453a3"
+      }
+    },
+    {
+      "name": "regional-row-walked",
+      "file": "screenshots/regional-row-walked.png",
+      "sha256": "67cd34d4c4c1c15fdfabd052484d254ccfc76203f34f726cace59d8f97db540c",
+      "viewport": {
+        "width": 1440,
+        "height": 1080
+      },
+      "state": {
+        "caseId": "regional-row",
+        "layoutHash": "bf7b72838b558845dd9d54fc12d642e3a2b6a0e80c8bab1d7b6f7fba5b5df801",
+        "currentNodeId": "node-86ad0a46d4f845b3450f894329b7614d",
+        "currentPoint": {
+          "vehicleId": "fixture-interior-vehicle-1",
+          "bodyId": "body-3",
+          "deckId": "main",
+          "xMm": 5950,
+          "yMm": 1500
+        },
+        "view": {
+          "bodyKey": "fixture-interior-vehicle-1/body-3",
+          "deckId": "main",
+          "zoom": 1
+        },
+        "movements": 51,
+        "rejected": 0,
+        "lastIssue": null,
+        "capacity": {
+          "standardSeats": 104,
+          "standardStanding": 40,
+          "premiumSeats": 16,
+          "wheelchairSpaces": 2,
+          "bicycleSpaces": 12,
+          "strollerSpaces": 4
+        },
+        "artManifestSha256": "1503e2a3199d7f7b217e83b346e7ed3af8664e6b692642e9b140d312164453a3"
+      }
+    },
+    {
+      "name": "regional-double-entry",
+      "file": "screenshots/regional-double-entry.png",
+      "sha256": "aae0355345cff7b2e5628b25d63608b98bef3f88bfd5fcca2d02ba3870d2d114",
+      "viewport": {
+        "width": 1440,
+        "height": 1080
+      },
+      "state": {
+        "caseId": "regional-double",
+        "layoutHash": "4ed91b3b885f1f2ecda50eb0daff47f00c4e9ec78e066ad48cf2c0006ef77da1",
+        "currentNodeId": "node-2bd08394c8160d8c872992f30900145d",
+        "currentPoint": {
+          "vehicleId": "fixture-interior-vehicle-2",
+          "bodyId": "body-1",
+          "deckId": "lower",
+          "xMm": 7000,
+          "yMm": 1500
+        },
+        "view": {
+          "bodyKey": "fixture-interior-vehicle-2/body-1",
+          "deckId": "lower",
+          "zoom": 1
+        },
+        "movements": 0,
+        "rejected": 0,
+        "lastIssue": null,
+        "capacity": {
+          "standardSeats": 184,
+          "standardStanding": 20,
+          "premiumSeats": 16,
+          "wheelchairSpaces": 2,
+          "bicycleSpaces": 12,
+          "strollerSpaces": 2
+        },
+        "artManifestSha256": "1503e2a3199d7f7b217e83b346e7ed3af8664e6b692642e9b140d312164453a3"
+      }
+    },
+    {
+      "name": "regional-double-upper",
+      "file": "screenshots/regional-double-upper.png",
+      "sha256": "e375e07b1e71446679bc1573ca77dab66e7e414b959c49a5972e290e5a2ce63f",
+      "viewport": {
+        "width": 1440,
+        "height": 1080
+      },
+      "state": {
+        "caseId": "regional-double",
+        "layoutHash": "4ed91b3b885f1f2ecda50eb0daff47f00c4e9ec78e066ad48cf2c0006ef77da1",
+        "currentNodeId": "node-2b48c3348827d67c036b6b15e6d1bd39",
+        "currentPoint": {
+          "vehicleId": "fixture-interior-vehicle-2",
+          "bodyId": "body-2",
+          "deckId": "upper",
+          "xMm": 3500,
+          "yMm": 1500
+        },
+        "view": {
+          "bodyKey": "fixture-interior-vehicle-2/body-2",
+          "deckId": "upper",
+          "zoom": 1
+        },
+        "movements": 20,
+        "rejected": 0,
+        "lastIssue": null,
+        "capacity": {
+          "standardSeats": 184,
+          "standardStanding": 20,
+          "premiumSeats": 16,
+          "wheelchairSpaces": 2,
+          "bicycleSpaces": 12,
+          "strollerSpaces": 2
+        },
+        "artManifestSha256": "1503e2a3199d7f7b217e83b346e7ed3af8664e6b692642e9b140d312164453a3"
+      }
+    },
+    {
+      "name": "regional-double-stairs",
+      "file": "screenshots/regional-double-stairs.png",
+      "sha256": "a50b45b197c0905d0afd6ff9802cbb9116cdea531aed8e67dbb9bd48452e853b",
+      "viewport": {
+        "width": 1440,
+        "height": 1080
+      },
+      "state": {
+        "caseId": "regional-double",
+        "layoutHash": "4ed91b3b885f1f2ecda50eb0daff47f00c4e9ec78e066ad48cf2c0006ef77da1",
+        "currentNodeId": "node-7c7cb030925fb5366e9fb0c4da591e25",
+        "currentPoint": {
+          "vehicleId": "fixture-interior-vehicle-2",
+          "bodyId": "body-2",
+          "deckId": "lower",
+          "xMm": 3500,
+          "yMm": 1500
+        },
+        "view": {
+          "bodyKey": "fixture-interior-vehicle-2/body-2",
+          "deckId": "lower",
+          "zoom": 1
+        },
+        "movements": 21,
+        "rejected": 0,
+        "lastIssue": null,
+        "capacity": {
+          "standardSeats": 184,
+          "standardStanding": 20,
+          "premiumSeats": 16,
+          "wheelchairSpaces": 2,
+          "bicycleSpaces": 12,
+          "strollerSpaces": 2
+        },
+        "artManifestSha256": "1503e2a3199d7f7b217e83b346e7ed3af8664e6b692642e9b140d312164453a3"
+      }
+    },
+    {
+      "name": "regional-double-walked",
+      "file": "screenshots/regional-double-walked.png",
+      "sha256": "d9f5c9089a61b692091686be5605dd44bc8ddf76164e6d8a89f61aee2b8662b7",
+      "viewport": {
+        "width": 1440,
+        "height": 1080
+      },
+      "state": {
+        "caseId": "regional-double",
+        "layoutHash": "4ed91b3b885f1f2ecda50eb0daff47f00c4e9ec78e066ad48cf2c0006ef77da1",
+        "currentNodeId": "node-c8e265994bddfbbdf213e37dda7dd13e",
+        "currentPoint": {
+          "vehicleId": "fixture-interior-vehicle-2",
+          "bodyId": "body-3",
+          "deckId": "lower",
+          "xMm": 19500,
+          "yMm": 1500
+        },
+        "view": {
+          "bodyKey": "fixture-interior-vehicle-2/body-3",
+          "deckId": "lower",
+          "zoom": 1
+        },
+        "movements": 54,
+        "rejected": 0,
+        "lastIssue": null,
+        "capacity": {
+          "standardSeats": 184,
+          "standardStanding": 20,
+          "premiumSeats": 16,
+          "wheelchairSpaces": 2,
+          "bicycleSpaces": 12,
+          "strollerSpaces": 2
+        },
+        "artManifestSha256": "1503e2a3199d7f7b217e83b346e7ed3af8664e6b692642e9b140d312164453a3"
+      }
+    },
+    {
+      "name": "regional-folding-entry",
+      "file": "screenshots/regional-folding-entry.png",
+      "sha256": "2e86335bc6efec2727448a8f0bb9b165f973480cf21b7bd4ed50c81f6e3ebc25",
+      "viewport": {
+        "width": 1440,
+        "height": 1080
+      },
+      "state": {
+        "caseId": "regional-folding",
+        "layoutHash": "32acaafba810572678d79b2deb40343806fa31bbd43ba886fbe52ba93f136db4",
+        "currentNodeId": "node-9e4779e82b2bc7f8ac5c72b400fcb905",
+        "currentPoint": {
+          "vehicleId": "fixture-interior-vehicle-3",
+          "bodyId": "body-1",
+          "deckId": "main",
+          "xMm": 5000,
+          "yMm": 1500
+        },
+        "view": {
+          "bodyKey": "fixture-interior-vehicle-3/body-1",
+          "deckId": "main",
+          "zoom": 1
+        },
+        "movements": 0,
+        "rejected": 0,
+        "lastIssue": null,
+        "capacity": {
+          "standardSeats": 80,
+          "standardStanding": 48,
+          "premiumSeats": 16,
+          "wheelchairSpaces": 2,
+          "bicycleSpaces": 12,
+          "strollerSpaces": 8
+        },
+        "artManifestSha256": "1503e2a3199d7f7b217e83b346e7ed3af8664e6b692642e9b140d312164453a3"
+      }
+    },
+    {
+      "name": "regional-folding-walked",
+      "file": "screenshots/regional-folding-walked.png",
+      "sha256": "0ca263557aa6b5f1b99052d6002e487010cc19ffd932b012e5303bd0916ccbf3",
+      "viewport": {
+        "width": 1440,
+        "height": 1080
+      },
+      "state": {
+        "caseId": "regional-folding",
+        "layoutHash": "32acaafba810572678d79b2deb40343806fa31bbd43ba886fbe52ba93f136db4",
+        "currentNodeId": "node-e723b7b1768dad2bb39528afa4719d43",
+        "currentPoint": {
+          "vehicleId": "fixture-interior-vehicle-3",
+          "bodyId": "body-3",
+          "deckId": "main",
+          "xMm": 3625,
+          "yMm": 1500
+        },
+        "view": {
+          "bodyKey": "fixture-interior-vehicle-3/body-3",
+          "deckId": "main",
+          "zoom": 1
+        },
+        "movements": 53,
+        "rejected": 0,
+        "lastIssue": null,
+        "capacity": {
+          "standardSeats": 80,
+          "standardStanding": 48,
+          "premiumSeats": 16,
+          "wheelchairSpaces": 2,
+          "bicycleSpaces": 12,
+          "strollerSpaces": 8
+        },
+        "artManifestSha256": "1503e2a3199d7f7b217e83b346e7ed3af8664e6b692642e9b140d312164453a3"
+      }
+    },
+    {
+      "name": "configuration-missing-blocked",
+      "file": "screenshots/configuration-missing-blocked.png",
+      "sha256": "dc6109b358297259e5a2048132fb8f3e509101b89d4dfc1be3bd82a1dca650a5",
+      "viewport": {
+        "width": 1440,
+        "height": 1080
+      },
+      "state": {
+        "caseId": "configuration-missing",
+        "layoutHash": null,
+        "currentNodeId": "node-e723b7b1768dad2bb39528afa4719d43",
+        "currentPoint": null,
+        "view": {
+          "bodyKey": "fixture-interior-vehicle-3/body-3",
+          "deckId": "main",
+          "zoom": 1
+        },
+        "movements": 0,
+        "rejected": 0,
+        "lastIssue": "interior_configuration_missing",
+        "capacity": null,
+        "artManifestSha256": "1503e2a3199d7f7b217e83b346e7ed3af8664e6b692642e9b140d312164453a3"
+      }
+    },
+    {
+      "name": "mobile-390",
+      "file": "screenshots/mobile-390.png",
+      "sha256": "195ecddce69782d9722185fbb14ee059808c3770bcebf3d9e38f22bec800c7de",
+      "viewport": {
+        "width": 390,
+        "height": 900
+      },
+      "state": {
+        "caseId": "regional-row",
+        "layoutHash": "bf7b72838b558845dd9d54fc12d642e3a2b6a0e80c8bab1d7b6f7fba5b5df801",
+        "currentNodeId": "node-19d75f080d0323d7f155804f53815677",
+        "currentPoint": {
+          "vehicleId": "fixture-interior-vehicle-1",
+          "bodyId": "body-1",
+          "deckId": "main",
+          "xMm": 7000,
+          "yMm": 1500
+        },
+        "view": {
+          "bodyKey": "fixture-interior-vehicle-1/body-1",
+          "deckId": "main",
+          "zoom": 2
+        },
+        "movements": 0,
+        "rejected": 0,
+        "lastIssue": null,
+        "capacity": {
+          "standardSeats": 104,
+          "standardStanding": 40,
+          "premiumSeats": 16,
+          "wheelchairSpaces": 2,
+          "bicycleSpaces": 12,
+          "strollerSpaces": 4
+        },
+        "artManifestSha256": "1503e2a3199d7f7b217e83b346e7ed3af8664e6b692642e9b140d312164453a3"
+      }
+    },
+    {
+      "name": "mobile-320",
+      "file": "screenshots/mobile-320.png",
+      "sha256": "8c84984f36caeb8238c4d6aad5f08687bf6e841ff09f80bd1208f3cd21f9cc79",
+      "viewport": {
+        "width": 320,
+        "height": 900
+      },
+      "state": {
+        "caseId": "regional-row",
+        "layoutHash": "bf7b72838b558845dd9d54fc12d642e3a2b6a0e80c8bab1d7b6f7fba5b5df801",
+        "currentNodeId": "node-19d75f080d0323d7f155804f53815677",
+        "currentPoint": {
+          "vehicleId": "fixture-interior-vehicle-1",
+          "bodyId": "body-1",
+          "deckId": "main",
+          "xMm": 7000,
+          "yMm": 1500
+        },
+        "view": {
+          "bodyKey": "fixture-interior-vehicle-1/body-1",
+          "deckId": "main",
+          "zoom": 2
+        },
+        "movements": 0,
+        "rejected": 0,
+        "lastIssue": null,
+        "capacity": {
+          "standardSeats": 104,
+          "standardStanding": 40,
+          "premiumSeats": 16,
+          "wheelchairSpaces": 2,
+          "bicycleSpaces": 12,
+          "strollerSpaces": 4
+        },
+        "artManifestSha256": "1503e2a3199d7f7b217e83b346e7ed3af8664e6b692642e9b140d312164453a3"
+      }
+    }
+  ]
+}

@@ -5,3 +5,4 @@ export * from "./parse.js";
 export * from "./png.js";
 export * from "./validate.js";
 export * from "./loader.js";
+export * from "./directory.js";

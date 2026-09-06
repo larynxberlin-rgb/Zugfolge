@@ -19,6 +19,46 @@ pub fn project_conductor_passengers(input_json: String) -> napi::Result<String> 
         .map_err(|error| napi::Error::from_reason(error.to_string()))
 }
 
+/// Erzeugt einen millimetergenauen Innenraum aus gepinnten M5-Konfigurationen.
+#[cfg(feature = "node-addon")]
+#[napi(js_name = "buildConductorInterior")]
+pub fn build_conductor_interior(input_json: String) -> napi::Result<String> {
+    zugfolge_conductor::build_interior_layout_json(&input_json)
+        .map_err(|error| napi::Error::from_reason(error.to_string()))
+}
+
+/// Bindet den geprüften Formationsinnenraum an einen echten Zuglauf.
+#[cfg(feature = "node-addon")]
+#[napi(js_name = "bindConductorInterior")]
+pub fn bind_conductor_interior(input_json: String) -> napi::Result<String> {
+    zugfolge_conductor::bind_interior_passenger_places_json(&input_json)
+        .map_err(|error| napi::Error::from_reason(error.to_string()))
+}
+
+/// Projiziert tatsächliche Fahrgäste auf Decks und exklusive Sonderflächen.
+#[cfg(feature = "node-addon")]
+#[napi(js_name = "projectConductorPassengersV2")]
+pub fn project_conductor_passengers_v2(input_json: String) -> napi::Result<String> {
+    zugfolge_conductor::project_conductor_passengers_v2_json(&input_json)
+        .map_err(|error| napi::Error::from_reason(error.to_string()))
+}
+
+/// Findet einen Weg durch das zusammenhängende Passagiernetz.
+#[cfg(feature = "node-addon")]
+#[napi(js_name = "findConductorInteriorPath")]
+pub fn find_conductor_interior_path(input_json: String) -> napi::Result<String> {
+    zugfolge_conductor::find_interior_path_json(&input_json)
+        .map_err(|error| napi::Error::from_reason(error.to_string()))
+}
+
+/// Prüft eine Bewegung ohne Sitzung, Uhr oder Zustandsmutation.
+#[cfg(feature = "node-addon")]
+#[napi(js_name = "checkConductorInteriorMovement")]
+pub fn check_conductor_interior_movement(input_json: String) -> napi::Result<String> {
+    zugfolge_conductor::check_interior_movement_json(&input_json)
+        .map_err(|error| napi::Error::from_reason(error.to_string()))
+}
+
 #[cfg(feature = "node-addon")]
 use napi_derive::napi;
 

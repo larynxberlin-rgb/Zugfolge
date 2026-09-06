@@ -407,6 +407,9 @@ dependencies = [
  "serde_json",
  "sha2",
  "zugfolge-demand",
+ "zugfolge-fleet",
+ "zugfolge-runtime",
+ "zugfolge-sim",
 ]
 
 [[package]]

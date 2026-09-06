@@ -26,6 +26,7 @@ lesen, nicht raten.
 | `docs/fahrzeugkatalog.md` | Exakte Fahrzeugtypen, Feldbelege, Rechte-Gate, Welt-Seed und gemeinsame Fleet-/Operational-Projektion | Fahrzeugdaten recherchieren, freigeben, kompilieren oder an Operational v2 anbinden |
 | `docs/personenverkehr.md`, `docs/schaffnermodus.md` | M10-Nachfrage und Manifeste; kanonischer versionierter M15-Fachvertrag mit Autoritäts-, Projektions-, Kontroll- und Abnahmegrenzen | Nachfrage, Fahrgastprojektion oder Schaffnermodus bearbeiten |
 | `docs/art-atlas.md` | M15.3-Pixelartkatalog, ArtAtlasManifestV1, Raster-/Herkunfts-/Freigabegates und Abnahmegrenzen | Schaffnergrafiken erzeugen, prüfen, packen oder ausliefern |
+| `docs/conductor-interior.md`, `docs/m5-interior-configuration.md`, `docs/conductor-interior-platform.md` | M15.4-Innenraumgeometrie, vollständiger M5-Konfigurationsbeleg, autorisierte Plattformbindung und Bewegungsprüfung | Fahrzeuginnenräume, Plätze, Decks, Türen oder Fahrzeugkonfigurationen verändern |
 | `docs/stoerungen.md` | M8-Fachvertrag: Policies, Ursachenkennungen, Abfahrtsrechte, virtuelle Fahrdienstleiter, Ersatzplanung | Störungen, Baustellen, Ersatzverkehr, Verspätungsursachen |
 | `docs/betriebsengine.md` | Exakte Betriebswirklichkeit: Bewegung, Belegung, Stellwerk, FDL, Lokführer, Rangieren, Projektionen und Cutover | Simulationskern, LiveMap, RZÜ, operative InfraRelease-Artefakte |
 | `docs/betriebsengine-lastnachweis.md` | Reproduzierbarer E31-Kernbenchmark, Messergebnis und offene Systemlast-Gates | Lasttest oder Cutover-Abnahme der Betriebsengine |

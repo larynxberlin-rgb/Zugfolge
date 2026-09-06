@@ -17,6 +17,7 @@
   "dependencies": {
     "@zugfolge/alpha": "workspace:*",
     "@zugfolge/commerce": "workspace:*",
+    "@zugfolge/conductor-art": "workspace:*",
     "@zugfolge/cooperation": "workspace:*",
     "@zugfolge/db": "workspace:*",
     "@zugfolge/dispatch": "workspace:*",

@@ -358,9 +358,17 @@ Der Schaffnermodus leitet ein `InteriorLayoutV1` aus der tatsächlichen
 Formation sowie `StructuralConfiguration` und `InteriorConfiguration` ab.
 M5 bleibt Quelle für Konfiguration und Kapazität. Der vollständige
 Geometrie-, Platz- und Begehbarkeitsvertrag einschließlich fehlender
-Konfigurationen steht in [`schaffnermodus.md`](schaffnermodus.md) 3.3, 4 und 5.
-Der M15.2-Projektor nimmt das belegte Platzinventar nur entgegen; dessen
-Erzeugung und Freigabe bleibt M15.4.
+Konfigurationen steht in [`conductor-interior.md`](conductor-interior.md).
+Der vollständige Beleg `vehicleConfiguration` wird nach
+[`m5-interior-configuration.md`](m5-interior-configuration.md) im individuellen
+Seed, Authority-Release und nativen Flottenzustand gebunden. Sein Fehlen bleibt
+in historischen M5-Daten erhalten und sperrt den Innenraumeinstieg konkret.
+
+Der M15.2-Projektor nimmt das daraus belegte Platzinventar nur entgegen.
+Doppelstockplätze tragen in V2 eigene Kasten-/Deckkennungen und nutzen echte
+Treppenverbindungen. Eine Formationsgeometrie beweist noch keine Zuordnung zu
+einem M10-Zuglauf; diese wird gesondert serverseitig geprüft. Die übrigen
+Schaffneraktionen bleiben im [M15-Gesamtvertrag](schaffnermodus.md) geregelt.
 
 ## 4. Versorgung, Instandhaltung und Zusatzfahrten
 

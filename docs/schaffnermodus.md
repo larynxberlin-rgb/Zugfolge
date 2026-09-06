@@ -196,6 +196,12 @@ Der Kapazitätsnachweis muss den verwendeten M10-Angebotsfakten entsprechen.
 Ein technisch gültiges Platzinventar ersetzt keinen Nachweis seiner Herkunft
 aus der wirklichen Fahrzeugkonfiguration.
 
+M15.4 ergänzt mit `InteriorPassengerPlacesV2` und `PassengerProjectionV2`
+ausdrückliche Wagenkasten- und Deckkennungen. V1 und dessen Hashvertrag bleiben
+unverändert. Der formationsbezogene Layoutbau und die erst anschließend
+zulässige, serververtrauenswürdig belegte Zuglaufbindung stehen in
+[`conductor-interior.md`](conductor-interior.md) 3 und 7.
+
 `PassengerProjectionV1` enthält ausschließlich sichtbare Fahrgastdaten:
 `passengerKey`, `placeId`, `vehicleId`, `xMm`, `yMm`, `comfortClass`,
 `spaceNeeds`, `posture`, `appearanceVariant` und `activity`, außerdem die
@@ -354,6 +360,14 @@ abgeleitet:
 Die Innenräume sind konfigurationsgetreu, aber keine exakte Nachbildung realer
 Baureihen. Ein Fahrzeug mit unvollständiger Konfiguration ist nicht betretbar
 und nennt den fehlenden Konfigurationsnachweis.
+
+Der vollständige versionierte Vertrag für M5-Konfigurationsbelege, generische
+Geometrieprofile, lokale Kasten-/Deckkoordinaten, Treppen, Kollisions- und
+Kapazitätsprüfungen steht in [`conductor-interior.md`](conductor-interior.md).
+Das Layout bindet eine wirkliche Formation; eine konkrete Zuglaufzuordnung
+kommt erst aus einer gesondert geprüften serverseitigen Bindung. Getrennte
+Passagierbereiche werden ohne belegten Gangübergang nicht durch Teleportieren
+verbunden, sondern für diesen Innenraumvertrag abgelehnt.
 
 ## 6. Fahrt, Umgebung und Stationen
 
@@ -638,13 +652,16 @@ M15 führt mindestens folgende versionierte Verträge ein:
 
 - `PassengerManifestV1`
 - `PassengerProjectionV1`
+- `PassengerProjectionV2`
 - `FareCompliancePolicyV1`
 - `FareInspectionCaseV1`
 - `FareControlPolicyV1`
 - `FareControlHoldV1`
 - `ArtAtlasManifestV1`
 - `InteriorLayoutV1`
+- `InteriorGeometryPolicyV1`
 - `InteriorPassengerPlacesV1`
+- `InteriorPassengerPlacesV2`
 - `StationSceneV1`
 - `DialogueReleaseV1`
 - `PassengerEncounterV1`
@@ -672,8 +689,8 @@ Die Vertragsgrenzen sind:
 | Vertragsfamilie | Autorität | Freigabe zur Darstellung |
 |---|---|---|
 | `PassengerManifestV1`, `FareCompliancePolicyV1` | M10 | Nur validierte Ableitungen; kein rohes Manifest |
-| `PassengerProjectionV1` | M15.2 aus M10 und M5-Fakten | Private autorisierte Ansicht; Abschnitt 3.3 |
-| `InteriorLayoutV1`, `InteriorPassengerPlacesV1` | M15.4 aus M5 | Geprüfte Geometrie und Platzinventar, keine Kapazitätserfindung |
+| `PassengerProjectionV1`, `PassengerProjectionV2` | M15.2 aus M10 und M5-Fakten | Private autorisierte Ansicht; Abschnitt 3.3; V2 bindet Kasten und Deck ausdrücklich |
+| `InteriorLayoutV1`, `InteriorPassengerPlacesV1`, `InteriorPassengerPlacesV2` | M15.4 aus M5 | Geprüfte Formationsgeometrie; Platzinventar erst nach unabhängiger Zuglaufbindung, keine Kapazitätserfindung |
 | `ArtAtlasManifestV1`, `StationSceneV1` | M15.3/M15.5 aus freigegebenen Releases | Nur freigegebene Assets und betriebliche Fakten |
 | `DialogueReleaseV1`, `FareInspectionCaseV1`, `FareControlPolicyV1` | M15-Server | Nur offenbarte Hinweise und zulässige Optionen |
 | `PassengerEncounterV1`, `ConductorSessionSnapshotV1`, `ConductorCommandV1` | M15-Sitzung | Eigener Spieler und Zug; Revision, Lease und Sequenz |

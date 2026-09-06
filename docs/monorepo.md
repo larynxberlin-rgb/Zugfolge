@@ -12,7 +12,7 @@ Spieleroberfläche folgt [Design](design.md) und
 ```text
 crates/                     Rust — Simulationskern, Solver, Release-Pipeline
   zugfolge-determinism/     Determinismus-Testharnisch (M0.2)
-  zugfolge-conductor/       Reiner M15.2-Projektor: quittierte M10-Manifeste auf belegte Innenraumplätze; keine Nachfrage, Sitzung oder Betriebssteuerung
+  zugfolge-conductor/       M15.2/M15.4: quittierte M10-Manifeste und konfigurationsgetreue Innenraumgeometrie samt Deck-, Weg- und Kollisionsprüfung; keine Nachfrage, Sitzung oder Betriebssteuerung
   zugfolge-infra/           Betriebsgraph und Infra-Release-Pipeline (M1)
   zugfolge-conflict/        Sperrzeiten, Belegungsprofile, Konfliktprüfung (M3.1–M3.3), Rahmenverträge (M3.8)
   zugfolge-planner/         Trassen-Planner (M3.4), PlanningRun, Fahrplanperiode, Ad-hoc-Trassen (M3.5–M3.7)
@@ -26,6 +26,7 @@ crates/                     Rust — Simulationskern, Solver, Release-Pipeline
   zugfolge-rules/           Betriebsprogramm, Dispositionsregeln, Erklärungen und Rücktest (M7)
   zugfolge-disruption/      Policies, Ursachen, Wirkungen, Fahrdienstleitung und Ersatzplanung (M8)
 packages/                   TypeScript — fachliche Bibliotheken (ab M2)
+  conductor-art/            M15.3: geprüfter Pixelartkorpus, Signatur-/Weltpinprüfung und begrenzter lokaler Dateisystemloader
   db/                       Postgres-Zugriff über Drizzle, Wurzel der Weltisolation (M2.2)
   disruption-provider/      Rechtegeprüfter Snapshot-Adapter für REALISTIC (M8.12)
   identity/                 Konten, Rollen, Weltzugänge; Keycloak-Verifikation (M2.1)
@@ -51,6 +52,8 @@ apps/                       TypeScript — Dienste und Frontend (ab M2 / M4)
   operations-center/        Betriebslage, Automatik und Tagesberichte (M7)
 spikes/                     Wegwerf-Code mit Verfallsdatum — derzeit leer
 tools/                      Werkzeuge für CI und Entwicklung
+  art-atlas/                M15.3: reproduzierbare Atlasvorbereitung, Freigabegates, Signiereinstieg und Grafikprüfung
+  conductor-interior/       M15.4: echter M5-/DB-/Rust-Nachweis mit lokaler begehbarer Geometrieprüfung; keine Produktivsitzung
   guards/                   die Wächter der harten Invarianten
   load/                     äußerer Lastmessharnisch für 180.000 Fahrten und ≥2 Mio. Ereignisse (M4.11)
   m7-acceptance/            echter 48h-Rust-Ereigniserzeuger für die M7-Abnahme
@@ -248,7 +251,7 @@ Liste ist keine vollständige Karte des Repositoriums, sondern die Zuordnung
 | `infra-pipeline` | `crates/zugfolge-infra/**` | aktiv | **der einzige Ort mit Gleitkommarechnung** — sie endet in ganzzahligen Fahrzeittabellen |
 | `world-isolation` | `packages/db/**` | aktiv | Postgres-Zugriff der Game-Services; Wurzel der Weltisolation — `worlds`, das Event-Log und das weltgebundene Repository (M2.2) |
 | `release-tools` | `tools/audits/**`, `tools/reference-corpus/**`, `tools/reference-model/**`, `tools/region-import/**`, `tools/tiles/**` | aktiv | nicht autoritative Datei-I/O-, Import- und Kartenadapter; Freigabeentscheidungen bleiben in Rust |
-| `operations-tools` | `tools/alpha-ops/**`, `tools/guards/**`, `tools/load/**`, `tools/m7-acceptance/**`, `tools/m7-e2e/**`, `tools/ui-preview/**` | aktiv | Betriebs-, Abnahme-, Last-, UI-Vorschau- und Governance-Werkzeuge ohne fachliche Laufzeitautorität |
+| `operations-tools` | `tools/alpha-ops/**`, `tools/art-atlas/**`, `tools/conductor-interior/**`, `tools/guards/**`, `tools/load/**`, `tools/m7-acceptance/**`, `tools/m7-e2e/**`, `tools/ui-preview/**` | aktiv | Betriebs-, Abnahme-, Last-, UI-Vorschau- und Governance-Werkzeuge ohne fachliche Laufzeitautorität |
 | `platform-services` | explizit aufgezählte übrige `packages/*` und `apps/*` | aktiv | vollständige Zuordnung aller Produktionspakete; neue Pakete erzwingen vor dem ersten Commit eine bewusste Wächterentscheidung |
 
 **Status ist kein Kommentar, sondern eine Prüfung.** Eine `aktive` Domäne muss

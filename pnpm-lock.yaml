@@ -19,6 +19,9 @@ importers:
       '@zugfolge/commerce':
         specifier: workspace:*
         version: link:../../packages/commerce
+      '@zugfolge/conductor-art':
+        specifier: workspace:*
+        version: link:../../packages/conductor-art
       '@zugfolge/cooperation':
         specifier: workspace:*
         version: link:../../packages/cooperation
