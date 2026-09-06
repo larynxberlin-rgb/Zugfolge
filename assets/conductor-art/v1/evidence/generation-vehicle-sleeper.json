@@ -1,0 +1,51 @@
+{
+  "schemaVersion": "conductor-art-generation-evidence/v1",
+  "source": "sources/vehicle-sleeper.png",
+  "sourceSha256": "e38e61afe88a73bf1609c6ae383aa1d3b5bfb27d05ba0fbedbc64f2adadf4390",
+  "tool": "image_gen.imagegen",
+  "prompt": "Use case: stylized-concept. Project-bound sprite art for Zugfolge railway game. Input image1 is ONLY our own graphite/red pixel-art style reference, not a vehicle layout to copy. NEW generic European non-powered coach, no cab or pantographs. Strict orthographic TOP-DOWN plan view, camera straight down, no perspective/isometric tilt/vanishing point. Crisp pixel clusters, flat limited texture, clear furnishings. Full long axis vertical, couplers/gangways at both ends, slender width:length ratio approximately1:9 (3mx27m). TWO identical-width and identical-length full-height coaches side by side: LEFT open roof cutaway interior, RIGHT closed exterior roof. Equal-width columns, full objects uncut with40px outer padding and wide EMPTY transparent gutter. Genuine transparent background, portrait1024x1536 or similar. Graphite #181e25 with own red #e5233d accents, silver edging, #303b46 floors, warm cream tables and upholstery. NO text, logos, letters, numbers, labels, people, scenery, railway tracks, cast shadows or painted checkerboard. No separate nose, no driving cab.\nPRIMARY REQUEST: Schlafwagen / night sleeping coach. Interior: clear long narrow SIDE CORRIDOR down the right-hand side, with a succession of six separate compact sleeping compartments on the left, opaque partitions and individual doors opening to corridor. Each compartment has two visible slim rectangular bunk/bed footprints or lower beds with cream bedding, red blanket folded at foot, small bedside shelf. No ordinary rows of passenger seats and no dining tables. Shared washroom and WC service blocks at one end, small vestibules and side doors at both ends. Room divisions and corridor must be legible in strict floor plan. Closed exterior roof simple smooth graphite/silver with small vents and two modest HVAC units, red side trim. Both views align end-for-end.",
+  "metadata": {
+    "container": "PNG/caBX/JUMBF/c2pa.actions.v2",
+    "cborSha256": "240ed05494cc3b525aa83b377611b8072281e000029d87b9b502108cd1fa3ac8",
+    "actions": {
+      "actions": [
+        {
+          "action": "c2pa.created",
+          "when": "2026-09-06T00:00:00Z",
+          "softwareAgent": {
+            "name": "gpt-image",
+            "version": "2.0"
+          },
+          "digitalSourceType": "http://cv.iptc.org/newscodes/digitalsourcetype/trainedAlgorithmicMedia"
+        },
+        {
+          "action": "c2pa.converted",
+          "when": "2026-09-06T00:00:00Z"
+        },
+        {
+          "action": "c2pa.watermarked.unbound",
+          "when": "2026-09-06T00:00:00Z"
+        }
+      ],
+      "allActionsIncluded": false
+    },
+    "softwareAgent": {
+      "name": "gpt-image",
+      "version": "2.0"
+    },
+    "interpretation": "Providerdeklarierte Modellangabe; keine Prüfung der C2PA-Signatur oder Aussage über interne Gewichte."
+  },
+  "technicalProcessing": {
+    "script": "tools/art-atlas/prepare.py",
+    "pillowVersion": "12.3.0",
+    "operations": [
+      "crop",
+      "edge-connected-neutral-checkerboard-removal",
+      "alpha-threshold-128",
+      "nearest-neighbor-resize",
+      "fixed-palette-no-dither",
+      "atlas-pack"
+    ],
+    "authorization": "Auftraggeber: Ja, technisch aufbereiten (06.09.2026)."
+  }
+}

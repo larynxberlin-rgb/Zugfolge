@@ -3787,6 +3787,314 @@
         "reviewerId": null,
         "evidenceId": null
       }
+    },
+    "vehicle.regional-double.lower": {
+      "visual": {
+        "status": "pending",
+        "reviewerId": null,
+        "evidenceId": null
+      },
+      "logoAndText": {
+        "status": "pending",
+        "reviewerId": null,
+        "evidenceId": null
+      },
+      "contrast": {
+        "status": "pending",
+        "reviewerId": null,
+        "evidenceId": null
+      },
+      "provenance": {
+        "status": "pending",
+        "reviewerId": null,
+        "evidenceId": null
+      }
+    },
+    "vehicle.regional-double.upper": {
+      "visual": {
+        "status": "pending",
+        "reviewerId": null,
+        "evidenceId": null
+      },
+      "logoAndText": {
+        "status": "pending",
+        "reviewerId": null,
+        "evidenceId": null
+      },
+      "contrast": {
+        "status": "pending",
+        "reviewerId": null,
+        "evidenceId": null
+      },
+      "provenance": {
+        "status": "pending",
+        "reviewerId": null,
+        "evidenceId": null
+      }
+    },
+    "vehicle.regional-double.roof": {
+      "visual": {
+        "status": "pending",
+        "reviewerId": null,
+        "evidenceId": null
+      },
+      "logoAndText": {
+        "status": "pending",
+        "reviewerId": null,
+        "evidenceId": null
+      },
+      "contrast": {
+        "status": "pending",
+        "reviewerId": null,
+        "evidenceId": null
+      },
+      "provenance": {
+        "status": "pending",
+        "reviewerId": null,
+        "evidenceId": null
+      }
+    },
+    "vehicle.intercity-single.body": {
+      "visual": {
+        "status": "pending",
+        "reviewerId": null,
+        "evidenceId": null
+      },
+      "logoAndText": {
+        "status": "pending",
+        "reviewerId": null,
+        "evidenceId": null
+      },
+      "contrast": {
+        "status": "pending",
+        "reviewerId": null,
+        "evidenceId": null
+      },
+      "provenance": {
+        "status": "pending",
+        "reviewerId": null,
+        "evidenceId": null
+      }
+    },
+    "vehicle.intercity-single.roof": {
+      "visual": {
+        "status": "pending",
+        "reviewerId": null,
+        "evidenceId": null
+      },
+      "logoAndText": {
+        "status": "pending",
+        "reviewerId": null,
+        "evidenceId": null
+      },
+      "contrast": {
+        "status": "pending",
+        "reviewerId": null,
+        "evidenceId": null
+      },
+      "provenance": {
+        "status": "pending",
+        "reviewerId": null,
+        "evidenceId": null
+      }
+    },
+    "vehicle.regional-single.body": {
+      "visual": {
+        "status": "pending",
+        "reviewerId": null,
+        "evidenceId": null
+      },
+      "logoAndText": {
+        "status": "pending",
+        "reviewerId": null,
+        "evidenceId": null
+      },
+      "contrast": {
+        "status": "pending",
+        "reviewerId": null,
+        "evidenceId": null
+      },
+      "provenance": {
+        "status": "pending",
+        "reviewerId": null,
+        "evidenceId": null
+      }
+    },
+    "vehicle.regional-single.roof": {
+      "visual": {
+        "status": "pending",
+        "reviewerId": null,
+        "evidenceId": null
+      },
+      "logoAndText": {
+        "status": "pending",
+        "reviewerId": null,
+        "evidenceId": null
+      },
+      "contrast": {
+        "status": "pending",
+        "reviewerId": null,
+        "evidenceId": null
+      },
+      "provenance": {
+        "status": "pending",
+        "reviewerId": null,
+        "evidenceId": null
+      }
+    },
+    "vehicle.intercity-double.lower": {
+      "visual": {
+        "status": "pending",
+        "reviewerId": null,
+        "evidenceId": null
+      },
+      "logoAndText": {
+        "status": "pending",
+        "reviewerId": null,
+        "evidenceId": null
+      },
+      "contrast": {
+        "status": "pending",
+        "reviewerId": null,
+        "evidenceId": null
+      },
+      "provenance": {
+        "status": "pending",
+        "reviewerId": null,
+        "evidenceId": null
+      }
+    },
+    "vehicle.intercity-double.upper": {
+      "visual": {
+        "status": "pending",
+        "reviewerId": null,
+        "evidenceId": null
+      },
+      "logoAndText": {
+        "status": "pending",
+        "reviewerId": null,
+        "evidenceId": null
+      },
+      "contrast": {
+        "status": "pending",
+        "reviewerId": null,
+        "evidenceId": null
+      },
+      "provenance": {
+        "status": "pending",
+        "reviewerId": null,
+        "evidenceId": null
+      }
+    },
+    "vehicle.intercity-double.roof": {
+      "visual": {
+        "status": "pending",
+        "reviewerId": null,
+        "evidenceId": null
+      },
+      "logoAndText": {
+        "status": "pending",
+        "reviewerId": null,
+        "evidenceId": null
+      },
+      "contrast": {
+        "status": "pending",
+        "reviewerId": null,
+        "evidenceId": null
+      },
+      "provenance": {
+        "status": "pending",
+        "reviewerId": null,
+        "evidenceId": null
+      }
+    },
+    "vehicle.dining.body": {
+      "visual": {
+        "status": "pending",
+        "reviewerId": null,
+        "evidenceId": null
+      },
+      "logoAndText": {
+        "status": "pending",
+        "reviewerId": null,
+        "evidenceId": null
+      },
+      "contrast": {
+        "status": "pending",
+        "reviewerId": null,
+        "evidenceId": null
+      },
+      "provenance": {
+        "status": "pending",
+        "reviewerId": null,
+        "evidenceId": null
+      }
+    },
+    "vehicle.dining.roof": {
+      "visual": {
+        "status": "pending",
+        "reviewerId": null,
+        "evidenceId": null
+      },
+      "logoAndText": {
+        "status": "pending",
+        "reviewerId": null,
+        "evidenceId": null
+      },
+      "contrast": {
+        "status": "pending",
+        "reviewerId": null,
+        "evidenceId": null
+      },
+      "provenance": {
+        "status": "pending",
+        "reviewerId": null,
+        "evidenceId": null
+      }
+    },
+    "vehicle.sleeper.body": {
+      "visual": {
+        "status": "pending",
+        "reviewerId": null,
+        "evidenceId": null
+      },
+      "logoAndText": {
+        "status": "pending",
+        "reviewerId": null,
+        "evidenceId": null
+      },
+      "contrast": {
+        "status": "pending",
+        "reviewerId": null,
+        "evidenceId": null
+      },
+      "provenance": {
+        "status": "pending",
+        "reviewerId": null,
+        "evidenceId": null
+      }
+    },
+    "vehicle.sleeper.roof": {
+      "visual": {
+        "status": "pending",
+        "reviewerId": null,
+        "evidenceId": null
+      },
+      "logoAndText": {
+        "status": "pending",
+        "reviewerId": null,
+        "evidenceId": null
+      },
+      "contrast": {
+        "status": "pending",
+        "reviewerId": null,
+        "evidenceId": null
+      },
+      "provenance": {
+        "status": "pending",
+        "reviewerId": null,
+        "evidenceId": null
+      }
     }
   },
   "releaseReview": {
@@ -3822,6 +4130,10 @@
     "train": {
       "status": "unverified",
       "evidenceId": null
+    },
+    "vehicle-regional-double-initial": {
+      "status": "unverified",
+      "evidenceId": null
     }
   },
   "evidence": [
@@ -3829,6 +4141,12 @@
       "id": "technical-visual-review",
       "path": "evidence/technical-visual-review.md",
       "sha256": "5a49713b7169b26e325e39a616a04d22c64f92792333c9cfc7fbc3187ca4d8d4",
+      "mediaType": "text/markdown"
+    },
+    {
+      "id": "vehicle-visual-review",
+      "path": "evidence/vehicle-visual-review.md",
+      "sha256": "950fec6214a5ed6905af52f35cbe5982bf27d89183df37d55efe34743c09c74c",
       "mediaType": "text/markdown"
     }
   ]

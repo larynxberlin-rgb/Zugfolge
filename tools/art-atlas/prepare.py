@@ -18,6 +18,14 @@ SOURCES = RELEASE / "sources"
 PALETTE = ["101419", "181e25", "202830", "303b46", "f5f7fa", "b5c0cc", "93a2b1", "e5233d", "7cddba", "f5bf65", "e8b894", "be8060", "805342", "382c28", "e9e1cc", "a8967a", "932b34", "4f6650", "728168", "416365", "678998", "566370", "647780", "c4b29a"]
 DIRECTIONS = ["south", "west", "east", "north"]
 ACTORS = {"passenger-red": "passenger-01", "passenger-teal": "passenger-02", "passenger-amber": "passenger-03", "passenger-slate": "passenger-04", "conductor": "conductor-01"}
+VEHICLES = {
+    "regional-double": ("lower", "upper", "roof"),
+    "intercity-single": ("body", "roof"),
+    "regional-single": ("body", "roof"),
+    "intercity-double": ("lower", "upper", "roof"),
+    "dining": ("body", "roof"),
+    "sleeper": ("body", "roof"),
+}
 
 
 def digest(data):
@@ -193,6 +201,44 @@ def fit(image, width, height, anchor="center", scale=None):
     return image.resize(size, Image.Resampling.NEAREST)
 
 
+def prepare_vehicles(entries, files, models):
+    """Neue Wagen auf separatem Blatt; vorhandene Motive und Atlanten bleiben gleich."""
+    # Die einzige verworfene Vorstufe ist eine tatsächliche Referenz der
+    # korrigierten Doppelstockgrafik und behält deshalb ihren eigenen Beleg.
+    models["vehicle-regional-double-initial"] = provenance("vehicle-regional-double-initial")
+    atlas = Image.new("RGBA", (2048, 1024))
+    x = 0
+    for family, parts in VEHICLES.items():
+        key = f"vehicle-{family}"
+        models[key] = provenance(key)
+        original = Image.open(SOURCES / f"{key}.png")
+        frames = []
+        for column, part in enumerate(parts):
+            cell, rect = crop_cell(original, len(parts), 1, column, 0)
+            content, bounds = cutout(cell)
+            frames.append((part, content, rect, bounds))
+        # Ein gemeinsamer Maßstab und Pivot pro Wagen halten beide Decks und
+        # Dach auf derselben Bildfläche. Keine unabhängige Streckung pro Teil.
+        scale = min(96 / max(f[1].width for f in frames), 864 / max(f[1].height for f in frames))
+        for part, content, rect, bounds in frames:
+            resized = fit(content, 96, 864, scale=scale)
+            canvas = Image.new("RGBA", (96, 864))
+            canvas.alpha_composite(resized, ((96 - resized.width) // 2, (864 - resized.height) // 2))
+            if x + canvas.width > atlas.width:
+                raise ValueError("Fahrzeugatlas ist voll")
+            atlas.alpha_composite(quantize(canvas), (x, 0))
+            entries.append({"id": f"vehicle.{family}.{part}", "fileId": "vehicles",
+                            "rect": {"x": x, "y": 0, "width": 96, "height": 864},
+                            "category": "vehicle", "sourceKey": key, "sourceRect": rect,
+                            "contentBounds": bounds, "worldWidthMm": 3000, "worldHeightMm": 27000,
+                            "pivot": {"x": 48, "y": 432}})
+            x += canvas.width + 2
+    output = RELEASE / "atlases/vehicles.png"
+    atlas.save(output, optimize=False, compress_level=9)
+    files.append({"id": "vehicles", "path": "atlases/vehicles.png", "sha256": digest(output.read_bytes()),
+                  "widthPx": atlas.width, "heightPx": atlas.height, "sourceScale": 1})
+
+
 def main():
     (RELEASE / "atlases").mkdir(parents=True, exist_ok=True)
     entries = []
@@ -319,6 +365,7 @@ def main():
     output = RELEASE / "atlases/modules.png"
     atlas.save(output,optimize=False,compress_level=9)
     files.append({"id":"modules","path":"atlases/modules.png","sha256":digest(output.read_bytes()),"widthPx":atlas.width,"heightPx":atlas.height,"sourceScale":1})
+    prepare_vehicles(entries, files, models)
     write_json(RELEASE / "prepared.json", {"schemaVersion": "conductor-art-prepared/v1", "palette": ["#00000000"] + [f"#{color}ff" for color in PALETTE], "files": files, "assets": entries, "animations": animations, "models": models})
     print(json.dumps({"files": len(files), "assets": len(entries), "animations": len(animations), "models": models}))
 

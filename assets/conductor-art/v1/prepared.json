@@ -75,6 +75,14 @@
       "widthPx": 2048,
       "heightPx": 2048,
       "sourceScale": 1
+    },
+    {
+      "id": "vehicles",
+      "path": "atlases/vehicles.png",
+      "sha256": "9af3e9b1add565fe91e248db0b3e7c99c9d97a1627f15def8404672eae266323",
+      "widthPx": 2048,
+      "heightPx": 1024,
+      "sourceScale": 1
     }
   ],
   "assets": [
@@ -5237,6 +5245,426 @@
         "x": 32,
         "y": 32
       }
+    },
+    {
+      "id": "vehicle.regional-double.lower",
+      "fileId": "vehicles",
+      "rect": {
+        "x": 0,
+        "y": 0,
+        "width": 96,
+        "height": 864
+      },
+      "category": "vehicle",
+      "sourceKey": "vehicle-regional-double",
+      "sourceRect": [
+        0,
+        0,
+        341,
+        1536
+      ],
+      "contentBounds": [
+        110,
+        104,
+        288,
+        1438
+      ],
+      "worldWidthMm": 3000,
+      "worldHeightMm": 27000,
+      "pivot": {
+        "x": 48,
+        "y": 432
+      }
+    },
+    {
+      "id": "vehicle.regional-double.upper",
+      "fileId": "vehicles",
+      "rect": {
+        "x": 98,
+        "y": 0,
+        "width": 96,
+        "height": 864
+      },
+      "category": "vehicle",
+      "sourceKey": "vehicle-regional-double",
+      "sourceRect": [
+        341,
+        0,
+        683,
+        1536
+      ],
+      "contentBounds": [
+        80,
+        104,
+        256,
+        1442
+      ],
+      "worldWidthMm": 3000,
+      "worldHeightMm": 27000,
+      "pivot": {
+        "x": 48,
+        "y": 432
+      }
+    },
+    {
+      "id": "vehicle.regional-double.roof",
+      "fileId": "vehicles",
+      "rect": {
+        "x": 196,
+        "y": 0,
+        "width": 96,
+        "height": 864
+      },
+      "category": "vehicle",
+      "sourceKey": "vehicle-regional-double",
+      "sourceRect": [
+        683,
+        0,
+        1024,
+        1536
+      ],
+      "contentBounds": [
+        55,
+        104,
+        229,
+        1442
+      ],
+      "worldWidthMm": 3000,
+      "worldHeightMm": 27000,
+      "pivot": {
+        "x": 48,
+        "y": 432
+      }
+    },
+    {
+      "id": "vehicle.intercity-single.body",
+      "fileId": "vehicles",
+      "rect": {
+        "x": 294,
+        "y": 0,
+        "width": 96,
+        "height": 864
+      },
+      "category": "vehicle",
+      "sourceKey": "vehicle-intercity-single",
+      "sourceRect": [
+        0,
+        0,
+        512,
+        1536
+      ],
+      "contentBounds": [
+        239,
+        44,
+        411,
+        1488
+      ],
+      "worldWidthMm": 3000,
+      "worldHeightMm": 27000,
+      "pivot": {
+        "x": 48,
+        "y": 432
+      }
+    },
+    {
+      "id": "vehicle.intercity-single.roof",
+      "fileId": "vehicles",
+      "rect": {
+        "x": 392,
+        "y": 0,
+        "width": 96,
+        "height": 864
+      },
+      "category": "vehicle",
+      "sourceKey": "vehicle-intercity-single",
+      "sourceRect": [
+        512,
+        0,
+        1024,
+        1536
+      ],
+      "contentBounds": [
+        102,
+        44,
+        274,
+        1488
+      ],
+      "worldWidthMm": 3000,
+      "worldHeightMm": 27000,
+      "pivot": {
+        "x": 48,
+        "y": 432
+      }
+    },
+    {
+      "id": "vehicle.regional-single.body",
+      "fileId": "vehicles",
+      "rect": {
+        "x": 490,
+        "y": 0,
+        "width": 96,
+        "height": 864
+      },
+      "category": "vehicle",
+      "sourceKey": "vehicle-regional-single",
+      "sourceRect": [
+        0,
+        0,
+        512,
+        1536
+      ],
+      "contentBounds": [
+        182,
+        43,
+        361,
+        1452
+      ],
+      "worldWidthMm": 3000,
+      "worldHeightMm": 27000,
+      "pivot": {
+        "x": 48,
+        "y": 432
+      }
+    },
+    {
+      "id": "vehicle.regional-single.roof",
+      "fileId": "vehicles",
+      "rect": {
+        "x": 588,
+        "y": 0,
+        "width": 96,
+        "height": 864
+      },
+      "category": "vehicle",
+      "sourceKey": "vehicle-regional-single",
+      "sourceRect": [
+        512,
+        0,
+        1024,
+        1536
+      ],
+      "contentBounds": [
+        149,
+        43,
+        327,
+        1452
+      ],
+      "worldWidthMm": 3000,
+      "worldHeightMm": 27000,
+      "pivot": {
+        "x": 48,
+        "y": 432
+      }
+    },
+    {
+      "id": "vehicle.intercity-double.lower",
+      "fileId": "vehicles",
+      "rect": {
+        "x": 686,
+        "y": 0,
+        "width": 96,
+        "height": 864
+      },
+      "category": "vehicle",
+      "sourceKey": "vehicle-intercity-double",
+      "sourceRect": [
+        0,
+        0,
+        341,
+        1536
+      ],
+      "contentBounds": [
+        95,
+        45,
+        268,
+        1476
+      ],
+      "worldWidthMm": 3000,
+      "worldHeightMm": 27000,
+      "pivot": {
+        "x": 48,
+        "y": 432
+      }
+    },
+    {
+      "id": "vehicle.intercity-double.upper",
+      "fileId": "vehicles",
+      "rect": {
+        "x": 784,
+        "y": 0,
+        "width": 96,
+        "height": 864
+      },
+      "category": "vehicle",
+      "sourceKey": "vehicle-intercity-double",
+      "sourceRect": [
+        341,
+        0,
+        683,
+        1536
+      ],
+      "contentBounds": [
+        83,
+        45,
+        256,
+        1476
+      ],
+      "worldWidthMm": 3000,
+      "worldHeightMm": 27000,
+      "pivot": {
+        "x": 48,
+        "y": 432
+      }
+    },
+    {
+      "id": "vehicle.intercity-double.roof",
+      "fileId": "vehicles",
+      "rect": {
+        "x": 882,
+        "y": 0,
+        "width": 96,
+        "height": 864
+      },
+      "category": "vehicle",
+      "sourceKey": "vehicle-intercity-double",
+      "sourceRect": [
+        683,
+        0,
+        1024,
+        1536
+      ],
+      "contentBounds": [
+        69,
+        45,
+        244,
+        1476
+      ],
+      "worldWidthMm": 3000,
+      "worldHeightMm": 27000,
+      "pivot": {
+        "x": 48,
+        "y": 432
+      }
+    },
+    {
+      "id": "vehicle.dining.body",
+      "fileId": "vehicles",
+      "rect": {
+        "x": 980,
+        "y": 0,
+        "width": 96,
+        "height": 864
+      },
+      "category": "vehicle",
+      "sourceKey": "vehicle-dining",
+      "sourceRect": [
+        0,
+        0,
+        512,
+        1536
+      ],
+      "contentBounds": [
+        209,
+        30,
+        413,
+        1493
+      ],
+      "worldWidthMm": 3000,
+      "worldHeightMm": 27000,
+      "pivot": {
+        "x": 48,
+        "y": 432
+      }
+    },
+    {
+      "id": "vehicle.dining.roof",
+      "fileId": "vehicles",
+      "rect": {
+        "x": 1078,
+        "y": 0,
+        "width": 96,
+        "height": 864
+      },
+      "category": "vehicle",
+      "sourceKey": "vehicle-dining",
+      "sourceRect": [
+        512,
+        0,
+        1024,
+        1536
+      ],
+      "contentBounds": [
+        93,
+        30,
+        295,
+        1493
+      ],
+      "worldWidthMm": 3000,
+      "worldHeightMm": 27000,
+      "pivot": {
+        "x": 48,
+        "y": 432
+      }
+    },
+    {
+      "id": "vehicle.sleeper.body",
+      "fileId": "vehicles",
+      "rect": {
+        "x": 1176,
+        "y": 0,
+        "width": 96,
+        "height": 864
+      },
+      "category": "vehicle",
+      "sourceKey": "vehicle-sleeper",
+      "sourceRect": [
+        0,
+        0,
+        512,
+        1536
+      ],
+      "contentBounds": [
+        177,
+        29,
+        366,
+        1501
+      ],
+      "worldWidthMm": 3000,
+      "worldHeightMm": 27000,
+      "pivot": {
+        "x": 48,
+        "y": 432
+      }
+    },
+    {
+      "id": "vehicle.sleeper.roof",
+      "fileId": "vehicles",
+      "rect": {
+        "x": 1274,
+        "y": 0,
+        "width": 96,
+        "height": 864
+      },
+      "category": "vehicle",
+      "sourceKey": "vehicle-sleeper",
+      "sourceRect": [
+        512,
+        0,
+        1024,
+        1536
+      ],
+      "contentBounds": [
+        141,
+        29,
+        331,
+        1501
+      ],
+      "worldWidthMm": 3000,
+      "worldHeightMm": 27000,
+      "pivot": {
+        "x": 48,
+        "y": 432
+      }
     }
   ],
   "animations": [
@@ -6311,6 +6739,34 @@
       "version": "2.0"
     },
     "accessories": {
+      "name": "gpt-image",
+      "version": "2.0"
+    },
+    "vehicle-regional-double-initial": {
+      "name": "gpt-image",
+      "version": "2.0"
+    },
+    "vehicle-regional-double": {
+      "name": "gpt-image",
+      "version": "2.0"
+    },
+    "vehicle-intercity-single": {
+      "name": "gpt-image",
+      "version": "2.0"
+    },
+    "vehicle-regional-single": {
+      "name": "gpt-image",
+      "version": "2.0"
+    },
+    "vehicle-intercity-double": {
+      "name": "gpt-image",
+      "version": "2.0"
+    },
+    "vehicle-dining": {
+      "name": "gpt-image",
+      "version": "2.0"
+    },
+    "vehicle-sleeper": {
       "name": "gpt-image",
       "version": "2.0"
     }

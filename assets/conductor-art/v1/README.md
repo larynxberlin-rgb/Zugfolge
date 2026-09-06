@@ -1,6 +1,6 @@
 # Zugfolge — Grafikkandidat 2026.1
 
-Der Korpus enthält **172 Motive und 60 Animationssequenzen** auf sechs PNG-Atlanten.
+Der Korpus enthält **186 Motive und 60 Animationssequenzen** auf sieben PNG-Atlanten.
 Er ist vollständig technisch vorbereitet, aber **noch nicht produktiv freigegeben
 oder signiert**. [Fachvertrag](../../../docs/art-atlas.md) und
 [Prüfbericht](evidence/technical-visual-review.md) beschreiben Umfang und Grenzen.
@@ -9,6 +9,11 @@ oder signiert**. [Fachvertrag](../../../docs/art-atlas.md) und
   vier Gehphasen und Sitzpose — insgesamt 120 Figurenframes.
 - Elf Innenraummodule, drei Fahrzeugteile, 15 Bahnhofsmodule für drei Klassen,
   neun Umgebungsgruppen, zwei Signalbilder und zwölf Zubehöransichten.
+- Sechs zusätzliche Wagenfamilien mit insgesamt 14 Teilen: Doppelstockwagen
+  für Nah- und Fernverkehr, einstöckige Nah- und Fernverkehrswagen sowie Speise-
+  und Schlafwagen. Doppelstockwagen besitzen Unterdeck, Oberdeck und Dach;
+  einstöckige Wagen Innenraum und Dach. Die Galerie bietet eine Fahrzeugwahl
+  und eine gemeinsame Vergleichsansicht.
 - 25 RGBA-Paletteneinträge einschließlich Transparenz, 32 logische Pixel pro
   Meter, ganze Zoomstufen und Nearest Neighbor.
 - Originale, tatsächliche Prompts, verwendete eigene Referenzen und die aus
@@ -18,6 +23,13 @@ oder signiert**. [Fachvertrag](../../../docs/art-atlas.md) und
 seine Motive werden nicht geladen. Die final vorbereiteten Innenräume stammen
 aus `sources/interior-topdown.png`. Die alten Nord-/Südansichten des Zubehörs
 werden durch `sources/accessories-north-south.png` ersetzt.
+
+`sources/vehicle-regional-double-initial.png` ist die tatsächlich verwendete
+Vorstufe des korrigierten Doppelstockwagens. Die gezielte Bildkorrektur und
+die übrigen Wagen beschreibt der [Fahrzeug-Sichtbeleg](evidence/vehicle-visual-review.md).
+Die sechs vorhandenen Atlanten bleiben bytegleich; die neuen Wagen liegen in
+`atlases/vehicles.png`. Der Katalog `conductor-art-catalog/v2` verlangt alle
+186 Motive. Der Validator unterstützt weiterhin den bisherigen Katalog v1.
 
 ## Reproduzieren
 

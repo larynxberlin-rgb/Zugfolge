@@ -2,7 +2,7 @@
   "schemaVersion": "art-atlas-manifest/v1",
   "releaseId": "conductor-art-2026.1",
   "status": "candidate",
-  "catalogVersion": "conductor-art-catalog/v1",
+  "catalogVersion": "conductor-art-catalog/v2",
   "pixelsPerMetre": 32,
   "rendering": {
     "projection": "orthogonal_top_down",
@@ -92,6 +92,14 @@
       "widthPx": 2048,
       "heightPx": 2048,
       "sourceScale": 1
+    },
+    {
+      "id": "vehicles",
+      "path": "atlases/vehicles.png",
+      "sha256": "9af3e9b1add565fe91e248db0b3e7c99c9d97a1627f15def8404672eae266323",
+      "widthPx": 2048,
+      "heightPx": 1024,
+      "sourceScale": 1
     }
   ],
   "references": [
@@ -150,13 +158,21 @@
       "sha256": "72f19564ff8899a4b768baac671ff8659e7d488dba7b5322368fd51ab2669b0d",
       "rightsStatus": "unverified",
       "evidenceId": null
+    },
+    {
+      "id": "reference-vehicle-regional-double-initial",
+      "description": "Tatsächlich verwendete eigene Generierung vehicle-regional-double-initial.",
+      "source": "sources/vehicle-regional-double-initial.png",
+      "sha256": "5890e44184bdcc7b2bf036272eaaa3de5a091948099f765eaf6b527e609f31f7",
+      "rightsStatus": "unverified",
+      "evidenceId": null
     }
   ],
   "evidence": [
     {
       "id": "technical-preparation",
       "path": "prepared.json",
-      "sha256": "77fcbfefe8d20c67f24a2f356cdca9a0c9dbf0e4e373f74a398c30c7f720fc4e",
+      "sha256": "b7624271bb9ba6e3248294bac40312934f3a3edf6b4638714c188f6ff06c3b0b",
       "mediaType": "application/json"
     },
     {
@@ -316,15 +332,105 @@
       "mediaType": "image/png"
     },
     {
+      "id": "generation-vehicle-dining",
+      "path": "evidence/generation-vehicle-dining.json",
+      "sha256": "58e9c03a401aeca08709e08351a706c8d81234ba8a067a7d4a07aa9f5cc5a219",
+      "mediaType": "application/json"
+    },
+    {
+      "id": "source-vehicle-dining",
+      "path": "sources/vehicle-dining.png",
+      "sha256": "75df063a2285a0fedea52bd88b95b05b78bf582da7bb8f959268c5660a49c531",
+      "mediaType": "image/png"
+    },
+    {
+      "id": "generation-vehicle-intercity-double",
+      "path": "evidence/generation-vehicle-intercity-double.json",
+      "sha256": "a910091f396ea2ee30d46e9c8169cb8b2348dfc580ae7262a49b0c99c9efa7f5",
+      "mediaType": "application/json"
+    },
+    {
+      "id": "source-vehicle-intercity-double",
+      "path": "sources/vehicle-intercity-double.png",
+      "sha256": "f595af0873d3c4d82ce474176fdf9559705388fe291d6bd7cb947726f13bcde8",
+      "mediaType": "image/png"
+    },
+    {
+      "id": "generation-vehicle-intercity-single",
+      "path": "evidence/generation-vehicle-intercity-single.json",
+      "sha256": "c990acfad73dc8fef7aa4a2fcd360519fac1d47bb6146e56e999a10bad4bb9e9",
+      "mediaType": "application/json"
+    },
+    {
+      "id": "source-vehicle-intercity-single",
+      "path": "sources/vehicle-intercity-single.png",
+      "sha256": "a89c156466607baacf8d4ae8019d2d91c419a7ddb2035a66a08a5a9daac427a2",
+      "mediaType": "image/png"
+    },
+    {
+      "id": "generation-vehicle-regional-double",
+      "path": "evidence/generation-vehicle-regional-double.json",
+      "sha256": "50a277f1f1188c6ed24e7b761dd1bda2070512107fb36b164086e931dec72a98",
+      "mediaType": "application/json"
+    },
+    {
+      "id": "source-vehicle-regional-double",
+      "path": "sources/vehicle-regional-double.png",
+      "sha256": "2b57020d566a1410a31167102ca631fa22fc265ea5704b05b02e9a87898d1d62",
+      "mediaType": "image/png"
+    },
+    {
+      "id": "generation-vehicle-regional-double-initial",
+      "path": "evidence/generation-vehicle-regional-double-initial.json",
+      "sha256": "b470fb68d506e93dd42bd4e9578dfe2a1699e6be1ce22c5c22030929b5db4d32",
+      "mediaType": "application/json"
+    },
+    {
+      "id": "source-vehicle-regional-double-initial",
+      "path": "sources/vehicle-regional-double-initial.png",
+      "sha256": "5890e44184bdcc7b2bf036272eaaa3de5a091948099f765eaf6b527e609f31f7",
+      "mediaType": "image/png"
+    },
+    {
+      "id": "generation-vehicle-regional-single",
+      "path": "evidence/generation-vehicle-regional-single.json",
+      "sha256": "c14cfad7f946bb0fd9d4cc2f4abf958852b4ff4dbf9b29322f1ab38b753fa754",
+      "mediaType": "application/json"
+    },
+    {
+      "id": "source-vehicle-regional-single",
+      "path": "sources/vehicle-regional-single.png",
+      "sha256": "a9b2ab3193311112fa8d40919b11febaa789fd9b530593b3f9cd65c2d0191156",
+      "mediaType": "image/png"
+    },
+    {
+      "id": "generation-vehicle-sleeper",
+      "path": "evidence/generation-vehicle-sleeper.json",
+      "sha256": "a647c0a16d3b1a3afed4ab618b6cf478020e865edd0fbf521bdece24f2b497af",
+      "mediaType": "application/json"
+    },
+    {
+      "id": "source-vehicle-sleeper",
+      "path": "sources/vehicle-sleeper.png",
+      "sha256": "e38e61afe88a73bf1609c6ae383aa1d3b5bfb27d05ba0fbedbc64f2adadf4390",
+      "mediaType": "image/png"
+    },
+    {
       "id": "atlas-review-record",
       "path": "review.json",
-      "sha256": "4a2830bba5b6e0c890976a3ef7f25559f3c9ed46e64fc868d508e4fe35af2aa3",
+      "sha256": "f0fcb58649491ae2612f1b70f0d7beb3d4e0e279e99d6448ebfe63c8a76e15f7",
       "mediaType": "application/json"
     },
     {
       "id": "technical-visual-review",
       "path": "evidence/technical-visual-review.md",
       "sha256": "5a49713b7169b26e325e39a616a04d22c64f92792333c9cfc7fbc3187ca4d8d4",
+      "mediaType": "text/markdown"
+    },
+    {
+      "id": "vehicle-visual-review",
+      "path": "evidence/vehicle-visual-review.md",
+      "sha256": "950fec6214a5ed6905af52f35cbe5982bf27d89183df37d55efe34743c09c74c",
       "mediaType": "text/markdown"
     }
   ],
@@ -9231,6 +9337,748 @@
           "evidenceId": "generation-accessories"
         },
         "evidenceId": "generation-accessories"
+      },
+      "review": {
+        "visual": {
+          "status": "pending",
+          "reviewerId": null,
+          "evidenceId": null
+        },
+        "logoAndText": {
+          "status": "pending",
+          "reviewerId": null,
+          "evidenceId": null
+        },
+        "contrast": {
+          "status": "pending",
+          "reviewerId": null,
+          "evidenceId": null
+        },
+        "provenance": {
+          "status": "pending",
+          "reviewerId": null,
+          "evidenceId": null
+        }
+      }
+    },
+    {
+      "id": "vehicle.regional-double.lower",
+      "fileId": "vehicles",
+      "rect": {
+        "x": 0,
+        "y": 0,
+        "width": 96,
+        "height": 864
+      },
+      "worldWidthMm": 3000,
+      "worldHeightMm": 27000,
+      "pivot": {
+        "x": 48,
+        "y": 432
+      },
+      "category": "vehicle",
+      "generation": {
+        "prompt": "Edit target: the attached generated Zugfolge double-deck regional coach sprite sheet. Preserve the entire three-panel layout, every outer car outline, roof/right panel, center upper deck panel, exact image size, pixel style, colors, couplers and transparent-looking background. Make ONE specific floorplan correction only to the LEFT/lower deck interior: it currently has a second staircase halfway down the carriage. Remove that middle staircase and continue the same ordinary red seating in that small area. Instead place the lower deck's second staircase near the BOTTOM end at exactly the same longitudinal location as the bottom staircase in the CENTER/upper deck (around y=1230..1320 in the 1536-pixel-tall sheet). Keep a bicycle/wheelchair bay on the opposite side of the bottom lower-deck stairs. This makes lower and upper stair openings align. Do not change the first staircase near the top. No new text, symbols, logos, people or extra panels. Keep all coach ends fully inside canvas.",
+        "referenceIds": [
+          "reference-vehicle-regional-double-initial"
+        ],
+        "model": {
+          "provider": "openai",
+          "name": "gpt-image",
+          "revision": "2.0",
+          "verification": "provider_declared",
+          "evidenceId": "generation-vehicle-regional-double"
+        },
+        "evidenceId": "generation-vehicle-regional-double"
+      },
+      "review": {
+        "visual": {
+          "status": "pending",
+          "reviewerId": null,
+          "evidenceId": null
+        },
+        "logoAndText": {
+          "status": "pending",
+          "reviewerId": null,
+          "evidenceId": null
+        },
+        "contrast": {
+          "status": "pending",
+          "reviewerId": null,
+          "evidenceId": null
+        },
+        "provenance": {
+          "status": "pending",
+          "reviewerId": null,
+          "evidenceId": null
+        }
+      }
+    },
+    {
+      "id": "vehicle.regional-double.upper",
+      "fileId": "vehicles",
+      "rect": {
+        "x": 98,
+        "y": 0,
+        "width": 96,
+        "height": 864
+      },
+      "worldWidthMm": 3000,
+      "worldHeightMm": 27000,
+      "pivot": {
+        "x": 48,
+        "y": 432
+      },
+      "category": "vehicle",
+      "generation": {
+        "prompt": "Edit target: the attached generated Zugfolge double-deck regional coach sprite sheet. Preserve the entire three-panel layout, every outer car outline, roof/right panel, center upper deck panel, exact image size, pixel style, colors, couplers and transparent-looking background. Make ONE specific floorplan correction only to the LEFT/lower deck interior: it currently has a second staircase halfway down the carriage. Remove that middle staircase and continue the same ordinary red seating in that small area. Instead place the lower deck's second staircase near the BOTTOM end at exactly the same longitudinal location as the bottom staircase in the CENTER/upper deck (around y=1230..1320 in the 1536-pixel-tall sheet). Keep a bicycle/wheelchair bay on the opposite side of the bottom lower-deck stairs. This makes lower and upper stair openings align. Do not change the first staircase near the top. No new text, symbols, logos, people or extra panels. Keep all coach ends fully inside canvas.",
+        "referenceIds": [
+          "reference-vehicle-regional-double-initial"
+        ],
+        "model": {
+          "provider": "openai",
+          "name": "gpt-image",
+          "revision": "2.0",
+          "verification": "provider_declared",
+          "evidenceId": "generation-vehicle-regional-double"
+        },
+        "evidenceId": "generation-vehicle-regional-double"
+      },
+      "review": {
+        "visual": {
+          "status": "pending",
+          "reviewerId": null,
+          "evidenceId": null
+        },
+        "logoAndText": {
+          "status": "pending",
+          "reviewerId": null,
+          "evidenceId": null
+        },
+        "contrast": {
+          "status": "pending",
+          "reviewerId": null,
+          "evidenceId": null
+        },
+        "provenance": {
+          "status": "pending",
+          "reviewerId": null,
+          "evidenceId": null
+        }
+      }
+    },
+    {
+      "id": "vehicle.regional-double.roof",
+      "fileId": "vehicles",
+      "rect": {
+        "x": 196,
+        "y": 0,
+        "width": 96,
+        "height": 864
+      },
+      "worldWidthMm": 3000,
+      "worldHeightMm": 27000,
+      "pivot": {
+        "x": 48,
+        "y": 432
+      },
+      "category": "vehicle",
+      "generation": {
+        "prompt": "Edit target: the attached generated Zugfolge double-deck regional coach sprite sheet. Preserve the entire three-panel layout, every outer car outline, roof/right panel, center upper deck panel, exact image size, pixel style, colors, couplers and transparent-looking background. Make ONE specific floorplan correction only to the LEFT/lower deck interior: it currently has a second staircase halfway down the carriage. Remove that middle staircase and continue the same ordinary red seating in that small area. Instead place the lower deck's second staircase near the BOTTOM end at exactly the same longitudinal location as the bottom staircase in the CENTER/upper deck (around y=1230..1320 in the 1536-pixel-tall sheet). Keep a bicycle/wheelchair bay on the opposite side of the bottom lower-deck stairs. This makes lower and upper stair openings align. Do not change the first staircase near the top. No new text, symbols, logos, people or extra panels. Keep all coach ends fully inside canvas.",
+        "referenceIds": [
+          "reference-vehicle-regional-double-initial"
+        ],
+        "model": {
+          "provider": "openai",
+          "name": "gpt-image",
+          "revision": "2.0",
+          "verification": "provider_declared",
+          "evidenceId": "generation-vehicle-regional-double"
+        },
+        "evidenceId": "generation-vehicle-regional-double"
+      },
+      "review": {
+        "visual": {
+          "status": "pending",
+          "reviewerId": null,
+          "evidenceId": null
+        },
+        "logoAndText": {
+          "status": "pending",
+          "reviewerId": null,
+          "evidenceId": null
+        },
+        "contrast": {
+          "status": "pending",
+          "reviewerId": null,
+          "evidenceId": null
+        },
+        "provenance": {
+          "status": "pending",
+          "reviewerId": null,
+          "evidenceId": null
+        }
+      }
+    },
+    {
+      "id": "vehicle.intercity-single.body",
+      "fileId": "vehicles",
+      "rect": {
+        "x": 294,
+        "y": 0,
+        "width": 96,
+        "height": 864
+      },
+      "worldWidthMm": 3000,
+      "worldHeightMm": 27000,
+      "pivot": {
+        "x": 48,
+        "y": 432
+      },
+      "category": "vehicle",
+      "generation": {
+        "prompt": "Use case: stylized-concept. Project-bound sprite art for Zugfolge railway game. Input image 1 is ONLY a reference for our own graphite/red raster-art treatment; do NOT copy its cab layout, dimensions or pantographs. Create a NEW coherent generic European passenger coach design. Flat strict orthographic TOP-DOWN plan view with square pixel clusters and crisp contour, no vanishing point, no perspective, no isometric tilt. Camera straight vertically down. Vehicle long axis vertical, couplers at top and bottom. Rail coach width-to-length ratio approximately 1:9 (3m x27m); long, slender full-length coaches, same exact outline and alignment across panels. Arrange on a transparent background with wide EMPTY transparent gutters and at least 40px outer padding, full objects completely inside canvas. Portrait canvas 1024x1536 or similar. Bodywork graphite #181e25 with own red #e5233d accents, silver edging; floor graphite #303b46; warm modest highlights. Clear readable game-scale furnishings, small square pixels, flat restrained texture. NO text, letters, logos, numbers, badges, fake labels, people, scenery, railway tracks, cast shadows, checkerboard painted into background. No locomotive pantographs on these non-powered coaches. Do not draw standalone cab or nose. Every panel is the SAME full-length coach with roof either removed or fitted.\nPRIMARY REQUEST: Einstöckiger Wagen Fernverkehr / single-deck intercity coach. TWO full-height parallel panels from LEFT to RIGHT: OPEN CUTAWAY INTERIOR, CLOSED ROOF. A locomotive-hauled passenger coach with flat gangway ends, narrow entry vestibules at each extreme end, toilets and generous luggage racks beside vestibules, a spacious long quiet seating saloon. Clearly separated wide comfortable blue-grey 2+1 premium seats with red headrests, several facing seating groups with large cream tables, ample aisle and legroom. Distinct long-distance design, no large open bicycle bay, no cab. Roof smooth silver/graphite with two modest HVAC modules. Both panels equally wide and equally long, centered in equal-width columns.",
+        "referenceIds": [
+          "reference-train"
+        ],
+        "model": {
+          "provider": "openai",
+          "name": "gpt-image",
+          "revision": "2.0",
+          "verification": "provider_declared",
+          "evidenceId": "generation-vehicle-intercity-single"
+        },
+        "evidenceId": "generation-vehicle-intercity-single"
+      },
+      "review": {
+        "visual": {
+          "status": "pending",
+          "reviewerId": null,
+          "evidenceId": null
+        },
+        "logoAndText": {
+          "status": "pending",
+          "reviewerId": null,
+          "evidenceId": null
+        },
+        "contrast": {
+          "status": "pending",
+          "reviewerId": null,
+          "evidenceId": null
+        },
+        "provenance": {
+          "status": "pending",
+          "reviewerId": null,
+          "evidenceId": null
+        }
+      }
+    },
+    {
+      "id": "vehicle.intercity-single.roof",
+      "fileId": "vehicles",
+      "rect": {
+        "x": 392,
+        "y": 0,
+        "width": 96,
+        "height": 864
+      },
+      "worldWidthMm": 3000,
+      "worldHeightMm": 27000,
+      "pivot": {
+        "x": 48,
+        "y": 432
+      },
+      "category": "vehicle",
+      "generation": {
+        "prompt": "Use case: stylized-concept. Project-bound sprite art for Zugfolge railway game. Input image 1 is ONLY a reference for our own graphite/red raster-art treatment; do NOT copy its cab layout, dimensions or pantographs. Create a NEW coherent generic European passenger coach design. Flat strict orthographic TOP-DOWN plan view with square pixel clusters and crisp contour, no vanishing point, no perspective, no isometric tilt. Camera straight vertically down. Vehicle long axis vertical, couplers at top and bottom. Rail coach width-to-length ratio approximately 1:9 (3m x27m); long, slender full-length coaches, same exact outline and alignment across panels. Arrange on a transparent background with wide EMPTY transparent gutters and at least 40px outer padding, full objects completely inside canvas. Portrait canvas 1024x1536 or similar. Bodywork graphite #181e25 with own red #e5233d accents, silver edging; floor graphite #303b46; warm modest highlights. Clear readable game-scale furnishings, small square pixels, flat restrained texture. NO text, letters, logos, numbers, badges, fake labels, people, scenery, railway tracks, cast shadows, checkerboard painted into background. No locomotive pantographs on these non-powered coaches. Do not draw standalone cab or nose. Every panel is the SAME full-length coach with roof either removed or fitted.\nPRIMARY REQUEST: Einstöckiger Wagen Fernverkehr / single-deck intercity coach. TWO full-height parallel panels from LEFT to RIGHT: OPEN CUTAWAY INTERIOR, CLOSED ROOF. A locomotive-hauled passenger coach with flat gangway ends, narrow entry vestibules at each extreme end, toilets and generous luggage racks beside vestibules, a spacious long quiet seating saloon. Clearly separated wide comfortable blue-grey 2+1 premium seats with red headrests, several facing seating groups with large cream tables, ample aisle and legroom. Distinct long-distance design, no large open bicycle bay, no cab. Roof smooth silver/graphite with two modest HVAC modules. Both panels equally wide and equally long, centered in equal-width columns.",
+        "referenceIds": [
+          "reference-train"
+        ],
+        "model": {
+          "provider": "openai",
+          "name": "gpt-image",
+          "revision": "2.0",
+          "verification": "provider_declared",
+          "evidenceId": "generation-vehicle-intercity-single"
+        },
+        "evidenceId": "generation-vehicle-intercity-single"
+      },
+      "review": {
+        "visual": {
+          "status": "pending",
+          "reviewerId": null,
+          "evidenceId": null
+        },
+        "logoAndText": {
+          "status": "pending",
+          "reviewerId": null,
+          "evidenceId": null
+        },
+        "contrast": {
+          "status": "pending",
+          "reviewerId": null,
+          "evidenceId": null
+        },
+        "provenance": {
+          "status": "pending",
+          "reviewerId": null,
+          "evidenceId": null
+        }
+      }
+    },
+    {
+      "id": "vehicle.regional-single.body",
+      "fileId": "vehicles",
+      "rect": {
+        "x": 490,
+        "y": 0,
+        "width": 96,
+        "height": 864
+      },
+      "worldWidthMm": 3000,
+      "worldHeightMm": 27000,
+      "pivot": {
+        "x": 48,
+        "y": 432
+      },
+      "category": "vehicle",
+      "generation": {
+        "prompt": "Use case: stylized-concept. Project-bound sprite art for Zugfolge railway game. Input image1 is ONLY a style reference for our own graphite/red pixel art; do NOT copy its cab layout, dimensions or pantographs. Create a NEW generic European non-powered passenger coach. Strict flat orthographic TOP-DOWN floor plan, camera straight vertically down, no perspective/isometric tilt/vanishing point. Crisp square pixel clusters, restrained flat texture. Full vehicle long axis vertical, gangways/couplers at top and bottom, width:length approximately1:9 (3mx27m), identical full-length outlines across panels. Portrait canvas1024x1536 or similar. Equal-width columns with wide EMPTY transparent gutters, 40px outer padding, no clipping. Genuine transparent background. Graphite #181e25 bodywork, red #e5233d accents, silver edging, graphite #303b46 floors. Clean legible furnishings. NO text, logos, letters, numbers, labels, people, scenery, tracks, cast shadows or painted checkerboard. No cab, separate nose or locomotive pantograph. Each panel depicts the same full-length coach, roof open or closed.\nPRIMARY REQUEST: Einstöckiger Wagen Nahverkehr / single-deck regional coach. TWO parallel full-height panels LEFT to RIGHT: OPEN CUTAWAY INTERIOR, CLOSED ROOF. Two broad paired side-door vestibules around one quarter and three quarters of length. Practical dense red2+2 transverse seats with a straight middle aisle, generous multipurpose bay with fold-up seats and bicycle space near one door, compact accessible WC near one end. Flat gangway ends. Durable simple fittings, no premium lounge or dining tables. Roof graphite/dull silver with low ventilation units. Equal-width/length panels centered in columns. Regional identity must come from door, bay and seat layouts, not just paint.",
+        "referenceIds": [
+          "reference-train"
+        ],
+        "model": {
+          "provider": "openai",
+          "name": "gpt-image",
+          "revision": "2.0",
+          "verification": "provider_declared",
+          "evidenceId": "generation-vehicle-regional-single"
+        },
+        "evidenceId": "generation-vehicle-regional-single"
+      },
+      "review": {
+        "visual": {
+          "status": "pending",
+          "reviewerId": null,
+          "evidenceId": null
+        },
+        "logoAndText": {
+          "status": "pending",
+          "reviewerId": null,
+          "evidenceId": null
+        },
+        "contrast": {
+          "status": "pending",
+          "reviewerId": null,
+          "evidenceId": null
+        },
+        "provenance": {
+          "status": "pending",
+          "reviewerId": null,
+          "evidenceId": null
+        }
+      }
+    },
+    {
+      "id": "vehicle.regional-single.roof",
+      "fileId": "vehicles",
+      "rect": {
+        "x": 588,
+        "y": 0,
+        "width": 96,
+        "height": 864
+      },
+      "worldWidthMm": 3000,
+      "worldHeightMm": 27000,
+      "pivot": {
+        "x": 48,
+        "y": 432
+      },
+      "category": "vehicle",
+      "generation": {
+        "prompt": "Use case: stylized-concept. Project-bound sprite art for Zugfolge railway game. Input image1 is ONLY a style reference for our own graphite/red pixel art; do NOT copy its cab layout, dimensions or pantographs. Create a NEW generic European non-powered passenger coach. Strict flat orthographic TOP-DOWN floor plan, camera straight vertically down, no perspective/isometric tilt/vanishing point. Crisp square pixel clusters, restrained flat texture. Full vehicle long axis vertical, gangways/couplers at top and bottom, width:length approximately1:9 (3mx27m), identical full-length outlines across panels. Portrait canvas1024x1536 or similar. Equal-width columns with wide EMPTY transparent gutters, 40px outer padding, no clipping. Genuine transparent background. Graphite #181e25 bodywork, red #e5233d accents, silver edging, graphite #303b46 floors. Clean legible furnishings. NO text, logos, letters, numbers, labels, people, scenery, tracks, cast shadows or painted checkerboard. No cab, separate nose or locomotive pantograph. Each panel depicts the same full-length coach, roof open or closed.\nPRIMARY REQUEST: Einstöckiger Wagen Nahverkehr / single-deck regional coach. TWO parallel full-height panels LEFT to RIGHT: OPEN CUTAWAY INTERIOR, CLOSED ROOF. Two broad paired side-door vestibules around one quarter and three quarters of length. Practical dense red2+2 transverse seats with a straight middle aisle, generous multipurpose bay with fold-up seats and bicycle space near one door, compact accessible WC near one end. Flat gangway ends. Durable simple fittings, no premium lounge or dining tables. Roof graphite/dull silver with low ventilation units. Equal-width/length panels centered in columns. Regional identity must come from door, bay and seat layouts, not just paint.",
+        "referenceIds": [
+          "reference-train"
+        ],
+        "model": {
+          "provider": "openai",
+          "name": "gpt-image",
+          "revision": "2.0",
+          "verification": "provider_declared",
+          "evidenceId": "generation-vehicle-regional-single"
+        },
+        "evidenceId": "generation-vehicle-regional-single"
+      },
+      "review": {
+        "visual": {
+          "status": "pending",
+          "reviewerId": null,
+          "evidenceId": null
+        },
+        "logoAndText": {
+          "status": "pending",
+          "reviewerId": null,
+          "evidenceId": null
+        },
+        "contrast": {
+          "status": "pending",
+          "reviewerId": null,
+          "evidenceId": null
+        },
+        "provenance": {
+          "status": "pending",
+          "reviewerId": null,
+          "evidenceId": null
+        }
+      }
+    },
+    {
+      "id": "vehicle.intercity-double.lower",
+      "fileId": "vehicles",
+      "rect": {
+        "x": 686,
+        "y": 0,
+        "width": 96,
+        "height": 864
+      },
+      "worldWidthMm": 3000,
+      "worldHeightMm": 27000,
+      "pivot": {
+        "x": 48,
+        "y": 432
+      },
+      "category": "vehicle",
+      "generation": {
+        "prompt": "Use case: stylized-concept. Project-bound sprite art for Zugfolge railway game. Input image1 is ONLY a style reference for our own graphite/red pixel art; do NOT copy its cab layout, dimensions or pantographs. Create a NEW generic European non-powered passenger coach. Strict flat orthographic TOP-DOWN floor plan, camera straight vertically down, no perspective/isometric tilt/vanishing point. Crisp square pixel clusters, restrained flat texture. Full vehicle long axis vertical, gangways/couplers at top and bottom, width:length approximately1:9 (3mx27m), identical full-length outlines across panels. Portrait canvas1024x1536 or similar. Equal-width columns with wide EMPTY transparent gutters, 40px outer padding, no clipping. Genuine transparent background. Graphite #181e25 bodywork, red #e5233d accents, silver edging, graphite #303b46 floors. Clean legible furnishings. NO text, logos, letters, numbers, labels, people, scenery, tracks, cast shadows or painted checkerboard. No cab, separate nose or locomotive pantograph. Each panel depicts the same full-length coach, roof open or closed.\nPRIMARY REQUEST: Doppelstockwagen Fernverkehr / double-deck intercity coach. THREE parallel full-height panels LEFT to RIGHT: LOWER DECK open cutaway, UPPER DECK open cutaway, CLOSED ROOF. Distinct premium long-distance double-deck coach, flat gangway ends. LOWER: end vestibules with comparatively narrow side doors, WC and luggage service spaces, stairs at both ends, spacious blue-grey2+1 seats and cream tables in facing groups. UPPER: matching stairwells at both ends, comfortable red2+2 reclining-seat blocks interspersed with four-seat table groups, middle aisle, luggage shelves. No large commuter bicycle bay. Lower/upper layouts clearly differ, stairs align longitudinally. Roof clean silver/graphite cap with two compact HVAC enclosures. Identical full-length outline across all3panels, equal-width columns.",
+        "referenceIds": [
+          "reference-train"
+        ],
+        "model": {
+          "provider": "openai",
+          "name": "gpt-image",
+          "revision": "2.0",
+          "verification": "provider_declared",
+          "evidenceId": "generation-vehicle-intercity-double"
+        },
+        "evidenceId": "generation-vehicle-intercity-double"
+      },
+      "review": {
+        "visual": {
+          "status": "pending",
+          "reviewerId": null,
+          "evidenceId": null
+        },
+        "logoAndText": {
+          "status": "pending",
+          "reviewerId": null,
+          "evidenceId": null
+        },
+        "contrast": {
+          "status": "pending",
+          "reviewerId": null,
+          "evidenceId": null
+        },
+        "provenance": {
+          "status": "pending",
+          "reviewerId": null,
+          "evidenceId": null
+        }
+      }
+    },
+    {
+      "id": "vehicle.intercity-double.upper",
+      "fileId": "vehicles",
+      "rect": {
+        "x": 784,
+        "y": 0,
+        "width": 96,
+        "height": 864
+      },
+      "worldWidthMm": 3000,
+      "worldHeightMm": 27000,
+      "pivot": {
+        "x": 48,
+        "y": 432
+      },
+      "category": "vehicle",
+      "generation": {
+        "prompt": "Use case: stylized-concept. Project-bound sprite art for Zugfolge railway game. Input image1 is ONLY a style reference for our own graphite/red pixel art; do NOT copy its cab layout, dimensions or pantographs. Create a NEW generic European non-powered passenger coach. Strict flat orthographic TOP-DOWN floor plan, camera straight vertically down, no perspective/isometric tilt/vanishing point. Crisp square pixel clusters, restrained flat texture. Full vehicle long axis vertical, gangways/couplers at top and bottom, width:length approximately1:9 (3mx27m), identical full-length outlines across panels. Portrait canvas1024x1536 or similar. Equal-width columns with wide EMPTY transparent gutters, 40px outer padding, no clipping. Genuine transparent background. Graphite #181e25 bodywork, red #e5233d accents, silver edging, graphite #303b46 floors. Clean legible furnishings. NO text, logos, letters, numbers, labels, people, scenery, tracks, cast shadows or painted checkerboard. No cab, separate nose or locomotive pantograph. Each panel depicts the same full-length coach, roof open or closed.\nPRIMARY REQUEST: Doppelstockwagen Fernverkehr / double-deck intercity coach. THREE parallel full-height panels LEFT to RIGHT: LOWER DECK open cutaway, UPPER DECK open cutaway, CLOSED ROOF. Distinct premium long-distance double-deck coach, flat gangway ends. LOWER: end vestibules with comparatively narrow side doors, WC and luggage service spaces, stairs at both ends, spacious blue-grey2+1 seats and cream tables in facing groups. UPPER: matching stairwells at both ends, comfortable red2+2 reclining-seat blocks interspersed with four-seat table groups, middle aisle, luggage shelves. No large commuter bicycle bay. Lower/upper layouts clearly differ, stairs align longitudinally. Roof clean silver/graphite cap with two compact HVAC enclosures. Identical full-length outline across all3panels, equal-width columns.",
+        "referenceIds": [
+          "reference-train"
+        ],
+        "model": {
+          "provider": "openai",
+          "name": "gpt-image",
+          "revision": "2.0",
+          "verification": "provider_declared",
+          "evidenceId": "generation-vehicle-intercity-double"
+        },
+        "evidenceId": "generation-vehicle-intercity-double"
+      },
+      "review": {
+        "visual": {
+          "status": "pending",
+          "reviewerId": null,
+          "evidenceId": null
+        },
+        "logoAndText": {
+          "status": "pending",
+          "reviewerId": null,
+          "evidenceId": null
+        },
+        "contrast": {
+          "status": "pending",
+          "reviewerId": null,
+          "evidenceId": null
+        },
+        "provenance": {
+          "status": "pending",
+          "reviewerId": null,
+          "evidenceId": null
+        }
+      }
+    },
+    {
+      "id": "vehicle.intercity-double.roof",
+      "fileId": "vehicles",
+      "rect": {
+        "x": 882,
+        "y": 0,
+        "width": 96,
+        "height": 864
+      },
+      "worldWidthMm": 3000,
+      "worldHeightMm": 27000,
+      "pivot": {
+        "x": 48,
+        "y": 432
+      },
+      "category": "vehicle",
+      "generation": {
+        "prompt": "Use case: stylized-concept. Project-bound sprite art for Zugfolge railway game. Input image1 is ONLY a style reference for our own graphite/red pixel art; do NOT copy its cab layout, dimensions or pantographs. Create a NEW generic European non-powered passenger coach. Strict flat orthographic TOP-DOWN floor plan, camera straight vertically down, no perspective/isometric tilt/vanishing point. Crisp square pixel clusters, restrained flat texture. Full vehicle long axis vertical, gangways/couplers at top and bottom, width:length approximately1:9 (3mx27m), identical full-length outlines across panels. Portrait canvas1024x1536 or similar. Equal-width columns with wide EMPTY transparent gutters, 40px outer padding, no clipping. Genuine transparent background. Graphite #181e25 bodywork, red #e5233d accents, silver edging, graphite #303b46 floors. Clean legible furnishings. NO text, logos, letters, numbers, labels, people, scenery, tracks, cast shadows or painted checkerboard. No cab, separate nose or locomotive pantograph. Each panel depicts the same full-length coach, roof open or closed.\nPRIMARY REQUEST: Doppelstockwagen Fernverkehr / double-deck intercity coach. THREE parallel full-height panels LEFT to RIGHT: LOWER DECK open cutaway, UPPER DECK open cutaway, CLOSED ROOF. Distinct premium long-distance double-deck coach, flat gangway ends. LOWER: end vestibules with comparatively narrow side doors, WC and luggage service spaces, stairs at both ends, spacious blue-grey2+1 seats and cream tables in facing groups. UPPER: matching stairwells at both ends, comfortable red2+2 reclining-seat blocks interspersed with four-seat table groups, middle aisle, luggage shelves. No large commuter bicycle bay. Lower/upper layouts clearly differ, stairs align longitudinally. Roof clean silver/graphite cap with two compact HVAC enclosures. Identical full-length outline across all3panels, equal-width columns.",
+        "referenceIds": [
+          "reference-train"
+        ],
+        "model": {
+          "provider": "openai",
+          "name": "gpt-image",
+          "revision": "2.0",
+          "verification": "provider_declared",
+          "evidenceId": "generation-vehicle-intercity-double"
+        },
+        "evidenceId": "generation-vehicle-intercity-double"
+      },
+      "review": {
+        "visual": {
+          "status": "pending",
+          "reviewerId": null,
+          "evidenceId": null
+        },
+        "logoAndText": {
+          "status": "pending",
+          "reviewerId": null,
+          "evidenceId": null
+        },
+        "contrast": {
+          "status": "pending",
+          "reviewerId": null,
+          "evidenceId": null
+        },
+        "provenance": {
+          "status": "pending",
+          "reviewerId": null,
+          "evidenceId": null
+        }
+      }
+    },
+    {
+      "id": "vehicle.dining.body",
+      "fileId": "vehicles",
+      "rect": {
+        "x": 980,
+        "y": 0,
+        "width": 96,
+        "height": 864
+      },
+      "worldWidthMm": 3000,
+      "worldHeightMm": 27000,
+      "pivot": {
+        "x": 48,
+        "y": 432
+      },
+      "category": "vehicle",
+      "generation": {
+        "prompt": "Use case: stylized-concept. Project-bound sprite art for Zugfolge railway game. Input image1 is ONLY our own graphite/red pixel-art style reference, not a vehicle layout to copy. NEW generic European non-powered coach, no cab or pantographs. Strict orthographic TOP-DOWN plan view, camera straight down, no perspective/isometric tilt/vanishing point. Crisp pixel clusters, flat limited texture, clear furnishings. Full long axis vertical, couplers/gangways at both ends, slender width:length ratio approximately1:9 (3mx27m). TWO identical-width and identical-length full-height coaches side by side: LEFT open roof cutaway interior, RIGHT closed exterior roof. Equal-width columns, full objects uncut with40px outer padding and wide EMPTY transparent gutter. Genuine transparent background, portrait1024x1536 or similar. Graphite #181e25 with own red #e5233d accents, silver edging, #303b46 floors, warm cream tables and upholstery. NO text, logos, letters, numbers, labels, people, scenery, railway tracks, cast shadows or painted checkerboard. No separate nose, no driving cab.\nPRIMARY REQUEST: Speisewagen / full-service dining coach. Interior is clearly divided: roughly two thirds restaurant saloon with freestanding cream rectangular dining tables and red upholstered chairs on both sides of a central aisle, a compact bar/service counter, and a separate enclosed stainless-steel kitchen occupying the final third with preparation counters, stove/sink blocks and narrow staff corridor. Toilets near end vestibule and small end-entry side doors. No rows of ordinary airline passenger seats. Distinct believable restaurant layout with seats facing dining tables, warm dark wood accents. Closed roof includes kitchen exhaust vents above the kitchen end and compact HVAC at opposite end, otherwise smooth silver/graphite. Both views align end-for-end.",
+        "referenceIds": [
+          "reference-train"
+        ],
+        "model": {
+          "provider": "openai",
+          "name": "gpt-image",
+          "revision": "2.0",
+          "verification": "provider_declared",
+          "evidenceId": "generation-vehicle-dining"
+        },
+        "evidenceId": "generation-vehicle-dining"
+      },
+      "review": {
+        "visual": {
+          "status": "pending",
+          "reviewerId": null,
+          "evidenceId": null
+        },
+        "logoAndText": {
+          "status": "pending",
+          "reviewerId": null,
+          "evidenceId": null
+        },
+        "contrast": {
+          "status": "pending",
+          "reviewerId": null,
+          "evidenceId": null
+        },
+        "provenance": {
+          "status": "pending",
+          "reviewerId": null,
+          "evidenceId": null
+        }
+      }
+    },
+    {
+      "id": "vehicle.dining.roof",
+      "fileId": "vehicles",
+      "rect": {
+        "x": 1078,
+        "y": 0,
+        "width": 96,
+        "height": 864
+      },
+      "worldWidthMm": 3000,
+      "worldHeightMm": 27000,
+      "pivot": {
+        "x": 48,
+        "y": 432
+      },
+      "category": "vehicle",
+      "generation": {
+        "prompt": "Use case: stylized-concept. Project-bound sprite art for Zugfolge railway game. Input image1 is ONLY our own graphite/red pixel-art style reference, not a vehicle layout to copy. NEW generic European non-powered coach, no cab or pantographs. Strict orthographic TOP-DOWN plan view, camera straight down, no perspective/isometric tilt/vanishing point. Crisp pixel clusters, flat limited texture, clear furnishings. Full long axis vertical, couplers/gangways at both ends, slender width:length ratio approximately1:9 (3mx27m). TWO identical-width and identical-length full-height coaches side by side: LEFT open roof cutaway interior, RIGHT closed exterior roof. Equal-width columns, full objects uncut with40px outer padding and wide EMPTY transparent gutter. Genuine transparent background, portrait1024x1536 or similar. Graphite #181e25 with own red #e5233d accents, silver edging, #303b46 floors, warm cream tables and upholstery. NO text, logos, letters, numbers, labels, people, scenery, railway tracks, cast shadows or painted checkerboard. No separate nose, no driving cab.\nPRIMARY REQUEST: Speisewagen / full-service dining coach. Interior is clearly divided: roughly two thirds restaurant saloon with freestanding cream rectangular dining tables and red upholstered chairs on both sides of a central aisle, a compact bar/service counter, and a separate enclosed stainless-steel kitchen occupying the final third with preparation counters, stove/sink blocks and narrow staff corridor. Toilets near end vestibule and small end-entry side doors. No rows of ordinary airline passenger seats. Distinct believable restaurant layout with seats facing dining tables, warm dark wood accents. Closed roof includes kitchen exhaust vents above the kitchen end and compact HVAC at opposite end, otherwise smooth silver/graphite. Both views align end-for-end.",
+        "referenceIds": [
+          "reference-train"
+        ],
+        "model": {
+          "provider": "openai",
+          "name": "gpt-image",
+          "revision": "2.0",
+          "verification": "provider_declared",
+          "evidenceId": "generation-vehicle-dining"
+        },
+        "evidenceId": "generation-vehicle-dining"
+      },
+      "review": {
+        "visual": {
+          "status": "pending",
+          "reviewerId": null,
+          "evidenceId": null
+        },
+        "logoAndText": {
+          "status": "pending",
+          "reviewerId": null,
+          "evidenceId": null
+        },
+        "contrast": {
+          "status": "pending",
+          "reviewerId": null,
+          "evidenceId": null
+        },
+        "provenance": {
+          "status": "pending",
+          "reviewerId": null,
+          "evidenceId": null
+        }
+      }
+    },
+    {
+      "id": "vehicle.sleeper.body",
+      "fileId": "vehicles",
+      "rect": {
+        "x": 1176,
+        "y": 0,
+        "width": 96,
+        "height": 864
+      },
+      "worldWidthMm": 3000,
+      "worldHeightMm": 27000,
+      "pivot": {
+        "x": 48,
+        "y": 432
+      },
+      "category": "vehicle",
+      "generation": {
+        "prompt": "Use case: stylized-concept. Project-bound sprite art for Zugfolge railway game. Input image1 is ONLY our own graphite/red pixel-art style reference, not a vehicle layout to copy. NEW generic European non-powered coach, no cab or pantographs. Strict orthographic TOP-DOWN plan view, camera straight down, no perspective/isometric tilt/vanishing point. Crisp pixel clusters, flat limited texture, clear furnishings. Full long axis vertical, couplers/gangways at both ends, slender width:length ratio approximately1:9 (3mx27m). TWO identical-width and identical-length full-height coaches side by side: LEFT open roof cutaway interior, RIGHT closed exterior roof. Equal-width columns, full objects uncut with40px outer padding and wide EMPTY transparent gutter. Genuine transparent background, portrait1024x1536 or similar. Graphite #181e25 with own red #e5233d accents, silver edging, #303b46 floors, warm cream tables and upholstery. NO text, logos, letters, numbers, labels, people, scenery, railway tracks, cast shadows or painted checkerboard. No separate nose, no driving cab.\nPRIMARY REQUEST: Schlafwagen / night sleeping coach. Interior: clear long narrow SIDE CORRIDOR down the right-hand side, with a succession of six separate compact sleeping compartments on the left, opaque partitions and individual doors opening to corridor. Each compartment has two visible slim rectangular bunk/bed footprints or lower beds with cream bedding, red blanket folded at foot, small bedside shelf. No ordinary rows of passenger seats and no dining tables. Shared washroom and WC service blocks at one end, small vestibules and side doors at both ends. Room divisions and corridor must be legible in strict floor plan. Closed exterior roof simple smooth graphite/silver with small vents and two modest HVAC units, red side trim. Both views align end-for-end.",
+        "referenceIds": [
+          "reference-train"
+        ],
+        "model": {
+          "provider": "openai",
+          "name": "gpt-image",
+          "revision": "2.0",
+          "verification": "provider_declared",
+          "evidenceId": "generation-vehicle-sleeper"
+        },
+        "evidenceId": "generation-vehicle-sleeper"
+      },
+      "review": {
+        "visual": {
+          "status": "pending",
+          "reviewerId": null,
+          "evidenceId": null
+        },
+        "logoAndText": {
+          "status": "pending",
+          "reviewerId": null,
+          "evidenceId": null
+        },
+        "contrast": {
+          "status": "pending",
+          "reviewerId": null,
+          "evidenceId": null
+        },
+        "provenance": {
+          "status": "pending",
+          "reviewerId": null,
+          "evidenceId": null
+        }
+      }
+    },
+    {
+      "id": "vehicle.sleeper.roof",
+      "fileId": "vehicles",
+      "rect": {
+        "x": 1274,
+        "y": 0,
+        "width": 96,
+        "height": 864
+      },
+      "worldWidthMm": 3000,
+      "worldHeightMm": 27000,
+      "pivot": {
+        "x": 48,
+        "y": 432
+      },
+      "category": "vehicle",
+      "generation": {
+        "prompt": "Use case: stylized-concept. Project-bound sprite art for Zugfolge railway game. Input image1 is ONLY our own graphite/red pixel-art style reference, not a vehicle layout to copy. NEW generic European non-powered coach, no cab or pantographs. Strict orthographic TOP-DOWN plan view, camera straight down, no perspective/isometric tilt/vanishing point. Crisp pixel clusters, flat limited texture, clear furnishings. Full long axis vertical, couplers/gangways at both ends, slender width:length ratio approximately1:9 (3mx27m). TWO identical-width and identical-length full-height coaches side by side: LEFT open roof cutaway interior, RIGHT closed exterior roof. Equal-width columns, full objects uncut with40px outer padding and wide EMPTY transparent gutter. Genuine transparent background, portrait1024x1536 or similar. Graphite #181e25 with own red #e5233d accents, silver edging, #303b46 floors, warm cream tables and upholstery. NO text, logos, letters, numbers, labels, people, scenery, railway tracks, cast shadows or painted checkerboard. No separate nose, no driving cab.\nPRIMARY REQUEST: Schlafwagen / night sleeping coach. Interior: clear long narrow SIDE CORRIDOR down the right-hand side, with a succession of six separate compact sleeping compartments on the left, opaque partitions and individual doors opening to corridor. Each compartment has two visible slim rectangular bunk/bed footprints or lower beds with cream bedding, red blanket folded at foot, small bedside shelf. No ordinary rows of passenger seats and no dining tables. Shared washroom and WC service blocks at one end, small vestibules and side doors at both ends. Room divisions and corridor must be legible in strict floor plan. Closed exterior roof simple smooth graphite/silver with small vents and two modest HVAC units, red side trim. Both views align end-for-end.",
+        "referenceIds": [
+          "reference-train"
+        ],
+        "model": {
+          "provider": "openai",
+          "name": "gpt-image",
+          "revision": "2.0",
+          "verification": "provider_declared",
+          "evidenceId": "generation-vehicle-sleeper"
+        },
+        "evidenceId": "generation-vehicle-sleeper"
       },
       "review": {
         "visual": {
