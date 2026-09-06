@@ -352,7 +352,10 @@
         { "number": 219, "kind": "issue", "labels": ["area:simulation", "area:planning", "area:operations", "type:enhancement", "priority:p1"] },
         { "number": 220, "kind": "issue", "labels": ["area:operations", "area:simulation", "type:enhancement", "priority:p1"] },
         { "number": 221, "kind": "issue", "labels": ["area:economy", "type:enhancement", "priority:p1"] },
-        { "number": 222, "kind": "issue", "labels": ["area:ci", "area:simulation", "type:enhancement", "priority:p1"] }
+        { "number": 222, "kind": "issue", "labels": ["area:ci", "area:simulation", "type:enhancement", "priority:p1"] },
+        { "number": 535, "kind": "pull_request" },
+        { "number": 536, "kind": "pull_request" },
+        { "number": 538, "kind": "pull_request" }
       ]
     }
   ]
