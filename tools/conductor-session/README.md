@@ -64,6 +64,13 @@ einen tatsächlichen Infrastruktur-Sperrbefehl, dessen native Projektion
 Stillstand und rote Signalbegriffe liefert. Der Browser erzeugt selbst
 keine Signale, Geschwindigkeiten oder Haltebelege.
 
+Am bestätigten nächtlichen Signalhalt vergleicht der Szenenfall die tatsächlichen
+Canvas-PNGs vor und nach einem vollständigen Seitenreload bytegenau. Native
+Szene, Snapshot, Layout, Spielerposition, Deck, Zoom und Uhr bleiben dabei gleich.
+Der Bericht enthält beide Bilder und den Vergleich in `visualRestore`. Das ist
+eine visuelle Restore-Regression im selben Browser und Viewport, kein
+plattformübergreifender ästhetischer Golden-Bildvergleich.
+
 Der Basisadapter weist sämtliche Kontrolleffekte ab. Forderungen, Zahlungen
 und Polizei benötigen den gesonderten echten Kontrolladapter. Die aktuelle
 Basisformation besitzt drei Wagenkästen auf einem Hauptdeck; sie behauptet

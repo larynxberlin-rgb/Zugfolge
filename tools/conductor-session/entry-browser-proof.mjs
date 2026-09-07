@@ -53,6 +53,11 @@ test("gemeinsamer Zugdetail-Einstieg prüft echte Availability, Gründe, Start, 
     releaseRequest(); const initialAvailability = await captureAvailability(await pending);
     await page.unroute(endpoint);
     assert.equal(initialAvailability.available, true); assert.equal(initialAvailability.sessionId, null);
+    await page.waitForFunction(() => document.querySelector(".conductor-entry [role=status]")?.textContent.includes("in Echtzeit"));
+    const entryExplanation = await page.locator(".conductor-entry [role=status]").innerText();
+    assert.match(entryExplanation, /jederzeit zur Karte zurückkehren/u);
+    assert.match(entryExplanation, /beim Fahrtende endet der Einsatz/u);
+    await shot("entry-00-available-explained.png");
     await entry().isEnabled(); await entry().click();
     await page.waitForFunction(() => document.querySelector("canvas")?.dataset.renderer === "webgl");
     const initial = await snapshot(), context = await page.locator("#entry-detail").evaluate((element) => ({ dataset: { ...element.dataset },
@@ -114,7 +119,7 @@ test("gemeinsamer Zugdetail-Einstieg prüft echte Availability, Gründe, Start, 
     await writeFile(reportPath, `${JSON.stringify({ schemaVersion: "conductor-entry-browser-proof/v1", testOnly: true,
       browser: browser.version(), evidence: backend.evidence, availability, commands, context, sessionId: initial.snapshot.sessionId,
       originalPosition: initial.snapshot.position, resumedPosition: resumed.snapshot.position, returnFocusPreserved: true,
-      returnUrlPreserved: true, staleSelectionRemainedDisabled: true, screenshots, pageErrors,
+      returnUrlPreserved: true, staleSelectionRemainedDisabled: true, entryExplanation, screenshots, pageErrors,
       limits: ["Originale gemeinsame Zugdetailkomponente mit echten API-Antworten; keine nachgebildete Karte.",
         "Fiktive Originalinfrastruktur und M5-Spielkonfiguration; temporäre Testsignaturen, keine produktive Freigabe."] }, null, 2)}\n`);
     console.log(JSON.stringify({ reportPath, screenshots: screenshots.length, sessionId: initial.snapshot.sessionId }));

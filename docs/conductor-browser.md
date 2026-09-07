@@ -8,7 +8,9 @@ identisch aus. Bis zur Antwort bleibt der Einstieg gesperrt; eine Ablehnung
 zeigt den tatsächlichen Servergrund. Antworten für eine inzwischen verlassene
 Auswahl dürfen keinen Einstieg mehr aktivieren. Start und Fortsetzung behalten
 Fahrt-, Welt- und Unternehmenskontext; die Rückkehr fokussiert denselben
-Einstieg. Der separate Browsernachweis benutzt echte Availability-, Start-,
+Einstieg. Vor dem Einstieg erklärt die Oberfläche, dass der Einsatz die laufende
+Fahrt in Echtzeit begleitet, die Rückkehr zur Karte jederzeit möglich ist und
+der Einsatz mit dem Fahrtende endet. Der separate Browsernachweis benutzt echte Availability-, Start-,
 Detach- und Resume-Antworten. Er prüft diese Komponente ohne nachgebildete Karte.
 
 Die Kopfzeile behält die bekannten Welt- und Unternehmensnamen aus dem

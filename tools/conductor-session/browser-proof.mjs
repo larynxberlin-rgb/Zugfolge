@@ -223,13 +223,96 @@ test("actual native night scene and red signals after a committed infrastructure
     assert.equal(stillStopped.scene.routeMm, stopped.scene.routeMm);
     assert.equal(stillStopped.scene.environment.scrollMm, stopped.scene.environment.scrollMm);
     assert.equal(stillStopped.scene.speedMmps, 0);
+
+    // Der normale Rückkehr-/Wiederaufnahmeweg lädt den bestätigten Signalhalt
+    // frisch. Danach bleibt die native Uhr für beide Canvas-Aufnahmen stehen;
+    // nur ein echter Seitenreload trennt die identischen Ansichten.
+    await page.getByRole("button", { name: "Zur Karte", exact: true }).click();
+    await page.locator("dialog.conductor-mode").waitFor({ state: "detached" });
+    assert.equal((await request()).snapshot.status, "detached");
+    const openStoppedView = async () => {
+      await page.getByRole("button", { name: "Schaffnermodus öffnen", exact: true }).click();
+      await page.waitForFunction(() => {
+        const canvas = document.querySelector(".conductor-stage canvas");
+        return canvas?.dataset.renderer === "webgl" && canvas.dataset.reducedMotion === "true"
+          && !document.querySelector(".conductor-status")?.textContent.includes("Verbindung unterbrochen");
+      }, null, { timeout: 90000 });
+      await page.evaluate(async () => {
+        await document.fonts.ready;
+        await new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done)));
+      });
+    };
+    const canvasShot = async (name) => {
+      const confirmed = await request();
+      assert.equal(confirmed.snapshot.status, "active");
+      assert.equal(confirmed.scene.motionState, "safe-stop");
+      assert.equal(confirmed.scene.waitingReason, "infrastructure-disruption");
+      assert.equal(confirmed.scene.speedMmps, 0);
+      assert.equal(confirmed.scene.lighting.phase, "night");
+      assert.ok(confirmed.scene.signals.some((signal) => signal.aspect === "stop"));
+      assert.deepEqual(confirmed.scene, stillStopped.scene);
+      assert.deepEqual(confirmed.snapshot.position, stillStopped.snapshot.position);
+      const view = await page.evaluate(() => {
+        const canvas = document.querySelector(".conductor-stage canvas");
+        const selects = document.querySelectorAll(".conductor-tools select");
+        const box = canvas.getBoundingClientRect();
+        return { section: selects[0].value, zoom: selects[1].value, deckId: canvas.dataset.deck,
+          renderer: canvas.dataset.renderer, reducedMotion: canvas.dataset.reducedMotion,
+          playerAnimation: canvas.dataset.playerAnimation, logicalPassengers: Number(canvas.dataset.logicalPassengers),
+          visiblePassengers: Number(canvas.dataset.visiblePassengers),
+          selectedPassengers: document.querySelectorAll('.conductor-passenger[aria-pressed="true"]').length,
+          canvas: { width: canvas.width, height: canvas.height, cssWidth: box.width, cssHeight: box.height },
+          devicePixelRatio, viewport: { width: innerWidth, height: innerHeight } };
+      });
+      const [vehicleIndex, bodyIndex, deckId] = view.section.split("|");
+      const vehicle = confirmed.layout.vehicles[Number(vehicleIndex)], body = vehicle?.bodies[Number(bodyIndex)];
+      assert.ok(vehicle && body && body.deckIds.includes(deckId));
+      assert.deepEqual({ vehicleId: vehicle.vehicleId, bodyId: body.bodyId, deckId }, {
+        vehicleId: confirmed.snapshot.position.vehicleId, bodyId: confirmed.snapshot.position.bodyId,
+        deckId: confirmed.snapshot.position.deckId });
+      assert.equal(view.deckId, deckId); assert.equal(view.zoom, "2");
+      assert.equal(view.renderer, "webgl"); assert.equal(view.reducedMotion, "true");
+      assert.equal(view.playerAnimation, "idle"); assert.equal(view.selectedPassengers, 0);
+      assert.equal(view.logicalPassengers, confirmed.snapshot.passengers.passengers.length);
+      const file = `${name}.png`, bytes = await page.locator(".conductor-stage canvas").screenshot({ path: resolve(output, file) });
+      assert.ok(bytes.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10])));
+      assert.ok((await readFile(resolve(output, file))).equals(bytes), "Gespeicherte Canvas-PNG muss den aufgenommenen Bytes entsprechen");
+      const nativeAfterCapture = await request();
+      assert.deepEqual(nativeAfterCapture.scene, confirmed.scene);
+      assert.deepEqual(nativeAfterCapture.snapshot, confirmed.snapshot);
+      screenshots.push({ file, sha256: sha(bytes), viewport: page.viewportSize() });
+      return { bytes, confirmed, record: { file, sha256: sha(bytes), byteLength: bytes.length,
+        pngWidth: bytes.readUInt32BE(16), pngHeight: bytes.readUInt32BE(20), view,
+        sessionId: confirmed.snapshot.sessionId, nowMs: confirmed.snapshot.nowMs,
+        snapshotHash: confirmed.snapshot.snapshotHash, sceneSha256: sha(Buffer.from(JSON.stringify(confirmed.scene))),
+        layoutHash: confirmed.layout.layoutHash, projectionHash: confirmed.snapshot.pins.projectionHash,
+        position: confirmed.snapshot.position } };
+    };
+    await openStoppedView();
+    const beforeRestore = await canvasShot("desktop-native-night-stop-before-reload");
+    const documentBefore = await page.evaluate(() => performance.timeOrigin);
+    await page.reload();
+    assert.equal(await page.evaluate(() => performance.getEntriesByType("navigation")[0].type), "reload");
+    assert.notEqual(await page.evaluate(() => performance.timeOrigin), documentBefore);
+    await openStoppedView();
+    const afterRestore = await canvasShot("desktop-native-night-stop-after-reload");
+    assert.deepEqual(afterRestore.confirmed.snapshot, beforeRestore.confirmed.snapshot);
+    assert.deepEqual(afterRestore.confirmed.layout, beforeRestore.confirmed.layout);
+    assert.deepEqual(afterRestore.confirmed.scene, beforeRestore.confirmed.scene);
+    assert.deepEqual(afterRestore.record.view, beforeRestore.record.view);
+    assert.ok(beforeRestore.bytes.equals(afterRestore.bytes),
+      `Canvas nach echtem Reload muss bytegleich sein: ${beforeRestore.record.sha256} / ${afterRestore.record.sha256}`);
+    const visualRestore = { schemaVersion: "conductor-scene-visual-restore/v1", comparison: "exact-png-bytes", identical: true,
+      navigation: "reload", nativeClockAdvancedBetweenCaptures: false,
+      preparation: "Actual detach_session/resume_session through the unchanged public return/open controls",
+      before: beforeRestore.record, after: afterRestore.record };
     await page.setViewportSize({ width: 320, height: 900 });
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
     await shot("mobile-320-native-night-stop");
     assert.deepEqual(errors, []);
     const report = { schemaVersion: "conductor-session-scene-browser-proof/v1", browser: browser.version(), evidence: backend.evidence,
       sourceRule: "Pinned authored midnight epoch on explicit fictional geography; all stop, route, time and signal facts come from native committed state",
-      closure, scenes: [night.scene, stopped.scene, stillStopped.scene], screenshots, pageErrors: errors };
+      closure, scenes: [night.scene, stopped.scene, stillStopped.scene], visualRestore, screenshots, pageErrors: errors };
     await writeFile(resolve(dirname(mainReport), "scene-browser-report.json"), `${JSON.stringify(report, null, 2)}\n`);
   } finally { await browser?.close(); await backend.close(); }
 });

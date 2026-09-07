@@ -1087,16 +1087,16 @@ Alpha-Schnitt. Vollständiger Fachvertrag:
 | # | Teilabschnitt | Größe | Status |
 |---|---------------|-------|--------|
 | 15.1 | **E29, ADR und versionierter Fachvertrag** einschließlich M10-/M8-Autoritätsgrenzen, Kontrolle, Dialog, Wirtschaft, Datenschutz und Abnahme | M | erledigt |
-| 15.2 | **M10-Fahrgastmanifeste und deterministische 1:1-Projektion**: jeder tatsächlich reisende Fahrgast wird logisch materialisiert, stabil platziert und kontrollierbar; Rendering darf nur optisch degradieren | L | in Arbeit |
+| 15.2 | **M10-Fahrgastmanifeste und deterministische 1:1-Projektion**: jeder tatsächlich reisende Fahrgast wird logisch materialisiert, stabil platziert und kontrollierbar; Rendering darf nur optisch degradieren | L | erledigt |
 | 15.3 | **Eigene Pixelart-Designsprache und freigegebener Asset-Korpus**: finale erzeugte Figuren-, Innenraum-, Bahnhof- und Umgebungsassets mit `ArtAtlasManifestV1`, Herkunft, Hash und Rechtegates | **XL** | in Arbeit |
 | 15.4 | **Konfigurationsgetreue begehbare Fahrzeuginnenräume**: `InteriorLayoutV1` aus Formation und Fahrzeugkonfiguration, Begehbarkeits-, Kollisions- und Kapazitätsnachweis | **XL** | erledigt |
 | 15.5 | **Fließende Umgebung und modulare Bahnhofsszenen**: Umland/Vorstadt/Stadt, Tageszeit, tatsächliche Geschwindigkeit, Signal-/Bahnhofshalte, kleine/mittlere/große Stationen und dynamische Namen | **XL** | in Arbeit |
 | 15.6 | **Versionierter Sprechblasen-Dialogkorpus**: mindestens 150 geprüfte Dialogbäume und 600 Fahrgastäußerungen, verdeckter Sachverhalt, mindestens zwölf Situationsfamilien, kein Laufzeit-Sprachmodell | L | in Arbeit |
-| 15.7 | **Autoritative Schaffnersitzung**: Eigentümerberechtigung, Exklusivität, Kommandorevision, Idempotenz, Reconnect, Restore und bitgleiches Replay | L | in Arbeit |
-| 15.8 | **Browserintegration**: Bewegung, Interaktion, Sprechblasen, Pixi/WebGL-Projektion, Desktop, Touch, Tastatur, Screenreader und reduzierte Bewegung | **XL** | in Arbeit |
-| 15.9 | **Kontrollhalt über Konfliktengine und virtuelle Fahrdienstleiter**: `FareControlHoldV1`, tatsächliche Ressourcenweiterbelegung, Höchstwartezeit, erneute Abfahrtsprüfung und Netzfolgen für alle Zugarten | **XL** | in Arbeit |
-| 15.10 | **Polizeireaktion, EBE-Fallabschluss und Verspätungsursache**: deterministische Verfügbarkeit, Bündelung höchstens eines Polizeihalts je Zuglauf, Feststellung, vorläufige/reguläre EBE und `authority.police.fare-control` | L | in Arbeit |
-| 15.11 | **Forderungen, Ausfälle und gedeckelte Kontrollprämie**: offene EBE, spätere Zahlung/Reduzierung/Abschreibung, Integer-Cent-Ledger, höchstens vierfache Prämie und 0,5-Prozent-Tagesdeckel | M | in Arbeit |
+| 15.7 | **Autoritative Schaffnersitzung**: Eigentümerberechtigung, Exklusivität, Kommandorevision, Idempotenz, Reconnect, Restore und bitgleiches Replay | L | erledigt |
+| 15.8 | **Browserintegration**: Bewegung, Interaktion, Sprechblasen, Pixi/WebGL-Projektion, Desktop, Touch, Tastatur, Screenreader und reduzierte Bewegung | **XL** | erledigt |
+| 15.9 | **Kontrollhalt über Konfliktengine und virtuelle Fahrdienstleiter**: `FareControlHoldV1`, tatsächliche Ressourcenweiterbelegung, Höchstwartezeit, erneute Abfahrtsprüfung und Netzfolgen für alle Zugarten | **XL** | erledigt |
+| 15.10 | **Polizeireaktion, EBE-Fallabschluss und Verspätungsursache**: deterministische Verfügbarkeit, Bündelung höchstens eines Polizeihalts je Zuglauf, Feststellung, vorläufige/reguläre EBE und `authority.police.fare-control` | L | erledigt |
+| 15.11 | **Forderungen, Ausfälle und gedeckelte Kontrollprämie**: offene EBE, spätere Zahlung/Reduzierung/Abschreibung, Integer-Cent-Ledger, höchstens vierfache Prämie und 0,5-Prozent-Tagesdeckel | M | erledigt |
 | 15.12 | **Performance-, Determinismus- und Gesamtannahme**: voller SPNV-Verband, Mehrzug-Golden-Master, Property-Tests für Invariante 1, Browser-/Barrierefreiheitsabnahme und zusammenhängender Spielbeweis | L | in Arbeit |
 
 **Teilabhängigkeiten:** M15.1 ist der Einstieg. M15.2 folgt M10.3a und M15.1.
@@ -1104,6 +1104,16 @@ M15.3 und M15.6 können danach parallel beginnen. M15.4 folgt M15.3 und M5;
 M15.5 folgt M15.3 und M14.2; M15.7 folgt M15.1/M15.2; M15.8 folgt
 M15.3–M15.7; M15.9 folgt M15.7/M15.8 und M8; M15.10 folgt M15.6/M15.9;
 M15.11 folgt M15.10 und M6; M15.12 schließt alle Teile zusammen.
+
+Die technischen Abschlüsse von 15.2 und 15.7–15.11 liegen in PR #539. Ihre
+nativen, DB-/HTTP- und tatsächlichen Browsernachweise sind im
+[integrierten Prüfstand](m15-integration.md) und in der
+[Nachweisanleitung](../tools/conductor-session/README.md) dokumentiert.
+Der abschließende CI-Lauf und sein an den Quellstand gebundenes Artefakt werden
+im PR verlinkt. M15 bleibt insgesamt offen: 15.3/15.6 benötigen die produktiven
+Signaturen und unabhängigen Weltpins, 15.5 den vollständigen ursprünglichen
+Deutschland-InfraRelease und 15.12 die vollständige freigegebene Abnahmeformation
+samt Budget und signiertem Korpus. Die Basisgrenzen #518 und #520 bleiben erhalten.
 
 **M15.1/M15.2-Stand:** Der versionierte Fachvertrag und seine
 Aktions-/Autoritätsmatrix sind vollständig dokumentiert. E28 ist mit #530

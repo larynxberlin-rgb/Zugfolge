@@ -28,7 +28,7 @@ export async function appendConductorEntry(input: {
     if (!current()) return;
     entry.disabled = false;
     entry.textContent = available.sessionId === null ? "Als Schaffner mitfahren" : "Schaffnersitzung fortsetzen";
-    note.textContent = "Begehbarer Innenraum, Fahrgäste und Fahrkartenkontrolle in deiner aktuellen Fahrt.";
+    note.textContent = "Du begleitest diese laufende Fahrt in Echtzeit. Du kannst jederzeit zur Karte zurückkehren; beim Fahrtende endet der Einsatz.";
     entry.addEventListener("click", async () => {
       if (!current()) return;
       entry.disabled = true;
