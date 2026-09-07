@@ -2696,9 +2696,10 @@ fn apply_asset_transfer(
                 || command.lessor_operator_id.is_some()
                 || command.contract_id.is_some()
                 || command.valid_until_s.is_some()
-                || current.lessor_operator_id.as_ref().is_some_and(|lessor| {
-                    lessor != &command.to_owner_operator_id
-                })
+                || current
+                    .lessor_operator_id
+                    .as_ref()
+                    .is_some_and(|lessor| lessor != &command.to_owner_operator_id)
             {
                 return Err(invalid(
                     "Betriebsaufgabe muss Eigentum erhalten und den Halter zum Eigentuemer zurueckfuehren",
@@ -4641,8 +4642,14 @@ mod tests {
             "transferReceiptHash": "3".repeat(64)
         });
         let exited = apply(&initial["state"], &command, None);
-        assert_eq!(exited["state"]["authorityRelease"], initial["state"]["authorityRelease"]);
-        assert_eq!(exited["state"]["assetHoldings"]["vehicle-2"]["ownerOperatorId"], "operator-1");
+        assert_eq!(
+            exited["state"]["authorityRelease"],
+            initial["state"]["authorityRelease"]
+        );
+        assert_eq!(
+            exited["state"]["assetHoldings"]["vehicle-2"]["ownerOperatorId"],
+            "operator-1"
+        );
         assert_ne!(
             exited["state"]["assetHoldings"]["vehicle-2"]["historyHash"],
             initial["state"]["assetHoldings"]["vehicle-2"]["historyHash"]
@@ -4701,14 +4708,20 @@ mod tests {
             }),
             None,
         );
-        assert_eq!(returned["state"]["authorityRelease"], initial["state"]["authorityRelease"]);
+        assert_eq!(
+            returned["state"]["authorityRelease"],
+            initial["state"]["authorityRelease"]
+        );
         let holding = &returned["state"]["assetHoldings"]["vehicle-1"];
         assert_eq!(holding["holderOperatorId"], "operator-1");
         assert_eq!(holding["ownerOperatorId"], "operator-1");
         assert!(holding["lessorOperatorId"].is_null());
         assert!(holding["contractId"].is_null());
         assert!(holding["validUntilS"].is_null());
-        assert_ne!(holding["historyHash"], rented["state"]["assetHoldings"]["vehicle-1"]["historyHash"]);
+        assert_ne!(
+            holding["historyHash"],
+            rented["state"]["assetHoldings"]["vehicle-1"]["historyHash"]
+        );
     }
 
     #[test]
