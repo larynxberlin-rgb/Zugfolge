@@ -1,10 +1,11 @@
 # Nativer Kern der lokalen Demo
 
-`kernel.wasm` ist der tatsächlich im Browser geprüfte Rust-Kern der fiktiven
-Offline-Demo. Seine Bytes wurden unverändert übernommen: 11.718.022 Bytes,
-SHA-256 `1b154c352e57bfadd57750327f5e81f26c95090c60902c1dcf64ba7a9b98b593`.
+`kernel.wasm` ist der Rust-Kern der fiktiven Offline-Demo. Für die gemeinsame
+Integration von Schaffnermodus und Fahrzeugregister wurde er aus den
+zusammengeführten Quellen neu gebaut: 11.704.528 Bytes,
+SHA-256 `9910573d395697bac3f75e25ee3cf2dfd802bb0c0b0f442549559494b987d505`.
 Die Originalcrates stammen aus Repositorystand
-`74a9dafa90f9c685cab9916523b98506c35c004a`. Es handelt sich um ein lokales
+`0b0c03804c6229685610babf593abf54321ea904`. Es handelt sich um ein lokales
 Übungsartefakt, keine produktive Weltfreigabe oder Serverautorisierung.
 
 Der Wrapper benutzt die Originalkerne für Betrieb, Nachfrage, Innenräume,
@@ -28,12 +29,10 @@ transitiven Originalcrates aus diesem Lockfile. Die konservative Dateiliste
 umfasst sämtliche `src`-Dateien dieser Crates, auch testbedingte Module; es wird
 keine Behauptung aufgestellt, jede solche Datei sei im WASM enthalten.
 
-Bei der Übernahme wurden ausschließlich die Cargo-Pfadabhängigkeiten auf
-`../../../crates` umgestellt und Textdateien auf Repository-LF normalisiert.
-Der Binärkern wurde nicht neu gebaut. Die ursprünglichen Wrapper-Quellhashes
-stehen gesondert im Manifest. Herkunft des vorhandenen Artefakts und
-Buildfähigkeit im neuen Pfad sind verschiedene Nachweise. Ein Build auf
-anderen Hosts oder Pfaden muss nicht byteidentisch sein.
+Der Neubau verwendet Rust 1.94.1 auf `x86_64-pc-windows-gnu`, das Ziel
+`wasm32-unknown-unknown` und das unveränderte eigene Cargo-Lockfile. Das
+Manifest bindet alle 133 Quelldateien und die tatsächlich erzeugten Bytes.
+Ein Build auf anderen Hosts oder Pfaden muss nicht byteidentisch sein.
 
 ```sh
 node tools/conductor-offline/native/verify-native.mjs
@@ -67,8 +66,11 @@ Das Releaseprofil verwendet `opt-level=1`, `debug=0`, `incremental=false` und
 `panic=abort`. Hostbezogene Linkerpfade oder lokale Toolchainverzeichnisse
 gehören nicht in dieses portable Manifest.
 
-Der Neubau wurde für diese Repositoryübernahme bewusst nicht lokal ausgeführt.
-Der hier enthaltene Kernel ist der vorher tatsächlich getestete Build.
+Der aktuelle Neubau bestand das Quell- und ABI-Gate, den echten Worker mit
+Restore und Fehlerbehandlung, die Uhr-/Pausenregression und alle drei nativen
+Kontrollübungen einschließlich Zahlung, Nachweis und Treppenwechsel. Diese
+Komponentenbelege binden den neuen SHA-256-Wert; Browserbelege entstehen im
+vollständigen `check.mjs`-Lauf und werden separat an dessen HTML gebunden.
 
 ## ABI und Nutzung
 

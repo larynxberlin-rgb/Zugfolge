@@ -4,52 +4,16 @@
   "target": "wasm32-unknown-unknown",
   "artifact": {
     "file": "kernel.wasm",
-    "bytes": 11718022,
-    "sha256": "1b154c352e57bfadd57750327f5e81f26c95090c60902c1dcf64ba7a9b98b593"
+    "bytes": 11704528,
+    "sha256": "9910573d395697bac3f75e25ee3cf2dfd802bb0c0b0f442549559494b987d505"
   },
   "origin": {
-    "repositoryRevision": "74a9dafa90f9c685cab9916523b98506c35c004a",
+    "repositoryRevision": "0b0c03804c6229685610babf593abf54321ea904",
     "compiler": "rustc 1.94.1",
     "buildHost": "x86_64-pc-windows-gnu",
-    "wrapperOrigin": [
-      {
-        "path": "Cargo.toml",
-        "bytes": 1107,
-        "sha256": "46b676e6de785b593e56edddc7e09631ba487e8a3c7300665796daa6eddb5cc4",
-        "lfSha256": "46b676e6de785b593e56edddc7e09631ba487e8a3c7300665796daa6eddb5cc4"
-      },
-      {
-        "path": "Cargo.lock",
-        "bytes": 8040,
-        "sha256": "3efa9a8078c86809ceb2db75b4e6c75b2a11c357ce5430077b1e9596b523dfbf",
-        "lfSha256": "3efa9a8078c86809ceb2db75b4e6c75b2a11c357ce5430077b1e9596b523dfbf"
-      },
-      {
-        "path": "src/lib.rs",
-        "bytes": 6034,
-        "sha256": "a1828415c8bf0637d9276578a68fd1fc076efaf4be9fcee3d2fa9678790ab524",
-        "lfSha256": "a1828415c8bf0637d9276578a68fd1fc076efaf4be9fcee3d2fa9678790ab524"
-      },
-      {
-        "path": "src/offline.rs",
-        "bytes": 21938,
-        "sha256": "bd99000dbb8fdc8695d3c1625868ea470c228e6e684912ac3b637e8109cbd8c2",
-        "lfSha256": "bd99000dbb8fdc8695d3c1625868ea470c228e6e684912ac3b637e8109cbd8c2"
-      },
-      {
-        "path": "src/infrastructure.rs",
-        "bytes": 2890,
-        "sha256": "81459f6a8f8a334eeeb51119f2119e2f2860efb9928e8c0548fcfe8c60d4aa2b",
-        "lfSha256": "81459f6a8f8a334eeeb51119f2119e2f2860efb9928e8c0548fcfe8c60d4aa2b"
-      }
-    ],
-    "originalCrateBlobsVerified": true,
-    "relocationRebuilt": false,
-    "relocationChanges": [
-      "Cargo path dependencies only",
-      "Text line endings normalized to LF"
-    ],
-    "evidence": "Existing embedded kernel was built and exercised before repository relocation. Browser and component reports bind this same SHA-256. The original crate working bytes were compared to the listed Git revision during relocation; a new byte-identical build is not claimed."
+    "rebuilt": true,
+    "buildCommand": "cargo +1.94.1 build --manifest-path tools/conductor-offline/native/Cargo.toml --target wasm32-unknown-unknown --release --locked --offline -j1 --target-dir target/conductor-offline",
+    "evidence": "Fresh build from the combined conductor and persistent-vehicle-registry sources listed in this manifest. The read-only pin gate and offline acceptance scripts verify this artifact; generated reports bind its SHA-256."
   },
   "crates": [
     "zugfolge-conductor",
@@ -402,8 +366,8 @@
     },
     {
       "path": "crates/zugfolge-fleet/src/assets.rs",
-      "bytes": 28944,
-      "sha256": "33d96d4d9da97de8c113b8834b3a22917c7b01df980d0827e4cca9216cce5555"
+      "bytes": 29284,
+      "sha256": "81dd95ee792e5f7344d39f7a89de38e951d19bb2534aa9d7bd9fe83204ead1ef"
     },
     {
       "path": "crates/zugfolge-fleet/src/bin/zugfolge-vehicle-catalog.rs",
@@ -432,8 +396,8 @@
     },
     {
       "path": "crates/zugfolge-fleet/src/market.rs",
-      "bytes": 42758,
-      "sha256": "0c52368a0545f9b203774ade8704784f59ff645750acf232d00551055bf03198"
+      "bytes": 47576,
+      "sha256": "d9c410d28300070f0259749718b963641d899eafe2aa4c2d99ac3197bb6e5756"
     },
     {
       "path": "crates/zugfolge-fleet/src/mobilization.rs",
