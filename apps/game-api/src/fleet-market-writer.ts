@@ -3,6 +3,7 @@ import type {
   FleetAssetTransferIntent,
   FleetAssetTransferWriter,
 } from "@zugfolge/cooperation";
+import { CooperationConflictError } from "@zugfolge/cooperation";
 import {
   applyFleetProducerCommandInTransaction,
   loadFleetProducerCheckpoint,
@@ -24,7 +25,7 @@ export class GameFleetAssetTransferWriter implements FleetAssetTransferWriter {
     const db = tx as unknown as EconomyDatabase;
     const checkpoint = await loadFleetProducerCheckpoint(db, intent.worldId);
     if (checkpoint === undefined) {
-      throw new Error("M5-Flottenwelt wurde vor der Marktuebertragung nicht initialisiert.");
+      throw new CooperationConflictError("M5-Flottenwelt wurde vor der Marktübertragung nicht initialisiert.", "fleet_single_writer_unavailable");
     }
     const result = await applyFleetProducerCommandInTransaction({
       db,
@@ -48,6 +49,10 @@ export class GameFleetAssetTransferWriter implements FleetAssetTransferWriter {
         transferReceiptHash: intent.transferReceiptHash,
       },
       ingestedAt: new Date(),
+      projectMarketAssets: false,
+    }).catch((error: unknown) => {
+      if (error instanceof CooperationConflictError) throw error;
+      throw new CooperationConflictError("Die autoritative Flotte hat die Übergabe noch nicht freigegeben. Fahrzeug- und Vertragsbindungen müssen zuerst geklärt werden.", "fleet_transfer_blocked");
     });
     return {
       resultingStateHash: result.stateHash,

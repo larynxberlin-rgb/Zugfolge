@@ -312,6 +312,14 @@ ist eine austauschbare Kopie eines Typs. Wird ein Fahrzeug ausgemustert, bleibt
 sein Lebenslauf Teil des Weltarchivs, es kann aber nicht mehr disponiert oder
 gehandelt werden.
 
+**Jedes Fahrzeug bleibt während der gesamten Spielzeit erhalten**, unabhängig
+davon, ob es neu oder gebraucht eingebracht wurde. Alle Teilnehmer der Welt
+können seinen Fahrzeugpass und die vollständige erfasste Historie einsehen,
+auch ohne eigenes EVU oder aktives Marktangebot. Eigentümerwechsel,
+Betreiberende und Ausmusterung entfernen das Fahrzeug nicht aus dem Register.
+Der versionierte [Fahrzeugregister-Vertrag](fahrzeugregister.md) beschreibt
+Sichtbarkeit, Identitätserhalt und die zugehörigen Abnahmekriterien.
+
 Der optionale **Weltstartbestand** wird vor dem Start von der Administration
 als versionierter, auditierter und anschließend unveränderlicher Bestand
 festgelegt. Seine Fahrzeuge sind ausnahmslos gebraucht: Baujahr,

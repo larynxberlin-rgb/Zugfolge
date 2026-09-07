@@ -6,6 +6,8 @@ import {
   formatCents,
   MAX_RENDERED_COOPERATION_ITEMS,
   mergeBoundedItems,
+  marketDeadline,
+  vehiclePassportFragment,
   parseContractOfferFields,
   parseEuroCents,
   renderCooperationSurface,
@@ -132,7 +134,7 @@ describe("M12-Spieleroberfläche", () => {
         status: "open", revision: 1,
       }],
       selectedVehicleHistory: [{
-        id: "history-1", worldId: "world", vehicleId: "asset-442-1", eventType: "registered",
+        id: "history-1", worldId: "world", vehicleId: "asset-442-1", eventType: "sale",
         atS: 0, priorHistoryHash: null, resultingHistoryHash: "b".repeat(64), details: {},
       }],
     }));
@@ -140,8 +142,8 @@ describe("M12-Spieleroberfläche", () => {
     expect(html).toContain("87 %");
     expect(html).toContain("door-2");
     expect(html).toContain('data-listing-reserve="listing-1"');
-    expect(html).toContain("Die Geschichte dieses Fahrzeugs");
-    expect(html).toContain("Registriert");
+    expect(html).toContain("Handel & Überlassung");
+    expect(html).toContain("Verkauft");
   });
 
   it("zeigt Übergabe, Rückabwicklung, Rückzug und reguläres Vertragsende nur als explizite Aktionen", () => {
@@ -187,6 +189,58 @@ describe("M12-Spieleroberfläche", () => {
     expect(html).toContain("25 Treffer");
     expect((html.match(/data-listing-reserve=/g) ?? [])).toHaveLength(25);
     expect(html).not.toContain("asset-1</strong>");
+  });
+
+  it("trennt Kauf und Gesamtmiete beim Sortieren und findet den Anbieter", () => {
+    const base = { worldId: "world", offeringOperatorId: SELLER, disclosureHash: "c".repeat(64), listedAtS: 1, expiresAtS: 1000, status: "open" as const, revision: 1, disclosure: { classDesignation: "442" } };
+    const listings = [
+      { ...base, id: "expensive", vehicleId: "asset-expensive", listingType: "sale" as const, priceCents: "9223372036854775807" },
+      { ...base, id: "cheap", vehicleId: "asset-cheap", listingType: "sale" as const, priceCents: "90000000" },
+      { ...base, id: "rental", vehicleId: "asset-rental", listingType: "rental" as const, priceCents: "10000", rentalValidUntilS: 9000 },
+    ];
+    const html = renderCooperationSurface(state({ activeOperatorId: BUYER, listings, marketSort: "price", marketQuery: "Saale-Bahn" }));
+    expect(html).toContain("3 Treffer");
+    expect(html.indexOf('id="listing-cheap"')).toBeLessThan(html.indexOf('id="listing-expensive"'));
+    expect(html.indexOf('id="listing-expensive"')).toBeLessThan(html.indexOf('id="listing-rental"'));
+    expect(html).toContain("Gesamtmiete · Mietende");
+    const rentals = renderCooperationSurface(state({ activeOperatorId: BUYER, listings, marketType: "rental" }));
+    expect(rentals).toContain("1 Treffer");
+    expect(rentals).not.toContain('id="listing-cheap"');
+  });
+
+  it("zeigt Reservierungs- und Wartungsfristen und verhindert veraltete Handlungsangebote", () => {
+    const base = { worldId: "world", offeringOperatorId: SELLER, disclosureHash: "c".repeat(64), listedAtS: 1, expiresAtS: 1000, listingType: "sale" as const, revision: 1, priceCents: "100", disclosure: { classDesignation: "442", maintenanceDeadlines: [{ kind: "Bremsprüfung", dueAtS: 50 }], conditionProfile: { mechanicsBasisPoints: 9000, driveBasisPoints: 8100, brakesBasisPoints: 9700 } } };
+    const html = renderCooperationSurface(state({ activeOperatorId: BUYER, listings: [
+      { ...base, id: "expired", vehicleId: "asset-old", status: "open", expiresAtS: 99 },
+      { ...base, id: "reserved", vehicleId: "asset-reserved", status: "reserved", reservedUntilS: 99, reservedByOperatorId: BUYER },
+      { ...base, id: "mine", vehicleId: "asset-mine", status: "reserved", reservedUntilS: 700, reservedByOperatorId: BUYER },
+    ] }));
+    expect(html).not.toContain('data-listing-reserve="expired"');
+    expect(html).not.toContain('data-listing-transfer="reserved"');
+    expect(html).toContain('data-listing-transfer="mine"');
+    expect(html).toContain("Für dich reserviert");
+    expect(html).toContain("Wartung fällig");
+    expect(html).toContain("Mechanik");
+    expect(html).toContain("81 %");
+    expect(marketDeadline(undefined, 100)).toBe("Frist nicht belegt");
+    expect(marketDeadline(700, 100)).toContain("in 10 Min.");
+    expect(marketDeadline(99, 100)).toContain("fällig");
+  });
+
+  it("öffnet ein öffentliches Fahrzeug auch ohne Unternehmen oder Marktangebot und hält Ausmusterung sichtbar", () => {
+    const vehicle = {
+      schemaVersion: "zugfolge-vehicle-register/v1" as const, worldId: "world", vehicleId: "asset/442-1", authorityReleaseId: "fleet", classDesignation: "Baureihe 442", ownerOperatorId: SELLER, holderOperatorId: BUYER, introducedAtS: 0, retiredAtS: 50, dataAtS: 100, fleetRevision: 4, sourceStateHash: "a".repeat(64), factsHash: "b".repeat(64), historyHash: "c".repeat(64), facts: { source: { id: "asset/442-1", buildYear: 2015, condition: { mechanicsBasisPoints: 8200, driveBasisPoints: 9100, brakesBasisPoints: 9400 }, passenger: { seats: 320 }, technical: { maximumSpeedKph: 160 } }, holding: { ownerOperatorId: SELLER, holderOperatorId: BUYER }, bindings: {} },
+    };
+    const html = renderCooperationSurface(state({ activeOperatorId: "", ownOperatorIds: [], section: "markets", vehicleRegistry: [vehicle], selectedVehiclePassport: vehicle, vehicleRegistryHistory: [{ id: "event-1", worldId: "world", vehicleId: vehicle.vehicleId, fleetRevision: 1, atS: 0, eventType: "registered", priorHistoryHash: null, resultingHistoryHash: "c".repeat(64), sourceStateHash: "d".repeat(64), details: { vehicleId: vehicle.vehicleId } }] }));
+    expect(html).toContain('id="vehicle-asset/442-1"');
+    expect(html).toContain("Ausgemustert");
+    expect(html).toContain("In die Spielwelt aufgenommen");
+    expect(html).toContain("Öffentliches Fahrzeugregister durchsuchen");
+    expect(html).toContain("320");
+    expect(html).not.toContain("data-listing-reserve");
+    expect(vehiclePassportFragment(vehicle.vehicleId)).toBe("#vehicle-asset%2F442-1");
+    const active = renderCooperationSurface(state({ section: "markets", vehicleRegistry: [{ ...vehicle, retiredAtS: 200 }] }));
+    expect(active).not.toContain('class="state-word">Ausgemustert');
   });
 
   it("verarbeitet Geld ausschließlich als kanonischen Integer-Centstring", () => {

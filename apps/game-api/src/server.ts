@@ -85,6 +85,7 @@ import {
   runDisruptionProviderCycle,
 } from "./disruption-provider-scheduler.js";
 import { loadFleetAuthorityReleaseCatalog } from "./fleet-configuration.js";
+import { loadVehicleValuationCatalog } from "./vehicle-valuation-configuration.js";
 import { GameInfraActivationSafety, parseInfraActivationSafetyReports } from "./infra-activation-safety.js";
 import { createInfraOperationalV2NativeVerifier } from "./infra-operational-native-verifier.js";
 import { InfraPackageStaging, createLocalMapPackageVerifier, type InfraUploadSigningKey } from "./infra-package-staging.js";
@@ -667,6 +668,7 @@ const spfv = demand === undefined ? undefined : new SpfvService({
   },
   estimate: (input, tx) => demand.estimateSpfv(input, tx),
 });
+const vehicleValuationCatalog = await loadVehicleValuationCatalog(optionalEnv("ZUGFOLGE_VEHICLE_VALUATION_CATALOG_PATH"));
 const app = buildApp({
   worldScope,
   metricsApp,
@@ -686,6 +688,7 @@ const app = buildApp({
   fleetRuntime: operatingRuntime,
   fleetAuthorityReleases,
   fleetAuthorityConfigurations,
+  vehicleValuationCatalog,
   adminControl: "odoo",
   alpha: {
     feedback: alphaFeedback,

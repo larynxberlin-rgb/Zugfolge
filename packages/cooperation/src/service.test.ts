@@ -760,6 +760,165 @@ describe("M12.1 EVU-zu-EVU-Verträge", () => {
   });
 });
 
+describe("M12.2 dauerhafter Marktfortschritt und Flottenrücklauf", () => {
+  it("isoliert einen blockierten Mietrücklauf und entfernt ausschließlich die beendete Vertragsbindung", async () => {
+    const service = new CooperationService(db, undefined, {
+      async apply(_tx, intent) {
+        if (intent.transferType === "rental-return" && intent.vehicleId === "blocked-rental") {
+          throw new CooperationConflictError("Fahrzeug steht noch im laufenden Zug.", "vehicle_bound");
+        }
+        return { resultingStateHash: "f".repeat(64), resultingRevision: 1 };
+      },
+    });
+    for (const vehicleId of ["blocked-rental", "free-rental"]) {
+      await registerVehicle(service, vehicleId);
+      const contract = await service.offerContract(offer({ contractType: "vehicle-rental", subject: { vehicleIds: [vehicleId] },
+        priceCents: 0n, terms: {}, idempotencyKey: `offer-${vehicleId}` }));
+      await service.respondToContract({ worldId: WORLD, contractId: contract.id, actingOperatorId: buyerOperatorId,
+        actingAccountId: buyerAccountId, atS: 120, response: "accept", idempotencyKey: `accept-${vehicleId}` });
+      await db.update(vehicleAssets).set({ bindings: { formations: [], workshop: [], contracts: [contract.id], security: [] } })
+        .where(and(eq(vehicleAssets.worldId, WORLD), eq(vehicleAssets.vehicleId, vehicleId)));
+    }
+    const completed = await service.advanceContracts(WORLD, 4000);
+    expect(completed).toHaveLength(1);
+    expect(completed[0]?.subject).toEqual({ vehicleIds: ["free-rental"] });
+    expect(completed[0]?.status).toBe("completed");
+    expect(await service.advanceContracts(WORLD, 4001)).toEqual([]);
+    const [returned] = (await service.listOwnedVehicles(WORLD, sellerOperatorId)).filter((asset) => asset.vehicleId === "free-rental");
+    expect(returned).toMatchObject({ holderOperatorId: sellerOperatorId, lessorOperatorId: null, bindings: { formations: [], workshop: [], contracts: [], security: [] } });
+    const relisted = await service.createListing({ worldId: WORLD, vehicleId: "free-rental", offeringOperatorId: sellerOperatorId,
+      actingAccountId: sellerAccountId, listingType: "sale", priceCents: 100n, listedAtS: 4002, expiresAtS: 5000, idempotencyKey: "relist-returned" });
+    expect(relisted.status).toBe("open");
+    expect((await db.select().from(mailboxMessages).where(eq(mailboxMessages.worldId, WORLD))).filter((row) => row.messageType === "cooperation.rental-return-pending")).toHaveLength(2);
+  });
+
+  it("schreibt freigegebenen Wertverfall nach einem Eigentümerwechsel aus dem ursprünglichen Bezugsalter fort", async () => {
+    const service = cooperationService();
+    await service.registerVehicle({
+      worldId: WORLD, vehicleId: "depreciating-asset", authorityReleaseId: "fleet-md-2027-v1", classDesignation: "442",
+      actualConfiguration: { seats: 225 }, ownerOperatorId: sellerOperatorId, odometerMetres: 0n,
+      conditionBasisPoints: 10_000, damages: [], maintenanceDeadlines: [], approvals: ["DE"], operatingLimits: [],
+      valuationSpecId: "valuation-release-v1", valueCents: 100_000n, acquiredAtS: 0,
+      valuationBasis: { baseValueCents: 100_000n, ageYears: 0, spec: { specId: "valuation-release-v1",
+        annualDepreciationBasisPoints: 1000, mileageStepMetres: 100_000_000n, mileageDepreciationBasisPoints: 100,
+        maximumMileageSteps: 10, damageDeductionsBasisPoints: {}, minimumResidualBasisPoints: 1000 } },
+    });
+    await fundOperator(buyerOperatorId, 200_000n, "depreciation-purchase");
+    await ensureCashAccount(sellerOperatorId);
+    const listing = await service.createListing({ worldId: WORLD, vehicleId: "depreciating-asset", offeringOperatorId: sellerOperatorId,
+      actingAccountId: sellerAccountId, listingType: "sale", priceCents: 100_000n, listedAtS: 100, expiresAtS: 1000, idempotencyKey: "depreciation-listing" });
+    const reserved = await service.reserveListing({ worldId: WORLD, listingId: listing.id, buyerOperatorId, actingAccountId: buyerAccountId, atS: 110, expectedRevision: 1 });
+    await service.transferListing({ worldId: WORLD, listingId: listing.id, buyerOperatorId, actingAccountId: buyerAccountId,
+      atS: 120, expectedRevision: reserved.revision, idempotencyKey: "depreciation-transfer" });
+    expect(await service.advanceVehicleValuations(WORLD, 31_535_999)).toBe(0);
+    expect(await service.advanceVehicleValuations(WORLD, 31_536_000)).toBe(1);
+    expect(await service.advanceVehicleValuations(WORLD, 31_536_001)).toBe(0);
+    const [asset] = await service.listOwnedVehicles(WORLD, buyerOperatorId);
+    expect(asset).toMatchObject({ valueCents: 90_000n, acquiredAtS: 120, vehicleId: "depreciating-asset" });
+    expect(await service.listVehicleHistory(WORLD, "depreciating-asset")).toHaveLength(3);
+  });
+
+  it("führt gemietete Assets bei Betriebsaufgabe mit unverändertem Zustand an den Vermieter zurück", async () => {
+    const service = cooperationService();
+    await registerVehicle(service);
+    const contract = await service.offerContract(offer({ contractType: "vehicle-rental", subject: { vehicleIds: ["vehicle-442-001"] },
+      priceCents: 0n, terms: {}, validFromS: 150, validUntilS: 2000, responseDeadlineS: 150 }));
+    await service.respondToContract({ worldId: WORLD, contractId: contract.id, actingOperatorId: buyerOperatorId,
+      actingAccountId: buyerAccountId, atS: 120, response: "accept", idempotencyKey: "rental-start-before-closure" });
+    expect(await service.exitOperator({ worldId: WORLD, operatorId: buyerOperatorId, actingAccountId: buyerAccountId,
+      reason: "business-closure", atS: 200, idempotencyKey: "rental-company-closure" })).toEqual([]);
+    const [asset] = await service.listOwnedVehicles(WORLD, sellerOperatorId);
+    expect(asset).toMatchObject({ ownerOperatorId: sellerOperatorId, holderOperatorId: sellerOperatorId, lessorOperatorId: null,
+      odometerMetres: 12_345_000n, conditionBasisPoints: 8750 });
+    expect(await service.listVehicleHistory(WORLD, "vehicle-442-001")).toHaveLength(3);
+    expect(await service.advanceContracts(WORLD, 2100)).toEqual([]);
+  });
+
+  it("gibt abgelaufene Reservierungen genau einmal frei und archiviert Angebote weltisoliert", async () => {
+    const service = cooperationService();
+    await registerVehicle(service);
+    const listing = await service.createListing({ worldId: WORLD, vehicleId: "vehicle-442-001", offeringOperatorId: sellerOperatorId,
+      actingAccountId: sellerAccountId, listingType: "sale", priceCents: 100n, listedAtS: 100, expiresAtS: 1000, idempotencyKey: "expiry" });
+    const reserved = await service.reserveListing({ worldId: WORLD, listingId: listing.id, buyerOperatorId,
+      actingAccountId: buyerAccountId, atS: 120, expectedRevision: listing.revision, idempotencyKey: "reserve-expiry" });
+    expect(await service.advanceMarket(OTHER_WORLD, 720)).toEqual([]);
+    expect(await service.advanceMarket(WORLD, 719)).toEqual([]);
+    expect(await service.advanceMarket(WORLD, 720)).toMatchObject([{ status: "open", revision: 3, reservedByOperatorId: null }]);
+    expect(await service.advanceMarket(WORLD, 721)).toEqual([]);
+    await expect(service.transferListing({ worldId: WORLD, listingId: listing.id, buyerOperatorId,
+      actingAccountId: buyerAccountId, atS: 721, expectedRevision: reserved.revision, idempotencyKey: "late-transfer" })).rejects.toMatchObject({ code: "revision_conflict" });
+    expect(await service.advanceMarket(WORLD, 1000)).toMatchObject([{ status: "expired", revision: 4 }]);
+    expect(await service.advanceMarket(WORLD, 1001)).toEqual([]);
+    expect((await service.pageListings(WORLD)).items).toHaveLength(0);
+    expect((await service.pageListings(WORLD, { view: "archive" })).items).toHaveLength(1);
+  });
+
+  it("bewahrt ein verkauftes Angebotskommando auch nach Eigentümerwechsel idempotent", async () => {
+    const service = cooperationService();
+    await registerVehicle(service);
+    await fundOperator(buyerOperatorId, 1000n, "replay");
+    await ensureCashAccount(sellerOperatorId);
+    const input = { worldId: WORLD, vehicleId: "vehicle-442-001", offeringOperatorId: sellerOperatorId,
+      actingAccountId: sellerAccountId, listingType: "sale" as const, priceCents: 100n, listedAtS: 100, expiresAtS: 1000, idempotencyKey: "listing-replay-after-sale" };
+    const listing = await service.createListing(input);
+    const reservation = await service.reserveListing({ worldId: WORLD, listingId: listing.id, buyerOperatorId, actingAccountId: buyerAccountId, atS: 110, expectedRevision: 1 });
+    await service.transferListing({ worldId: WORLD, listingId: listing.id, buyerOperatorId, actingAccountId: buyerAccountId, atS: 120, expectedRevision: reservation.revision, idempotencyKey: "sale-replay" });
+    expect(await service.createListing({ ...input, listedAtS: 130 })).toMatchObject({ id: listing.id, status: "transferred" });
+    await expect(service.createListing({ ...input, priceCents: 101n })).rejects.toMatchObject({ code: "idempotency_conflict" });
+    expect(await service.listVehicleHistory(WORLD, input.vehicleId)).toHaveLength(2);
+  });
+
+  it("verwertet nach Betriebsaufgabe dasselbe Asset und erlaubt einen neuen Eigentümer", async () => {
+    const service = cooperationService();
+    await registerVehicle(service);
+    const input = { worldId: WORLD, operatorId: sellerOperatorId, actingAccountId: sellerAccountId,
+      reason: "business-closure" as const, atS: 200, idempotencyKey: "closure", salePrices: { "vehicle-442-001": 100n } };
+    const [listing] = await service.exitOperator(input);
+    expect(listing).toMatchObject({ vehicleId: "vehicle-442-001", status: "open", priceCents: 100n });
+    expect(await service.exitOperator({ ...input, atS: 201 })).toMatchObject([{ id: listing!.id }]);
+    expect(await db.select().from(vehicleAssets).where(eq(vehicleAssets.worldId, WORLD))).toHaveLength(1);
+    expect((await service.listVehicleHistory(WORLD, "vehicle-442-001"))).toHaveLength(2);
+    expect((await db.select().from(operators).where(eq(operators.id, sellerOperatorId)))[0]?.lifecycle).toBe("exited");
+    await expect(service.createListing({ worldId: WORLD, vehicleId: "vehicle-442-001", offeringOperatorId: sellerOperatorId,
+      actingAccountId: sellerAccountId, listingType: "sale", priceCents: 100n, listedAtS: 201, expiresAtS: 1000, idempotencyKey: "after-closure" })).rejects.toMatchObject({ code: "operator_exited" });
+    await fundOperator(buyerOperatorId, 1000n, "estate-purchase");
+    await ensureCashAccount(sellerOperatorId);
+    const reserved = await service.reserveListing({ worldId: WORLD, listingId: listing!.id, buyerOperatorId, actingAccountId: buyerAccountId, atS: 220, expectedRevision: 1 });
+    const result = await service.transferListing({ worldId: WORLD, listingId: listing!.id, buyerOperatorId, actingAccountId: buyerAccountId,
+      atS: 230, expectedRevision: reserved.revision, idempotencyKey: "estate-sale" });
+    expect(result.vehicle).toMatchObject({ vehicleId: "vehicle-442-001", ownerOperatorId: buyerOperatorId, odometerMetres: 12_345_000n, conditionBasisPoints: 8750 });
+  });
+
+  it("rollt bei gebundener Flotte und fremder Identität die gesamte Betriebsaufgabe zurück", async () => {
+    const service = cooperationService();
+    await registerVehicle(service);
+    await db.update(vehicleAssets).set({ bindings: { formations: ["active-train"], contracts: [], workshop: [], security: [] } }).where(eq(vehicleAssets.worldId, WORLD));
+    const input = { worldId: WORLD, operatorId: sellerOperatorId, actingAccountId: sellerAccountId,
+      reason: "business-closure" as const, atS: 200, idempotencyKey: "bound-closure" };
+    await expect(service.exitOperator({ ...input, actingAccountId: buyerAccountId })).rejects.toThrow(/Konto darf nicht/);
+    await expect(service.exitOperator(input)).rejects.toMatchObject({ code: "vehicle_bound" });
+    expect(await service.listListings(WORLD)).toEqual([]);
+    expect(await service.listVehicleHistory(WORLD, "vehicle-442-001")).toHaveLength(1);
+    expect((await db.select().from(operators).where(eq(operators.id, sellerOperatorId)))[0]?.lifecycle).toBe("active");
+  });
+
+  it("hält bei fehlender Bewertung Insolvenzassets mit dedupliziertem Handlungsbedarf fest", async () => {
+    const service = cooperationService();
+    await registerVehicle(service);
+    await db.update(vehicleAssets).set({ ownerOperatorId: buyerOperatorId, holderOperatorId: buyerOperatorId, valueCents: null, valuationSpecId: null }).where(eq(vehicleAssets.worldId, WORLD));
+    await setEconomyPurchaseState({ insolvent: true, revision: 1 });
+    await service.advanceInsolvencies(WORLD, 200);
+    await service.advanceInsolvencies(WORLD, 201);
+    expect(await db.select().from(vehicleAssets).where(eq(vehicleAssets.worldId, WORLD))).toHaveLength(1);
+    expect(await service.listListings(WORLD)).toEqual([]);
+    expect((await db.select().from(mailboxMessages).where(eq(mailboxMessages.worldId, WORLD))).filter((row) => row.messageType === "vehicle-market.liquidation-pending")).toHaveLength(1);
+    await db.update(vehicleAssets).set({ valueCents: 100n, valuationSpecId: "confirmed-valuation" }).where(eq(vehicleAssets.worldId, WORLD));
+    await service.advanceInsolvencies(WORLD, 202);
+    expect(await service.listListings(WORLD)).toMatchObject([{ vehicleId: "vehicle-442-001", offeringOperatorId: buyerOperatorId, priceCents: 100n }]);
+    expect((await db.select().from(operators).where(eq(operators.id, buyerOperatorId)))[0]?.lifecycle).toBe("exited");
+  });
+});
+
 describe("M12.2 Fahrzeug-Sekundärmarkt", () => {
   it("replayed Reservierung und Rueckzug genau einmal und sperrt Schluesselkollisionen", async () => {
     const service = cooperationService();

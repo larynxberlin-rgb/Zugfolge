@@ -85,12 +85,13 @@ export interface VehicleAssetView {
   readonly classDesignation: string;
   readonly ownerOperatorId: string;
   readonly holderOperatorId: string;
-  readonly odometerMetres: string;
-  readonly conditionBasisPoints: number;
+  readonly odometerMetres: string | null;
+  readonly conditionBasisPoints: number | null;
+  readonly conditionProfile?: Readonly<Record<string, unknown>>;
   readonly damages: readonly Readonly<Record<string, unknown>>[];
   readonly maintenanceDeadlines: readonly Readonly<Record<string, unknown>>[];
   readonly bindings: Readonly<Record<string, unknown>>;
-  readonly valueCents: string;
+  readonly valueCents: string | null;
   readonly revision: number;
   readonly historyHash: string;
 }
@@ -135,6 +136,52 @@ export interface VehicleHistoryEventView {
 }
 
 export type CooperationPageView = "actionable" | "archive" | "all";
+
+export interface VehicleRegistryEntryView {
+  readonly schemaVersion: "zugfolge-vehicle-register/v1";
+  readonly worldId: string;
+  readonly vehicleId: string;
+  readonly authorityReleaseId: string;
+  readonly classDesignation: string;
+  readonly ownerOperatorId: string;
+  readonly holderOperatorId: string;
+  readonly introducedAtS: number;
+  readonly retiredAtS: number;
+  readonly dataAtS: number;
+  readonly fleetRevision: number;
+  readonly sourceStateHash: string;
+  readonly facts: Readonly<Record<string, unknown>>;
+  readonly factsHash: string;
+  readonly historyHash: string;
+}
+
+export interface VehicleRegistryEventView {
+  readonly id: string;
+  readonly worldId: string;
+  readonly vehicleId: string;
+  readonly fleetRevision: number;
+  readonly atS: number;
+  readonly eventType: "registered" | "condition-updated" | "operator-exit";
+  readonly priorHistoryHash: string | null;
+  readonly resultingHistoryHash: string;
+  readonly sourceStateHash: string;
+  readonly details: Readonly<Record<string, unknown>>;
+}
+
+export interface VehicleRegistryPageView {
+  readonly schemaVersion: "zugfolge-vehicle-register-page/v1";
+  readonly worldId: string;
+  readonly items: readonly VehicleRegistryEntryView[];
+  readonly nextCursor: string | null;
+}
+
+export interface VehicleRegistryHistoryPageView {
+  readonly schemaVersion: "zugfolge-vehicle-register-history-page/v1";
+  readonly worldId: string;
+  readonly vehicleId: string;
+  readonly items: readonly VehicleRegistryEventView[];
+  readonly nextCursor: string | null;
+}
 
 export interface CursorPage<T> {
   readonly schemaVersion?: typeof COOPERATION_PAGE_SCHEMA_VERSION;
@@ -417,12 +464,13 @@ function parseVehicle(recordValue: unknown, name: string): VehicleAssetView {
     classDesignation: stringValue(record, "classDesignation", name)!,
     ownerOperatorId: stringValue(record, "ownerOperatorId", name)!,
     holderOperatorId: stringValue(record, "holderOperatorId", name)!,
-    odometerMetres: integerMoney(record, "odometerMetres", name),
-    conditionBasisPoints: integerValue(record, "conditionBasisPoints", name),
+    odometerMetres: record["odometerMetres"] === null ? null : integerMoney(record, "odometerMetres", name),
+    conditionBasisPoints: record["conditionBasisPoints"] === null ? null : integerValue(record, "conditionBasisPoints", name),
+    ...(record["conditionProfile"] == null ? {} : { conditionProfile: asRecord(record["conditionProfile"], `${name}.conditionProfile`) }),
     damages: recordList(record["damages"], `${name}.damages`),
     maintenanceDeadlines: recordList(record["maintenanceDeadlines"], `${name}.maintenanceDeadlines`),
     bindings: asRecord(record["bindings"], `${name}.bindings`),
-    valueCents: integerMoney(record, "valueCents", name),
+    valueCents: record["valueCents"] === null ? null : integerMoney(record, "valueCents", name),
     revision: integerValue(record, "revision", name),
     historyHash: stringValue(record, "historyHash", name)!,
   };
@@ -431,6 +479,57 @@ function parseVehicle(recordValue: unknown, name: string): VehicleAssetView {
 function parseVehicles(value: unknown): readonly VehicleAssetView[] {
   if (!Array.isArray(value)) throw new GameApiError("Fahrzeugliste ist keine Liste.", false);
   return value.map((entry, index) => parseVehicle(entry, `Fahrzeugliste[${index}]`));
+}
+
+function registryBinding(record: Readonly<Record<string, unknown>>, worldId: string, vehicleId?: string): void {
+  if (record["worldId"] !== worldId || (vehicleId !== undefined && record["vehicleId"] !== vehicleId)) {
+    throw new GameApiError("Fahrzeugregister gehört zu einer anderen Welt oder einem anderen Fahrzeug.", false);
+  }
+}
+
+function registryHash(record: Readonly<Record<string, unknown>>, key: string): string {
+  const value = stringValue(record, key, "Fahrzeugregister")!;
+  if (!/^[a-f0-9]{64}$/.test(value)) throw new GameApiError(`Fahrzeugregister.${key} ist kein Zustandsbeleg.`, false);
+  return value;
+}
+
+function parseRegistryEntry(value: unknown, worldId: string, vehicleId?: string): VehicleRegistryEntryView {
+  const name = "Fahrzeugregister";
+  const record = asRecord(value, name);
+  registryBinding(record, worldId, vehicleId);
+  if (record["schemaVersion"] !== "zugfolge-vehicle-register/v1") throw new GameApiError("Unbekanntes Fahrzeugregisterschema.", false);
+  const facts = asRecord(record["facts"], `${name}.facts`);
+  const source = asRecord(facts["source"], `${name}.facts.source`);
+  const holding = asRecord(facts["holding"], `${name}.facts.holding`);
+  asRecord(facts["bindings"], `${name}.facts.bindings`);
+  const id = stringValue(record, "vehicleId", name)!;
+  if (source["id"] !== id || holding["ownerOperatorId"] !== record["ownerOperatorId"] || holding["holderOperatorId"] !== record["holderOperatorId"]) {
+    throw new GameApiError("Fahrzeugfakten gehören zu einem anderen Fahrzeug oder Halter.", false);
+  }
+  return {
+    schemaVersion: "zugfolge-vehicle-register/v1", worldId, vehicleId: id,
+    authorityReleaseId: stringValue(record, "authorityReleaseId", name)!,
+    classDesignation: stringValue(record, "classDesignation", name)!,
+    ownerOperatorId: stringValue(record, "ownerOperatorId", name)!,
+    holderOperatorId: stringValue(record, "holderOperatorId", name)!,
+    introducedAtS: integerValue(record, "introducedAtS", name), retiredAtS: integerValue(record, "retiredAtS", name),
+    dataAtS: integerValue(record, "dataAtS", name), fleetRevision: integerValue(record, "fleetRevision", name),
+    sourceStateHash: registryHash(record, "sourceStateHash"), facts,
+    factsHash: registryHash(record, "factsHash"), historyHash: registryHash(record, "historyHash"),
+  };
+}
+
+function registryCursor(record: Readonly<Record<string, unknown>>): string | null {
+  const value = record["nextCursor"];
+  if (value !== null && (typeof value !== "string" || value.length === 0)) throw new GameApiError("Ungültiger Fahrzeugregistercursor.", false);
+  return value;
+}
+
+function registryQuery(limit: number, cursor?: string): URLSearchParams {
+  if (!Number.isSafeInteger(limit) || limit < 1 || limit > 100) throw new GameApiError("Seitengröße muss zwischen 1 und 100 liegen.", false);
+  const result = new URLSearchParams({ limit: String(limit) });
+  if (cursor !== undefined) result.set("cursor", cursor);
+  return result;
 }
 
 function parseListing(recordValue: unknown, name: string): VehicleMarketListingView {
@@ -961,6 +1060,52 @@ export class GameApiClient {
 
   loadVehicleHistory(worldId: string, vehicleId: string): Promise<readonly VehicleHistoryEventView[]> {
     return this.#journeyJson<unknown>(`/worlds/${encodeURIComponent(worldId)}/vehicles/${encodeURIComponent(vehicleId)}/history`).then(parseHistory);
+  }
+
+  loadVehicleRegistry(worldId: string, query = "", cursor?: string, limit = 50): Promise<VehicleRegistryPageView> {
+    const params = registryQuery(limit, cursor);
+    if (query !== "") params.set("query", query);
+    return this.#journeyJson<unknown>(`/worlds/${encodeURIComponent(worldId)}/vehicle-register?${params}`).then((value) => {
+      const record = asRecord(value, "Fahrzeugregisterseite");
+      registryBinding(record, worldId);
+      if (record["schemaVersion"] !== "zugfolge-vehicle-register-page/v1" || !Array.isArray(record["items"])) throw new GameApiError("Unbekanntes Fahrzeugregisterseitenformat.", false);
+      return { schemaVersion: "zugfolge-vehicle-register-page/v1", worldId,
+        items: record["items"].map((entry) => parseRegistryEntry(entry, worldId)), nextCursor: registryCursor(record) };
+    });
+  }
+
+  loadVehiclePassport(worldId: string, vehicleId: string): Promise<VehicleRegistryEntryView> {
+    return this.#journeyJson<unknown>(`/worlds/${encodeURIComponent(worldId)}/vehicle-register/${encodeURIComponent(vehicleId)}`)
+      .then((value) => parseRegistryEntry(value, worldId, vehicleId));
+  }
+
+  exitOperatorFleet(worldId: string, operatorId: string, salePrices: Readonly<Record<string, string>>, idempotencyKey: string): Promise<void> {
+    return this.#journeyJson<unknown>(`/worlds/${encodeURIComponent(worldId)}/operators/${encodeURIComponent(operatorId)}/fleet-exit`, {
+      method: "POST", body: JSON.stringify({ salePrices, idempotencyKey }),
+    }).then((value) => {
+      const response = asRecord(value, "Betriebsaufgabe");
+      if (response["schemaVersion"] !== "zugfolge-operator-fleet-exit/v1" || !Array.isArray(response["listings"])) throw new GameApiError("Betriebsaufgabe wurde nicht bestätigt.", false);
+    });
+  }
+
+  loadVehicleRegistryHistory(worldId: string, vehicleId: string, cursor?: string, limit = 50): Promise<VehicleRegistryHistoryPageView> {
+    return this.#journeyJson<unknown>(`/worlds/${encodeURIComponent(worldId)}/vehicle-register/${encodeURIComponent(vehicleId)}/history?${registryQuery(limit, cursor)}`).then((value) => {
+      const record = asRecord(value, "Fahrzeuglebenslauf");
+      registryBinding(record, worldId, vehicleId);
+      if (record["schemaVersion"] !== "zugfolge-vehicle-register-history-page/v1" || !Array.isArray(record["items"])) throw new GameApiError("Unbekanntes Fahrzeuglebenslaufformat.", false);
+      const items = record["items"].map((entry): VehicleRegistryEventView => {
+        const event = asRecord(entry, "Lebenslaufereignis");
+        registryBinding(event, worldId, vehicleId);
+        return { id: stringValue(event, "id", "Lebenslaufereignis")!, worldId, vehicleId,
+          fleetRevision: integerValue(event, "fleetRevision", "Lebenslaufereignis"),
+          atS: integerValue(event, "atS", "Lebenslaufereignis"),
+          eventType: enumValue(event, "eventType", "Lebenslaufereignis", ["registered", "condition-updated", "operator-exit"]),
+          priorHistoryHash: event["priorHistoryHash"] === null ? null : registryHash(event, "priorHistoryHash"),
+          resultingHistoryHash: registryHash(event, "resultingHistoryHash"), sourceStateHash: registryHash(event, "sourceStateHash"),
+          details: asRecord(event["details"], "Lebenslaufereignis.details") };
+      });
+      return { schemaVersion: "zugfolge-vehicle-register-history-page/v1", worldId, vehicleId, items, nextCursor: registryCursor(record) };
+    });
   }
 
   scheduleMaintenance(worldId: string, operatorId: string, payload: {

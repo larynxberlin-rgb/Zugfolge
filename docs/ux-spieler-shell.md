@@ -12,7 +12,7 @@ und [Screenshots](ui-redesign/README.md).
 | LiveMap | Deutschland erkunden, eigene Züge und Abweichungen finden | `apps/livemap` |
 | Fahrplan | Zugfahrten und zeitliche Konflikte verstehen | `game-web`, `view=diagram` |
 | Betrieb | Meldungen beurteilen, Automatik steuern, Tagesberichte lesen | `operations-center` |
-| Markt | Aufträge, Fahrzeuge und Zusammenarbeit | `game-web`, `section=markets` |
+| Markt | Aufträge, Fahrzeugangebote, Zusammenarbeit und öffentliches Fahrzeugregister | `game-web`, `section=markets` |
 | Unternehmen | Geld, Flotte und Einstieg | `game-web`, `section=company` / `world` |
 | Postfach im Kopf | Nachrichten lesen und zur Entscheidung springen | `game-web`, `section=mailbox` |
 
@@ -44,6 +44,12 @@ Gemeinsame Kopfzeile und Navigation verbinden alle drei Anwendungen. Der
 verfügbare Geldbetrag berücksichtigt bereits vorgemerkte Ausgaben. Ein
 Unternehmenswechsel bleibt in Links erhalten. Register teilen große Seiten
 in konkrete Aufgaben; Formulare zum Erstellen sind zunächst geschlossen.
+
+Das Fahrzeugregister ist unter `section=markets#vehicle-register` erreichbar.
+`section=markets#vehicle-<Kennung>` öffnet denselben öffentlichen Fahrzeugpass
+aus einem Angebot, der Unternehmensflotte oder einem gespeicherten Link.
+Die Kennung wird für den Link URL-kodiert. Ein fehlendes Angebot oder ein
+beendetes Unternehmen entfernt weder das Fahrzeug noch seinen Lebenslauf.
 
 Auf Desktop scrollen Karte und äußerer Rahmen nicht. Auf Mobilgeräten bleibt
 die Hauptnavigation unten stehen. Lange Fachinhalte scrollen im jeweiligen

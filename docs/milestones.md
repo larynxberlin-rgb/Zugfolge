@@ -1001,7 +1001,7 @@ offen.
 | # | Teilabschnitt | Größe | Status |
 |---|---------------|-------|--------|
 | 12.1 | EVU-zu-EVU-Verträge: Traktion, Vermietung, Anschluss, Ersatzverkehr | L | in Arbeit |
-| 12.2 | **Persistenter Fahrzeug-Sekundärmarkt** mit Fristenstand, mehrdimensionalem Zustand, Lebenslauf, Wertverfall und Rücklauf nach Leasingende, Betriebsaufgabe oder Insolvenz; Neukäufe gehen bei Verwertung als dieselben Assets in diesen Markt | L | in Arbeit |
+| 12.2 | **Persistenter Fahrzeug-Sekundärmarkt** mit Fristenstand, mehrdimensionalem Zustand, Lebenslauf, Wertverfall und Rücklauf nach Leasingende, Betriebsaufgabe oder Insolvenz; jedes neue und gebrauchte Fahrzeug bleibt während der gesamten Spielzeit erhalten und sein Lebenslauf für alle Weltteilnehmer einsehbar | L | in Arbeit |
 | 12.2a | **Servereigene Vermieter**: mehrere fiktive, deterministisch profilierte Anbieter mit Baureihen- und Verkehrstyppräferenzen; transparente, je Anbieter verschiedene Kalkulation, jedoch stets über dem Marktpreisband vergleichbarer EVU-Angebote | M | offen |
 | 12.3 | Bietergemeinschaften, Kooperationstarife | M | offen |
 | 12.4 | Öffentliche Qualitätsrankings mit Wirkung auf Ausschreibungswertung | M | offen |
@@ -1014,6 +1014,15 @@ Angebot, Reservierung und Rust-Flotten-Single-Writer-Übergabe; Identität,
 Historienkette und Doppelbindungs-Schutz bleiben erhalten. Offen bleibt der
 externe Zwei-Browser-Lauf gegen die Alpha-Zielumgebung; deshalb sind M12.1 und
 M12.2 noch nicht als erledigt markiert.
+
+Der [Fahrzeugregister-Vertrag](fahrzeugregister.md) erweitert diesen Nachweis um
+das öffentliche, vom Marktangebot unabhängige Register aller bestätigten
+Flottenfahrzeuge. Neue und gebrauchte Fahrzeuge behalten ihre Identität;
+Welteintritt, Zustandsrevisionen und Halterwechsel werden append-only erhalten.
+Bestehende Flotten-Checkpoints werden chronologisch nachgezogen. Der
+Fahrzeugpass bleibt für alle Weltteilnehmer lesbar, auch nach Verkauf,
+Betreiberende und Ausmusterung. Fehlende Gesamt-Laufleistungen und nicht
+freigegebene Bewertungsgrundlagen werden ausdrücklich als unbekannt geführt.
 
 ---
 

@@ -157,6 +157,25 @@ async function fundBuyer(amountCents: bigint, key: string): Promise<void> {
 }
 
 describe("M12 HTTP-Integration", () => {
+  it("bewahrt nach Betreiberende lesbare Archive und sperrt neue Betriebsaufträge", async () => {
+    await db.update(operators).set({ lifecycle: "exited" }).where(and(eq(operators.worldId, WORLD), eq(operators.id, sellerOperatorId)));
+    const archived = await app.inject({ url: `/worlds/${WORLD}/operators/${sellerOperatorId}/operating-programs`, headers: auth("seller") });
+    expect(archived.statusCode).toBe(200);
+    const rejected = await app.inject({ method: "POST", url: `/worlds/${WORLD}/operators/${sellerOperatorId}/operating-programs`, headers: auth("seller"), payload: { program: {} } });
+    expect(rejected.statusCode).toBe(403);
+    expect(rejected.json().error).toMatch(/beendetes Unternehmen/);
+    const history = await app.inject({ url: `/worlds/${WORLD}/vehicles/vehicle-1/history`, headers: auth("buyer") });
+    expect(history.statusCode).toBe(200);
+    expect(history.json()).toHaveLength(1);
+  });
+
+  it("öffnet die Marktchronik auch Weltteilnehmern ohne Konto und ohne Marktangebot", async () => {
+    await db.insert(worldAccesses).values({ worldId: WORLD, keycloakSubject: "spectator" });
+    const response = await app.inject({ url: `/worlds/${WORLD}/vehicles/vehicle-without-market/history`, headers: auth("spectator") });
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual([]);
+  });
+
   it("fordert fuer jede bestaetigte Kooperation-Aktion einen Client-Idempotenzschluessel", async () => {
     const targetId = "99999999-9999-4999-8999-999999999999";
     const responses = await Promise.all([

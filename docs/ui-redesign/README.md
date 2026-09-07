@@ -51,6 +51,28 @@ bleiben erhalten.
 | Mobiler Betrieb | [Betrieb auf dem Handy](screenshots/operations-mobile.png) |
 | Mobiler Fahrplan | [Fahrplan auf dem Handy](screenshots/planner-mobile.png) |
 
+## Fahrzeugmarkt und öffentliches Fahrzeugregister (M12.2)
+
+Der Fahrzeugmarkt zeigt Kaufpreis beziehungsweise Gesamtmiete, Zustand,
+Laufleistung und die tatsächlichen Angebots-, Reservierungs- und Wartungsfristen
+in kompakten Handelszeilen. Kauf und Miete lassen sich getrennt filtern;
+aufgeklappte Angebotsdetails zeigen Mechanik, Antrieb, Bremsen und Ausstattung.
+Fehlende Zustands- oder Wertangaben bleiben als unbekannt erkennbar.
+
+Das öffentliche Fahrzeugregister ist unabhängig von aktuellen Marktangeboten
+und einem eigenen Unternehmen zugänglich. Flotte und Angebote öffnen denselben
+dauerhaft verlinkten Fahrzeugpass. Auch weiterverkaufte, zurückgegebene und
+ausgemusterte Fahrzeuge bleiben auffindbar. Der Pass zeigt den Datenstand,
+Eigentümer und Halter, Zustands- und Wartungsdaten sowie einen lesbaren,
+seitenweise vollständig zugänglichen Lebenslauf. Technische Belege lassen sich
+zusätzlich aufklappen.
+
+| Ansicht | Bildschirmfoto |
+| --- | --- |
+| Kauf- und Mietangebote | [Fahrzeugmarkt](screenshots/m12-vehicles.png) |
+| Öffentlicher Fahrzeugpass | [Fahrzeugpass](screenshots/m12-passport.png) |
+| Fahrzeugpass auf dem Handy | [Mobiler Fahrzeugpass](screenshots/m12-passport-mobile.png) |
+
 **Diese Screenshots zeigen die implementierten Oberflächen mit gekennzeichneten
 Beispieldaten.** Die Vorschaukarte ist ein vereinfachtes Schema Deutschlands;
 Korridore und Züge sind illustrative Testdaten. Im Spiel bleibt die vorhandene
@@ -98,6 +120,42 @@ diesen UI-Nachweis: drei zur Tooltip-Hilfe und fünf zur Betriebszentrale
 einschließlich Eingabe-, Fokus- und Dialogerhaltung bei Live-Aktualisierungen.
 Ein vollständiger Produktions-, Last- oder Anmeldetest ist
 damit nicht verbunden.
+
+### Zusätzlicher Nachweis für M12.2
+
+Bei laufender Vorschau prüft der folgende Befehl ausschließlich den ergänzten
+Fahrzeugmarkt, das Register, die Fahrzeugpässe und das Formular zur Betriebsaufgabe.
+Er schreibt die drei oben verlinkten M12-Screenshots und
+[`m12-qa.json`](screenshots/m12-qa.json); die bisherigen Screenshots bleiben erhalten.
+
+```sh
+node tools/ui-preview/check-vehicle-market.mjs
+```
+
+Der Nachweis umfasst **17 Layoutprüfungen** bei 1440, 1024, 390 und 320 Pixeln:
+keinen horizontalen Überlauf oder Dokumentscroll, Kauf-/Mietfilter, Suche,
+Register per Tastatur, erhaltene Formularwerte und Fokus beim Aktualisieren,
+Schließen von Angebotsdetails mit Escape sowie direkt verlinkte, verkaufte und
+ausgemusterte Fahrzeuge mit lesbarer Historie. Das Formular zur Betriebsaufgabe
+erhält seine Preise beim Registerwechsel; die Bestätigung bleibt ausdrücklich
+erforderlich.
+
+**Vier Browsertests am gebauten Spiel** prüfen die bestehenden Spielhinweise
+und die Betriebsaufgabe. Der neue
+Bestätigungstest belegt: Vor dem Dialog und nach Abbrechen wird kein
+`fleet-exit`-POST gesendet; Abbrechen erhält den eingegebenen Preis. Erst die
+ausdrückliche Bestätigung sendet genau einen Aufruf mit Integer-Centpreisen.
+Ausführung unter PowerShell nach dem oben beschriebenen Abhängigkeitsbuild:
+
+```powershell
+pnpm --filter @zugfolge/game-web build
+$env:ZUGFOLGE_BROWSER_E2E = "1"
+pnpm --filter @zugfolge/game-api exec vitest run src/game-hints.browser.test.ts --maxWorkers=1
+```
+
+Die Browserprüfungen verwenden gekennzeichnete Beispieldaten beziehungsweise
+lokale API-Testantworten. Sie ersetzen keine Abnahme einer laufenden öffentlichen
+Spielwelt oder einen vollständigen manuellen Zugänglichkeitsaudit.
 
 ## Inspiration und Gestaltung
 

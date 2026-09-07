@@ -426,6 +426,16 @@ export const GENERATED_GLOSSARY_ENTRIES = Object.freeze([
     "definition": "autoritativer Zustand eines konkreten Fahrzeugs: Eigentum, Leasing, serverseitiges Leasingangebot, Gebrauchtangebot oder Ausmusterung"
   },
   {
+    "term": "Fahrzeugregistereintrag",
+    "code": "VehicleRegistryEntry",
+    "definition": "dauerhafter, für alle Weltteilnehmer lesbarer Fahrzeugpass mit den bestätigten Flottenfakten eines neuen oder gebrauchten Fahrzeugs, unabhängig von Eigentum und Marktangebot"
+  },
+  {
+    "term": "Fahrzeugregisterereignis",
+    "code": "VehicleRegistryEvent",
+    "definition": "unveränderlicher, welt- und fahrzeuggebundener Originalstand einer bestätigten Flottenrevision; überlebt Handel, Betreiberende und Ausmusterung"
+  },
+  {
     "term": "Fahrzeugzustand",
     "code": "VehicleCondition",
     "definition": "mehrdimensionaler, ganzzahliger Zustand für Mechanik, Antrieb, Bremsen, Betrieb und Innenraum; wird im Lebenslauf fortgeschrieben"

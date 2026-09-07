@@ -67,7 +67,9 @@ werden Inhalte nacheinander angezeigt, ohne die Navigation aus dem Blick zu verl
 
 - LiveMap: große Karte, eigener Zugfilter, Suche, vier priorisierte Fahrten,
   Postfachhinweise und eine aufklappbare Zugübersicht.
-- Markt: Register für Aufträge, Fahrzeuge und Zusammenarbeit. Erstellformulare
+- Markt: Register für Aufträge, Fahrzeuge, Zusammenarbeit und das öffentliche
+  Fahrzeugregister. Der dauerhaft verlinkbare Fahrzeugpass verbindet Angebote,
+  Flotte und Lebenslauf auch nach Verkauf oder Ausmusterung. Erstellformulare
   und ausführliche Vergleiche öffnen sich bei Bedarf.
 - Unternehmen: Geld und Bestand, mit Registern für Finanzen und Flotte.
 - Betrieb: Betriebslage, Automatik und Tagesberichte als getrennte Aufgaben.

@@ -20,6 +20,8 @@ import {
   type VehicleAssetView,
   type VehicleHistoryEventView,
   type VehicleMarketListingView,
+  type VehicleRegistryEntryView,
+  type VehicleRegistryEventView,
 } from "./api.js";
 import {
   ensureAccessToken,
@@ -34,6 +36,7 @@ import {
   parseEuroCents,
   formatCents,
   mergeBoundedItems,
+  vehiclePassportFragment,
   type CooperationSurfaceState,
 } from "./cooperation.js";
 import { conflictsForTrain, formatSignedShiftS } from "./diagram.js";
@@ -128,6 +131,16 @@ let selectedVehicleHistory: readonly VehicleHistoryEventView[] | undefined;
 let selectedHistoryVehicleId = "";
 let contractType: ContractType = "traction";
 let marketQuery = "";
+let marketType: "all" | "sale" | "rental" = "all";
+let marketSort: "newest" | "price" | "deadline" = "newest";
+let registryQuery = "";
+let vehicleRegistry: readonly VehicleRegistryEntryView[] | undefined;
+let registryNextCursor: string | null = null;
+let selectedVehiclePassport: VehicleRegistryEntryView | undefined;
+let vehicleRegistryHistory: readonly VehicleRegistryEventView[] | undefined;
+let registryHistoryNextCursor: string | null = null;
+let registryHistoryCursors: (string | undefined)[] = [undefined];
+let registryHistoryPage = 1;
 let cooperationAtS = 0;
 let economyRevision = 0;
 let worldEntryConfirmed = false;
@@ -228,6 +241,15 @@ function cooperationState(): CooperationSurfaceState | undefined {
     selectedHistoryVehicleId,
     contractType,
     marketQuery,
+    marketType,
+    marketSort,
+    vehicleRegistry,
+    registryQuery,
+    registryNextCursor,
+    selectedVehiclePassport,
+    vehicleRegistryHistory,
+    registryHistoryNextCursor,
+    registryHistoryPage,
     contractPageView,
     listingPageView,
     contractNextCursor,
@@ -319,6 +341,11 @@ function render(): void {
 }
 
 function bindJourney(): void {
+  app.querySelector<HTMLFormElement>("#company-exit-form")?.addEventListener("submit", (event) => {
+    event.preventDefault();
+    const form = event.currentTarget as HTMLFormElement;
+    if (form.reportValidity()) void exitCompany(Object.fromEntries(new FormData(form).entries()));
+  });
   app.querySelector("#journey-retry")?.addEventListener("click", () => {
     const recovery = bootRecovery;
     if (recovery === "authenticate") {
@@ -362,6 +389,12 @@ function bindJourney(): void {
       render();
     },
     changeMarketQuery: (value) => { marketQuery = value; render(); },
+    changeMarketType: (value) => { marketType = value; render(); },
+    changeMarketSort: (value) => { marketSort = value; render(); },
+    changeRegistryQuery,
+    loadMoreRegistry,
+    loadMoreRegistryHistory,
+    loadPreviousRegistryHistory,
     changeContractPageView,
     changeListingPageView,
     loadMoreContracts,
@@ -377,6 +410,33 @@ function bindJourney(): void {
     cancelListing,
     loadHistory: loadVehicleHistory,
   });
+}
+
+function exitCompany(fields: Readonly<Record<string, FormDataEntryValue>>): Promise<void> {
+  const operatorId = activeOperatorId;
+  let salePrices: Record<string, string>;
+  try {
+    if (operatorId === "" || fields["confirmExit"] !== "yes") throw new Error("Bestätige die dauerhafte Betriebsaufgabe.");
+    salePrices = Object.fromEntries(ownedVehicles.map((vehicle) => {
+      const price = parseEuroCents(String(fields[`price:${vehicle.vehicleId}`] ?? ""));
+      if (BigInt(price) <= 0n) throw new Error("Jedes Verkaufsangebot braucht einen positiven Preis.");
+      return [vehicle.vehicleId, price];
+    }));
+  } catch (error) { return reportFormError(error); }
+  const fingerprint = `${operatorId}:${JSON.stringify(salePrices)}`;
+  const key = commandKey("company-exit", fingerprint);
+  const total = Object.values(salePrices).reduce((sum, value) => sum + BigInt(value), 0n);
+  return requestConfirmation("Unternehmen dauerhaft beenden?", confirmationDetail({
+    parties: operatorDisplayName(operatorId), object: "Betriebsaufgabe und Rücklauf deiner Fahrzeuge",
+    amount: `${formatCents(total.toString())} Angebotssumme; Erlös erst nach einem Verkauf`, deadline: "nach erfolgreicher Prüfung sofort",
+    consequence: "Dein Unternehmen wird dauerhaft beendet. Mietfahrzeuge gehen zurück, eigene Fahrzeuge werden zu deinen Preisen angeboten. Offene Pflichten müssen zuvor erfüllt sein. Jedes Fahrzeug und sein öffentlicher Lebenslauf bleiben erhalten.",
+  }), () => cooperationAction(async () => {
+    if (api === undefined) throw new Error("Sitzung fehlt.");
+    await api.exitOperatorFleet(publicWorldId, operatorId, salePrices, key);
+    completeCommand("company-exit", fingerprint);
+    clearedJourneyDrafts.add("company-exit-form");
+    await refreshCooperation("");
+  }, "Dein Unternehmen wurde beendet. Die Fahrzeuge bleiben im öffentlichen Register erhalten."), "#company-exit-form button[type=submit]");
 }
 
 function foundOperator(name: string): Promise<void> {
@@ -654,13 +714,14 @@ function addWorldSeconds(atS: number, durationS: number, name: string): number {
 async function refreshCooperation(preferredOperatorId = activeOperatorId): Promise<void> {
   const client = api;
   if (client === undefined || publicWorldId === "") return;
-  const [operatorContext, atS, roster, listingPage, inbox, economy] = await Promise.all([
+  const [operatorContext, atS, roster, listingPage, inbox, economy, registryPage] = await Promise.all([
     client.loadPlayerOperatorContext(publicWorldId),
     client.loadSimulationTime(publicWorldId),
     client.loadWorldOperators(publicWorldId),
     client.loadVehicleMarket(publicWorldId, listingPageView, undefined, 50, cooperationDeadlineBeforeS),
     client.loadMailbox(publicWorldId),
     client.loadEconomyState(publicWorldId).catch(() => null),
+    client.loadVehicleRegistry(publicWorldId, registryQuery),
   ]);
   tendersUnavailable = economy === null;
   if (economy !== null) economyRevision = economy.revision;
@@ -677,8 +738,10 @@ async function refreshCooperation(preferredOperatorId = activeOperatorId): Promi
   marketListings = listingPage.items;
   listingNextCursor = listingPage.nextCursor;
   mailboxMessages = inbox;
-  selectedVehicleHistory = undefined;
-  selectedHistoryVehicleId = "";
+  vehicleRegistry = registryPage.items;
+  registryNextCursor = registryPage.nextCursor;
+  const requestedPassport = passportVehicleId(window.location.hash) ?? selectedVehiclePassport?.vehicleId;
+  if (requestedPassport !== undefined) await fetchVehiclePassport(requestedPassport, requestedPassport === selectedVehiclePassport?.vehicleId);
   if (activeOperatorId === "") {
     operatorContracts = [];
     contractNextCursor = null;
@@ -871,26 +934,26 @@ function reserveListing(listingId: string, expectedRevision: number): Promise<vo
   const listing = marketListings.find((candidate) => candidate.id === listingId);
   const actionFingerprint = `${listingId}:${expectedRevision}`;
   const idempotencyKey = commandKey("vehicle-reserve", actionFingerprint);
-  return requestConfirmation("Fahrzeug reservieren?", confirmationDetail({ parties: `${operatorDisplayName(listing?.offeringOperatorId ?? "")} und ${operatorDisplayName(activeOperatorId)}`, object: String(listing?.disclosure["classDesignation"] ?? "Fahrzeug"), amount: listing === undefined ? "unbekannt" : formatCents(listing.priceCents), deadline: listing === undefined ? "zehn Simulationsminuten" : `Reservierung zehn Simulationsminuten, Angebot bis ${simulationDeadline(listing.expiresAtS)}`, consequence: "Das Fahrzeug wird für dich reserviert. Währenddessen können andere Unternehmen es nicht übernehmen." }), () => cooperationAction(async () => {
+  return requestConfirmation("Fahrzeug reservieren?", confirmationDetail({ parties: `${operatorDisplayName(listing?.offeringOperatorId ?? "")} und ${operatorDisplayName(activeOperatorId)}`, object: String(listing?.disclosure["classDesignation"] ?? "Fahrzeug"), amount: listing === undefined ? "unbekannt" : formatCents(listing.priceCents), deadline: listing === undefined ? "zehn Minuten" : `Reservierung bis zu zehn Minuten, Angebot bis ${simulationDeadline(listing.expiresAtS)}`, consequence: "Das Fahrzeug wird für dich reserviert. Währenddessen können andere Unternehmen es nicht übernehmen." }), () => cooperationAction(async () => {
     const client = api;
     if (client === undefined || activeOperatorId === "") throw new Error("Wähle zuerst dein Unternehmen.");
     await client.reserveVehicleListing(publicWorldId, listingId, activeOperatorId, expectedRevision, idempotencyKey);
     await refreshCooperation(activeOperatorId);
     completeCommand("vehicle-reserve", actionFingerprint);
-  }, "Fahrzeug ist für zehn Simulationsminuten reserviert."), `[data-listing-reserve="${CSS.escape(listingId)}"]`);
+  }, "Fahrzeug ist für dich reserviert. Prüfe die angezeigte Übergabefrist."), `[data-listing-reserve="${CSS.escape(listingId)}"]`);
 }
 
 function transferListing(listingId: string, expectedRevision: number): Promise<void> {
   const listing = marketListings.find((candidate) => candidate.id === listingId);
   const actionFingerprint = `${listingId}:${expectedRevision}`;
   const idempotencyKey = commandKey("vehicle-transfer", actionFingerprint);
-  return requestConfirmation("Fahrzeugübergabe und Zahlung bestätigen?", confirmationDetail({ parties: `${operatorDisplayName(listing?.offeringOperatorId ?? "")} und ${operatorDisplayName(activeOperatorId)}`, object: String(listing?.disclosure["classDesignation"] ?? "Fahrzeug"), amount: listing === undefined ? "unbekannt" : formatCents(listing.priceCents), deadline: simulationDeadline(listing?.reservedUntilS), consequence: "Eigentum beziehungsweise Halterschaft, Zahlung und Fahrzeuglebenslauf werden atomar geändert." }), () => cooperationAction(async () => {
+  return requestConfirmation("Fahrzeugübergabe und Zahlung bestätigen?", confirmationDetail({ parties: `${operatorDisplayName(listing?.offeringOperatorId ?? "")} und ${operatorDisplayName(activeOperatorId)}`, object: String(listing?.disclosure["classDesignation"] ?? "Fahrzeug"), amount: listing === undefined ? "unbekannt" : formatCents(listing.priceCents), deadline: simulationDeadline(listing?.reservedUntilS), consequence: listing?.listingType === "rental" ? `Du zahlst die Gesamtmiete und übernimmst das Fahrzeug mit seiner vorhandenen Ausstattung bis ${simulationDeadline(listing.rentalValidUntilS)}. Anschließend geht es an den Vermieter zurück; sein Lebenslauf bleibt erhalten.` : "Du zahlst den Kaufpreis und wirst Eigentümer dieses Fahrzeugs. Ausstattung, Zustand, Wartungsfristen und Lebenslauf bleiben erhalten." }), () => cooperationAction(async () => {
     const client = api;
     if (client === undefined || activeOperatorId === "") throw new Error("Wähle zuerst dein Unternehmen.");
     await client.transferVehicleListing(publicWorldId, listingId, activeOperatorId, expectedRevision, idempotencyKey);
     await refreshCooperation(activeOperatorId);
     completeCommand("vehicle-transfer", actionFingerprint);
-  }, "Übergabe, Ledgerbuchung, Flotten-Single-Writer und Lebenslauf wurden atomar bestätigt."), `[data-listing-transfer="${CSS.escape(listingId)}"]`);
+  }, "Das Fahrzeug wurde übernommen und die Zahlung gebucht. Sein Lebenslauf wurde fortgeschrieben."), `[data-listing-transfer="${CSS.escape(listingId)}"]`);
 }
 
 function reverseListing(listingId: string, reasonCode: string): Promise<void> {
@@ -923,11 +986,75 @@ function cancelListing(listingId: string, expectedRevision: number): Promise<voi
 
 function loadVehicleHistory(vehicleId: string): Promise<void> {
   return cooperationAction(async () => {
-    const client = api;
-    if (client === undefined) throw new Error("Game-API fehlt.");
-    selectedVehicleHistory = await client.loadVehicleHistory(publicWorldId, vehicleId);
-    selectedHistoryVehicleId = vehicleId;
-  }, "Die Geschichte dieses Fahrzeugs ist jetzt geöffnet.");
+    await fetchVehiclePassport(vehicleId);
+    const url = new URL(window.location.href);
+    url.hash = vehiclePassportFragment(vehicleId);
+    window.history.replaceState({}, "", url);
+    pendingCooperationDeepLink = true;
+  }, "Der öffentliche Fahrzeugpass ist geöffnet.");
+}
+
+function passportVehicleId(hash: string): string | undefined {
+  if (!hash.startsWith("#vehicle-") || hash === "#vehicle-market" || hash === "#vehicle-register") return undefined;
+  try { return decodeURIComponent(hash.slice("#vehicle-".length)) || undefined; } catch { return undefined; }
+}
+
+async function fetchVehiclePassport(vehicleId: string, retainHistoryPage = false): Promise<void> {
+  const client = api;
+  if (client === undefined) throw new Error("Game-API fehlt.");
+  const [passport, history, trades] = await Promise.all([
+    client.loadVehiclePassport(publicWorldId, vehicleId),
+    client.loadVehicleRegistryHistory(publicWorldId, vehicleId, retainHistoryPage ? registryHistoryCursors[registryHistoryPage - 1] : undefined),
+    client.loadVehicleHistory(publicWorldId, vehicleId),
+  ]);
+  selectedVehiclePassport = passport;
+  vehicleRegistryHistory = history.items;
+  registryHistoryNextCursor = history.nextCursor;
+  if (!retainHistoryPage) { registryHistoryCursors = [undefined]; registryHistoryPage = 1; }
+  selectedVehicleHistory = trades;
+  selectedHistoryVehicleId = vehicleId;
+}
+
+function changeRegistryQuery(query: string): Promise<void> {
+  return cooperationAction(async () => {
+    if (api === undefined) return;
+    const page = await api.loadVehicleRegistry(publicWorldId, query);
+    registryQuery = query;
+    vehicleRegistry = page.items;
+    registryNextCursor = page.nextCursor;
+  }, "Das Fahrzeugregister wurde durchsucht.");
+}
+
+function loadMoreRegistry(): Promise<void> {
+  return cooperationAction(async () => {
+    if (api === undefined || registryNextCursor === null) return;
+    const page = await api.loadVehicleRegistry(publicWorldId, registryQuery, registryNextCursor);
+    const existingIds = new Set(vehicleRegistry?.map((vehicle) => vehicle.vehicleId));
+    vehicleRegistry = [...(vehicleRegistry ?? []), ...page.items.filter((vehicle) => !existingIds.has(vehicle.vehicleId))].slice(-200);
+    registryNextCursor = page.nextCursor;
+  }, "Weitere Fahrzeuge wurden geladen.");
+}
+
+function loadMoreRegistryHistory(): Promise<void> {
+  return cooperationAction(async () => {
+    if (api === undefined || selectedVehiclePassport === undefined || registryHistoryNextCursor === null) return;
+    const cursor = registryHistoryNextCursor;
+    const page = await api.loadVehicleRegistryHistory(publicWorldId, selectedVehiclePassport.vehicleId, cursor);
+    registryHistoryCursors[registryHistoryPage] = cursor;
+    registryHistoryPage += 1;
+    vehicleRegistryHistory = page.items;
+    registryHistoryNextCursor = page.nextCursor;
+  }, "Weitere Lebenslaufeinträge wurden geladen.");
+}
+
+function loadPreviousRegistryHistory(): Promise<void> {
+  return cooperationAction(async () => {
+    if (api === undefined || selectedVehiclePassport === undefined || registryHistoryPage <= 1) return;
+    const page = await api.loadVehicleRegistryHistory(publicWorldId, selectedVehiclePassport.vehicleId, registryHistoryCursors[registryHistoryPage - 2]);
+    registryHistoryPage -= 1;
+    vehicleRegistryHistory = page.items;
+    registryHistoryNextCursor = page.nextCursor;
+  }, "Die vorherige Lebenslaufseite ist geöffnet.");
 }
 
 function bind(): void {
@@ -1096,6 +1223,11 @@ async function boot(): Promise<void> {
   }
   render();
 }
+
+window.addEventListener("hashchange", () => {
+  const vehicleId = passportVehicleId(window.location.hash);
+  if (journeyMode && activeJourneySection === "markets" && vehicleId !== undefined && vehicleId !== selectedVehiclePassport?.vehicleId) void loadVehicleHistory(vehicleId);
+});
 
 if (requestedView === "spfv") void mountSpfv(app);
 else if (primaryDestination === undefined) void boot();

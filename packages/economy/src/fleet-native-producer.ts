@@ -1,4 +1,4 @@
-import { fleetWorldCheckpoints, worlds } from "@zugfolge/db";
+import { fleetWorldCheckpoints, operators, worlds } from "@zugfolge/db";
 import type {
   FleetCommandResult,
   FleetCommandReceipt,
@@ -10,6 +10,7 @@ import type {
 } from "@zugfolge/runtime-native";
 import {
   FLEET_COMMAND_RECEIPT_SCHEMA,
+  FLEET_ASSET_TRANSFER_COMMAND_SCHEMA,
   canonicalFleetCommandHash,
   canonicalFleetCommandJson,
   canonicalizeFleetCommand,
@@ -27,6 +28,7 @@ import {
   type FleetMobilizationSnapshot,
 } from "./fleet-snapshot.js";
 import type { EconomyDatabase } from "./ledger.js";
+import { backfillFleetVehicleRegistry, persistFleetVehicleRegistry } from "./fleet-vehicle-registry.js";
 
 export interface FleetProducerCheckpoint {
   readonly state: NativeFleetWorldState;
@@ -51,6 +53,8 @@ export interface InitializeFleetProducerInput extends FleetProducerPersistence {
 
 export interface ApplyFleetProducerCommandInput extends FleetProducerPersistence {
   readonly command: NativeFleetCommand;
+  /** Der Markt schreibt seine gesperrte Assetzeile nach dem Rust-Commit selbst. */
+  readonly projectMarketAssets?: boolean;
 }
 
 /** Stabile 409-Grenze fuer konkurrierende oder abweichende Producer-Aufrufe. */
@@ -203,6 +207,25 @@ async function lockWorld(db: EconomyDatabase, worldId: string): Promise<void> {
   await db.execute(sql`select ${worlds.id} from ${worlds} where ${worlds.id} = ${worldId} for update`);
 }
 
+async function requireActiveCommandOperator(
+  db: EconomyDatabase, state: NativeFleetWorldState, command: NativeFleetCommand,
+): Promise<void> {
+  // Ruecklauf und Verwertung muessen auch nach dem Betreiberende moeglich
+  // bleiben. Ihre eigene Authority prueft Eigentum und Betriebsbindungen.
+  if (command.schemaVersion === FLEET_ASSET_TRANSFER_COMMAND_SCHEMA) return;
+  const pathReceiptId = "pathReceiptId" in command ? command.pathReceiptId
+    : state.formations[command.formationId]?.pathReceiptId;
+  const operatorId = state.authorityRelease.pathReceipts.find((receipt) => receipt.id === pathReceiptId)?.operatorId;
+  // Fehlende Quellbelege weist anschliessend Rust zurueck. Oeffentliche
+  // Flottenakteure duerfen eigene Textkennungen ohne Spieler-EVU verwenden.
+  if (operatorId === undefined) return;
+  const [operator] = await db.select({ lifecycle: operators.lifecycle }).from(operators).where(and(
+    eq(operators.worldId, state.worldId), sql`${operators.id}::text = ${operatorId}`,
+  )).limit(1);
+  conflictInvariant(operator === undefined || operator.lifecycle === "active",
+    "Beendetes EVU darf keine neuen Flottenauftraege ausfuehren.");
+}
+
 /**
  * Creates revision zero and its M6 projection in one world-locked commit.
  * An exact retry while revision zero is still current performs no write.
@@ -244,6 +267,7 @@ export async function initializeFleetProducer(
       runtimeEnvelope(initialized),
       input.ingestedAt,
     );
+    await persistFleetVehicleRegistry(tx, initialized.state, initialized.stateHash);
     return initialized;
   });
 }
@@ -278,6 +302,7 @@ export async function applyFleetProducerCommandInTransaction(
   const submitted = canonicalizeFleetCommand(input.command);
   const tx = input.db;
   await lockWorld(tx, submitted.worldId);
+  await backfillFleetVehicleRegistry(tx, submitted.worldId);
   const current = await latestCheckpoint(tx, submitted.worldId);
   conflictInvariant(current !== undefined, "M5-Flottenwelt wurde noch nicht initialisiert.");
   const exact = exactCommand(current.state, submitted);
@@ -326,6 +351,7 @@ export async function applyFleetProducerCommandInTransaction(
         resultingSnapshotHash: priorCommand.snapshotHash,
       };
     }
+    if (priorCommand === undefined) await requireActiveCommandOperator(tx, current.state, exact.command);
     const result = input.runtime.applyFleetCommand(
       replayCheckpoint?.state ?? current.state,
       exact.command,
@@ -378,5 +404,6 @@ export async function applyFleetProducerCommandInTransaction(
       runtimeEnvelope(result),
       input.ingestedAt,
     );
+    await persistFleetVehicleRegistry(tx, result.state, result.stateHash, input.projectMarketAssets ?? true);
     return result;
 }

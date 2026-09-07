@@ -8,8 +8,10 @@ export function captureWorkspaceView(root: HTMLElement): () => void {
     ? document.activeElement : undefined;
   const formId = active?.closest("form[id]")?.id;
   const name = active?.getAttribute("name");
+  const disclosureKey = active?.tagName === "SUMMARY" ? active.closest<HTMLDetailsElement>("details[data-preserve-disclosure]")?.dataset["preserveDisclosure"] : undefined;
   const selector = active?.id ? `#${CSS.escape(active.id)}`
-    : formId && name ? `#${CSS.escape(formId)} [name="${CSS.escape(name)}"]` : undefined;
+    : formId && name ? `#${CSS.escape(formId)} [name="${CSS.escape(name)}"]`
+      : disclosureKey ? `details[data-preserve-disclosure="${CSS.escape(disclosureKey)}"] > summary` : undefined;
   const selection = active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement
     ? { start: active.selectionStart, end: active.selectionEnd } : undefined;
   return () => {

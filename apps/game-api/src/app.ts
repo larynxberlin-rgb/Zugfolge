@@ -193,6 +193,9 @@ import Fastify, {
 import { createAuthenticator, type TokenVerifier } from "./auth.js";
 import { guardAlphaAction, registerAlphaRoutes, type AlphaAbuseServices, type AlphaRouteServices } from "./alpha-routes.js";
 import { registerCooperationRoutes } from "./cooperation-routes.js";
+import { registerVehicleRegistryRoutes } from "./vehicle-registry-routes.js";
+import { advanceCooperationWorld, registerCooperationProgress } from "./cooperation-progress.js";
+import type { VehicleValuationCatalog } from "./vehicle-valuation-configuration.js";
 import { GameCooperationAuthority } from "./cooperation-authority.js";
 import { contractReportPeriod } from "./contract-report-period.js";
 import { GameFleetAssetTransferWriter } from "./fleet-market-writer.js";
@@ -266,6 +269,8 @@ export interface AppDependencies {
   readonly infraUploadKeys?: readonly InfraUploadSigningKey[];
   /** Serverautoritative EVU-Verträge und Sekundärmarkt; Produktion nutzt dieselbe Postgres-Verbindung. */
   readonly cooperation?: CooperationService;
+  /** Freigegebene, an Fleet- und Economy-Release gebundene Fahrzeugbewertungen. */
+  readonly vehicleValuationCatalog?: VehicleValuationCatalog;
   /** Injizierbare serverautoritative Weltzeit für Kooperation und Markt. */
   readonly cooperationSimulationSecond?: (worldId: string) => Promise<number>;
   /** Einmal je Postfachrequest gelesene Serverzeit fuer Prioritaet und Fristen. */
@@ -898,11 +903,15 @@ async function requireOperatorOwner(
   worldId: string,
   operatorId: string,
   keycloakSubject: string,
+  requireActive = false,
 ): Promise<void> {
   const operator = await getOperator(db, { worldId, operatorId });
   const account = await getAccount(db, { worldId, keycloakSubject });
   if (account === undefined || account.id !== operator.foundingAccountId) {
     throw new AuthorizationError(`Nur das gründende Konto führt die Bücher von EVU '${operatorId}'.`);
+  }
+  if (requireActive && operator.lifecycle !== "active") {
+    throw new AuthorizationError("Ein beendetes Unternehmen kann keine neuen Betriebs- oder Wirtschaftsaufträge erteilen.");
   }
 }
 
@@ -1506,11 +1515,20 @@ export function buildApp(deps: AppDependencies): FastifyInstance {
       throw error;
     }
   };
+  const synchronizeCooperationWorld = deps.fleetRuntime !== undefined && deps.cooperation === undefined
+    ? (worldId: string, atS: number) => advanceCooperationWorld(deps.db, cooperation, worldId, atS, deps.vehicleValuationCatalog)
+    : undefined;
+  if (synchronizeCooperationWorld !== undefined) registerCooperationProgress(app, {
+    worldIds: Object.keys(deps.fleetAuthorityReleases ?? {}),
+    advance: async (worldId) => synchronizeCooperationWorld(worldId, await cooperationSimulationSecond(worldId)),
+  });
+  registerVehicleRegistryRoutes(app, { db: deps.db, authenticate });
   registerCooperationRoutes(app, {
     db: deps.db,
     cooperation,
     authenticate,
     simulationSecond: cooperationSimulationSecond,
+    ...(synchronizeCooperationWorld === undefined ? {} : { synchronizeWorld: synchronizeCooperationWorld }),
     resourceCatalog: (worldId, operatorId) => cooperationAuthority.resourceCatalog(worldId, operatorId),
     guardAction: guardCooperationAction,
   });
@@ -1823,7 +1841,7 @@ export function buildApp(deps: AppDependencies): FastifyInstance {
       const identity = request.identity;
       if (identity === undefined) return reply.code(401).send({ error: "Keine Identität." });
       try {
-        await requireOperatorOwner(deps.db, request.params.worldId, request.params.operatorId, identity.keycloakSubject);
+        await requireOperatorOwner(deps.db, request.params.worldId, request.params.operatorId, identity.keycloakSubject, request.method !== "GET" && request.method !== "HEAD");
         await guardSensitiveAction(request, identity.keycloakSubject, request.params.worldId, "tender-bid", request.params.tenderId, request.body.commandId);
         const state = await loadEconomyWorldState(deps.db, request.params.worldId);
         if (state === undefined) return reply.code(404).send({ error: "Wirtschaftswelt ist noch nicht gestartet." });
@@ -1878,7 +1896,7 @@ export function buildApp(deps: AppDependencies): FastifyInstance {
       const identity = request.identity;
       if (identity === undefined) return reply.code(401).send({ error: "Keine Identität." });
       try {
-        await requireOperatorOwner(deps.db, request.params.worldId, request.params.operatorId, identity.keycloakSubject);
+        await requireOperatorOwner(deps.db, request.params.worldId, request.params.operatorId, identity.keycloakSubject, request.method !== "GET" && request.method !== "HEAD");
         const state = await loadEconomyWorldState(deps.db, request.params.worldId);
         if (state === undefined) return reply.code(404).send({ error: "Wirtschaftswelt ist noch nicht gestartet." });
         requireExpectedRevision(request.params.worldId, state.revision, request.body.expectedRevision);
@@ -1924,7 +1942,7 @@ export function buildApp(deps: AppDependencies): FastifyInstance {
       const identity = request.identity;
       if (identity === undefined) return reply.code(401).send({ error: "Keine Identität." });
       try {
-        await requireOperatorOwner(deps.db, request.params.worldId, request.params.operatorId, identity.keycloakSubject);
+        await requireOperatorOwner(deps.db, request.params.worldId, request.params.operatorId, identity.keycloakSubject, request.method !== "GET" && request.method !== "HEAD");
         const state = await loadEconomyWorldState(deps.db, request.params.worldId);
         if (state === undefined) return reply.code(404).send({ error: "Wirtschaftswelt ist noch nicht gestartet." });
         requireExpectedRevision(request.params.worldId, state.revision, request.body.expectedRevision);
@@ -2081,7 +2099,7 @@ export function buildApp(deps: AppDependencies): FastifyInstance {
       const identity = request.identity;
       if (identity === undefined) return reply.code(401).send({ error: "Keine Identitaet." });
       try {
-        await requireOperatorOwner(deps.db, request.params.worldId, request.params.operatorId, identity.keycloakSubject);
+        await requireOperatorOwner(deps.db, request.params.worldId, request.params.operatorId, identity.keycloakSubject, request.method !== "GET" && request.method !== "HEAD");
         await guardSensitiveAction(request, identity.keycloakSubject, request.params.worldId, "fleet-maintenance", request.body.formationId, request.body.idempotencyKey);
         if (deps.fleetRuntime === undefined) {
           return reply.code(503).send({ code: "fleet_unavailable", error: "Autoritativer M5-Flottenzustand ist nicht konfiguriert." });
@@ -3608,7 +3626,7 @@ export function buildApp(deps: AppDependencies): FastifyInstance {
       const identity = request.identity;
       if (identity === undefined) return reply.code(401).send({ error: "Keine Identität." });
       try {
-        await requireOperatorOwner(deps.db, request.params.worldId, request.params.operatorId, identity.keycloakSubject);
+        await requireOperatorOwner(deps.db, request.params.worldId, request.params.operatorId, identity.keycloakSubject, request.method !== "GET" && request.method !== "HEAD");
         const [conservative, connections, rotations] = operatingProgramTemplates(request.params.worldId, request.params.operatorId, 1);
         return reply.send([
           { id: "conservative-punctual", name: "Konservativ pünktlich", program: conservative },
@@ -3634,7 +3652,7 @@ export function buildApp(deps: AppDependencies): FastifyInstance {
       const identity = request.identity;
       if (identity === undefined) return reply.code(401).send({ error: "Keine Identität." });
       try {
-        await requireOperatorOwner(deps.db, request.params.worldId, request.params.operatorId, identity.keycloakSubject);
+        await requireOperatorOwner(deps.db, request.params.worldId, request.params.operatorId, identity.keycloakSubject, request.method !== "GET" && request.method !== "HEAD");
         const account = await getAccount(deps.db, { worldId: request.params.worldId, keycloakSubject: identity.keycloakSubject });
         if (account === undefined) throw new AuthorizationError("Kein aktiver Zugang zu dieser Welt.");
         const canonical = canonicalizeProgram(request.body.program, request.params);
@@ -3674,7 +3692,7 @@ export function buildApp(deps: AppDependencies): FastifyInstance {
       const identity = request.identity;
       if (identity === undefined) return reply.code(401).send({ error: "Keine Identität." });
       try {
-        await requireOperatorOwner(deps.db, request.params.worldId, request.params.operatorId, identity.keycloakSubject);
+        await requireOperatorOwner(deps.db, request.params.worldId, request.params.operatorId, identity.keycloakSubject, request.method !== "GET" && request.method !== "HEAD");
         return reply.send(await deps.db.select().from(operatingProgramVersions).where(and(
           eq(operatingProgramVersions.worldId, request.params.worldId),
           eq(operatingProgramVersions.operatorId, request.params.operatorId),
@@ -3695,7 +3713,7 @@ export function buildApp(deps: AppDependencies): FastifyInstance {
       const identity = request.identity;
       if (identity === undefined) return reply.code(401).send({ error: "Keine Identität." });
       try {
-        await requireOperatorOwner(deps.db, request.params.worldId, request.params.operatorId, identity.keycloakSubject);
+        await requireOperatorOwner(deps.db, request.params.worldId, request.params.operatorId, identity.keycloakSubject, request.method !== "GET" && request.method !== "HEAD");
         const account = await getAccount(deps.db, { worldId: request.params.worldId, keycloakSubject: identity.keycloakSubject });
         if (account === undefined) throw new AuthorizationError("Kein aktiver Zugang zu dieser Welt.");
         if (deps.dispatchConsumerReady?.(request.params.worldId) !== true) {
@@ -3744,7 +3762,7 @@ export function buildApp(deps: AppDependencies): FastifyInstance {
       const identity = request.identity;
       if (identity === undefined) return reply.code(401).send({ error: "Keine Identität." });
       try {
-        await requireOperatorOwner(deps.db, request.params.worldId, request.params.operatorId, identity.keycloakSubject);
+        await requireOperatorOwner(deps.db, request.params.worldId, request.params.operatorId, identity.keycloakSubject, request.method !== "GET" && request.method !== "HEAD");
         return reply.send({
           ...projectOperations(await worldEventLog(deps.db, request.params.worldId).list(), request.params.operatorId),
           consumerAvailable: deps.dispatchConsumerReady?.(request.params.worldId) === true,
@@ -3771,7 +3789,7 @@ export function buildApp(deps: AppDependencies): FastifyInstance {
       const identity = request.identity;
       if (identity === undefined) return reply.code(401).send({ error: "Keine Identität." });
       try {
-        await requireOperatorOwner(deps.db, request.params.worldId, request.params.operatorId, identity.keycloakSubject);
+        await requireOperatorOwner(deps.db, request.params.worldId, request.params.operatorId, identity.keycloakSubject, request.method !== "GET" && request.method !== "HEAD");
         const account = await getAccount(deps.db, { worldId: request.params.worldId, keycloakSubject: identity.keycloakSubject });
         if (account === undefined) throw new AuthorizationError("Kein aktiver Zugang zu dieser Welt.");
         if (deps.dispatchConsumerReady?.(request.params.worldId) !== true) {
@@ -3809,7 +3827,7 @@ export function buildApp(deps: AppDependencies): FastifyInstance {
       const identity = request.identity;
       if (identity === undefined) return reply.code(401).send({ error: "Keine Identität." });
       try {
-        await requireOperatorOwner(deps.db, request.params.worldId, request.params.operatorId, identity.keycloakSubject);
+        await requireOperatorOwner(deps.db, request.params.worldId, request.params.operatorId, identity.keycloakSubject, request.method !== "GET" && request.method !== "HEAD");
         if (request.body.sourceAfter >= request.body.sourceThrough) return reply.code(400).send({ error: "Rücktest-Zeitraum ist leer." });
         if (deps.dispatchConsumerReady?.(request.params.worldId) !== true) {
           return reply.code(503).send({ code: "dispatch_consumer_unavailable", error: "Der Betriebsprogramm-Verbraucher ist für diese Welt noch nicht angebunden. Der Rücktest wurde nicht eingereiht." });
@@ -3847,7 +3865,7 @@ export function buildApp(deps: AppDependencies): FastifyInstance {
       const identity = request.identity;
       if (identity === undefined) return reply.code(401).send({ error: "Keine Identität." });
       try {
-        await requireOperatorOwner(deps.db, request.params.worldId, request.params.operatorId, identity.keycloakSubject);
+        await requireOperatorOwner(deps.db, request.params.worldId, request.params.operatorId, identity.keycloakSubject, request.method !== "GET" && request.method !== "HEAD");
         const events = await worldEventLog(deps.db, request.params.worldId).list();
         return reply.send(events.filter((event) => {
           if (event.eventType !== "dispatch.backtest-result" || typeof event.payload !== "object" || event.payload === null || Array.isArray(event.payload)) return false;
@@ -3867,7 +3885,7 @@ export function buildApp(deps: AppDependencies): FastifyInstance {
       const identity = request.identity;
       if (identity === undefined) return reply.code(401).send({ error: "Keine Identität." });
       try {
-        await requireOperatorOwner(deps.db, request.params.worldId, request.params.operatorId, identity.keycloakSubject);
+        await requireOperatorOwner(deps.db, request.params.worldId, request.params.operatorId, identity.keycloakSubject, request.method !== "GET" && request.method !== "HEAD");
         const report = buildDailyReport(await worldEventLog(deps.db, request.params.worldId).list(), request.params.operatorId, request.params.serviceDay);
         const [saved] = await deps.db.insert(dailyOperationReports).values({ worldId: request.params.worldId, operatorId: request.params.operatorId, serviceDay: request.params.serviceDay, sourceFromSequence: report.sourceFromSequence, sourceThroughSequence: report.sourceThroughSequence, projection: report, generatedAt: new Date() }).onConflictDoUpdate({
           target: [dailyOperationReports.worldId, dailyOperationReports.operatorId, dailyOperationReports.serviceDay],
@@ -3887,7 +3905,7 @@ export function buildApp(deps: AppDependencies): FastifyInstance {
       const identity = request.identity;
       if (identity === undefined) return reply.code(401).send({ error: "Keine Identität." });
       try {
-        await requireOperatorOwner(deps.db, request.params.worldId, request.params.operatorId, identity.keycloakSubject);
+        await requireOperatorOwner(deps.db, request.params.worldId, request.params.operatorId, identity.keycloakSubject, request.method !== "GET" && request.method !== "HEAD");
         return reply.send(await deps.db.select().from(dailyOperationReports).where(and(eq(dailyOperationReports.worldId, request.params.worldId), eq(dailyOperationReports.operatorId, request.params.operatorId))).orderBy(desc(dailyOperationReports.serviceDay)));
       } catch (error) {
         return sendError(reply, error);
@@ -3902,7 +3920,7 @@ export function buildApp(deps: AppDependencies): FastifyInstance {
       const identity = request.identity;
       if (identity === undefined) return reply.code(401).send({ error: "Keine Identität." });
       try {
-        await requireOperatorOwner(deps.db, request.params.worldId, request.params.operatorId, identity.keycloakSubject);
+        await requireOperatorOwner(deps.db, request.params.worldId, request.params.operatorId, identity.keycloakSubject, request.method !== "GET" && request.method !== "HEAD");
       } catch (error) {
         return sendError(reply, error);
       }
@@ -3961,7 +3979,7 @@ export function buildApp(deps: AppDependencies): FastifyInstance {
       try {
         await requireWorldAdminAccount(deps.db, request.params.worldId, identity.keycloakSubject);
         assertDirectAdminAllowed();
-        await requireOperatorOwner(deps.db, request.params.worldId, request.params.operatorId, identity.keycloakSubject);
+        await requireOperatorOwner(deps.db, request.params.worldId, request.params.operatorId, identity.keycloakSubject, request.method !== "GET" && request.method !== "HEAD");
         const account = await openLedgerAccount(deps.db, {
           worldId: request.params.worldId,
           operatorId: request.params.operatorId,
@@ -3983,7 +4001,7 @@ export function buildApp(deps: AppDependencies): FastifyInstance {
         return reply.code(401).send({ error: "Keine Identität." });
       }
       try {
-        await requireOperatorOwner(deps.db, request.params.worldId, request.params.operatorId, identity.keycloakSubject);
+        await requireOperatorOwner(deps.db, request.params.worldId, request.params.operatorId, identity.keycloakSubject, request.method !== "GET" && request.method !== "HEAD");
         const ledgerAccounts = await listLedgerAccounts(deps.db, {
           worldId: request.params.worldId,
           operatorId: request.params.operatorId,
@@ -4039,7 +4057,7 @@ export function buildApp(deps: AppDependencies): FastifyInstance {
       try {
         await requireWorldAdminAccount(deps.db, request.params.worldId, identity.keycloakSubject);
         assertDirectAdminAllowed();
-        await requireOperatorOwner(deps.db, request.params.worldId, request.params.operatorId, identity.keycloakSubject);
+        await requireOperatorOwner(deps.db, request.params.worldId, request.params.operatorId, identity.keycloakSubject, request.method !== "GET" && request.method !== "HEAD");
         const transaction = await postLedgerTransaction(deps.db, {
           worldId: request.params.worldId,
           operatorId: request.params.operatorId,
@@ -4066,7 +4084,7 @@ export function buildApp(deps: AppDependencies): FastifyInstance {
         return reply.code(401).send({ error: "Keine Identität." });
       }
       try {
-        await requireOperatorOwner(deps.db, request.params.worldId, request.params.operatorId, identity.keycloakSubject);
+        await requireOperatorOwner(deps.db, request.params.worldId, request.params.operatorId, identity.keycloakSubject, request.method !== "GET" && request.method !== "HEAD");
         const list = await listLedgerTransactions(deps.db, {
           worldId: request.params.worldId,
           operatorId: request.params.operatorId,

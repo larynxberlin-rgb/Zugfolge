@@ -16,6 +16,7 @@ body:has(.player-shell),body:has(.planner-shell) {
   padding:0;
   display:grid;
   grid-template-rows:68px minmax(0,1fr) 32px;
+  grid-template-columns:minmax(0,1fr);
   background:var(--zf-canvas);
   font-size:13px
 }
@@ -872,6 +873,93 @@ body:has(.player-shell),body:has(.planner-shell) {
 .market-comparison>.comparison-workbench {
   border:0;
   background:none
+}
+.m12-surface--markets #vehicle-market .m12-list { grid-template-columns:minmax(0,1fr); gap:10px; }
+.market-item { gap:12px; border-left-width:3px; }
+.market-trade-row { display:grid; grid-template-columns:minmax(175px,1.15fr) minmax(170px,1.2fr) minmax(115px,.75fr) minmax(100px,.7fr); gap:18px; align-items:center; }
+.market-trade-row>div { min-width:0; }
+.market-trade-row strong { font-size:16px; font-variant-numeric:tabular-nums; }
+.market-trade-row small,.market-identity small { display:block; color:var(--zf-text-faint); font-size:11px; line-height:1.5; margin-top:5px; overflow-wrap:anywhere; }
+.market-identity h3 { margin:3px 0; font-size:18px; }
+.market-kind { color:var(--zf-text-muted); font-size:9px; font-weight:750; letter-spacing:.12em; }
+.market-quote strong { color:var(--zf-text); font-size:21px; }
+.market-decision { display:flex; flex-wrap:wrap; align-items:center; gap:8px 15px; padding:10px 0; border-top:1px solid var(--zf-line); border-bottom:1px solid var(--zf-line); color:var(--zf-text-muted); font-size:11px; }
+.market-decision .state-word { margin-right:3px; }
+.market-filters { display:grid; grid-template-columns:minmax(190px,1.6fr) repeat(3,minmax(120px,1fr)); align-items:end; }
+.market-filters label { display:grid; gap:6px; min-width:0; }
+.market-filters select,.market-filters input { width:100%; min-width:0; }
+.vehicle-offer-disclosure>summary,.vehicle-technical>summary { cursor:pointer; font-size:12px; color:var(--zf-text-muted); padding:5px 0; }
+.vehicle-offer-disclosure>summary:focus-visible,.vehicle-technical>summary:focus-visible { outline:2px solid var(--zf-focus); outline-offset:4px; }
+.vehicle-condition { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:1px; background:var(--zf-line); border:1px solid var(--zf-line); border-radius:6px; overflow:hidden; margin:15px 0; }
+.vehicle-condition>div { display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:6px; padding:13px; background:var(--zf-surface,#181e25); }
+.vehicle-condition span { color:var(--zf-text-muted); font-size:11px; }
+.vehicle-condition strong { font-size:16px; font-variant-numeric:tabular-nums; }
+.vehicle-pass-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:20px; margin:16px 0; font-size:12px; line-height:1.55; }
+.vehicle-pass-grid h4 { margin:0 0 10px; color:var(--zf-text); font-size:12px; }
+.vehicle-pass-grid ul { margin:0; padding-left:17px; }
+.vehicle-pass-grid li { margin-bottom:10px; }
+.vehicle-pass-grid li span { display:block; color:var(--zf-text-muted); }
+.vehicle-pass-grid dl { display:block; }
+.vehicle-pass-grid section { min-width:0; overflow-wrap:anywhere; }
+.market-note { color:var(--zf-text-muted); font-size:12px; line-height:1.6; }
+.vehicle-register-search { display:flex; gap:12px; align-items:end; margin:18px 0; }
+.vehicle-register-search label { flex:1; min-width:0; }
+.vehicle-register-search input { width:100%; }
+.vehicle-register-list { display:grid; gap:1px; border:1px solid var(--zf-line); background:var(--zf-line); border-radius:7px; overflow:hidden; margin:18px 0; }
+.journey-shell button.vehicle-register-entry { width:100%; display:grid; grid-template-columns:minmax(170px,1.3fr) minmax(120px,1fr) minmax(100px,.7fr) 15px; gap:18px; align-items:center; text-align:left; border:0; border-radius:0; padding:14px 16px; background:var(--zf-surface,#181e25); color:var(--zf-text-muted); font-size:12px; }
+.vehicle-register-entry strong { display:block; color:var(--zf-text); font-size:14px; }
+.vehicle-register-entry small { display:block; color:var(--zf-text-faint); margin-top:4px; overflow-wrap:anywhere; }
+.journey-shell button.vehicle-register-entry:hover { background:#202830; }
+.vehicle-register-entry .state-word { justify-self:start; }
+.vehicle-passport { margin:20px 0; padding:22px; border:1px solid var(--zf-line); border-top:3px solid var(--zf-brand,#e5233d); border-radius:8px; background:#131b23; scroll-margin-top:65px; }
+.vehicle-passport:focus-visible { outline:2px solid var(--zf-focus); outline-offset:4px; }
+.vehicle-passport .journey-heading h3 { margin:5px 0; font-size:24px; }
+.vehicle-passport .eyebrow { overflow-wrap:anywhere; }
+.vehicle-identity-data { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:12px 20px; margin:20px 0; }
+.vehicle-identity-data>div { display:block; padding:0; border:0; }
+.vehicle-identity-data dt { font-size:11px; color:var(--zf-text-muted); margin-bottom:5px; }
+.vehicle-identity-data dd { font-size:13px; overflow-wrap:anywhere; }
+.vehicle-passport .vehicle-history { padding:15px 0; margin:15px 0; border-top:1px solid var(--zf-line); }
+.vehicle-history li { display:grid; grid-template-columns:75px minmax(0,1fr) auto; padding:12px 0; }
+.vehicle-history li>span { font-size:11px; color:var(--zf-text-faint); }
+.vehicle-history li p { margin:5px 0; font-size:12px; color:var(--zf-text-muted); }
+.vehicle-history li details { font-size:11px; }
+.vehicle-passport pre,.vehicle-passport code { white-space:pre-wrap; overflow-wrap:anywhere; word-break:break-word; font-size:10px; }
+.vehicle-pass-link { display:inline-block; font-size:12px; color:var(--zf-text-muted); margin-top:15px; }
+@media(max-width:1100px) {
+  .market-trade-row { grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px 18px; }
+  .market-filters { grid-template-columns:repeat(2,minmax(0,1fr)); }
+  .vehicle-pass-grid { grid-template-columns:repeat(2,minmax(0,1fr)); }
+  .vehicle-pass-grid section:last-child { grid-column:1/-1; }
+  .vehicle-condition>div { display:grid; }
+}
+@media(max-width:600px) {
+  .m12-surface--markets .rail-tabs { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); }
+  .m12-surface--markets .rail-tabs button { min-width:0; }
+  .market-item { padding:13px; }
+  .market-trade-row { gap:14px; }
+  .market-trade-row strong { font-size:14px; }
+  .market-quote strong { font-size:17px; }
+  .market-decision { display:grid; justify-items:start; }
+  .market-filters { gap:10px; }
+  .market-filters .m12-search { grid-column:1/-1; }
+  .market-filters label:last-child { grid-column:1/-1; }
+  .vehicle-pass-grid { display:block; }
+  .vehicle-pass-grid section { margin-bottom:20px; }
+  .vehicle-condition>div { padding:10px 8px; }
+  .vehicle-condition strong { font-size:13px; }
+  .vehicle-condition span { font-size:10px; }
+  .vehicle-passport { padding:14px; }
+  .vehicle-passport { scroll-margin-top:112px; }
+  .vehicle-passport .journey-heading { display:block; }
+  .vehicle-passport .journey-heading .state-word { display:inline-block; margin-top:7px; }
+  .vehicle-identity-data { grid-template-columns:repeat(2,minmax(0,1fr)); gap:14px; }
+  .journey-shell button.vehicle-register-entry { grid-template-columns:minmax(0,1fr) auto; gap:8px; padding:12px; }
+  .vehicle-register-entry>span:nth-child(2) { grid-column:1; grid-row:2; }
+  .vehicle-register-entry>span:last-child { display:none; }
+  .vehicle-register-search { gap:8px; }
+  .vehicle-history li { grid-template-columns:52px minmax(0,1fr); }
+  .vehicle-history li>details { grid-column:2; }
 }
 .m12-filter-row {
   margin:18px 0;

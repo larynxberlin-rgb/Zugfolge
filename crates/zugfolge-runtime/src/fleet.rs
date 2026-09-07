@@ -400,6 +400,7 @@ enum AssetTransferType {
     Sale,
     RentalStart,
     RentalReturn,
+    OperatorExit,
     Reversal,
 }
 
@@ -2010,6 +2011,12 @@ fn materialize_formation(
                 .map(|deadline| deadline.due_at)
                 .chain([source.retired_at])
         })
+        .chain(sources.iter().filter_map(|source| {
+            state
+                .asset_holdings
+                .get(&source.id)
+                .and_then(|holding| holding.valid_until_s)
+        }))
         .chain([receipt.valid_until])
         .min()
         .ok_or_else(|| invalid("Formation besitzt kein Verfuegbarkeitsende"))?;
@@ -2191,6 +2198,14 @@ fn materialize_duty(
             materialize_formation(state, formation)
         })
         .collect::<Result<Vec<_>, _>>()?;
+    if materialized.iter().any(|formation| {
+        intent.valid_from < formation.snapshot.available_from
+            || intent.valid_until > formation.snapshot.available_until
+    }) {
+        return Err(invalid(
+            "Personaldienst liegt ausserhalb der Fahrzeugverfuegbarkeit oder Mietdauer",
+        ));
+    }
     if materialized
         .iter()
         .any(|formation| formation.snapshot.operator_id != pool_source.operator_id)
@@ -2670,6 +2685,24 @@ fn apply_asset_transfer(
                 || command.valid_until_s.is_some()
             {
                 return Err(invalid("Mietende passt nicht zum laufenden Halterzustand"));
+            }
+        }
+        AssetTransferType::OperatorExit => {
+            // Die Plattform beendet zuerst den Betrieb. Der gemeinsame
+            // Bindungscheck oben verhindert das heimliche Aufloesen laufender
+            // Formationen, Dienste oder Werkstattauftraege bei der Verwertung.
+            if command.from_owner_operator_id != command.to_owner_operator_id
+                || command.to_holder_operator_id != command.to_owner_operator_id
+                || command.lessor_operator_id.is_some()
+                || command.contract_id.is_some()
+                || command.valid_until_s.is_some()
+                || current.lessor_operator_id.as_ref().is_some_and(|lessor| {
+                    lessor != &command.to_owner_operator_id
+                })
+            {
+                return Err(invalid(
+                    "Betriebsaufgabe muss Eigentum erhalten und den Halter zum Eigentuemer zurueckfuehren",
+                ));
             }
         }
         AssetTransferType::Reversal => {
@@ -4534,6 +4567,148 @@ mod tests {
         let error = apply_fleet_command(&formed["state"].to_string(), &duty.to_string(), None)
             .expect_err("Wagenpark ohne Lok darf keinen Dienst bilden");
         assert!(error.to_string().contains("Wagenpark ohne Lok"));
+    }
+
+    #[test]
+    fn mietende_begrenzt_mobilisierung_und_den_vollstaendigen_personaldienst() {
+        let mut release = authority_release_v2();
+        release["personnelPools"][0]["operatorId"] = json!("operator-2");
+        release["personnelPools"][0]["pathReceiptIds"] = json!(["path-foreign"]);
+        let initial: Value = serde_json::from_str(
+            &initialize_fleet_world(
+                &json!({
+                    "schemaVersion": "zugfolge-fleet-world-initialize/v2",
+                    "worldId": WORLD, "producedAt": 10, "authorityRelease": release
+                })
+                .to_string(),
+            )
+            .expect("Flottenwelt"),
+        )
+        .expect("Initialisierung");
+        let rented = apply(
+            &initial["state"],
+            &json!({
+                "schemaVersion": "zugfolge-fleet-transfer-asset-command/v1",
+                "worldId": WORLD, "commandId": "market:rental",
+                "expectedStateHash": initial["stateHash"], "expectedRevision": 0,
+                "atS": 11, "vehicleId": "vehicle-1", "transferType": "rental-start",
+                "fromOwnerOperatorId": "operator-1", "toOwnerOperatorId": "operator-1",
+                "fromHolderOperatorId": "operator-1", "toHolderOperatorId": "operator-2",
+                "lessorOperatorId": "operator-1", "contractId": "rental-1",
+                "validUntilS": 50, "transferReceiptHash": "4".repeat(64)
+            }),
+            None,
+        );
+        let formed = apply(
+            &rented["state"],
+            &json!({
+                "schemaVersion": "zugfolge-fleet-form-vehicles-command/v2",
+                "worldId": WORLD, "commandId": "formation:rented",
+                "expectedStateHash": rented["stateHash"], "expectedRevision": 1,
+                "atS": 12, "formationId": "formation-rented",
+                "vehicleIds": ["vehicle-1"], "pathReceiptId": "path-foreign"
+            }),
+            None,
+        );
+        assert_eq!(formed["snapshot"]["formations"][0]["availableUntil"], 50);
+        let mut duty = json!({
+            "schemaVersion": "zugfolge-fleet-assign-duty-command/v2",
+            "worldId": WORLD, "commandId": "duty:rented",
+            "expectedStateHash": formed["stateHash"], "expectedRevision": 2,
+            "atS": 13, "personnelDutyId": "duty-rented", "personnelPoolId": "pool-1",
+            "formationIds": ["formation-rented"], "pathReceiptId": "path-foreign",
+            "validFrom": 20, "validUntil": 51
+        });
+        let error = apply_fleet_command(&formed["state"].to_string(), &duty.to_string(), None)
+            .expect_err("Dienst darf keine Sekunde ueber das Mietende hinausreichen");
+        assert!(error.to_string().contains("Mietdauer"));
+        duty["validUntil"] = json!(50);
+        let assigned = apply(&formed["state"], &duty, None);
+        assert_eq!(assigned["snapshot"]["personnelDuties"][0]["validUntil"], 50);
+    }
+
+    #[test]
+    fn betriebsaufgabe_erhaelt_neufahrzeug_identitaet_und_verkettete_historie() {
+        let initial = initialize();
+        let command = json!({
+            "schemaVersion": "zugfolge-fleet-transfer-asset-command/v1",
+            "worldId": WORLD, "commandId": "market:operator-exit",
+            "expectedStateHash": initial["stateHash"], "expectedRevision": 0,
+            "atS": 11, "vehicleId": "vehicle-2", "transferType": "operator-exit",
+            "fromOwnerOperatorId": "operator-1", "toOwnerOperatorId": "operator-1",
+            "fromHolderOperatorId": "operator-1", "toHolderOperatorId": "operator-1",
+            "lessorOperatorId": null, "contractId": null, "validUntilS": null,
+            "transferReceiptHash": "3".repeat(64)
+        });
+        let exited = apply(&initial["state"], &command, None);
+        assert_eq!(exited["state"]["authorityRelease"], initial["state"]["authorityRelease"]);
+        assert_eq!(exited["state"]["assetHoldings"]["vehicle-2"]["ownerOperatorId"], "operator-1");
+        assert_ne!(
+            exited["state"]["assetHoldings"]["vehicle-2"]["historyHash"],
+            initial["state"]["assetHoldings"]["vehicle-2"]["historyHash"]
+        );
+        let replay = apply(&exited["state"], &command, Some(&exited["commandReceipt"]));
+        assert_eq!(replay["idempotentReplay"], true);
+        assert_eq!(replay["stateHash"], exited["stateHash"]);
+
+        let mut forged = command.clone();
+        forged["toOwnerOperatorId"] = json!("operator-2");
+        forged["toHolderOperatorId"] = json!("operator-2");
+        let error = apply_fleet_command(&initial["state"].to_string(), &forged.to_string(), None)
+            .expect_err("Betriebsaufgabe darf kein Eigentum verschenken");
+        assert!(error.to_string().contains("Eigentum erhalten"));
+
+        let mut formation = formation_command(&initial, "formation:before-exit");
+        formation["vehicleIds"] = json!(["vehicle-2"]);
+        let formed = apply(&initial["state"], &formation, None);
+        let mut bound = command;
+        bound["expectedStateHash"] = formed["stateHash"].clone();
+        bound["expectedRevision"] = json!(1);
+        bound["atS"] = json!(12);
+        let error = apply_fleet_command(&formed["state"].to_string(), &bound.to_string(), None)
+            .expect_err("Betriebsaufgabe darf keine betriebliche Bindung loeschen");
+        assert!(error.to_string().contains("Formation gebunden"));
+    }
+
+    #[test]
+    fn betriebsaufgabe_fuehrt_gemietetes_asset_vor_frist_ohne_duplikat_zurueck() {
+        let initial = initialize();
+        let rented = apply(
+            &initial["state"],
+            &json!({
+                "schemaVersion": "zugfolge-fleet-transfer-asset-command/v1",
+                "worldId": WORLD, "commandId": "market:rental-before-exit",
+                "expectedStateHash": initial["stateHash"], "expectedRevision": 0,
+                "atS": 11, "vehicleId": "vehicle-1", "transferType": "rental-start",
+                "fromOwnerOperatorId": "operator-1", "toOwnerOperatorId": "operator-1",
+                "fromHolderOperatorId": "operator-1", "toHolderOperatorId": "operator-2",
+                "lessorOperatorId": "operator-1", "contractId": "rental-1",
+                "validUntilS": 50, "transferReceiptHash": "4".repeat(64)
+            }),
+            None,
+        );
+        let returned = apply(
+            &rented["state"],
+            &json!({
+                "schemaVersion": "zugfolge-fleet-transfer-asset-command/v1",
+                "worldId": WORLD, "commandId": "market:rental-exit",
+                "expectedStateHash": rented["stateHash"], "expectedRevision": 1,
+                "atS": 12, "vehicleId": "vehicle-1", "transferType": "operator-exit",
+                "fromOwnerOperatorId": "operator-1", "toOwnerOperatorId": "operator-1",
+                "fromHolderOperatorId": "operator-2", "toHolderOperatorId": "operator-1",
+                "lessorOperatorId": null, "contractId": null, "validUntilS": null,
+                "transferReceiptHash": "5".repeat(64)
+            }),
+            None,
+        );
+        assert_eq!(returned["state"]["authorityRelease"], initial["state"]["authorityRelease"]);
+        let holding = &returned["state"]["assetHoldings"]["vehicle-1"];
+        assert_eq!(holding["holderOperatorId"], "operator-1");
+        assert_eq!(holding["ownerOperatorId"], "operator-1");
+        assert!(holding["lessorOperatorId"].is_null());
+        assert!(holding["contractId"].is_null());
+        assert!(holding["validUntilS"].is_null());
+        assert_ne!(holding["historyHash"], rented["state"]["assetHoldings"]["vehicle-1"]["historyHash"]);
     }
 
     #[test]
