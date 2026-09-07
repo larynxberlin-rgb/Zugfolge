@@ -615,7 +615,7 @@ zum Abbruch statt zur Löschung regulärer Spielstände.
 Vorhandene reguläre Welten auf getrennte Server mit eigenen Subdomains umziehen,
 bevor sie mit dieser Version gestartet werden. Die Migration teilt solche
 Bestände nicht automatisch auf. Neue Backups und Restorebelege verwenden
-Schema 38 einschließlich des persistenten Fahrzeugregisters aus Migration 0036. Die genauen Vorbedingungen stehen unter
+Schema 38 einschließlich des persistenten Fahrzeugregisters aus Migration 0038. Die genauen Vorbedingungen stehen unter
 [Upgrade auf Spielhinweise](docs/alpha-betrieb.md#upgrade-auf-spielhinweise).
 
 ## Abnahme und Wiederherstellung

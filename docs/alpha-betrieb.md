@@ -108,7 +108,7 @@ ausgeblendeten Fakten und keine Aenderung archivierter Zeilen.
 
 Der gestufte neue Installationspfad endet nach dem kalten Schema-31-Nachweis mit
 `--schema38-after-cold`, `--keycloak-after-schema38` und `--prepare-v2-hot` auf
-exakt Schema 38. Die aelteren `schema33`-, `schema34`- und `schema35`-Flags
+exakt Schema 38. Die aelteren `schema33`-, `schema34`-, `schema35`- und `schema36`-Flags
 sowie die bisherigen `schema33`-Dienstnamen sind
 Kompatibilitaetsaliasnamen fuer diesen aktuellen Gatepfad. Der Wrapper prueft
 nach der Migration und vor Keycloak/Hot-Backup immer den tatsaechlichen Stand 38.

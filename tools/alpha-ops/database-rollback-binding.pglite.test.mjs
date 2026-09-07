@@ -13,6 +13,7 @@ import {
 import { keycloakStateInspectorFixture } from "./database-rollback-test-fixtures.mjs";
 import { databaseRollbackEvidenceFixtures } from "./database-rollback-test-fixtures.mjs";
 import { createDatabaseRollbackProof, validateDatabaseRollbackProof } from "../tiles/map-release-build-evidence.mjs";
+import { validateGameDatabaseCatalog } from "./keycloak-public-to-schema.mjs";
 
 const sourceMigrationsFolder = resolve(import.meta.dirname, "../../packages/db/drizzle");
 // Diese Suite attestiert den unveraenderlichen historischen Schema-33-Vertrag.
@@ -102,13 +103,16 @@ test(`Schema${migrationCount} liefert aus dem echten Katalog einen vollständige
     const source = await inspectLiveDatabaseRollbackSnapshot(adapter(client));
     assert.equal(source.migrationLedger.length, migrationCount);
     assert.equal(source.guards.length, 79);
+    const relations = (await client.query("select c.relname from pg_class c join pg_namespace n on n.oid=c.relnamespace where n.nspname='public' and c.relkind='r' order by c.relname")).rows.map((row) => row.relname);
+    const routines = (await client.query("select p.proname as name,pg_get_function_identity_arguments(p.oid) as arguments from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' order by p.proname,pg_get_function_identity_arguments(p.oid)")).rows;
+    assert.equal(validateGameDatabaseCatalog(relations, routines, migrationCount), "schema-38");
     const evidence = databaseRollbackEvidenceFixtures(source);
     const proof = createDatabaseRollbackProof({ releaseId: "infra-deutschland-2026.4", previousReleaseId: "infra-deutschland-2026.2", source, ...evidence, writersQuiesced: true, rollbackWindow: "pre-activation-only" });
     assert.equal(proof.schema, `zugfolge-database-rollback-proof/v${migrationCount - 30}`);
     assert.equal(validateDatabaseRollbackProof(proof), proof);
     if (migrationCount === 38) {
       const worldId = "11111111-1111-4111-8111-111111111136";
-      await client.query("insert into worlds(id,name,schedule_period_weeks,epoch) values($1,'Register36',4,'2026-01-01Z')", [worldId]);
+      await client.query("insert into worlds(id,name,schedule_period_weeks,epoch) values($1,'Register38',4,'2026-01-01Z')", [worldId]);
       await client.query(`insert into vehicle_registry_entries(world_id,vehicle_id,authority_release_id,class_designation,owner_operator_id,holder_operator_id,introduced_at_s,retired_at_s,data_at_s,fleet_revision,source_state_hash,facts,facts_hash,history_hash)
         values($1,'vehicle-36','authority-36','Klasse 36','public','public',0,1000,0,1,$2,'{}',$2,$2)`, [worldId, "a".repeat(64)]);
       await client.query(`insert into vehicle_registry_events(world_id,vehicle_id,fleet_revision,at_s,event_type,resulting_history_hash,source_state_hash,details)

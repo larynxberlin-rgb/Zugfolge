@@ -4,6 +4,7 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 import { createDatabaseRollbackProof, validateDatabaseRollbackProof } from "../tiles/map-release-build-evidence.mjs";
+import { ARCHIVE_PRIVACY_FUNCTION_SOURCES, ARCHIVE_PRIVACY_REDACTABLE_TABLES } from "./archive-privacy-binding.mjs";
 import {
   assertDatabaseRollbackProofMatchesLive,
   inspectMigratedKeycloakState,
@@ -34,6 +35,21 @@ import {
 const DATABASE_A = "00000000-0000-4000-8000-000000000031";
 const DATABASE_B = "00000000-0000-4000-8000-000000000032";
 
+function archivePrivacyCatalogRows(query) {
+  if (query.includes("from pg_proc p join")) {
+    return Object.entries(ARCHIVE_PRIVACY_FUNCTION_SOURCES).sort(([left], [right]) => left.localeCompare(right, "en"))
+      .map(([proname, prosrc]) => ({ proname, prosrc, prosecdef: false }));
+  }
+  if (query.includes("from pg_trigger t join")) {
+    return databaseCutoverGuards(37).filter(({ name, relation }) => name.startsWith("zugfolge_archive_privacy_capture_")
+      || name.startsWith("archive_privacy_")
+      || (name.startsWith("zugfolge_world_guard_") && ARCHIVE_PRIVACY_REDACTABLE_TABLES.includes(relation)))
+      .map(({ name, relation, type, functionName }) => ({ tgname: name, relname: relation, tgenabled: "O", tgtype: type,
+        proname: functionName, function_schema: "public", arguments: name.startsWith("zugfolge_world_guard_") ? Buffer.from("world_id\0").toString("hex") : "" }));
+  }
+  return undefined;
+}
+
 test("Schema 32 sperrt Outbox- und Lifecycle-DML vor seinem ersten Altzustands-Snapshot", async () => {
   const migration = normalizeDatabaseDefinition(await readFile(
     new URL("../../packages/db/drizzle/0032_world_writer_guard.sql", import.meta.url),
@@ -61,6 +77,8 @@ function sqlFixture(databaseIdentity = DATABASE_A, domainRowsSha256 = "d".repeat
   return {
     async unsafe(source) {
       const query = source.replace(/\s+/gu, " ").trim().toLowerCase();
+      const archiveRows = archivePrivacyCatalogRows(query);
+      if (archiveRows !== undefined) return archiveRows;
       if (query.includes("from zugfolge_database_identity")) return [{ database_id: databaseIdentity }];
       if (query.includes("from drizzle.__drizzle_migrations")) {
         return Array.from({ length: migrationCount }, (_, index) => index + 1).map((id) => ({
@@ -271,6 +289,10 @@ function worldSealSql(changedTable, { migrationCount = 33, nonemptyTable, omitte
   return {
     async unsafe(source) {
       const query = source.replace(/\s+/gu, " ").trim().toLowerCase();
+      const archiveRows = archivePrivacyCatalogRows(query);
+      if (archiveRows !== undefined) return archiveRows;
+      if (query.includes("from zugfolge_database_identity")) return [{ database_id: DATABASE_A }];
+      if (query.includes("from archive_privacy_requests")) return [];
       if (query === "select count(*)::int as migration_count from drizzle.__drizzle_migrations") return [{ migration_count: migrationCount }];
       if (query.includes("from information_schema.columns as columns")) {
         return databaseWorldHistoryBindings(migrationCount)
