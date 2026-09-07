@@ -33,14 +33,14 @@
     "@zugfolge/planning-worker": "workspace:*",
     "@zugfolge/privacy": "workspace:*",
     "@zugfolge/runtime-native": "workspace:*",
-    "fastify": "^5.12.1"
+    "fastify": "^5.12.3"
   },
   "devDependencies": {
     "@electric-sql/pglite": "^0.5.8",
-    "@types/node": "26.4.0",
+    "@types/node": "26.4.1",
     "@zugfolge/gtfs": "workspace:*",
     "drizzle-orm": "^0.45.2",
-    "jose": "^6.2.9",
+    "jose": "^6.2.11",
     "playwright-core": "1.62.1",
     "postgres": "^3.4.9",
     "typescript": "^7.0.2",
