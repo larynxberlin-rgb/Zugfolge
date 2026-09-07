@@ -68,8 +68,11 @@ der erste Import entstand, statt sie nachträglich einzuziehen.
 
 Der Unterschied zwischen `entwicklung` und `freigegeben` ist der Kern der
 Trennung: Eine `entwicklung`-Quelle darf ein Mensch beim Bauen ansehen, aber
-keine Zeile Import darf sie ziehen. So bleibt der Trassenfinder ein
-Kalibrierwerkzeug (E10) und wird nie eine Laufzeitabhängigkeit.
+kein Infrastruktur- oder Referenzimport darf sie ziehen. Der getrennte,
+nutzergeführte CSV-Laufweg in Abschnitt 4 übernimmt lediglich unmittelbar
+gewählte Fahrwegvorgaben als native Stationskennungen. Er gibt den externen
+Datenbestand nicht als Importquelle frei und macht den Trassenfinder nicht
+zur Laufzeitabhängigkeit.
 
 ---
 
@@ -278,16 +281,16 @@ Zwei Grenzen gelten unabhängig von den Nutzungsbedingungen:
 - **Kein Laufzeitdienst.** Determinismus und Replay verlangen, dass jede
   Kostenberechnung aus dem gepinnten `EconomyRelease` der Welt kommt (Invariante
   6). Deshalb steht der Trassenfinder im Register auf `entwicklung`, nie auf
-  `freigegeben` — er darf nie ein Import werden.
+  `freigegeben` — seine Werte werden keine Betriebs- oder Infrastrukturquelle.
 - **Keine Präzisionswahrheit.** Der Betreiber weist die Werte selbst als
   unverbindliche Richtwerte aus vereinfachter Berechnung aus. Für einen
   Größenordnungsabgleich richtig, als Referenzwahrheit nicht.
 
-**Die verbindliche Projektgrenze.** Der Disclaimer der OpenAPI gestattet die
+**Die Grenze für Entwicklung und Datenbestände.** Der Disclaimer der OpenAPI gestattet die
 API nur zur einzelnen Routenermittlung und schließt insbesondere Analyse oder
 Rekonstruktion der zugrunde liegenden Verfahren sowie Speicherung ohne
 zeitlich unmittelbare Nutzung aus. Deshalb ruft Zugfolge die Routensuche nicht
-automatisiert ab. Bis zu einer ausdrücklichen Betreiberfreigabe gilt:
+automatisiert ab. Für Entwicklungskalibrierungen gilt weiterhin:
 
 - nur manuelle Einzelabfragen in der öffentlichen Weboberfläche;
 - nur unmittelbar für eine benannte Entwicklungs-Kalibrierung;
@@ -300,6 +303,32 @@ genau den Kalibrierlauf gebunden. Es wird nicht als freigegebener Datensatz
 oder Referenzwahrheit dargestellt. Diese konservative Auslegung ist keine
 Rechtsberatung; eine systematische Nutzung bleibt bis zur schriftlichen
 Klärung gesperrt.
+
+**Getrennte Projektentscheidung vom 07.09.2026: lokaler Fahrwegwunsch.** Der
+ausdrückliche Nutzerauftrag erweitert E10 um einen optionalen Link zur
+öffentlichen Trassenfinder-Weboberfläche und die unmittelbar anschließende
+Verarbeitung einer selbst gewählten Datei aus „CSV-Export des Laufwegs“.
+Die Exportart und das Format wurden am 07.09.2026 an der öffentlichen
+[Beispielroute](https://trassenfinder.de/route/e7f792a1d49bae2) geprüft. Das ist
+ein Formatbeleg, keine veröffentlichte Lizenz oder neue Betreiberfreigabe.
+
+Der Browser liest die Rohdatei nur lokal. Er übernimmt ausschließlich die
+geordnete Betriebsstellenfolge als Spielereingabe und ordnet sie vollständig
+und eindeutig nativen Stationen des gepinnten Weltreleases zu. Der normale
+Spielantrag enthält danach eigene Stationskennungen und Durchfahrtvorgaben.
+Fremde Infrastruktur, Physik, Fahr- und Haltezeiten, Preise und Energiewerte
+werden nicht übernommen. Die Rohdatei wird weder zum Server übertragen noch
+gespeichert, gesammelt oder weiterveröffentlicht; der Server ruft keinen
+externen Dienst auf. Diese Funktion bestellt keine reale DB-Trasse.
+
+Diese enge Projektentscheidung ist vom Import externer Datenbestände
+getrennt. Der Quellenstatus `entwicklung` bleibt bestehen; insbesondere folgt
+daraus keine Freigabe für API-Zugriff, Infrastrukturimporte, Rohdatenarchive,
+systematische Auswertung oder Wiederveröffentlichung. Die genaue Eingabe- und
+Verarbeitungsgrenze steht in
+[Trassenfinder-Routenimport](trassenfinder-routenimport.md). Der Nutzerauftrag
+ersetzt die bisherige ausschließliche Bindung der manuellen Einzelabfrage an
+Entwicklungskalibrierungen nur für diesen beschriebenen Spielereingabepfad.
 
 Dieser Prüfpunkt betrifft die **berechneten** Werte der Routensuche
 (Fahrzeit, Trassenpreis). Auch die **Stammdatenressource** `/infrastrukturen`

@@ -73,7 +73,7 @@ export function registerDemandRoutes(app: FastifyInstance, deps: DemandRouteDepe
     async (request) => { const { worldId, operatorId } = request.params; const accountId = await authorizeDemand(deps, request, worldId, operatorId); return spfv().catalog({ worldId, operatorId, accountId }); },
   );
   app.post<{ Params: { worldId: string; operatorId: string }; Body: unknown }>(
-    "/worlds/:worldId/operators/:operatorId/spfv/preview", { preHandler: deps.authenticate, errorHandler: demandRouteError, bodyLimit: 16_384, schema: { params: params(["worldId", "operatorId"]), body: { type: "object" } } },
+    "/worlds/:worldId/operators/:operatorId/spfv/preview", { preHandler: deps.authenticate, errorHandler: demandRouteError, bodyLimit: 131_072, schema: { params: params(["worldId", "operatorId"]), body: { type: "object" } } },
     async (request) => { const { worldId, operatorId } = request.params; const accountId = await authorizeDemand(deps, request, worldId, operatorId);
       const draft = parseSpfvDraft(request.body);
       await deps.guardPlanning?.(request, worldId, operatorId, demandHash(draft));

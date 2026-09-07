@@ -16,6 +16,7 @@ import { requestWorldAccess, type AccountRecord } from "@zugfolge/identity";
 import {
   PLANNING_COORDINATE_AUTHORITY_SCHEMA,
   PLANNING_PLAYER_PATH_REQUEST_SCHEMA,
+  type PlanningInfrastructureRelease,
 } from "@zugfolge/planning-worker";
 import type {
   FleetAuthorityRelease,
@@ -480,8 +481,10 @@ describe("produktive M3-Planning-Routen", () => {
   let accountA: AccountRecord;
   let accountB: AccountRecord;
   let authority: AccountRecord;
+  let routeRelease: PlanningInfrastructureRelease | undefined;
 
   beforeEach(async () => {
+    routeRelease = undefined;
     client = new PGlite();
     db = drizzle(client, { schema });
     await migrate(db, { migrationsFolder: MIGRATIONS_FOLDER });
@@ -525,6 +528,7 @@ describe("produktive M3-Planning-Routen", () => {
       simulationIngestToken: internalToken,
       planningAuthorityAccountIds: { [worldA]: authority.id },
       fleetRuntime: planningFleetRuntime,
+      planningInfrastructureForWorld: () => routeRelease,
     });
     await app.ready();
   });
@@ -542,6 +546,41 @@ describe("produktive M3-Planning-Routen", () => {
       payload: body,
     });
   }
+
+  it("behandelt eine leere Fahrwegvorgabe wie eine normale Fahrt ohne Katalogabhängigkeit", async () => {
+    const result = await submitPath("account-a", { ...pathRequest("empty-route", "train", 1), viaStationIds: [] });
+    expect(result.statusCode).toBe(202);
+    expect(result.json().payload.stops).toEqual([]);
+  });
+
+  it("liefert nur den aktiven weltgebundenen Fahrwegkatalog und prüft importierte Punkte vor der Queue", async () => {
+    const catalogUrl = `/worlds/${worldA}/planning/route-catalog`;
+    const headers = { authorization: "Bearer account-a" };
+    expect((await app.inject({ url: catalogUrl })).statusCode).toBe(401);
+    expect((await app.inject({ url: catalogUrl, headers: { authorization: "Bearer foreign" } })).statusCode).toBe(403);
+    expect((await app.inject({ url: catalogUrl, headers })).statusCode).toBe(503);
+    const routed = { ...pathRequest("imported", "train", 1), viaStationIds: ["mitte"] };
+    expect((await submitPath("account-a", routed)).statusCode).toBe(503);
+    routeRelease = { schemaVersion: "planning.infrastructure-release/v1", worldId: worldA, releaseId: "fixture-route-v1",
+      sourceId: "synthetic-test", corridorId: "test", corridorName: "Testkorridor",
+      stations: ["leipzig", "mitte", "halle"].map((id, index) => ({ id, code: `TEST${index}`, name: id,
+        numericId: index + 1, distanceMm: index * 100_000, latitudeE7: 510_000_000, longitudeE7: 120_000_000,
+        stationTrackNumericId: index + 10, stationTrackLengthMm: 200_000, stationMaximumSpeedKph: 100 })),
+      segments: [] };
+    const catalog = await app.inject({ url: catalogUrl, headers });
+    expect(catalog.statusCode).toBe(200);
+    expect(catalog.json()).toEqual({ worldId: worldA, releaseId: "fixture-route-v1", segments: [],
+      stations: routeRelease.stations.map(({ id, code, name }) => ({ id, code, name })) });
+    routeRelease = { ...routeRelease, worldId: worldB };
+    expect((await app.inject({ url: catalogUrl, headers })).statusCode).toBe(503);
+    expect((await submitPath("account-a", routed)).statusCode).toBe(503);
+    routeRelease = { ...routeRelease, worldId: worldA };
+    expect((await submitPath("account-a", { ...routed, viaStationIds: ["outside"] })).statusCode).toBe(409);
+    expect(await db.select().from(simulationCommands)).toHaveLength(0);
+    const accepted = await submitPath("account-a", routed);
+    expect(accepted.statusCode).toBe(202);
+    expect(accepted.json().payload).toMatchObject({ viaStationIds: ["mitte"], stops: [], worldId: worldA });
+  });
 
   it("bindet Welt und zwei aktive Konten serverseitig und validiert exakt", async () => {
     const bodyA = pathRequest("request-a", "train-a", 26801);

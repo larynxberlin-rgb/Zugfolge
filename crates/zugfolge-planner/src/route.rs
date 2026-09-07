@@ -1,6 +1,6 @@
 //! Laufwegkandidaten — die erste Hälfte von **M3.4**.
 //!
-//! Ein Trassenantrag nennt Anfang, Ziel und Halte. Welche **Gleise** ein Zug
+//! Ein Trassenantrag nennt Anfang, Ziel, Halte und optionale geordnete Fahrwegpunkte. Welche **Gleise** ein Zug
 //! dabei befährt, ist offen: Auf einer zweigleisigen Strecke gibt es je
 //! Richtung mindestens eines, in einem Bahnhof mehrere Bahnsteiggleise. Genau
 //! diese Wahl ist der Laufwegkandidat, und sie ist keine Kosmetik: Zwei Züge,
@@ -11,7 +11,7 @@
 //!
 //! 1. **Betriebsstellenfolgen** vom Anfang zum Ziel aufzählen, ohne eine
 //!    Betriebsstelle zweimal zu berühren, und nur die behalten, die jeden
-//!    beantragten Halt berühren.
+//!    beantragten Halt und die Fahrwegpunkte in ihrer Reihenfolge berühren.
 //! 2. **Gleise wählen**: je Betriebsstelle ein befahrbares Gleis, je Kante ein
 //!    Streckengleis, das die Fahrtrichtung zulässt. An einem beantragten Halt
 //!    kommen nur Gleise mit einem Bahnsteig in Frage, der die Zuglänge
@@ -30,13 +30,13 @@ use zugfolge_infra::{
 };
 
 use crate::error::PlannerError;
-use crate::request::PathRequest;
+use crate::request::{MAX_VIA_POINTS, PathRequest};
 
 /// Wie viele Betriebsstellen ein Laufweg höchstens berührt.
 ///
 /// Die Schranke hält die Aufzählung endlich, auch in einem dicht vermaschten
-/// Netz. Ein Laufweg über mehr als 64 Betriebsstellen ist kein Laufweg mehr,
-/// sondern ein Rundkurs.
+/// Netz. Für ausdrücklich geordnete Fahrwege gilt eine Grenze von 512 Punkten,
+/// damit auch nicht ausdrücklich genannte Betriebsstellen dazwischen passen.
 const MAX_POINTS: usize = 64;
 
 /// Wie viele Betriebsstellenfolgen die Suche höchstens sammelt.
@@ -142,11 +142,23 @@ fn punktfolgen(graph: &OperatingGraph, request: &PathRequest) -> Vec<Vec<Operati
         request.stops().iter().map(|halt| halt.point()).collect();
 
     let mut gefunden: Vec<Vec<OperatingPointId>> = Vec::new();
-    let mut warteschlange: VecDeque<Vec<OperatingPointId>> = VecDeque::new();
-    warteschlange.push_back(vec![request.origin()]);
+    let via_points = request.via_points();
+    if via_points
+        .iter()
+        .any(|point| graph.operating_point(*point).is_none())
+    {
+        return Vec::new();
+    }
+    let max_points = if via_points.is_empty() {
+        MAX_POINTS
+    } else {
+        MAX_VIA_POINTS + 2
+    };
+    let mut warteschlange: VecDeque<(Vec<OperatingPointId>, usize)> = VecDeque::new();
+    warteschlange.push_back((vec![request.origin()], 0));
     let mut betrachtet = 0_usize;
 
-    while let Some(pfad) = warteschlange.pop_front() {
+    while let Some((pfad, next_via)) = warteschlange.pop_front() {
         betrachtet = betrachtet.saturating_add(1);
         if betrachtet > MAX_EXPANSIONS {
             break;
@@ -156,7 +168,7 @@ fn punktfolgen(graph: &OperatingGraph, request: &PathRequest) -> Vec<Vec<Operati
         };
 
         if aktuell == request.destination() {
-            if pflicht.iter().all(|halt| pfad.contains(halt)) {
+            if next_via == via_points.len() && pflicht.iter().all(|halt| pfad.contains(halt)) {
                 gefunden.push(pfad);
                 if gefunden.len() >= MAX_POINT_SEQUENCES {
                     break;
@@ -166,7 +178,7 @@ fn punktfolgen(graph: &OperatingGraph, request: &PathRequest) -> Vec<Vec<Operati
             // dort, wo der Antrag ihn enden lässt.
             continue;
         }
-        if pfad.len() >= MAX_POINTS {
+        if pfad.len() >= max_points {
             continue;
         }
 
@@ -174,9 +186,21 @@ fn punktfolgen(graph: &OperatingGraph, request: &PathRequest) -> Vec<Vec<Operati
             if pfad.contains(&nachbar) {
                 continue;
             }
+            let following_via =
+                if let Some(index) = via_points.iter().position(|point| *point == nachbar) {
+                    if index != next_via {
+                        continue;
+                    }
+                    next_via.saturating_add(1)
+                } else {
+                    next_via
+                };
+            if nachbar == request.destination() && following_via != via_points.len() {
+                continue;
+            }
             let mut naechster = pfad.clone();
             naechster.push(nachbar);
-            warteschlange.push_back(naechster);
+            warteschlange.push_back((naechster, following_via));
         }
     }
 
@@ -359,6 +383,48 @@ mod tests {
             PathTolerances::EXACT,
         )
         .expect("gültiger Antrag")
+    }
+
+    #[test]
+    fn geordnete_fahrwegpunkte_binden_den_laufweg_ohne_halt_oder_bahnsteigpflicht() {
+        let infra = reference_infrastructure();
+        let request = antrag(freight_train(), 1, 4, &[])
+            .with_via_points(vec![OperatingPointId::new(2), OperatingPointId::new(3)])
+            .expect("gültige Durchfahrtpunkte");
+        let routes =
+            enumerate_itineraries(infra.graph(), &request, 8).expect("Durchfahrt ohne Bahnsteig");
+        assert!(!routes.is_empty());
+        for route in routes {
+            assert_eq!(route.total_dwell_s(), 0);
+            assert_eq!(route.stops().count(), 0);
+        }
+        for points in [vec![3, 2], vec![99]] {
+            let invalid_route = antrag(regional_train(), 1, 4, &[])
+                .with_via_points(points.into_iter().map(OperatingPointId::new).collect())
+                .expect("strukturell gültige Durchfahrtpunkte");
+            assert!(matches!(
+                enumerate_itineraries(infra.graph(), &invalid_route, 8),
+                Err(PlannerError::NoRoute { .. })
+            ));
+        }
+        let stopping = antrag(regional_train(), 1, 4, &[(2, 60)])
+            .with_via_points(vec![OperatingPointId::new(2), OperatingPointId::new(3)])
+            .unwrap();
+        assert!(
+            enumerate_itineraries(infra.graph(), &stopping, 8)
+                .unwrap()
+                .iter()
+                .all(|route| route.total_dwell_s() == 60)
+        );
+    }
+
+    #[test]
+    fn fahrwegpunkte_duerfen_weder_endpunkte_noch_wiederholungen_enthalten() {
+        for points in [vec![1], vec![4], vec![2, 2], (10..521).collect()] {
+            let result = antrag(regional_train(), 1, 4, &[])
+                .with_via_points(points.into_iter().map(OperatingPointId::new).collect());
+            assert!(matches!(result, Err(PlannerError::InvalidViaPoints(_))));
+        }
     }
 
     #[test]

@@ -248,11 +248,11 @@
       "titel": "Trassenfinder — Trassenpreis- und Fahrzeitstruktur",
       "status": "entwicklung",
       "lizenz": "Nutzungsbedingungen des Betreibers, siehe Hinweis",
-      "bereitstellung": "Öffentlicher Dienst des Infrastrukturbetreibers; genutzt ausschließlich in der Entwicklung.",
+      "bereitstellung": "Öffentlicher Dienst des Infrastrukturbetreibers für Entwicklungs-Kalibrierung; seit Projektauftrag vom 2026-09-07 zusätzlich optional vom Spieler im eigenen Browser geöffnet. Kein Aufruf durch Server oder Simulation.",
       "attribution": "nicht in Auslieferung enthalten (kein Import)",
-      "nutzung": "Modellierungscheckliste für PathRequest und EconomyRelease sowie manuelle Einzelreferenz für unmittelbar zugeordnete Entwicklungs-Kalibrierungen. Zulässig ist nur ein minimales eigenes Ergebnisprotokoll der konkreten Webabfrage; keine Rohantwort, keine systematische Referenzsammlung und niemals eine Laufzeitabhängigkeit (E10, Invariante 6).",
+      "nutzung": "Modellierungscheckliste für PathRequest und EconomyRelease sowie manuelle Einzelreferenz für unmittelbar zugeordnete Entwicklungs-Kalibrierungen. Getrennter Spielerpfad: lokale, unmittelbare Verarbeitung einer selbst ausgewählten Laufweg-CSV zu freigegebenen weltgebundenen Betriebsstellen-IDs als Fahrwegwunsch. Keine Rohdatei auf dem Server, keine fremden Infrastruktur-, Zeit-, Preis- oder Energiedaten, keine systematische Sammlung und niemals eine Laufzeitabhängigkeit (E10, Invariante 6).",
       "entscheidung": { "datum": "2026-08-06", "pruefer": "Sebastian Barowski" },
-      "hinweis": "Der API-Disclaimer schließt zweckfremde Nutzung und Speicherung ohne zeitlich unmittelbare Nutzung aus. Deshalb kein API-Abruf: Bis zu einer ausdrücklichen Betreiberfreigabe sind nur manuelle Einzelabfragen in der Weboberfläche und ein minimales, unmittelbar an die konkrete Kalibrierung gebundenes eigenes Ergebnisprotokoll zulässig. Keine Rohantworten oder systematische Sammlung. Werte sind laut Betreiber unverbindliche Richtwerte aus vereinfachter Berechnung — keine Referenzwahrheit. Ausführlich: docs/rechte.md 4.",
+      "hinweis": "Der API-Disclaimer schließt zweckfremde Nutzung und Speicherung ohne zeitlich unmittelbare Nutzung aus. Deshalb kein API-Abruf und keine Rohantworten oder systematische Sammlung. Der Projektauftrag vom 2026-09-07 erweitert E10 um die optionale lokale Eingabehilfe für eigene Fahrwegwünsche; er behauptet keine Betreiberlizenz oder Freigabe zur Wiederveröffentlichung des Exports. Dieser Quellenstatus bleibt für den externen Datenbestand unverändert. Werte sind unverbindliche Richtwerte, keine Referenzwahrheit. Ausführlich: docs/rechte.md 4 und docs/trassenfinder-routenimport.md.",
       "milestone": "M1.13"
     },
     {

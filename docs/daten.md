@@ -98,7 +98,7 @@ Zwei Grenzen bleiben unabhängig von der Rechtslage bestehen:
   aus. Für einen Größenordnungsabgleich genau richtig, für eine Referenzwahrheit
   nicht.
 
-Sinnvolle Nutzung: **in der Entwicklung manuell gegen einzelne Richtwerte
+Für die Entwicklung gilt weiter: **manuell gegen einzelne Richtwerte
 kalibrieren, im Betrieb ohne ihn auskommen.** Eine solche Abfrage kann ein
 minimales, unmittelbar an den konkreten Kalibrierlauf gebundenes eigenes
 Ergebnisprotokoll erhalten. Automatisierter Abruf, Rohantworten und eine
@@ -107,13 +107,27 @@ Rechte-Gate (`rechte.md` 4; Eintrag `trassenfinder` im Quellenregister, Status
 `entwicklung`). Eine gegen denselben Einzelwert eingestellte Rechnung ist noch
 keine unabhängige Validierung.
 
+**Optionale Spielereingabe seit 07.09.2026:** Der ausdrückliche Nutzerauftrag
+erweitert E10 um einen selbst geöffneten Trassenfinder und die unmittelbar
+anschließende lokale Verarbeitung seines „CSV-Exports des Laufwegs“. Nur die
+geordnete Betriebsstellenfolge wird als Fahrwegwunsch gegen native Stationen
+des gepinnten Weltreleases geprüft. Die Rohdatei bleibt im Browser, wird nicht
+hochgeladen oder archiviert und wird keine Infrastruktur- oder Referenzquelle.
+Unbekannte, mehrdeutige und außerhalb des Spielnetzes liegende Punkte verhindern
+die gesamte Übernahme. Zwischenpunkte bedeuten Durchfahrt; gewünschte Halte
+bleiben eigene Eingaben. Fremde Zeiten, Kosten, Physik und Infrastruktur werden
+nicht übernommen. Format, Ablauf und Grenzen stehen in
+[Trassenfinder-Routenimport](trassenfinder-routenimport.md); die getrennte
+Rechteentscheidung steht in [Rechte-Gate](rechte.md#4-trassenfinder-nutzungsbedingungen-e10).
+
 **Davon getrennt (E22):** Dieselbe API stellt unter `/infrastrukturen` eine
 reine Stammdatenressource bereit — Betriebsstellen und Streckensegmente,
-gebunden an ein Fahrplanjahr statt an einen laufenden Abruf. Ihre bestehende
-Rechtefreigabe bleibt unverändert; sie ist im Deutschland-Quellvertrag jedoch
-nur eine optionale Gegenprüfung. OSM-PBF, offizielles DB-InfraGO-Open-Data,
-OpenStation, GTFS und DEM müssen den Jahreslauf ohne diesen Snapshot tragen.
-Die beiden Grenzen oben gelten unverändert für die Routensuche.
+gebunden an ein Fahrplanjahr statt an einen laufenden Abruf. Mangels
+veröffentlichter Nutzungsbedingungen bleibt diese Quelle gemäß `rechte.md`
+ausschließlich Entwicklungs- und Lineagereferenz; sie ist kein freigegebener
+Import und kein Infrastruktur-Faktenlieferant. OSM-PBF, offizielles
+DB-InfraGO-Open-Data, OpenStation, GTFS und DEM tragen den Jahreslauf ohne diesen
+Snapshot. Der lokale Routenentwurf ändert diese Quellengrenze nicht.
 
 ## 4. Trassenpreissystem als Vorbild für den `EconomyRelease`
 

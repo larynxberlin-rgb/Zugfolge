@@ -55,6 +55,24 @@ function result(worldId: string, revision = 1): string {
 }
 
 describe("native M3 ABI boundary", () => {
+  it("transportiert geordnete Durchfahrtpunkte ohne neue Halte oder Legacy-Felder", () => {
+    const seen: PlanningCoordinateCommand[] = [];
+    const runtime = planningRuntimeFromAddon({
+      coordinatePlanningRun: (json) => { seen.push(JSON.parse(json) as PlanningCoordinateCommand); return result(input.worldId); },
+      applyPlanningAlternative: () => result(input.worldId, 2),
+    });
+    runtime.coordinate(input);
+    runtime.coordinate({ ...input, requests: [{ ...input.requests[0]!, viaStationIds: ["z", "c"] }] });
+    expect(seen[0]?.requests[0]).not.toHaveProperty("viaStationIds");
+    expect(seen[1]?.requests[0]?.viaStationIds).toEqual(["z", "c"]);
+    expect(seen[1]?.requests[0]?.stops).toEqual([]);
+    for (const viaStationIds of [null, ["a"], ["b"], [" z"], ["z", "z"], Array.from({ length: 511 }, (_, index) => `point-${index}`)]) {
+      expect(() => runtime.coordinate({ ...input,
+        requests: [{ ...input.requests[0]!, viaStationIds }] } as unknown as PlanningCoordinateCommand)).toThrow(/viaStationIds/);
+    }
+    expect(seen).toHaveLength(2);
+  });
+
   it("rejects foreign baselines, invalid validity and unbound replacements before entering Rust", () => {
     let calls = 0;
     const runtime = planningRuntimeFromAddon({ coordinatePlanningRun: () => { calls += 1; return result(input.worldId); },

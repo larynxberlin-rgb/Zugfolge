@@ -2,6 +2,7 @@ import { railwayBrand, railwayNavigation, badge, emptyState, escapeHtml, icon, t
 import type {
   PlanningConflictProjection,
   PlanningProjectionV1,
+  PlanningResultProjection,
   PlanningTrainProjection,
 } from "@zugfolge/planning-projection";
 
@@ -19,6 +20,7 @@ import {
   timeExtentS,
   timeX,
 } from "./diagram.js";
+import "./planning-adjustments.css";
 
 export interface ProjectionViewOptions {
   readonly density: Density;
@@ -123,7 +125,10 @@ ${projection.trains
   .map((train) => {
     const selected = train.id === options.selectedTrainId;
     const firstCall = train.calls[0]!;
-    return `<g class="train ${selected ? "train--selected" : ""}" tabindex="0" role="button" aria-pressed="${selected}" aria-label="Zuglauf ${escapeHtml(train.number)} auswählen" data-train="${escapeHtml(train.id)}"><polyline points="${pathPoints(projection, train)}"/><text x="${timeX(projection, firstCall.timeS) + 5}" y="${stationY(projection, firstCall.stationId) - 6}">${escapeHtml(train.number)} ${train.direction === "with-chainage" ? "→" : "←"}</text></g>`;
+    const adjusted = train.planning?.status === "allocated" && (train.planning.adjustments.length > 0 || train.planning.routeChange !== undefined);
+    const rejected = train.planning?.status === "rejected";
+    const status = adjusted ? " · Zugewiesene Trasse angepasst" : rejected ? " · Keine Trasse zugeteilt" : train.planning?.status === "requested" ? " · Wunschlage, noch nicht zugeteilt" : "";
+    return `<g class="train ${selected ? "train--selected" : ""}${adjusted ? " train--adjusted" : ""}${rejected ? " train--rejected" : ""}" tabindex="0" role="button" aria-pressed="${selected}" aria-label="Zuglauf ${escapeHtml(train.number)} auswählen${status}" data-train="${escapeHtml(train.id)}"><polyline points="${pathPoints(projection, train)}"/><text x="${timeX(projection, firstCall.timeS) + 5}" y="${stationY(projection, firstCall.stationId) - 6}">${escapeHtml(train.number)} ${train.direction === "with-chainage" ? "→" : "←"}${adjusted ? " △" : rejected ? " !" : ""}</text></g>`;
   })
   .join("")}
 ${activeConflict === undefined ? "" : `<text class="conflict-marker active-label" x="${timeX(projection, activeConflict.window.startS)}" y="448">! ${escapeHtml(conflictLabels[activeConflict.kind])} ${formatTimeS(activeConflict.window.startS, projection.timeBasis)}</text>`}</svg>`;
@@ -141,6 +146,31 @@ function renderBoundaryWindows(train: PlanningTrainProjection, projection: Plann
   return `<div class="boundary-windows"><p class="eyebrow">Durchgehende Fahrt</p><h3>Feste Grenzfenster</h3><p>Sie planen die Trasse innerhalb der Welt. Der gepinnte Infrastrukturrelease gibt die Übergabe am Grenzportal vor; der Außenlauf bleibt Teil derselben Zugfahrt und ist nicht bearbeitbar.</p><dl>${train.boundaryWindows.map((window) => `<div><dt>${window.direction === "entry" ? "Einfahrt an der Netzgrenze" : "Ausfahrt an der Netzgrenze"}<details><summary>Technische Details</summary><code>${escapeHtml(window.portalId)}</code></details></dt><dd><strong>${formatTimeS(window.targetS, projection.timeBasis)}</strong><br>${formatTimeS(window.earliestS, projection.timeBasis)}–${formatTimeS(window.latestS, projection.timeBasis)}</dd></div>`).join("")}</dl></div>`;
 }
 
+function renderPlanningResult(result: PlanningResultProjection | undefined, projection: PlanningProjectionV1, demoMode = false): string {
+  if (result === undefined) return "";
+  const changed = result.adjustments.length > 0 || result.routeChange !== undefined;
+  const status = result.status === "allocated" ? (changed ? "changed" : "allocated")
+    : result.status === "proposed" ? "requested" : result.status;
+  const label = { allocated: "Trasse zugeteilt", proposed: "Vorschlag · noch nicht übernommen", requested: "Noch keine Trasse zugeteilt", rejected: "Trasse nicht zugeteilt" }[result.status];
+  const title = result.status === "allocated" ? (changed ? "So wurde deine Planung angepasst" : "Deine Planzeiten")
+    : result.status === "proposed" ? "Diese Anpassungen werden vorgeschlagen" : result.status === "rejected" ? "Keine passende Trasse" : "Deine Wunschlage";
+  const plannedLabel = result.status === "proposed" ? "Vorgeschlagene Abfahrt" : "Zugewiesene Abfahrt";
+  const description = { allocated: changed ? "Die zugeteilte Trasse enthält die folgenden Änderungen gegenüber deinem Antrag." : "Die Trasse wurde mit deiner gewünschten Abfahrt zugeteilt.",
+    proposed: "Die Änderungen gelten erst, wenn du diese Alternative übernimmst.", requested: "Die dargestellte Wunschlage ist noch nicht zugeteilt.",
+    rejected: "Für diesen Antrag wurde keine zulässige Trasse zugeteilt. Passe deine Fahrtplanung an." }[result.status];
+  const changes = result.adjustments.map((change) => {
+    const station = projection.stations.find((station) => station.id === change.stationId)?.name ?? change.stationId;
+    const name = { "departure-shift": "Abfahrt verschoben", "operational-stop": "Zusätzlicher Betriebshalt", "dwell-extension": "Aufenthalt verlängert", "running-time-extension": "Fahrzeitverlängerung insgesamt" }[change.kind];
+    const values = change.kind === "departure-shift"
+      ? `Gewünscht: ${formatTimeS(change.requestedS, projection.timeBasis)} → ${result.status === "proposed" ? "Vorschlag" : "Zugewiesen"}: ${formatTimeS(change.plannedS, projection.timeBasis)}`
+      : change.kind === "running-time-extension" ? `Ausgangsfahrtdauer: ${formatDurationS(change.requestedS)} → ${result.status === "proposed" ? "Vorschlag" : "Zugewiesen"}: ${formatDurationS(change.plannedS)} Gesamtfahrtdauer`
+      : change.kind === "operational-stop" ? `Gewünscht: Durchfahrt → ${result.status === "proposed" ? "Vorschlag" : "Zugewiesen"}: ${formatDurationS(change.plannedS)} Aufenthalt`
+        : `Beantragt: mindestens ${formatDurationS(change.requestedS)} → ${result.status === "proposed" ? "Vorschlag" : "Zugewiesen"}: ${formatDurationS(change.plannedS)} Aufenthalt`;
+    return `<li><h4><span>${name} · ${escapeHtml(station)}</span><span class="planning-adjustment-delta" aria-label="Änderung ${formatSignedShiftS(change.plannedS - change.requestedS)}">${formatSignedShiftS(change.plannedS - change.requestedS)}</span></h4><p class="planning-adjustment-values">${values}</p><p>${escapeHtml(change.explanation)}</p></li>`;
+  }).join("") + (result.routeChange === undefined ? "" : `<li><h4><span>Fahrweg angepasst</span><span class="planning-adjustment-delta">+${formatDistanceMm(result.routeChange.additionalDistanceMm)} km</span></h4><p class="planning-adjustment-values">Zusätzlicher Weg gegenüber der Ausgangstrasse: ${formatDistanceMm(result.routeChange.additionalDistanceMm)} km</p><p>${escapeHtml(result.routeChange.explanation)}</p></li>`);
+  return `<section class="planning-adjustments planning-adjustments--${status}" aria-label="${escapeHtml(title)}"><p class="planning-result"><span aria-hidden="true">${result.status === "rejected" ? "!" : changed ? "△" : "○"}</span>${demoMode ? "Beispieldaten · " : ""}${label}</p><h3>${title}</h3><p>${description}</p><dl class="planning-departures"><div><dt>Gewünschte Abfahrt</dt><dd>${formatTimeS(result.requestedDepartureS, projection.timeBasis)}</dd></div><div><dt>${plannedLabel}</dt><dd>${result.plannedDepartureS === null ? "Nicht zugeteilt" : formatTimeS(result.plannedDepartureS, projection.timeBasis)}</dd></div></dl>${changes === "" ? "" : `<ul class="planning-adjustment-list" aria-label="Änderungen gegenüber deinem Antrag">${changes}</ul>`}</section>`;
+}
+
 function renderInspector(
   projection: PlanningProjectionV1,
   train: PlanningTrainProjection,
@@ -150,8 +180,10 @@ function renderInspector(
   const conflict =
     available.find((candidate) => candidate.id === options.selectedConflictId) ?? available[0];
   const boundaryWindows = renderBoundaryWindows(train, projection);
+  const planning = renderPlanningResult(train.planning, projection, options.demoMode);
   if (conflict === undefined) {
-    return `<aside class="inspector zf-surface"><div class="no-conflict">${badge("Konfliktfrei", "neutral", "check")}<h2>${escapeHtml(train.number)}</h2><p>Die Strecke ist frei für diesen Zug. Dein Fahrplan passt zu den anderen Fahrten.</p></div>${boundaryWindows}</aside>`;
+    const unresolved = train.planning?.status === "requested" || train.planning?.status === "rejected";
+    return `<aside class="inspector zf-surface"><div class="no-conflict">${unresolved ? "" : badge("Konfliktfrei", "neutral", "check")}<h2>${escapeHtml(train.number)}</h2>${unresolved ? "" : "<p>Die Strecke ist frei für diesen Zug. Dein Fahrplan passt zu den anderen Fahrten.</p>"}</div>${planning}${boundaryWindows}</aside>`;
   }
   const firstTrain = trainById(projection, conflict.trainIds[0])!;
   const secondTrain = trainById(projection, conflict.trainIds[1])!;
@@ -159,8 +191,8 @@ function renderInspector(
   const proposal =
     alternative === null
       ? `<div class="proposal proposal--unavailable"><p class="eyebrow">DEINE OPTIONEN</p><h3>Noch keine passende Alternative</h3><p>Mit den gewählten Zeiten lässt sich dieser Konflikt noch nicht lösen. Passe deine Fahrtplanung an.</p></div>`
-      : `<div class="proposal"><p class="eyebrow">Zulässige Alternative</p><h3>Zeitlage ${formatSignedShiftS(alternative.departureShiftS)}</h3><p>${escapeHtml(alternative.explanation)}</p><button class="zf-button primary" data-apply-alternative="${escapeHtml(alternative.alternativeId)}"${options.applyingAlternativeId === alternative.alternativeId ? " disabled" : ""}>${options.applyingAlternativeId === alternative.alternativeId ? "Planung wird geprüft …" : "Neue Zeit übernehmen"} ${icon("chevron")}</button></div>`;
-  return `<aside class="inspector zf-surface"><div class="inspector-head"><div>${badge(conflictLabels[conflict.kind], "danger", "alert")}<span class="counter">${available.indexOf(conflict) + 1} von ${available.length}</span></div><h2>${escapeHtml(conflict.resource.label)}</h2><p>${formatTimeS(conflict.window.startS, projection.timeBasis)}–${formatTimeS(conflict.window.endS, projection.timeBasis)}</p></div><div class="conflict-nav">${available
+      : `<div class="proposal"><p class="eyebrow">Zulässige Alternative · ${escapeHtml(trainById(projection, alternative.trainId)?.number ?? alternative.trainId)}</p>${alternative.planning === undefined ? `<h3>Zeitlage ${formatSignedShiftS(alternative.departureShiftS)}</h3>` : renderPlanningResult(alternative.planning, projection, options.demoMode)}<p>${escapeHtml(alternative.explanation)}</p><button class="zf-button primary" data-apply-alternative="${escapeHtml(alternative.alternativeId)}"${options.applyingAlternativeId === alternative.alternativeId ? " disabled" : ""}>${options.applyingAlternativeId === alternative.alternativeId ? "Planung wird geprüft …" : alternative.planning === undefined ? "Neue Zeit übernehmen" : "Angepasste Trasse übernehmen"} ${icon("chevron")}</button></div>`;
+  return `<aside class="inspector zf-surface">${planning}<div class="inspector-head"><div>${badge(conflictLabels[conflict.kind], "danger", "alert")}<span class="counter">${available.indexOf(conflict) + 1} von ${available.length}</span></div><h2>${escapeHtml(conflict.resource.label)}</h2><p>${formatTimeS(conflict.window.startS, projection.timeBasis)}–${formatTimeS(conflict.window.endS, projection.timeBasis)}</p></div><div class="conflict-nav">${available
     .map(
       (candidate) =>
         `<button class="zf-button ${candidate.id === conflict.id ? "pressed" : ""}" aria-pressed="${candidate.id === conflict.id}" data-conflict="${escapeHtml(candidate.id)}">${escapeHtml(conflictLabels[candidate.kind])}</button>`,
@@ -204,5 +236,6 @@ export function renderProjection(
     return `<a class="skip" href="#planner-empty">Zum Inhalt</a><div class="shell planner-shell">${renderHeader(projection, options)}<main>${demoBanner}${context}${message}<section id="planner-empty" class="zf-surface empty-card" tabindex="-1">${emptyState("Dein Fahrplan wartet auf dich.", "Für diese Strecke gibt es noch keine geplanten Fahrten. Melde im Bereich Betrieb deine erste Verbindung an.")}</section></main></div>`;
   }
   const selectedTrain = trainById(projection, options.selectedTrainId) ?? projection.trains[0]!;
-  return `<a class="skip" href="#diagram-card">Zum Bildfahrplan</a><div class="shell planner-shell">${renderHeader(projection, options)}<main>${demoBanner}${context}${message}<section class="workspace"><article id="diagram-card" class="diagram-card zf-surface" role="region" aria-labelledby="diagram-title" tabindex="-1"><div class="legend"><span><i class="line selected"></i> ausgewählt</span><span><i class="line"></i> Zuglauf</span><span><i class="hatch"></i> Konflikt !</span></div>${renderDiagram(projection, { ...options, selectedTrainId: selectedTrain.id })}</article>${renderInspector(projection, selectedTrain, options)}</section></main></div>`;
+  const adjustmentsLegend = `${projection.trains.some((train) => train.planning?.status === "allocated" && (train.planning.adjustments.length > 0 || train.planning.routeChange !== undefined)) ? '<span><i class="line adjusted"></i> angepasst △</span>' : ""}${projection.trains.some((train) => train.planning?.status === "rejected") ? '<span><i class="line rejected"></i> nicht zugeteilt !</span>' : ""}`;
+  return `<a class="skip" href="#diagram-card">Zum Bildfahrplan</a><div class="shell planner-shell">${renderHeader(projection, options)}<main>${demoBanner}${context}${message}<section class="workspace"><article id="diagram-card" class="diagram-card zf-surface" role="region" aria-labelledby="diagram-title" tabindex="-1"><div class="legend"><span><i class="line selected"></i> ausgewählt</span><span><i class="line"></i> Zuglauf</span>${adjustmentsLegend}<span><i class="hatch"></i> Konflikt !</span></div>${renderDiagram(projection, { ...options, selectedTrainId: selectedTrain.id })}</article>${renderInspector(projection, selectedTrain, options)}</section></main></div>`;
 }

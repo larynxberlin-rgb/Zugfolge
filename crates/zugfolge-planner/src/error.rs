@@ -20,6 +20,8 @@ pub enum PlannerError {
     TrivialRequest(OperatingPointId),
     /// Eine Betriebsstelle ist zweimal als Halt genannt.
     DuplicateStop(OperatingPointId),
+    /// Die geordneten Fahrwegpunkte überschreiten die Grenze oder wiederholen Betriebsstellen.
+    InvalidViaPoints(&'static str),
     /// Eine Toleranz oder Haltezeit hat einen unzulässigen Wert.
     InvalidTolerance {
         /// Welcher Wert gemeint ist.
@@ -30,7 +32,7 @@ pub enum PlannerError {
     /// Ein Grenzfenster ist leer, ruecklaeufig oder doppelt belegt.
     InvalidBoundaryWindow(&'static str),
     /// Zwischen den beiden Betriebsstellen führt kein Laufweg, der alle
-    /// beantragten Halte bedient.
+    /// beantragten Halte sowie die geordneten Fahrwegpunkte bedient.
     NoRoute {
         /// Anfangsbetriebsstelle.
         origin: OperatingPointId,
@@ -82,6 +84,9 @@ impl fmt::Display for PlannerError {
             Self::InvalidTolerance { what, value } => {
                 write!(formatter, "{what} hat den unzulässigen Wert {value}")
             }
+            Self::InvalidViaPoints(detail) => {
+                write!(formatter, "Fahrwegpunkte sind ungültig: {detail}")
+            }
             Self::InvalidBoundaryWindow(detail) => {
                 write!(formatter, "Grenzfenster ist ungültig: {detail}")
             }
@@ -91,7 +96,7 @@ impl fmt::Display for PlannerError {
             } => write!(
                 formatter,
                 "zwischen {origin} und {destination} führt kein Laufweg, der alle \
-                 beantragten Halte bedient"
+                 beantragten Halte sowie die geordneten Fahrwegpunkte bedient"
             ),
             Self::UnservableStop(point) => write!(
                 formatter,

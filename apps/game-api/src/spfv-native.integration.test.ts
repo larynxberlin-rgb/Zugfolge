@@ -100,7 +100,7 @@ nativeIt("verknüpft HTTP, native Flotte, Nachfrage, Trassenkonkurrenz und Resto
       request.identity = { keycloakSubject: "native-spfv-owner", displayName: "Test" };
     } });
     const path = `/worlds/${WORLD}/operators/${OPERATOR}/spfv`;
-    const draft: SpfvDraft = { name: "Erste Fernlinie", stopIds: ["a", "c"], formationId: "formation", referenceTrainId: "regional-1",
+    const draft: SpfvDraft = { name: "Erste Fernlinie", stopIds: ["a", "c"], viaStationIds: ["b"], formationId: "formation", referenceTrainId: "regional-1",
       headwayS: 300, fareCents: "100", validFromS: 200, validUntilS: 600 };
     const previewResponse = await app.inject({ method: "POST", url: `${path}/preview`, payload: draft });
     expect(previewResponse.statusCode, previewResponse.body).toBe(200);

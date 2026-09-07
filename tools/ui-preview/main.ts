@@ -20,8 +20,12 @@ if (["operations", "program", "reports"].includes(screen)) {
   await import("../../apps/game-web/src/styles.css");
   await import("../../packages/design-system/src/railway.css");
   await import("../../apps/game-web/src/railway-game.css");
+  await import("../../apps/game-web/src/route-import.css");
   root.dataset.density = "control";
-  if (screen === "planner") {
+  if (screen === "planning-adjustments") {
+    const { mountPlanningAdjustmentsPreview } = await import("./planning-adjustments-preview.js");
+    mountPlanningAdjustmentsPreview(root);
+  } else if (screen === "planner") {
     const { renderProjection } = await import("../../apps/game-web/src/view.js");
     const { demoProjection } = await import("../../apps/game-web/src/demo.js");
     root.innerHTML = renderProjection(demoProjection, { density:"control",showBlockingTimes:true,selectedTrainId:demoProjection.trains[0]!.id,selectedConflictId:"",demoMode:true,livemapUrl:"http://127.0.0.1:4173/?screen=map" });
@@ -31,9 +35,12 @@ if (["operations", "program", "reports"].includes(screen)) {
     const { renderJourney } = await import("../../apps/game-web/src/journey.js");
     const { GAME_HINTS } = await import("../../apps/game-web/src/game-hints.js");
     const founding = screen === "foundation" || screen === "entry";
+    const workshop = screen === "workshop" || screen === "route-import";
+    const routePreview = screen === "route-import" ? await import("./route-import-preview.js") : undefined;
     const render = (accepted: boolean) => {
       const restoreView = captureWorkspaceView(root);
-      root.innerHTML = renderJourney({publicWorldId:worldId,busy:false,message:"",activeSection:founding?"world":screen==="workshop"?"operations":screen as never,entryConfirmed:accepted,hasActiveOperator:!founding,activeOperatorId:founding?"":operatorId,livemapUrl:"http://127.0.0.1:4173/?screen=map",operationsCenterUrl:"http://127.0.0.1:4173/?screen=operations",worldContracts:[worldContract] as never,operatorContext:founding?{...playerContext,operators:[]}:playerContext as never,mailbox:mailbox as never,cooperation:{...cooperation,section:screen==="markets"?"markets":screen==="workshop"?"operations":"all",activeOperatorId:founding?"":operatorId} as never});
+      root.innerHTML = renderJourney({publicWorldId:worldId,busy:false,message:"",activeSection:founding?"world":workshop?"operations":screen as never,entryConfirmed:accepted,hasActiveOperator:!founding,activeOperatorId:founding?"":operatorId,livemapUrl:"http://127.0.0.1:4173/?screen=map",operationsCenterUrl:"http://127.0.0.1:4173/?screen=operations",worldContracts:[worldContract] as never,operatorContext:founding?{...playerContext,operators:[]}:playerContext as never,mailbox:mailbox as never,cooperation:{...cooperation,section:screen==="markets"?"markets":workshop?"operations":"all",activeOperatorId:founding?"":operatorId} as never});
+      routePreview?.mountRouteImportPreview(root, worldId);
       bindRailwayTabs(root, location.hash);
       restoreView();
       root.querySelector("#m12-refresh")?.addEventListener("click", () => render(accepted));

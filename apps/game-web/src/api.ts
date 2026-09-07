@@ -10,6 +10,7 @@ import {
   type PlayerOperatorContextV1,
 } from "@zugfolge/player-context";
 import { parseSpfvCatalog, parseSpfvPreview, type SpfvCatalog, type SpfvLineDraft, type SpfvPreview, type SpfvSubmission } from "./spfv.js";
+import { parseRouteCatalog, type RouteCatalog } from "./route-import.js";
 
 export interface AlternativeApplicationOptions {
   readonly queueAttempts?: number;
@@ -734,6 +735,11 @@ export class GameApiClient {
     return typeof this.#accessToken === "string" ? Promise.resolve(this.#accessToken) : this.#accessToken(forceRefresh);
   }
 
+  loadRouteCatalog(worldId: string): Promise<RouteCatalog> {
+    return this.#journeyJson<unknown>(`/worlds/${encodeURIComponent(worldId)}/planning/route-catalog`)
+      .then((value) => parseRouteCatalog(value, worldId));
+  }
+
   loadSpfvCatalog(worldId: string, operatorId: string, referenceTrainId?: string): Promise<SpfvCatalog> {
     const query = new URLSearchParams();
     if (referenceTrainId !== undefined) query.set("referenceTrainId", referenceTrainId);
@@ -981,6 +987,7 @@ export class GameApiClient {
     readonly trainCategory: "long-distance" | "suburban" | "regional" | "freight" | "supplementary";
     readonly originStationId: string;
     readonly destinationStationId: string;
+    readonly viaStationIds?: readonly string[];
     readonly desiredDepartureS: number;
     readonly operatingDays: "daily" | "workdays" | "weekend";
     readonly stops: readonly { readonly stationId: string; readonly minimumDwellS: number }[];

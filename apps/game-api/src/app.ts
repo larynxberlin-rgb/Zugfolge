@@ -161,6 +161,7 @@ import {
   queuePlanningPathRequest,
   type PlanningCoordinateAuthorityBody,
   type PlanningPlayerPathRequestBody,
+  type PlanningInfrastructureRelease,
 } from "@zugfolge/planning-worker";
 import { eraseAccountData, exportAccountData, PersonalDataNotFoundError } from "@zugfolge/privacy";
 import {
@@ -246,6 +247,8 @@ export interface AppDependencies {
   readonly regionalSimulation?: Pick<RegionalSimulationWorker, "initialize" | "apply">;
   /** Serverseitig je Welt gebundener Audit-Principal fuer PlanningRun-Koordination. */
   readonly planningAuthorityAccountIds?: Readonly<Record<string, string>>;
+  /** Exakt das aktive Planungsrelease; keine externe Infrastrukturabfrage. */
+  readonly planningInfrastructureForWorld?: (worldId: string) => PlanningInfrastructureRelease | undefined;
   /** Geteiltes Geheimnis des kanonischen M5-Single-Writer-Snapshot-Adapters. */
   readonly fleetIngestToken?: string;
   /** Fail-closed Rust-Single-Writer fuer M5-Intents und deren Projektion. */
@@ -2478,6 +2481,26 @@ export function buildApp(deps: AppDependencies): FastifyInstance {
     },
   );
 
+  app.get<{ Params: { worldId: string } }>(
+    "/worlds/:worldId/planning/route-catalog",
+    { preHandler: authenticate, schema: { params: worldIdParam } },
+    async (request, reply) => {
+      const identity = request.identity;
+      if (identity === undefined) return reply.code(401).send({ error: "Keine Identität." });
+      try {
+        const account = await getAccount(deps.db, { worldId: request.params.worldId, keycloakSubject: identity.keycloakSubject });
+        if (account === undefined) throw new AuthorizationError("Kein aktiver Zugang zu dieser Welt.");
+        const release = deps.planningInfrastructureForWorld?.(request.params.worldId);
+        if (release === undefined || release.worldId !== request.params.worldId) {
+          return reply.code(503).send({ code: "planning_route_unavailable", error: "Der Fahrwegkatalog dieser Welt ist noch nicht verfügbar." });
+        }
+        return reply.send({ worldId: release.worldId, releaseId: release.releaseId,
+          stations: release.stations.map(({ id, code, name }) => ({ id, code, name })),
+          segments: release.segments.map(({ fromStationId, toStationId }) => ({ fromStationId, toStationId })) });
+      } catch (error) { return sendError(reply, error); }
+    },
+  );
+
   app.post<{
     Params: { worldId: string };
     Body: PlanningPlayerPathRequestBody;
@@ -2512,6 +2535,16 @@ export function buildApp(deps: AppDependencies): FastifyInstance {
         });
         if (account === undefined) {
           throw new AuthorizationError("Kein aktiver Zugang zu dieser Welt.");
+        }
+        if ((request.body.viaStationIds?.length ?? 0) > 0) {
+          const release = deps.planningInfrastructureForWorld?.(request.params.worldId);
+          if (release === undefined || release.worldId !== request.params.worldId) {
+            return reply.code(503).send({ code: "planning_route_unavailable", error: "Der Fahrwegkatalog dieser Welt ist noch nicht verfügbar." });
+          }
+          const known = new Set(release.stations.map((station) => station.id));
+          if ([request.body.originStationId, ...(request.body.viaStationIds ?? []), request.body.destinationStationId].some((id) => !known.has(id))) {
+            return reply.code(409).send({ code: "planning_route_unknown", error: "Ein Fahrwegpunkt fehlt im freigegebenen Netz dieser Welt. Bitte den Fahrweg erneut prüfen." });
+          }
         }
         await guardSensitiveAction(request, identity.keycloakSubject, request.params.worldId, "path-window", request.body.requestId, request.body.requestId);
         const authoritativeBody = await resolveAuthoritativePlanningPathRequest(
