@@ -784,6 +784,7 @@ export class ActiveWorldDeploymentRuntime implements RegionalScheduledCommandCat
   readonly #worldId: string;
   #active = false;
   #deploymentHash: string | undefined;
+  #planningReleaseId: string | undefined;
   readonly #realtimeRegions = new Map<string, RegionalRealtimeRegistration>();
   readonly #operationalPrograms = new Map<string, OperationalDeploymentProgram>();
   readonly #operationalInfrastructure = new Map<string, OperationalInfrastructureBinding>();
@@ -976,6 +977,7 @@ export class ActiveWorldDeploymentRuntime implements RegionalScheduledCommandCat
       throw new Error(`Planning-Authority fuer '${deployment.worldId}' steht im Konflikt zum signierten Deployment.`);
     }
     this.#planningRegistry.register(deployment.planning.infrastructureRelease);
+    this.#planningReleaseId = deployment.planning.infrastructureRelease.releaseId;
     this.fleetAuthorityConfigurations[deployment.worldId] = {
       producedAt: deployment.fleet.producedAt,
       authorityRelease: deployment.fleet.authorityRelease,
@@ -1107,12 +1109,18 @@ export class ActiveWorldDeploymentRuntime implements RegionalScheduledCommandCat
     return (this.#active && worldId === this.#worldId);
   }
 
+  planningInfrastructureForWorld(worldId: string): PlanningInfrastructureRelease | undefined {
+    if (!this.isRealtimeWorld(worldId) || this.#planningReleaseId === undefined) return undefined;
+    return this.#planningRegistry.get(worldId, this.#planningReleaseId);
+  }
+
   /** Entfernt nur die prozesslokale Projektion einer dauerhaft archivierten Welt. */
   releaseWorld(worldId: string): void {
     if (worldId !== this.#worldId) return;
     const prefix = `${worldId}\u0000`;
     this.#active = false;
     this.#deploymentHash = undefined;
+    this.#planningReleaseId = undefined;
     this.worldEpochs.delete(worldId);
     delete this.fleetAuthorityConfigurations[worldId];
     delete this.fleetAuthorityReleases[worldId];

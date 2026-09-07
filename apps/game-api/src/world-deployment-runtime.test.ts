@@ -521,7 +521,10 @@ describe("aktive World-Deployment-Runtime", () => {
   it("entfernt eine dauerhaft abgeschlossene Welt idempotent aus allen Scheduler- und Authority-Projektionen", () => {
     const deployment = signed();
     const runtime = deploymentRuntime({ worldId: WORLD_ID });
+    expect(runtime.planningInfrastructureForWorld(WORLD_ID)).toBeUndefined();
     runtime.register(deployment, EPOCH);
+    expect(runtime.planningInfrastructureForWorld(WORLD_ID)).toEqual(deployment.deployment.planning.infrastructureRelease);
+    expect(runtime.planningInfrastructureForWorld("foreign-world")).toBeUndefined();
 
     expect(runtime.worldIds()).toEqual([WORLD_ID]);
     expect(runtime.realtimeWorldIds()).toEqual([WORLD_ID]);
@@ -531,6 +534,7 @@ describe("aktive World-Deployment-Runtime", () => {
 
     runtime.releaseWorld(WORLD_ID);
     runtime.releaseWorld(WORLD_ID);
+    expect(runtime.planningInfrastructureForWorld(WORLD_ID)).toBeUndefined();
 
     expect(runtime.worldIds()).toEqual([]);
     expect(runtime.realtimeWorldIds()).toEqual([]);

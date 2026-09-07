@@ -57,6 +57,30 @@ export interface PlanningCoordinateTrainV2 extends PlanningCoordinateTrainBase {
   readonly maximumSpeedMmps: number;
 }
 
+/** Hoechstens 512 Betriebsstellen einschliesslich Start und Ziel. */
+export const MAX_PLANNING_VIA_STATIONS = 510;
+
+/** Prueft geordnete Zwischenpunkte an beiden TypeScript-Vertragsgrenzen. */
+export function validatePlanningViaStationIds(
+  value: unknown,
+  originStationId: unknown,
+  destinationStationId: unknown,
+  name = "viaStationIds",
+): asserts value is readonly string[] {
+  if (!Array.isArray(value) || value.length > MAX_PLANNING_VIA_STATIONS) {
+    throw new TypeError(`${name} muss eine Liste mit hoechstens ${MAX_PLANNING_VIA_STATIONS} Fahrwegpunkten sein.`);
+  }
+  for (const [index, stationId] of value.entries()) {
+    if (typeof stationId !== "string" || stationId.trim().length === 0 || stationId !== stationId.trim()
+      || stationId === originStationId || stationId === destinationStationId) {
+      throw new TypeError(`${name}[${index}] muss ein nichtleerer Zwischenpunkt ohne Rand-Leerzeichen sein; Start und Ziel stehen getrennt.`);
+    }
+  }
+  if (new Set(value).size !== value.length) {
+    throw new TypeError(`${name} enthaelt doppelte Fahrwegpunkte.`);
+  }
+}
+
 interface PlanningCoordinateRequestBase<TTrain extends PlanningCoordinateTrainBase> {
   readonly requestNumericId: number;
   readonly trainId: string;
@@ -64,6 +88,8 @@ interface PlanningCoordinateRequestBase<TTrain extends PlanningCoordinateTrainBa
   readonly trainNumber: number;
   readonly originStationId: string;
   readonly destinationStationId: string;
+  /** Geordnete Fahrwegpunkte; erzeugen ohne ausdruecklichen Halt keinen Aufenthalt. */
+  readonly viaStationIds?: readonly string[];
   readonly desiredDepartureS: number;
   readonly operatingDays: "daily" | "workdays" | "weekend";
   /** Absolute, half-open validity for a bounded service; omitted on legacy daily patterns. */
@@ -235,7 +261,7 @@ function validateCoordinateRequest(
     "extraRunningTimeS",
     "maxOperationalStops",
     "train",
-  ], ["boundaryWindows", "serviceWindow"], name);
+  ], ["boundaryWindows", "serviceWindow", "viaStationIds"], name);
   safeInteger(value["requestNumericId"], `${name}.requestNumericId`);
   for (const key of ["trainId", "originStationId", "destinationStationId"] as const) {
     nonEmptyString(value[key], `${name}.${key}`);
@@ -261,6 +287,9 @@ function validateCoordinateRequest(
       && (value["desiredDepartureS"] as number) < window["validUntilS"], `${name}.serviceWindow enthaelt die Abfahrt nicht.`);
   }
   invariant(Array.isArray(value["stops"]), `${name}.stops ist keine Liste.`);
+  if (Object.hasOwn(value, "viaStationIds")) {
+    validatePlanningViaStationIds(value["viaStationIds"], value["originStationId"], value["destinationStationId"], `${name}.viaStationIds`);
+  }
   if (Object.hasOwn(value, "boundaryWindows")) {
     invariant(Array.isArray(value["boundaryWindows"]), `${name}.boundaryWindows ist keine Liste.`);
   }

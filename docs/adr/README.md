@@ -58,7 +58,7 @@ vorgeschlagen.
 | [0007](0007-eigenbetrieb-bei-gescheiterter-ausschreibung.md) | E7 | Eigenbetrieb übernimmt gescheiterte Ausschreibungen |
 | [0008](0008-insolvenz-als-totalverlust.md) | E8 | Insolvenz bedeutet Totalverlust des EVU |
 | [0009](0009-vollstaendige-transparenz-livemap.md) | E9 | Vollständige Transparenz auf der Livemap |
-| [0010](0010-trassenfinder-nur-kalibrierwerkzeug.md) | E10 | Trassenfinder ist Kalibrierwerkzeug, keine Laufzeitabhängigkeit |
+| [0010](0010-trassenfinder-nur-kalibrierwerkzeug.md) | E10 | Trassenfinder ist optionales externes Planungs- und Kalibrierwerkzeug, keine Laufzeitabhängigkeit |
 | [0011](0011-kein-einzelner-optimierungswert.md) | E11 | Kein einzelner Optimierungswert |
 | [0012](0012-rangieren-nur-automatisiert.md) | E12 | Rangieren ist ausschließlich automatisiert |
 | [0013](0013-automatikmodus-kostenlos.md) | E13 | Der Automatikmodus bleibt in öffentlichen Welten kostenlos |

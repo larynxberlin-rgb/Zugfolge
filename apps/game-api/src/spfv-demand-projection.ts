@@ -150,10 +150,14 @@ export async function loadCommittedSpfvServices(db: IdentityDatabase, worldId: s
         && payload["trainCategory"] === "long-distance", "Bestätigte Fahrt besitzt eine fremde Fahrzeug- oder Kontoautorität.");
       const train = demandRecord(reservation["train"]), calls = demandList(reservation["passengerStops"]), window = demandRecord(reservation["serviceWindow"]);
       const departure = demandInteger(payload["desiredDepartureS"]);
+      const flexibility = draft["departureFlexibilityS"] === undefined ? 0 : demandInteger(draft["departureFlexibilityS"]);
+      requireFact(flexibility >= 0 && flexibility <= 7_200, "Bestätigter Abfahrtsspielraum ist ungültig.");
+      const latestDeparture = departure + Math.min(flexibility, headway - 1, until - departure - 1);
+      const plannedDeparture = demandInteger(calls[0]?.["departureS"]);
       requireFact(train["id"] === trainId && demandHash(calls.map((call) => call["stationId"])) === demandHash(stopIds)
         && departure >= from && departure < until && (departure - from) % headway === 0
-        && window["validFromS"] === departure && window["validUntilS"] === departure + 1
-        && demandHash(payload["serviceWindow"]) === demandHash(window) && calls[0]?.["departureS"] === departure,
+        && window["validFromS"] === departure && window["validUntilS"] === latestDeparture + 1
+        && demandHash(payload["serviceWindow"]) === demandHash(window) && plannedDeparture >= departure && plannedDeparture <= latestDeparture,
       "Bestätigte Fahrt weicht von Abfahrtsfenster oder Verkehrshalten der Linie ab.");
       const stops = calls.map((call, index) => ({ stopId: `${trainId}:${index}`, stationId: demandText(call["stationId"]),
         arrivalMs: milliseconds(call["arrivalS"]), departureMs: milliseconds(call["departureS"]), passengerStop: true }));

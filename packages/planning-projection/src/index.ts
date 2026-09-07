@@ -44,6 +44,40 @@ export interface PlanningTrainCallProjection {
   readonly timeS: number;
 }
 
+export interface PlanningAdjustmentProjection {
+  readonly kind: "departure-shift" | "operational-stop" | "dwell-extension" | "running-time-extension";
+  readonly stationId: string;
+  /** Abfahrt: absolute Weltsekunden; Halte: Aufenthalt; Fahrzeit: gesamte Fahrtdauer. */
+  readonly requestedS: number;
+  readonly plannedS: number;
+  readonly explanation: string;
+}
+
+/** Vollständiger, geordneter Betriebsstellenlauf aus einem nativen Fahrprofil. */
+export interface PlanningTimelineCallProjection {
+  readonly stationId: string;
+  readonly arrivalS: number;
+  readonly departureS: number;
+  readonly kind: "origin" | "destination" | "passenger-stop" | "operational-stop" | "pass";
+}
+
+export interface PlanningTimelineProjection {
+  readonly requested: readonly PlanningTimelineCallProjection[];
+  /** Ohne Zuteilung oder konkreten Vorschlag fehlen tatsächliche Planzeiten. */
+  readonly planned: readonly PlanningTimelineCallProjection[] | null;
+}
+
+/** Native Kandidatenfakten; eine vorgeschlagene Alternative ist noch nicht zugeteilt. */
+export interface PlanningResultProjection {
+  readonly status: "requested" | "proposed" | "allocated" | "rejected";
+  readonly requestedDepartureS: number;
+  readonly plannedDepartureS: number | null;
+  readonly adjustments: readonly PlanningAdjustmentProjection[];
+  readonly routeChange?: { readonly additionalDistanceMm: number; readonly explanation: string };
+  /** Fehlt bei älteren Projektionen; Zwischenzeiten werden dann nicht rekonstruiert. */
+  readonly timeline?: PlanningTimelineProjection;
+}
+
 export interface PlanningTrainProjection {
   readonly id: string;
   readonly number: string;
@@ -51,6 +85,8 @@ export interface PlanningTrainProjection {
   readonly calls: readonly PlanningTrainCallProjection[];
   /** Nicht bearbeitbare Randbedingungen einer gebietsueberschreitenden Fahrt. */
   readonly boundaryWindows?: readonly PlanningBoundaryWindowProjection[];
+  /** Fehlt bei historischen Projektionen ohne belegten Wunsch-/Planvergleich. */
+  readonly planning?: PlanningResultProjection;
 }
 
 export interface PlanningBoundaryWindowProjection {
@@ -92,6 +128,7 @@ export interface PlanningAlternativeProjection {
   readonly trainId: string;
   readonly departureShiftS: number;
   readonly explanation: string;
+  readonly planning?: PlanningResultProjection;
 }
 
 export interface PlanningConflictProjection {
@@ -214,6 +251,96 @@ function assertUnique(values: readonly string[], path: string): void {
   if (new Set(values).size !== values.length) fail(path, "eindeutige Kennungen erwartet");
 }
 
+function timelineCallsValue(value: unknown, path: string, stationIds: ReadonlySet<string>, departureS: number): readonly PlanningTimelineCallProjection[] {
+  const rows = arrayValue(value, path);
+  if (rows.length < 2 || rows.length > 512) fail(path, "vollstaendiger Lauf mit 2 bis 512 Betriebsstellen erwartet");
+  const calls = rows.map((value, index) => {
+    const callPath = `${path}[${index}]`;
+    const item = record(value, callPath, ["stationId", "arrivalS", "departureS", "kind"]);
+    const stationId = stringValue(item["stationId"], `${callPath}.stationId`, 128);
+    if (!stationIds.has(stationId)) fail(`${callPath}.stationId`, "bekannte Betriebsstelle erwartet");
+    const arrivalS = integerValue(item["arrivalS"], `${callPath}.arrivalS`, 0);
+    const departureS = integerValue(item["departureS"], `${callPath}.departureS`, 0);
+    const kind = enumValue(item["kind"], `${callPath}.kind`, ["origin", "destination", "passenger-stop", "operational-stop", "pass"] as const);
+    if (arrivalS > departureS || (kind === "operational-stop" && arrivalS === departureS)
+      || ((kind === "origin" || kind === "destination" || kind === "pass") && arrivalS !== departureS)) {
+      fail(callPath, "Ankunft vor Abfahrt, Aufenthalt bei Betriebshalt und identische Zeiten an Start, Ziel und Durchfahrt erwartet");
+    }
+    if ((index === 0) !== (kind === "origin") || (index === rows.length - 1) !== (kind === "destination")) {
+      fail(`${callPath}.kind`, "Start nur am Anfang und Ziel nur am Ende des Laufs erwartet");
+    }
+    return { stationId, arrivalS, departureS, kind };
+  });
+  assertUnique(calls.map((call) => call.stationId), `${path}[].stationId`);
+  if (calls[0]!.departureS !== departureS) fail(path, "Lauf muss an der belegten Abfahrt beginnen");
+  if (calls.some((call, index) => index > 0 && call.arrivalS < calls[index - 1]!.departureS)) {
+    fail(path, "chronologischer Lauf ohne Rueckspruenge erwartet");
+  }
+  return calls;
+}
+
+function planningResultValue(value: unknown, path: string, stationIds: ReadonlySet<string>): PlanningResultProjection {
+  const input = record(value, path, ["status", "requestedDepartureS", "plannedDepartureS", "adjustments",
+    ...(typeof value === "object" && value !== null && "routeChange" in value ? ["routeChange"] : []),
+    ...(typeof value === "object" && value !== null && "timeline" in value ? ["timeline"] : [])]);
+  const status = enumValue(input["status"], `${path}.status`, ["requested", "proposed", "allocated", "rejected"] as const);
+  const requestedDepartureS = integerValue(input["requestedDepartureS"], `${path}.requestedDepartureS`, 0);
+  const plannedDepartureS = input["plannedDepartureS"] === null ? null
+    : integerValue(input["plannedDepartureS"], `${path}.plannedDepartureS`, 0);
+  if ((status === "allocated" || status === "proposed") !== (plannedDepartureS !== null)) {
+    fail(`${path}.plannedDepartureS`, "Planzeit nur fuer zugeteilte oder vorgeschlagene Trasse erwartet");
+  }
+  const adjustments = arrayValue(input["adjustments"], `${path}.adjustments`).map((value, index) => {
+    const changePath = `${path}.adjustments[${index}]`;
+    const item = record(value, changePath, ["kind", "stationId", "requestedS", "plannedS", "explanation"]);
+    const kind = enumValue(item["kind"], `${changePath}.kind`, ["departure-shift", "operational-stop", "dwell-extension", "running-time-extension"] as const);
+    const stationId = stringValue(item["stationId"], `${changePath}.stationId`, 128);
+    if (!stationIds.has(stationId)) fail(`${changePath}.stationId`, "bekannte Betriebsstelle erwartet");
+    const requestedS = integerValue(item["requestedS"], `${changePath}.requestedS`, 0);
+    const plannedS = integerValue(item["plannedS"], `${changePath}.plannedS`, 0);
+    if (requestedS === plannedS || (kind !== "departure-shift" && plannedS < requestedS)
+      || (kind === "operational-stop" && requestedS !== 0)) {
+      fail(changePath, "tatsaechliche Abfahrtsaenderung, zusaetzlicher Betriebshalt oder verlaengerter Aufenthalt erwartet");
+    }
+    if (kind === "departure-shift" && (requestedS !== requestedDepartureS || plannedS !== plannedDepartureS)) {
+      fail(changePath, "Abfahrtsaenderung muss die belegten Wunsch- und Planzeiten vergleichen");
+    }
+    return { kind, stationId, requestedS, plannedS, explanation: stringValue(item["explanation"], `${changePath}.explanation`, 2_048) };
+  });
+  if (adjustments.length > 514 || (plannedDepartureS === null && adjustments.length !== 0)) {
+    fail(`${path}.adjustments`, "begrenzte Aenderungsliste nur mit belegter Planzeit erwartet");
+  }
+  assertUnique(adjustments.map((change) => `${change.kind}:${change.stationId}`), `${path}.adjustments`);
+  const departureChanges = adjustments.filter((change) => change.kind === "departure-shift");
+  if (departureChanges.length > 1 || (plannedDepartureS !== null && plannedDepartureS !== requestedDepartureS && departureChanges.length !== 1)) {
+    fail(`${path}.adjustments`, "genau ein Beleg fuer eine geaenderte Abfahrt erwartet");
+  }
+  let routeChange: PlanningResultProjection["routeChange"];
+  if (Object.hasOwn(input, "routeChange")) {
+    if (plannedDepartureS === null) fail(`${path}.routeChange`, "Fahrweganpassung nur fuer vorgeschlagene oder zugeteilte Trasse erwartet");
+    const route = record(input["routeChange"], `${path}.routeChange`, ["additionalDistanceMm", "explanation"]);
+    routeChange = { additionalDistanceMm: integerValue(route["additionalDistanceMm"], `${path}.routeChange.additionalDistanceMm`, 1),
+      explanation: stringValue(route["explanation"], `${path}.routeChange.explanation`, 2_048) };
+  }
+  let timeline: PlanningTimelineProjection | undefined;
+  if (Object.hasOwn(input, "timeline")) {
+    const timelinePath = `${path}.timeline`;
+    const item = record(input["timeline"], timelinePath, ["requested", "planned"]);
+    const requested = timelineCallsValue(item["requested"], `${timelinePath}.requested`, stationIds, requestedDepartureS);
+    if ((item["planned"] === null) !== (plannedDepartureS === null)) {
+      fail(`${timelinePath}.planned`, "Planlauf nur bei konkretem Vorschlag oder Zuteilung erwartet");
+    }
+    const planned = item["planned"] === null ? null
+      : timelineCallsValue(item["planned"], `${timelinePath}.planned`, stationIds, plannedDepartureS!);
+    if (planned !== null && (planned[0]!.stationId !== requested[0]!.stationId || planned.at(-1)!.stationId !== requested.at(-1)!.stationId)) {
+      fail(timelinePath, "identische Start- und Zielbetriebsstellen erwartet");
+    }
+    timeline = { requested, planned };
+  }
+  return { status, requestedDepartureS, plannedDepartureS, adjustments, ...(routeChange === undefined ? {} : { routeChange }),
+    ...(timeline === undefined ? {} : { timeline }) };
+}
+
 function parseProjectionUnchecked(value: unknown): PlanningProjectionV1 {
   const input = record(value, "$", [
     "schemaVersion",
@@ -249,6 +376,7 @@ function parseProjectionUnchecked(value: unknown): PlanningProjectionV1 {
     if (typeof train === "object" && train !== null && !Array.isArray(train) && "boundaryWindows" in trainRecord) {
       trainKeys.push("boundaryWindows");
     }
+    if (typeof train === "object" && train !== null && !Array.isArray(train) && "planning" in trainRecord) trainKeys.push("planning");
     const item = record(train, path, trainKeys);
     const calls = arrayValue(item["calls"], `${path}.calls`).map((call, callIndex) => {
       const callPath = `${path}.calls[${callIndex}]`;
@@ -287,12 +415,24 @@ function parseProjectionUnchecked(value: unknown): PlanningProjectionV1 {
       assertUnique(boundaryWindows.map((window) => window.windowId), `${path}.boundaryWindows[].windowId`);
       assertUnique(boundaryWindows.map((window) => window.direction), `${path}.boundaryWindows[].direction`);
     }
+    const planning = item["planning"] === undefined ? undefined : planningResultValue(item["planning"], `${path}.planning`, stationIds);
+    if (planning?.status === "proposed") fail(`${path}.planning.status`, "Vorschlag gehoert zur Alternative, nicht zur dargestellten Zugtrasse");
+    if (planning?.status === "allocated" && planning.plannedDepartureS !== calls[0]?.timeS) {
+      fail(`${path}.planning.plannedDepartureS`, "Planabfahrt muss mit dem dargestellten Zuglauf uebereinstimmen");
+    }
+    const timelineCalls = planning?.timeline?.planned ?? planning?.timeline?.requested;
+    if (timelineCalls !== undefined && (timelineCalls[0]!.stationId !== calls[0]!.stationId
+      || timelineCalls.at(-1)!.stationId !== calls.at(-1)!.stationId
+      || timelineCalls[0]!.departureS !== calls[0]!.timeS || timelineCalls.at(-1)!.arrivalS !== calls.at(-1)!.timeS)) {
+      fail(`${path}.planning.timeline`, "Endpunkte und Zeiten muessen mit dem dargestellten Zuglauf uebereinstimmen");
+    }
     return {
       id: stringValue(item["id"], `${path}.id`, 128),
       number: stringValue(item["number"], `${path}.number`, 64),
       direction: enumValue(item["direction"], `${path}.direction`, TRAVEL_DIRECTIONS),
       calls,
       ...(boundaryWindows === undefined ? {} : { boundaryWindows }),
+      ...(planning === undefined ? {} : { planning }),
     };
   });
   assertUnique(trains.map((train) => train.id), "$.trains[].id");
@@ -372,11 +512,13 @@ function parseProjectionUnchecked(value: unknown): PlanningProjectionV1 {
     let alternative: PlanningAlternativeProjection | null = null;
     if (item["alternative"] !== null) {
       const alternativePath = `${path}.alternative`;
+      const alternativeValue = item["alternative"];
       const alternativeInput = record(item["alternative"], alternativePath, [
         "alternativeId",
         "trainId",
         "departureShiftS",
         "explanation",
+        ...(typeof alternativeValue === "object" && alternativeValue !== null && "planning" in alternativeValue ? ["planning"] : []),
       ]);
       const alternativeTrainId = stringValue(
         alternativeInput["trainId"],
@@ -390,7 +532,13 @@ function parseProjectionUnchecked(value: unknown): PlanningProjectionV1 {
         alternativeInput["departureShiftS"],
         `${alternativePath}.departureShiftS`,
       );
-      if (departureShiftS === 0) {
+      const planning = alternativeInput["planning"] === undefined ? undefined
+        : planningResultValue(alternativeInput["planning"], `${alternativePath}.planning`, stationIds);
+      if (planning !== undefined && (planning.status !== "proposed"
+        || planning.plannedDepartureS! - planning.requestedDepartureS !== departureShiftS)) {
+        fail(`${alternativePath}.planning`, "vorgeschlagene Trasse mit identischer Abfahrtsverschiebung erwartet");
+      }
+      if (departureShiftS === 0 && (planning === undefined || (planning.adjustments.length === 0 && planning.routeChange === undefined))) {
         fail(`${alternativePath}.departureShiftS`, "Zeitlagenaenderung ungleich null erwartet");
       }
       alternative = {
@@ -406,6 +554,7 @@ function parseProjectionUnchecked(value: unknown): PlanningProjectionV1 {
           `${alternativePath}.explanation`,
           2_048,
         ),
+        ...(planning === undefined ? {} : { planning }),
       };
     }
     return {

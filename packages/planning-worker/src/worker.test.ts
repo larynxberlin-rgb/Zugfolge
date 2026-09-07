@@ -333,7 +333,7 @@ describe("planning worker transaction", () => {
     for (let index = 0; index < 3; index += 1) {
       const request = await queuePlanningPathRequest(db, { worldId: WORLD, requestingAccountId: ACCOUNT_A,
         body: { ...requestBody({ requestId: `batch-${index}`, trainId: `batch-train-${index}`, trainNumber: 26000 + index }),
-          serviceWindow: { validFromS: 100, validUntilS: 101 } }, submittedAt: new Date(1000) });
+          viaStationIds: ["via-z", "via-c"], serviceWindow: { validFromS: 100, validUntilS: 101 } }, submittedAt: new Date(1000) });
       ids.push(request.id);
     }
     const batch = await queuePlanningCoordinate(db, { worldId: WORLD, authorityAccountId: AUTHORITY,
@@ -341,6 +341,7 @@ describe("planning worker transaction", () => {
     await processPlanningCommand(db, runtime, infrastructureReleases, WORLD, batch.id, new Date(3000));
     expect(capturedCoordinate?.requests).toHaveLength(3);
     expect(capturedCoordinate?.requests.every((request) => request.serviceWindow?.validUntilS === 101)).toBe(true);
+    expect(capturedCoordinate?.requests.every((request) => JSON.stringify(request.viaStationIds) === JSON.stringify(["via-z", "via-c"]))).toBe(true);
     expect(capturedCoordinate).not.toHaveProperty("previousState");
     const next = await queuePlanningPathRequest(db, { worldId: WORLD, requestingAccountId: ACCOUNT_A,
       body: requestBody({ requestId: "next", trainId: "next-train", trainNumber: 26004 }), submittedAt: new Date(4000) });

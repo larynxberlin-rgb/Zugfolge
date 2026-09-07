@@ -1,0 +1,133 @@
+.planner-shell .planning-adjustments {
+  padding: 18px;
+  border-bottom: 1px solid var(--zf-line, #303b46);
+  overflow-wrap: anywhere;
+}
+
+.planning-adjustments h3 {
+  margin: 8px 0;
+  font-size: 17px;
+}
+
+.planning-adjustments p {
+  margin: 8px 0;
+  color: var(--zf-text-muted, #b5c0cc);
+}
+
+.planning-adjustments .planning-result {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  margin: 0;
+  font-weight: 700;
+  color: var(--zf-text, #f5f7fa);
+}
+
+.planning-adjustments--changed .planning-result,
+.planning-adjustments--requested .planning-result,
+.planning-adjustment-delta {
+  color: #f5bf65;
+}
+
+.planning-adjustments--rejected {
+  border-left: 3px solid #ff7d87;
+}
+
+.planning-adjustments--rejected .planning-result {
+  color: #ff7d87;
+}
+
+.planning-departures {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 12px;
+  margin: 14px 0;
+}
+
+.planning-departures > div {
+  display: block;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+}
+
+.planning-departures dt,
+.planning-adjustment-values {
+  color: var(--zf-text-muted, #b5c0cc);
+  font-size: 12px;
+}
+
+.planning-departures dd {
+  margin: 5px 0 0;
+  font-variant-numeric: tabular-nums;
+  font-weight: 650;
+}
+
+.planning-adjustment-list {
+  display: grid;
+  gap: 10px;
+  margin: 12px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.planning-adjustment-list > li {
+  padding: 12px;
+  border-left: 3px solid #f5bf65;
+  border-radius: 0 6px 6px 0;
+  background: #202830;
+}
+
+.planning-adjustment-list h4 {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 5px 10px;
+  margin: 0 0 7px;
+  font-size: 13px;
+}
+
+.planning-adjustment-list .planning-adjustment-values {
+  margin: 5px 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.planning-adjustment-list p:last-child {
+  margin-bottom: 0;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.planner-shell .diagram .train--adjusted polyline {
+  stroke: #f5bf65;
+  stroke-width: 2.4;
+}
+
+.planner-shell .diagram .train--adjusted text {
+  fill: #f5bf65;
+}
+
+.planner-shell .diagram .train--rejected polyline {
+  stroke: #ff7d87;
+  stroke-dasharray: 5 4;
+}
+
+.planner-shell .diagram .train--rejected text {
+  fill: #ff7d87;
+}
+
+.planner-shell .legend .line.adjusted {
+  border-color: #f5bf65;
+  border-width: 2px;
+}
+
+.planner-shell .legend .line.rejected {
+  border-color: #ff7d87;
+  border-style: dashed;
+}
+
+@media (max-width: 390px) {
+  .planning-departures {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

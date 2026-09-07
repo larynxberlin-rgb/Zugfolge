@@ -13,8 +13,8 @@ use std::fmt::Write as _;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use zugfolge_conflict::{
-    BlockingTime, ConflictResource, Infrastructure, OccupationLedger, OperatingDays,
-    SECONDS_PER_DAY, ServiceWindow, TrainCategory, TrainNumber, TrainRun,
+    BlockingTime, ConflictResource, Infrastructure, OccupationLedger, OccupationProfile,
+    OperatingDays, SECONDS_PER_DAY, ServiceWindow, TrainCategory, TrainNumber, TrainRun,
     derive_occupation_profile,
 };
 use zugfolge_determinism::{SimTime, WorldSeed};
@@ -202,6 +202,9 @@ pub struct CoordinateRequestInput {
     pub origin_station_id: String,
     /// Zielbetriebsstelle.
     pub destination_station_id: String,
+    /// Geordnete Zwischenpunkte ohne zusätzliche Haltepflicht.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub via_station_ids: Vec<String>,
     /// Beantragte Abfahrt seit Weltepoche.
     pub desired_departure_s: i64,
     /// Optionales absolutes Abfahrtsfenster; ohne Feld gilt der historische Tagesvertrag.
@@ -356,6 +359,82 @@ struct TrainProjection {
     calls: Vec<TrainCallProjection>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     boundary_windows: Vec<BoundaryWindowProjection>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    planning: Option<TrainPlanningProjection>,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+enum TrainPlanningStatus {
+    Requested,
+    Proposed,
+    Allocated,
+    Rejected,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+enum PlanningAdjustmentKind {
+    DepartureShift,
+    OperationalStop,
+    DwellExtension,
+    RunningTimeExtension,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct PlanningAdjustmentProjection {
+    kind: PlanningAdjustmentKind,
+    station_id: String,
+    requested_s: i64,
+    planned_s: i64,
+    explanation: String,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct TrainPlanningProjection {
+    status: TrainPlanningStatus,
+    requested_departure_s: i64,
+    planned_departure_s: Option<i64>,
+    adjustments: Vec<PlanningAdjustmentProjection>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    route_change: Option<PlanningRouteChangeProjection>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    timeline: Option<PlanningTimelineProjection>,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+enum TimelineCallKind {
+    Origin,
+    Destination,
+    PassengerStop,
+    OperationalStop,
+    Pass,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct TimelineCallProjection {
+    station_id: String,
+    arrival_s: i64,
+    departure_s: i64,
+    kind: TimelineCallKind,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct PlanningTimelineProjection {
+    requested: Vec<TimelineCallProjection>,
+    planned: Option<Vec<TimelineCallProjection>>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct PlanningRouteChangeProjection {
+    additional_distance_mm: i64,
+    explanation: String,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -404,6 +483,8 @@ struct AlternativeProjection {
     train_id: String,
     departure_shift_s: i64,
     explanation: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    planning: Option<TrainPlanningProjection>,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -1009,6 +1090,25 @@ fn materialize(input: &PlanningCoordinateInput) -> Result<MaterializedRun, Plann
                 .map_err(map_domain)
             })
             .collect::<Result<Vec<_>, PlanningRuntimeError>>()?;
+        if request.via_station_ids.len() > zugfolge_planner::MAX_VIA_POINTS {
+            return Err(invalid(
+                "viaStationIds erlaubt höchstens 510 Zwischenpunkte",
+            ));
+        }
+        let via_points = request
+            .via_station_ids
+            .iter()
+            .map(|station_id| {
+                non_empty(station_id, "viaStationIds[]")?;
+                if station_id.trim() != station_id {
+                    return Err(invalid("viaStationIds[] enthält Rand-Leerzeichen"));
+                }
+                let station = station_by_external
+                    .get(station_id)
+                    .ok_or_else(|| invalid(format!("unbekannter Fahrwegpunkt '{station_id}'")))?;
+                Ok(OperatingPointId::new(station.numeric_id))
+            })
+            .collect::<Result<Vec<_>, PlanningRuntimeError>>()?;
         let boundary_windows = request
             .boundary_windows
             .iter()
@@ -1057,6 +1157,8 @@ fn materialize(input: &PlanningCoordinateInput) -> Result<MaterializedRun, Plann
             .map_err(map_domain)?,
         )
         .map_err(map_domain)?
+        .with_via_points(via_points)
+        .map_err(map_domain)?
         .with_boundary_windows(boundary_windows)
         .map_err(map_domain)?;
         if let Some(window) = &request.service_window {
@@ -1086,7 +1188,7 @@ fn desired_run(
     infrastructure: &Infrastructure,
     request: &PathRequest,
     options: PlannerOptions,
-) -> Result<TrainRun, PlanningRuntimeError> {
+) -> Result<(TrainRun, OccupationProfile), PlanningRuntimeError> {
     let itineraries = enumerate_itineraries(
         infrastructure.graph(),
         request,
@@ -1103,13 +1205,11 @@ fn desired_run(
         .collect::<Vec<_>>();
     candidates.sort_by_key(|(itinerary, profile)| (profile.running_time_s(), itinerary.length()));
     let (_, profile) = candidates
-        .first()
+        .into_iter()
+        .next()
         .ok_or_else(|| PlanningRuntimeError::new("planning_failed", "kein befahrbarer Laufweg"))?;
-    Ok(TrainRun::new(
-        request.number(),
-        request.desired_departure(),
-        profile,
-    ))
+    let run = TrainRun::new(request.number(), request.desired_departure(), &profile);
+    Ok((run, profile))
 }
 
 fn fallback_resource(resource: ConflictResource, governing_distance_mm: i64) -> ResourceLocation {
@@ -1181,6 +1281,7 @@ fn project_train(
     Ok(TrainProjection {
         id: input.train_id.clone(),
         number: request.number().to_string(),
+        planning: None,
         direction: if destination.distance_mm >= origin.distance_mm {
             "with-chainage".to_owned()
         } else {
@@ -1209,6 +1310,160 @@ fn project_train(
             })
             .collect(),
     })
+}
+
+fn project_planning(
+    input: &CoordinateRequestInput,
+    desired_profile: &OccupationProfile,
+    candidate: Option<&zugfolge_planner::PathCandidate>,
+    status: TrainPlanningStatus,
+    materialized: &MaterializedRun,
+) -> Result<TrainPlanningProjection, PlanningRuntimeError> {
+    let mut adjustments = Vec::new();
+    let planned_departure_s = candidate.map(|candidate| candidate.first_departure().seconds());
+    if let Some(candidate) = candidate {
+        let actual_departure = candidate.first_departure().seconds();
+        if actual_departure != input.desired_departure_s {
+            adjustments.push(PlanningAdjustmentProjection {
+                kind: PlanningAdjustmentKind::DepartureShift,
+                station_id: input.origin_station_id.clone(),
+                requested_s: input.desired_departure_s,
+                planned_s: actual_departure,
+                explanation: format!(
+                    "Abfahrt um {} s gegenüber der Wunschzeit verschoben",
+                    actual_departure.saturating_sub(input.desired_departure_s)
+                ),
+            });
+        }
+        for call in candidate.profile().station_calls() {
+            let station_id = materialized
+                .station_external_by_numeric
+                .get(&call.station)
+                .ok_or_else(|| {
+                    invalid("Planungsanpassung verweist auf unbekannte Betriebsstelle")
+                })?;
+            if station_id == &input.origin_station_id || station_id == &input.destination_station_id
+            {
+                continue;
+            }
+            let requested_stop = input
+                .stops
+                .iter()
+                .find(|stop| &stop.station_id == station_id);
+            let requested_dwell = requested_stop.map_or(0, |stop| stop.minimum_dwell_s);
+            let planned_dwell = call.departure_s.saturating_sub(call.arrival_s);
+            if planned_dwell <= requested_dwell {
+                continue;
+            }
+            let station = materialized
+                .station_by_external
+                .get(station_id)
+                .ok_or_else(|| invalid("Planungsanpassung hat keine Betriebsstellenfakten"))?;
+            let (kind, explanation) = if requested_stop.is_some() {
+                (
+                    PlanningAdjustmentKind::DwellExtension,
+                    format!(
+                        "Aufenthalt in {} von {requested_dwell} s auf {planned_dwell} s verlängert",
+                        station.name
+                    ),
+                )
+            } else {
+                (
+                    PlanningAdjustmentKind::OperationalStop,
+                    format!(
+                        "Zusätzlicher Betriebshalt in {}: {planned_dwell} s",
+                        station.name
+                    ),
+                )
+            };
+            adjustments.push(PlanningAdjustmentProjection {
+                kind,
+                station_id: station_id.clone(),
+                requested_s: requested_dwell,
+                planned_s: planned_dwell,
+                explanation,
+            });
+        }
+        let extra_running_time = candidate.deviation().extra_running_time_s();
+        if extra_running_time > 0 {
+            let planned_s = candidate.profile().running_time_s();
+            let requested_s = planned_s.saturating_sub(extra_running_time);
+            adjustments.push(PlanningAdjustmentProjection {
+                kind: PlanningAdjustmentKind::RunningTimeExtension,
+                station_id: input.destination_station_id.clone(),
+                requested_s,
+                planned_s,
+                explanation: format!(
+                    "Gesamtfahrtdauer von {requested_s} s auf {planned_s} s verlängert"
+                ),
+            });
+        }
+    }
+    Ok(TrainPlanningProjection {
+        status,
+        requested_departure_s: input.desired_departure_s,
+        planned_departure_s,
+        adjustments,
+        route_change: candidate.and_then(|candidate| {
+            let additional_distance_mm = candidate.deviation().detour().millimetres();
+            (additional_distance_mm > 0).then(|| PlanningRouteChangeProjection {
+                additional_distance_mm,
+                explanation: format!("Geprüfter anderer Laufweg mit {additional_distance_mm} mm zusätzlichem Weg innerhalb der bestellten Fahrwegpunkte"),
+            })
+        }),
+        timeline: Some(PlanningTimelineProjection {
+            requested: project_timeline_calls(input, desired_profile, input.desired_departure_s, materialized)?,
+            planned: candidate.map(|candidate| project_timeline_calls(input, candidate.profile(),
+                candidate.first_departure().seconds(), materialized)).transpose()?,
+        }),
+    })
+}
+
+fn project_timeline_calls(
+    input: &CoordinateRequestInput,
+    profile: &OccupationProfile,
+    departure_s: i64,
+    materialized: &MaterializedRun,
+) -> Result<Vec<TimelineCallProjection>, PlanningRuntimeError> {
+    profile
+        .station_calls()
+        .iter()
+        .map(|call| {
+            let station_id = materialized
+                .station_external_by_numeric
+                .get(&call.station)
+                .ok_or_else(|| invalid("Zeitverlauf verweist auf unbekannte Betriebsstelle"))?;
+            let arrival_s = departure_s
+                .checked_add(call.arrival_s)
+                .ok_or_else(|| invalid("Überlauf bei Zeitverlaufsankunft"))?;
+            let call_departure_s = departure_s
+                .checked_add(call.departure_s)
+                .ok_or_else(|| invalid("Überlauf bei Zeitverlaufsabfahrt"))?;
+            safe_non_negative(arrival_s, "timeline[].arrivalS")?;
+            safe_non_negative(call_departure_s, "timeline[].departureS")?;
+            let kind = if station_id == &input.origin_station_id {
+                TimelineCallKind::Origin
+            } else if station_id == &input.destination_station_id {
+                TimelineCallKind::Destination
+            } else if input
+                .stops
+                .iter()
+                .any(|stop| &stop.station_id == station_id)
+            {
+                TimelineCallKind::PassengerStop
+            } else if call.departure_s > call.arrival_s {
+                TimelineCallKind::OperationalStop
+            } else {
+                TimelineCallKind::Pass
+            };
+            Ok(TimelineCallProjection {
+                station_id: station_id.clone(),
+                arrival_s,
+                departure_s: call_departure_s,
+                kind,
+            })
+        })
+        .collect()
 }
 
 fn passenger_stops(
@@ -1269,6 +1524,8 @@ struct AlternativeIdentity<'a> {
     extra_running_time_s: i64,
     tracks: Vec<u32>,
     operational_stops: Vec<u32>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    dwell_extensions: Vec<(u32, i64)>,
 }
 
 fn alternative_id(
@@ -1280,7 +1537,10 @@ fn alternative_id(
         world_id,
         request_numeric_id: request.input.request_numeric_id,
         train_id: &request.input.train_id,
-        departure_shift_s: candidate.deviation().shift_s(),
+        departure_shift_s: candidate
+            .first_departure()
+            .seconds()
+            .saturating_sub(request.input.desired_departure_s),
         extra_running_time_s: candidate.deviation().extra_running_time_s(),
         tracks: candidate
             .itinerary()
@@ -1293,6 +1553,19 @@ fn alternative_id(
             .operational_stops()
             .iter()
             .map(|point| point.value())
+            .collect(),
+        dwell_extensions: candidate
+            .profile()
+            .station_calls()
+            .iter()
+            .filter_map(|call| {
+                let requested = request.request.stop_at(call.station)?;
+                let extra = call
+                    .departure_s
+                    .saturating_sub(call.arrival_s)
+                    .saturating_sub(requested.minimum_dwell_s());
+                (extra > 0).then_some((call.station.value(), extra))
+            })
             .collect(),
     };
     Ok(format!("alt-{}", &sha256_json(&identity)?[..24]))
@@ -1334,7 +1607,7 @@ fn build_projection(
     let options = PlannerOptions::default();
     let mut trains = Vec::new();
     let mut occupations = Vec::new();
-    let mut desired_runs = BTreeMap::new();
+    let mut desired_profiles = BTreeMap::new();
     let mut train_id_by_number = BTreeMap::new();
     if let Some(previous) = &input.previous_state {
         for reservation in previous.reservations.values() {
@@ -1350,40 +1623,58 @@ fn build_projection(
         }
     }
     for request in &materialized.requests {
-        let run = desired_run(&materialized.infrastructure, &request.request, options)?;
-        let projected_run = if input.schema_version == COORDINATE_SCHEMA {
-            match outcome.outcome(request.request.id()) {
-                Some(RequestOutcome::Planned(planned))
-                    if planned.decision() == PathDecision::Granted =>
-                {
-                    let candidate = planned
-                        .candidates()
-                        .first()
-                        .ok_or_else(|| invalid("Zuteilung ohne Kandidat"))?;
-                    TrainRun::new(
-                        request.request.number(),
-                        candidate.first_departure(),
-                        candidate.profile(),
-                    )
-                }
-                _ => run.clone(),
+        let (run, desired_profile) =
+            desired_run(&materialized.infrastructure, &request.request, options)?;
+        let projected_run = match outcome.outcome(request.request.id()) {
+            Some(RequestOutcome::Planned(planned))
+                if planned.decision() == PathDecision::Granted =>
+            {
+                let candidate = planned
+                    .candidates()
+                    .first()
+                    .ok_or_else(|| invalid("Zuteilung ohne Kandidat"))?;
+                TrainRun::new(
+                    request.request.number(),
+                    candidate.first_departure(),
+                    candidate.profile(),
+                )
             }
-        } else {
-            run.clone()
+            _ => run.clone(),
         };
-        trains.push(project_train(
+        let mut train = project_train(
             &request.input,
             &request.request,
             &projected_run,
             materialized,
+        )?;
+        let (status, allocated) = match outcome.outcome(request.request.id()) {
+            Some(RequestOutcome::Planned(planned))
+                if planned.decision() == PathDecision::Granted =>
+            {
+                (TrainPlanningStatus::Allocated, planned.offer())
+            }
+            Some(RequestOutcome::Planned(planned))
+                if planned.decision() == PathDecision::Alternative =>
+            {
+                (TrainPlanningStatus::Requested, None)
+            }
+            _ => (TrainPlanningStatus::Rejected, None),
+        };
+        train.planning = Some(project_planning(
+            &request.input,
+            &desired_profile,
+            allocated,
+            status,
+            materialized,
         )?);
+        trains.push(train);
         occupations.extend(project_occupations(
             &request.input.train_id,
             &projected_run,
             materialized,
         )?);
         train_id_by_number.insert(request.request.number(), request.input.train_id.clone());
-        desired_runs.insert(request.request.id(), run);
+        desired_profiles.insert(request.request.id(), desired_profile);
     }
     trains.sort_by(|left, right| left.id.cmp(&right.id));
     occupations.sort_by(|left, right| {
@@ -1465,12 +1756,22 @@ fn build_projection(
                 candidate.first_departure(),
                 candidate.profile(),
             );
-            let replacement_train = project_train(
+            let mut replacement_train = project_train(
                 &request.input,
                 &request.request,
                 &replacement_run,
                 materialized,
             )?;
+            let proposed_planning = project_planning(
+                &request.input,
+                desired_profiles
+                    .get(&request.request.id())
+                    .ok_or_else(|| invalid("Ausgangsprofil des Angebots fehlt"))?,
+                Some(candidate),
+                TrainPlanningStatus::Proposed,
+                materialized,
+            )?;
+            replacement_train.planning = Some(proposed_planning.clone());
             let replacement_occupations =
                 project_occupations(&request.input.train_id, &replacement_run, materialized)?;
             let replacement_stops = passenger_stops(&request.input, candidate, materialized)?;
@@ -1486,8 +1787,12 @@ fn build_projection(
                 conflict.alternative = Some(AlternativeProjection {
                     alternative_id: offered_id.clone(),
                     train_id: request.input.train_id.clone(),
-                    departure_shift_s: candidate.deviation().shift_s(),
+                    departure_shift_s: candidate
+                        .first_departure()
+                        .seconds()
+                        .saturating_sub(request.input.desired_departure_s),
                     explanation,
+                    planning: Some(proposed_planning),
                 });
             }
             alternatives.insert(
@@ -1495,7 +1800,10 @@ fn build_projection(
                 StoredAlternative {
                     conflict_id: first_conflict_id.clone(),
                     train_id: request.input.train_id.clone(),
-                    departure_shift_s: candidate.deviation().shift_s(),
+                    departure_shift_s: candidate
+                        .first_departure()
+                        .seconds()
+                        .saturating_sub(request.input.desired_departure_s),
                     reservation: (input.schema_version == COORDINATE_SCHEMA).then(|| {
                         StoredReservation {
                             number: request.request.number().value(),
@@ -2019,7 +2327,12 @@ fn apply(
         .find(|train| train.id == offered.train_id)
         .ok_or_else(|| PlanningRuntimeError::new("state_corrupt", "angebotener Zug fehlt"))?;
     *train = offered.replacement_train;
-    if let Some(reservation) = offered.reservation {
+    if let Some(planning) = &mut train.planning {
+        planning.status = TrainPlanningStatus::Allocated;
+    }
+    let applied_train = train.clone();
+    if let Some(mut reservation) = offered.reservation {
+        reservation.train = applied_train;
         state
             .reservations
             .insert(reservation.train.id.clone(), reservation);
@@ -2394,6 +2707,345 @@ mod tests {
         .unwrap()
     }
 
+    fn linear_route_input(point_count: u32) -> Value {
+        let mut input = single_absolute_input(28_800, "via-route", 26802);
+        let station_template = input["stations"][0].clone();
+        let segment_template = input["segments"][0].clone();
+        input["stations"] = Value::Array(
+            (1..=point_count)
+                .map(|index| {
+                    let mut station = station_template.clone();
+                    station["numericId"] = json!(index);
+                    station["id"] = json!(format!("point-{index}"));
+                    station["code"] = json!(format!("P{index}"));
+                    station["name"] = json!(format!("Punkt {index}"));
+                    station["stationTrackNumericId"] = json!(index);
+                    station["distanceMm"] = json!(i64::from(index - 1) * 5_000_000);
+                    station
+                })
+                .collect(),
+        );
+        input["segments"] = Value::Array(
+            (1..point_count)
+                .map(|index| {
+                    let mut segment = segment_template.clone();
+                    segment["edgeNumericId"] = json!(index);
+                    segment["trackNumericId"] = json!(1000 + index);
+                    segment["id"] = json!(format!("segment-{index}"));
+                    segment["fromStationId"] = json!(format!("point-{index}"));
+                    segment["toStationId"] = json!(format!("point-{}", index + 1));
+                    segment
+                })
+                .collect(),
+        );
+        input["requests"][0]["originStationId"] = json!("point-1");
+        input["requests"][0]["destinationStationId"] = json!(format!("point-{point_count}"));
+        input
+    }
+
+    #[test]
+    fn langer_importierter_fahrweg_bleibt_geordnet_ohne_verkehrshalte() {
+        let mut input = linear_route_input(70);
+        assert!(
+            coordinate_planning_run(&input.to_string()).is_err(),
+            "Legacy-Suchgrenze bleibt 64 Betriebsstellen"
+        );
+        input["requests"][0]["viaStationIds"] = json!(
+            (2..70)
+                .map(|index| format!("point-{index}"))
+                .collect::<Vec<_>>()
+        );
+        let planned = evaluate_json(&input);
+        let calls = planned["state"]["reservations"]["via-route"]["passengerStops"]
+            .as_array()
+            .unwrap();
+        assert_eq!(calls.len(), 2);
+        assert_eq!(calls[0]["stationId"], "point-1");
+        assert_eq!(calls[1]["stationId"], "point-70");
+        let timeline =
+            &planned["state"]["reservations"]["via-route"]["train"]["planning"]["timeline"];
+        assert_eq!(timeline["requested"].as_array().unwrap().len(), 70);
+        assert_eq!(timeline["planned"], timeline["requested"]);
+        assert_eq!(
+            evaluate_json(&input),
+            planned,
+            "der vollständige native Zustand ist deterministisch"
+        );
+        let mut sparse = input.clone();
+        sparse["requests"][0]["viaStationIds"] = json!(["point-35"]);
+        assert_eq!(
+            evaluate_json(&sparse),
+            planned,
+            "zusätzliche native Betriebsstellen bleiben zwischen wenigen Pflichtpunkten befahrbar"
+        );
+        input["requests"][0]["viaStationIds"]
+            .as_array_mut()
+            .unwrap()
+            .swap(0, 1);
+        assert!(
+            coordinate_planning_run(&input.to_string()).is_err(),
+            "falsche Reihenfolge darf nicht still korrigiert werden"
+        );
+    }
+
+    #[test]
+    fn native_fahrwegpunkte_sind_geprueft_und_leer_behaelt_legacy_hashes() {
+        let mut input = linear_route_input(4);
+        let legacy = evaluate_json(&input);
+        input["requests"][0]["viaStationIds"] = json!([]);
+        assert_eq!(
+            evaluate_json(&input),
+            legacy,
+            "leere Fahrwegpunkte ändern weder Zustand noch Hash"
+        );
+        input["requests"][0]["viaStationIds"] = json!(["point-2", "point-3"]);
+        let via = evaluate_json(&input);
+        assert_eq!(via["projection"], legacy["projection"]);
+        assert_eq!(
+            via["stateHash"], legacy["stateHash"],
+            "derselbe tatsächlich zugeteilte Fahrweg behält denselben Zustandsbeleg"
+        );
+        input["requests"][0]["stops"] = json!([{"stationId":"point-2", "minimumDwellS":60}]);
+        let stopping = evaluate_json(&input);
+        let calls = stopping["state"]["reservations"]["via-route"]["passengerStops"]
+            .as_array()
+            .unwrap();
+        assert_eq!(calls.len(), 3);
+        assert_eq!(calls[1]["stationId"], "point-2");
+        assert_eq!(
+            calls[1]["departureS"].as_i64().unwrap() - calls[1]["arrivalS"].as_i64().unwrap(),
+            60
+        );
+
+        for points in [
+            json!(null),
+            json!([""]),
+            json!([" point-2"]),
+            json!(["point-1"]),
+            json!(["point-4"]),
+            json!(["point-2", "point-2"]),
+            json!(["unknown"]),
+            json!(
+                (0..511)
+                    .map(|index| format!("point-{index}"))
+                    .collect::<Vec<_>>()
+            ),
+        ] {
+            input["requests"][0]["viaStationIds"] = points;
+            assert!(coordinate_planning_run(&input.to_string()).is_err());
+        }
+        input["requests"][0]["viaStationIds"] = json!(["point-2"]);
+        input["segments"].as_array_mut().unwrap().remove(0);
+        assert!(
+            coordinate_planning_run(&input.to_string()).is_err(),
+            "bekannter, aber unerreichbarer Punkt wird abgelehnt"
+        );
+    }
+
+    #[test]
+    fn haltanpassungen_werden_nativ_erklaert_ohne_abfahrtsverschiebung_uebernommen_und_wiederhergestellt()
+     {
+        for passenger_stop in [false, true] {
+            let mut input = linear_route_input(4);
+            input["requests"][0]["viaStationIds"] = json!(["point-2", "point-3"]);
+            input["requests"][0]["laterS"] = json!(0);
+            input["requests"][0]["extraRunningTimeS"] = json!(1800);
+            input["requests"][0]["maxOperationalStops"] = json!(if passenger_stop { 0 } else { 1 });
+            if passenger_stop {
+                input["requests"][0]["stops"] =
+                    json!([{"stationId":"point-2", "minimumDwellS":60}]);
+            }
+            let typed: super::PlanningCoordinateInput =
+                serde_json::from_value(input.clone()).unwrap();
+            let materialized = super::materialize(&typed).unwrap();
+            let request = &materialized.requests[0].request;
+            let itineraries = zugfolge_planner::enumerate_itineraries(
+                materialized.infrastructure.graph(),
+                request,
+                1,
+            )
+            .unwrap();
+            let profile = zugfolge_conflict::derive_occupation_profile(
+                &materialized.infrastructure,
+                &itineraries[0],
+                request.train(),
+            )
+            .unwrap();
+            let arrival = profile
+                .station_calls()
+                .iter()
+                .find(|call| call.station == zugfolge_infra::OperatingPointId::new(3))
+                .unwrap()
+                .arrival_s;
+            let blocking_departure = 28_800 + arrival;
+            let mut blocking = input.clone();
+            blocking["requests"][0]["trainId"] = json!("blocking");
+            blocking["requests"][0]["trainNumber"] = json!(26804);
+            blocking["requests"][0]["originStationId"] = json!("point-3");
+            blocking["requests"][0]["stops"] = json!([]);
+            blocking["requests"][0]["viaStationIds"] = json!([]);
+            blocking["requests"][0]["desiredDepartureS"] = json!(blocking_departure);
+            blocking["requests"][0]["serviceWindow"] =
+                json!({"validFromS":blocking_departure,"validUntilS":blocking_departure+1});
+            let baseline = evaluate_json(&blocking);
+            input["previousState"] = baseline["state"].clone();
+            input["expectedProjectionRevision"] = json!(1);
+            let result = evaluate_json(&input);
+            let train = result["projection"]["trains"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|train| train["id"] == "via-route")
+                .unwrap();
+            assert_eq!(train["planning"]["status"], "requested");
+            assert!(train["planning"]["plannedDepartureS"].is_null());
+            assert!(train["planning"]["timeline"]["planned"].is_null());
+            let conflict = result["projection"]["conflicts"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|conflict| conflict["alternative"].is_object())
+                .unwrap();
+            let alternative = &conflict["alternative"];
+            assert_eq!(alternative["departureShiftS"], 0);
+            assert_eq!(alternative["planning"]["status"], "proposed");
+            let timeline = &alternative["planning"]["timeline"];
+            let requested_calls = timeline["requested"].as_array().unwrap();
+            let planned_calls = timeline["planned"].as_array().unwrap();
+            assert_eq!(requested_calls.len(), 4);
+            assert_eq!(planned_calls.len(), 4);
+            assert_eq!(
+                train["planning"]["timeline"]["requested"],
+                timeline["requested"]
+            );
+            for (projected, native) in requested_calls.iter().zip(profile.station_calls()) {
+                assert_eq!(
+                    projected["stationId"],
+                    format!("point-{}", native.station.value())
+                );
+                assert_eq!(projected["arrivalS"], 28_800 + native.arrival_s);
+                assert_eq!(projected["departureS"], 28_800 + native.departure_s);
+            }
+            assert_eq!(requested_calls[0]["kind"], "origin");
+            assert_eq!(
+                requested_calls[1]["kind"],
+                if passenger_stop {
+                    "passenger-stop"
+                } else {
+                    "pass"
+                }
+            );
+            assert_eq!(
+                planned_calls[1]["kind"],
+                if passenger_stop {
+                    "passenger-stop"
+                } else {
+                    "operational-stop"
+                }
+            );
+            assert_eq!(requested_calls[2]["kind"], "pass");
+            assert_eq!(planned_calls[2]["kind"], "pass");
+            assert_eq!(requested_calls[3]["kind"], "destination");
+            assert_eq!(planned_calls[3]["kind"], "destination");
+            let kind = if passenger_stop {
+                "dwell-extension"
+            } else {
+                "operational-stop"
+            };
+            let adjustment = alternative["planning"]["adjustments"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|adjustment| adjustment["kind"] == kind)
+                .unwrap();
+            assert_eq!(adjustment["stationId"], "point-2");
+            assert_eq!(
+                adjustment["requestedS"],
+                if passenger_stop { 60 } else { 0 }
+            );
+            assert!(
+                adjustment["plannedS"].as_i64().unwrap()
+                    > adjustment["requestedS"].as_i64().unwrap()
+            );
+            assert_eq!(
+                planned_calls[1]["departureS"].as_i64().unwrap()
+                    - planned_calls[1]["arrivalS"].as_i64().unwrap(),
+                adjustment["plannedS"].as_i64().unwrap()
+            );
+            assert_eq!(
+                planned_calls[3]["arrivalS"],
+                result["state"]["alternatives"][alternative["alternativeId"].as_str().unwrap()]["replacementTrain"]
+                    ["calls"][1]["timeS"]
+            );
+            assert!(
+                alternative["planning"]["adjustments"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .any(|adjustment| adjustment["kind"] == "running-time-extension")
+            );
+            let command = json!({"schemaVersion":"planning-apply-alternative/v1","projectionRevision":2,
+                "alternativeId":alternative["alternativeId"],"conflictId":conflict["id"],
+                "trainId":"via-route","departureShiftS":0});
+            let applied: Value = serde_json::from_str(
+                &apply_planning_alternative(
+                    &result["state"].to_string(),
+                    "accept-stop",
+                    &command.to_string(),
+                )
+                .unwrap(),
+            )
+            .unwrap();
+            let reservation = &applied["state"]["reservations"]["via-route"];
+            assert_eq!(reservation["train"]["planning"]["status"], "allocated");
+            assert_eq!(
+                reservation["train"]["planning"]["adjustments"],
+                alternative["planning"]["adjustments"]
+            );
+            assert_eq!(
+                reservation["train"]["planning"]["timeline"], *timeline,
+                "die Übernahme bewahrt Wunschprofil und angebotenen tatsächlichen Verlauf"
+            );
+            let calls = reservation["passengerStops"].as_array().unwrap();
+            assert_eq!(calls.len(), if passenger_stop { 3 } else { 2 });
+            if passenger_stop {
+                let call = calls
+                    .iter()
+                    .find(|call| call["stationId"] == "point-2")
+                    .unwrap();
+                assert_eq!(
+                    call["departureS"].as_i64().unwrap() - call["arrivalS"].as_i64().unwrap(),
+                    adjustment["plannedS"].as_i64().unwrap()
+                );
+            }
+            let replay: Value = serde_json::from_str(
+                &apply_planning_alternative(
+                    &applied["state"].to_string(),
+                    "accept-stop",
+                    &command.to_string(),
+                )
+                .unwrap(),
+            )
+            .unwrap();
+            assert_eq!(replay["stateHash"], applied["stateHash"]);
+            assert_eq!(
+                replay["state"]["reservations"]["via-route"]["train"]["planning"]["timeline"],
+                *timeline
+            );
+            input["previousState"] = applied["state"].clone();
+            input["expectedProjectionRevision"] = json!(3);
+            input["requests"][0]["trainId"] = json!("later");
+            input["requests"][0]["trainNumber"] = json!(26806);
+            input["requests"][0]["desiredDepartureS"] = json!(60_000);
+            input["requests"][0]["serviceWindow"] =
+                json!({"validFromS":60_000,"validUntilS":60_001});
+            assert_eq!(
+                evaluate_json(&input)["state"]["reservations"]["via-route"],
+                *reservation
+            );
+        }
+    }
+
     #[test]
     fn einzelantrag_und_selbe_formation_in_mehreren_absoluten_fahrten_sind_zulaessig() {
         let mut input = single_absolute_input(7 * 86_400 + 28_800, "one", 26802);
@@ -2694,6 +3346,16 @@ mod tests {
             .and_then(|items| items.iter().find(|item| item["alternative"].is_object()))
             .expect("Konflikt mit Angebot");
         let alternative = &conflict["alternative"];
+        assert_eq!(alternative["planning"]["status"], "proposed");
+        assert_eq!(
+            alternative["planning"]["plannedDepartureS"]
+                .as_i64()
+                .unwrap()
+                - alternative["planning"]["requestedDepartureS"]
+                    .as_i64()
+                    .unwrap(),
+            alternative["departureShiftS"].as_i64().unwrap()
+        );
         let command = json!({
             "schemaVersion": "planning-apply-alternative/v1",
             "projectionRevision": 1,
@@ -2714,6 +3376,17 @@ mod tests {
         assert_eq!(applied["projection"]["projectionRevision"], 2);
         assert_eq!(applied["projection"]["conflicts"], json!([]));
         assert_eq!(applied["idempotentReplay"], false);
+        let allocated = applied["projection"]["trains"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|train| train["id"] == alternative["trainId"])
+            .unwrap();
+        assert_eq!(allocated["planning"]["status"], "allocated");
+        assert_eq!(
+            allocated["planning"]["plannedDepartureS"],
+            allocated["calls"][0]["timeS"]
+        );
 
         let replay: Value = serde_json::from_str(
             &apply_planning_alternative(
@@ -2743,5 +3416,158 @@ mod tests {
         )
         .expect_err("manipulierte Verschiebung muss scheitern");
         assert!(error.to_string().starts_with("alternative_mismatch:"));
+    }
+
+    #[test]
+    fn historische_zustaende_ohne_planungsmetadaten_bleiben_byte_semantisch_unveraendert() {
+        let mut legacy = coordinate_value(false)["state"].clone();
+        for train in legacy["projection"]["trains"].as_array_mut().unwrap() {
+            train.as_object_mut().unwrap().remove("planning");
+        }
+        for conflict in legacy["projection"]["conflicts"].as_array_mut().unwrap() {
+            if let Some(alternative) = conflict["alternative"].as_object_mut() {
+                alternative.remove("planning");
+            }
+        }
+        for alternative in legacy["alternatives"].as_object_mut().unwrap().values_mut() {
+            alternative["replacementTrain"]
+                .as_object_mut()
+                .unwrap()
+                .remove("planning");
+        }
+        let decoded: super::PlanningRuntimeState = serde_json::from_value(legacy.clone()).unwrap();
+        assert_eq!(serde_json::to_value(decoded).unwrap(), legacy);
+    }
+
+    #[test]
+    fn nichtverkehrstage_zeigen_die_tatsaechliche_erste_abfahrt_in_beiden_vertraegen() {
+        for mut input in [coordinate_input(false), coordinate_input_v2()] {
+            input["requests"][0]["operatingDays"] = json!("weekend");
+            input["requests"][1]["operatingDays"] = json!("weekend");
+            input["requests"][1]["desiredDepartureS"] = json!(64_800);
+            let result = evaluate_json(&input);
+            let train = result["projection"]["trains"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|train| train["id"] == "train-east")
+                .unwrap();
+            assert_eq!(train["planning"]["status"], "allocated");
+            assert_eq!(
+                train["planning"]["plannedDepartureS"],
+                train["calls"][0]["timeS"]
+            );
+            assert!(train["planning"]["plannedDepartureS"].as_i64().unwrap() > 28_800);
+            let adjustment = &train["planning"]["adjustments"][0];
+            assert_eq!(adjustment["kind"], "departure-shift");
+            assert_eq!(adjustment["requestedS"], 28_800);
+            assert_eq!(adjustment["plannedS"], train["calls"][0]["timeS"]);
+        }
+    }
+
+    #[test]
+    fn reiner_umweg_wird_als_entfernung_statt_erfundener_zeitabweichung_erklaert() {
+        let mut input = linear_route_input(3);
+        let mut shortcut = input["segments"][0].clone();
+        shortcut["edgeNumericId"] = json!(99);
+        shortcut["trackNumericId"] = json!(9999);
+        shortcut["id"] = json!("slow-shortcut");
+        shortcut["toStationId"] = json!("point-3");
+        // Der direkte Abschnitt deckt dieselben 10 km Korridor ab. Der schnellere
+        // Weg über Punkt 2 enthält zusätzlich dessen 400 m langes Bahnhofsgleis.
+        shortcut["lengthMm"] = json!(10_000_000);
+        shortcut["maximumSpeedKph"] = json!(1);
+        shortcut["mainSignalPositionsMm"] = json!([]);
+        input["segments"].as_array_mut().unwrap().push(shortcut);
+        let typed: super::PlanningCoordinateInput = serde_json::from_value(input).unwrap();
+        let materialized = super::materialize(&typed).unwrap();
+        let request = &materialized.requests[0];
+        let ledger = zugfolge_conflict::OccupationLedger::new(
+            materialized.infrastructure.exclusions().clone(),
+        );
+        let outcome = zugfolge_planner::TrainPathPlanner::new(&materialized.infrastructure)
+            .plan(&ledger, &request.request)
+            .unwrap();
+        let candidate = outcome.offer().unwrap();
+        assert_eq!(candidate.deviation().shift_s(), 0);
+        assert_eq!(candidate.deviation().extra_running_time_s(), 0);
+        let (_, desired_profile) = super::desired_run(
+            &materialized.infrastructure,
+            &request.request,
+            zugfolge_planner::PlannerOptions::default(),
+        )
+        .unwrap();
+        let metadata = super::project_planning(
+            &request.input,
+            &desired_profile,
+            Some(candidate),
+            super::TrainPlanningStatus::Proposed,
+            &materialized,
+        )
+        .unwrap();
+        assert!(metadata.adjustments.is_empty());
+        assert!(metadata.route_change.unwrap().additional_distance_mm > 0);
+    }
+
+    #[test]
+    fn zeitverlaeufe_bleiben_fuer_bestehende_planungszustaende_optional() {
+        fn remove_timelines(value: &mut Value) -> usize {
+            match value {
+                Value::Object(fields) => {
+                    let removed = if fields.remove("timeline").is_some() {
+                        1
+                    } else {
+                        0
+                    };
+                    removed + fields.values_mut().map(remove_timelines).sum::<usize>()
+                }
+                Value::Array(values) => values.iter_mut().map(remove_timelines).sum(),
+                _ => 0,
+            }
+        }
+        let mut legacy = evaluate_json(&coordinate_input_v2())["state"].clone();
+        assert!(remove_timelines(&mut legacy) > 0);
+        let decoded: super::PlanningRuntimeState = serde_json::from_value(legacy.clone()).unwrap();
+        assert_eq!(
+            serde_json::to_value(decoded).unwrap(),
+            legacy,
+            "ein vorhandener Zustand bekommt beim Lesen keinen erfundenen Zeitverlauf"
+        );
+    }
+
+    #[test]
+    fn zeitverlauf_folgt_der_fahrtrichtung_und_enthaelt_auch_durchfahrten() {
+        let mut input = linear_route_input(4);
+        input["requests"][0]["originStationId"] = json!("point-4");
+        input["requests"][0]["destinationStationId"] = json!("point-1");
+        input["requests"][0]["viaStationIds"] = json!(["point-3", "point-2"]);
+        input["requests"][0]["stops"] = json!([{"stationId":"point-2", "minimumDwellS":60}]);
+        let result = evaluate_json(&input);
+        let timeline = &result["projection"]["trains"][0]["planning"]["timeline"];
+        let calls = timeline["requested"].as_array().unwrap();
+        assert_eq!(
+            calls
+                .iter()
+                .map(|call| call["stationId"].as_str().unwrap())
+                .collect::<Vec<_>>(),
+            ["point-4", "point-3", "point-2", "point-1"]
+        );
+        assert_eq!(
+            calls
+                .iter()
+                .map(|call| call["kind"].as_str().unwrap())
+                .collect::<Vec<_>>(),
+            ["origin", "pass", "passenger-stop", "destination"]
+        );
+        assert_eq!(calls[0]["arrivalS"], 28_800);
+        assert_eq!(
+            calls[2]["departureS"].as_i64().unwrap() - calls[2]["arrivalS"].as_i64().unwrap(),
+            60
+        );
+        assert_eq!(timeline["planned"], timeline["requested"]);
+        assert_eq!(
+            calls[3]["arrivalS"],
+            result["projection"]["trains"][0]["calls"][1]["timeS"]
+        );
     }
 }

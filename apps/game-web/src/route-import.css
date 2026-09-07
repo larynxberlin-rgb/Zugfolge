@@ -1,0 +1,18 @@
+.route-import { min-width: 0; margin: .65rem 0; padding: .8rem; border: 1px solid var(--rail-line, #303b46); border-radius: .5rem; }
+.route-import legend { max-width: 100%; padding: 0 .25rem; font-weight: 650; overflow-wrap: anywhere; }
+.route-import p { margin: .5rem 0; font-size: .85rem; line-height: 1.5; overflow-wrap: anywhere; }
+.route-import a { color: inherit; text-decoration: underline; text-underline-offset: .2em; }
+.route-import label { display: grid; gap: .4rem; font-size: .85rem; }
+.route-import input[type="file"] { width: 100%; min-width: 0; max-width: 100%; padding: .5rem; }
+.route-import [role="alert"] { color: #ff7d87; }
+.route-import button { margin: .35rem .3rem 0 0; }
+.route-import-points { max-height: 10rem; overflow: auto; padding: .4rem .4rem .4rem 1.8rem; margin: .3rem 0; font-size: .85rem; overflow-wrap: anywhere; }
+.route-import-points li { padding: .15rem 0; }
+.route-import-points small { color: #b5c0cc; }
+.planning-flexibility { min-width: 0; padding: .8rem; border: 1px solid #303b46; border-radius: .5rem; }
+.planning-flexibility legend { max-width: 100%; padding: 0 .25rem; overflow-wrap: anywhere; }
+.planning-flexibility .m12-field + .m12-field { margin-top: .75rem; }
+.route-mapping { min-width: 0; border-top: 1px solid #303b46; margin-top: .75rem; padding-top: .75rem; }
+.route-mapping h4 { margin: 0; font-size: .95rem; }
+.route-mapping select { width: 100%; min-width: 0; max-width: 100%; margin: .25rem 0; padding: .5rem; background: #202830; color: #f5f7fa; border: 1px solid #465360; font: inherit; }
+.route-mapping-source { display: block; margin: .25rem 0; }

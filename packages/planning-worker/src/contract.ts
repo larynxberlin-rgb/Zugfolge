@@ -1,5 +1,7 @@
 import {
   PLANNING_APPLY_ALTERNATIVE_SCHEMA,
+  MAX_PLANNING_VIA_STATIONS,
+  validatePlanningViaStationIds,
   type PlanningApplyAlternativePayload,
   type PlanningCoordinateBoundaryWindow,
   type PlanningCoordinateRequestV1,
@@ -176,6 +178,9 @@ function validatePlayerRequestFacts(input: Record<string, unknown>, name: string
   integer(input["extraRunningTimeS"], `${name}.extraRunningTimeS`);
   integer(input["maxOperationalStops"], `${name}.maxOperationalStops`);
   invariant(Array.isArray(input["stops"]), `${name}.stops ist keine Liste.`);
+  if (Object.hasOwn(input, "viaStationIds")) {
+    validatePlanningViaStationIds(input["viaStationIds"], input["originStationId"], input["destinationStationId"], `${name}.viaStationIds`);
+  }
   for (const [index, value] of input["stops"].entries()) {
     const stop = exactRecord(value, `${name}.stops[${index}]`, ["stationId", "minimumDwellS"]);
     text(stop["stationId"], `${name}.stops[${index}].stationId`);
@@ -224,6 +229,7 @@ export function bindPlanningPlayerPathRequest(value: unknown): PlanningPlayerPat
     ...PLAYER_REQUEST_KEYS,
     ...(withBoundaryReference ? ["boundaryPlanningWindowId"] : []),
     ...(typeof value === "object" && value !== null && "serviceWindow" in value ? ["serviceWindow"] : []),
+    ...(typeof value === "object" && value !== null && "viaStationIds" in value ? ["viaStationIds"] : []),
   ]);
   invariant(
     input["schemaVersion"] === PLANNING_PLAYER_PATH_REQUEST_SCHEMA,
@@ -251,6 +257,7 @@ function bindPlanningPathRequestForRead(
     ...REQUEST_KEYS,
     ...(withBoundaryReference ? ["boundaryPlanningWindowId"] : []),
     ...(typeof value === "object" && value !== null && "serviceWindow" in value ? ["serviceWindow"] : []),
+    ...(typeof value === "object" && value !== null && "viaStationIds" in value ? ["viaStationIds"] : []),
   ]);
   invariant(
     input["schemaVersion"] === PLANNING_PATH_REQUEST_SCHEMA
@@ -420,7 +427,6 @@ export function parsePlanningApplyAlternativePayload(value: unknown): PlanningAp
   integer(input["projectionRevision"], "planning.apply-alternative.projectionRevision");
   for (const key of ["alternativeId", "conflictId", "trainId"] as const) text(input[key], `planning.apply-alternative.${key}`);
   integer(input["departureShiftS"], "planning.apply-alternative.departureShiftS", Number.MIN_SAFE_INTEGER);
-  invariant(input["departureShiftS"] !== 0, "planning.apply-alternative.departureShiftS darf nicht null sein.");
   return input as unknown as PlanningApplyAlternativePayload;
 }
 
@@ -441,6 +447,7 @@ const pathRequestProperties = {
   trainNumber: positiveInteger,
   originStationId: nonEmptyString,
   destinationStationId: nonEmptyString,
+  viaStationIds: { type: "array", maxItems: MAX_PLANNING_VIA_STATIONS, uniqueItems: true, items: nonEmptyString },
   desiredDepartureS: nonNegativeInteger,
   operatingDays: { enum: ["daily", "workdays", "weekend"] },
   serviceWindow: {

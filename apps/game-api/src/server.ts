@@ -743,6 +743,7 @@ const app = buildApp({
   validateDailyRestrictionPolicy: (worldId, policy) => dailyRestrictionCatalog.validatePolicy(worldId, policy),
   planningAuthorityAccountIds,
   fleetIngestToken: requireEnv("FLEET_INGEST_TOKEN"),
+  planningInfrastructureForWorld: (worldId) => deploymentRuntime.planningInfrastructureForWorld(worldId),
   fleetRuntime: operatingRuntime,
   fleetAuthorityReleases,
   fleetAuthorityConfigurations,

@@ -28,6 +28,9 @@ use zugfolge_infra::{OperatingPointId, TrainCharacteristics};
 
 use crate::error::PlannerError;
 
+/// Höchstens 512 Betriebsstellen einschließlich Anfang und Ziel.
+pub const MAX_VIA_POINTS: usize = 510;
+
 /// Die Kennung eines Trassenantrags.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct PathRequestId(u32);
@@ -340,6 +343,7 @@ pub struct PathRequest {
     origin: OperatingPointId,
     destination: OperatingPointId,
     stops: Vec<RequestedStop>,
+    via_points: Vec<OperatingPointId>,
     desired_departure: SimTime,
     operating_days: OperatingDays,
     tolerances: PathTolerances,
@@ -392,12 +396,46 @@ impl PathRequest {
             origin,
             destination,
             stops,
+            via_points: Vec::new(),
             desired_departure,
             operating_days,
             tolerances,
             boundary_windows: Vec::new(),
             service_window: None,
         })
+    }
+
+    /// Bindet geordnete Zwischenpunkte ohne zusätzliche Haltepflicht.
+    ///
+    /// # Errors
+    /// Höchstens [`MAX_VIA_POINTS`] verschiedene Zwischenpunkte sind erlaubt;
+    /// Anfang und Ziel dürfen nicht nochmals als Zwischenpunkt erscheinen.
+    pub fn with_via_points(mut self, points: Vec<OperatingPointId>) -> Result<Self, PlannerError> {
+        if points.len() > MAX_VIA_POINTS {
+            return Err(PlannerError::InvalidViaPoints(
+                "höchstens 510 Zwischenpunkte sind zulässig",
+            ));
+        }
+        let mut seen = std::collections::BTreeSet::new();
+        for point in &points {
+            if *point == self.origin || *point == self.destination {
+                return Err(PlannerError::InvalidViaPoints(
+                    "Anfang und Ziel stehen getrennt von den Zwischenpunkten",
+                ));
+            }
+            if !seen.insert(*point) {
+                return Err(PlannerError::InvalidViaPoints(
+                    "eine Betriebsstelle ist mehrfach als Zwischenpunkt genannt",
+                ));
+            }
+        }
+        self.via_points = points;
+        Ok(self)
+    }
+
+    /// Geordnete Fahrwegpunkte; Halte werden ausschließlich durch `stops` festgelegt.
+    pub fn via_points(&self) -> &[OperatingPointId] {
+        &self.via_points
     }
 
     /// Bindet die wiederkehrende Tageslage an ein absolutes Abfahrtsfenster.

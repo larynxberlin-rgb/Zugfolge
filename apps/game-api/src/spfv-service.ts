@@ -11,6 +11,9 @@ export interface SpfvDraft {
   readonly lineId?: string;
   readonly name: string;
   readonly stopIds: readonly string[];
+  readonly viaStationIds?: readonly string[];
+  readonly departureFlexibilityS?: number;
+  readonly extraRunningTimeS?: number;
   readonly headwayS: number;
   readonly fareCents: string;
   readonly formationId: string;
@@ -126,7 +129,7 @@ function text(value: unknown, name: string, maximum = 160): asserts value is str
 export function parseSpfvDraft(value: unknown): SpfvDraft {
   valid(value !== null && typeof value === "object" && !Array.isArray(value), "Fernverkehrslinie fehlt.");
   const draft = value as Record<string, unknown>;
-  const keys = ["lineId", "name", "stopIds", "headwayS", "fareCents", "formationId", "validFromS", "validUntilS", "referenceTrainId"];
+  const keys = ["lineId", "name", "stopIds", "viaStationIds", "departureFlexibilityS", "extraRunningTimeS", "headwayS", "fareCents", "formationId", "validFromS", "validUntilS", "referenceTrainId"];
   valid(Object.keys(draft).every((key) => keys.includes(key)), "Fernverkehrslinie enthält unbekannte Felder.");
   text(draft["name"], "Linienname");
   text(draft["formationId"], "Formation");
@@ -136,7 +139,19 @@ export function parseSpfvDraft(value: unknown): SpfvDraft {
   valid(Array.isArray(stopIds) && stopIds.length >= 2 && stopIds.length <= 64, "Zwei bis 64 Halte sind erforderlich.");
   stopIds.forEach((id) => text(id, "Halt"));
   valid(new Set(stopIds).size === stopIds.length, "Ein Halt darf in diesem Linienlauf nur einmal vorkommen.");
+  const viaStationIds = draft["viaStationIds"];
+  if (viaStationIds !== undefined) {
+    valid(Array.isArray(viaStationIds) && viaStationIds.length <= 510, "Der Fahrweg darf höchstens 510 Durchfahrtspunkte enthalten.");
+    viaStationIds.forEach((id) => text(id, "Fahrwegpunkt"));
+    valid(new Set(viaStationIds).size === viaStationIds.length && !viaStationIds.includes(stopIds[0]) && !viaStationIds.includes(stopIds.at(-1)),
+      "Fahrwegpunkte müssen eindeutig sein und zwischen Start und Ziel liegen.");
+  }
   const headwayS = draft["headwayS"];
+  for (const [key, maximum] of [["departureFlexibilityS", 7_200], ["extraRunningTimeS", 3_600]] as const) {
+    const value = draft[key];
+    valid(value === undefined || Number.isSafeInteger(value) && (value as number) >= 0 && (value as number) <= maximum,
+      `${key === "departureFlexibilityS" ? "Abfahrtsverschiebung" : "Zusätzliche Fahrzeit"} muss zwischen 0 und ${maximum} Sekunden liegen.`);
+  }
   const from = draft["validFromS"];
   const until = draft["validUntilS"];
   valid(Number.isSafeInteger(headwayS) && (headwayS as number) >= 60 && (headwayS as number) <= 86_400, "Takt muss zwischen 60 und 86400 Sekunden liegen.");
@@ -146,6 +161,9 @@ export function parseSpfvDraft(value: unknown): SpfvDraft {
   valid(BigInt(until as number) - BigInt(from as number) <= BigInt(headwayS as number) * BigInt(MAX_DEPARTURES), "Die Linie überschreitet 256 Trassenanträge pro Vorschau.");
   return { ...(draft["lineId"] === undefined ? {} : { lineId: draft["lineId"] as string }), name: draft["name"] as string,
     stopIds: [...stopIds] as string[], headwayS: headwayS as number, fareCents: draft["fareCents"],
+    ...(viaStationIds === undefined ? {} : { viaStationIds: [...viaStationIds] as string[] }),
+    ...(draft["departureFlexibilityS"] === undefined ? {} : { departureFlexibilityS: draft["departureFlexibilityS"] as number }),
+    ...(draft["extraRunningTimeS"] === undefined ? {} : { extraRunningTimeS: draft["extraRunningTimeS"] as number }),
     formationId: draft["formationId"] as string, validFromS: from as number, validUntilS: until as number,
     ...(draft["referenceTrainId"] === undefined ? {} : { referenceTrainId: draft["referenceTrainId"] as string }) };
 }
@@ -210,7 +228,7 @@ export class SpfvService {
       periodId: `period-${BigInt(atS) / BigInt(periodDurationS)}`, periodStartS, periodEndS: periodStartS + periodDurationS,
       asOfS: atS, releaseId: release.releaseId, defaultHeadwayS: 3_600,
       source: { kind: "committed", infrastructureReleaseId: release.releaseId, sourceId: release.sourceId, fleetRevision: checkpoint.state.revision },
-      stops: release.stations.map(({ id, name }) => ({ id, label: name })),
+      stops: release.stations.map(({ id, name, code }) => ({ id, label: name, code })),
       formations: checkpoint.snapshot.formations.filter((formation) => formation.operatorId === scope.operatorId
         && formation.availability === "available" && formation.procurement === "delivered")
         .map((formation) => {
@@ -241,6 +259,12 @@ export class SpfvService {
     valid(indices.every((index, position) => position === 0 || (index - indices[position - 1]!) * direction > 0), "Halte müssen in Laufwegreihenfolge liegen.", 409);
     const low = Math.min(indices[0]!, indices.at(-1)!);
     const high = Math.max(indices[0]!, indices.at(-1)!);
+    if (draft.viaStationIds !== undefined) {
+      const routeIndices = [indices[0]!, ...draft.viaStationIds.map((id) => release.stations.findIndex((station) => station.id === id)), indices.at(-1)!];
+      valid(routeIndices.every((index, position) => index >= low && index <= high
+        && (position === 0 || (index - routeIndices[position - 1]!) * direction > 0)),
+      "Der importierte Fahrweg muss in Fahrtrichtung innerhalb des freigegebenen Korridors liegen.", 409);
+    }
     let distance = 0n;
     for (let index = low; index < high; index += 1) {
       const from = release.stations[index]!.id;
@@ -396,14 +420,17 @@ export class SpfvService {
         const replaceTrainIds = current.replaceTrainIds;
         const requestIds: string[] = [];
         for (const [index, departureS] of departures(preview.draft).entries()) {
+          const laterS = Math.min(preview.draft.departureFlexibilityS ?? 0, preview.draft.headwayS - 1, preview.draft.validUntilS - departureS - 1);
+          const extraRunningTimeS = preview.draft.extraRunningTimeS ?? 0;
           const requestId = `spfv-${demandHash({ operatorId: scope.operatorId, previewId: preview.previewId, index }).slice(0, 48)}`;
           const authoritative = await resolveAuthoritativePlanningPathRequest(tx, { worldId: scope.worldId, accountId: scope.accountId,
             fleetRuntime: this.deps.fleetRuntime, body: { schemaVersion: PLANNING_PLAYER_PATH_REQUEST_SCHEMA, requestId,
               formationId: preview.draft.formationId, trainCategory: "long-distance", originStationId: preview.draft.stopIds[0]!,
               destinationStationId: preview.draft.stopIds.at(-1)!, desiredDepartureS: departureS, operatingDays: "daily",
-              serviceWindow: { validFromS: departureS, validUntilS: departureS + 1 },
+              serviceWindow: { validFromS: departureS, validUntilS: departureS + laterS + 1 },
               stops: preview.draft.stopIds.slice(1, -1).map((stationId) => ({ stationId, minimumDwellS: MINIMUM_DWELL_S })),
-              earlierS: 0, laterS: 0, stepS: 1, extraRunningTimeS: 0, maxOperationalStops: 0 } });
+              ...(preview.draft.viaStationIds === undefined ? {} : { viaStationIds: preview.draft.viaStationIds }),
+              earlierS: 0, laterS, stepS: laterS > 0 ? 60 : 1, extraRunningTimeS, maxOperationalStops: extraRunningTimeS > 0 ? 4 : 0 } });
           valid(authoritative.operatorId === scope.operatorId && authoritative.fleetStateHash === preview.fleetStateHash, "Trassenautorität hat eine fremde Formation gebunden.", 409);
           const command = await queuePlanningPathRequest(tx, { worldId: scope.worldId, requestingAccountId: scope.accountId,
             body: authoritative, submittedAt: occurredAt });

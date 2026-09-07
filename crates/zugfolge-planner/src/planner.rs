@@ -403,14 +403,17 @@ impl<'a> TrainPathPlanner<'a> {
                     continue;
                 }
 
-                if toleranz.max_operational_stops() == 0 {
+                if toleranz.extra_running_time_s() == 0 {
                     continue;
                 }
 
-                // Mit einem Betriebshalt an einer kreuzungsfähigen
-                // Betriebsstelle. Das ist die Kreuzung — die betrieblich
-                // richtige Auflösung, die der Prüfer nicht kennt.
+                // Einen vorhandenen Halt verlängern oder an einer
+                // kreuzungsfähigen Betriebsstelle einen Betriebshalt einlegen.
                 for (abschnitt, punkt) in self.betriebshalte(laufweg, request) {
+                    let neuer_halt = request.stop_at(punkt).is_none();
+                    if neuer_halt && toleranz.max_operational_stops() == 0 {
+                        continue;
+                    }
                     let Some((halt_laufweg, halt_profil, _)) = self.betriebshalt(
                         ledger,
                         request,
@@ -439,7 +442,12 @@ impl<'a> TrainPathPlanner<'a> {
                     }
                     kandidaten.push(PathCandidate::new(
                         angebot.clone(),
-                        CandidateDeviation::new(shift, mehrfahrzeit, vec![punkt], umweg),
+                        CandidateDeviation::new(
+                            shift,
+                            mehrfahrzeit,
+                            if neuer_halt { vec![punkt] } else { Vec::new() },
+                            umweg,
+                        ),
                         self.erste_abfahrt(&angebot, abfahrt),
                     ));
                     break;
@@ -475,7 +483,9 @@ impl<'a> TrainPathPlanner<'a> {
         cache: &mut BTreeMap<(usize, usize, i64), (Itinerary, OccupationProfile)>,
     ) -> Result<Option<(Itinerary, OccupationProfile, i64)>, PlannerError> {
         let abfahrt = request.desired_departure().plus_seconds(shift);
-        let mut haltezeit = auf_volle_minute(self.options.minimum_operational_dwell_s);
+        let mut haltezeit = laufweg.legs()[abschnitt]
+            .dwell_s()
+            .saturating_add(auf_volle_minute(self.options.minimum_operational_dwell_s));
 
         for _ in 0..self.options.max_dwell_rounds {
             let schluessel = (nummer, abschnitt, haltezeit);
@@ -531,10 +541,9 @@ impl<'a> TrainPathPlanner<'a> {
 
     /// Die Abschnitte, an deren Ende ein Betriebshalt möglich ist.
     ///
-    /// Möglich ist er in einer Betriebsstelle, die kreuzen kann (also Weichen
-    /// hat), die nicht Anfang oder Ziel ist und an der nicht ohnehin gehalten
-    /// wird. Ein Haltepunkt auf freier Strecke kann nicht kreuzen — dort steht
-    /// ein wartender Zug im Weg.
+    /// Ein vorhandener Zwischenhalt darf verlängert werden. Ein neuer Halt
+    /// verlangt eine kreuzungsfähige Betriebsstelle. Anfang und Ziel bleiben
+    /// ausgenommen; jede verlängerte Belegung durchläuft dieselbe Konfliktprüfung.
     fn betriebshalte(
         &self,
         laufweg: &Itinerary,
@@ -545,18 +554,11 @@ impl<'a> TrainPathPlanner<'a> {
             .legs()
             .iter()
             .enumerate()
-            .filter(|(index, leg)| {
-                *index > 0 && *index < letzter && leg.is_in_station() && leg.dwell_s() == 0
-            })
+            .filter(|(index, leg)| *index > 0 && *index < letzter && leg.is_in_station())
             .filter_map(|(index, leg)| {
                 let punkt = leg.to();
-                if request.stop_at(punkt).is_some() {
-                    return None;
-                }
                 let betriebsstelle = self.infrastructure.graph().operating_point(punkt)?;
-                betriebsstelle
-                    .kind()
-                    .allows_crossing()
+                (request.stop_at(punkt).is_some() || betriebsstelle.kind().allows_crossing())
                     .then_some((index, punkt))
             })
             .collect()

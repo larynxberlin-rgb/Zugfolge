@@ -184,6 +184,21 @@ describe("SPFV: persistente Vorschau und bestehende Trassenautorität", () => {
     await expect(service.confirm(scope, { previewId: "different", commandId: "confirm" })).rejects.toMatchObject({ statusCode: 409 });
   });
 
+  it("bindet importierte Durchfahrtspunkte in Vorschau und Anträgen ohne zusätzliche Halte", async () => {
+    const ordinary = await service.preview(scope, DRAFT);
+    const imported = await service.preview(scope, { ...DRAFT, viaStationIds: ["b"], departureFlexibilityS: 1_800, extraRunningTimeS: 900 });
+    expect(imported.previewId).not.toBe(ordinary.previewId);
+    expect(imported.draft).toMatchObject({ viaStationIds: ["b"], stopIds: ["a", "c"] });
+    const submitted = await service.confirm(scope, { previewId: imported.previewId, commandId: "import-route" });
+    expect(submitted.planningRequestIds).toHaveLength(2);
+    const requests = await db.select().from(simulationCommands).where(eq(simulationCommands.commandType, "planning.path-request"));
+    for (const request of requests) expect(request.payload).toMatchObject({ viaStationIds: ["b"], stops: [],
+      earlierS: 0, laterS: 1_800, extraRunningTimeS: 900, maxOperationalStops: 4 });
+    expect(requests[0]?.payload).toHaveProperty("serviceWindow", { validFromS: 3_600, validUntilS: 5_401 });
+    await expect(service.preview(scope, { ...DRAFT, viaStationIds: ["unknown"] })).rejects.toThrow("Fahrweg");
+    await expect(service.preview(scope, { ...DRAFT, stopIds: ["a", "b"], viaStationIds: ["c"] })).rejects.toThrow("Fahrweg");
+  });
+
   it("rollt den ersten Antrag und seine Nummer zurück, wenn ein späterer Queue-Write fehlschlägt", async () => {
     const preview = await service.preview(scope, DRAFT);
     await db.execute(sql`alter table simulation_commands add constraint spfv_test_window check (command_type <> 'planning.path-request' or (payload->>'desiredDepartureS')::integer < 7000)`);
@@ -250,7 +265,11 @@ describe("SPFV: persistente Vorschau und bestehende Trassenautorität", () => {
 it("begrenzt Integer, Fristen und Batchgröße vor jeder Datenbankmutation", () => {
   expect(parseSpfvDraft(DRAFT)).toEqual(DRAFT);
   for (const input of [{ ...DRAFT, fareCents: "9223372036854775808" }, { ...DRAFT, headwayS: 60.5 },
-    { ...DRAFT, validUntilS: Number.MAX_SAFE_INTEGER }, { ...DRAFT, seats: 99999 }, { ...DRAFT, stopIds: ["a", "a"] }]) {
+    { ...DRAFT, validUntilS: Number.MAX_SAFE_INTEGER }, { ...DRAFT, seats: 99999 }, { ...DRAFT, stopIds: ["a", "a"] },
+    { ...DRAFT, viaStationIds: ["a"] }, { ...DRAFT, viaStationIds: ["b", "b"] }, { ...DRAFT, viaStationIds: [""] },
+    { ...DRAFT, viaStationIds: Array.from({ length: 511 }, (_, i) => `point-${i}`) },
+    { ...DRAFT, departureFlexibilityS: -1 }, { ...DRAFT, departureFlexibilityS: 7_201 },
+    { ...DRAFT, extraRunningTimeS: 3_601 }, { ...DRAFT, extraRunningTimeS: 0.5 }]) {
     expect(() => parseSpfvDraft(input)).toThrow();
   }
 });

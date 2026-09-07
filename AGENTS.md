@@ -34,6 +34,7 @@ lesen, nicht raten.
 | `docs/betriebsengine-lastnachweis.md` | Reproduzierbarer E31-Kernbenchmark, Messergebnis und offene Systemlast-Gates | Lasttest oder Cutover-Abnahme der Betriebsengine |
 | `docs/wirtschaft.md` | Spielkreislauf, Geschäftsfelder, Nachfrage, Ausschreibung, Eigenbetrieb, Insolvenz, Kooperation | Verträge, Märkte, Geld, Ausschreibungen |
 | `docs/daten.md` | Datenlage OSM/ORM, Quellen, Rechte, Qualitätsklassen | Import-Pipeline, InfraRelease, Lizenzfragen zu Daten |
+| `docs/trassenfinder-routenimport.md` | Optionaler externer Routenentwurf, lokaler CSV-Laufwegimport und getrennte Durchfahrtpunkte | Fahrwegwahl, Trassenfinder-Verknüpfung, nutzergewählte Routendateien |
 | `docs/architektur.md` | Systemarchitektur, Lastgrößen, irreversible Entscheidungen, Determinismus, Sicherheit | Technischer Entwurf, Skalierung, Persistenz |
 | `docs/design.md` | Deutschlandweite LiveMap, rote Gleismarke, Graphitpalette, Spielertexte, kompakte Arbeitsbereiche und Zugänglichkeit | jede Oberflächenarbeit, jedes Diagramm, jede Zustandsdarstellung |
 | `docs/ui-redesign/README.md`, `docs/brand/README.md` | Echte UI-Screenshots mit Beispieldaten, Vorschauprüfung, aktuelle Zeichen und Bildherkunft | neue Oberflächen oder Bilder gestalten, den aktuellen UI-Stand prüfen |
@@ -81,7 +82,7 @@ Begründungen: `docs/entscheidungen.md`. Änderungen dort eintragen und begründ
 | E7 | Gescheiterte Ausschreibungen übernimmt der Eigenbetrieb des Aufgabenträgers |
 | E8 | Insolvenz bedeutet Totalverlust des EVU, mit telegrafierter Eskalationsleiter |
 | E9 | Vollständige Transparenz auf der Livemap |
-| E10 | Trassenfinder ist Kalibrierwerkzeug der Entwicklung, keine Laufzeitabhängigkeit |
+| E10 | Trassenfinder ist optionales externes Planungs- und Kalibrierwerkzeug, keine Laufzeitabhängigkeit; lokale Routendateien liefern nur geprüfte Fahrwegwünsche |
 | E11 | Kein einzelner Optimierungswert |
 | E12 | Rangieren ist ausschließlich automatisiert und wird als vollständige physische Bewegung simuliert |
 | E13 | Der Automatikmodus bleibt in öffentlichen Welten kostenlos |

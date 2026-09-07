@@ -56,6 +56,9 @@ import "@zugfolge/design-system/railway.css";
 import "./railway-game.css";
 import "./spfv.css";
 import { mountSpfv } from "./spfv-controller.js";
+import { mountRouteImport, RouteImportSession, routeMatchesEndpoints, routeViaStationIds } from "./route-import.js";
+import "./route-import.css";
+import { parsePlanningFlexibility } from "./planning-flexibility.js";
 
 const root = document.querySelector<HTMLDivElement>("#root");
 if (root === null) throw new Error("App-Wurzel fehlt");
@@ -108,6 +111,7 @@ let api: GameApiClient | undefined;
 
 let density: Density = "control";
 let showBlockingTimes = true;
+let planningView: "comparison" | "diagram" | undefined;
 let selectedTrainId = parameters.get("train") ?? "";
 let selectedConflictId = "";
 let projection: PlanningProjectionV1 | undefined;
@@ -156,6 +160,7 @@ let listingNextCursor: string | null = null;
 type FormDraft = Readonly<Record<string, readonly string[]>>;
 const journeyDrafts = new Map<string, FormDraft>();
 const clearedJourneyDrafts = new Set<string>();
+const routeImports = new Map<string, RouteImportSession>();
 let pendingConfirmation: {
   readonly title: string;
   readonly detail: string;
@@ -298,6 +303,7 @@ function render(): void {
     bindJourney();
     bindRailwayTabs(app, window.location.hash);
     restoreJourneyDrafts();
+    bindJourneyRouteImports();
     restoreWorkspaceView();
     mountGlossaryForCurrentView();
     if (pendingCooperationDeepLink && focusCooperationDeepLink(
@@ -325,6 +331,7 @@ function render(): void {
   app.innerHTML = renderProjection(projection, {
     density,
     showBlockingTimes,
+    planningView,
     selectedTrainId,
     selectedConflictId,
     message,
@@ -338,6 +345,36 @@ function render(): void {
   });
   bind();
   mountGlossaryForCurrentView();
+}
+
+function bindJourneyRouteImports(): void {
+  const scope = JSON.stringify([publicWorldId, activeOperatorId]);
+  app.querySelectorAll<HTMLFormElement>("[data-path-request]").forEach((form) => {
+    const kind = form.dataset["pathRequest"]!;
+    let session = routeImports.get(kind);
+    if (!session || session.scope !== scope) {
+      session?.clear(); session = new RouteImportSession(scope); routeImports.set(kind, session);
+    }
+    const current = session;
+    const origin = form.querySelector<HTMLInputElement>('[name="originStationId"]')!;
+    const destination = form.querySelector<HTMLInputElement>('[name="destinationStationId"]')!;
+    if (current.applied && !routeMatchesEndpoints(current.applied, origin.value.trim(), destination.value.trim())) current.clear("Start oder Ziel wurde geändert. Übernimm den Fahrweg erneut.");
+    const invalidate = (): void => { if (current.applied || current.candidate || current.pendingMapping || current.busy) current.clear("Start oder Ziel wurde geändert. Übernimm den Fahrweg erneut."); };
+    for (const input of [origin, destination]) {
+      input.addEventListener("input", invalidate);
+      input.addEventListener("change", invalidate);
+    }
+    const host = form.querySelector<HTMLElement>("[data-route-import]")!;
+    mountRouteImport(host, current, {
+      disabled: journeyBusyScopes.has("initial") || journeyBusyScopes.has("cooperation"),
+      loadCatalog: async () => {
+        if (!api) throw new Error("Melde dich an, um den Laufweg mit deiner Spielwelt abzugleichen.");
+        return api.loadRouteCatalog(publicWorldId);
+      },
+      apply: (route) => { origin.value = route.stations[0]!.id; destination.value = route.stations.at(-1)!.id; },
+      remove: () => undefined,
+    });
+  });
 }
 
 function bindJourney(): void {
@@ -519,9 +556,15 @@ function submitPathRequest(kind: "schedule" | "empty-run", fields: Readonly<Reco
     const originStationId = (fields["originStationId"] ?? "").trim();
     const destinationStationId = (fields["destinationStationId"] ?? "").trim();
     const departureInMinutes = positiveIntegerField(fields["departureInMinutes"], "Abfahrtsvorlauf");
+    const flexibility = parsePlanningFlexibility(fields, { departureMinutes: kind === "schedule" ? 30 : 5, runningMinutes: kind === "schedule" ? 15 : 5 });
     if (formationId === "" || originStationId === "" || destinationStationId === "") throw new Error("Formation, Start und Ziel muessen ausgewaehlt werden.");
     if (originStationId === destinationStationId) throw new Error("Start und Ziel muessen verschieden sein.");
-    const fingerprint = `${kind}:${formationId}:${originStationId}:${destinationStationId}:${departureInMinutes}`;
+    const routeSession = routeImports.get(kind);
+    routeSession?.assertReady();
+    const route = routeSession?.scope === JSON.stringify([publicWorldId, activeOperatorId]) ? routeSession.applied : undefined;
+    if (route && !routeMatchesEndpoints(route, originStationId, destinationStationId)) throw new Error("Start oder Ziel wurde geändert. Übernimm den Fahrweg erneut.");
+    const viaStationIds = route === undefined ? undefined : routeViaStationIds(route);
+    const fingerprint = JSON.stringify([kind, formationId, originStationId, destinationStationId, departureInMinutes, viaStationIds ?? [], flexibility]);
     const requestId = commandKey("planning-path", fingerprint);
     const desiredDepartureS = cooperationAtS + departureInMinutes * 60;
     if (!Number.isSafeInteger(desiredDepartureS)) throw new Error("Abfahrtszeit liegt ausserhalb des sicheren Zeitbereichs.");
@@ -529,7 +572,7 @@ function submitPathRequest(kind: "schedule" | "empty-run", fields: Readonly<Reco
     let assignedTrainNumber: number | undefined;
     return requestConfirmation(
       `${label === "Fahrplan" ? "Fahrplan" : "Leerfahrt"} verbindlich anmelden?`,
-      confirmationDetail({ parties: operatorDisplayName(activeOperatorId), object: `${label} von ${originStationId} nach ${destinationStationId}; Zugnummer wird automatisch vergeben`, amount: "Die geltenden Strecken- und Betriebskosten", deadline: `Abfahrt in ${departureInMinutes} Minuten`, consequence: "Wir prüfen, ob dein Zug einsatzbereit ist und die Fahrt ins Netz passt." }),
+      confirmationDetail({ parties: operatorDisplayName(activeOperatorId), object: `${label} ${route ? `mit Fahrweg ${route.stations.map((station) => station.name).join(" → ")}` : `von ${originStationId} nach ${destinationStationId}`}; Zugnummer wird automatisch vergeben`, amount: "Die geltenden Strecken- und Betriebskosten", deadline: `Wunschabfahrt in ${departureInMinutes} Minuten, bis zu ${flexibility.departureFlexibilityS / 60} Minuten später; bis zu ${flexibility.extraRunningTimeS / 60} Minuten zusätzliche Fahrzeit`, consequence: "Wir prüfen, ob dein Zug einsatzbereit ist und die Fahrt ins Netz passt." }),
       () => cooperationAction(async () => {
         if (api === undefined || activeOperatorId === "") throw new Error("Melde dich an und wähle dein Unternehmen.");
         const submission = await api.submitPlanningPathRequest(publicWorldId, {
@@ -539,18 +582,20 @@ function submitPathRequest(kind: "schedule" | "empty-run", fields: Readonly<Reco
           trainCategory: kind === "schedule" ? "regional" : "supplementary",
           originStationId,
           destinationStationId,
+          ...(viaStationIds === undefined ? {} : { viaStationIds }),
           desiredDepartureS,
           operatingDays: "daily",
           stops: [],
-          earlierS: kind === "schedule" ? 600 : 120,
-          laterS: kind === "schedule" ? 600 : 300,
+          earlierS: 0,
+          laterS: flexibility.departureFlexibilityS,
           stepS: 60,
-          extraRunningTimeS: kind === "schedule" ? 120 : 60,
+          extraRunningTimeS: flexibility.extraRunningTimeS,
           maxOperationalStops: 4,
         });
         assignedTrainNumber = submission.trainNumber;
         completeCommand("planning-path", fingerprint);
         clearedJourneyDrafts.add(kind === "schedule" ? "schedule-request-form" : "empty-run-request-form");
+        routeImports.get(kind)?.clear();
       }, () => `${label} wurde als Zug ${assignedTrainNumber ?? "–"} zur konfliktgeprüften Planung eingereicht.`),
       `[data-path-request="${kind}"] button`,
     );
@@ -1058,6 +1103,20 @@ function loadPreviousRegistryHistory(): Promise<void> {
 }
 
 function bind(): void {
+  app.querySelectorAll<HTMLButtonElement>("[data-planning-view]").forEach((node) => {
+    node.addEventListener("click", () => {
+      planningView = node.dataset.planningView === "comparison" ? "comparison" : "diagram";
+      render();
+      app.querySelector<HTMLElement>(`[data-planning-view="${planningView}"]`)?.focus();
+    });
+  });
+  app.querySelector<HTMLSelectElement>("#planning-train")?.addEventListener("change", (event) => {
+    selectedTrainId = (event.currentTarget as HTMLSelectElement).value;
+    selectedConflictId = projection ? conflictsForTrain(projection, selectedTrainId)[0]?.id ?? "" : "";
+    message = "";
+    render();
+    app.querySelector<HTMLElement>("#planning-train")?.focus();
+  });
   app.querySelector("#density")?.addEventListener("click", () => {
     density = density === "control" ? "document" : "control";
     render();
@@ -1134,7 +1193,7 @@ async function applyAlternative(alternativeId: string): Promise<void> {
   } finally {
     applyingAlternativeId = "";
     render();
-    app.querySelector<HTMLElement>("#diagram-card")?.focus();
+    app.querySelector<HTMLElement>("#planning-comparison, #diagram-card")?.focus();
   }
 }
 
