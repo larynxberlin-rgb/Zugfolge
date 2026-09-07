@@ -1,0 +1,17 @@
+{
+  "schemaVersion": "zugfolge-operational-service-day-policy/v1",
+  "plannedSchemaVersion": "zugfolge-operational-service-day-planned/v1",
+  "closedSchemaVersion": "zugfolge-operational-service-day-closed/v1",
+  "costSchemaVersion": "zugfolge-operational-service-vehicle-cost/v1",
+  "dayLengthMs": 86400000,
+  "maximumOpenDays": 32,
+  "maximumFutureDays": 2,
+  "completeness": "exact signed ServiceOutcome serviceIds, including services never materialized; templates specify first physical day",
+  "close": "day boundary passed and every expected original service outcome present; no inferred cancellation",
+  "identity": "native template trainRunId plus :day-N for N>0; serviceRunId uses original serviceId and Gregorian serviceDay",
+  "costBasis": "formation-operating-cost, exact physical distance of each actual vehicle times pinned M5 cents-per-train-km",
+  "rounding": "sum millimetre-cent numerators before integer division by 1000000",
+  "posting": "evidence only; never add again to report costs already charged as M6 mandatory vehicle cost",
+  "authority": "signed initial policy is not a later OperatingTransition; changed contract bindings require separate verified source",
+  "legacy": "absent optional fields retain original bytes and hashes"
+}

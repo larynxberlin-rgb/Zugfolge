@@ -1,0 +1,25 @@
+[package]
+name = "zugfolge-conductor-session"
+description = "Autoritativer weltgebundener M15-Sitzungskern"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+zugfolge-conductor = { path = "../zugfolge-conductor", version = "0.0.0" }
+zugfolge-conductor-dialogue = { path = "../zugfolge-conductor-dialogue", version = "0.0.0" }
+zugfolge-demand = { path = "../zugfolge-demand", version = "0.0.0" }
+zugfolge-sim = { path = "../zugfolge-sim", version = "0.0.0" }
+
+[dev-dependencies]
+zugfolge-fleet = { path = "../zugfolge-fleet", version = "0.0.0" }
+zugfolge-runtime = { path = "../zugfolge-runtime", version = "0.0.0" }
+
+[lints]
+workspace = true

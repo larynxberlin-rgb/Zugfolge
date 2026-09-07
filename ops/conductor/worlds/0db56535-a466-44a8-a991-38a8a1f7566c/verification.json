@@ -1,0 +1,74 @@
+{
+  "schemaVersion": "conductor-registered-release-verification/v1",
+  "worldId": "0db56535-a466-44a8-a991-38a8a1f7566c",
+  "releaseSignaturesVerified": true,
+  "privateKeysRead": false,
+  "worldServerActivated": false,
+  "worldIdentityCanonicalSha256": "0173f92a02f4973dfaa08d33be891a2a2ef23c4c6bf4dae6951d526f5eef3854",
+  "roles": {
+    "art": {
+      "keyId": "zugfolge-conductor-art-2026.1",
+      "publicSpkiSha256": "5e3463fc466301ab359b435f9d7330312c0f7f2ea8ef0405de949eea976709d9"
+    },
+    "dialogue": {
+      "keyId": "zugfolge-conductor-dialogue-2026.1",
+      "publicSpkiSha256": "69edb323b81860fbe500227f06fe8180cdf864b89244984f31758b0dc50e1dce"
+    }
+  },
+  "art": {
+    "releaseId": "conductor-art-2026.1",
+    "manifestSha256": "1503e2a3199d7f7b217e83b346e7ed3af8664e6b692642e9b140d312164453a3",
+    "assets": 186,
+    "atlases": 7,
+    "animations": 60
+  },
+  "dialogue": {
+    "families": 12,
+    "releaseHash": "a602cc60e168cc7cc39e60fddfa57e44cf10f4c9b72cfe79fb014f0679e5e651",
+    "releaseId": "dialogue-de-2026-v1",
+    "trees": 156,
+    "utterances": 624
+  },
+  "files": [
+    {
+      "file": "tools/region-import/specifications/alpha-world-germany-2026.3.identity.json",
+      "canonicalJsonSha256": "0173f92a02f4973dfaa08d33be891a2a2ef23c4c6bf4dae6951d526f5eef3854"
+    },
+    {
+      "file": "ops/conductor/worlds/0db56535-a466-44a8-a991-38a8a1f7566c/release-binding.json",
+      "sha256": "5113388ea12e944c55549e158cadf527b670d44183aadbd2ae397381301d6cf9"
+    },
+    {
+      "file": "ops/conductor/worlds/0db56535-a466-44a8-a991-38a8a1f7566c/art-world-pin.json",
+      "sha256": "c892d37e6ecfcd77734a493d85aba0d6060f1442e4d4487697e8d60f82eed179"
+    },
+    {
+      "file": "ops/conductor/worlds/0db56535-a466-44a8-a991-38a8a1f7566c/art-signature.json",
+      "sha256": "3852a73cd478e65e63e67ee2ddffb3e75943cc7a4a7275b2ced769b555d67acb"
+    },
+    {
+      "file": "ops/conductor/worlds/0db56535-a466-44a8-a991-38a8a1f7566c/dialogue-world-pin.json",
+      "sha256": "059d7157735cc29d9b9482dcb3d0da432d3d0f8ddbc51694fa8ba2ee78048f94"
+    },
+    {
+      "file": "ops/conductor/worlds/0db56535-a466-44a8-a991-38a8a1f7566c/dialogue-signature.json",
+      "sha256": "0cc1ca2749b5e5ef5e55f4bc0165fd2935aed283eeca1e711d5270b02aee3a23"
+    },
+    {
+      "file": "ops/keys/trusted-conductor-art-keys.json",
+      "sha256": "e03371da2366a29f19f627ad272e8995c0e54ff426fe3d31508f071a7ad38665"
+    },
+    {
+      "file": "ops/keys/trusted-conductor-dialogue-keys.json",
+      "sha256": "3218ad03efaa304b354360ff61843e0c00bf7a710c6caa558bf2247fb14d5422"
+    },
+    {
+      "file": "ops/keys/trusted-delivery-keys.json",
+      "sha256": "66a515518e10bfda79cc0c6687015149f3a73fe0dbff0665d2f8a84f56771640"
+    }
+  ],
+  "limits": [
+    "Initial trust registered under the owner's completion authorization; no prior human fingerprint review claimed",
+    "Existing Alpha world identity; this verification does not claim a running target server or activate a world"
+  ]
+}

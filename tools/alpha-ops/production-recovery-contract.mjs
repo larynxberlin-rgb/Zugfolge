@@ -25,6 +25,7 @@ import {
   inspectDatabaseRollbackEndpoint,
 } from "./create-database-rollback-proof.mjs";
 import { inspectLiveDatabaseRollbackSnapshot } from "./database-rollback-binding.mjs";
+import { assertArchivePrivacyActivation } from "./archive-privacy-recovery.mjs";
 
 const execFile = promisify(execFileCallback);
 const SHA256 = /^[a-f0-9]{64}$/u;
@@ -723,11 +724,18 @@ function postgresFactoryDefault() {
   return postgresModule.default ?? postgresModule;
 }
 
-async function defaultInspectGameContinuity({ databaseUrl, worldId }, postgresFactory) {
+async function inspectRecoveryGameRestore(databaseUrl, postgresFactory, environment = process.env) {
+  return inspectDatabaseRollbackEndpoint(databaseUrl, postgresFactory, {
+    validateArchivePrivacy: (sql) => assertArchivePrivacyActivation(sql, environment),
+  });
+}
+
+async function defaultInspectGameContinuity({ databaseUrl, worldId, environment = process.env }, postgresFactory) {
   const factory = postgresFactory ?? postgresFactoryDefault();
   const client = factory(databaseUrl, { max: 1 });
   try {
     return await client.begin("isolation level serializable read only deferrable", async (sql) => {
+      await assertArchivePrivacyActivation(sql, environment);
       const [snapshot, worldRows, regionRows] = await Promise.all([
         inspectLiveDatabaseRollbackSnapshot(sql),
         sql.unsafe(`
@@ -1456,7 +1464,7 @@ function promotionArtifact(receipt, receiptSha256) {
 
 export async function createProductionRecoveryArtifacts({
   environment = process.env,
-  inspectGameRestore = inspectDatabaseRollbackEndpoint,
+  inspectGameRestore = inspectRecoveryGameRestore,
   inspectOdooRestore = defaultInspectOdooRestore,
   inspectDatabaseFence = defaultInspectDatabaseFence,
   sealDatabase = defaultFenceDatabase,
@@ -1535,7 +1543,7 @@ export async function createProductionRecoveryArtifacts({
     migrationCount: gameManifest.migrationCount,
     recoveryId,
   });
-  const gameInspection = await inspectGameRestore(gameRestoreDatabaseUrl, postgresFactory);
+  const gameInspection = await inspectGameRestore(gameRestoreDatabaseUrl, postgresFactory, environment);
   invariant(sameValue(gameInspection.snapshot, rollbackProof.source), "Neu isolierter Game-Restore weicht vom vor Cutover qualifizierten Kopf ab.");
   const gameEndpointSha256 = databaseEndpointSha256(gameRestoreDatabaseUrl);
   invariant(gameEndpointSha256 !== quiescence.gameDatabase.endpointSha256, "Game-Recovery wuerde die gesperrte V2-Live-Datenbank wiederverwenden.");
@@ -1995,7 +2003,7 @@ async function assertPostFenceRecoveryState({
   invariant(databaseNameFromUrl(gameDatabaseUrl) === evidence.gameRestoreDatabase && databaseEndpointSha256(gameDatabaseUrl) === evidence.receipt.game.endpointSha256, "Post-Fence-Game-Inspektion bindet nicht den expliziten Recovery-Endpunkt.");
   invariant(databaseNameFromUrl(odooDatabaseUrl) === evidence.odooRestoreDatabase && databaseEndpointSha256(odooDatabaseUrl) === evidence.receipt.odoo.endpointSha256, "Post-Fence-Odoo-Inspektion bindet nicht den expliziten Recovery-Endpunkt.");
   const [gameInspection, odooInspection] = await Promise.all([
-    inspectGameRestore(gameDatabaseUrl, postgresFactory),
+    inspectGameRestore(gameDatabaseUrl, postgresFactory, environment),
     inspectOdooRestore({
       databaseUrl: odooDatabaseUrl,
       filestoreOptions: { expectedAccess: "owner-writable", expectedOwner: owner },
@@ -2220,7 +2228,7 @@ async function inspectOpenContinuityHeads({
   invariant(databaseNameFromUrl(gameDatabaseUrl) === evidence.gameRestoreDatabase && databaseEndpointSha256(gameDatabaseUrl) === evidence.receipt.game.endpointSha256, "Recovery-Continuity-Game-Inspektion bindet nicht den attestierten Recovery-Endpunkt.");
   invariant(databaseNameFromUrl(odooDatabaseUrl) === evidence.odooRestoreDatabase && databaseEndpointSha256(odooDatabaseUrl) === evidence.receipt.odoo.endpointSha256, "Recovery-Continuity-Odoo-Inspektion bindet nicht den attestierten Recovery-Endpunkt.");
   const [gameInspection, odooInspection] = await Promise.all([
-    inspectGameContinuity({ databaseUrl: gameDatabaseUrl, worldId: evidence.runtimeRollbackEvidence.worldDeployment.worldId }, postgresFactory),
+    inspectGameContinuity({ databaseUrl: gameDatabaseUrl, worldId: evidence.runtimeRollbackEvidence.worldDeployment.worldId, environment }, postgresFactory),
     inspectOdooRestore({
       databaseUrl: odooDatabaseUrl,
       filestoreOptions: { expectedAccess: "owner-writable", expectedOwner: owner },
@@ -3459,7 +3467,7 @@ export async function executeProductionRecoveryAction({
   inspectDatabaseFence = defaultInspectDatabaseFence,
   inspectFilestore = inspectFilestoreTree,
   inspectGameContinuity = defaultInspectGameContinuity,
-  inspectGameRestore = inspectDatabaseRollbackEndpoint,
+  inspectGameRestore = inspectRecoveryGameRestore,
   inspectOdooRestore = defaultInspectOdooRestore,
   inspectRunningServices = defaultRunningServices,
   openDatabase = defaultOpenRecoveryDatabase,

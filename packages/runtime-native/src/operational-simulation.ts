@@ -3,6 +3,8 @@ import { createHash } from "node:crypto";
 import { lstatSync, realpathSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, isAbsolute, resolve } from "node:path";
+import { assertFareControlPolicy, assertOperationalFareControlCommand, type FareControlPolicyV1, type OperationalFareControlCommand } from "./operational-fare-control.js";
+export * from "./operational-fare-control.js";
 import {
   decodeOperationalDailyRestrictions,
   type OperationalDailyRestrictionsGenerated,
@@ -202,6 +204,29 @@ export interface OperationalServiceOutcomePolicy {
   readonly vehicleCapacities: readonly Readonly<{ vehicleId: string; seats: number; sourceReference: string }>[];
 }
 
+/** Vollständige signierte Tagesvorlagen; keine bereits gestartete Teilmenge. */
+export interface OperationalServiceDayPolicyV1 {
+  readonly schemaVersion: "zugfolge-operational-service-day-policy/v1";
+  readonly epochServiceDay: string;
+  readonly dayLengthMs: 86400000;
+  readonly services: readonly {
+    readonly trainRunId: string;
+    readonly operatorId: string;
+    readonly firstDayIndex: number;
+    readonly scheduledDepartureMs: number;
+    readonly binding: OperationalServiceOutcomeBinding;
+  }[];
+  readonly vehicleCostPolicy: null | {
+    readonly economyReleaseHash: string;
+    readonly fleetAuthorityReleaseHash: string;
+    readonly vehicleCosts: readonly {
+      readonly vehicleId: string;
+      readonly centsPerTrainKm: number;
+      readonly sourceReference: string;
+    }[];
+  };
+}
+
 export interface OperationalPassengerStopPlan {
   readonly schemaVersion: "zugfolge-operational-passenger-stop-plan/v1";
   readonly worldId: string;
@@ -310,7 +335,9 @@ export interface OperationalInitializationValidationReceipt {
 }
 
 export interface OperationalSimulationInitialization {
+  readonly fareControlPolicy?: FareControlPolicyV1;
   readonly serviceOutcomePolicy?: OperationalServiceOutcomePolicy;
+  readonly serviceDayPolicy?: OperationalServiceDayPolicyV1;
   readonly schemaVersion: typeof OPERATIONAL_SIMULATION_INITIALIZE_SCHEMA;
   readonly worldId: string;
   readonly regionId: string;
@@ -348,6 +375,8 @@ export interface OperationalDispatchRequest {
 }
 
 export type OperationalSimulationCommandPayload =
+  | { readonly type: "open-service-day"; readonly dayIndex: number }
+  | OperationalFareControlCommand
   | { readonly type: "materialize"; readonly train: OperationalTrainInitialization }
   | { readonly type: "retire"; readonly trainId: string }
   | { readonly type: "advance-to"; readonly atMs: number }
@@ -500,6 +529,7 @@ export interface OperationalSimulationBatchResult {
 }
 
 export interface OperationalSimulationNativeAddon {
+  readonly hashFareControlPolicy?: (policyJson: string) => string;
   readonly generateOperationalDailyRestrictions?: (inputJson: string, infrastructurePath: string) => string;
   readonly hashOperationalSimulationCommand?: (commandJson: string) => string;
   readonly initializeOperationalSimulation: (inputJson: string, infrastructurePath: string) => string;
@@ -527,6 +557,7 @@ export interface OperationalSimulationNativeAddon {
 }
 
 export interface OperationalSimulationRuntime {
+  readonly fareControlPolicyHash?: (policy: FareControlPolicyV1) => string;
   readonly dailyRestrictions?: (input: OperationalDailyRestrictionsRequest) => OperationalDailyRestrictionsGenerated;
   readonly commandHash: (command: OperationalSimulationCommandPayload) => string;
   readonly initialize: (input: OperationalSimulationInitialization) => OperationalSimulationInitialized;
@@ -1071,12 +1102,18 @@ function projectedTrain(value: unknown, name: string): asserts value is Operatio
     }),
     `${name}.motionGeometry ist nicht lueckenlos gleisgebunden geordnet.`,
   );
-  invariant(
-    value["motionSegment"] === null
-      ? value["motionGeometry"].length === 0
-      : value["motionGeometry"].length >= 2,
-    `${name}.motionSegment und motionGeometry widersprechen sich.`,
-  );
+  const segment = value["motionSegment"];
+  const geometry = value["motionGeometry"];
+  const head = value["headGeometry"];
+  const constantPosition = segment !== null && segment.startRouteMm === segment.segmentEndRouteMm;
+  invariant(segment === null ? geometry.length === 0 : constantPosition
+    ? segment.validUntilMs > segment.startedAtMs && geometry.length === 1
+      && segment.startRouteMm === head.routeMm
+      && (["routeMm", "edgeId", "edgeOffsetMm", "latitudeE7", "longitudeE7", "bearingMilliDegrees"] as const)
+        .every((key) => geometry[0]?.[key] === head[key])
+    : geometry.length >= 2 && geometry[0]?.routeMm === segment.startRouteMm
+      && geometry.at(-1)?.routeMm === segment.segmentEndRouteMm,
+  `${name}.motionSegment und motionGeometry widersprechen sich.`);
   if (value["waitingReason"] !== null) nonEmptyString(value["waitingReason"], `${name}.waitingReason`);
 }
 
@@ -1309,6 +1346,7 @@ function validateOperationalCommandBatch(
     `Operative Kommandogruppe muss 1 bis ${OPERATIONAL_SIMULATION_COMMAND_BATCH_LIMIT} Eintraege enthalten.`,
   );
   batch.commands.forEach((item, index) => {
+    assertOperationalFareControlCommand(item.command, batch.worldId);
     nonEmptyString(item.commandId, `operative Kommandogruppe.commands[${index}].commandId`);
     record(item.command, `operative Kommandogruppe.commands[${index}].command`);
     if (item.command.type === "materialize") {
@@ -1455,6 +1493,15 @@ export function operationalSimulationRuntimeFromAddon(
   addon: OperationalSimulationNativeAddon,
 ): OperationalSimulationRuntime {
   return Object.freeze({
+    fareControlPolicyHash(policy: FareControlPolicyV1) {
+      assertFareControlPolicy({ ...policy, contentHash: "0".repeat(64) });
+      invariant(typeof addon.hashFareControlPolicy === "function", "napi-rs-Addon exportiert hashFareControlPolicy nicht.");
+      const json = JSON.stringify(policy);
+      invariant(Buffer.byteLength(json, "utf8") <= OPERATIONAL_SIMULATION_COMMAND_JSON_LIMIT_BYTES, "Kontrollhaltpolicy überschreitet das Transportbudget.");
+      const hash = addon.hashFareControlPolicy(json);
+      invariant(/^[a-f0-9]{64}$/u.test(hash), "Nativer Kontrollhaltpolicyhash ist ungültig.");
+      return hash;
+    },
     dailyRestrictions(input: OperationalDailyRestrictionsRequest) {
       invariant(typeof addon.generateOperationalDailyRestrictions === "function",
         "napi-rs-Addon exportiert generateOperationalDailyRestrictions nicht.");
@@ -1467,6 +1514,7 @@ export function operationalSimulationRuntimeFromAddon(
       );
     },
     commandHash(command: OperationalSimulationCommandPayload) {
+      assertOperationalFareControlCommand(command);
       invariant(
         typeof addon.hashOperationalSimulationCommand === "function",
         "napi-rs-Addon exportiert hashOperationalSimulationCommand nicht.",
@@ -1476,6 +1524,7 @@ export function operationalSimulationRuntimeFromAddon(
       return hash;
     },
     initialize(input: OperationalSimulationInitialization) {
+      if (input.fareControlPolicy !== undefined) assertFareControlPolicy(input.fareControlPolicy, input.worldId);
       assertOperationalTrainNumbers(input.trains, "operative Rust-v2-Initialisierung");
       invariant(
         (input.repeatEveryMs === null && input.movementContinuations.length === 0)
@@ -1548,6 +1597,7 @@ export function operationalSimulationRuntimeFromAddon(
       return result;
     },
     async apply(state: OperationalSimulationState, command: OperationalSimulationCommand) {
+      assertOperationalFareControlCommand(command.command, command.worldId);
       invariant(state.world.worldId === command.worldId && state.world.regionId === command.regionId, "Operatives Kommando verletzt Welt- oder Regionsisolation.");
       if (command.command.type === "materialize") {
         assertOperationalTrainNumbers([command.command.train], "operatives Rust-v2-Materialisierungskommando");

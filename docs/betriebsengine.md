@@ -79,6 +79,23 @@ Zugspitze, Wendezugfähigkeit und wirksame Zugsicherung. Ein ausschließlich aus
 nicht angetriebenen Fahrzeugen bestehender Wagenpark bleibt als immobile
 Formation zulässig.
 
+### Lebensdauer temporärer CLI-Indizes
+
+Der native Operational-v2-Cache hält validierte Infrastrukturindizes während
+eines Serverprozesses warm. Kurzlebige Prüf-CLIs geben ihre Cacheeinträge nach
+Abwicklung des Aufrufs ausdrücklich frei, sowohl bei Erfolg als auch bei einer
+fachlichen Ablehnung nach Restore. Statische Rust-Werte besitzen beim
+Prozessende keinen automatischen Destruktorlauf. Erst die Freigabe des letzten
+Handles schließt die redb-Datei; anschließend wird ausschließlich das vom Store
+selbst angelegte temporäre Verzeichnis entfernt. Fremde oder noch benutzte
+Verzeichnisse werden nicht gesucht oder gelöscht. Ein Prozessabbruch ohne
+Abwicklung ist von dieser normalen Aufräumgarantie ausgenommen.
+
+Diese Ressourcenfreigabe ändert weder Quell-, Zustands- oder Kommandobelege noch
+den warmen NAPI-Pfad. Der Prozessnachweis für `operational_json` prüft echte
+Initialisierung und eine Ablehnung nach tatsächlichem Wiederanbinden des
+Zustands jeweils mit isoliertem Temp-Verzeichnis.
+
 ## 3. Weltzustand und Einheiten
 
 `OperationalWorld` ist je Welt und Region der einzige Writer. Er enthält:
@@ -116,9 +133,18 @@ am Start, das Abschnittsende aber exakt einen Millimeter dahinter, wird dieser
 Millimeter ausschließlich bei `valid_until` erreicht. Nullzeitabschnitte und
 groessere positive Nullfortschritte springen nicht und werden beim Abschluss
 fail-closed abgewiesen. An internen Abschnittsenden bleibt die analytische
-Geschwindigkeit erhalten; am erreichten Fahrberechtigungsende oder gebundenen
-Fahrgasthalt wird sie auf null geklemmt. Rust-Kern und TypeScript-Kartenprojektion wenden diese Regel
-identisch an.
+Geschwindigkeit erhalten; am erreichten Fahrberechtigungsende wird sie auf
+null geklemmt. Rust-Kern und TypeScript-Kartenprojektion wenden diese Regel
+identisch an. Am gebundenen Fahrgasthalt kann nach Erreichen des ganzzahligen
+Zielmillimeters ein zeitlich positiver Bremsrest ohne weiteren darstellbaren
+Weg verbleiben. Er bleibt ein echter Bewegungsabschnitt mit gleicher Start-
+und Endposition; der Ankunftsbeleg entsteht erst bei Geschwindigkeit null.
+Seine Projektion enthält genau einen tatsächlichen Gleisgeometriepunkt an der
+committed Zugspitze. Zeitlich leere Abschnitte oder fehlende, fremde oder mehrere
+Punkte sind hierfür unzulässig. Räumlich fortschreitende Abschnitte benötigen
+weiterhin mindestens zwei lückenlos verbundene Punkte. LiveMap und RZÜ halten
+beim Einpunktabschnitt dieselbe Position, werten den Geschwindigkeitsrest bis
+zur Zeitgrenze aus und extrapolieren danach nicht.
 
 ## 4. Belegung und Stellwerk
 
@@ -442,6 +468,20 @@ Bewegungsabschnitts erzeugt den Abfahrtsbeleg. Ein Signalhalt, Dispatchauftrag,
 SafeStop oder Erreichen einer Sollzeit ist kein Fahrgastwechsel. Der Endhalt
 erzeugt keine weitere Abfahrt.
 
+Die technische Aufhebung einer Infrastruktursperre darf ausschließlich den
+durch genau diese Aktivierung belegten Sicherheitsstopp lösen. Der native
+Checkpoint hält dafür die noch wirksamen Sperrenkennungen und die entzogene
+Fahrberechtigung als Schutzbeleg fest; leere Zustände lassen dieses Feld aus.
+Mehrere überlagerte Sperren müssen alle aufgehoben sein. Ein anderer
+Sicherheitsstopp, ein abgebrochener Haltplan oder ein aktiver Kontrollhalt
+bleibt wirksam. Alte Checkpoints ohne Ursachenbeleg erhalten keine abgeleitete
+Freigabe. Der aufgehobene Sperrenstopp wird nur zum gesicherten Stillstand:
+Fahrstraßen und Belegungen bleiben geschützt, die Fahrberechtigung bleibt
+entzogen und Signale bleiben bis zur erneuten regulären FDL-Prüfung auf Halt.
+Der FDL darf dabei die belegte verbleibende Teilfahrstraße erneut prüfen;
+keine Position und kein Haltbeleg wird beim Wiederanlauf erfunden. Eine
+Regionsübergabe mit noch offenem Wiederanlaufbeleg wird abgewiesen.
+
 `OperationalPassengerStopReceipt` verwendet das Schema
 `zugfolge-operational-passenger-stop-receipt/v1`. Es bindet Welt, Tagesfahrt,
 Zuglauf, Haltkennung/-folge, Planhash, Route, Formation, Art, tatsächliche Zeit
@@ -505,11 +545,15 @@ serialisierten Bytes und erzeugen keine nachtraeglich erfundenen Ergebnisse.
 Tagesberichte ordnen diese Ereignisse anhand des signierten Betriebstags ein,
 auch bei verspaeteter Ankunft am Folgetag. Sie summieren Millimeter vor der
 Umrechnung zu ganzen Zugkilometern. `knownServicesComplete` bewertet nur die
-bereits publizierten Plaene. Ein vollstaendiges Tagesplanmanifest samt
-Day-Close-Vertrag fehlt derzeit; `dayPlanComplete` und die uebergeordnete
-Vollstaendigkeit bleiben deshalb false. Auch der lueckenlose native
-Kostenbeleg sowie die bei Tendervergabe aktualisierte Betreiber-/Vertrags-
-und Anschlussbindung fehlen noch. Die Vertragsabrechnung verlangt diese
+bereits publizierten Plaene. Der optionale vollständige Tagesplankatalog und
+native Day-Close sind in [operational-service-days.md](operational-service-days.md)
+definiert. Neue Alpha-Builds binden damit die ursprüngliche Tagesmenge samt
+vorhandener M5-Fahrzeugkostenbasis; alte Starts erhalten keine nachträglich
+erfundene Policy. Ohne passenden Day-Close bleibt `dayPlanComplete` falsch.
+Die lückenlose allgemeine Kostenabdeckung sowie die bei Tendervergabe
+aktualisierte Betreiber-/Vertrags- und Anschlussbindung bleiben offen;
+die übergeordnete Vollständigkeit folgt nicht allein aus einem Tagesabschluss.
+Die Vertragsabrechnung verlangt diese
 Nachweise explizit und bleibt fuer diese unvollstaendige Ausgangslage gesperrt.
 Diese verbleibenden Integrationen gehoeren zu Issue #518; aktive Cancel-Run-
 Massnahmen erfordern zudem den autoritativen Dispositionsvertrag aus #517.

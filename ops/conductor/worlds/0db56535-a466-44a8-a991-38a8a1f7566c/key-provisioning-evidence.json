@@ -1,0 +1,51 @@
+{
+  "schemaVersion": "conductor-key-provisioning-evidence/v1",
+  "worldId": "0db56535-a466-44a8-a991-38a8a1f7566c",
+  "checkedAtUtc": "2026-09-07T07:24:40Z",
+  "hostPlatform": "win32",
+  "privateDirectory": "LocalApplicationData/Zugfolge/release-signing/conductor-v1",
+  "directoryInheritanceProtected": true,
+  "authorizationBasis": "owner-authorized-initial-provisioning",
+  "authorizationRecord": "docs/conductor-release-signing.md",
+  "humanPriorFingerprintReviewClaimed": false,
+  "privateBytesIncluded": false,
+  "existingAlphaOrMapKeysReused": false,
+  "keys": [
+    {
+      "inheritedFromProtectedDirectory": true,
+      "aclPrincipals": [
+        "current-owner",
+        "SYSTEM"
+      ],
+      "publicSpkiSha256": "5e3463fc466301ab359b435f9d7330312c0f7f2ea8ef0405de949eea976709d9",
+      "ownerAndSystemOnly": true,
+      "existingKeyReplaced": false,
+      "newPermanentKey": true,
+      "aclRuleCount": 2,
+      "keyId": "zugfolge-conductor-art-2026.1",
+      "privateFileName": "zugfolge-conductor-art-2026.1.private.pem",
+      "role": "art",
+      "regularFileWithoutReparsePoint": true
+    },
+    {
+      "inheritedFromProtectedDirectory": true,
+      "aclPrincipals": [
+        "current-owner",
+        "SYSTEM"
+      ],
+      "publicSpkiSha256": "69edb323b81860fbe500227f06fe8180cdf864b89244984f31758b0dc50e1dce",
+      "ownerAndSystemOnly": true,
+      "existingKeyReplaced": false,
+      "newPermanentKey": true,
+      "aclRuleCount": 2,
+      "keyId": "zugfolge-conductor-dialogue-2026.1",
+      "privateFileName": "zugfolge-conductor-dialogue-2026.1.private.pem",
+      "role": "dialogue",
+      "regularFileWithoutReparsePoint": true
+    }
+  ],
+  "limits": [
+    "ACLs were inspected on the signing host; CI verifies only the public trust, pins and signatures.",
+    "No running world server or productive session activation is claimed."
+  ]
+}

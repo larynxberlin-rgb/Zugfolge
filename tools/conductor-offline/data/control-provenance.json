@@ -1,0 +1,31 @@
+{
+  "schemaVersion": "offline-control-configuration/v1",
+  "testOnly": true,
+  "source": "prepare-practice.mjs; original M10/fare-control WASM functions",
+  "fixtureHash": "cf919194900a8a15465f7c7375f0bee6e236f3be209b7b86a15c0d1d83f1f3e8",
+  "ordinaryFareCents": "1250",
+  "inspectionPolicy": {
+    "schemaVersion": "fare-inspection-policy/v1",
+    "policyId": "offline-practice-inspection-v1",
+    "worldId": "00000000-0000-4000-8000-000000000387",
+    "periodId": "period-1",
+    "contentHash": "661ae873519c220d83dd9a3070df24c7e84780e2cefd6d6691d2c6ceebafd4e0",
+    "invalidDocumentPresentedBasisPoints": 10000,
+    "identityRefusalBasisPoints": 1500,
+    "concreteDangerBasisPoints": 0
+  },
+  "policeResponseModel": {
+    "schemaVersion": "police-response-model/v1",
+    "modelId": "offline-explicit-test-police",
+    "worldId": "00000000-0000-4000-8000-000000000387",
+    "contentHash": "b7141a62a7da64e206dc82551fce33179d6c2c82fab3c401f541c29c61659450",
+    "availableBasisPoints": 10000,
+    "delayedBasisPoints": 0,
+    "responseMs": 1000,
+    "delayedResponseMs": 2000,
+    "identitySuccessBasisPoints": 10000
+  },
+  "economyReleaseHash": "34739ee585f4d3afae715072af3e05a07a72e65b53e900bca3116c78d4923701",
+  "journeyCount": 3,
+  "reason": "Global fictional learning quotas and complete explicit practice tariffs; no individual passenger or place edits."
+}

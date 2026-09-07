@@ -276,7 +276,7 @@ den Rest der Rechte nach.
 Weltzugangs, alle in dieser Welt gegründeten EVU und das vollständige
 Postfach zu einem `PersonalDataExport` — was das Spielsystem über ein Konto
 in einer Welt weiß, an einer Stelle, maschinenlesbar. Der versionierte
-Export `zugfolge-personal-data-export/v3` enthält außerdem eigene
+Export `zugfolge-personal-data-export/v4` enthält außerdem eigene
 Weltvertragsbestätigungen und kaufmännische Berechtigungen.
 Die authentifizierte Selbst-Auskunft bleibt nach Entzug des Weltzugangs möglich.
 
@@ -317,11 +317,11 @@ werden entfernt; ein minimierter technischer Deduplizierungsbeleg verhindert,
 dass ein späterer Zustell-Retry den Inhalt wiederherstellt. Fristen und
 Räumlauf sind mit expliziter Prüfzeit testbar. Der tatsächliche Betrieb und
 die Überwachung dieses Jobs im Zielstack bleiben Teil der M9-Betriebsdrills.
-Der Schreibschutz archivierter Welten blockiert die personenbezogene Räumung
-weiterhin; solche Fälle bleiben protokollierter Rückstand, während andere
-Konten und Welten weiterverarbeitet werden. Das ist die offene
-[Archivgrenze #520](https://github.com/larynxberlin-rgb/Zugfolge/issues/520),
-keine umgesetzte Aufbewahrungsausnahme. Der
+Schema 37 ergänzt für archivierte und beim Cutover versiegelte Welten einen
+festen atomaren Redaktionspfad. Er entfernt die fälligen persönlichen Daten
+einschließlich privater Schaffnersitzungen und erhält die ursprünglichen
+Historien- und Cutoverquittungen. Allgemeine Archivschreibvorgänge bleiben
+gesperrt; Wiederherstellung verlangt den unabhängig gepinnten Löschstand. Der
 [geprüfte Archivvertrag](datenschutz-archivgrenze.md) und das
 [Datenschutzinventar](datenschutz-inventar.md#aufbewahrung-und-wiederholung)
 beschreiben Frist-Holds, Grenzen und Nachweise.
@@ -332,9 +332,10 @@ Replay (M2.2, M2.4). Daraus folgt nicht, dass alle Belege personenfrei sind:
 Administrative Ereignisse können Antragsteller und andere Kontobezüge
 enthalten. Das [Datenschutzinventar](datenschutz-inventar.md) ordnet direkte
 und mittelbare Bezüge sowie deren Auskunftswege zu. Die technische
-Unveränderlichkeit ist keine pauschale Aufbewahrungsausnahme; die noch
-fehlende datenschutzgerechte Trennung bestehender Archivbelege bleibt
-ausdrücklich unter #520 dokumentiert.
+Unveränderlichkeit ist keine pauschale Aufbewahrungsausnahme. Der unter #520
+umgesetzte Redaktionsvertrag umfasst die festgelegten Konto-, Zugangs-,
+Teilnahme-, Rollen-, Postfach- und privaten Schaffnerdaten. Er entfernt
+keine beliebigen Bezüge aus fachlichen Journalereignissen.
 
 Code: `packages/db/src/schema/accounts.ts` (`erasedAt`),
 `packages/identity/src/accounts.ts` (Selbstbedienungs-Ausnahme in

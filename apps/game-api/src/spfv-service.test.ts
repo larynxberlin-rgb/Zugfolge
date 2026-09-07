@@ -3,14 +3,16 @@ import { domainEvents, fleetMobilizationSnapshots, fleetWorldCheckpoints, MIGRAT
 import * as schema from "@zugfolge/db/schema";
 import { createFleetMobilizationEnvelope, type FleetMobilizationSnapshot } from "@zugfolge/economy";
 import { requestWorldAccess } from "@zugfolge/identity";
+import { LivemapRegistry, type LivemapReadModel } from "@zugfolge/livemap-stream";
 import type { PlanningInfrastructureRelease } from "@zugfolge/planning-worker";
-import type { FleetRuntime, NativeFleetWorldState } from "@zugfolge/runtime-native";
+import type { DemandRuntime, FleetRuntime, NativeFleetWorldState } from "@zugfolge/runtime-native";
 import { eq, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/pglite";
 import { migrate } from "drizzle-orm/pglite/migrator";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { appendDemandEvent, demandHash } from "./demand-store.js";
+import { DemandService } from "./demand-service.js";
+import { appendDemandEvent, demandHash, DemandStore } from "./demand-store.js";
 import { parseSpfvDraft, SpfvService, type SpfvDraft, type SpfvEstimate, type SpfvScope, type SpfvServiceDependencies } from "./spfv-service.js";
 
 const WORLD = "11111111-1111-4111-8111-111111111111";
@@ -65,6 +67,30 @@ async function fixture(db: ReturnType<typeof drizzle<typeof schema>>) {
   return runtime;
 }
 
+async function demandFixture(db: ReturnType<typeof drizzle<typeof schema>>) {
+  const stops = [{ stopId: "from", stationId: "a", arrivalMs: 3_600_000, departureMs: 3_600_000, passengerStop: true },
+    { stopId: "to", stationId: "c", arrivalMs: 3_660_000, departureMs: 3_660_000, passengerStop: true }];
+  // Dieser Transportkern prüft ausschließlich die Transaktionsgrenze. Die
+  // fachliche Gesamtkette bleibt im echten nativen SPFV-Integrationstest belegt.
+  const runtime: DemandRuntime = { evaluate(input) { return { worldId: input["worldId"], periodId: input["periodId"],
+    demandReleaseId: "transaction-fixture", nowMs: input["nowMs"], windowStartMs: input["windowStartMs"], windowEndMs: input["windowEndMs"],
+    stateHash: demandHash(input), choices: [], allocations: [], cohorts: [], unserved: [], totals: { rail: 0, unserved: 0 } }; } };
+  const readModel = { async getConfig() { return { infrastructureReleaseId: "infra" }; },
+    async getScheduledCall(worldId: string, stationId: string, trainId: string, atS: number, kind: string) {
+      return worldId === WORLD && trainId === "reference" && stops.some((stop) => stop.stationId === stationId
+        && stop[kind === "arrival" ? "arrivalMs" : "departureMs"] === atS * 1000) ? { trainId, scheduledTimeS: atS } : undefined;
+    } } as unknown as LivemapReadModel;
+  const livemap = new LivemapRegistry(); livemap.initializeWorld(WORLD, { at: 0, trains: [] });
+  const demand = new DemandService({ db, runtime, deploymentHash: "transaction-pin", readModel, livemap, infrastructure: [release()],
+    deployment: { schemaVersion: "zugfolge-demand-deployment/v1", worldId: WORLD, infrastructureReleaseId: "infra", windows: [{
+      schemaVersion: "zugfolge-demand-evaluation/v1", worldId: WORLD, periodId: "p1", seed: 1,
+      windowStartMs: 0, windowEndMs: 86_400_000, release: { id: "transaction-fixture", provenance: "balanced", zones: [] },
+      services: [{ trainRunId: "reference", worldId: WORLD, operatorId: OPERATOR, mode: "spfv", stops }], alternatives: [],
+    }] } });
+  await demand.refresh(10_000, new Date(10_000));
+  return { demand, runtime };
+}
+
 describe("SPFV: persistente Vorschau und bestehende Trassenautorität", () => {
   let client: PGlite;
   let db: ReturnType<typeof drizzle<typeof schema>>;
@@ -86,6 +112,42 @@ describe("SPFV: persistente Vorschau und bestehende Trassenautorität", () => {
     service = new SpfvService(deps);
   }, 30_000);
   afterEach(async () => { await client.close(); });
+
+  it("liest die echte Nachfrageschätzung in Vorschau und Bestätigung über dieselbe Transaktion", async () => {
+    const { demand } = await demandFixture(db);
+    const checkpoint = await demand.checkpoint(WORLD);
+    const integrated = new SpfvService({ ...deps, estimate: demand.estimateSpfv.bind(demand) });
+    // Eine Abfrage am Hauptzugang würde im PGlite-Transaktionsmutex warten.
+    // Sofortiges Scheitern schützt diese Regression vor einem Test-Timeout.
+    const rootRead = vi.spyOn(db, "select").mockImplementation(() => { throw new Error("Nachfrage verlässt die offene Transaktion."); });
+    try {
+      const preview = await integrated.preview(scope, DRAFT);
+      expect(preview).toMatchObject({ confirmationAllowed: true, provenance: { stateHash: checkpoint.result["stateHash"] } });
+      const submitted = await integrated.confirm(scope, { previewId: preview.previewId, commandId: "transaction-confirm" });
+      expect(submitted.planningRequestIds).toHaveLength(2);
+      expect(rootRead).not.toHaveBeenCalled();
+    } finally { rootRead.mockRestore(); }
+    expect(await demand.checkpoint(WORLD)).toEqual(checkpoint);
+    expect(await db.select().from(domainEvents).where(eq(domainEvents.eventType, "spfv.submitted"))).toHaveLength(1);
+  });
+
+  it("übernimmt keinen zurückgerollten Nachfragecheckpoint in den Cache späterer Transaktionen", async () => {
+    const { demand, runtime } = await demandFixture(db);
+    const initial = await demand.checkpoint(WORLD);
+    const rollback = new Error("Transaktion absichtlich zurückrollen.");
+    await expect(db.transaction(async (tx) => {
+      const store = new DemandStore(tx, runtime);
+      const checkpoint = await store.commit({ ...initial.input, revision: 2, nowMs: 11_000 }, "transaction-pin", new Date(11_000));
+      expect(await demand.checkpoint(WORLD, tx)).toEqual(checkpoint);
+      throw rollback;
+    })).rejects.toBe(rollback);
+    expect(await new DemandStore(db, runtime).latest(WORLD, "transaction-pin")).toEqual(initial);
+    // Ein unabhängiger Writer belegt dieselbe Sequenz neu, ohne den Cache des
+    // Services zu leeren. Ein geleakter Rollbackstand müsste jetzt auffallen.
+    const committed = await new DemandStore(db, runtime).commit({ ...initial.input, revision: 2, nowMs: 12_000 }, "transaction-pin", new Date(12_000));
+    expect(await db.transaction((tx) => demand.checkpoint(WORLD, tx))).toEqual(committed);
+    expect(await demand.checkpoint(WORLD)).toEqual(committed);
+  });
 
   it("bindet echte Flottenkapazität, bewahrt fehlende Nachfrage und verbraucht in der Vorschau keine Zugnummer", async () => {
     const catalog = await service.catalog(scope);

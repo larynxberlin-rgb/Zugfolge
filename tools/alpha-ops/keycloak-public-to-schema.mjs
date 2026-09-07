@@ -11,6 +11,8 @@ import {
   DATABASE_AUTHORITATIVE_TABLES_SCHEMA_34,
   DATABASE_AUTHORITATIVE_TABLES_SCHEMA_35,
   DATABASE_AUTHORITATIVE_TABLES_SCHEMA_36,
+  DATABASE_AUTHORITATIVE_TABLES_SCHEMA_37,
+  DATABASE_AUTHORITATIVE_TABLES_SCHEMA_38,
 } from "./database-cutover-schema-contract.mjs";
 
 export const KEYCLOAK_SCHEMA_MIGRATION_SCHEMA = "keycloak-public-to-schema/v1";
@@ -71,7 +73,11 @@ const GAME_ROUTINES_33 = Object.freeze([
   "zugfolge_capture_operational_command_receipts",
   "zugfolge_enforce_operational_initialization_immutability",
 ].sort());
-const GAME_ROUTINES_36 = Object.freeze([...GAME_ROUTINES_33, "protect_vehicle_registry_history"].sort());
+const GAME_ROUTINES_37_ADDITIONS = Object.freeze([
+  { name: "zugfolge_archive_privacy_allowed", arguments: "target_table text, operation text, old_row jsonb, new_row jsonb" },
+  ...["zugfolge_archive_privacy_apply", "zugfolge_archive_privacy_capture", "zugfolge_archive_privacy_request_guard", "zugfolge_archive_privacy_rows_guard"]
+    .map((name) => ({ name, arguments: "" })),
+]);
 const EMPTY_ARRAY_SHA256 = "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945";
 const ADVISORY_LOCK_KEY = "keycloak-public-to-schema/v1";
 
@@ -530,8 +536,8 @@ export function assertCatalogSignature(actual, catalog, label) {
 }
 
 function gameRelationVariant(names, migrationCount) {
-  invariant([28, 29, 30, 31, 32, 33, 34, 35, 36].includes(migrationCount), `Drizzle-Stand ${migrationCount} ist fuer den Keycloak-Cutover nicht freigegeben.`);
-  const authoritative = migrationCount === 36 ? DATABASE_AUTHORITATIVE_TABLES_SCHEMA_36 : migrationCount === 35 ? DATABASE_AUTHORITATIVE_TABLES_SCHEMA_35 : migrationCount === 34 ? DATABASE_AUTHORITATIVE_TABLES_SCHEMA_34 : migrationCount >= 33
+  invariant([28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38].includes(migrationCount), `Drizzle-Stand ${migrationCount} ist fuer den Keycloak-Cutover nicht freigegeben.`);
+  const authoritative = migrationCount === 38 ? DATABASE_AUTHORITATIVE_TABLES_SCHEMA_38 : migrationCount === 37 ? DATABASE_AUTHORITATIVE_TABLES_SCHEMA_37 : migrationCount === 36 ? DATABASE_AUTHORITATIVE_TABLES_SCHEMA_36 : migrationCount === 35 ? DATABASE_AUTHORITATIVE_TABLES_SCHEMA_35 : migrationCount === 34 ? DATABASE_AUTHORITATIVE_TABLES_SCHEMA_34 : migrationCount >= 33
     ? DATABASE_AUTHORITATIVE_TABLES
     : DATABASE_AUTHORITATIVE_TABLES_SCHEMA_28_TO_32;
   const expected = [
@@ -539,7 +545,7 @@ function gameRelationVariant(names, migrationCount) {
     ...(migrationCount >= 31 ? GAME_SUPPORT_RELATIONS : []),
   ].sort();
   invariant(JSON.stringify(names) === JSON.stringify(expected), `Der public-Game-Relationssatz passt nicht zum Drizzle-Stand ${migrationCount}.`);
-  return migrationCount === 36 ? "schema-36" : migrationCount === 35 ? "schema-35" : migrationCount === 34 ? "schema-34" : migrationCount >= 31 ? "schema-31-to-33" : "schema-28-to-30";
+  return migrationCount === 38 ? "schema-38" : migrationCount === 37 ? "schema-37" : migrationCount === 36 ? "schema-36" : migrationCount === 35 ? "schema-35" : migrationCount === 34 ? "schema-34" : migrationCount >= 31 ? "schema-31-to-33" : "schema-28-to-30";
 }
 
 function assertGameRoutines(routines, migrationCount) {
@@ -549,8 +555,11 @@ function assertGameRoutines(routines, migrationCount) {
       ? GAME_ROUTINES_31
       : migrationCount === 32
         ? GAME_ROUTINES_32
-        : migrationCount === 36 ? GAME_ROUTINES_36 : GAME_ROUTINES_33;
-  const expected = expectedNames.map((name) => ({ name, arguments: "" }));
+        : GAME_ROUTINES_33;
+  const expected = [...expectedNames.map((name) => ({ name, arguments: "" })),
+    ...(migrationCount >= 37 ? GAME_ROUTINES_37_ADDITIONS : []),
+    ...(migrationCount >= 38 ? [{ name: "protect_vehicle_registry_history", arguments: "" }] : []),
+  ].sort((left, right) => left.name.localeCompare(right.name, "en") || left.arguments.localeCompare(right.arguments, "en"));
   invariant(JSON.stringify(routines) === JSON.stringify(expected), `Der public-Game-Routinenkatalog passt nicht zum Drizzle-Stand ${migrationCount}.`);
 }
 
@@ -769,7 +778,7 @@ export function validateKeycloakStateSnapshot(snapshot) {
     invariant(snapshot.targetSchemaComment === KEYCLOAK_BOOTSTRAP_SCHEMA_COMMENT, "Keycloak-Bootstrap besitzt keinen Init-Hook-Ursprungsmarker.");
     return snapshot;
   }
-  invariant(["schema-28-to-30", "schema-31-to-33", "schema-34", "schema-35", "schema-36"].includes(snapshot.gameVariant), "Keycloak-Schema-Zustand besitzt keinen bekannten Game-Katalog.");
+  invariant(["schema-28-to-30", "schema-31-to-33", "schema-34", "schema-35", "schema-36", "schema-37", "schema-38"].includes(snapshot.gameVariant), "Keycloak-Schema-Zustand besitzt keinen bekannten Game-Katalog.");
   validateKeycloakIdentityHead(snapshot.identityHead);
   invariant(snapshot.identityHead.objectCatalogSha256 === snapshot.objectCatalogSha256, "Keycloak-Schema-Zustand bindet widerspruechliche Objektkataloge.");
   invariant(snapshot.objectOids.length === 544, "Keycloak-Schema-Zustand bindet nicht exakt 544 Tabellen-, Index- und Constraint-OIDs.");

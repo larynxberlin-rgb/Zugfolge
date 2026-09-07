@@ -3405,8 +3405,8 @@ test("Datenbank-Rollbackbeleg bindet DB-Identitaet, Schema, autoritativen Kopf, 
   assert.throws(() => validateDatabaseRollbackProof(tampered), /semantische Backup-Manifest nicht kanonisch/u);
 });
 
-test("Datenbank-Rollbackbeleg v6 bindet Schema 36 und bewahrt historische Schema-33/34/35-Nachweise", () => {
-  for (const [migrationCount, schemaVersion] of [[33, 3], [34, 4], [35, 5], [36, 6]]) {
+test("Datenbank-Rollbackbeleg v8 bindet Schema 38 und bewahrt historische Schema-33/34/35-Nachweise", () => {
+  for (const [migrationCount, schemaVersion] of [[33, 3], [34, 4], [35, 5], [36, 6], [37, 7], [38, 8]]) {
     const proof = databaseRollbackProof({ source: databaseRollbackSnapshot(migrationCount) });
     assert.equal(proof.schema, `zugfolge-database-rollback-proof/v${schemaVersion}`);
     assert.equal(validateDatabaseRollbackProof(proof), proof);
@@ -3416,33 +3416,33 @@ test("Datenbank-Rollbackbeleg v6 bindet Schema 36 und bewahrt historische Schema
     assert.equal(proof.source.authoritativeHead.tableSetSha256, databaseAuthoritativeCatalog(migrationCount).tableSetSha256);
   }
 
-  const missingGuard = databaseRollbackSnapshot(36);
+  const missingGuard = databaseRollbackSnapshot(38);
   missingGuard.guards = missingGuard.guards.filter(({ name }) => name !== "vehicle_registry_events_append_only");
   assert.throws(() => databaseRollbackProof({ source: missingGuard }), /exakten Unveraenderlichkeitsvertrag/u);
 
-  const disabledWriterGuard = databaseRollbackSnapshot(36);
+  const disabledWriterGuard = databaseRollbackSnapshot(38);
   disabledWriterGuard.guards.find(({ name }) => name === "zugfolge_world_guard_vehicle_registry_entries").enabled = false;
   assert.throws(() => databaseRollbackProof({ source: disabledWriterGuard }), /nicht aktiviert/u);
 
-  const oldCatalog = databaseRollbackSnapshot(36);
+  const oldCatalog = databaseRollbackSnapshot(38);
   const schema35 = databaseAuthoritativeCatalog(35);
   oldCatalog.authoritativeHead.tableCount = schema35.tables.length;
   oldCatalog.authoritativeHead.tableSetSha256 = schema35.tableSetSha256;
-  assert.throws(() => databaseRollbackProof({ source: oldCatalog }), /Schema-36-Tabellensatz/u);
+  assert.throws(() => databaseRollbackProof({ source: oldCatalog }), /Schema-38-Tabellensatz/u);
 
   const relabelled = databaseRollbackProof({ source: databaseRollbackSnapshot(35) });
-  relabelled.schema = "zugfolge-database-rollback-proof/v6";
-  assert.throws(() => validateDatabaseRollbackProof(relabelled), /Migrationsledger mit 36 Eintraegen/u);
+  relabelled.schema = "zugfolge-database-rollback-proof/v8";
+  assert.throws(() => validateDatabaseRollbackProof(relabelled), /Migrationsledger mit 38 Eintraegen/u);
 
-  const downgraded = databaseRollbackProof({ source: databaseRollbackSnapshot(36) });
+  const downgraded = databaseRollbackProof({ source: databaseRollbackSnapshot(38) });
   downgraded.schema = "zugfolge-database-rollback-proof/v5";
   assert.throws(() => validateDatabaseRollbackProof(downgraded), /Migrationsledger mit 35 Eintraegen/u);
 });
 
-test("Datenbank-Runtimebindung akzeptiert v6 ausschließlich mit dem Schema-36-Fahrzeugregister", () => {
+test("Datenbank-Runtimebindung akzeptiert v8 ausschließlich mit dem Schema-38-Fahrzeugregister", () => {
   const digest = "a".repeat(64);
   const worldId = "00000000-0000-4000-8000-000000000036";
-  for (const migrationCount of [33, 34, 35, 36]) {
+  for (const migrationCount of [33, 34, 35, 36, 37, 38]) {
     const proof = databaseRollbackProof({ source: databaseRollbackSnapshot(migrationCount) });
     const artifact = parseCanonicalDatabaseRollbackProof(serializeMapReleaseBuildEvidence(proof));
     const databaseRollback = {
@@ -3474,7 +3474,7 @@ test("Datenbank-Runtimebindung akzeptiert v6 ausschließlich mit dem Schema-36-F
     };
     assert.equal(validateUnsignedMapRollbackAttestation(attestation).schema, attestation.schema);
 
-    const foreignSchema = migrationCount === 36 ? 35 : 36;
+    const foreignSchema = migrationCount === 38 ? 37 : 38;
     const foreignCatalog = databaseAuthoritativeCatalog(foreignSchema);
     databaseRollback.sourceAuthoritativeHead = { ...databaseRollback.sourceAuthoritativeHead,
       tableCount: foreignCatalog.tables.length, tableSetSha256: foreignCatalog.tableSetSha256 };

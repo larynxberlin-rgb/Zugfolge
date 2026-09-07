@@ -2643,7 +2643,7 @@ describe("Datenschutz (M2.6)", () => {
     expect(eraseResponse.json<{ displayName: string }>().displayName).toBe("Gelöschtes Konto");
     const afterErase = await app.inject({ method: "GET", url: `/worlds/${WORLD_LHE}/me/export`, headers: { authorization: `Bearer ${token}` } });
     expect(afterErase.statusCode).toBe(200);
-    expect(afterErase.json()).toMatchObject({ schemaVersion: "zugfolge-personal-data-export/v3", worldAccessStatus: "revoked", worldAccess: { acceptedWorldContractHash: TEST_WORLD_CONTRACT_HASH }, account: { erasedAt: expect.any(String) } });
+    expect(afterErase.json()).toMatchObject({ schemaVersion: "zugfolge-personal-data-export/v4", worldAccessStatus: "revoked", worldAccess: { acceptedWorldContractHash: TEST_WORLD_CONTRACT_HASH }, account: { erasedAt: expect.any(String) } });
 
     const reaccessResponse = await app.inject({
       method: "POST",

@@ -39,7 +39,9 @@ jobs:
         run: cargo clippy --workspace --all-targets --locked -- -D warnings
 
       - name: Tests und Golden-Master
-        run: cargo test --workspace --locked
+        run: |
+          cargo test --workspace --locked
+          cargo test --locked --offline -p zugfolge-sim-runtime --example operational_json
 
       - name: Freie Nachfragequellen und Holdout-Trennung
         run: python3 -m unittest discover -s tools/demand-calibration -p 'test_*.py'
@@ -87,13 +89,28 @@ jobs:
       - name: Typprüfung
         run: pnpm -r --stream typecheck
 
+      - name: Offline-Schaffnerspiel strikt typprüfen
+        run: node apps/livemap/node_modules/typescript/bin/tsc -p tools/conductor-offline/tsconfig.ui.json
+
       - name: App- und Pakettests einmal ausfuehren
         run: pnpm test
+
+      - name: Echten Pixelart-Korpus gegen Manifest und Belegbytes prüfen
+        run: pnpm --filter @zugfolge/conductor-art check:release
+
+      - name: Szenenquellen, Compilerbindungen und Browser-Evidenzpaket prüfen
+        run: node --test tools/conductor-scenes/source-compiler.test.mjs tools/conductor-session/package-evidence.test.mjs tools/conductor-session/browser-driver.test.mjs
+
+      - name: Archivredaktion, historische Sicherungen und Tagesplanquelle prüfen
+        run: |
+          node --test --test-concurrency=1 tools/alpha-ops/database-rollback-binding.pglite.test.mjs
+          node --test --test-concurrency=1 tools/alpha-ops/database-rollback-binding.test.mjs tools/alpha-ops/create-database-rollback-proof.test.mjs tools/alpha-ops/create-database-backup-restore-evidence.test.mjs tools/alpha-ops/production-recovery-contract.test.mjs tools/region-import/service-outcome-binding.test.mjs
+          node --test --test-name-pattern="Datenbank-Rollbackbeleg" tools/tiles/map-release-build-evidence.test.mjs
 
   native-runtime-smoke:
     name: Native Runtime ABI (Linux, echtes NAPI)
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 45
     services:
       postgres:
         image: postgres:16.14-trixie
@@ -147,8 +164,38 @@ jobs:
       - name: Initialize-, Apply-, Hash- und Idempotenz-Smoke
         run: pnpm --filter @zugfolge/runtime-native smoke:native
 
+      - name: M15.4-Katalogcompiler und native Geometrie-Hashgrenze bereitstellen
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo build --release --locked -p zugfolge-fleet --bin zugfolge-vehicle-catalog -p zugfolge-conductor --example interior_json
+          printf 'ZUGFOLGE_VEHICLE_CATALOG_TEST_BINARY=%s/target/release/zugfolge-vehicle-catalog\n' "$GITHUB_WORKSPACE" >> "$GITHUB_ENV"
+          printf 'ZUGFOLGE_INTERIOR_TEST_BINARY=%s/target/release/examples/interior_json\n' "$GITHUB_WORKSPACE" >> "$GITHUB_ENV"
+
+      - name: M15-Sitzungsquelle aus den echten M5-, M10- und Betriebskernen bauen
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo build --release --locked -p zugfolge-conductor-session --example session_fixture
+          cargo build --release --locked -p zugfolge-conductor-dialogue --example dialogue_json
+          printf 'ZUGFOLGE_SESSION_FIXTURE_BINARY=%s/target/release/examples/session_fixture\n' "$GITHUB_WORKSPACE" >> "$GITHUB_ENV"
+          printf 'ZUGFOLGE_DIALOGUE_TEST_BINARY=%s/target/release/examples/dialogue_json\n' "$GITHUB_WORKSPACE" >> "$GITHUB_ENV"
+
       - name: M3-Planning-Worker und TypeScript-Grenzen bauen
         run: pnpm --filter @zugfolge/planning-worker... build
+
+      - name: Registrierte Art- und Dialogsignaturen für die Alpha-Welt prüfen
+        run: |
+          pnpm --filter @zugfolge/conductor-art... --filter @zugfolge/conductor-dialogue... build
+          node --test tools/conductor-release/verify.test.mjs
+          node tools/conductor-release/verify.mjs > "$RUNNER_TEMP/conductor-registered-release-verification.json"
+
+      - name: Öffentlichen M15-Signaturnachweis aufbewahren
+        uses: actions/upload-artifact@v4
+        with:
+          name: conductor-registered-release-verification
+          path: ${{ runner.temp }}/conductor-registered-release-verification.json
+          if-no-files-found: error
 
       - name: M3-Planning-Node-Addon mit registrierter NAPI-Grenze bauen
         run: cargo build --release --locked -p zugfolge-planning-runtime-napi --features node-addon
@@ -177,7 +224,7 @@ jobs:
           pnpm --filter @zugfolge/game-web... build
           pnpm --filter @zugfolge/operations-center... build
           # Echte NAPI-Registries und PGlite-Welten nicht zwischen Vitest-Worker-Isolates parallelisieren.
-          pnpm --filter @zugfolge/game-api exec vitest run --no-file-parallelism src/world-deployment-runtime.test.ts src/fleet-configuration.native.integration.test.ts src/economy-native.integration.test.ts src/disruption-policy-admin.test.ts src/manual-disruption-catalog.native.integration.test.ts src/demand-service.test.ts src/spfv-native.integration.test.ts
+          pnpm --filter @zugfolge/game-api exec vitest run --no-file-parallelism src/world-deployment-runtime.test.ts src/fleet-configuration.native.integration.test.ts src/economy-native.integration.test.ts src/disruption-policy-admin.test.ts src/manual-disruption-catalog.native.integration.test.ts src/demand-service.test.ts src/spfv-native.integration.test.ts src/conductor-projection.native.integration.test.ts src/conductor-interior.native.integration.test.ts
           pnpm --filter @zugfolge/game-api exec vitest run --no-file-parallelism src/operations-browser.e2e.test.ts src/game-hints.browser.test.ts src/demand-browser.e2e.test.ts
           # Echter Alpha-Builder -> serialisierter Compact-v2-Vertrag -> Serverstart-Registry.
           node --test tools/region-import/build-alpha-world-runtime.integration.test.mjs
@@ -187,6 +234,16 @@ jobs:
 
       - name: M10-Haltbelege, Journalcursor und native Fahrgastfortschreibung
         run: pnpm --filter @zugfolge/game-api exec vitest run --no-file-parallelism src/demand-progress.test.ts src/demand-pool-seeds.test.ts src/demand-pool-lifecycle.test.ts src/demand-offer-history.test.ts src/demand-operational-native.integration.test.ts
+
+      - name: M15-Sitzungen, private Persistenz, Releasepins und tatsächliche Szenenprojektion
+        env:
+          ZUGFOLGE_DIALOGUE_SCENARIOS_REPORT_PATH: ${{ runner.temp }}/conductor-session/dialogue-http-report.json
+        run: |
+          pnpm --filter @zugfolge/runtime-native exec vitest run --no-file-parallelism src/scenes.test.ts src/operational-fare-control.test.ts
+          pnpm --filter @zugfolge/game-api exec vitest run --no-file-parallelism src/conductor-session.native.integration.test.ts src/conductor-session.handover.native.integration.test.ts src/conductor-session-configuration.test.ts src/conductor-scene-configuration.test.ts src/operational-fare-control-event.test.ts
+          pnpm --filter @zugfolge/game-api exec vitest run --no-file-parallelism src/conductor-control.native.integration.test.ts src/conductor-control-penalty.native.integration.test.ts
+          pnpm --filter @zugfolge/game-api exec vitest run --no-file-parallelism src/conductor-network.native.integration.test.ts src/conductor-acceptance.native.integration.test.ts
+          pnpm --filter @zugfolge/game-api exec vitest run --no-file-parallelism src/conductor-dialogue-scenarios.native.integration.test.ts
 
       - name: PostgreSQL-Migration, Weltisolation und Autorisierung
         env:
@@ -204,6 +261,106 @@ jobs:
         run: |
           pnpm --filter @zugfolge/livemap... build
           pnpm --filter @zugfolge/game-api exec vitest run --no-file-parallelism src/demand-map-browser.e2e.test.ts
+
+      - name: M15.3-Atlasgalerie mit echtem Browser und mobilen Pixelzooms
+        shell: bash
+        env:
+          ART_PREVIEW_BROWSER_TEST: "1"
+          ART_PREVIEW_SCREENSHOT_DIR: ${{ runner.temp }}/art-atlas/screenshots
+          ART_PREVIEW_REPORT_PATH: ${{ runner.temp }}/art-atlas/browser-report.json
+        run: |
+          set -euo pipefail
+          # Wie M6/M10 den vorhandenen Systembrowser verwenden; playwright-core lädt keinen Browser herunter.
+          for art_browser in "${ZUGFOLGE_BROWSER_EXECUTABLE:-}" /usr/bin/google-chrome /usr/bin/chromium; do
+            if [[ -n "${art_browser}" && -x "${art_browser}" ]]; then
+              export PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH="${art_browser}"
+              break
+            fi
+          done
+          if [[ -z "${PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH:-}" ]]; then
+            echo "M15.3-Browserprüfung benötigt Chrome oder Chromium." >&2
+            exit 1
+          fi
+          node --test tools/art-atlas/preview.test.mjs
+
+      - name: M15.4-Innenräume aus M5 im echten Browser begehen
+        shell: bash
+        env:
+          CONDUCTOR_INTERIOR_BROWSER_TEST: "1"
+          CONDUCTOR_INTERIOR_SCREENSHOT_DIR: ${{ runner.temp }}/conductor-interior/screenshots
+          CONDUCTOR_INTERIOR_REPORT_PATH: ${{ runner.temp }}/conductor-interior/browser-report.json
+        run: |
+          set -euo pipefail
+          for interior_browser in "${ZUGFOLGE_BROWSER_EXECUTABLE:-}" /usr/bin/google-chrome /usr/bin/chromium; do
+            if [[ -n "${interior_browser}" && -x "${interior_browser}" ]]; then
+              export PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH="${interior_browser}"
+              break
+            fi
+          done
+          test -n "${PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH:-}"
+          node --test tools/conductor-interior/server.test.mjs tools/conductor-interior/preview.test.mjs
+
+      - name: M15-Sitzung im tatsächlichen Desktop- und Touchbrowser
+        shell: bash
+        env:
+          CONDUCTOR_SESSION_BROWSER_TEST: "1"
+          CONDUCTOR_CONTROL_BROWSER_TEST: "1"
+          CONDUCTOR_CAPACITY_BROWSER_TEST: "1"
+          CONDUCTOR_MANIFEST_BROWSER_TEST: "1"
+          CONDUCTOR_ACCEPTANCE_BROWSER_TEST: "1"
+          CONDUCTOR_ENTRY_BROWSER_TEST: "1"
+          CONDUCTOR_SESSION_SCREENSHOT_DIR: ${{ runner.temp }}/conductor-session/screenshots
+          CONDUCTOR_SESSION_REPORT_PATH: ${{ runner.temp }}/conductor-session/browser-report.json
+          CONDUCTOR_CONTROL_REPORT_PATH: ${{ runner.temp }}/conductor-session/control-browser-report.json
+          CONDUCTOR_CAPACITY_REPORT_PATH: ${{ runner.temp }}/conductor-session/capacity-browser-report.json
+          CONDUCTOR_MANIFEST_REPORT_PATH: ${{ runner.temp }}/conductor-session/manifest-browser-report.json
+          CONDUCTOR_ACCEPTANCE_REPORT_PATH: ${{ runner.temp }}/conductor-session/acceptance-browser-report.json
+          CONDUCTOR_ENTRY_REPORT_PATH: ${{ runner.temp }}/conductor-session/entry-browser-report.json
+        run: |
+          set -euo pipefail
+          for conductor_browser in "${ZUGFOLGE_BROWSER_EXECUTABLE:-}" /usr/bin/google-chrome /usr/bin/chromium; do
+            if [[ -n "${conductor_browser}" && -x "${conductor_browser}" ]]; then
+              export PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH="${conductor_browser}"
+              break
+            fi
+          done
+          test -n "${PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH:-}"
+          node --test tools/conductor-session/browser-proof.mjs
+          node --test tools/conductor-session/control-browser-proof.mjs
+          node --test tools/conductor-session/capacity-browser-proof.mjs
+          node --test tools/conductor-session/manifest-browser-proof.mjs
+          node --test tools/conductor-session/acceptance-browser-proof.mjs
+          node --test tools/conductor-session/entry-browser-proof.mjs
+          node tools/conductor-session/package-evidence.mjs "$RUNNER_TEMP/conductor-session" "$GITHUB_SHA" "https://github.com/larynxberlin-rgb/Zugfolge/actions/runs/$GITHUB_RUN_ID"
+
+      - name: M15-Browserbelege aufbewahren
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: conductor-session-browser-evidence
+          path: ${{ runner.temp }}/conductor-session
+          if-no-files-found: ignore
+
+      - name: Offline-Schaffnerspiel als einzelne HTML-Datei prüfen
+        shell: bash
+        run: |
+          set -euo pipefail
+          for offline_browser in "${ZUGFOLGE_BROWSER_EXECUTABLE:-}" /usr/bin/google-chrome /usr/bin/chromium; do
+            if [[ -n "${offline_browser}" && -x "${offline_browser}" ]]; then
+              export PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH="${offline_browser}"
+              break
+            fi
+          done
+          test -n "${PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH:-}"
+          node tools/conductor-offline/check.mjs
+
+      - name: Offline-Demo und zugehörige Browserbelege aufbewahren
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: conductor-offline-demo
+          path: outputs/conductor-offline
+          if-no-files-found: ignore
 
   guards:
     # ASCII-only: GitHub branch protection compares this check name byte-for-byte.

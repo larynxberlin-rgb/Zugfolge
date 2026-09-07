@@ -1,0 +1,6774 @@
+{
+  "schemaVersion": "conductor-art-prepared/v1",
+  "palette": [
+    "#00000000",
+    "#101419ff",
+    "#181e25ff",
+    "#202830ff",
+    "#303b46ff",
+    "#f5f7faff",
+    "#b5c0ccff",
+    "#93a2b1ff",
+    "#e5233dff",
+    "#7cddbaff",
+    "#f5bf65ff",
+    "#e8b894ff",
+    "#be8060ff",
+    "#805342ff",
+    "#382c28ff",
+    "#e9e1ccff",
+    "#a8967aff",
+    "#932b34ff",
+    "#4f6650ff",
+    "#728168ff",
+    "#416365ff",
+    "#678998ff",
+    "#566370ff",
+    "#647780ff",
+    "#c4b29aff"
+  ],
+  "files": [
+    {
+      "id": "passenger-red",
+      "path": "atlases/passenger-red.png",
+      "sha256": "7f0cd9c264bc5404d957675bc84ed886039dc84f2faab54b8e8d8a1e72b4b346",
+      "widthPx": 320,
+      "heightPx": 256,
+      "sourceScale": 1
+    },
+    {
+      "id": "passenger-teal",
+      "path": "atlases/passenger-teal.png",
+      "sha256": "3aaadd3f90131877bd5f482c6d96b292b8f42471ef699bf4c4ea0e8cdd9c33ad",
+      "widthPx": 320,
+      "heightPx": 256,
+      "sourceScale": 1
+    },
+    {
+      "id": "passenger-amber",
+      "path": "atlases/passenger-amber.png",
+      "sha256": "e781ead10d891f00ea99b744c2232441311bb70b8b53b1a5ab3c99fb7653ad04",
+      "widthPx": 320,
+      "heightPx": 256,
+      "sourceScale": 1
+    },
+    {
+      "id": "passenger-slate",
+      "path": "atlases/passenger-slate.png",
+      "sha256": "c1807f78b0318d07ec1000004a4035600f82640f211c6455e04acec2ee998480",
+      "widthPx": 320,
+      "heightPx": 256,
+      "sourceScale": 1
+    },
+    {
+      "id": "conductor",
+      "path": "atlases/conductor.png",
+      "sha256": "e42490973eb0ea458a500b0b5278382d48fdbcdd1ed83424263151d1422a8c4a",
+      "widthPx": 320,
+      "heightPx": 256,
+      "sourceScale": 1
+    },
+    {
+      "id": "modules",
+      "path": "atlases/modules.png",
+      "sha256": "9ddda097bed0c264600f1416cf3b7ce708e56201096be699cbb6e316ded1eb3c",
+      "widthPx": 2048,
+      "heightPx": 2048,
+      "sourceScale": 1
+    },
+    {
+      "id": "vehicles",
+      "path": "atlases/vehicles.png",
+      "sha256": "9af3e9b1add565fe91e248db0b3e7c99c9d97a1627f15def8404672eae266323",
+      "widthPx": 2048,
+      "heightPx": 1024,
+      "sourceScale": 1
+    }
+  ],
+  "assets": [
+    {
+      "id": "actor.passenger-01.south.idle",
+      "fileId": "passenger-red",
+      "rect": {
+        "x": 0,
+        "y": 0,
+        "width": 64,
+        "height": 64
+      },
+      "category": "actor",
+      "sourceKey": "passenger-red",
+      "sourceRect": [
+        0,
+        0,
+        280,
+        264
+      ],
+      "contentBounds": [
+        112,
+        20,
+        251,
+        243
+      ],
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000,
+      "pivot": {
+        "x": 32,
+        "y": 50
+      }
+    },
+    {
+      "id": "actor.passenger-01.south.walk.1",
+      "fileId": "passenger-red",
+      "rect": {
+        "x": 64,
+        "y": 0,
+        "width": 64,
+        "height": 64
+      },
+      "category": "actor",
+      "sourceKey": "passenger-red",
+      "sourceRect": [
+        280,
+        0,
+        561,
+        270
+      ],
+      "contentBounds": [
+        88,
+        20,
+        229,
+        260
+      ],
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000,
+      "pivot": {
+        "x": 32,
+        "y": 50
+      }
+    },
+    {
+      "id": "actor.passenger-01.south.walk.2",
+      "fileId": "passenger-red",
+      "rect": {
+        "x": 128,
+        "y": 0,
+        "width": 64,
+        "height": 64
+      },
+      "category": "actor",
+      "sourceKey": "passenger-red",
+      "sourceRect": [
+        561,
+        0,
+        841,
+        268
+      ],
+      "contentBounds": [
+        73,
+        20,
+        210,
+        256
+      ],
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000,
+      "pivot": {
+        "x": 32,
+        "y": 50
+      }
+    },
+    {
+      "id": "actor.passenger-01.south.walk.3",
+      "fileId": "passenger-red",
+      "rect": {
+        "x": 192,
+        "y": 0,
+        "width": 64,
+        "height": 64
+      },
+      "category": "actor",
+      "sourceKey": "passenger-red",
+      "sourceRect": [
+        841,
+        0,
+        1122,
+        272
+      ],
+      "contentBounds": [
+        51,
+        20,
+        192,
+        260
+      ],
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000,
+      "pivot": {
+        "x": 32,
+        "y": 50
+      }
+    },
+    {
+      "id": "actor.passenger-01.south.walk.4",
+      "fileId": "passenger-red",
+      "rect": {
+        "x": 256,
+        "y": 0,
+        "width": 64,
+        "height": 64
+      },
+      "category": "actor",
+      "sourceKey": "passenger-red",
+      "sourceRect": [
+        1122,
+        0,
+        1402,
+        268
+      ],
+      "contentBounds": [
+        31,
+        20,
+        174,
+        252
+      ],
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000,
+      "pivot": {
+        "x": 32,
+        "y": 50
+      }
+    },
+    {
+      "id": "actor.passenger-01.west.idle",
+      "fileId": "passenger-red",
+      "rect": {
+        "x": 0,
+        "y": 64,
+        "width": 64,
+        "height": 64
+      },
+      "category": "actor",
+      "sourceKey": "passenger-red",
+      "sourceRect": [
+        0,
+        264,
+        280,
+        548
+      ],
+      "contentBounds": [
+        127,
+        21,
+        231,
+        268
+      ],
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000,
+      "pivot": {
+        "x": 32,
+        "y": 50
+      }
+    },
+    {
+      "id": "actor.passenger-01.west.walk.1",
+      "fileId": "passenger-red",
+      "rect": {
+        "x": 64,
+        "y": 64,
+        "width": 64,
+        "height": 64
+      },
+      "category": "actor",
+      "sourceKey": "passenger-red",
+      "sourceRect": [
+        280,
+        270,
+        561,
+        552
+      ],
+      "contentBounds": [
+        79,
+        11,
+        224,
+        269
+      ],
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000,
+      "pivot": {
+        "x": 32,
+        "y": 50
+      }
+    },
+    {
+      "id": "actor.passenger-01.west.walk.2",
+      "fileId": "passenger-red",
+      "rect": {
+        "x": 128,
+        "y": 64,
+        "width": 64,
+        "height": 64
+      },
+      "category": "actor",
+      "sourceKey": "passenger-red",
+      "sourceRect": [
+        561,
+        268,
+        841,
+        544
+      ],
+      "contentBounds": [
+        74,
+        12,
+        195,
+        257
+      ],
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000,
+      "pivot": {
+        "x": 32,
+        "y": 50
+      }
+    },
+    {
+      "id": "actor.passenger-01.west.walk.3",
+      "fileId": "passenger-red",
+      "rect": {
+        "x": 192,
+        "y": 64,
+        "width": 64,
+        "height": 64
+      },
+      "category": "actor",
+      "sourceKey": "passenger-red",
+      "sourceRect": [
+        841,
+        272,
+        1122,
+        552
+      ],
+      "contentBounds": [
+        37,
+        13,
+        180,
+        267
+      ],
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000,
+      "pivot": {
+        "x": 32,
+        "y": 50
+      }
+    },
+    {
+      "id": "actor.passenger-01.west.walk.4",
+      "fileId": "passenger-red",
+      "rect": {
+        "x": 256,
+        "y": 64,
+        "width": 64,
+        "height": 64
+      },
+      "category": "actor",
+      "sourceKey": "passenger-red",
+      "sourceRect": [
+        1122,
+        268,
+        1402,
+        550
+      ],
+      "contentBounds": [
+        29,
+        17,
+        176,
+        265
+      ],
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000,
+      "pivot": {
+        "x": 32,
+        "y": 50
+      }
+    },
+    {
+      "id": "actor.passenger-01.east.idle",
+      "fileId": "passenger-red",
+      "rect": {
+        "x": 0,
+        "y": 128,
+        "width": 64,
+        "height": 64
+      },
+      "category": "actor",
+      "sourceKey": "passenger-red",
+      "sourceRect": [
+        0,
+        548,
+        280,
+        832
+      ],
+      "contentBounds": [
+        115,
+        17,
+        227,
+        268
+      ],
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000,
+      "pivot": {
+        "x": 32,
+        "y": 50
+      }
+    },
+    {
+      "id": "actor.passenger-01.east.walk.1",
+      "fileId": "passenger-red",
+      "rect": {
+        "x": 64,
+        "y": 128,
+        "width": 64,
+        "height": 64
+      },
+      "category": "actor",
+      "sourceKey": "passenger-red",
+      "sourceRect": [
+        280,
+        552,
+        561,
+        835
+      ],
+      "contentBounds": [
+        83,
+        14,
+        235,
+        269
+      ],
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000,
+      "pivot": {
+        "x": 32,
+        "y": 50
+      }
+    },
+    {
+      "id": "actor.passenger-01.east.walk.2",
+      "fileId": "passenger-red",
+      "rect": {
+        "x": 128,
+        "y": 128,
+        "width": 64,
+        "height": 64
+      },
+      "category": "actor",
+      "sourceKey": "passenger-red",
+      "sourceRect": [
+        561,
+        544,
+        841,
+        830
+      ],
+      "contentBounds": [
+        77,
+        20,
+        194,
+        267
+      ],
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000,
+      "pivot": {
+        "x": 32,
+        "y": 50
+      }
+    },
+    {
+      "id": "actor.passenger-01.east.walk.3",
+      "fileId": "passenger-red",
+      "rect": {
+        "x": 192,
+        "y": 128,
+        "width": 64,
+        "height": 64
+      },
+      "category": "actor",
+      "sourceKey": "passenger-red",
+      "sourceRect": [
+        841,
+        552,
+        1122,
+        835
+      ],
+      "contentBounds": [
+        46,
+        14,
+        192,
+        269
+      ],
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000,
+      "pivot": {
+        "x": 32,
+        "y": 50
+      }
+    },
+    {
+      "id": "actor.passenger-01.east.walk.4",
+      "fileId": "passenger-red",
+      "rect": {
+        "x": 256,
+        "y": 128,
+        "width": 64,
+        "height": 64
+      },
+      "category": "actor",
+      "sourceKey": "passenger-red",
+      "sourceRect": [
+        1122,
+        550,
+        1402,
+        835
+      ],
+      "contentBounds": [
+        29,
+        17,
+        177,
+        271
+      ],
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000,
+      "pivot": {
+        "x": 32,
+        "y": 50
+      }
+    },
+    {
+      "id": "actor.passenger-01.north.idle",
+      "fileId": "passenger-red",
+      "rect": {
+        "x": 0,
+        "y": 192,
+        "width": 64,
+        "height": 64
+      },
+      "category": "actor",
+      "sourceKey": "passenger-red",
+      "sourceRect": [
+        0,
+        832,
+        280,
+        1122
+      ],
+      "contentBounds": [
+        109,
+        16,
+        243,
+        259
+      ],
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000,
+      "pivot": {
+        "x": 32,
+        "y": 50
+      }
+    },
+    {
+      "id": "actor.passenger-01.north.walk.1",
+      "fileId": "passenger-red",
+      "rect": {
+        "x": 64,
+        "y": 192,
+        "width": 64,
+        "height": 64
+      },
+      "category": "actor",
+      "sourceKey": "passenger-red",
+      "sourceRect": [
+        280,
+        835,
+        561,
+        1122
+      ],
+      "contentBounds": [
+        83,
+        14,
+        225,
+        264
+      ],
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000,
+      "pivot": {
+        "x": 32,
+        "y": 50
+      }
+    },
+    {
+      "id": "actor.passenger-01.north.walk.2",
+      "fileId": "passenger-red",
+      "rect": {
+        "x": 128,
+        "y": 192,
+        "width": 64,
+        "height": 64
+      },
+      "category": "actor",
+      "sourceKey": "passenger-red",
+      "sourceRect": [
+        561,
+        830,
+        841,
+        1122
+      ],
+      "contentBounds": [
+        73,
+        19,
+        205,
+        270
+      ],
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000,
+      "pivot": {
+        "x": 32,
+        "y": 50
+      }
+    },
+    {
+      "id": "actor.passenger-01.north.walk.3",
+      "fileId": "passenger-red",
+      "rect": {
+        "x": 192,
+        "y": 192,
+        "width": 64,
+        "height": 64
+      },
+      "category": "actor",
+      "sourceKey": "passenger-red",
+      "sourceRect": [
+        841,
+        835,
+        1122,
+        1122
+      ],
+      "contentBounds": [
+        50,
+        14,
+        192,
+        265
+      ],
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000,
+      "pivot": {
+        "x": 32,
+        "y": 50
+      }
+    },
+    {
+      "id": "actor.passenger-01.north.walk.4",
+      "fileId": "passenger-red",
+      "rect": {
+        "x": 256,
+        "y": 192,
+        "width": 64,
+        "height": 64
+      },
+      "category": "actor",
+      "sourceKey": "passenger-red",
+      "sourceRect": [
+        1122,
+        835,
+        1402,
+        1122
+      ],
+      "contentBounds": [
+        31,
+        14,
+        174,
+        265
+      ],
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000,
+      "pivot": {
+        "x": 32,
+        "y": 50
+      }
+    },
+    {
+      "id": "actor.passenger-02.south.idle",
+      "fileId": "passenger-teal",
+      "rect": {
+        "x": 0,
+        "y": 0,
+        "width": 64,
+        "height": 64
+      },
+      "category": "actor",
+      "sourceKey": "passenger-teal",
+      "sourceRect": [
+        0,
+        0,
+        280,
+        262
+      ],
+      "contentBounds": [
+        78,
+        35,
+        209,
+        240
+      ],
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000,
+      "pivot": {
+        "x": 32,
+        "y": 50
+      }
+    },
+    {
+      "id": "actor.passenger-02.south.walk.1",
+      "fileId": "passenger-teal",
+      "rect": {
+        "x": 64,
+        "y": 0,
+        "width": 64,
+        "height": 64
+      },
+      "category": "actor",
+      "sourceKey": "passenger-teal",
+      "sourceRect": [
+        280,
+        0,
+        561,
+        273
+      ],
+      "contentBounds": [
+        74,
+        33,
+        204,
+        255
+      ],
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000,
+      "pivot": {
+        "x": 32,
+        "y": 50
+      }
+    },
+    {
+      "id": "actor.passenger-02.south.walk.2",
+      "fileId": "passenger-teal",
+      "rect": {
+        "x": 128,
+        "y": 0,
+        "width": 64,
+        "height": 64
+      },
+      "category": "actor",
+      "sourceKey": "passenger-teal",
+      "sourceRect": [
+        561,
+        0,
+        841,
+        274
+      ],
+      "contentBounds": [
+        73,
+        40,
+        206,
+        256
+      ],
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000,
+      "pivot": {
+        "x": 32,
+        "y": 50
+      }
+    },
+    {
+      "id": "actor.passenger-02.south.walk.3",
+      "fileId": "passenger-teal",
+      "rect": {
+        "x": 192,
+        "y": 0,
+        "width": 64,
+        "height": 64
+      },
+      "category": "actor",
+      "sourceKey": "passenger-teal",
+      "sourceRect": [
+        841,
+        0,
+        1122,
+        272
+      ],
+      "contentBounds": [
+        77,
+        36,
+        203,
+        260
+      ],
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000,
+      "pivot": {
+        "x": 32,
+        "y": 50
+      }
+    },
+    {
+      "id": "actor.passenger-02.south.walk.4",
+      "fileId": "passenger-teal",
+      "rect": {
+        "x": 256,
+        "y": 0,
+        "width": 64,
+        "height": 64
+      },
+      "category": "actor",
+      "sourceKey": "passenger-teal",
+      "sourceRect": [
+        1122,
+        0,
+        1402,
+        271
+      ],
+      "contentBounds": [
+        69,
+        33,
+        198,
+        257
+      ],
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000,
+      "pivot": {
+        "x": 32,
+        "y": 50
+      }
+    },
+    {
+      "id": "actor.passenger-02.west.idle",
+      "fileId": "passenger-teal",
+      "rect": {
+        "x": 0,
+        "y": 64,
+        "width": 64,
+        "height": 64
+      },
+      "category": "actor",
+      "sourceKey": "passenger-teal",
+      "sourceRect": [
+        0,
+        262,
+        280,
+        530
+      ],
+      "contentBounds": [
+        105,
+        23,
+        204,
+        254
+      ],
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000,
+      "pivot": {
+        "x": 32,
+        "y": 50
+      }
+    },
+    {
+      "id": "actor.passenger-02.west.walk.1",
+      "fileId": "passenger-teal",
+      "rect": {
+        "x": 64,
+        "y": 64,
+        "width": 64,
+        "height": 64
+      },
+      "category": "actor",
+      "sourceKey": "passenger-teal",
+      "sourceRect": [
+        280,
+        273,
+        561,
+        526
+      ],
+      "contentBounds": [
+        69,
+        19,
+        194,
+        227
+      ],
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000,
+      "pivot": {
+        "x": 32,
+        "y": 50
+      }
+    },
+    {
+      "id": "actor.passenger-02.west.walk.2",
+      "fileId": "passenger-teal",
+      "rect": {
+        "x": 128,
+        "y": 64,
+        "width": 64,
+        "height": 64
+      },
+      "category": "actor",
+      "sourceKey": "passenger-teal",
+      "sourceRect": [
+        561,
+        274,
+        841,
+        530
+      ],
+      "contentBounds": [
+        77,
+        18,
+        205,
+        233
+      ],
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000,
+      "pivot": {
+        "x": 32,
+        "y": 50
+      }
+    },
+    {
+      "id": "actor.passenger-02.west.walk.3",
+      "fileId": "passenger-teal",
+      "rect": {
+        "x": 192,
+        "y": 64,
+        "width": 64,
+        "height": 64
+      },
+      "category": "actor",
+      "sourceKey": "passenger-teal",
+      "sourceRect": [
+        841,
+        272,
+        1122,
+        529
+      ],
+      "contentBounds": [
+        84,
+        13,
+        211,
+        241
+      ],
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000,
+      "pivot": {
+        "x": 32,
+        "y": 50
+      }
+    },
+    {
+      "id": "actor.passenger-02.west.walk.4",
+      "fileId": "passenger-teal",
+      "rect": {
+        "x": 256,
+        "y": 64,
+        "width": 64,
+        "height": 64
+      },
+      "category": "actor",
+      "sourceKey": "passenger-teal",
+      "sourceRect": [
+        1122,
+        271,
+        1402,
+        531
+      ],
+      "contentBounds": [
+        75,
+        15,
+        181,
+        244
+      ],
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000,
+      "pivot": {
+        "x": 32,
+        "y": 50
+      }
+    },
+    {
+      "id": "actor.passenger-02.east.idle",
+      "fileId": "passenger-teal",
+      "rect": {
+        "x": 0,
+        "y": 128,
+        "width": 64,
+        "height": 64
+      },
+      "category": "actor",
+      "sourceKey": "passenger-teal",
+      "sourceRect": [
+        0,
+        530,
+        280,
+        798
+      ],
+      "contentBounds": [
+        84,
+        15,
+        185,
+        251
+      ],
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000,
+      "pivot": {
+        "x": 32,
+        "y": 50
+      }
+    },
+    {
+      "id": "actor.passenger-02.east.walk.1",
+      "fileId": "passenger-teal",
+      "rect": {
+        "x": 64,
+        "y": 128,
+        "width": 64,
+        "height": 64
+      },
+      "category": "actor",
+      "sourceKey": "passenger-teal",
+      "sourceRect": [
+        280,
+        526,
+        561,
+        791
+      ],
+      "contentBounds": [
+        76,
+        26,
+        207,
+        242
+      ],
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000,
+      "pivot": {
+        "x": 32,
+        "y": 50
+      }
+    },
+    {
+      "id": "actor.passenger-02.east.walk.2",
+      "fileId": "passenger-teal",
+      "rect": {
+        "x": 128,
+        "y": 128,
+        "width": 64,
+        "height": 64
+      },
+      "category": "actor",
+      "sourceKey": "passenger-teal",
+      "sourceRect": [
+        561,
+        530,
+        841,
+        799
+      ],
+      "contentBounds": [
+        73,
+        24,
+        200,
+        245
+      ],
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000,
+      "pivot": {
+        "x": 32,
+        "y": 50
+      }
+    },
+    {
+      "id": "actor.passenger-02.east.walk.3",
+      "fileId": "passenger-teal",
+      "rect": {
+        "x": 192,
+        "y": 128,
+        "width": 64,
+        "height": 64
+      },
+      "category": "actor",
+      "sourceKey": "passenger-teal",
+      "sourceRect": [
+        841,
+        529,
+        1122,
+        796
+      ],
+      "contentBounds": [
+        71,
+        16,
+        200,
+        246
+      ],
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000,
+      "pivot": {
+        "x": 32,
+        "y": 50
+      }
+    },
+    {
+      "id": "actor.passenger-02.east.walk.4",
+      "fileId": "passenger-teal",
+      "rect": {
+        "x": 256,
+        "y": 128,
+        "width": 64,
+        "height": 64
+      },
+      "category": "actor",
+      "sourceKey": "passenger-teal",
+      "sourceRect": [
+        1122,
+        531,
+        1402,
+        793
+      ],
+      "contentBounds": [
+        73,
+        16,
+        201,
+        244
+      ],
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000,
+      "pivot": {
+        "x": 32,
+        "y": 50
+      }
+    },
+    {
+      "id": "actor.passenger-02.north.idle",
+      "fileId": "passenger-teal",
+      "rect": {
+        "x": 0,
+        "y": 192,
+        "width": 64,
+        "height": 64
+      },
+      "category": "actor",
+      "sourceKey": "passenger-teal",
+      "sourceRect": [
+        0,
+        798,
+        280,
+        1122
+      ],
+      "contentBounds": [
+        78,
+        18,
+        208,
+        241
+      ],
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000,
+      "pivot": {
+        "x": 32,
+        "y": 50
+      }
+    },
+    {
+      "id": "actor.passenger-02.north.walk.1",
+      "fileId": "passenger-teal",
+      "rect": {
+        "x": 64,
+        "y": 192,
+        "width": 64,
+        "height": 64
+      },
+      "category": "actor",
+      "sourceKey": "passenger-teal",
+      "sourceRect": [
+        280,
+        791,
+        561,
+        1122
+      ],
+      "contentBounds": [
+        75,
+        23,
+        205,
+        261
+      ],
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000,
+      "pivot": {
+        "x": 32,
+        "y": 50
+      }
+    },
+    {
+      "id": "actor.passenger-02.north.walk.2",
+      "fileId": "passenger-teal",
+      "rect": {
+        "x": 128,
+        "y": 192,
+        "width": 64,
+        "height": 64
+      },
+      "category": "actor",
+      "sourceKey": "passenger-teal",
+      "sourceRect": [
+        561,
+        799,
+        841,
+        1122
+      ],
+      "contentBounds": [
+        73,
+        24,
+        206,
+        252
+      ],
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000,
+      "pivot": {
+        "x": 32,
+        "y": 50
+      }
+    },
+    {
+      "id": "actor.passenger-02.north.walk.3",
+      "fileId": "passenger-teal",
+      "rect": {
+        "x": 192,
+        "y": 192,
+        "width": 64,
+        "height": 64
+      },
+      "category": "actor",
+      "sourceKey": "passenger-teal",
+      "sourceRect": [
+        841,
+        796,
+        1122,
+        1122
+      ],
+      "contentBounds": [
+        78,
+        21,
+        207,
+        263
+      ],
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000,
+      "pivot": {
+        "x": 32,
+        "y": 50
+      }
+    },
+    {
+      "id": "actor.passenger-02.north.walk.4",
+      "fileId": "passenger-teal",
+      "rect": {
+        "x": 256,
+        "y": 192,
+        "width": 64,
+        "height": 64
+      },
+      "category": "actor",
+      "sourceKey": "passenger-teal",
+      "sourceRect": [
+        1122,
+        793,
+        1402,
+        1122
+      ],
+      "contentBounds": [
+        68,
+        19,
+        195,
+        261
+      ],
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000,
+      "pivot": {
+        "x": 32,
+        "y": 50
+      }
+    },
+    {
+      "id": "actor.passenger-03.south.idle",
+      "fileId": "passenger-amber",
+      "rect": {
+        "x": 0,
+        "y": 0,
+        "width": 64,
+        "height": 64
+      },
+      "category": "actor",
+      "sourceKey": "passenger-amber",
+      "sourceRect": [
+        0,
+        0,
+        280,
+        270
+      ],
+      "contentBounds": [
+        113,
+        23,
+        248,
+        258
+      ],
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000,
+      "pivot": {
+        "x": 32,
+        "y": 50
+      }
+    },
+    {
+      "id": "actor.passenger-03.south.walk.1",
+      "fileId": "passenger-amber",
+      "rect": {
+        "x": 64,
+        "y": 0,
+        "width": 64,
+        "height": 64
+      },
+      "category": "actor",
+      "sourceKey": "passenger-amber",
+      "sourceRect": [
+        280,
+        0,
+        561,
+        267
+      ],
+      "contentBounds": [
+        102,
+        16,
+        235,
+        254
+      ],
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000,
+      "pivot": {
+        "x": 32,
+        "y": 50
+      }
+    },
+    {
+      "id": "actor.passenger-03.south.walk.2",
+      "fileId": "passenger-amber",
+      "rect": {
+        "x": 128,
+        "y": 0,
+        "width": 64,
+        "height": 64
+      },
+      "category": "actor",
+      "sourceKey": "passenger-amber",
+      "sourceRect": [
+        561,
+        0,
+        841,
+        273
+      ],
+      "contentBounds": [
+        65,
+        30,
+        217,
+        263
+      ],
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000,
+      "pivot": {
+        "x": 32,
+        "y": 50
+      }
+    },
+    {
+      "id": "actor.passenger-03.south.walk.3",
+      "fileId": "passenger-amber",
+      "rect": {
+        "x": 192,
+        "y": 0,
+        "width": 64,
+        "height": 64
+      },
+      "category": "actor",
+      "sourceKey": "passenger-amber",
+      "sourceRect": [
+        841,
+        0,
+        1122,
+        267
+      ],
+      "contentBounds": [
+        55,
+        21,
+        186,
+        252
+      ],
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000,
+      "pivot": {
+        "x": 32,
+        "y": 50
+      }
+    },
+    {
+      "id": "actor.passenger-03.south.walk.4",
+      "fileId": "passenger-amber",
+      "rect": {
+        "x": 256,
+        "y": 0,
+        "width": 64,
+        "height": 64
+      },
+      "category": "actor",
+      "sourceKey": "passenger-amber",
+      "sourceRect": [
+        1122,
+        0,
+        1402,
+        267
+      ],
+      "contentBounds": [
+        36,
+        23,
+        167,
+        253
+      ],
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000,
+      "pivot": {
+        "x": 32,
+        "y": 50
+      }
+    },
+    {
+      "id": "actor.passenger-03.west.idle",
+      "fileId": "passenger-amber",
+      "rect": {
+        "x": 0,
+        "y": 64,
+        "width": 64,
+        "height": 64
+      },
+      "category": "actor",
+      "sourceKey": "passenger-amber",
+      "sourceRect": [
+        0,
+        270,
+        280,
+        524
+      ],
+      "contentBounds": [
+        109,
+        13,
+        247,
+        239
+      ],
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000,
+      "pivot": {
+        "x": 32,
+        "y": 50
+      }
+    },
+    {
+      "id": "actor.passenger-03.west.walk.1",
+      "fileId": "passenger-amber",
+      "rect": {
+        "x": 64,
+        "y": 64,
+        "width": 64,
+        "height": 64
+      },
+      "category": "actor",
+      "sourceKey": "passenger-amber",
+      "sourceRect": [
+        280,
+        267,
+        561,
+        527
+      ],
+      "contentBounds": [
+        90,
+        14,
+        240,
+        245
+      ],
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000,
+      "pivot": {
+        "x": 32,
+        "y": 50
+      }
+    },
+    {
+      "id": "actor.passenger-03.west.walk.2",
+      "fileId": "passenger-amber",
+      "rect": {
+        "x": 128,
+        "y": 64,
+        "width": 64,
+        "height": 64
+      },
+      "category": "actor",
+      "sourceKey": "passenger-amber",
+      "sourceRect": [
+        561,
+        273,
+        841,
+        527
+      ],
+      "contentBounds": [
+        75,
+        10,
+        212,
+        239
+      ],
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000,
+      "pivot": {
+        "x": 32,
+        "y": 50
+      }
+    },
+    {
+      "id": "actor.passenger-03.west.walk.3",
+      "fileId": "passenger-amber",
+      "rect": {
+        "x": 192,
+        "y": 64,
+        "width": 64,
+        "height": 64
+      },
+      "category": "actor",
+      "sourceKey": "passenger-amber",
+      "sourceRect": [
+        841,
+        267,
+        1122,
+        527
+      ],
+      "contentBounds": [
+        53,
+        15,
+        204,
+        245
+      ],
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000,
+      "pivot": {
+        "x": 32,
+        "y": 50
+      }
+    },
+    {
+      "id": "actor.passenger-03.west.walk.4",
+      "fileId": "passenger-amber",
+      "rect": {
+        "x": 256,
+        "y": 64,
+        "width": 64,
+        "height": 64
+      },
+      "category": "actor",
+      "sourceKey": "passenger-amber",
+      "sourceRect": [
+        1122,
+        267,
+        1402,
+        527
+      ],
+      "contentBounds": [
+        30,
+        14,
+        167,
+        246
+      ],
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000,
+      "pivot": {
+        "x": 32,
+        "y": 50
+      }
+    },
+    {
+      "id": "actor.passenger-03.east.idle",
+      "fileId": "passenger-amber",
+      "rect": {
+        "x": 0,
+        "y": 128,
+        "width": 64,
+        "height": 64
+      },
+      "category": "actor",
+      "sourceKey": "passenger-amber",
+      "sourceRect": [
+        0,
+        524,
+        280,
+        790
+      ],
+      "contentBounds": [
+        104,
+        16,
+        240,
+        255
+      ],
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000,
+      "pivot": {
+        "x": 32,
+        "y": 50
+      }
+    },
+    {
+      "id": "actor.passenger-03.east.walk.1",
+      "fileId": "passenger-amber",
+      "rect": {
+        "x": 64,
+        "y": 128,
+        "width": 64,
+        "height": 64
+      },
+      "category": "actor",
+      "sourceKey": "passenger-amber",
+      "sourceRect": [
+        280,
+        527,
+        561,
+        787
+      ],
+      "contentBounds": [
+        76,
+        15,
+        233,
+        249
+      ],
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000,
+      "pivot": {
+        "x": 32,
+        "y": 50
+      }
+    },
+    {
+      "id": "actor.passenger-03.east.walk.2",
+      "fileId": "passenger-amber",
+      "rect": {
+        "x": 128,
+        "y": 128,
+        "width": 64,
+        "height": 64
+      },
+      "category": "actor",
+      "sourceKey": "passenger-amber",
+      "sourceRect": [
+        561,
+        527,
+        841,
+        783
+      ],
+      "contentBounds": [
+        67,
+        15,
+        215,
+        248
+      ],
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000,
+      "pivot": {
+        "x": 32,
+        "y": 50
+      }
+    },
+    {
+      "id": "actor.passenger-03.east.walk.3",
+      "fileId": "passenger-amber",
+      "rect": {
+        "x": 192,
+        "y": 128,
+        "width": 64,
+        "height": 64
+      },
+      "category": "actor",
+      "sourceKey": "passenger-amber",
+      "sourceRect": [
+        841,
+        527,
+        1122,
+        785
+      ],
+      "contentBounds": [
+        40,
+        15,
+        193,
+        246
+      ],
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000,
+      "pivot": {
+        "x": 32,
+        "y": 50
+      }
+    },
+    {
+      "id": "actor.passenger-03.east.walk.4",
+      "fileId": "passenger-amber",
+      "rect": {
+        "x": 256,
+        "y": 128,
+        "width": 64,
+        "height": 64
+      },
+      "category": "actor",
+      "sourceKey": "passenger-amber",
+      "sourceRect": [
+        1122,
+        527,
+        1402,
+        790
+      ],
+      "contentBounds": [
+        31,
+        15,
+        177,
+        248
+      ],
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000,
+      "pivot": {
+        "x": 32,
+        "y": 50
+      }
+    },
+    {
+      "id": "actor.passenger-03.north.idle",
+      "fileId": "passenger-amber",
+      "rect": {
+        "x": 0,
+        "y": 192,
+        "width": 64,
+        "height": 64
+      },
+      "category": "actor",
+      "sourceKey": "passenger-amber",
+      "sourceRect": [
+        0,
+        790,
+        280,
+        1122
+      ],
+      "contentBounds": [
+        108,
+        12,
+        243,
+        281
+      ],
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000,
+      "pivot": {
+        "x": 32,
+        "y": 50
+      }
+    },
+    {
+      "id": "actor.passenger-03.north.walk.1",
+      "fileId": "passenger-amber",
+      "rect": {
+        "x": 64,
+        "y": 192,
+        "width": 64,
+        "height": 64
+      },
+      "category": "actor",
+      "sourceKey": "passenger-amber",
+      "sourceRect": [
+        280,
+        787,
+        561,
+        1122
+      ],
+      "contentBounds": [
+        100,
+        11,
+        235,
+        293
+      ],
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000,
+      "pivot": {
+        "x": 32,
+        "y": 50
+      }
+    },
+    {
+      "id": "actor.passenger-03.north.walk.2",
+      "fileId": "passenger-amber",
+      "rect": {
+        "x": 128,
+        "y": 192,
+        "width": 64,
+        "height": 64
+      },
+      "category": "actor",
+      "sourceKey": "passenger-amber",
+      "sourceRect": [
+        561,
+        783,
+        841,
+        1122
+      ],
+      "contentBounds": [
+        71,
+        9,
+        215,
+        285
+      ],
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000,
+      "pivot": {
+        "x": 32,
+        "y": 50
+      }
+    },
+    {
+      "id": "actor.passenger-03.north.walk.3",
+      "fileId": "passenger-amber",
+      "rect": {
+        "x": 192,
+        "y": 192,
+        "width": 64,
+        "height": 64
+      },
+      "category": "actor",
+      "sourceKey": "passenger-amber",
+      "sourceRect": [
+        841,
+        785,
+        1122,
+        1122
+      ],
+      "contentBounds": [
+        49,
+        13,
+        188,
+        295
+      ],
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000,
+      "pivot": {
+        "x": 32,
+        "y": 50
+      }
+    },
+    {
+      "id": "actor.passenger-03.north.walk.4",
+      "fileId": "passenger-amber",
+      "rect": {
+        "x": 256,
+        "y": 192,
+        "width": 64,
+        "height": 64
+      },
+      "category": "actor",
+      "sourceKey": "passenger-amber",
+      "sourceRect": [
+        1122,
+        790,
+        1402,
+        1122
+      ],
+      "contentBounds": [
+        30,
+        15,
+        165,
+        290
+      ],
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000,
+      "pivot": {
+        "x": 32,
+        "y": 50
+      }
+    },
+    {
+      "id": "actor.passenger-04.south.idle",
+      "fileId": "passenger-slate",
+      "rect": {
+        "x": 0,
+        "y": 0,
+        "width": 64,
+        "height": 64
+      },
+      "category": "actor",
+      "sourceKey": "passenger-slate",
+      "sourceRect": [
+        0,
+        0,
+        280,
+        262
+      ],
+      "contentBounds": [
+        107,
+        29,
+        231,
+        241
+      ],
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000,
+      "pivot": {
+        "x": 32,
+        "y": 50
+      }
+    },
+    {
+      "id": "actor.passenger-04.south.walk.1",
+      "fileId": "passenger-slate",
+      "rect": {
+        "x": 64,
+        "y": 0,
+        "width": 64,
+        "height": 64
+      },
+      "category": "actor",
+      "sourceKey": "passenger-slate",
+      "sourceRect": [
+        280,
+        0,
+        561,
+        269
+      ],
+      "contentBounds": [
+        88,
+        29,
+        217,
+        255
+      ],
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000,
+      "pivot": {
+        "x": 32,
+        "y": 50
+      }
+    },
+    {
+      "id": "actor.passenger-04.south.walk.2",
+      "fileId": "passenger-slate",
+      "rect": {
+        "x": 128,
+        "y": 0,
+        "width": 64,
+        "height": 64
+      },
+      "category": "actor",
+      "sourceKey": "passenger-slate",
+      "sourceRect": [
+        561,
+        0,
+        841,
+        269
+      ],
+      "contentBounds": [
+        76,
+        29,
+        201,
+        255
+      ],
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000,
+      "pivot": {
+        "x": 32,
+        "y": 50
+      }
+    },
+    {
+      "id": "actor.passenger-04.south.walk.3",
+      "fileId": "passenger-slate",
+      "rect": {
+        "x": 192,
+        "y": 0,
+        "width": 64,
+        "height": 64
+      },
+      "category": "actor",
+      "sourceKey": "passenger-slate",
+      "sourceRect": [
+        841,
+        0,
+        1122,
+        270
+      ],
+      "contentBounds": [
+        57,
+        29,
+        182,
+        256
+      ],
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000,
+      "pivot": {
+        "x": 32,
+        "y": 50
+      }
+    },
+    {
+      "id": "actor.passenger-04.south.walk.4",
+      "fileId": "passenger-slate",
+      "rect": {
+        "x": 256,
+        "y": 0,
+        "width": 64,
+        "height": 64
+      },
+      "category": "actor",
+      "sourceKey": "passenger-slate",
+      "sourceRect": [
+        1122,
+        0,
+        1402,
+        269
+      ],
+      "contentBounds": [
+        40,
+        29,
+        171,
+        255
+      ],
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000,
+      "pivot": {
+        "x": 32,
+        "y": 50
+      }
+    },
+    {
+      "id": "actor.passenger-04.west.idle",
+      "fileId": "passenger-slate",
+      "rect": {
+        "x": 0,
+        "y": 64,
+        "width": 64,
+        "height": 64
+      },
+      "category": "actor",
+      "sourceKey": "passenger-slate",
+      "sourceRect": [
+        0,
+        262,
+        280,
+        538
+      ],
+      "contentBounds": [
+        113,
+        22,
+        213,
+        259
+      ],
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000,
+      "pivot": {
+        "x": 32,
+        "y": 50
+      }
+    },
+    {
+      "id": "actor.passenger-04.west.walk.1",
+      "fileId": "passenger-slate",
+      "rect": {
+        "x": 64,
+        "y": 64,
+        "width": 64,
+        "height": 64
+      },
+      "category": "actor",
+      "sourceKey": "passenger-slate",
+      "sourceRect": [
+        280,
+        269,
+        561,
+        536
+      ],
+      "contentBounds": [
+        86,
+        15,
+        213,
+        247
+      ],
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000,
+      "pivot": {
+        "x": 32,
+        "y": 50
+      }
+    },
+    {
+      "id": "actor.passenger-04.west.walk.2",
+      "fileId": "passenger-slate",
+      "rect": {
+        "x": 128,
+        "y": 64,
+        "width": 64,
+        "height": 64
+      },
+      "category": "actor",
+      "sourceKey": "passenger-slate",
+      "sourceRect": [
+        561,
+        269,
+        841,
+        539
+      ],
+      "contentBounds": [
+        63,
+        15,
+        184,
+        252
+      ],
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000,
+      "pivot": {
+        "x": 32,
+        "y": 50
+      }
+    },
+    {
+      "id": "actor.passenger-04.west.walk.3",
+      "fileId": "passenger-slate",
+      "rect": {
+        "x": 192,
+        "y": 64,
+        "width": 64,
+        "height": 64
+      },
+      "category": "actor",
+      "sourceKey": "passenger-slate",
+      "sourceRect": [
+        841,
+        270,
+        1122,
+        538
+      ],
+      "contentBounds": [
+        57,
+        14,
+        161,
+        251
+      ],
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000,
+      "pivot": {
+        "x": 32,
+        "y": 50
+      }
+    },
+    {
+      "id": "actor.passenger-04.west.walk.4",
+      "fileId": "passenger-slate",
+      "rect": {
+        "x": 256,
+        "y": 64,
+        "width": 64,
+        "height": 64
+      },
+      "category": "actor",
+      "sourceKey": "passenger-slate",
+      "sourceRect": [
+        1122,
+        269,
+        1402,
+        539
+      ],
+      "contentBounds": [
+        41,
+        15,
+        153,
+        252
+      ],
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000,
+      "pivot": {
+        "x": 32,
+        "y": 50
+      }
+    },
+    {
+      "id": "actor.passenger-04.east.idle",
+      "fileId": "passenger-slate",
+      "rect": {
+        "x": 0,
+        "y": 128,
+        "width": 64,
+        "height": 64
+      },
+      "category": "actor",
+      "sourceKey": "passenger-slate",
+      "sourceRect": [
+        0,
+        538,
+        280,
+        805
+      ],
+      "contentBounds": [
+        116,
+        18,
+        217,
+        256
+      ],
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000,
+      "pivot": {
+        "x": 32,
+        "y": 50
+      }
+    },
+    {
+      "id": "actor.passenger-04.east.walk.1",
+      "fileId": "passenger-slate",
+      "rect": {
+        "x": 64,
+        "y": 128,
+        "width": 64,
+        "height": 64
+      },
+      "category": "actor",
+      "sourceKey": "passenger-slate",
+      "sourceRect": [
+        280,
+        536,
+        561,
+        807
+      ],
+      "contentBounds": [
+        92,
+        21,
+        224,
+        258
+      ],
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000,
+      "pivot": {
+        "x": 32,
+        "y": 50
+      }
+    },
+    {
+      "id": "actor.passenger-04.east.walk.2",
+      "fileId": "passenger-slate",
+      "rect": {
+        "x": 128,
+        "y": 128,
+        "width": 64,
+        "height": 64
+      },
+      "category": "actor",
+      "sourceKey": "passenger-slate",
+      "sourceRect": [
+        561,
+        539,
+        841,
+        807
+      ],
+      "contentBounds": [
+        76,
+        18,
+        206,
+        255
+      ],
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000,
+      "pivot": {
+        "x": 32,
+        "y": 50
+      }
+    },
+    {
+      "id": "actor.passenger-04.east.walk.3",
+      "fileId": "passenger-slate",
+      "rect": {
+        "x": 192,
+        "y": 128,
+        "width": 64,
+        "height": 64
+      },
+      "category": "actor",
+      "sourceKey": "passenger-slate",
+      "sourceRect": [
+        841,
+        538,
+        1122,
+        807
+      ],
+      "contentBounds": [
+        77,
+        18,
+        177,
+        256
+      ],
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000,
+      "pivot": {
+        "x": 32,
+        "y": 50
+      }
+    },
+    {
+      "id": "actor.passenger-04.east.walk.4",
+      "fileId": "passenger-slate",
+      "rect": {
+        "x": 256,
+        "y": 128,
+        "width": 64,
+        "height": 64
+      },
+      "category": "actor",
+      "sourceKey": "passenger-slate",
+      "sourceRect": [
+        1122,
+        539,
+        1402,
+        807
+      ],
+      "contentBounds": [
+        51,
+        18,
+        167,
+        255
+      ],
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000,
+      "pivot": {
+        "x": 32,
+        "y": 50
+      }
+    },
+    {
+      "id": "actor.passenger-04.north.idle",
+      "fileId": "passenger-slate",
+      "rect": {
+        "x": 0,
+        "y": 192,
+        "width": 64,
+        "height": 64
+      },
+      "category": "actor",
+      "sourceKey": "passenger-slate",
+      "sourceRect": [
+        0,
+        805,
+        280,
+        1122
+      ],
+      "contentBounds": [
+        107,
+        12,
+        231,
+        239
+      ],
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000,
+      "pivot": {
+        "x": 32,
+        "y": 50
+      }
+    },
+    {
+      "id": "actor.passenger-04.north.walk.1",
+      "fileId": "passenger-slate",
+      "rect": {
+        "x": 64,
+        "y": 192,
+        "width": 64,
+        "height": 64
+      },
+      "category": "actor",
+      "sourceKey": "passenger-slate",
+      "sourceRect": [
+        280,
+        807,
+        561,
+        1122
+      ],
+      "contentBounds": [
+        87,
+        14,
+        221,
+        263
+      ],
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000,
+      "pivot": {
+        "x": 32,
+        "y": 50
+      }
+    },
+    {
+      "id": "actor.passenger-04.north.walk.2",
+      "fileId": "passenger-slate",
+      "rect": {
+        "x": 128,
+        "y": 192,
+        "width": 64,
+        "height": 64
+      },
+      "category": "actor",
+      "sourceKey": "passenger-slate",
+      "sourceRect": [
+        561,
+        807,
+        841,
+        1122
+      ],
+      "contentBounds": [
+        75,
+        13,
+        201,
+        252
+      ],
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000,
+      "pivot": {
+        "x": 32,
+        "y": 50
+      }
+    },
+    {
+      "id": "actor.passenger-04.north.walk.3",
+      "fileId": "passenger-slate",
+      "rect": {
+        "x": 192,
+        "y": 192,
+        "width": 64,
+        "height": 64
+      },
+      "category": "actor",
+      "sourceKey": "passenger-slate",
+      "sourceRect": [
+        841,
+        807,
+        1122,
+        1122
+      ],
+      "contentBounds": [
+        53,
+        13,
+        187,
+        263
+      ],
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000,
+      "pivot": {
+        "x": 32,
+        "y": 50
+      }
+    },
+    {
+      "id": "actor.passenger-04.north.walk.4",
+      "fileId": "passenger-slate",
+      "rect": {
+        "x": 256,
+        "y": 192,
+        "width": 64,
+        "height": 64
+      },
+      "category": "actor",
+      "sourceKey": "passenger-slate",
+      "sourceRect": [
+        1122,
+        807,
+        1402,
+        1122
+      ],
+      "contentBounds": [
+        36,
+        13,
+        171,
+        263
+      ],
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000,
+      "pivot": {
+        "x": 32,
+        "y": 50
+      }
+    },
+    {
+      "id": "actor.conductor-01.south.idle",
+      "fileId": "conductor",
+      "rect": {
+        "x": 0,
+        "y": 0,
+        "width": 64,
+        "height": 64
+      },
+      "category": "actor",
+      "sourceKey": "conductor",
+      "sourceRect": [
+        0,
+        0,
+        280,
+        259
+      ],
+      "contentBounds": [
+        81,
+        19,
+        223,
+        234
+      ],
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000,
+      "pivot": {
+        "x": 32,
+        "y": 50
+      }
+    },
+    {
+      "id": "actor.conductor-01.south.walk.1",
+      "fileId": "conductor",
+      "rect": {
+        "x": 64,
+        "y": 0,
+        "width": 64,
+        "height": 64
+      },
+      "category": "actor",
+      "sourceKey": "conductor",
+      "sourceRect": [
+        280,
+        0,
+        561,
+        268
+      ],
+      "contentBounds": [
+        75,
+        19,
+        210,
+        253
+      ],
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000,
+      "pivot": {
+        "x": 32,
+        "y": 50
+      }
+    },
+    {
+      "id": "actor.conductor-01.south.walk.2",
+      "fileId": "conductor",
+      "rect": {
+        "x": 128,
+        "y": 0,
+        "width": 64,
+        "height": 64
+      },
+      "category": "actor",
+      "sourceKey": "conductor",
+      "sourceRect": [
+        561,
+        0,
+        841,
+        263
+      ],
+      "contentBounds": [
+        68,
+        14,
+        211,
+        243
+      ],
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000,
+      "pivot": {
+        "x": 32,
+        "y": 50
+      }
+    },
+    {
+      "id": "actor.conductor-01.south.walk.3",
+      "fileId": "conductor",
+      "rect": {
+        "x": 192,
+        "y": 0,
+        "width": 64,
+        "height": 64
+      },
+      "category": "actor",
+      "sourceKey": "conductor",
+      "sourceRect": [
+        841,
+        0,
+        1122,
+        267
+      ],
+      "contentBounds": [
+        70,
+        25,
+        207,
+        252
+      ],
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000,
+      "pivot": {
+        "x": 32,
+        "y": 50
+      }
+    },
+    {
+      "id": "actor.conductor-01.south.walk.4",
+      "fileId": "conductor",
+      "rect": {
+        "x": 256,
+        "y": 0,
+        "width": 64,
+        "height": 64
+      },
+      "category": "actor",
+      "sourceKey": "conductor",
+      "sourceRect": [
+        1122,
+        0,
+        1402,
+        269
+      ],
+      "contentBounds": [
+        59,
+        23,
+        200,
+        256
+      ],
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000,
+      "pivot": {
+        "x": 32,
+        "y": 50
+      }
+    },
+    {
+      "id": "actor.conductor-01.west.idle",
+      "fileId": "conductor",
+      "rect": {
+        "x": 0,
+        "y": 64,
+        "width": 64,
+        "height": 64
+      },
+      "category": "actor",
+      "sourceKey": "conductor",
+      "sourceRect": [
+        0,
+        259,
+        280,
+        549
+      ],
+      "contentBounds": [
+        92,
+        25,
+        193,
+        277
+      ],
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000,
+      "pivot": {
+        "x": 32,
+        "y": 50
+      }
+    },
+    {
+      "id": "actor.conductor-01.west.walk.1",
+      "fileId": "conductor",
+      "rect": {
+        "x": 64,
+        "y": 64,
+        "width": 64,
+        "height": 64
+      },
+      "category": "actor",
+      "sourceKey": "conductor",
+      "sourceRect": [
+        280,
+        268,
+        561,
+        544
+      ],
+      "contentBounds": [
+        82,
+        15,
+        207,
+        261
+      ],
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000,
+      "pivot": {
+        "x": 32,
+        "y": 50
+      }
+    },
+    {
+      "id": "actor.conductor-01.west.walk.2",
+      "fileId": "conductor",
+      "rect": {
+        "x": 128,
+        "y": 64,
+        "width": 64,
+        "height": 64
+      },
+      "category": "actor",
+      "sourceKey": "conductor",
+      "sourceRect": [
+        561,
+        263,
+        841,
+        542
+      ],
+      "contentBounds": [
+        82,
+        20,
+        191,
+        263
+      ],
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000,
+      "pivot": {
+        "x": 32,
+        "y": 50
+      }
+    },
+    {
+      "id": "actor.conductor-01.west.walk.3",
+      "fileId": "conductor",
+      "rect": {
+        "x": 192,
+        "y": 64,
+        "width": 64,
+        "height": 64
+      },
+      "category": "actor",
+      "sourceKey": "conductor",
+      "sourceRect": [
+        841,
+        267,
+        1122,
+        543
+      ],
+      "contentBounds": [
+        72,
+        15,
+        202,
+        260
+      ],
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000,
+      "pivot": {
+        "x": 32,
+        "y": 50
+      }
+    },
+    {
+      "id": "actor.conductor-01.west.walk.4",
+      "fileId": "conductor",
+      "rect": {
+        "x": 256,
+        "y": 64,
+        "width": 64,
+        "height": 64
+      },
+      "category": "actor",
+      "sourceKey": "conductor",
+      "sourceRect": [
+        1122,
+        269,
+        1402,
+        543
+      ],
+      "contentBounds": [
+        68,
+        13,
+        196,
+        259
+      ],
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000,
+      "pivot": {
+        "x": 32,
+        "y": 50
+      }
+    },
+    {
+      "id": "actor.conductor-01.east.idle",
+      "fileId": "conductor",
+      "rect": {
+        "x": 0,
+        "y": 128,
+        "width": 64,
+        "height": 64
+      },
+      "category": "actor",
+      "sourceKey": "conductor",
+      "sourceRect": [
+        0,
+        549,
+        280,
+        824
+      ],
+      "contentBounds": [
+        101,
+        13,
+        206,
+        264
+      ],
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000,
+      "pivot": {
+        "x": 32,
+        "y": 50
+      }
+    },
+    {
+      "id": "actor.conductor-01.east.walk.1",
+      "fileId": "conductor",
+      "rect": {
+        "x": 64,
+        "y": 128,
+        "width": 64,
+        "height": 64
+      },
+      "category": "actor",
+      "sourceKey": "conductor",
+      "sourceRect": [
+        280,
+        544,
+        561,
+        820
+      ],
+      "contentBounds": [
+        81,
+        15,
+        212,
+        262
+      ],
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000,
+      "pivot": {
+        "x": 32,
+        "y": 50
+      }
+    },
+    {
+      "id": "actor.conductor-01.east.walk.2",
+      "fileId": "conductor",
+      "rect": {
+        "x": 128,
+        "y": 128,
+        "width": 64,
+        "height": 64
+      },
+      "category": "actor",
+      "sourceKey": "conductor",
+      "sourceRect": [
+        561,
+        542,
+        841,
+        819
+      ],
+      "contentBounds": [
+        88,
+        17,
+        198,
+        264
+      ],
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000,
+      "pivot": {
+        "x": 32,
+        "y": 50
+      }
+    },
+    {
+      "id": "actor.conductor-01.east.walk.3",
+      "fileId": "conductor",
+      "rect": {
+        "x": 192,
+        "y": 128,
+        "width": 64,
+        "height": 64
+      },
+      "category": "actor",
+      "sourceKey": "conductor",
+      "sourceRect": [
+        841,
+        543,
+        1122,
+        821
+      ],
+      "contentBounds": [
+        67,
+        16,
+        200,
+        265
+      ],
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000,
+      "pivot": {
+        "x": 32,
+        "y": 50
+      }
+    },
+    {
+      "id": "actor.conductor-01.east.walk.4",
+      "fileId": "conductor",
+      "rect": {
+        "x": 256,
+        "y": 128,
+        "width": 64,
+        "height": 64
+      },
+      "category": "actor",
+      "sourceKey": "conductor",
+      "sourceRect": [
+        1122,
+        543,
+        1402,
+        820
+      ],
+      "contentBounds": [
+        65,
+        16,
+        201,
+        263
+      ],
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000,
+      "pivot": {
+        "x": 32,
+        "y": 50
+      }
+    },
+    {
+      "id": "actor.conductor-01.north.idle",
+      "fileId": "conductor",
+      "rect": {
+        "x": 0,
+        "y": 192,
+        "width": 64,
+        "height": 64
+      },
+      "category": "actor",
+      "sourceKey": "conductor",
+      "sourceRect": [
+        0,
+        824,
+        280,
+        1122
+      ],
+      "contentBounds": [
+        81,
+        11,
+        224,
+        266
+      ],
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000,
+      "pivot": {
+        "x": 32,
+        "y": 50
+      }
+    },
+    {
+      "id": "actor.conductor-01.north.walk.1",
+      "fileId": "conductor",
+      "rect": {
+        "x": 64,
+        "y": 192,
+        "width": 64,
+        "height": 64
+      },
+      "category": "actor",
+      "sourceKey": "conductor",
+      "sourceRect": [
+        280,
+        820,
+        561,
+        1122
+      ],
+      "contentBounds": [
+        74,
+        15,
+        212,
+        270
+      ],
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000,
+      "pivot": {
+        "x": 32,
+        "y": 50
+      }
+    },
+    {
+      "id": "actor.conductor-01.north.walk.2",
+      "fileId": "conductor",
+      "rect": {
+        "x": 128,
+        "y": 192,
+        "width": 64,
+        "height": 64
+      },
+      "category": "actor",
+      "sourceKey": "conductor",
+      "sourceRect": [
+        561,
+        819,
+        841,
+        1122
+      ],
+      "contentBounds": [
+        67,
+        13,
+        211,
+        271
+      ],
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000,
+      "pivot": {
+        "x": 32,
+        "y": 50
+      }
+    },
+    {
+      "id": "actor.conductor-01.north.walk.3",
+      "fileId": "conductor",
+      "rect": {
+        "x": 192,
+        "y": 192,
+        "width": 64,
+        "height": 64
+      },
+      "category": "actor",
+      "sourceKey": "conductor",
+      "sourceRect": [
+        841,
+        821,
+        1122,
+        1122
+      ],
+      "contentBounds": [
+        69,
+        14,
+        208,
+        269
+      ],
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000,
+      "pivot": {
+        "x": 32,
+        "y": 50
+      }
+    },
+    {
+      "id": "actor.conductor-01.north.walk.4",
+      "fileId": "conductor",
+      "rect": {
+        "x": 256,
+        "y": 192,
+        "width": 64,
+        "height": 64
+      },
+      "category": "actor",
+      "sourceKey": "conductor",
+      "sourceRect": [
+        1122,
+        820,
+        1402,
+        1122
+      ],
+      "contentBounds": [
+        58,
+        15,
+        200,
+        270
+      ],
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000,
+      "pivot": {
+        "x": 32,
+        "y": 50
+      }
+    },
+    {
+      "id": "actor.passenger-01.south.sitting",
+      "fileId": "modules",
+      "rect": {
+        "x": 0,
+        "y": 0,
+        "width": 64,
+        "height": 64
+      },
+      "category": "actor",
+      "sourceKey": "seated",
+      "sourceRect": [
+        0,
+        0,
+        280,
+        292
+      ],
+      "contentBounds": [
+        96,
+        54,
+        242,
+        279
+      ],
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000,
+      "pivot": {
+        "x": 32,
+        "y": 50
+      }
+    },
+    {
+      "id": "actor.passenger-01.west.sitting",
+      "fileId": "modules",
+      "rect": {
+        "x": 66,
+        "y": 0,
+        "width": 64,
+        "height": 64
+      },
+      "category": "actor",
+      "sourceKey": "seated",
+      "sourceRect": [
+        280,
+        0,
+        561,
+        293
+      ],
+      "contentBounds": [
+        70,
+        63,
+        214,
+        274
+      ],
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000,
+      "pivot": {
+        "x": 32,
+        "y": 50
+      }
+    },
+    {
+      "id": "actor.passenger-01.north.sitting",
+      "fileId": "modules",
+      "rect": {
+        "x": 132,
+        "y": 0,
+        "width": 64,
+        "height": 64
+      },
+      "category": "actor",
+      "sourceKey": "seated",
+      "sourceRect": [
+        561,
+        0,
+        842,
+        283
+      ],
+      "contentBounds": [
+        61,
+        56,
+        207,
+        258
+      ],
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000,
+      "pivot": {
+        "x": 32,
+        "y": 50
+      }
+    },
+    {
+      "id": "actor.passenger-01.east.sitting",
+      "fileId": "modules",
+      "rect": {
+        "x": 198,
+        "y": 0,
+        "width": 64,
+        "height": 64
+      },
+      "category": "actor",
+      "sourceKey": "seated",
+      "sourceRect": [
+        842,
+        0,
+        1122,
+        293
+      ],
+      "contentBounds": [
+        37,
+        63,
+        181,
+        274
+      ],
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000,
+      "pivot": {
+        "x": 32,
+        "y": 50
+      }
+    },
+    {
+      "id": "actor.passenger-02.south.sitting",
+      "fileId": "modules",
+      "rect": {
+        "x": 264,
+        "y": 0,
+        "width": 64,
+        "height": 64
+      },
+      "category": "actor",
+      "sourceKey": "seated",
+      "sourceRect": [
+        0,
+        292,
+        280,
+        543
+      ],
+      "contentBounds": [
+        96,
+        14,
+        234,
+        233
+      ],
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000,
+      "pivot": {
+        "x": 32,
+        "y": 50
+      }
+    },
+    {
+      "id": "actor.passenger-02.west.sitting",
+      "fileId": "modules",
+      "rect": {
+        "x": 330,
+        "y": 0,
+        "width": 64,
+        "height": 64
+      },
+      "category": "actor",
+      "sourceKey": "seated",
+      "sourceRect": [
+        280,
+        293,
+        561,
+        548
+      ],
+      "contentBounds": [
+        63,
+        19,
+        210,
+        231
+      ],
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000,
+      "pivot": {
+        "x": 32,
+        "y": 50
+      }
+    },
+    {
+      "id": "actor.passenger-02.north.sitting",
+      "fileId": "modules",
+      "rect": {
+        "x": 396,
+        "y": 0,
+        "width": 64,
+        "height": 64
+      },
+      "category": "actor",
+      "sourceKey": "seated",
+      "sourceRect": [
+        561,
+        283,
+        842,
+        536
+      ],
+      "contentBounds": [
+        65,
+        25,
+        202,
+        226
+      ],
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000,
+      "pivot": {
+        "x": 32,
+        "y": 50
+      }
+    },
+    {
+      "id": "actor.passenger-02.east.sitting",
+      "fileId": "modules",
+      "rect": {
+        "x": 462,
+        "y": 0,
+        "width": 64,
+        "height": 64
+      },
+      "category": "actor",
+      "sourceKey": "seated",
+      "sourceRect": [
+        842,
+        293,
+        1122,
+        548
+      ],
+      "contentBounds": [
+        41,
+        19,
+        188,
+        231
+      ],
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000,
+      "pivot": {
+        "x": 32,
+        "y": 50
+      }
+    },
+    {
+      "id": "actor.passenger-03.south.sitting",
+      "fileId": "modules",
+      "rect": {
+        "x": 528,
+        "y": 0,
+        "width": 64,
+        "height": 64
+      },
+      "category": "actor",
+      "sourceKey": "seated",
+      "sourceRect": [
+        0,
+        543,
+        280,
+        795
+      ],
+      "contentBounds": [
+        100,
+        19,
+        228,
+        235
+      ],
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000,
+      "pivot": {
+        "x": 32,
+        "y": 50
+      }
+    },
+    {
+      "id": "actor.passenger-03.west.sitting",
+      "fileId": "modules",
+      "rect": {
+        "x": 594,
+        "y": 0,
+        "width": 64,
+        "height": 64
+      },
+      "category": "actor",
+      "sourceKey": "seated",
+      "sourceRect": [
+        280,
+        548,
+        561,
+        797
+      ],
+      "contentBounds": [
+        68,
+        25,
+        208,
+        229
+      ],
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000,
+      "pivot": {
+        "x": 32,
+        "y": 50
+      }
+    },
+    {
+      "id": "actor.passenger-03.north.sitting",
+      "fileId": "modules",
+      "rect": {
+        "x": 660,
+        "y": 0,
+        "width": 64,
+        "height": 64
+      },
+      "category": "actor",
+      "sourceKey": "seated",
+      "sourceRect": [
+        561,
+        536,
+        842,
+        788
+      ],
+      "contentBounds": [
+        70,
+        28,
+        202,
+        225
+      ],
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000,
+      "pivot": {
+        "x": 32,
+        "y": 50
+      }
+    },
+    {
+      "id": "actor.passenger-03.east.sitting",
+      "fileId": "modules",
+      "rect": {
+        "x": 726,
+        "y": 0,
+        "width": 64,
+        "height": 64
+      },
+      "category": "actor",
+      "sourceKey": "seated",
+      "sourceRect": [
+        842,
+        548,
+        1122,
+        796
+      ],
+      "contentBounds": [
+        41,
+        24,
+        181,
+        228
+      ],
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000,
+      "pivot": {
+        "x": 32,
+        "y": 50
+      }
+    },
+    {
+      "id": "actor.passenger-04.south.sitting",
+      "fileId": "modules",
+      "rect": {
+        "x": 792,
+        "y": 0,
+        "width": 64,
+        "height": 64
+      },
+      "category": "actor",
+      "sourceKey": "seated",
+      "sourceRect": [
+        0,
+        795,
+        280,
+        1047
+      ],
+      "contentBounds": [
+        96,
+        17,
+        231,
+        235
+      ],
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000,
+      "pivot": {
+        "x": 32,
+        "y": 50
+      }
+    },
+    {
+      "id": "actor.passenger-04.west.sitting",
+      "fileId": "modules",
+      "rect": {
+        "x": 858,
+        "y": 0,
+        "width": 64,
+        "height": 64
+      },
+      "category": "actor",
+      "sourceKey": "seated",
+      "sourceRect": [
+        280,
+        797,
+        561,
+        1050
+      ],
+      "contentBounds": [
+        66,
+        20,
+        210,
+        230
+      ],
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000,
+      "pivot": {
+        "x": 32,
+        "y": 50
+      }
+    },
+    {
+      "id": "actor.passenger-04.north.sitting",
+      "fileId": "modules",
+      "rect": {
+        "x": 924,
+        "y": 0,
+        "width": 64,
+        "height": 64
+      },
+      "category": "actor",
+      "sourceKey": "seated",
+      "sourceRect": [
+        561,
+        788,
+        842,
+        1041
+      ],
+      "contentBounds": [
+        70,
+        27,
+        202,
+        225
+      ],
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000,
+      "pivot": {
+        "x": 32,
+        "y": 50
+      }
+    },
+    {
+      "id": "actor.passenger-04.east.sitting",
+      "fileId": "modules",
+      "rect": {
+        "x": 990,
+        "y": 0,
+        "width": 64,
+        "height": 64
+      },
+      "category": "actor",
+      "sourceKey": "seated",
+      "sourceRect": [
+        842,
+        796,
+        1122,
+        1050
+      ],
+      "contentBounds": [
+        40,
+        20,
+        183,
+        230
+      ],
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000,
+      "pivot": {
+        "x": 32,
+        "y": 50
+      }
+    },
+    {
+      "id": "actor.conductor-01.south.sitting",
+      "fileId": "modules",
+      "rect": {
+        "x": 1056,
+        "y": 0,
+        "width": 64,
+        "height": 64
+      },
+      "category": "actor",
+      "sourceKey": "seated",
+      "sourceRect": [
+        0,
+        1047,
+        280,
+        1402
+      ],
+      "contentBounds": [
+        96,
+        18,
+        235,
+        246
+      ],
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000,
+      "pivot": {
+        "x": 32,
+        "y": 50
+      }
+    },
+    {
+      "id": "actor.conductor-01.west.sitting",
+      "fileId": "modules",
+      "rect": {
+        "x": 1122,
+        "y": 0,
+        "width": 64,
+        "height": 64
+      },
+      "category": "actor",
+      "sourceKey": "seated",
+      "sourceRect": [
+        280,
+        1050,
+        561,
+        1402
+      ],
+      "contentBounds": [
+        70,
+        24,
+        195,
+        238
+      ],
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000,
+      "pivot": {
+        "x": 32,
+        "y": 50
+      }
+    },
+    {
+      "id": "actor.conductor-01.north.sitting",
+      "fileId": "modules",
+      "rect": {
+        "x": 1188,
+        "y": 0,
+        "width": 64,
+        "height": 64
+      },
+      "category": "actor",
+      "sourceKey": "seated",
+      "sourceRect": [
+        561,
+        1041,
+        842,
+        1402
+      ],
+      "contentBounds": [
+        66,
+        29,
+        204,
+        233
+      ],
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000,
+      "pivot": {
+        "x": 32,
+        "y": 50
+      }
+    },
+    {
+      "id": "actor.conductor-01.east.sitting",
+      "fileId": "modules",
+      "rect": {
+        "x": 1254,
+        "y": 0,
+        "width": 64,
+        "height": 64
+      },
+      "category": "actor",
+      "sourceKey": "seated",
+      "sourceRect": [
+        842,
+        1050,
+        1122,
+        1402
+      ],
+      "contentBounds": [
+        50,
+        24,
+        176,
+        238
+      ],
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000,
+      "pivot": {
+        "x": 32,
+        "y": 50
+      }
+    },
+    {
+      "id": "interior.floor",
+      "fileId": "modules",
+      "rect": {
+        "x": 1320,
+        "y": 0,
+        "width": 64,
+        "height": 64
+      },
+      "category": "interior",
+      "sourceKey": "interior-topdown",
+      "sourceRect": [
+        0,
+        0,
+        314,
+        314
+      ],
+      "contentBounds": [
+        53,
+        52,
+        303,
+        298
+      ],
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000,
+      "pivot": {
+        "x": 32,
+        "y": 32
+      }
+    },
+    {
+      "id": "interior.wall",
+      "fileId": "modules",
+      "rect": {
+        "x": 1386,
+        "y": 0,
+        "width": 64,
+        "height": 64
+      },
+      "category": "interior",
+      "sourceKey": "interior-topdown",
+      "sourceRect": [
+        314,
+        0,
+        627,
+        314
+      ],
+      "contentBounds": [
+        38,
+        52,
+        290,
+        298
+      ],
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000,
+      "pivot": {
+        "x": 32,
+        "y": 32
+      }
+    },
+    {
+      "id": "interior.window",
+      "fileId": "modules",
+      "rect": {
+        "x": 1452,
+        "y": 0,
+        "width": 64,
+        "height": 64
+      },
+      "category": "interior",
+      "sourceKey": "interior-topdown",
+      "sourceRect": [
+        627,
+        0,
+        940,
+        314
+      ],
+      "contentBounds": [
+        24,
+        52,
+        275,
+        298
+      ],
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000,
+      "pivot": {
+        "x": 32,
+        "y": 32
+      }
+    },
+    {
+      "id": "interior.door-closed",
+      "fileId": "modules",
+      "rect": {
+        "x": 1518,
+        "y": 0,
+        "width": 64,
+        "height": 64
+      },
+      "category": "interior",
+      "sourceKey": "interior-topdown",
+      "sourceRect": [
+        940,
+        0,
+        1254,
+        314
+      ],
+      "contentBounds": [
+        11,
+        52,
+        262,
+        298
+      ],
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000,
+      "pivot": {
+        "x": 32,
+        "y": 32
+      }
+    },
+    {
+      "id": "interior.door-open",
+      "fileId": "modules",
+      "rect": {
+        "x": 1584,
+        "y": 0,
+        "width": 64,
+        "height": 64
+      },
+      "category": "interior",
+      "sourceKey": "interior-topdown",
+      "sourceRect": [
+        0,
+        314,
+        314,
+        627
+      ],
+      "contentBounds": [
+        53,
+        30,
+        302,
+        275
+      ],
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000,
+      "pivot": {
+        "x": 32,
+        "y": 32
+      }
+    },
+    {
+      "id": "interior.seat",
+      "fileId": "modules",
+      "rect": {
+        "x": 1650,
+        "y": 0,
+        "width": 64,
+        "height": 64
+      },
+      "category": "interior",
+      "sourceKey": "interior-topdown",
+      "sourceRect": [
+        314,
+        314,
+        627,
+        627
+      ],
+      "contentBounds": [
+        39,
+        30,
+        290,
+        275
+      ],
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000,
+      "pivot": {
+        "x": 32,
+        "y": 32
+      }
+    },
+    {
+      "id": "interior.multipurpose",
+      "fileId": "modules",
+      "rect": {
+        "x": 1716,
+        "y": 0,
+        "width": 64,
+        "height": 64
+      },
+      "category": "interior",
+      "sourceKey": "interior-topdown",
+      "sourceRect": [
+        940,
+        314,
+        1254,
+        627
+      ],
+      "contentBounds": [
+        11,
+        30,
+        262,
+        277
+      ],
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000,
+      "pivot": {
+        "x": 32,
+        "y": 32
+      }
+    },
+    {
+      "id": "interior.wc",
+      "fileId": "modules",
+      "rect": {
+        "x": 1782,
+        "y": 0,
+        "width": 64,
+        "height": 64
+      },
+      "category": "interior",
+      "sourceKey": "interior-topdown",
+      "sourceRect": [
+        0,
+        627,
+        314,
+        940
+      ],
+      "contentBounds": [
+        53,
+        10,
+        303,
+        313
+      ],
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000,
+      "pivot": {
+        "x": 32,
+        "y": 32
+      }
+    },
+    {
+      "id": "interior.cab",
+      "fileId": "modules",
+      "rect": {
+        "x": 1848,
+        "y": 0,
+        "width": 64,
+        "height": 64
+      },
+      "category": "interior",
+      "sourceKey": "interior-topdown",
+      "sourceRect": [
+        314,
+        627,
+        627,
+        940
+      ],
+      "contentBounds": [
+        39,
+        10,
+        290,
+        313
+      ],
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000,
+      "pivot": {
+        "x": 32,
+        "y": 32
+      }
+    },
+    {
+      "id": "interior.gangway",
+      "fileId": "modules",
+      "rect": {
+        "x": 1914,
+        "y": 0,
+        "width": 64,
+        "height": 64
+      },
+      "category": "interior",
+      "sourceKey": "interior-topdown",
+      "sourceRect": [
+        627,
+        627,
+        940,
+        940
+      ],
+      "contentBounds": [
+        24,
+        10,
+        275,
+        313
+      ],
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000,
+      "pivot": {
+        "x": 32,
+        "y": 32
+      }
+    },
+    {
+      "id": "interior.standing",
+      "fileId": "modules",
+      "rect": {
+        "x": 1980,
+        "y": 0,
+        "width": 64,
+        "height": 64
+      },
+      "category": "interior",
+      "sourceKey": "interior-topdown",
+      "sourceRect": [
+        0,
+        940,
+        314,
+        1254
+      ],
+      "contentBounds": [
+        53,
+        0,
+        303,
+        234
+      ],
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000,
+      "pivot": {
+        "x": 32,
+        "y": 32
+      }
+    },
+    {
+      "id": "vehicle.body",
+      "fileId": "modules",
+      "rect": {
+        "x": 0,
+        "y": 66,
+        "width": 96,
+        "height": 640
+      },
+      "category": "vehicle",
+      "sourceKey": "train",
+      "sourceRect": [
+        0,
+        0,
+        418,
+        1254
+      ],
+      "contentBounds": [
+        168,
+        10,
+        363,
+        1244
+      ],
+      "worldWidthMm": 3000,
+      "worldHeightMm": 20000,
+      "pivot": {
+        "x": 48,
+        "y": 320
+      }
+    },
+    {
+      "id": "vehicle.front",
+      "fileId": "modules",
+      "rect": {
+        "x": 98,
+        "y": 66,
+        "width": 96,
+        "height": 192
+      },
+      "category": "vehicle",
+      "sourceKey": "train",
+      "sourceRect": [
+        418,
+        0,
+        836,
+        1254
+      ],
+      "contentBounds": [
+        131,
+        10,
+        288,
+        370
+      ],
+      "worldWidthMm": 3000,
+      "worldHeightMm": 6000,
+      "pivot": {
+        "x": 48,
+        "y": 96
+      }
+    },
+    {
+      "id": "vehicle.roof",
+      "fileId": "modules",
+      "rect": {
+        "x": 196,
+        "y": 66,
+        "width": 96,
+        "height": 640
+      },
+      "category": "vehicle",
+      "sourceKey": "train",
+      "sourceRect": [
+        836,
+        0,
+        1254,
+        1254
+      ],
+      "contentBounds": [
+        52,
+        10,
+        255,
+        1244
+      ],
+      "worldWidthMm": 3000,
+      "worldHeightMm": 20000,
+      "pivot": {
+        "x": 48,
+        "y": 320
+      }
+    },
+    {
+      "id": "station.small.platform",
+      "fileId": "modules",
+      "rect": {
+        "x": 294,
+        "y": 66,
+        "width": 256,
+        "height": 96
+      },
+      "category": "station",
+      "sourceKey": "stations",
+      "sourceRect": [
+        0,
+        0,
+        328,
+        244
+      ],
+      "contentBounds": [
+        40,
+        73,
+        303,
+        224
+      ],
+      "worldWidthMm": 8000,
+      "worldHeightMm": 3000,
+      "pivot": {
+        "x": 128,
+        "y": 48
+      }
+    },
+    {
+      "id": "station.medium.platform",
+      "fileId": "modules",
+      "rect": {
+        "x": 552,
+        "y": 66,
+        "width": 320,
+        "height": 128
+      },
+      "category": "station",
+      "sourceKey": "stations",
+      "sourceRect": [
+        328,
+        0,
+        740,
+        244
+      ],
+      "contentBounds": [
+        35,
+        49,
+        387,
+        224
+      ],
+      "worldWidthMm": 10000,
+      "worldHeightMm": 4000,
+      "pivot": {
+        "x": 160,
+        "y": 64
+      }
+    },
+    {
+      "id": "station.large.platform",
+      "fileId": "modules",
+      "rect": {
+        "x": 874,
+        "y": 66,
+        "width": 384,
+        "height": 160
+      },
+      "category": "station",
+      "sourceKey": "stations",
+      "sourceRect": [
+        740,
+        0,
+        1254,
+        244
+      ],
+      "contentBounds": [
+        30,
+        19,
+        474,
+        235
+      ],
+      "worldWidthMm": 12000,
+      "worldHeightMm": 5000,
+      "pivot": {
+        "x": 192,
+        "y": 80
+      }
+    },
+    {
+      "id": "station.small.roof",
+      "fileId": "modules",
+      "rect": {
+        "x": 1260,
+        "y": 66,
+        "width": 256,
+        "height": 128
+      },
+      "category": "station",
+      "sourceKey": "stations",
+      "sourceRect": [
+        0,
+        244,
+        328,
+        465
+      ],
+      "contentBounds": [
+        50,
+        57,
+        283,
+        185
+      ],
+      "worldWidthMm": 8000,
+      "worldHeightMm": 4000,
+      "pivot": {
+        "x": 128,
+        "y": 64
+      }
+    },
+    {
+      "id": "station.medium.roof",
+      "fileId": "modules",
+      "rect": {
+        "x": 1518,
+        "y": 66,
+        "width": 320,
+        "height": 160
+      },
+      "category": "station",
+      "sourceKey": "stations",
+      "sourceRect": [
+        328,
+        244,
+        740,
+        465
+      ],
+      "contentBounds": [
+        36,
+        36,
+        380,
+        196
+      ],
+      "worldWidthMm": 10000,
+      "worldHeightMm": 5000,
+      "pivot": {
+        "x": 160,
+        "y": 80
+      }
+    },
+    {
+      "id": "station.large.roof",
+      "fileId": "modules",
+      "rect": {
+        "x": 0,
+        "y": 708,
+        "width": 384,
+        "height": 192
+      },
+      "category": "station",
+      "sourceKey": "stations",
+      "sourceRect": [
+        740,
+        244,
+        1254,
+        465
+      ],
+      "contentBounds": [
+        32,
+        18,
+        470,
+        221
+      ],
+      "worldWidthMm": 12000,
+      "worldHeightMm": 6000,
+      "pivot": {
+        "x": 192,
+        "y": 96
+      }
+    },
+    {
+      "id": "station.small.hall",
+      "fileId": "modules",
+      "rect": {
+        "x": 386,
+        "y": 708,
+        "width": 192,
+        "height": 160
+      },
+      "category": "station",
+      "sourceKey": "stations",
+      "sourceRect": [
+        0,
+        465,
+        328,
+        738
+      ],
+      "contentBounds": [
+        53,
+        52,
+        282,
+        251
+      ],
+      "worldWidthMm": 6000,
+      "worldHeightMm": 5000,
+      "pivot": {
+        "x": 96,
+        "y": 80
+      }
+    },
+    {
+      "id": "station.medium.hall",
+      "fileId": "modules",
+      "rect": {
+        "x": 580,
+        "y": 708,
+        "width": 256,
+        "height": 192
+      },
+      "category": "station",
+      "sourceKey": "stations",
+      "sourceRect": [
+        328,
+        465,
+        740,
+        738
+      ],
+      "contentBounds": [
+        46,
+        18,
+        370,
+        263
+      ],
+      "worldWidthMm": 8000,
+      "worldHeightMm": 6000,
+      "pivot": {
+        "x": 128,
+        "y": 96
+      }
+    },
+    {
+      "id": "station.large.hall",
+      "fileId": "modules",
+      "rect": {
+        "x": 838,
+        "y": 708,
+        "width": 320,
+        "height": 256
+      },
+      "category": "station",
+      "sourceKey": "stations",
+      "sourceRect": [
+        740,
+        465,
+        1254,
+        738
+      ],
+      "contentBounds": [
+        24,
+        0,
+        481,
+        263
+      ],
+      "worldWidthMm": 10000,
+      "worldHeightMm": 8000,
+      "pivot": {
+        "x": 160,
+        "y": 128
+      }
+    },
+    {
+      "id": "station.small.stairs",
+      "fileId": "modules",
+      "rect": {
+        "x": 1160,
+        "y": 708,
+        "width": 96,
+        "height": 96
+      },
+      "category": "station",
+      "sourceKey": "stations",
+      "sourceRect": [
+        0,
+        738,
+        328,
+        960
+      ],
+      "contentBounds": [
+        74,
+        39,
+        252,
+        190
+      ],
+      "worldWidthMm": 3000,
+      "worldHeightMm": 3000,
+      "pivot": {
+        "x": 48,
+        "y": 48
+      }
+    },
+    {
+      "id": "station.medium.stairs",
+      "fileId": "modules",
+      "rect": {
+        "x": 1258,
+        "y": 708,
+        "width": 128,
+        "height": 128
+      },
+      "category": "station",
+      "sourceKey": "stations",
+      "sourceRect": [
+        328,
+        738,
+        740,
+        960
+      ],
+      "contentBounds": [
+        46,
+        21,
+        369,
+        200
+      ],
+      "worldWidthMm": 4000,
+      "worldHeightMm": 4000,
+      "pivot": {
+        "x": 64,
+        "y": 64
+      }
+    },
+    {
+      "id": "station.large.stairs",
+      "fileId": "modules",
+      "rect": {
+        "x": 1388,
+        "y": 708,
+        "width": 192,
+        "height": 128
+      },
+      "category": "station",
+      "sourceKey": "stations",
+      "sourceRect": [
+        740,
+        738,
+        1254,
+        960
+      ],
+      "contentBounds": [
+        30,
+        5,
+        477,
+        221
+      ],
+      "worldWidthMm": 6000,
+      "worldHeightMm": 4000,
+      "pivot": {
+        "x": 96,
+        "y": 64
+      }
+    },
+    {
+      "id": "station.small.underpass",
+      "fileId": "modules",
+      "rect": {
+        "x": 1582,
+        "y": 708,
+        "width": 192,
+        "height": 160
+      },
+      "category": "station",
+      "sourceKey": "stations",
+      "sourceRect": [
+        0,
+        960,
+        328,
+        1254
+      ],
+      "contentBounds": [
+        49,
+        30,
+        268,
+        218
+      ],
+      "worldWidthMm": 6000,
+      "worldHeightMm": 5000,
+      "pivot": {
+        "x": 96,
+        "y": 80
+      }
+    },
+    {
+      "id": "station.medium.underpass",
+      "fileId": "modules",
+      "rect": {
+        "x": 1776,
+        "y": 708,
+        "width": 256,
+        "height": 192
+      },
+      "category": "station",
+      "sourceKey": "stations",
+      "sourceRect": [
+        328,
+        960,
+        740,
+        1254
+      ],
+      "contentBounds": [
+        21,
+        7,
+        370,
+        267
+      ],
+      "worldWidthMm": 8000,
+      "worldHeightMm": 6000,
+      "pivot": {
+        "x": 128,
+        "y": 96
+      }
+    },
+    {
+      "id": "station.large.underpass",
+      "fileId": "modules",
+      "rect": {
+        "x": 0,
+        "y": 966,
+        "width": 320,
+        "height": 256
+      },
+      "category": "station",
+      "sourceKey": "stations",
+      "sourceRect": [
+        740,
+        960,
+        1254,
+        1254
+      ],
+      "contentBounds": [
+        24,
+        7,
+        478,
+        278
+      ],
+      "worldWidthMm": 10000,
+      "worldHeightMm": 8000,
+      "pivot": {
+        "x": 160,
+        "y": 128
+      }
+    },
+    {
+      "id": "environment.rural.vegetation",
+      "fileId": "modules",
+      "rect": {
+        "x": 322,
+        "y": 966,
+        "width": 256,
+        "height": 256
+      },
+      "category": "environment",
+      "sourceKey": "environment",
+      "sourceRect": [
+        0,
+        0,
+        512,
+        320
+      ],
+      "contentBounds": [
+        37,
+        4,
+        474,
+        320
+      ],
+      "worldWidthMm": 8000,
+      "worldHeightMm": 8000,
+      "pivot": {
+        "x": 128,
+        "y": 128
+      }
+    },
+    {
+      "id": "environment.suburban.vegetation",
+      "fileId": "modules",
+      "rect": {
+        "x": 580,
+        "y": 966,
+        "width": 256,
+        "height": 256
+      },
+      "category": "environment",
+      "sourceKey": "environment",
+      "sourceRect": [
+        512,
+        0,
+        1024,
+        320
+      ],
+      "contentBounds": [
+        43,
+        26,
+        470,
+        306
+      ],
+      "worldWidthMm": 8000,
+      "worldHeightMm": 8000,
+      "pivot": {
+        "x": 128,
+        "y": 128
+      }
+    },
+    {
+      "id": "environment.urban.vegetation",
+      "fileId": "modules",
+      "rect": {
+        "x": 838,
+        "y": 966,
+        "width": 256,
+        "height": 256
+      },
+      "category": "environment",
+      "sourceKey": "environment",
+      "sourceRect": [
+        1024,
+        0,
+        1536,
+        320
+      ],
+      "contentBounds": [
+        41,
+        12,
+        465,
+        320
+      ],
+      "worldWidthMm": 8000,
+      "worldHeightMm": 8000,
+      "pivot": {
+        "x": 128,
+        "y": 128
+      }
+    },
+    {
+      "id": "environment.rural.road",
+      "fileId": "modules",
+      "rect": {
+        "x": 1096,
+        "y": 966,
+        "width": 256,
+        "height": 128
+      },
+      "category": "environment",
+      "sourceKey": "environment",
+      "sourceRect": [
+        0,
+        320,
+        512,
+        625
+      ],
+      "contentBounds": [
+        29,
+        0,
+        489,
+        305
+      ],
+      "worldWidthMm": 8000,
+      "worldHeightMm": 4000,
+      "pivot": {
+        "x": 128,
+        "y": 64
+      }
+    },
+    {
+      "id": "environment.suburban.road",
+      "fileId": "modules",
+      "rect": {
+        "x": 1354,
+        "y": 966,
+        "width": 256,
+        "height": 128
+      },
+      "category": "environment",
+      "sourceKey": "environment",
+      "sourceRect": [
+        512,
+        320,
+        1024,
+        625
+      ],
+      "contentBounds": [
+        28,
+        5,
+        486,
+        305
+      ],
+      "worldWidthMm": 8000,
+      "worldHeightMm": 4000,
+      "pivot": {
+        "x": 128,
+        "y": 64
+      }
+    },
+    {
+      "id": "environment.urban.road",
+      "fileId": "modules",
+      "rect": {
+        "x": 1612,
+        "y": 966,
+        "width": 256,
+        "height": 128
+      },
+      "category": "environment",
+      "sourceKey": "environment",
+      "sourceRect": [
+        1024,
+        320,
+        1536,
+        625
+      ],
+      "contentBounds": [
+        20,
+        0,
+        485,
+        305
+      ],
+      "worldWidthMm": 8000,
+      "worldHeightMm": 4000,
+      "pivot": {
+        "x": 128,
+        "y": 64
+      }
+    },
+    {
+      "id": "environment.rural.building",
+      "fileId": "modules",
+      "rect": {
+        "x": 0,
+        "y": 1224,
+        "width": 256,
+        "height": 256
+      },
+      "category": "environment",
+      "sourceKey": "environment",
+      "sourceRect": [
+        0,
+        625,
+        512,
+        1024
+      ],
+      "contentBounds": [
+        25,
+        0,
+        495,
+        382
+      ],
+      "worldWidthMm": 8000,
+      "worldHeightMm": 8000,
+      "pivot": {
+        "x": 128,
+        "y": 128
+      }
+    },
+    {
+      "id": "environment.suburban.building",
+      "fileId": "modules",
+      "rect": {
+        "x": 258,
+        "y": 1224,
+        "width": 256,
+        "height": 256
+      },
+      "category": "environment",
+      "sourceKey": "environment",
+      "sourceRect": [
+        512,
+        625,
+        1024,
+        1024
+      ],
+      "contentBounds": [
+        41,
+        0,
+        472,
+        381
+      ],
+      "worldWidthMm": 8000,
+      "worldHeightMm": 8000,
+      "pivot": {
+        "x": 128,
+        "y": 128
+      }
+    },
+    {
+      "id": "environment.urban.building",
+      "fileId": "modules",
+      "rect": {
+        "x": 516,
+        "y": 1224,
+        "width": 256,
+        "height": 256
+      },
+      "category": "environment",
+      "sourceKey": "environment",
+      "sourceRect": [
+        1024,
+        625,
+        1536,
+        1024
+      ],
+      "contentBounds": [
+        2,
+        0,
+        485,
+        386
+      ],
+      "worldWidthMm": 8000,
+      "worldHeightMm": 8000,
+      "pivot": {
+        "x": 128,
+        "y": 128
+      }
+    },
+    {
+      "id": "signal.stop",
+      "fileId": "modules",
+      "rect": {
+        "x": 774,
+        "y": 1224,
+        "width": 32,
+        "height": 96
+      },
+      "category": "signal",
+      "sourceKey": "utilities",
+      "sourceRect": [
+        0,
+        0,
+        627,
+        627
+      ],
+      "contentBounds": [
+        209,
+        8,
+        419,
+        620
+      ],
+      "worldWidthMm": 1000,
+      "worldHeightMm": 3000,
+      "pivot": {
+        "x": 16,
+        "y": 48
+      }
+    },
+    {
+      "id": "signal.proceed",
+      "fileId": "modules",
+      "rect": {
+        "x": 808,
+        "y": 1224,
+        "width": 32,
+        "height": 96
+      },
+      "category": "signal",
+      "sourceKey": "utilities",
+      "sourceRect": [
+        627,
+        0,
+        1254,
+        627
+      ],
+      "contentBounds": [
+        209,
+        8,
+        419,
+        620
+      ],
+      "worldWidthMm": 1000,
+      "worldHeightMm": 3000,
+      "pivot": {
+        "x": 16,
+        "y": 48
+      }
+    },
+    {
+      "id": "accessory.wheelchair.north",
+      "fileId": "modules",
+      "rect": {
+        "x": 842,
+        "y": 1224,
+        "width": 64,
+        "height": 64
+      },
+      "category": "accessory",
+      "sourceKey": "accessories-north-south",
+      "sourceRect": [
+        0,
+        0,
+        512,
+        467
+      ],
+      "contentBounds": [
+        187,
+        65,
+        452,
+        423
+      ],
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000,
+      "pivot": {
+        "x": 32,
+        "y": 32
+      }
+    },
+    {
+      "id": "accessory.wheelchair.east",
+      "fileId": "modules",
+      "rect": {
+        "x": 908,
+        "y": 1224,
+        "width": 64,
+        "height": 64
+      },
+      "category": "accessory",
+      "sourceKey": "accessories",
+      "sourceRect": [
+        362,
+        0,
+        724,
+        343
+      ],
+      "contentBounds": [
+        49,
+        50,
+        331,
+        306
+      ],
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000,
+      "pivot": {
+        "x": 32,
+        "y": 32
+      }
+    },
+    {
+      "id": "accessory.wheelchair.south",
+      "fileId": "modules",
+      "rect": {
+        "x": 974,
+        "y": 1224,
+        "width": 64,
+        "height": 64
+      },
+      "category": "accessory",
+      "sourceKey": "accessories-north-south",
+      "sourceRect": [
+        512,
+        0,
+        1024,
+        459
+      ],
+      "contentBounds": [
+        62,
+        55,
+        322,
+        408
+      ],
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000,
+      "pivot": {
+        "x": 32,
+        "y": 32
+      }
+    },
+    {
+      "id": "accessory.wheelchair.west",
+      "fileId": "modules",
+      "rect": {
+        "x": 1040,
+        "y": 1224,
+        "width": 64,
+        "height": 64
+      },
+      "category": "accessory",
+      "sourceKey": "accessories",
+      "sourceRect": [
+        1086,
+        0,
+        1448,
+        343
+      ],
+      "contentBounds": [
+        32,
+        50,
+        315,
+        306
+      ],
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000,
+      "pivot": {
+        "x": 32,
+        "y": 32
+      }
+    },
+    {
+      "id": "accessory.bicycle.north",
+      "fileId": "modules",
+      "rect": {
+        "x": 1106,
+        "y": 1224,
+        "width": 64,
+        "height": 64
+      },
+      "category": "accessory",
+      "sourceKey": "accessories-north-south",
+      "sourceRect": [
+        0,
+        467,
+        512,
+        953
+      ],
+      "contentBounds": [
+        205,
+        44,
+        429,
+        457
+      ],
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000,
+      "pivot": {
+        "x": 32,
+        "y": 32
+      }
+    },
+    {
+      "id": "accessory.bicycle.east",
+      "fileId": "modules",
+      "rect": {
+        "x": 1172,
+        "y": 1224,
+        "width": 64,
+        "height": 64
+      },
+      "category": "accessory",
+      "sourceKey": "accessories",
+      "sourceRect": [
+        362,
+        343,
+        724,
+        684
+      ],
+      "contentBounds": [
+        0,
+        38,
+        362,
+        293
+      ],
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000,
+      "pivot": {
+        "x": 32,
+        "y": 32
+      }
+    },
+    {
+      "id": "accessory.bicycle.south",
+      "fileId": "modules",
+      "rect": {
+        "x": 1238,
+        "y": 1224,
+        "width": 64,
+        "height": 64
+      },
+      "category": "accessory",
+      "sourceKey": "accessories-north-south",
+      "sourceRect": [
+        512,
+        459,
+        1024,
+        946
+      ],
+      "contentBounds": [
+        81,
+        52,
+        304,
+        465
+      ],
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000,
+      "pivot": {
+        "x": 32,
+        "y": 32
+      }
+    },
+    {
+      "id": "accessory.bicycle.west",
+      "fileId": "modules",
+      "rect": {
+        "x": 1304,
+        "y": 1224,
+        "width": 64,
+        "height": 64
+      },
+      "category": "accessory",
+      "sourceKey": "accessories",
+      "sourceRect": [
+        1086,
+        343,
+        1448,
+        684
+      ],
+      "contentBounds": [
+        0,
+        38,
+        362,
+        293
+      ],
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000,
+      "pivot": {
+        "x": 32,
+        "y": 32
+      }
+    },
+    {
+      "id": "accessory.stroller.north",
+      "fileId": "modules",
+      "rect": {
+        "x": 1370,
+        "y": 1224,
+        "width": 64,
+        "height": 64
+      },
+      "category": "accessory",
+      "sourceKey": "accessories-north-south",
+      "sourceRect": [
+        0,
+        953,
+        512,
+        1536
+      ],
+      "contentBounds": [
+        207,
+        30,
+        430,
+        429
+      ],
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000,
+      "pivot": {
+        "x": 32,
+        "y": 32
+      }
+    },
+    {
+      "id": "accessory.stroller.east",
+      "fileId": "modules",
+      "rect": {
+        "x": 1436,
+        "y": 1224,
+        "width": 64,
+        "height": 64
+      },
+      "category": "accessory",
+      "sourceKey": "accessories",
+      "sourceRect": [
+        362,
+        684,
+        724,
+        1086
+      ],
+      "contentBounds": [
+        31,
+        49,
+        304,
+        349
+      ],
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000,
+      "pivot": {
+        "x": 32,
+        "y": 32
+      }
+    },
+    {
+      "id": "accessory.stroller.south",
+      "fileId": "modules",
+      "rect": {
+        "x": 1502,
+        "y": 1224,
+        "width": 64,
+        "height": 64
+      },
+      "category": "accessory",
+      "sourceKey": "accessories-north-south",
+      "sourceRect": [
+        512,
+        946,
+        1024,
+        1536
+      ],
+      "contentBounds": [
+        71,
+        23,
+        312,
+        493
+      ],
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000,
+      "pivot": {
+        "x": 32,
+        "y": 32
+      }
+    },
+    {
+      "id": "accessory.stroller.west",
+      "fileId": "modules",
+      "rect": {
+        "x": 1568,
+        "y": 1224,
+        "width": 64,
+        "height": 64
+      },
+      "category": "accessory",
+      "sourceKey": "accessories",
+      "sourceRect": [
+        1086,
+        684,
+        1448,
+        1086
+      ],
+      "contentBounds": [
+        50,
+        49,
+        328,
+        350
+      ],
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000,
+      "pivot": {
+        "x": 32,
+        "y": 32
+      }
+    },
+    {
+      "id": "vehicle.regional-double.lower",
+      "fileId": "vehicles",
+      "rect": {
+        "x": 0,
+        "y": 0,
+        "width": 96,
+        "height": 864
+      },
+      "category": "vehicle",
+      "sourceKey": "vehicle-regional-double",
+      "sourceRect": [
+        0,
+        0,
+        341,
+        1536
+      ],
+      "contentBounds": [
+        110,
+        104,
+        288,
+        1438
+      ],
+      "worldWidthMm": 3000,
+      "worldHeightMm": 27000,
+      "pivot": {
+        "x": 48,
+        "y": 432
+      }
+    },
+    {
+      "id": "vehicle.regional-double.upper",
+      "fileId": "vehicles",
+      "rect": {
+        "x": 98,
+        "y": 0,
+        "width": 96,
+        "height": 864
+      },
+      "category": "vehicle",
+      "sourceKey": "vehicle-regional-double",
+      "sourceRect": [
+        341,
+        0,
+        683,
+        1536
+      ],
+      "contentBounds": [
+        80,
+        104,
+        256,
+        1442
+      ],
+      "worldWidthMm": 3000,
+      "worldHeightMm": 27000,
+      "pivot": {
+        "x": 48,
+        "y": 432
+      }
+    },
+    {
+      "id": "vehicle.regional-double.roof",
+      "fileId": "vehicles",
+      "rect": {
+        "x": 196,
+        "y": 0,
+        "width": 96,
+        "height": 864
+      },
+      "category": "vehicle",
+      "sourceKey": "vehicle-regional-double",
+      "sourceRect": [
+        683,
+        0,
+        1024,
+        1536
+      ],
+      "contentBounds": [
+        55,
+        104,
+        229,
+        1442
+      ],
+      "worldWidthMm": 3000,
+      "worldHeightMm": 27000,
+      "pivot": {
+        "x": 48,
+        "y": 432
+      }
+    },
+    {
+      "id": "vehicle.intercity-single.body",
+      "fileId": "vehicles",
+      "rect": {
+        "x": 294,
+        "y": 0,
+        "width": 96,
+        "height": 864
+      },
+      "category": "vehicle",
+      "sourceKey": "vehicle-intercity-single",
+      "sourceRect": [
+        0,
+        0,
+        512,
+        1536
+      ],
+      "contentBounds": [
+        239,
+        44,
+        411,
+        1488
+      ],
+      "worldWidthMm": 3000,
+      "worldHeightMm": 27000,
+      "pivot": {
+        "x": 48,
+        "y": 432
+      }
+    },
+    {
+      "id": "vehicle.intercity-single.roof",
+      "fileId": "vehicles",
+      "rect": {
+        "x": 392,
+        "y": 0,
+        "width": 96,
+        "height": 864
+      },
+      "category": "vehicle",
+      "sourceKey": "vehicle-intercity-single",
+      "sourceRect": [
+        512,
+        0,
+        1024,
+        1536
+      ],
+      "contentBounds": [
+        102,
+        44,
+        274,
+        1488
+      ],
+      "worldWidthMm": 3000,
+      "worldHeightMm": 27000,
+      "pivot": {
+        "x": 48,
+        "y": 432
+      }
+    },
+    {
+      "id": "vehicle.regional-single.body",
+      "fileId": "vehicles",
+      "rect": {
+        "x": 490,
+        "y": 0,
+        "width": 96,
+        "height": 864
+      },
+      "category": "vehicle",
+      "sourceKey": "vehicle-regional-single",
+      "sourceRect": [
+        0,
+        0,
+        512,
+        1536
+      ],
+      "contentBounds": [
+        182,
+        43,
+        361,
+        1452
+      ],
+      "worldWidthMm": 3000,
+      "worldHeightMm": 27000,
+      "pivot": {
+        "x": 48,
+        "y": 432
+      }
+    },
+    {
+      "id": "vehicle.regional-single.roof",
+      "fileId": "vehicles",
+      "rect": {
+        "x": 588,
+        "y": 0,
+        "width": 96,
+        "height": 864
+      },
+      "category": "vehicle",
+      "sourceKey": "vehicle-regional-single",
+      "sourceRect": [
+        512,
+        0,
+        1024,
+        1536
+      ],
+      "contentBounds": [
+        149,
+        43,
+        327,
+        1452
+      ],
+      "worldWidthMm": 3000,
+      "worldHeightMm": 27000,
+      "pivot": {
+        "x": 48,
+        "y": 432
+      }
+    },
+    {
+      "id": "vehicle.intercity-double.lower",
+      "fileId": "vehicles",
+      "rect": {
+        "x": 686,
+        "y": 0,
+        "width": 96,
+        "height": 864
+      },
+      "category": "vehicle",
+      "sourceKey": "vehicle-intercity-double",
+      "sourceRect": [
+        0,
+        0,
+        341,
+        1536
+      ],
+      "contentBounds": [
+        95,
+        45,
+        268,
+        1476
+      ],
+      "worldWidthMm": 3000,
+      "worldHeightMm": 27000,
+      "pivot": {
+        "x": 48,
+        "y": 432
+      }
+    },
+    {
+      "id": "vehicle.intercity-double.upper",
+      "fileId": "vehicles",
+      "rect": {
+        "x": 784,
+        "y": 0,
+        "width": 96,
+        "height": 864
+      },
+      "category": "vehicle",
+      "sourceKey": "vehicle-intercity-double",
+      "sourceRect": [
+        341,
+        0,
+        683,
+        1536
+      ],
+      "contentBounds": [
+        83,
+        45,
+        256,
+        1476
+      ],
+      "worldWidthMm": 3000,
+      "worldHeightMm": 27000,
+      "pivot": {
+        "x": 48,
+        "y": 432
+      }
+    },
+    {
+      "id": "vehicle.intercity-double.roof",
+      "fileId": "vehicles",
+      "rect": {
+        "x": 882,
+        "y": 0,
+        "width": 96,
+        "height": 864
+      },
+      "category": "vehicle",
+      "sourceKey": "vehicle-intercity-double",
+      "sourceRect": [
+        683,
+        0,
+        1024,
+        1536
+      ],
+      "contentBounds": [
+        69,
+        45,
+        244,
+        1476
+      ],
+      "worldWidthMm": 3000,
+      "worldHeightMm": 27000,
+      "pivot": {
+        "x": 48,
+        "y": 432
+      }
+    },
+    {
+      "id": "vehicle.dining.body",
+      "fileId": "vehicles",
+      "rect": {
+        "x": 980,
+        "y": 0,
+        "width": 96,
+        "height": 864
+      },
+      "category": "vehicle",
+      "sourceKey": "vehicle-dining",
+      "sourceRect": [
+        0,
+        0,
+        512,
+        1536
+      ],
+      "contentBounds": [
+        209,
+        30,
+        413,
+        1493
+      ],
+      "worldWidthMm": 3000,
+      "worldHeightMm": 27000,
+      "pivot": {
+        "x": 48,
+        "y": 432
+      }
+    },
+    {
+      "id": "vehicle.dining.roof",
+      "fileId": "vehicles",
+      "rect": {
+        "x": 1078,
+        "y": 0,
+        "width": 96,
+        "height": 864
+      },
+      "category": "vehicle",
+      "sourceKey": "vehicle-dining",
+      "sourceRect": [
+        512,
+        0,
+        1024,
+        1536
+      ],
+      "contentBounds": [
+        93,
+        30,
+        295,
+        1493
+      ],
+      "worldWidthMm": 3000,
+      "worldHeightMm": 27000,
+      "pivot": {
+        "x": 48,
+        "y": 432
+      }
+    },
+    {
+      "id": "vehicle.sleeper.body",
+      "fileId": "vehicles",
+      "rect": {
+        "x": 1176,
+        "y": 0,
+        "width": 96,
+        "height": 864
+      },
+      "category": "vehicle",
+      "sourceKey": "vehicle-sleeper",
+      "sourceRect": [
+        0,
+        0,
+        512,
+        1536
+      ],
+      "contentBounds": [
+        177,
+        29,
+        366,
+        1501
+      ],
+      "worldWidthMm": 3000,
+      "worldHeightMm": 27000,
+      "pivot": {
+        "x": 48,
+        "y": 432
+      }
+    },
+    {
+      "id": "vehicle.sleeper.roof",
+      "fileId": "vehicles",
+      "rect": {
+        "x": 1274,
+        "y": 0,
+        "width": 96,
+        "height": 864
+      },
+      "category": "vehicle",
+      "sourceKey": "vehicle-sleeper",
+      "sourceRect": [
+        512,
+        0,
+        1024,
+        1536
+      ],
+      "contentBounds": [
+        141,
+        29,
+        331,
+        1501
+      ],
+      "worldWidthMm": 3000,
+      "worldHeightMm": 27000,
+      "pivot": {
+        "x": 48,
+        "y": 432
+      }
+    }
+  ],
+  "animations": [
+    {
+      "id": "passenger-01.south.idle",
+      "appearanceId": "passenger-01",
+      "role": "passenger",
+      "direction": "south",
+      "state": "idle",
+      "frames": [
+        {
+          "assetId": "actor.passenger-01.south.idle",
+          "durationMs": 1000
+        }
+      ]
+    },
+    {
+      "id": "passenger-01.south.walk",
+      "appearanceId": "passenger-01",
+      "role": "passenger",
+      "direction": "south",
+      "state": "walk",
+      "frames": [
+        {
+          "assetId": "actor.passenger-01.south.walk.1",
+          "durationMs": 160
+        },
+        {
+          "assetId": "actor.passenger-01.south.walk.2",
+          "durationMs": 160
+        },
+        {
+          "assetId": "actor.passenger-01.south.walk.3",
+          "durationMs": 160
+        },
+        {
+          "assetId": "actor.passenger-01.south.walk.4",
+          "durationMs": 160
+        }
+      ]
+    },
+    {
+      "id": "passenger-01.west.idle",
+      "appearanceId": "passenger-01",
+      "role": "passenger",
+      "direction": "west",
+      "state": "idle",
+      "frames": [
+        {
+          "assetId": "actor.passenger-01.west.idle",
+          "durationMs": 1000
+        }
+      ]
+    },
+    {
+      "id": "passenger-01.west.walk",
+      "appearanceId": "passenger-01",
+      "role": "passenger",
+      "direction": "west",
+      "state": "walk",
+      "frames": [
+        {
+          "assetId": "actor.passenger-01.west.walk.1",
+          "durationMs": 160
+        },
+        {
+          "assetId": "actor.passenger-01.west.walk.2",
+          "durationMs": 160
+        },
+        {
+          "assetId": "actor.passenger-01.west.walk.3",
+          "durationMs": 160
+        },
+        {
+          "assetId": "actor.passenger-01.west.walk.4",
+          "durationMs": 160
+        }
+      ]
+    },
+    {
+      "id": "passenger-01.east.idle",
+      "appearanceId": "passenger-01",
+      "role": "passenger",
+      "direction": "east",
+      "state": "idle",
+      "frames": [
+        {
+          "assetId": "actor.passenger-01.east.idle",
+          "durationMs": 1000
+        }
+      ]
+    },
+    {
+      "id": "passenger-01.east.walk",
+      "appearanceId": "passenger-01",
+      "role": "passenger",
+      "direction": "east",
+      "state": "walk",
+      "frames": [
+        {
+          "assetId": "actor.passenger-01.east.walk.1",
+          "durationMs": 160
+        },
+        {
+          "assetId": "actor.passenger-01.east.walk.2",
+          "durationMs": 160
+        },
+        {
+          "assetId": "actor.passenger-01.east.walk.3",
+          "durationMs": 160
+        },
+        {
+          "assetId": "actor.passenger-01.east.walk.4",
+          "durationMs": 160
+        }
+      ]
+    },
+    {
+      "id": "passenger-01.north.idle",
+      "appearanceId": "passenger-01",
+      "role": "passenger",
+      "direction": "north",
+      "state": "idle",
+      "frames": [
+        {
+          "assetId": "actor.passenger-01.north.idle",
+          "durationMs": 1000
+        }
+      ]
+    },
+    {
+      "id": "passenger-01.north.walk",
+      "appearanceId": "passenger-01",
+      "role": "passenger",
+      "direction": "north",
+      "state": "walk",
+      "frames": [
+        {
+          "assetId": "actor.passenger-01.north.walk.1",
+          "durationMs": 160
+        },
+        {
+          "assetId": "actor.passenger-01.north.walk.2",
+          "durationMs": 160
+        },
+        {
+          "assetId": "actor.passenger-01.north.walk.3",
+          "durationMs": 160
+        },
+        {
+          "assetId": "actor.passenger-01.north.walk.4",
+          "durationMs": 160
+        }
+      ]
+    },
+    {
+      "id": "passenger-02.south.idle",
+      "appearanceId": "passenger-02",
+      "role": "passenger",
+      "direction": "south",
+      "state": "idle",
+      "frames": [
+        {
+          "assetId": "actor.passenger-02.south.idle",
+          "durationMs": 1000
+        }
+      ]
+    },
+    {
+      "id": "passenger-02.south.walk",
+      "appearanceId": "passenger-02",
+      "role": "passenger",
+      "direction": "south",
+      "state": "walk",
+      "frames": [
+        {
+          "assetId": "actor.passenger-02.south.walk.1",
+          "durationMs": 160
+        },
+        {
+          "assetId": "actor.passenger-02.south.walk.2",
+          "durationMs": 160
+        },
+        {
+          "assetId": "actor.passenger-02.south.walk.3",
+          "durationMs": 160
+        },
+        {
+          "assetId": "actor.passenger-02.south.walk.4",
+          "durationMs": 160
+        }
+      ]
+    },
+    {
+      "id": "passenger-02.west.idle",
+      "appearanceId": "passenger-02",
+      "role": "passenger",
+      "direction": "west",
+      "state": "idle",
+      "frames": [
+        {
+          "assetId": "actor.passenger-02.west.idle",
+          "durationMs": 1000
+        }
+      ]
+    },
+    {
+      "id": "passenger-02.west.walk",
+      "appearanceId": "passenger-02",
+      "role": "passenger",
+      "direction": "west",
+      "state": "walk",
+      "frames": [
+        {
+          "assetId": "actor.passenger-02.west.walk.1",
+          "durationMs": 160
+        },
+        {
+          "assetId": "actor.passenger-02.west.walk.2",
+          "durationMs": 160
+        },
+        {
+          "assetId": "actor.passenger-02.west.walk.3",
+          "durationMs": 160
+        },
+        {
+          "assetId": "actor.passenger-02.west.walk.4",
+          "durationMs": 160
+        }
+      ]
+    },
+    {
+      "id": "passenger-02.east.idle",
+      "appearanceId": "passenger-02",
+      "role": "passenger",
+      "direction": "east",
+      "state": "idle",
+      "frames": [
+        {
+          "assetId": "actor.passenger-02.east.idle",
+          "durationMs": 1000
+        }
+      ]
+    },
+    {
+      "id": "passenger-02.east.walk",
+      "appearanceId": "passenger-02",
+      "role": "passenger",
+      "direction": "east",
+      "state": "walk",
+      "frames": [
+        {
+          "assetId": "actor.passenger-02.east.walk.1",
+          "durationMs": 160
+        },
+        {
+          "assetId": "actor.passenger-02.east.walk.2",
+          "durationMs": 160
+        },
+        {
+          "assetId": "actor.passenger-02.east.walk.3",
+          "durationMs": 160
+        },
+        {
+          "assetId": "actor.passenger-02.east.walk.4",
+          "durationMs": 160
+        }
+      ]
+    },
+    {
+      "id": "passenger-02.north.idle",
+      "appearanceId": "passenger-02",
+      "role": "passenger",
+      "direction": "north",
+      "state": "idle",
+      "frames": [
+        {
+          "assetId": "actor.passenger-02.north.idle",
+          "durationMs": 1000
+        }
+      ]
+    },
+    {
+      "id": "passenger-02.north.walk",
+      "appearanceId": "passenger-02",
+      "role": "passenger",
+      "direction": "north",
+      "state": "walk",
+      "frames": [
+        {
+          "assetId": "actor.passenger-02.north.walk.1",
+          "durationMs": 160
+        },
+        {
+          "assetId": "actor.passenger-02.north.walk.2",
+          "durationMs": 160
+        },
+        {
+          "assetId": "actor.passenger-02.north.walk.3",
+          "durationMs": 160
+        },
+        {
+          "assetId": "actor.passenger-02.north.walk.4",
+          "durationMs": 160
+        }
+      ]
+    },
+    {
+      "id": "passenger-03.south.idle",
+      "appearanceId": "passenger-03",
+      "role": "passenger",
+      "direction": "south",
+      "state": "idle",
+      "frames": [
+        {
+          "assetId": "actor.passenger-03.south.idle",
+          "durationMs": 1000
+        }
+      ]
+    },
+    {
+      "id": "passenger-03.south.walk",
+      "appearanceId": "passenger-03",
+      "role": "passenger",
+      "direction": "south",
+      "state": "walk",
+      "frames": [
+        {
+          "assetId": "actor.passenger-03.south.walk.1",
+          "durationMs": 160
+        },
+        {
+          "assetId": "actor.passenger-03.south.walk.2",
+          "durationMs": 160
+        },
+        {
+          "assetId": "actor.passenger-03.south.walk.3",
+          "durationMs": 160
+        },
+        {
+          "assetId": "actor.passenger-03.south.walk.4",
+          "durationMs": 160
+        }
+      ]
+    },
+    {
+      "id": "passenger-03.west.idle",
+      "appearanceId": "passenger-03",
+      "role": "passenger",
+      "direction": "west",
+      "state": "idle",
+      "frames": [
+        {
+          "assetId": "actor.passenger-03.west.idle",
+          "durationMs": 1000
+        }
+      ]
+    },
+    {
+      "id": "passenger-03.west.walk",
+      "appearanceId": "passenger-03",
+      "role": "passenger",
+      "direction": "west",
+      "state": "walk",
+      "frames": [
+        {
+          "assetId": "actor.passenger-03.west.walk.1",
+          "durationMs": 160
+        },
+        {
+          "assetId": "actor.passenger-03.west.walk.2",
+          "durationMs": 160
+        },
+        {
+          "assetId": "actor.passenger-03.west.walk.3",
+          "durationMs": 160
+        },
+        {
+          "assetId": "actor.passenger-03.west.walk.4",
+          "durationMs": 160
+        }
+      ]
+    },
+    {
+      "id": "passenger-03.east.idle",
+      "appearanceId": "passenger-03",
+      "role": "passenger",
+      "direction": "east",
+      "state": "idle",
+      "frames": [
+        {
+          "assetId": "actor.passenger-03.east.idle",
+          "durationMs": 1000
+        }
+      ]
+    },
+    {
+      "id": "passenger-03.east.walk",
+      "appearanceId": "passenger-03",
+      "role": "passenger",
+      "direction": "east",
+      "state": "walk",
+      "frames": [
+        {
+          "assetId": "actor.passenger-03.east.walk.1",
+          "durationMs": 160
+        },
+        {
+          "assetId": "actor.passenger-03.east.walk.2",
+          "durationMs": 160
+        },
+        {
+          "assetId": "actor.passenger-03.east.walk.3",
+          "durationMs": 160
+        },
+        {
+          "assetId": "actor.passenger-03.east.walk.4",
+          "durationMs": 160
+        }
+      ]
+    },
+    {
+      "id": "passenger-03.north.idle",
+      "appearanceId": "passenger-03",
+      "role": "passenger",
+      "direction": "north",
+      "state": "idle",
+      "frames": [
+        {
+          "assetId": "actor.passenger-03.north.idle",
+          "durationMs": 1000
+        }
+      ]
+    },
+    {
+      "id": "passenger-03.north.walk",
+      "appearanceId": "passenger-03",
+      "role": "passenger",
+      "direction": "north",
+      "state": "walk",
+      "frames": [
+        {
+          "assetId": "actor.passenger-03.north.walk.1",
+          "durationMs": 160
+        },
+        {
+          "assetId": "actor.passenger-03.north.walk.2",
+          "durationMs": 160
+        },
+        {
+          "assetId": "actor.passenger-03.north.walk.3",
+          "durationMs": 160
+        },
+        {
+          "assetId": "actor.passenger-03.north.walk.4",
+          "durationMs": 160
+        }
+      ]
+    },
+    {
+      "id": "passenger-04.south.idle",
+      "appearanceId": "passenger-04",
+      "role": "passenger",
+      "direction": "south",
+      "state": "idle",
+      "frames": [
+        {
+          "assetId": "actor.passenger-04.south.idle",
+          "durationMs": 1000
+        }
+      ]
+    },
+    {
+      "id": "passenger-04.south.walk",
+      "appearanceId": "passenger-04",
+      "role": "passenger",
+      "direction": "south",
+      "state": "walk",
+      "frames": [
+        {
+          "assetId": "actor.passenger-04.south.walk.1",
+          "durationMs": 160
+        },
+        {
+          "assetId": "actor.passenger-04.south.walk.2",
+          "durationMs": 160
+        },
+        {
+          "assetId": "actor.passenger-04.south.walk.3",
+          "durationMs": 160
+        },
+        {
+          "assetId": "actor.passenger-04.south.walk.4",
+          "durationMs": 160
+        }
+      ]
+    },
+    {
+      "id": "passenger-04.west.idle",
+      "appearanceId": "passenger-04",
+      "role": "passenger",
+      "direction": "west",
+      "state": "idle",
+      "frames": [
+        {
+          "assetId": "actor.passenger-04.west.idle",
+          "durationMs": 1000
+        }
+      ]
+    },
+    {
+      "id": "passenger-04.west.walk",
+      "appearanceId": "passenger-04",
+      "role": "passenger",
+      "direction": "west",
+      "state": "walk",
+      "frames": [
+        {
+          "assetId": "actor.passenger-04.west.walk.1",
+          "durationMs": 160
+        },
+        {
+          "assetId": "actor.passenger-04.west.walk.2",
+          "durationMs": 160
+        },
+        {
+          "assetId": "actor.passenger-04.west.walk.3",
+          "durationMs": 160
+        },
+        {
+          "assetId": "actor.passenger-04.west.walk.4",
+          "durationMs": 160
+        }
+      ]
+    },
+    {
+      "id": "passenger-04.east.idle",
+      "appearanceId": "passenger-04",
+      "role": "passenger",
+      "direction": "east",
+      "state": "idle",
+      "frames": [
+        {
+          "assetId": "actor.passenger-04.east.idle",
+          "durationMs": 1000
+        }
+      ]
+    },
+    {
+      "id": "passenger-04.east.walk",
+      "appearanceId": "passenger-04",
+      "role": "passenger",
+      "direction": "east",
+      "state": "walk",
+      "frames": [
+        {
+          "assetId": "actor.passenger-04.east.walk.1",
+          "durationMs": 160
+        },
+        {
+          "assetId": "actor.passenger-04.east.walk.2",
+          "durationMs": 160
+        },
+        {
+          "assetId": "actor.passenger-04.east.walk.3",
+          "durationMs": 160
+        },
+        {
+          "assetId": "actor.passenger-04.east.walk.4",
+          "durationMs": 160
+        }
+      ]
+    },
+    {
+      "id": "passenger-04.north.idle",
+      "appearanceId": "passenger-04",
+      "role": "passenger",
+      "direction": "north",
+      "state": "idle",
+      "frames": [
+        {
+          "assetId": "actor.passenger-04.north.idle",
+          "durationMs": 1000
+        }
+      ]
+    },
+    {
+      "id": "passenger-04.north.walk",
+      "appearanceId": "passenger-04",
+      "role": "passenger",
+      "direction": "north",
+      "state": "walk",
+      "frames": [
+        {
+          "assetId": "actor.passenger-04.north.walk.1",
+          "durationMs": 160
+        },
+        {
+          "assetId": "actor.passenger-04.north.walk.2",
+          "durationMs": 160
+        },
+        {
+          "assetId": "actor.passenger-04.north.walk.3",
+          "durationMs": 160
+        },
+        {
+          "assetId": "actor.passenger-04.north.walk.4",
+          "durationMs": 160
+        }
+      ]
+    },
+    {
+      "id": "conductor-01.south.idle",
+      "appearanceId": "conductor-01",
+      "role": "conductor",
+      "direction": "south",
+      "state": "idle",
+      "frames": [
+        {
+          "assetId": "actor.conductor-01.south.idle",
+          "durationMs": 1000
+        }
+      ]
+    },
+    {
+      "id": "conductor-01.south.walk",
+      "appearanceId": "conductor-01",
+      "role": "conductor",
+      "direction": "south",
+      "state": "walk",
+      "frames": [
+        {
+          "assetId": "actor.conductor-01.south.walk.1",
+          "durationMs": 160
+        },
+        {
+          "assetId": "actor.conductor-01.south.walk.2",
+          "durationMs": 160
+        },
+        {
+          "assetId": "actor.conductor-01.south.walk.3",
+          "durationMs": 160
+        },
+        {
+          "assetId": "actor.conductor-01.south.walk.4",
+          "durationMs": 160
+        }
+      ]
+    },
+    {
+      "id": "conductor-01.west.idle",
+      "appearanceId": "conductor-01",
+      "role": "conductor",
+      "direction": "west",
+      "state": "idle",
+      "frames": [
+        {
+          "assetId": "actor.conductor-01.west.idle",
+          "durationMs": 1000
+        }
+      ]
+    },
+    {
+      "id": "conductor-01.west.walk",
+      "appearanceId": "conductor-01",
+      "role": "conductor",
+      "direction": "west",
+      "state": "walk",
+      "frames": [
+        {
+          "assetId": "actor.conductor-01.west.walk.1",
+          "durationMs": 160
+        },
+        {
+          "assetId": "actor.conductor-01.west.walk.2",
+          "durationMs": 160
+        },
+        {
+          "assetId": "actor.conductor-01.west.walk.3",
+          "durationMs": 160
+        },
+        {
+          "assetId": "actor.conductor-01.west.walk.4",
+          "durationMs": 160
+        }
+      ]
+    },
+    {
+      "id": "conductor-01.east.idle",
+      "appearanceId": "conductor-01",
+      "role": "conductor",
+      "direction": "east",
+      "state": "idle",
+      "frames": [
+        {
+          "assetId": "actor.conductor-01.east.idle",
+          "durationMs": 1000
+        }
+      ]
+    },
+    {
+      "id": "conductor-01.east.walk",
+      "appearanceId": "conductor-01",
+      "role": "conductor",
+      "direction": "east",
+      "state": "walk",
+      "frames": [
+        {
+          "assetId": "actor.conductor-01.east.walk.1",
+          "durationMs": 160
+        },
+        {
+          "assetId": "actor.conductor-01.east.walk.2",
+          "durationMs": 160
+        },
+        {
+          "assetId": "actor.conductor-01.east.walk.3",
+          "durationMs": 160
+        },
+        {
+          "assetId": "actor.conductor-01.east.walk.4",
+          "durationMs": 160
+        }
+      ]
+    },
+    {
+      "id": "conductor-01.north.idle",
+      "appearanceId": "conductor-01",
+      "role": "conductor",
+      "direction": "north",
+      "state": "idle",
+      "frames": [
+        {
+          "assetId": "actor.conductor-01.north.idle",
+          "durationMs": 1000
+        }
+      ]
+    },
+    {
+      "id": "conductor-01.north.walk",
+      "appearanceId": "conductor-01",
+      "role": "conductor",
+      "direction": "north",
+      "state": "walk",
+      "frames": [
+        {
+          "assetId": "actor.conductor-01.north.walk.1",
+          "durationMs": 160
+        },
+        {
+          "assetId": "actor.conductor-01.north.walk.2",
+          "durationMs": 160
+        },
+        {
+          "assetId": "actor.conductor-01.north.walk.3",
+          "durationMs": 160
+        },
+        {
+          "assetId": "actor.conductor-01.north.walk.4",
+          "durationMs": 160
+        }
+      ]
+    },
+    {
+      "id": "passenger-01.south.sitting",
+      "appearanceId": "passenger-01",
+      "role": "passenger",
+      "direction": "south",
+      "state": "sitting",
+      "frames": [
+        {
+          "assetId": "actor.passenger-01.south.sitting",
+          "durationMs": 1000
+        }
+      ]
+    },
+    {
+      "id": "passenger-01.west.sitting",
+      "appearanceId": "passenger-01",
+      "role": "passenger",
+      "direction": "west",
+      "state": "sitting",
+      "frames": [
+        {
+          "assetId": "actor.passenger-01.west.sitting",
+          "durationMs": 1000
+        }
+      ]
+    },
+    {
+      "id": "passenger-01.north.sitting",
+      "appearanceId": "passenger-01",
+      "role": "passenger",
+      "direction": "north",
+      "state": "sitting",
+      "frames": [
+        {
+          "assetId": "actor.passenger-01.north.sitting",
+          "durationMs": 1000
+        }
+      ]
+    },
+    {
+      "id": "passenger-01.east.sitting",
+      "appearanceId": "passenger-01",
+      "role": "passenger",
+      "direction": "east",
+      "state": "sitting",
+      "frames": [
+        {
+          "assetId": "actor.passenger-01.east.sitting",
+          "durationMs": 1000
+        }
+      ]
+    },
+    {
+      "id": "passenger-02.south.sitting",
+      "appearanceId": "passenger-02",
+      "role": "passenger",
+      "direction": "south",
+      "state": "sitting",
+      "frames": [
+        {
+          "assetId": "actor.passenger-02.south.sitting",
+          "durationMs": 1000
+        }
+      ]
+    },
+    {
+      "id": "passenger-02.west.sitting",
+      "appearanceId": "passenger-02",
+      "role": "passenger",
+      "direction": "west",
+      "state": "sitting",
+      "frames": [
+        {
+          "assetId": "actor.passenger-02.west.sitting",
+          "durationMs": 1000
+        }
+      ]
+    },
+    {
+      "id": "passenger-02.north.sitting",
+      "appearanceId": "passenger-02",
+      "role": "passenger",
+      "direction": "north",
+      "state": "sitting",
+      "frames": [
+        {
+          "assetId": "actor.passenger-02.north.sitting",
+          "durationMs": 1000
+        }
+      ]
+    },
+    {
+      "id": "passenger-02.east.sitting",
+      "appearanceId": "passenger-02",
+      "role": "passenger",
+      "direction": "east",
+      "state": "sitting",
+      "frames": [
+        {
+          "assetId": "actor.passenger-02.east.sitting",
+          "durationMs": 1000
+        }
+      ]
+    },
+    {
+      "id": "passenger-03.south.sitting",
+      "appearanceId": "passenger-03",
+      "role": "passenger",
+      "direction": "south",
+      "state": "sitting",
+      "frames": [
+        {
+          "assetId": "actor.passenger-03.south.sitting",
+          "durationMs": 1000
+        }
+      ]
+    },
+    {
+      "id": "passenger-03.west.sitting",
+      "appearanceId": "passenger-03",
+      "role": "passenger",
+      "direction": "west",
+      "state": "sitting",
+      "frames": [
+        {
+          "assetId": "actor.passenger-03.west.sitting",
+          "durationMs": 1000
+        }
+      ]
+    },
+    {
+      "id": "passenger-03.north.sitting",
+      "appearanceId": "passenger-03",
+      "role": "passenger",
+      "direction": "north",
+      "state": "sitting",
+      "frames": [
+        {
+          "assetId": "actor.passenger-03.north.sitting",
+          "durationMs": 1000
+        }
+      ]
+    },
+    {
+      "id": "passenger-03.east.sitting",
+      "appearanceId": "passenger-03",
+      "role": "passenger",
+      "direction": "east",
+      "state": "sitting",
+      "frames": [
+        {
+          "assetId": "actor.passenger-03.east.sitting",
+          "durationMs": 1000
+        }
+      ]
+    },
+    {
+      "id": "passenger-04.south.sitting",
+      "appearanceId": "passenger-04",
+      "role": "passenger",
+      "direction": "south",
+      "state": "sitting",
+      "frames": [
+        {
+          "assetId": "actor.passenger-04.south.sitting",
+          "durationMs": 1000
+        }
+      ]
+    },
+    {
+      "id": "passenger-04.west.sitting",
+      "appearanceId": "passenger-04",
+      "role": "passenger",
+      "direction": "west",
+      "state": "sitting",
+      "frames": [
+        {
+          "assetId": "actor.passenger-04.west.sitting",
+          "durationMs": 1000
+        }
+      ]
+    },
+    {
+      "id": "passenger-04.north.sitting",
+      "appearanceId": "passenger-04",
+      "role": "passenger",
+      "direction": "north",
+      "state": "sitting",
+      "frames": [
+        {
+          "assetId": "actor.passenger-04.north.sitting",
+          "durationMs": 1000
+        }
+      ]
+    },
+    {
+      "id": "passenger-04.east.sitting",
+      "appearanceId": "passenger-04",
+      "role": "passenger",
+      "direction": "east",
+      "state": "sitting",
+      "frames": [
+        {
+          "assetId": "actor.passenger-04.east.sitting",
+          "durationMs": 1000
+        }
+      ]
+    },
+    {
+      "id": "conductor-01.south.sitting",
+      "appearanceId": "conductor-01",
+      "role": "conductor",
+      "direction": "south",
+      "state": "sitting",
+      "frames": [
+        {
+          "assetId": "actor.conductor-01.south.sitting",
+          "durationMs": 1000
+        }
+      ]
+    },
+    {
+      "id": "conductor-01.west.sitting",
+      "appearanceId": "conductor-01",
+      "role": "conductor",
+      "direction": "west",
+      "state": "sitting",
+      "frames": [
+        {
+          "assetId": "actor.conductor-01.west.sitting",
+          "durationMs": 1000
+        }
+      ]
+    },
+    {
+      "id": "conductor-01.north.sitting",
+      "appearanceId": "conductor-01",
+      "role": "conductor",
+      "direction": "north",
+      "state": "sitting",
+      "frames": [
+        {
+          "assetId": "actor.conductor-01.north.sitting",
+          "durationMs": 1000
+        }
+      ]
+    },
+    {
+      "id": "conductor-01.east.sitting",
+      "appearanceId": "conductor-01",
+      "role": "conductor",
+      "direction": "east",
+      "state": "sitting",
+      "frames": [
+        {
+          "assetId": "actor.conductor-01.east.sitting",
+          "durationMs": 1000
+        }
+      ]
+    }
+  ],
+  "models": {
+    "passenger-red": {
+      "name": "gpt-image",
+      "version": "2.0"
+    },
+    "passenger-teal": {
+      "name": "gpt-image",
+      "version": "2.0"
+    },
+    "passenger-amber": {
+      "name": "gpt-image",
+      "version": "2.0"
+    },
+    "passenger-slate": {
+      "name": "gpt-image",
+      "version": "2.0"
+    },
+    "conductor": {
+      "name": "gpt-image",
+      "version": "2.0"
+    },
+    "seated": {
+      "name": "gpt-image",
+      "version": "2.0"
+    },
+    "interior-topdown": {
+      "name": "gpt-image",
+      "version": "2.0"
+    },
+    "train": {
+      "name": "gpt-image",
+      "version": "2.0"
+    },
+    "stations": {
+      "name": "gpt-image",
+      "version": "2.0"
+    },
+    "environment": {
+      "name": "gpt-image",
+      "version": "2.0"
+    },
+    "utilities": {
+      "name": "gpt-image",
+      "version": "2.0"
+    },
+    "accessories-north-south": {
+      "name": "gpt-image",
+      "version": "2.0"
+    },
+    "accessories": {
+      "name": "gpt-image",
+      "version": "2.0"
+    },
+    "vehicle-regional-double-initial": {
+      "name": "gpt-image",
+      "version": "2.0"
+    },
+    "vehicle-regional-double": {
+      "name": "gpt-image",
+      "version": "2.0"
+    },
+    "vehicle-intercity-single": {
+      "name": "gpt-image",
+      "version": "2.0"
+    },
+    "vehicle-regional-single": {
+      "name": "gpt-image",
+      "version": "2.0"
+    },
+    "vehicle-intercity-double": {
+      "name": "gpt-image",
+      "version": "2.0"
+    },
+    "vehicle-dining": {
+      "name": "gpt-image",
+      "version": "2.0"
+    },
+    "vehicle-sleeper": {
+      "name": "gpt-image",
+      "version": "2.0"
+    }
+  }
+}

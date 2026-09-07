@@ -30,6 +30,8 @@ Die Oberfläche bindet Marke und Icons über das Design-System ein. Kopierte
 Einzelpfade in Anwendungen würden bei späteren Änderungen auseinanderlaufen.
 Die Symbolübersicht zeigt vorhandene UI-Zeichen; sie ist kein Fahrzeug- oder
 Schaffner-Assetkorpus. Dessen noch offene Abnahme bleibt M15.3.
+Pflichtmotive, Originalbildherkunft, Raster und Freigabe werden getrennt im
+[M15.3-Atlasvertrag](../art-atlas.md) geführt.
 
 ## Gestaltung und Zugänglichkeit
 

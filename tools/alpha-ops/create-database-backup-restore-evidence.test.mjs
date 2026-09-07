@@ -135,7 +135,7 @@ async function missing(path) {
   await assert.rejects(access(path), { code: "ENOENT" });
 }
 
-for (const migrationCount of [33, 34, 35, 36]) {
+for (const migrationCount of [33, 34, 35, 36, 37, 38]) {
 test(`erzeugt aus Schema ${migrationCount} das kanonische v1-Paar und einen gueltigen v${migrationCount - 30}-Rollbackbeleg`, async () => {
   const value = await fixture({ migrationCount });
   const inspect = inspectPair({ sourceSnapshot: snapshot({}, migrationCount) });
@@ -180,7 +180,7 @@ for (const scenario of [
   { name: "Schema-34-Manifest mit Schema-33-Datenbank", migrationCount: 34, sourceSnapshot: snapshot(), error: /Schema-34-Migrationsledger/u },
   { name: "Schema-33-Manifest mit Schema-34-Datenbank", migrationCount: 33, sourceSnapshot: snapshot({}, 34), error: /Schema-33-Migrationsledger/u },
   { name: "Schema-34-Ledger mit historischem Schema-33-Tabellensatz", migrationCount: 34, sourceSnapshot: snapshot({ authoritativeHead: snapshot().authoritativeHead }, 34), error: /Schema-34-Tabellensatz/u },
-  { name: "unqualifiziertes Schema 37", migrationCount: 37, sourceSnapshot: snapshot(), error: /keinen qualifizierten autoritativen Tabellenvertrag/u },
+  { name: "unqualifiziertes Schema 39", migrationCount: 39, sourceSnapshot: snapshot(), error: /keinen qualifizierten autoritativen Tabellenvertrag/u },
 ]) {
   test(`publiziert keine Belege fuer ${scenario.name}`, async () => {
     const value = await fixture({ migrationCount: scenario.migrationCount });

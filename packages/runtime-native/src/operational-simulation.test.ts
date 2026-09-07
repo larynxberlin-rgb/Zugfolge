@@ -657,7 +657,7 @@ describe("operative native v2-Grenze", () => {
     const headGeometry = { routeMm: 0, edgeId: "edge:1", edgeOffsetMm: 0, latitudeE7: 510_000_000, longitudeE7: 120_000_000, bearingMilliDegrees: null };
     const exit = { ...headGeometry, routeMm: 1_000, edgeOffsetMm: 1_000, latitudeE7: 510_001_000 };
     const entry = { ...exit, edgeId: "edge:2", edgeOffsetMm: 0 };
-    const initialize = (motionGeometry: readonly typeof headGeometry[]) => {
+    const initialize = (motionGeometry: readonly typeof headGeometry[], segmentEndRouteMm = 1_000, validUntilMs = 1_000) => {
       const liveMap = {
         ...projection("live-map"),
         trains: [{
@@ -665,8 +665,8 @@ describe("operative native v2-Grenze", () => {
           motionState: "moving", direction: "along", routeVersionId: "route:v1", formationVersionId: "formation:v1",
           headRouteMm: 0, tailRouteMm: -20_000, speedMmps: 1_000, occupiedIntervals: [], occupiedBlocks: [],
           authorityEndRouteMm: 1_000, headGeometry, tailGeometry: null, waitingReason: null, motionGeometry,
-          motionSegment: { startedAtMs: 0, validUntilMs: 1_000, startRouteMm: 0, startSpeedMmps: 1_000,
-            accelerationMmps2: 0, routeVersionId: "route:v1", authorityEndRouteMm: 1_000, segmentEndRouteMm: 1_000 },
+          motionSegment: { startedAtMs: 0, validUntilMs, startRouteMm: 0, startSpeedMmps: 1_000,
+            accelerationMmps2: 0, routeVersionId: "route:v1", authorityEndRouteMm: 1_000, segmentEndRouteMm },
         }],
       };
       return operationalSimulationRuntimeFromAddon({
@@ -682,6 +682,12 @@ describe("operative native v2-Grenze", () => {
     expect(() => initialize([headGeometry, entry])).toThrow(/gleisgebunden/);
     expect(() => initialize([headGeometry, exit, { ...entry, latitudeE7: 1 }])).toThrow(/gleisgebunden/);
     expect(() => initialize([headGeometry, headGeometry, exit])).toThrow(/gleisgebunden/);
+    expect(initialize([headGeometry], 0, 1).liveMap.trains[0]?.motionGeometry).toEqual([headGeometry]);
+    expect(() => initialize([], 0, 1)).toThrow(/widersprechen/);
+    expect(() => initialize([headGeometry], 0, 0)).toThrow(/widersprechen/);
+    expect(() => initialize([headGeometry])).toThrow(/widersprechen/);
+    expect(() => initialize([{ ...headGeometry, latitudeE7: 1 }], 0, 1)).toThrow(/widersprechen/);
+    expect(() => initialize([headGeometry, exit], 0, 1)).toThrow(/widersprechen/);
   });
 
   it("verwirft eine untypisierte oder unvollstaendige aktive Stoerungswirkung", () => {

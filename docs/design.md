@@ -9,6 +9,10 @@ Das [Gleiszeichen und die Symbolübersicht](brand/README.md) dokumentieren
 die verwendeten Vektoren. Die [Issue-Zuordnung](ui-redesign/issue-abgleich.md)
 verbindet diese Gestaltung mit den noch offenen Spielerabnahmen.
 
+Der [M15.3-Atlasvertrag](art-atlas.md) führt die eigene Pixelart des
+Schaffnermodus: Figuren, Innenraummodule, Stationen und Umgebung folgen
+derselben Graphit-/Rot-Gestaltung mit eigenen Raster- und Freigabegates.
+
 ## Spielwelt und Orientierung
 
 Zugfolge ist eine deutschlandweite Eisenbahn-Unternehmenssimulation. Die

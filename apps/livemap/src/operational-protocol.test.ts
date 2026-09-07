@@ -99,6 +99,30 @@ function state(at: number) {
 }
 
 describe("autorisierte Bewegungsabschnitte", () => {
+  it("hält den Einpunkt-Bremsrest für LiveMap und RZÜ ortsfest bis zum gemeinsamen Freeze", () => {
+    const segment = exactTrain.operational!.motionSegment!;
+    const train = { ...exactTrain, speedMmPerSecond: 70, operational: {
+      ...exactTrain.operational!, motionSegment: { ...segment, validUntilMs: 1_001,
+        startSpeedMmPerSecond: 70, accelerationMmPerSecondSquared: -900, segmentEndRouteMm: 0,
+        geometry: [segment.geometry[0]!],
+      },
+    } };
+    const snapshot = { worldId: "world:1", streamId: "stream-1", sequence: 7, at: 1,
+      trains: [train], operationalRegions: [frame()] };
+    const current = initialState(parseSnapshot(snapshot));
+    const samples = { previous: current, current };
+    for (const at of [1, 1.001, 2]) {
+      const rendered = renderTrains(samples, at)[0]!;
+      expect(rendered.positionMm).toBe(0);
+      expect(rendered.mapPosition).toEqual(exactTrain.mapPosition);
+    }
+    expect(renderTrains(samples, 1.001)[0]?.speedMmPerSecond).toBe(69);
+    expect(renderTrains(samples, 2)[0]?.positionFrozen).toBe(true);
+    expect(() => parseSnapshot({ ...snapshot, trains: [{ ...train, operational: {
+      ...train.operational, motionSegment: { ...train.operational.motionSegment, geometry: [] },
+    } }] })).toThrow(/gleisgebunden/);
+  });
+
   it("wechselt am exakten Kantenende auf den neuen Gleisoffset und fährt gegen dessen Kilometrierung weiter", () => {
     const train: PublicTrain = {
       ...exactTrain,

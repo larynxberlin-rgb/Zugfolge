@@ -204,6 +204,9 @@ import { registerInfraPackageUploadRoutes } from "./infra-package-routes.js";
 import type { InfraPackageStaging, InfraUploadSigningKey } from "./infra-package-staging.js";
 import { registerLivemapReadRoutes } from "./livemap-read-routes.js";
 import { registerDemandRoutes, type DemandReadService } from "./demand-routes.js";
+import { registerConductorInteriorRoutes, type ConductorInteriorService } from "./conductor-interior.js";
+import { registerConductorSessionRoutes } from "./conductor-session-routes.js";
+import type { ConductorSessionService } from "./conductor-session-service.js";
 import type { SpfvService } from "./spfv-service.js";
 import { ApiObservability, requestCorrelationId, type PrometheusMetricSource } from "./observability.js";
 import { PlanningAuthorityError, resolveAuthoritativePlanningPathRequest } from "./planning-authority.js";
@@ -238,6 +241,8 @@ export interface AppDependencies {
   /** Gepinnte Infrastrukturdetails und serverautoritative FIS-/Tafelprojektionen. */
   readonly livemapReadModel?: LivemapReadModel;
   readonly demand?: DemandReadService;
+  readonly conductorInterior?: Pick<ConductorInteriorService, "layout">;
+  readonly conductorSessions?: ConductorSessionService;
   readonly spfv?: Pick<SpfvService, "catalog" | "preview" | "confirm">;
   /** Authentifizierter, je EVU getrennter Betriebsereignis-Fanout (M7.5/M7.6). */
   readonly operations?: OperationsRegistry;
@@ -1539,6 +1544,8 @@ export function buildApp(deps: AppDependencies): FastifyInstance {
     readModel: deps.livemapReadModel,
     authenticate,
   });
+  registerConductorInteriorRoutes(app, { authenticate, conductorInterior: deps.conductorInterior });
+  registerConductorSessionRoutes(app, { authenticate, conductorSessions: deps.conductorSessions });
   registerDemandRoutes(app, { db: deps.db, authenticate, demand: deps.demand, spfv: deps.spfv,
     guardPlanning: (request, worldId, target, replayKey) => guardSensitiveAction(request, request.identity!.keycloakSubject, worldId, "path-window", target, replayKey),
   });

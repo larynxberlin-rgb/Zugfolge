@@ -1095,24 +1095,73 @@ Alpha-Schnitt. Vollständiger Fachvertrag:
 
 | # | Teilabschnitt | Größe | Status |
 |---|---------------|-------|--------|
-| 15.1 | **E29, ADR und versionierter Fachvertrag** einschließlich M10-/M8-Autoritätsgrenzen, Kontrolle, Dialog, Wirtschaft, Datenschutz und Abnahme | M | in Arbeit |
-| 15.2 | **M10-Fahrgastmanifeste und deterministische 1:1-Projektion**: jeder tatsächlich reisende Fahrgast wird logisch materialisiert, stabil platziert und kontrollierbar; Rendering darf nur optisch degradieren | L | offen |
-| 15.3 | **Eigene Pixelart-Designsprache und freigegebener Asset-Korpus**: finale erzeugte Figuren-, Innenraum-, Bahnhof- und Umgebungsassets mit `ArtAtlasManifestV1`, Herkunft, Hash und Rechtegates | **XL** | offen |
-| 15.4 | **Konfigurationsgetreue begehbare Fahrzeuginnenräume**: `InteriorLayoutV1` aus Formation und Fahrzeugkonfiguration, Begehbarkeits-, Kollisions- und Kapazitätsnachweis | **XL** | offen |
-| 15.5 | **Fließende Umgebung und modulare Bahnhofsszenen**: Umland/Vorstadt/Stadt, Tageszeit, tatsächliche Geschwindigkeit, Signal-/Bahnhofshalte, kleine/mittlere/große Stationen und dynamische Namen | **XL** | offen |
-| 15.6 | **Versionierter Sprechblasen-Dialogkorpus**: mindestens 150 geprüfte Dialogbäume und 600 Fahrgastäußerungen, verdeckter Sachverhalt, mindestens zwölf Situationsfamilien, kein Laufzeit-Sprachmodell | L | offen |
-| 15.7 | **Autoritative Schaffnersitzung**: Eigentümerberechtigung, Exklusivität, Kommandorevision, Idempotenz, Reconnect, Restore und bitgleiches Replay | L | offen |
-| 15.8 | **Browserintegration**: Bewegung, Interaktion, Sprechblasen, Pixi/WebGL-Projektion, Desktop, Touch, Tastatur, Screenreader und reduzierte Bewegung | **XL** | offen |
-| 15.9 | **Kontrollhalt über Konfliktengine und virtuelle Fahrdienstleiter**: `FareControlHoldV1`, tatsächliche Ressourcenweiterbelegung, Höchstwartezeit, erneute Abfahrtsprüfung und Netzfolgen für alle Zugarten | **XL** | offen |
-| 15.10 | **Polizeireaktion, EBE-Fallabschluss und Verspätungsursache**: deterministische Verfügbarkeit, Bündelung höchstens eines Polizeihalts je Zuglauf, Feststellung, vorläufige/reguläre EBE und `authority.police.fare-control` | L | offen |
-| 15.11 | **Forderungen, Ausfälle und gedeckelte Kontrollprämie**: offene EBE, spätere Zahlung/Reduzierung/Abschreibung, Integer-Cent-Ledger, höchstens vierfache Prämie und 0,5-Prozent-Tagesdeckel | M | offen |
-| 15.12 | **Performance-, Determinismus- und Gesamtannahme**: voller SPNV-Verband, Mehrzug-Golden-Master, Property-Tests für Invariante 1, Browser-/Barrierefreiheitsabnahme und zusammenhängender Spielbeweis | L | offen |
+| 15.1 | **E29, ADR und versionierter Fachvertrag** einschließlich M10-/M8-Autoritätsgrenzen, Kontrolle, Dialog, Wirtschaft, Datenschutz und Abnahme | M | erledigt |
+| 15.2 | **M10-Fahrgastmanifeste und deterministische 1:1-Projektion**: jeder tatsächlich reisende Fahrgast wird logisch materialisiert, stabil platziert und kontrollierbar; Rendering darf nur optisch degradieren | L | erledigt |
+| 15.3 | **Eigene Pixelart-Designsprache und freigegebener Asset-Korpus**: finale erzeugte Figuren-, Innenraum-, Bahnhof- und Umgebungsassets mit `ArtAtlasManifestV1`, Herkunft, Hash und Rechtegates | **XL** | erledigt |
+| 15.4 | **Konfigurationsgetreue begehbare Fahrzeuginnenräume**: `InteriorLayoutV1` aus Formation und Fahrzeugkonfiguration, Begehbarkeits-, Kollisions- und Kapazitätsnachweis | **XL** | erledigt |
+| 15.5 | **Fließende Umgebung und modulare Bahnhofsszenen**: Umland/Vorstadt/Stadt, Tageszeit, tatsächliche Geschwindigkeit, Signal-/Bahnhofshalte, kleine/mittlere/große Stationen und dynamische Namen | **XL** | in Arbeit |
+| 15.6 | **Versionierter Sprechblasen-Dialogkorpus**: mindestens 150 geprüfte Dialogbäume und 600 Fahrgastäußerungen, verdeckter Sachverhalt, mindestens zwölf Situationsfamilien, kein Laufzeit-Sprachmodell | L | erledigt |
+| 15.7 | **Autoritative Schaffnersitzung**: Eigentümerberechtigung, Exklusivität, Kommandorevision, Idempotenz, Reconnect, Restore und bitgleiches Replay | L | erledigt |
+| 15.8 | **Browserintegration**: Bewegung, Interaktion, Sprechblasen, Pixi/WebGL-Projektion, Desktop, Touch, Tastatur, Screenreader und reduzierte Bewegung | **XL** | erledigt |
+| 15.9 | **Kontrollhalt über Konfliktengine und virtuelle Fahrdienstleiter**: `FareControlHoldV1`, tatsächliche Ressourcenweiterbelegung, Höchstwartezeit, erneute Abfahrtsprüfung und Netzfolgen für alle Zugarten | **XL** | erledigt |
+| 15.10 | **Polizeireaktion, EBE-Fallabschluss und Verspätungsursache**: deterministische Verfügbarkeit, Bündelung höchstens eines Polizeihalts je Zuglauf, Feststellung, vorläufige/reguläre EBE und `authority.police.fare-control` | L | erledigt |
+| 15.11 | **Forderungen, Ausfälle und gedeckelte Kontrollprämie**: offene EBE, spätere Zahlung/Reduzierung/Abschreibung, Integer-Cent-Ledger, höchstens vierfache Prämie und 0,5-Prozent-Tagesdeckel | M | erledigt |
+| 15.12 | **Performance-, Determinismus- und Gesamtannahme**: voller SPNV-Verband, Mehrzug-Golden-Master, Property-Tests für Invariante 1, Browser-/Barrierefreiheitsabnahme und zusammenhängender Spielbeweis | L | in Arbeit |
 
 **Teilabhängigkeiten:** M15.1 ist der Einstieg. M15.2 folgt M10.3a und M15.1.
 M15.3 und M15.6 können danach parallel beginnen. M15.4 folgt M15.3 und M5;
 M15.5 folgt M15.3 und M14.2; M15.7 folgt M15.1/M15.2; M15.8 folgt
 M15.3–M15.7; M15.9 folgt M15.7/M15.8 und M8; M15.10 folgt M15.6/M15.9;
 M15.11 folgt M15.10 und M6; M15.12 schließt alle Teile zusammen.
+
+Die technischen Abschlüsse von 15.2 und 15.7–15.11 liegen in PR #539. Ihre
+nativen, DB-/HTTP- und tatsächlichen Browsernachweise sind im
+[integrierten Prüfstand](m15-integration.md) und in der
+[Nachweisanleitung](../tools/conductor-session/README.md) dokumentiert.
+Der abschließende CI-Lauf und sein an den Quellstand gebundenes Artefakt werden
+im PR verlinkt. Die dauerhaften Signaturen und getrennten öffentlichen Weltpins
+für 15.3/15.6 sind in [conductor-release-signing.md](conductor-release-signing.md)
+mit der bestehenden Alpha-Weltidentität nachgewiesen. M15 bleibt insgesamt
+offen: 15.5 benötigt den vollständigen ursprünglichen Deutschland-InfraRelease
+und 15.12 die vollständige freigegebene Abnahmeformation
+samt Budget und signiertem Korpus. Die allgemeine Betriebsbindung aus #518
+bleibt separat offen. Die Archivlöschung aus #520 ist mit Schema 37 und
+unveränderten Originalbelegen implementiert; ihr
+[Restorevertrag](datenschutz-archivgrenze.md) bleibt verbindlich.
+
+**M15.1/M15.2-Stand:** Der versionierte Fachvertrag und seine
+Aktions-/Autoritätsmatrix sind vollständig dokumentiert. E28 ist mit #530
+auf `main` veröffentlicht. M15.2 liefert den Rust-Projektionskern und eine
+autorisierte interne Plattformgrenze. M15.4 liefert inzwischen belegte
+Innenraumlayouts und deckgebundene V2-Plätze. Die aktuelle Integration verbindet
+diese mit dem tatsächlichen Operational-Haltproducer, M10 und der privaten
+Schaffnersitzung. Der [integrierte Prüfstand](m15-integration.md) dokumentiert
+Browser, Kontrollfolgen und die verbleibenden Gesamtannahmebedingungen. Die
+[ursprüngliche Teilabnahme](m15-abnahme.md) bleibt historisch nachvollziehbar.
+
+**M15.3-Stand:** [Atlasvertrag](art-atlas.md) und Pflichtkatalog v2 umfassen
+186 Motive (120 Figurenframes und 66 statische Motive), sieben Atlanten und
+sechs zusätzliche Wagenfamilien. Der Auftraggeber hat alle Asset-, Referenz-
+und Releasefreigaben erteilt; der [Prüfnachweis](art-atlas/README.md) enthält
+die an den Inhalt gebundene Erklärung und den strengen Check ohne Befunde.
+Die kryptografische Auslieferung ist mit dauerhaft bereitgestelltem separatem
+Art-Schlüssel, öffentlichem Rollentrust und exaktem Alpha-Weltpin geprüft.
+Der [öffentliche Signaturnachweis](conductor-release-signing.md) benötigt keinen
+privaten Schlüssel. Die Aktivierung im tatsächlichen Zielstack bleibt von
+dieser abgeschlossenen Releasebereitstellung getrennt.
+
+**M15.4-Stand:** Vollständige M5-Konfigurationen gelangen verlustfrei durch
+Katalogcompiler, native Flottenkommandos und gespeicherte Checkpoints in
+`InteriorLayoutV1`. Der autorisierte API-Dienst bindet Welt, aktuelle Periode,
+EVU, Halter, Formation, Revision und Releasepins. Rust erzeugt exakte Plätze,
+Türen, Sonderflächen, Sitzrichtungen, Decks, Übergänge und Kollisionsgeometrie.
+52 Konfigurationsvarianten, echte M10-Vollbelegung mit exklusiven Sonderflächen,
+Restore und konkrete Ablehnungen sind geprüft. Drei verschieden konfigurierte
+SPNV-Formationen sind im echten Browser begehbar; ein fehlender Beleg sperrt
+den Einstieg. [Vertrag](conductor-interior.md), [Plattformintegration](conductor-interior-platform.md)
+und [reproduzierbarer Beweis mit Screenshots](conductor-interior/README.md)
+dokumentieren den Abschluss. Produktive Art-Signatur und nachfolgende
+Schaffnersitzung bleiben den eigenen Arbeitspaketen zugeordnet.
 
 > **Beweis:** Ein eigener ausgelasteter SPNV-Zug wird mit den tatsächlichen
 > M10-Fahrgästen betreten. Der Spieler läuft durch den konfigurationsgetreuen

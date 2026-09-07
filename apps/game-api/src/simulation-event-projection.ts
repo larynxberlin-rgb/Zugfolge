@@ -50,6 +50,11 @@ const OPERATOR_EVENT_TYPES = new Set([
 ]);
 
 const PUBLIC_EVENT_TYPES = new Set([
+  "operations.fare-control-hold-requested",
+  "operations.fare-control-hold-activated",
+  "operations.fare-control-hold-released",
+  "operations.departure-authority-withheld",
+  "operations.departure-authority-requested",
   "alpha.public-operation-visible",
   "disruption.applied",
   "disruption.cleared",
@@ -67,6 +72,7 @@ const PUBLIC_EVENT_TYPES = new Set([
 ]);
 
 const PUBLIC_PAYLOAD_FIELDS = new Set([
+  "causeLabel",
   "affectedResource",
   "affectedTrainRunIds",
   "atS",

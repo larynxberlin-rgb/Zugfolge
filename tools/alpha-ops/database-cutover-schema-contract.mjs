@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { ARCHIVE_PRIVACY_TABLES, ARCHIVE_PRIVACY_REDACTABLE_TABLES, ARCHIVE_PRIVACY_FUNCTION_SOURCES } from "./archive-privacy-binding.mjs";
 
 function sortedValue(value) {
   if (Array.isArray(value)) return value.map(sortedValue);
@@ -119,31 +120,53 @@ export const DATABASE_AUTHORITATIVE_TABLE_SET_SHA256_SCHEMA_34 = definitionSha25
 const RETIRED_TABLES = new Set(["tutorial_progress", "tutorial_sessions", "tutorial_telemetry_events"]);
 export const DATABASE_AUTHORITATIVE_TABLES_SCHEMA_35 = Object.freeze(DATABASE_AUTHORITATIVE_TABLES_SCHEMA_34.filter((table) => !RETIRED_TABLES.has(table)));
 export const DATABASE_AUTHORITATIVE_TABLE_SET_SHA256_SCHEMA_35 = definitionSha256(DATABASE_AUTHORITATIVE_TABLES_SCHEMA_35);
-
-// Neue Fahrzeugidentitaeten und ihre Lebenslaeufe sind autoritative Weltdaten.
-// Die Tabellen- und Triggervertraege bereits signierter Belege bleiben unveraendert.
-export const DATABASE_AUTHORITATIVE_TABLES_SCHEMA_36 = Object.freeze([
-  ...DATABASE_AUTHORITATIVE_TABLES_SCHEMA_35,
-  "vehicle_registry_entries",
-  "vehicle_registry_events",
-].sort((left, right) => left.localeCompare(right, "en")));
+export const DATABASE_CONDUCTOR_TABLES = Object.freeze([
+  "conductor_command_receipts", "conductor_control_states", "conductor_leases", "conductor_owners", "conductor_snapshots", "conductor_train_states",
+]);
+export const DATABASE_AUTHORITATIVE_TABLES_SCHEMA_36 = Object.freeze([...DATABASE_AUTHORITATIVE_TABLES_SCHEMA_35, ...DATABASE_CONDUCTOR_TABLES].sort());
 export const DATABASE_AUTHORITATIVE_TABLE_SET_SHA256_SCHEMA_36 = definitionSha256(DATABASE_AUTHORITATIVE_TABLES_SCHEMA_36);
+export const DATABASE_AUTHORITATIVE_TABLES_SCHEMA_37 = Object.freeze([...DATABASE_AUTHORITATIVE_TABLES_SCHEMA_36, ...ARCHIVE_PRIVACY_TABLES].sort());
+export const DATABASE_AUTHORITATIVE_TABLE_SET_SHA256_SCHEMA_37 = definitionSha256(DATABASE_AUTHORITATIVE_TABLES_SCHEMA_37);
+
+export const DATABASE_AUTHORITATIVE_TABLES_SCHEMA_38 = Object.freeze([...DATABASE_AUTHORITATIVE_TABLES_SCHEMA_37,
+  "vehicle_registry_entries", "vehicle_registry_events"].sort());
+export const DATABASE_AUTHORITATIVE_TABLE_SET_SHA256_SCHEMA_38 = definitionSha256(DATABASE_AUTHORITATIVE_TABLES_SCHEMA_38);
 
 export function databaseWorldHistoryBindings(migrationCount) {
   databaseAuthoritativeCatalog(migrationCount);
-  const bindings = migrationCount >= 35 ? DATABASE_WORLD_HISTORY_BINDINGS.filter(({ table }) => !RETIRED_TABLES.has(table)) : DATABASE_WORLD_HISTORY_BINDINGS;
-  return migrationCount === 36 ? [...bindings, ...DATABASE_WORLD_HISTORY_BINDINGS_SCHEMA_36_ADDITIONS]
-    .sort((left, right) => left.table.localeCompare(right.table, "en")) : bindings;
+  if (migrationCount === 38) return [...databaseWorldHistoryBindings(37), ...DATABASE_WORLD_HISTORY_BINDINGS_SCHEMA_38_ADDITIONS]
+    .sort((a, b) => a.table.localeCompare(b.table, "en"));
+  if (migrationCount >= 36) return [...DATABASE_WORLD_HISTORY_BINDINGS.filter(({ table }) => !RETIRED_TABLES.has(table)),
+    ...DATABASE_CONDUCTOR_TABLES.map((table) => ({ table, columns: ["world_id"] }))].sort((a, b) => a.table.localeCompare(b.table, "en"));
+  return migrationCount === 35 ? DATABASE_WORLD_HISTORY_BINDINGS.filter(({ table }) => !RETIRED_TABLES.has(table)) : DATABASE_WORLD_HISTORY_BINDINGS;
 }
 
 export function databaseCutoverGuards(migrationCount) {
   databaseAuthoritativeCatalog(migrationCount);
-  const guards = migrationCount >= 35 ? DATABASE_CUTOVER_GUARDS.filter(({ relation }) => !RETIRED_TABLES.has(relation)) : DATABASE_CUTOVER_GUARDS;
-  return migrationCount === 36 ? [...guards, ...DATABASE_CUTOVER_GUARDS_SCHEMA_36_ADDITIONS]
-    .sort((left, right) => left.name.localeCompare(right.name, "en")) : guards;
+  if (migrationCount === 38) return [...databaseCutoverGuards(37), ...DATABASE_CUTOVER_GUARDS_SCHEMA_38_ADDITIONS]
+    .sort((a, b) => a.name.localeCompare(b.name, "en") || a.relation.localeCompare(b.relation, "en"));
+  if (migrationCount === 37) return [
+    ...databaseCutoverGuards(36).map((item) => item.functionName === "zugfolge_enforce_world_writer_guard"
+      ? guard(item.name, item.relation, item.type, item.functionName, item.triggerDefinition, ARCHIVE_PRIVACY_FUNCTION_SOURCES[item.functionName]) : item),
+    ...ARCHIVE_PRIVACY_REDACTABLE_TABLES.map((table) => guard(`zugfolge_archive_privacy_capture_${table}`, table, 27, "zugfolge_archive_privacy_capture",
+      `CREATE TRIGGER zugfolge_archive_privacy_capture_${table} BEFORE DELETE OR UPDATE ON ${table} FOR EACH ROW EXECUTE FUNCTION zugfolge_archive_privacy_capture()`, ARCHIVE_PRIVACY_FUNCTION_SOURCES.zugfolge_archive_privacy_capture)),
+    guard("archive_privacy_rows_immutable", "archive_privacy_rows", 31, "zugfolge_archive_privacy_rows_guard",
+      "CREATE TRIGGER archive_privacy_rows_immutable BEFORE INSERT OR DELETE OR UPDATE ON archive_privacy_rows FOR EACH ROW EXECUTE FUNCTION zugfolge_archive_privacy_rows_guard()", ARCHIVE_PRIVACY_FUNCTION_SOURCES.zugfolge_archive_privacy_rows_guard),
+    guard("archive_privacy_requests_immutable", "archive_privacy_requests", 31, "zugfolge_archive_privacy_request_guard",
+      "CREATE TRIGGER archive_privacy_requests_immutable BEFORE INSERT OR DELETE OR UPDATE ON archive_privacy_requests FOR EACH ROW EXECUTE FUNCTION zugfolge_archive_privacy_request_guard()", ARCHIVE_PRIVACY_FUNCTION_SOURCES.zugfolge_archive_privacy_request_guard),
+    guard("archive_privacy_requests_apply", "archive_privacy_requests", 5, "zugfolge_archive_privacy_apply",
+      "CREATE TRIGGER archive_privacy_requests_apply AFTER INSERT ON archive_privacy_requests FOR EACH ROW EXECUTE FUNCTION zugfolge_archive_privacy_apply()", ARCHIVE_PRIVACY_FUNCTION_SOURCES.zugfolge_archive_privacy_apply),
+  ].sort((a,b) => a.name.localeCompare(b.name,"en") || a.relation.localeCompare(b.relation,"en"));
+  if (migrationCount === 36) return [...DATABASE_CUTOVER_GUARDS.filter(({ relation }) => !RETIRED_TABLES.has(relation)),
+    ...DATABASE_CONDUCTOR_TABLES.map((table) => guard(`zugfolge_world_guard_${table}`, table, 31, "zugfolge_enforce_world_writer_guard",
+      `CREATE TRIGGER zugfolge_world_guard_${table} BEFORE INSERT OR DELETE OR UPDATE ON ${table} FOR EACH ROW EXECUTE FUNCTION zugfolge_enforce_world_writer_guard('world_id')`,
+      WORLD_WRITER_GUARD_SOURCE))].sort((a, b) => a.name.localeCompare(b.name, "en"));
+  return migrationCount === 35 ? DATABASE_CUTOVER_GUARDS.filter(({ relation }) => !RETIRED_TABLES.has(relation)) : DATABASE_CUTOVER_GUARDS;
 }
 
 export function databaseAuthoritativeCatalog(migrationCount) {
+  if (migrationCount === 38) return Object.freeze({ tables: DATABASE_AUTHORITATIVE_TABLES_SCHEMA_38, tableSetSha256: DATABASE_AUTHORITATIVE_TABLE_SET_SHA256_SCHEMA_38 });
+  if (migrationCount === 37) return Object.freeze({ tables: DATABASE_AUTHORITATIVE_TABLES_SCHEMA_37, tableSetSha256: DATABASE_AUTHORITATIVE_TABLE_SET_SHA256_SCHEMA_37 });
   if (migrationCount === 36) return Object.freeze({ tables: DATABASE_AUTHORITATIVE_TABLES_SCHEMA_36, tableSetSha256: DATABASE_AUTHORITATIVE_TABLE_SET_SHA256_SCHEMA_36 });
   if (migrationCount === 35) return Object.freeze({ tables: DATABASE_AUTHORITATIVE_TABLES_SCHEMA_35, tableSetSha256: DATABASE_AUTHORITATIVE_TABLE_SET_SHA256_SCHEMA_35 });
   if (migrationCount === 33) return Object.freeze({ tables: DATABASE_AUTHORITATIVE_TABLES, tableSetSha256: DATABASE_AUTHORITATIVE_TABLE_SET_SHA256 });
@@ -204,7 +227,7 @@ export const DATABASE_WORLD_HISTORY_BINDINGS = Object.freeze([
   ["worlds", ["id"]],
 ].map(([table, columns]) => Object.freeze({ table, columns: Object.freeze(columns) })));
 
-const DATABASE_WORLD_HISTORY_BINDINGS_SCHEMA_36_ADDITIONS = Object.freeze([
+const DATABASE_WORLD_HISTORY_BINDINGS_SCHEMA_38_ADDITIONS = Object.freeze([
   "vehicle_registry_entries", "vehicle_registry_events",
 ].map((table) => Object.freeze({ table, columns: Object.freeze(["world_id"]) })));
 
@@ -825,7 +848,7 @@ BEGIN
 END;
 `;
 
-const DATABASE_CUTOVER_GUARDS_SCHEMA_36_ADDITIONS = Object.freeze([
+const DATABASE_CUTOVER_GUARDS_SCHEMA_38_ADDITIONS = Object.freeze([
   ...[
     ["vehicle_registry_entries_no_delete", "vehicle_registry_entries", 11, "DELETE"],
     ["vehicle_registry_events_append_only", "vehicle_registry_events", 27, "DELETE OR UPDATE"],
@@ -836,10 +859,10 @@ const DATABASE_CUTOVER_GUARDS_SCHEMA_36_ADDITIONS = Object.freeze([
     `CREATE TRIGGER ${name} BEFORE ${events} ON ${relation} FOR EACH ROW EXECUTE FUNCTION protect_vehicle_registry_history()`,
     VEHICLE_HISTORY_PERSISTENCE_SOURCE,
   )),
-  ...DATABASE_WORLD_HISTORY_BINDINGS_SCHEMA_36_ADDITIONS.map(({ table }) => guard(
+  ...DATABASE_WORLD_HISTORY_BINDINGS_SCHEMA_38_ADDITIONS.map(({ table }) => guard(
     `zugfolge_world_guard_${table}`, table, 31, "zugfolge_enforce_world_writer_guard",
     `CREATE TRIGGER zugfolge_world_guard_${table} BEFORE INSERT OR DELETE OR UPDATE ON ${table} FOR EACH ROW EXECUTE FUNCTION zugfolge_enforce_world_writer_guard('world_id')`,
-    WORLD_WRITER_GUARD_SOURCE,
+    ARCHIVE_PRIVACY_FUNCTION_SOURCES.zugfolge_enforce_world_writer_guard,
   )),
 ]);
 

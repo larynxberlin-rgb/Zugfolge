@@ -447,6 +447,26 @@ describe("LivemapFeed", () => {
 });
 
 describe("LivemapRegistry", () => {
+  it("transportiert den Einpunkt-Bremsrest nur mit exakter Abschnittsbindung", () => {
+    const train = operationalTrain(7, 1_000);
+    const motionSegment = {
+      startedAtMs: 1_000, validUntilMs: 1_001, startRouteMm: 10_000,
+      startSpeedMmPerSecond: 70, accelerationMmPerSecondSquared: -900,
+      authorityEndRouteMm: 20_000, segmentEndRouteMm: 10_000,
+      geometry: [{ routeMm: 10_000, trackId: "edge:1", offsetMm: 10_000, latitudeE7: 510_000_000, longitudeE7: 120_000_000 }],
+    };
+    const publish = (segment: typeof motionSegment) => new LivemapRegistry().initializeRegion("a", "east", {
+      at: 1, trains: [{ ...train, operational: { ...train.operational!, motionSegment: segment } }],
+      operationalRegions: [operationalFrame(7, 1_000)],
+    });
+    expect(publish(motionSegment).changed[0]?.operational?.motionSegment?.geometry).toHaveLength(1);
+    for (const segment of [
+      { ...motionSegment, geometry: [] }, { ...motionSegment, validUntilMs: 1_000 },
+      { ...motionSegment, segmentEndRouteMm: 10_001 },
+      { ...motionSegment, geometry: [{ ...motionSegment.geometry[0]!, routeMm: 9_999 }] },
+    ]) expect(() => publish(segment)).toThrow(/Bewegungsabschnitt/);
+  });
+
   it("publiziert verbundene Kantenwechsel mit beiden Offsets und verwirft Positionssprünge", () => {
     const train = operationalTrain(7, 1_000);
     const motionSegment = {

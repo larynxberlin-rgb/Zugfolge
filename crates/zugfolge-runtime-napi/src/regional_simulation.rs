@@ -3,6 +3,19 @@
 use napi::{Env, Task, bindgen_prelude::AsyncTask};
 use napi_derive::napi;
 
+/// Prüft beide regionalen Köpfe und erzeugt die native Übergabe ohne DB-Zugriff.
+#[napi(js_name = "handoverOperationalSimulation")]
+pub fn handover_operational_simulation(
+    input_json: String,
+    infrastructure_path: String,
+) -> napi::Result<String> {
+    zugfolge_sim_runtime::operational_runtime::handover_operational_simulation(
+        &input_json,
+        &infrastructure_path,
+    )
+    .map_err(|_| napi::Error::from_reason("operational_handover_invalid"))
+}
+
 /// Releasegebundener deterministischer Tagesmodell-Adapter.
 #[napi(js_name = "generateOperationalDailyRestrictions")]
 pub fn generate_operational_daily_restrictions(

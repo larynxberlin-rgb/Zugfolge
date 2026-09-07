@@ -1,0 +1,31 @@
+[package]
+name = "zugfolge-offline-demo"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+serde = { version = "=1.0.229", features = ["derive"] }
+serde_json = "1.0.151"
+sha2 = "0.11"
+zugfolge-conductor-session = { path = "../../../crates/zugfolge-conductor-session" }
+zugfolge-conductor = { path = "../../../crates/zugfolge-conductor" }
+zugfolge-conductor-dialogue = { path = "../../../crates/zugfolge-conductor-dialogue" }
+zugfolge-conductor-scenes = { path = "../../../crates/zugfolge-conductor-scenes" }
+zugfolge-demand = { path = "../../../crates/zugfolge-demand" }
+zugfolge-fare-control = { path = "../../../crates/zugfolge-fare-control" }
+zugfolge-sim = { path = "../../../crates/zugfolge-sim" }
+zugfolge-determinism = { path = "../../../crates/zugfolge-determinism" }
+
+[profile.release]
+opt-level = 1
+debug = 0
+incremental = false
+strip = "debuginfo"
+panic = "abort"
+codegen-units = 16
+
+[workspace]

@@ -346,6 +346,11 @@ export const GENERATED_GLOSSARY_ENTRIES = Object.freeze([
     "definition": "private 1:1-Innenraumprojektion eines quittierten M10-Zugabschnitts mit stabilen Plätzen und ausschließlich sichtbaren Merkmalen; erzeugt keine Nachfrage oder Fahrberechtigung"
   },
   {
+    "term": "Fahrgastprojektion mit Deckbindung",
+    "code": "PassengerProjectionV2",
+    "definition": "M15.2-Projektion mit Wagenkasten-/Deckkennungen, exklusiver Sonderflächenzuordnung und Hash des geprüften M15.4-Quelllayouts; unveränderte Fahrgäste und Kapazitätszuweisungen"
+  },
+  {
     "term": "Fahrplanperiode",
     "code": "SchedulePeriod",
     "definition": "Saison aus Anmeldung, Koordinierung, Veröffentlichung und Betrieb; Länge ist Weltparameter, 3 bis 8 Wochen"
@@ -381,6 +386,11 @@ export const GENERATED_GLOSSARY_ENTRIES = Object.freeze([
     "definition": "erster Anteil der Sperrzeit: Stellen und Festlegen des Fahrwegs, bevor das Signal Fahrt zeigen kann"
   },
   {
+    "term": "Fahrtpreisbeleg",
+    "code": "FareJourneyEvidenceV1",
+    "definition": "welt-, perioden- und abschnittsgebundene Tarif- und Erwerbsmöglichkeitsquelle; fehlende Belege erlauben keine erfundene Kontrollforderung"
+  },
+  {
     "term": "Fahrweg",
     "code": "RunPath",
     "definition": "lückenlose Folge von Segmenten mit Länge, zulässiger Geschwindigkeit und Neigung, aus der die Fahrdynamik eine Fahrzeit rechnet — anders als der Laufweg bereits auf konstante Werte geschnitten"
@@ -413,7 +423,12 @@ export const GENERATED_GLOSSARY_ENTRIES = Object.freeze([
   {
     "term": "Fahrzeugkonfiguration",
     "code": "VehicleConfiguration",
-    "definition": "Sitzaufteilung, Bestuhlung, Mehrzweckbereiche, Türen und Ausstattung eines Fahrzeugs"
+    "definition": "Sitzaufteilung, Bestuhlung, Mehrzweckbereiche, Türen und Ausstattung eines Fahrzeugs; vollständiger nativer Transport als vehicleConfiguration im individuellen Authority-Asset"
+  },
+  {
+    "term": "Fahrzeugkostenbeleg",
+    "code": "ServiceVehicleCostPolicyV1",
+    "definition": "gepinnter M5-Betriebskostensatz je tatsächlich eingesetztem Fahrzeug; native gefahrene Millimeter belegen die Kostenbasis, ohne die M6-Buchung zu verdoppeln"
   },
   {
     "term": "Fahrzeuglebenslauf",
@@ -444,6 +459,11 @@ export const GENERATED_GLOSSARY_ENTRIES = Object.freeze([
     "term": "Fernverkehrslinienentwurf",
     "code": "SpfvDraft",
     "definition": "Spielerabsicht für Linie, Halte, Formation, Takt, Abschnittspreis und begrenzte Gültigkeit"
+  },
+  {
+    "term": "Feststellungsbeleg",
+    "code": "DialogueEvidenceV1",
+    "definition": "ausschließlich bestätigter Dokument-, Identitäts- und Gefährdungsstand für öffentliche Gesprächsoptionen; vom verdeckten Fahrscheinstatus getrennt"
   },
   {
     "term": "Flankenschutz",
@@ -486,6 +506,26 @@ export const GENERATED_GLOSSARY_ENTRIES = Object.freeze([
     "definition": "prüft geordnete Geometriepunkte einschließlich beider exakt verbundener Gleisenden an einem Kantenwechsel"
   },
   {
+    "term": "Grafikatlas",
+    "code": "ArtAtlasManifestV1",
+    "definition": "versionierter M15.3-Korpus mit tatsächlichen PNG-Bytes, Motiven, Bewegungsphasen, Raster, Palette, Herkunft und getrennter Bild-/Releasefreigabe"
+  },
+  {
+    "term": "Grafikatlasprüfung",
+    "code": "ArtAtlasReportV1",
+    "definition": "Prüfergebnis mit Manifesthash, tatsächlichen Befunden und ausdrücklicher Aktivierbarkeit; ein Kandidat bleibt bei fehlenden Pflichtbelegen gesperrt"
+  },
+  {
+    "term": "Grafikatlassignatur",
+    "code": "ArtAtlasSignatureV1",
+    "definition": "getrennte Ed25519-Bindung eines Atlasmanifesthashs an einen unabhängig vertrauten öffentlichen Schlüssel; ersetzt keine Bild- oder Herkunftsprüfung"
+  },
+  {
+    "term": "Grafikatlas-Weltpin",
+    "code": "ArtAtlasWorldPinV1",
+    "definition": "autorisierte Bindung von Welt, Releasekennung und exakten Atlasmanifestbytes; erzeugt keine eigene Nachfrage oder Betriebsautorität"
+  },
+  {
     "term": "Grenzportal",
     "code": "BoundaryPortal",
     "definition": "benannte, versionierte Schnittstelle am Rand des spielbaren Netzes; trägt die serverseitigen Ein- oder Ausfahrfenster einer Fahrtkette"
@@ -504,6 +544,36 @@ export const GENERATED_GLOSSARY_ENTRIES = Object.freeze([
     "term": "Infrastruktur-Release",
     "code": "InfraRelease",
     "definition": "unveränderliches, versioniertes Netz- und Betriebsartefakt mit Graph, gerichteten Kanten, Sicherungselementen, Laufwegvorlagen, RZÜ-Layout, Herkunft, Lizenz, Prüfsumme und Confidence"
+  },
+  {
+    "term": "Infrastruktursperrenstopp",
+    "code": "InfrastructureDisruptionStop",
+    "definition": "native Ursachenbindung eines durch tatsächliche Infrastruktursperren ausgelösten sicheren Halts; technische Freigabe ersetzt keine neue Fahrdienstleiterzustimmung und hebt andere Haltgründe nicht auf"
+  },
+  {
+    "term": "Innenraumgeometriepolicy",
+    "code": "InteriorGeometryPolicyV1",
+    "definition": "releasegebundene generische Kasten-, Deck-, Tür-, Gang- und Treppengeometrie zur unveränderten M5-Konfiguration; keine Maße aus Grafikdateien"
+  },
+  {
+    "term": "Innenraumlayout",
+    "code": "InteriorLayoutV1",
+    "definition": "welt- und formationsgebundene Millimetergeometrie mit zusammenhängendem Passagiernetz, Kollisionen und exaktem M5-Platzinventar; keine erfundene Zuglaufzuordnung"
+  },
+  {
+    "term": "Innenraumplatzinventar",
+    "code": "InteriorPassengerPlacesV1",
+    "definition": "gepinnte welt- und zuggebundene Liste belegter Sitz-, Steh- und Sonderplätze mit stabilen Kennungen und Millimeterpositionen; M15.2-Eingang aus dem M15.4-Layout"
+  },
+  {
+    "term": "Innenraumplatzinventar mit Deckbindung",
+    "code": "InteriorPassengerPlacesV2",
+    "definition": "aus einem geprüften M15.4-Layout und einer unabhängig belegten Zugzuordnung abgeleitete Kapazitätsplätze und getrennte Sonderflächen mit Kasten-/Deckidentität, Quelllayouthash und eigenem Inventarhash"
+  },
+  {
+    "term": "Innenraumsonderfläche",
+    "code": "InteriorSpecialBayV1",
+    "definition": "exklusive reale Rollstuhl-, Fahrrad- oder Kinderwagenfläche zusätzlich zum M10-Sitz-/Stehkapazitätsplatz; zählt keine weitere Person und bleibt an dasselbe individuelle Fahrzeug gebunden"
   },
   {
     "term": "Insolvenz",
@@ -549,6 +619,16 @@ export const GENERATED_GLOSSARY_ENTRIES = Object.freeze([
     "term": "Kontrollbedingter Betriebshalt",
     "code": "FareControlHoldV1",
     "definition": "bindender zusätzlicher Aufenthalt am nächsten planmäßigen Fahrgasthalt nach Polizeianforderung; verlängert reale Ressourcenbelegungen und verlangt anschließend ein neues Abfahrtsrecht"
+  },
+  {
+    "term": "Kontrollfolgenquittung",
+    "code": "ConductorSessionControlReceiptV1",
+    "definition": "native Bindung eines angenommenen Sitzungseffekts an einen tatsächlich committed Forderungs- oder Haltebeleg"
+  },
+  {
+    "term": "Kontrollhaltpolicy",
+    "code": "FareControlPolicyV1",
+    "definition": "welt- und periodenverbindliche Regeln für zulässige Polizeigründe, Zielhalt, Zuständigkeit, einmalige Anforderung und maximale zusätzliche Wartezeit"
   },
   {
     "term": "Kündigungsvormerkung",
@@ -801,6 +881,11 @@ export const GENERATED_GLOSSARY_ENTRIES = Object.freeze([
     "definition": "Übergang einer Zugfahrt zwischen zwei regionalen Single-Writer-Prozessen, mit Bestätigung"
   },
   {
+    "term": "Regionsübergabequittung",
+    "code": "FinishedHandoverReceiptV1",
+    "definition": "native Abschlussbindung von Zug, Quell-/Zielregion, Zeitpunkt und Payloadhash; gilt für Sitzungen nur zusammen mit der passenden Zielquittung und beiden Initialisierungspins"
+  },
+  {
     "term": "Reisenachfragekohorte",
     "code": "JourneyDemandV1",
     "definition": "Deterministisch erzeugte Reisen mit stabilem Gebiet-, Anlass-, Fenster- und Profilbezug"
@@ -844,6 +929,11 @@ export const GENERATED_GLOSSARY_ENTRIES = Object.freeze([
     "term": "Schaffnersitzung",
     "code": "ConductorSessionV1",
     "definition": "exklusive autorisierte Sitzung eines Spielers in einem eigenen aktiven SPNV-Zug; projiziert den Weltzustand und nimmt typisierte Kontrollkommandos an"
+  },
+  {
+    "term": "Schaffnerszenenrelease",
+    "code": "ConductorSceneReleaseV1",
+    "definition": "unveränderliche Umgebungs-, Kalender- und Stationsmetadaten, an ursprüngliche Operational-Infrastruktur gebunden"
   },
   {
     "term": "Schichtentrennung",
@@ -956,9 +1046,19 @@ export const GENERATED_GLOSSARY_ENTRIES = Object.freeze([
     "definition": "benannter Teilstrom des Weltseeds; ein neuer Strom verändert die bestehenden nicht"
   },
   {
+    "term": "Tagesabschluss",
+    "code": "service-day-closed",
+    "definition": "nativer Abschluss erst nach Tagesgrenze und jedem erwarteten tatsächlichen Fahrtabschluss; fehlende Fahrten halten den Tag offen"
+  },
+  {
     "term": "Tagesbericht",
     "code": "DailyReport",
     "definition": "asynchrone Rückmeldung an den Spieler: was ist passiert, welche Regel hat wann was getan"
+  },
+  {
+    "term": "Tagesplankatalog",
+    "code": "ServiceDayPolicyV1",
+    "definition": "vollständige, signierte Menge ursprünglicher Basisfahrten mit Tagesinstanzierung; umfasst auch noch nie gestartete Fahrten"
   },
   {
     "term": "Tarifprodukt",

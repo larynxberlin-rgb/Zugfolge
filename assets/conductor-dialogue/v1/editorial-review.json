@@ -1,0 +1,50 @@
+{
+  "schemaVersion": "conductor-dialogue-editorial-review/v1",
+  "releaseId": "dialogue-de-2026-v1",
+  "releaseSha256": "a602cc60e168cc7cc39e60fddfa57e44cf10f4c9b72cfe79fb014f0679e5e651",
+  "sourceSha256": "94fbfe6467080a0d04ab59a6b6bff0a839255d4da474ecca32f4daab6df76ebf",
+  "reviewerKind": "independent_agent",
+  "reviewerId": "codex-milestone-contract",
+  "status": "accepted",
+  "sampledTreeIds": [
+    "empty_phone-01",
+    "empty_phone-13",
+    "defective_phone-01",
+    "defective_phone-13",
+    "technical_issue-01",
+    "technical_issue-13",
+    "admission-01",
+    "admission-13",
+    "misunderstanding-01",
+    "misunderstanding-13",
+    "excuse-01",
+    "excuse-13",
+    "lack_of_money-01",
+    "lack_of_money-13",
+    "silence-01",
+    "silence-13",
+    "hostile_reaction-01",
+    "hostile_reaction-13",
+    "refusal-01",
+    "refusal-13",
+    "intoxication-01",
+    "intoxication-13",
+    "safety_escalation-01",
+    "safety_escalation-13"
+  ],
+  "checks": {
+    "coherentBranches": true,
+    "shortPlayableGerman": true,
+    "noBrandsOrRealPersons": true,
+    "noProtectedTraitFareInference": true,
+    "claimsAreNotEvidence": true,
+    "policeRequiresObservedGrounds": true
+  },
+  "notes": [
+    "Unabhängige Agentenstichprobe: jeweils Szene 01 und 13 aller zwölf Familien, insgesamt 24 Szenen und 96 Äußerungen. Keine menschliche Vollfreigabe.",
+    "Verständliches Deutsch und zusammenhängende kurze Folge; keine Marken, realen Personendaten oder geschützten Merkmale als Fahrkartenindiz gefunden.",
+    "Techniktexte schützen Zugangsdaten. Tonfall, Geldmangel und Alkoholisierung werden nicht als Fahrkartenbeweis behandelt.",
+    "Prüfpunkt refusal-01: Verweigerung einer Unterlage ist kein Identitätsverweigerungsbeleg. Gleiches gilt für reine Gefahrenbehauptungen in safety_escalation. Regression authored_refusal_and_safety_claims_never_manufacture_police_evidence prüft das unabhängig von den Autorenprofilen.",
+    "Produktive Aktivierung benötigt weiterhin unabhängig konfigurierte Welt- und Schlüsselbindung sowie eine gültige externe Signatur."
+  ]
+}

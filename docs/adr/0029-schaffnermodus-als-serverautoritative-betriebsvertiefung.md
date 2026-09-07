@@ -5,12 +5,16 @@
   [../schaffnermodus.md](../schaffnermodus.md) ·
   [../stoerungen.md](../stoerungen.md) · [../wirtschaft.md](../wirtschaft.md)
 - **Betrifft Milestones:** M10.1–M10.3a, M15.1–M15.12
-- **Verwandte ADRs:** ADR-0002, ADR-0011, ADR-0017, ADR-0019, ADR-0025
+- **Verwandte ADRs:** ADR-0002, ADR-0011, ADR-0017, ADR-0019, ADR-0028,
+  ADR-0032 (E31), ADR-0034 (E33), ADR-0035 (aktuelle Gestaltung)
+- **Fachvertrag:** `zugfolge-conductor/v1`; Aktions-/Autoritätsmatrix,
+  versionierte Policy und Abnahmegrenzen in [../schaffnermodus.md](../schaffnermodus.md).
 
 ## Kontext
 
-Die laufende Simulation bildet Züge, Konfliktressourcen, Fahrgäste und
-wirtschaftliche Folgen bereits serverautoritativ ab. Eine begehbare
+Züge, Konfliktressourcen, Fahrgäste und wirtschaftliche Folgen haben jeweils
+eine serverautoritative Fachdomäne. Ihre vollständige produktive Anbindung
+bleibt anhand der jeweiligen Milestone-Belege zu prüfen. Eine begehbare
 Innenansicht könnte diese Systeme erlebbar machen, würde als abgetrenntes
 Minigame aber zwei Wahrheiten erzeugen: erfundene Fahrgäste neben dem
 Nachfragemodell und künstliche Halte neben der Konfliktengine. Eine hohe
@@ -37,6 +41,12 @@ Sachverhalte auf dem Server. Normale Gespräche verändern den Betrieb nicht.
 Eine bindende Polizeianforderung erzeugt am nächsten planmäßigen Fahrgasthalt
 einen `FareControlHoldV1`, der die tatsächlich benötigten Konfliktressourcen
 über den vorhandenen `CapacityLedger` weiter belegt.
+
+Ein M10-Prognosemanifest darf niemals als bereits eingestiegener Fahrgastbestand
+angezeigt werden. Die Tatsachendarstellung verlangt passende autoritative
+Haltquittungen und ein aus der wirklichen Fahrzeugkonfiguration belegtes
+Platzinventar. Die spezifizierte API und die Aktionsereignisse schließen ihre
+spätere Implementierung oder produktive Abnahme nicht vorweg.
 
 Nach Ende des Halts erteilt das Spiel kein automatisches Abfahrtsrecht. Die
 vorhandene virtuelle Fahrdienstleitung prüft und priorisiert die Bewegung
@@ -82,3 +92,18 @@ die maximale Wartezeit begrenzen Missbrauch des gemeinsamen Netzes.
 - **Milestones:** M10 liefert Manifeste und Fahrberechtigungsstatus. M15.1–M15.12
   liefern Fachvertrag, Assets, Browser, Sitzung, Kontrolle, Betriebswirkung,
   Wirtschaft und Abnahme.
+
+## Einordnung und Nachweis
+
+E28 ist die eigenständige Einführung durch Tooltipps im laufenden Spiel;
+[ADR-0028](0028-spielhinweise-im-spiel.md) wurde mit
+[PR #530](https://github.com/larynxberlin-rgb/Zugfolge/pull/530) auf `main`
+veröffentlicht. E29 ersetzt und erweitert diese Einführung nicht. Neue
+Spielangebote liegen nach [E33/ADR-0034](0034-spielgenerierte-fahrplaene-im-spielgebiet.md)
+vollständig innerhalb der Spielkarte; Außenläufe betreffen nur historische
+Nachweise. Die aktuelle Oberflächengestaltung folgt
+[ADR-0035](0035-deutschlandweite-spieleroberflaeche.md).
+
+Die [M15.1-/M15.2-Teilabnahme](../m15-abnahme.md) trennt den vollständigen
+Fachvertrag, den technischen Projektionsnachweis und die noch offenen
+produktiven und spielbaren Nachweise. M15 insgesamt bleibt Ausbau.

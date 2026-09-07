@@ -37,7 +37,7 @@ export async function generateDailyOperationReports(
     const reportsByOperatorDay = new Map(existing.map((row) => [`${row.operatorId}\u0000${row.serviceDay}`, row]));
     const nativeDaysByOperator = new Map<string, Map<string, number>>();
     for (const event of events) {
-      if (event.eventType !== "operations.train-service-planned" && event.eventType !== "operations.train-outcome") continue;
+      if (!["operations.train-service-planned", "operations.train-outcome", "operations.service-day-planned", "operations.service-day-closed", "operations.service-vehicle-cost"].includes(event.eventType)) continue;
       const value = event.payload as Readonly<Record<string, unknown>> | null;
       const day = value?.["serviceDay"];
       if (typeof day !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(day) || day > serviceDay) continue;

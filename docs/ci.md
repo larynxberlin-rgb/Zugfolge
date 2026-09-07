@@ -22,7 +22,62 @@ die den echten Datenbankdienst benötigen; der native Teil aktiviert gezielt
 die Fälle mit echten Addons und Browsern. Referenzkorpus und Betriebswerkzeuge
 gehören zum erweiterten Prüflauf.
 
+M15 ergänzt den vorhandenen nativen Job um die originale M5-/M10-/Betriebsquelle,
+private Sitzungs-/Releaseintegration und die tatsächliche PixiJS-Oberfläche
+mit Desktop, Touch, Verbindungsverlust und Wiederaufnahme. Er benötigt das
+wirklich gebaute NAPI-Addon; die Fixture erzeugt fachliche Testdaten mit
+denselben Rust-Kernen. Testsignaturen autorisieren ausschließlich diesen
+gekennzeichneten Korpus. Die vier regulären Jobs bleiben erhalten; ein grüner
+Testkorpus ersetzt keine produktive Release- oder Deutschlandabnahme.
+Der native Job erhält für die zusammenhängenden Browserfahrten und die
+zusätzlichen Regionswechsel-/Ledgernachweise eine Höchstdauer von 45 Minuten.
+Der gemessene Zwischenlauf benötigte bereits 27 Minuten bis zur verbundenen
+Abnahmefahrt; deren vollständiger Netzabschluss und der anschließende
+Einstiegsnachweis müssen innerhalb desselben Jobs ausgeführt werden können.
+Die dateibasierten Szenen-/Evidenzpackerprüfungen und die Regression für den
+nativen Ereigniskalender des Browsertreibers laufen im TypeScript-Job;
+sie benötigen keinen zusätzlichen Browser oder Job.
+Die nativen Browserfahrten prüfen zusätzlich Dokumentkontrolle, spätere
+Nachweise, Zahlungen, Polizei und Tagesbericht sowie den vollständigen
+220-Personen-Doppelstockkorpus. Die Manifestfahrt prüft tatsächlichen
+Fahrgastwechsel über mehrere Halte und eine Infrastruktursperre. Die gemeinsame
+Abnahmefahrt verbindet Originaldialoge, Polizeihalt, Netz- und Vertragsfolgen;
+ihre Quelle und der einzelne Abnahmevertrag bleiben ausdrücklich fiktiv.
+Der gesonderte Einstiegsbeleg verwendet dieselbe Zugdetailkomponente wie die
+LiveMap mit tatsächlichen Verfügbarkeits-, Berechtigungs- und Resume-Antworten.
+Der Evidenzpacker bindet sämtliche sieben positiven Browserberichte, den
+separaten Originaldialog-HTTP-Beleg und die zugehörigen
+Screenshots an den tatsächlichen CI-Commit. Die zusätzliche
+Dialog-CLI liefert ausschließlich private Auswahlbelege aus Originaldialogen;
+die Sitzungs- und Kontrollkommandos verwenden unter Linux das echte NAPI-Addon.
+
+Der Kapazitätslauf lädt tatsächlich minifizierte Vite-Produktionsdateien im
+Browser und prüft deren ausgelieferte Bytes gegen die Buildhashes. Seine
+220-Personen-Spielkonfiguration und gemessenen Zeiten bleiben ein begrenzter
+Testnachweis. Zusätzlich verifiziert der native Job die dauerhaften Art- und
+Dialogsignaturen sowie die öffentlichen Weltpins der registrierten Alpha-Welt.
+Er benötigt dafür ausschließlich öffentliche Dateien und bewahrt das separate
+Artefakt `conductor-registered-release-verification` auf. Die Weltregistrierung
+ist in [conductor-release-signing.md](conductor-release-signing.md) belegt.
+
+Die [Offline-Demo](conductor-offline-demo.md) erhält eine eigene strikte
+Typprüfung im TypeScript-Job. Der vorhandene Native-ABI-Job baut anschließend
+die einzelne HTML-Datei und prüft sie mit ausgeschaltetem Netzwerk im
+Systembrowser. Worker-/Restore-/Pausenregressionen, drei tatsächliche
+Kontrollabläufe, sichtbare Geldfolgen, Touchbedienung und gerenderte Atemphasen
+gehören zu diesem Lauf. Er nutzt den quellgebundenen vorhandenen WASM-Kern;
+ein Browserdownload, weiterer Server oder fünfter CI-Job ist nicht erforderlich.
+Das Artefakt `conductor-offline-demo` enthält die spielbare Datei und die an
+ihren Hash gebundenen Berichte/Bilder. Die Kompilierung des WASM-Wrappers ist
+separat dokumentiert und wird durch dessen Quell-/Byteprüfung nicht behauptet.
+
 ## Lokal arbeiten
+
+Der Rust-Job führt außerdem den tatsächlichen `operational_json`-CLI-Einstieg
+in isolierten Kindprozessen aus. Erfolg und fachliche Ablehnung nach Restore
+müssen den temporären Infrastrukturindex beim Prozessende freigeben. Dieser
+Ressourcentest verändert keine Betriebs- oder Replayregeln und benötigt keinen
+zusätzlichen CI-Job.
 
 Die Toolchain steht in [`monorepo.md`](monorepo.md#2-werkzeugkette).
 Einmal installieren und den Workspace bauen:
@@ -85,7 +140,27 @@ Arbeit auf diesen Hosts.
 Ein grüner regulärer Prüflauf belegt den dort getesteten Code. Eine reale
 Betriebsabnahme wird mit ihrem eigenen Prüflauf und Protokoll dokumentiert.
 
+M15.4 wird im bestehenden Native-ABI-Job über den echten Katalogcompiler,
+M5-Checkpoints in PGlite, das Linux-NAPI-Addon und den installierten Browser
+geprüft. Der [reproduzierbare Innenraumbeweis](conductor-interior/README.md)
+umfasst drei Konfigurationen, Deck- und Wagenübergänge, Kollisionen und den
+konkret abgelehnten unvollständigen Beleg. Seine temporäre Testsignatur
+belegt die Auslieferungsprüfung; sie aktiviert keinen Produktivschlüssel.
+
 ## Welche Tests bleiben sinnvoll?
+
+Die reguläre Privacy-Suite enthält die Schema-37-Archivlöschung mit echten
+Schema-33-/36-Backups, 90-/365-Tage-Grenzen, M15-Entkopplung, unverändertem
+Originalseal und unabhängig gepinntem Restore. Der TypeScript-Job prüft zusätzlich
+die betroffenen Backup-/Recoverywerkzeuge, die Tagesplanquelle und
+`database-rollback-binding.pglite.test.mjs` nacheinander. Auch der erweiterte
+Werkzeuglauf enthält diese Prüfungen. Die historischen Verträge bleiben
+eingefroren, Schema 37 qualifiziert die beiden neuen Redaktionsbelegtabellen und
+73 Schutztrigger als `zugfolge-database-rollback-proof/v7`. Die
+[Restorebeschreibung](datenschutz-archivgrenze.md) trennt den ursprünglichen
+Rohrestore von Redaktion, neuer Sicherungsquelle und produktiver Freigabe.
+Lokal werden die schweren PGlite-Suiten nacheinander ausgeführt; ein wegen
+Hostressourcen abgebrochener Testlauf gilt nicht als bestandener Gesamtbeleg.
 
 - Konfliktfreiheit, Determinismus, Autorisierung, Weltisolation und korrekte
   Zugdarstellung werden über ihr Verhalten geprüft.

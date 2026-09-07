@@ -15,6 +15,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::error::Error;
 use std::fmt;
 
+use crate::{VehicleConfigurationFacts, VehicleConfigurationV1};
+
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use zugfolge_infra::FleetClass;
@@ -297,6 +299,13 @@ pub struct SeedVehicleAsset {
     pub restrictions: BTreeMap<String, VehicleRestriction>,
     #[serde(default)]
     pub history: Vec<String>,
+    /// Vollständige Konfiguration dieses konkreten Weltassets; kein Typdefault.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "crate::deserialize_optional_vehicle_configuration"
+    )]
+    pub vehicle_configuration: Option<VehicleConfigurationV1>,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -399,6 +408,12 @@ pub struct EconomyReleaseDocument {
     pub rates: EconomyReleaseRates,
     pub rules: EconomyReleaseRules,
     pub tender_profiles: Vec<EconomyTenderProfile>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "crate::deserialize_optional_fare_inspection"
+    )]
+    pub fare_inspection: Option<crate::FareInspectionEconomyV1>,
     pub checksum: String,
 }
 
@@ -676,6 +691,13 @@ pub struct AuthorityVehicleAsset {
     pub history: Vec<String>,
     pub technical: AuthorityTechnicalData,
     pub passenger: AuthorityPassengerData,
+    /// Geprüfte, verlustfrei aus dem Welt-Seed übernommene M5-Konfiguration.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "crate::deserialize_optional_vehicle_configuration"
+    )]
+    pub vehicle_configuration: Option<VehicleConfigurationV1>,
     pub delivered_at: u64,
     pub retired_at: u64,
 }
@@ -1036,6 +1058,9 @@ fn normalize_world_seed(seed: &mut VehicleWorldSeed) -> Result<(), CatalogCompil
     seed.assets.sort_by(|left, right| left.id.cmp(&right.id));
     reject_adjacent_duplicates_by(&seed.assets, "assets[].id", |item| item.id.as_str())?;
     for asset in &mut seed.assets {
+        if let Some(configuration) = &mut asset.vehicle_configuration {
+            configuration.normalize();
+        }
         asset.approved_line_ids.sort();
         reject_adjacent_duplicates(&asset.approved_line_ids, "assets[].approvedLineIds")?;
         asset
@@ -2213,6 +2238,9 @@ fn validate_seed_asset(
     reference_year: u16,
     produced_at: u64,
 ) -> Result<(), CatalogCompileError> {
+    if let Some(configuration) = &asset.vehicle_configuration {
+        validate_vehicle_configuration(configuration, vehicle_type)?;
+    }
     require_identifier(&asset.id, "assets[].id")?;
     require_safe_positive(asset.numeric_id, "assets[].numericId")?;
     require_identifier(&asset.operator_id, "assets[].operatorId")?;
@@ -2317,6 +2345,25 @@ fn validate_seed_asset(
         require_non_empty(history, "assets[].history[]")?;
     }
     Ok(())
+}
+
+fn validate_vehicle_configuration(
+    configuration: &VehicleConfigurationV1,
+    vehicle_type: &CompiledVehicleType,
+) -> Result<(), CatalogCompileError> {
+    configuration
+        .validate_against(VehicleConfigurationFacts {
+            length_mm: i64::from(vehicle_type.technical.length_mm),
+            seats: vehicle_type.passenger.seats,
+            first_class_seats: vehicle_type.passenger.first_class_seats,
+            bicycle_places: vehicle_type.passenger.bicycle_places,
+            wheelchair_places: vehicle_type.passenger.wheelchair_places,
+            accessible: vehicle_type.passenger.accessible,
+        })
+        .and_then(|()| configuration.validate_equipment(&vehicle_type.passenger.equipment))
+        .map_err(|error| {
+            CatalogCompileError::Invalid(format!("M5-Fahrzeugkonfiguration ist ungültig: {error}"))
+        })
 }
 
 fn validate_condition(condition: &VehicleCondition, id: &str) -> Result<(), CatalogCompileError> {
@@ -2497,6 +2544,7 @@ fn authority_asset(
             operating_cost_cents_per_train_km,
             replacement_plan: vehicle_type.passenger.replacement_plan,
         },
+        vehicle_configuration: asset.vehicle_configuration.clone(),
         delivered_at: asset.delivered_at,
         retired_at: asset.retired_at,
     })
@@ -2705,6 +2753,8 @@ struct EconomyReleaseChecksumBody<'a> {
     rates: &'a EconomyReleaseRates,
     rules: &'a EconomyReleaseRules,
     tender_profiles: &'a [EconomyTenderProfile],
+    #[serde(skip_serializing_if = "Option::is_none")]
+    fare_inspection: Option<&'a crate::FareInspectionEconomyV1>,
 }
 
 #[derive(Serialize)]
@@ -2728,6 +2778,7 @@ pub fn recompute_economy_release_checksum(
         rates: &release.rates,
         rules: &release.rules,
         tender_profiles: &tender_profiles,
+        fare_inspection: release.fare_inspection.as_ref(),
     };
     let value = serde_json::to_value(body)?;
     let canonical = canonical_economy_json(&value)?;
@@ -2853,11 +2904,18 @@ fn validate_economy_special_condition(
     Ok(())
 }
 
-fn validate_economy_release_document(
+pub fn validate_economy_release_document(
     release: &EconomyReleaseDocument,
 ) -> Result<(), CatalogCompileError> {
     require_schema(&release.schema, ECONOMY_RELEASE_SCHEMA, "EconomyRelease")?;
     require_identifier(&release.version, "economy.release.version")?;
+    if release
+        .fare_inspection
+        .as_ref()
+        .is_some_and(|rules| !rules.validate())
+    {
+        return invalid("EconomyRelease enthält ungültige Fahrkartenkontrollregeln");
+    }
     validate_sha256(&release.checksum, "economy.release.checksum")?;
     for (field, value) in [
         (
@@ -3952,6 +4010,9 @@ pub fn validate_compilation(
             }
         }
         validate_authority_asset_protection(asset, vehicle_type)?;
+        if let Some(configuration) = &asset.vehicle_configuration {
+            validate_vehicle_configuration(configuration, vehicle_type)?;
+        }
         validate_condition(&asset.condition, &asset.id)?;
         validate_restrictions(&asset.restrictions, vehicle_type, &asset.id)?;
         for history in &asset.history {

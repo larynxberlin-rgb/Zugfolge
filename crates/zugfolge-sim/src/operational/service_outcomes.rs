@@ -51,13 +51,13 @@ pub struct ServiceOutcomeProgress {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub(super) struct ServiceOutcomeState {
-    policy: ServiceOutcomePolicy,
+    pub(super) policy: ServiceOutcomePolicy,
     planned: BTreeMap<String, serde_json::Value>,
     latest_started_day: BTreeMap<String, String>,
 }
 
 impl ServiceOutcomeBinding {
-    fn validate(&self) -> Result<(), OperationalError> {
+    pub(super) fn validate(&self) -> Result<(), OperationalError> {
         let day = self.service_day.as_bytes();
         if self.schema_version != "zugfolge-operational-service-outcome-binding/v1"
             || self.service_run_id.is_empty()
@@ -181,6 +181,7 @@ impl OperationalWorld {
         train: &TrainMaterialization,
     ) -> Result<(), OperationalError> {
         self.validate_service_outcome_template(train)?;
+        self.bind_service_day(train)?;
         let Some(binding) = &train.service_outcome else {
             return Ok(());
         };
@@ -349,6 +350,7 @@ impl OperationalWorld {
         let (minimum_seats_provided, capacity_sources) =
             self.formation_service_capacity(formation_id);
         self.claim_service_day(binding)?;
+        self.start_service_vehicle_cost(input);
         Ok(Some(ServiceOutcomeProgress {
             binding: binding.clone(),
             start_head_route_mm: input.head_route_mm,
@@ -462,6 +464,7 @@ impl OperationalWorld {
             "evidenceComplete":missing_seats.is_some() && missed_connections.is_some()
         });
         self.record("train-outcome", train_id, outcome.to_string())?;
+        self.record_service_day_outcome(train_id, &outcome)?;
         // The immutable domain journal and command ledger retain the receipt;
         // regional snapshots retain only pending/active service plans.
         let id = self.trains[train_id]

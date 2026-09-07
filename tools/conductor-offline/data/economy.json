@@ -1,0 +1,78 @@
+{
+  "schema": "economy-release/v1",
+  "version": "fixture-economy-release-1",
+  "rates": {
+    "trackPerTrainKmCents": "100",
+    "stationPerStopCents": "200",
+    "facilityPerHourCents": "300",
+    "energyPerKwhCents": "40",
+    "personnelPerHourCents": "4000",
+    "administrationPerPeriodCents": "50000",
+    "vehiclePerPeriodCents": "100000",
+    "overnightStablingPerPeriodCents": "20000",
+    "protectionEquipmentPerPeriodCents": "10000",
+    "lateInterestBasisPoints": 500
+  },
+  "rules": {
+    "qualityBaselinePunctualityBasisPoints": 8500,
+    "pointsPerExtraSeat": 40,
+    "pointsPerPunctualityBasisPoint": 1,
+    "pointsPerAdditionalStop": 300,
+    "requirementFocusMaximumPoints": 1500,
+    "contractBonusCentsPerPeriod": "100000",
+    "penaltyRates": {
+      "punctuality": "10",
+      "cancellation": "10000",
+      "seats": "100",
+      "connections": "1000"
+    },
+    "penaltyFocusMultiplierBasisPoints": 20000,
+    "publicOperationSurchargeBasisPoints": 2000,
+    "failedPackageFeeStepBasisPoints": 500,
+    "failedPackageReductionStepBasisPoints": 400
+  },
+  "tenderProfiles": [
+    {
+      "id": "price",
+      "weights": {
+        "price": 7000,
+        "quality": 3000
+      },
+      "requirementFocus": "capacity",
+      "penaltyFocus": "punctuality",
+      "viabilitySurchargeBasisPoints": 1000
+    },
+    {
+      "id": "quality",
+      "weights": {
+        "price": 3000,
+        "quality": 7000
+      },
+      "requirementFocus": "accessibility",
+      "penaltyFocus": "connections",
+      "viabilitySurchargeBasisPoints": 1500
+    }
+  ],
+  "fareInspection": {
+    "schemaVersion": "fare-inspection-economy/v1",
+    "minimumClaimCents": "6000",
+    "ordinaryFareMultiplier": 2,
+    "reducedClaimCents": "700",
+    "proofWindowDays": 7,
+    "dayLengthMs": 86400000,
+    "handlingCostCents": "100",
+    "proofHandlingCostCents": "250",
+    "policeHandlingCostCents": "300",
+    "fullPaymentBasisPoints": 10000,
+    "partialPaymentBasisPoints": 0,
+    "partialPaymentShareBasisPoints": 5000,
+    "paymentDelayMs": 10000,
+    "writeOffDelayMs": 30000,
+    "validProofSubmissionBasisPoints": 10000,
+    "validProofDelayMs": 20000,
+    "premiumMultiplierBasisPoints": 40000,
+    "positiveDailyCapBasisPoints": 50,
+    "revenueAllocation": "uniform_settled_service_interval/v1"
+  },
+  "checksum": "34739ee585f4d3afae715072af3e05a07a72e65b53e900bca3116c78d4923701"
+}

@@ -250,8 +250,22 @@
     {
       "idx": 35,
       "version": "7",
-      "when": 1788742800000,
-      "tag": "0036_persistent_vehicle_registry",
+      "when": 1788728400000,
+      "tag": "0036_conductor_private_sessions",
+      "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1788746400000,
+      "tag": "0037_archive_privacy_redaction",
+      "breakpoints": true
+    },
+    {
+      "idx": 37,
+      "version": "7",
+      "when": 1788750000000,
+      "tag": "0038_persistent_vehicle_registry",
       "breakpoints": true
     }
   ]

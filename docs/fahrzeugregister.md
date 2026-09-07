@@ -76,7 +76,7 @@ keinen externen Zwei-Spieler-Lauf.
 
 ## Persistenz und Wiederaufbau
 
-Migration `0036_persistent_vehicle_registry.sql` trennt das vollständige
+Migration `0038_persistent_vehicle_registry.sql` trennt das vollständige
 Weltregister von handelbaren EVU-Beständen. Auch öffentliche Betreiber ohne
 EVU-Konto erhalten Registereinträge. Datenbanktrigger verhindern das Löschen
 von Fahrzeugen und das Ändern oder Löschen bestehender Historienereignisse.

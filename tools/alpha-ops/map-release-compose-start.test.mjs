@@ -392,7 +392,7 @@ test("mutable image name is confined to the canonical build and never accepted b
   assert.match(up.stderr, /ZUGFOLGE_GAME_API_IMAGE_REFERENCE/u);
 });
 
-test("Schema 29 is cold-restored before fixed 30/31, legacy-write, Schema-31-cold and current Schema-36 gates", async (t) => {
+test("Schema 29 is cold-restored before fixed 30/31, legacy-write, Schema-31-cold and current Schema-38 gates", async (t) => {
   const fixture = await wrapperFixture(t, { releaseId: "infra-deutschland-2026.1" });
   const schema31 = runWrapper(fixture, ["--prepare-v2-schema31", "-f", "compose.alpha.yml"]);
   assert.equal(schema31.status, 0, schema31.stderr);
@@ -501,10 +501,10 @@ test("Schema 29 is cold-restored before fixed 30/31, legacy-write, Schema-31-col
   assert.match(explicitRecoveryCalls[3], /keycloak-public-to-schema\.mjs recover$/u);
   assert.match(explicitRecoveryCalls[4], /keycloak-public-to-schema\.mjs preflight-up$/u);
 
-  for (const flag of ["--schema36-after-cold", "--keycloak-after-schema36", "--keycloak-recover-after-schema36"]) {
+  for (const flag of ["--schema38-after-cold", "--keycloak-after-schema38", "--keycloak-recover-after-schema38"]) {
     const currentSchema = runWrapper(fixture, [flag, "-f", "compose.alpha.yml"]);
     assert.equal(currentSchema.status, 0, currentSchema.stderr);
-    assert.match(currentSchema.stdout, /__drizzle_migrations[\s\S]*= 36/u);
+    assert.match(currentSchema.stdout, /__drizzle_migrations[\s\S]*= 38/u);
   }
 
   const hot = runWrapper(fixture, ["--prepare-v2-hot", "-f", "compose.alpha.yml"]);

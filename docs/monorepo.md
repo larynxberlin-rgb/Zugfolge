@@ -12,6 +12,11 @@ Spieleroberfläche folgt [Design](design.md) und
 ```text
 crates/                     Rust — Simulationskern, Solver, Release-Pipeline
   zugfolge-determinism/     Determinismus-Testharnisch (M0.2)
+  zugfolge-conductor/       M15.2/M15.4: quittierte M10-Manifeste und konfigurationsgetreue Innenraumgeometrie samt Deck-, Weg- und Kollisionsprüfung; keine Nachfrage, Sitzung oder Betriebssteuerung
+  zugfolge-conductor-scenes/ M15.5: gebundene Stations-/Umgebungsprojektion aus echten analytischen Betriebsabschnitten
+  zugfolge-conductor-dialogue/ M15.6: versionierte Offline-Dialoge und ausschließlich belegte öffentliche Gesprächsoptionen
+  zugfolge-conductor-session/ M15.7: reine Sitzungs-, Bewegungs-, Lease- und Dialogkommandos mit Restore/Replay
+  zugfolge-fare-control/    M15.10/M15.11: Feststellungen, Polizeireaktion, Forderungen, Ganzzahlbuchungen und Tagesdeckel
   zugfolge-infra/           Betriebsgraph und Infra-Release-Pipeline (M1)
   zugfolge-conflict/        Sperrzeiten, Belegungsprofile, Konfliktprüfung (M3.1–M3.3), Rahmenverträge (M3.8)
   zugfolge-planner/         Trassen-Planner (M3.4), PlanningRun, Fahrplanperiode, Ad-hoc-Trassen (M3.5–M3.7)
@@ -25,6 +30,8 @@ crates/                     Rust — Simulationskern, Solver, Release-Pipeline
   zugfolge-rules/           Betriebsprogramm, Dispositionsregeln, Erklärungen und Rücktest (M7)
   zugfolge-disruption/      Policies, Ursachen, Wirkungen, Fahrdienstleitung und Ersatzplanung (M8)
 packages/                   TypeScript — fachliche Bibliotheken (ab M2)
+  conductor-art/            M15.3: geprüfter Pixelartkorpus, Signatur-/Weltpinprüfung und begrenzter lokaler Dateisystemloader
+  conductor-dialogue/       M15.6: nativer Korpusvalidator mit unabhängigem Schlüsselring und Weltpin
   db/                       Postgres-Zugriff über Drizzle, Wurzel der Weltisolation (M2.2)
   disruption-provider/      Rechtegeprüfter Snapshot-Adapter für REALISTIC (M8.12)
   identity/                 Konten, Rollen, Weltzugänge; Keycloak-Verifikation (M2.1)
@@ -50,6 +57,12 @@ apps/                       TypeScript — Dienste und Frontend (ab M2 / M4)
   operations-center/        Betriebslage, Automatik und Tagesberichte (M7)
 spikes/                     Wegwerf-Code mit Verfallsdatum — derzeit leer
 tools/                      Werkzeuge für CI und Entwicklung
+  art-atlas/                M15.3: reproduzierbare Atlasvorbereitung, Freigabegates, Signiereinstieg und Grafikprüfung
+  conductor-interior/       M15.4: echter M5-/DB-/Rust-Nachweis mit lokaler begehbarer Geometrieprüfung; keine Produktivsitzung
+  conductor-scenes/         M15.5: belegte Quellenaufnahme und infrastrukturell gebundener Szenencompiler
+  conductor-dialogue/       M15.6: ursprünglicher Dialogkorpus, redaktionelle Prüfung und Signierwerkzeug
+  conductor-session/        M15.8/M15.12: tatsächliches Produkt-DOM und PixiJS gegen native Kerne und DB im Browser
+  conductor-offline/        lokale spielbare HTML-Demo mit originalem Rust-WASM, Pixelanimationen und Offline-Browserprüfungen
   guards/                   die Wächter der harten Invarianten
   load/                     äußerer Lastmessharnisch für 180.000 Fahrten und ≥2 Mio. Ereignisse (M4.11)
   m7-acceptance/            echter 48h-Rust-Ereigniserzeuger für die M7-Abnahme
@@ -239,7 +252,7 @@ Liste ist keine vollständige Karte des Repositoriums, sondern die Zuordnung
 | Domäne | Pfade | Status | Was dort besonders gilt |
 |--------|-------|--------|-------------------------|
 | `determinism-core` | `crates/zugfolge-determinism/**` | aktiv | ganzzahlig, uhrfrei, geordnet — der Harnisch muss selbst halten, was er prüft |
-| `simulation-core` | `crates/zugfolge-sim/**`, `crates/zugfolge-sim-runtime/**`, `crates/zugfolge-runtime{,-napi}/**`, `crates/zugfolge-conflict/**`, `crates/zugfolge-fleet/**`, `crates/zugfolge-disruption/**`, `packages/runtime-native/**`, `spikes/**` | aktiv | vollständiger Kernvertrag: kein Bezahlstatus, keine Uhr, keine Datenbank |
+| `simulation-core` | `crates/zugfolge-sim/**`, `crates/zugfolge-sim-runtime/**`, `crates/zugfolge-runtime{,-napi}/**`, `crates/zugfolge-conflict/**`, `crates/zugfolge-fleet/**`, `crates/zugfolge-disruption/**`, `crates/zugfolge-conductor/**`, `packages/runtime-native/**`, `spikes/**` | aktiv | vollständiger Kernvertrag: kein Bezahlstatus, keine Uhr, keine Datenbank |
 | `path-allocation` | `crates/zugfolge-planner/**`, `crates/zugfolge-planning-runtime{,-napi}/**`, `packages/path-allocation/**`, `packages/planning-{projection,runtime-native,worker}/**` | aktiv | Reihenfolge und Bezahlstatus beeinflussen das Ergebnis nicht (E4, `infrastruktur.md` 2) |
 | `dispatch` | `crates/zugfolge-rules/**`, `packages/dispatch/**` | aktiv | das Betriebsprogramm wirkt offline und für alle gleich (E2, E13) |
 | `demand` | `packages/demand/**`, `crates/zugfolge-demand/**` | aktiv | Ganzzahlige, uhrfreie Nachfrage folgt dem Angebot, nie dem Vertrag des Spielers; kein Datenbankzugriff |
@@ -247,7 +260,7 @@ Liste ist keine vollständige Karte des Repositoriums, sondern die Zuordnung
 | `infra-pipeline` | `crates/zugfolge-infra/**` | aktiv | **der einzige Ort mit Gleitkommarechnung** — sie endet in ganzzahligen Fahrzeittabellen |
 | `world-isolation` | `packages/db/**` | aktiv | Postgres-Zugriff der Game-Services; Wurzel der Weltisolation — `worlds`, das Event-Log und das weltgebundene Repository (M2.2) |
 | `release-tools` | `tools/audits/**`, `tools/reference-corpus/**`, `tools/reference-model/**`, `tools/region-import/**`, `tools/tiles/**` | aktiv | nicht autoritative Datei-I/O-, Import- und Kartenadapter; Freigabeentscheidungen bleiben in Rust |
-| `operations-tools` | `tools/alpha-ops/**`, `tools/guards/**`, `tools/load/**`, `tools/m7-acceptance/**`, `tools/m7-e2e/**`, `tools/ui-preview/**` | aktiv | Betriebs-, Abnahme-, Last-, UI-Vorschau- und Governance-Werkzeuge ohne fachliche Laufzeitautorität |
+| `operations-tools` | `tools/alpha-ops/**`, `tools/art-atlas/**`, `tools/conductor-interior/**`, `tools/conductor-release/**`, `tools/guards/**`, `tools/load/**`, `tools/m7-acceptance/**`, `tools/m7-e2e/**`, `tools/ui-preview/**` | aktiv | Betriebs-, Abnahme-, Last-, UI-Vorschau- und Governance-Werkzeuge ohne fachliche Laufzeitautorität |
 | `platform-services` | explizit aufgezählte übrige `packages/*` und `apps/*` | aktiv | vollständige Zuordnung aller Produktionspakete; neue Pakete erzwingen vor dem ersten Commit eine bewusste Wächterentscheidung |
 
 **Status ist kein Kommentar, sondern eine Prüfung.** Eine `aktive` Domäne muss
@@ -342,6 +355,24 @@ Baum. Bewusst veröffentlichte UI-Zeichen im Design-System und
 [Rechteschutz](rechteschutz.md) beschreibt die Abgrenzung.
 
 Vollständige Liste: `pnpm guards -- --list`.
+
+`decision-consistency` hält E1–E33, den ADR-Index und die Agenteneinstiege
+lückenlos und prüft die lokalen Markdown-Verweise der zugeordneten ADRs.
+Für M15 bleiben Aktionsautorität und Datenschutz im kanonischen
+[Schaffnervertrag](schaffnermodus.md). Der reine `zugfolge-conductor`-Projektor
+erhält ausschließlich geprüfte M10- und Innenraumfakten; der interne
+Game-API-Service setzt die Welt-/EVU-/Kontogrenze vor dem nativen Aufruf durch.
+Er erzeugt keine Ersatznachfrage, Haltquittungen oder Fahrzeuglayouts.
+
+`ConductorSessionService` verbindet diese belegten Eingänge inzwischen unter
+dem bestehenden Weltwriter. `zugfolge-conductor-session` entscheidet Sitzung
+und Bewegung, `zugfolge-sim::operational` hält reale Konfliktressourcen und
+`zugfolge-fare-control` erzeugt wirtschaftliche Folgen. Die Game-API speichert
+native Zustände, private Quittungen und ausgeglichene Ledgerbuchungen atomar.
+Ein unabhängiger Zyklus liest bestätigte regionale Uhren; Browser, Wallclock
+und Nachfrageprognosen können diesen Fortschritt nicht ersetzen. Die
+[Plattformgrenzen](conductor-session-platform.md) erklären Migration 36,
+Löschung, Sicherung, öffentliche Projektion und Produktionskonfiguration.
 
 ---
 

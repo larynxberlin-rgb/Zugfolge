@@ -426,6 +426,36 @@ describe("decision-consistency", () => {
       .toEqual(expect.arrayContaining([expect.stringContaining("fehlt")]));
   });
 
+  it("prüft lokale Fachvertragslinks relativ zum ADR, auch mit Abschnitt", () => {
+    const linked = files.map((file) => file.path === "docs/adr/0002-zwei.md"
+      ? sourceFile(file.path, `${file.text}\n[Fachvertrag](../fachvertrag.md#autoritaet)`)
+      : file);
+    expect(decisionConsistencyRule.check([
+      ...linked, sourceFile("docs/fachvertrag.md", "# Autorität"),
+    ], testConfig())).toEqual([]);
+    expect(decisionConsistencyRule.check(linked, testConfig())).toEqual([
+      expect.objectContaining({ path: "docs/adr/0002-zwei.md", line: 2,
+        message: expect.stringContaining("../fachvertrag.md") }),
+    ]);
+  });
+
+  it("führt für externe ADR-Quellen keine Netzwerkabfrage durch", () => {
+    const linked = files.map((file) => file.path === "docs/adr/0002-zwei.md"
+      ? sourceFile(file.path, `${file.text}\n[Quelle](https://example.org/quelle.md#text)`)
+      : file);
+    expect(decisionConsistencyRule.check(linked, testConfig())).toEqual([]);
+  });
+
+  it("weist lokale ADR-Verweise außerhalb der Repositorygrenze zurück", () => {
+    const linked = files.map((file) => file.path === "docs/adr/0002-zwei.md"
+      ? sourceFile(file.path, `${file.text}\n[Quelle](../../../extern.md)`)
+      : file);
+    expect(decisionConsistencyRule.check(linked, testConfig())).toEqual([
+      expect.objectContaining({ path: "docs/adr/0002-zwei.md", line: 2,
+        message: expect.stringContaining("../../../extern.md") }),
+    ]);
+  });
+
   it("folgt der E-Zuordnung im Index, wenn ein vorgeschlagenes ADR keine E-Nummer traegt", () => {
     const decisions = Array.from({ length: 30 }, (_, index) => index + 1);
     const canonical = decisions.map((number) => `| E${number} | Entscheidung ${number} | Grund |`).join("\n");

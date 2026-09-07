@@ -1,0 +1,345 @@
+{
+  "schemaVersion": "zugfolge-vehicle-world-seed/v3",
+  "seedId": "fixture-world-seed-v3-interior-configurations",
+  "catalogReleaseId": "fixture-vehicle-catalog-interior-configurations",
+  "authorityReleaseId": "fixture-fleet-authority-interior-configurations",
+  "operationalReleaseId": "fixture-operational-interior-configurations",
+  "worldId": "00000000-0000-4000-8000-000000000387",
+  "producedAt": 100,
+  "economy": {
+    "schemaVersion": "zugfolge-vehicle-economy-projection/v2",
+    "release": {
+      "schema": "economy-release/v1",
+      "version": "fixture-economy-release-1",
+      "rates": {
+        "trackPerTrainKmCents": "100",
+        "stationPerStopCents": "200",
+        "facilityPerHourCents": "300",
+        "energyPerKwhCents": "40",
+        "personnelPerHourCents": "4000",
+        "administrationPerPeriodCents": "50000",
+        "vehiclePerPeriodCents": "100000",
+        "overnightStablingPerPeriodCents": "20000",
+        "protectionEquipmentPerPeriodCents": "10000",
+        "lateInterestBasisPoints": 500
+      },
+      "rules": {
+        "qualityBaselinePunctualityBasisPoints": 8500,
+        "pointsPerExtraSeat": 40,
+        "pointsPerPunctualityBasisPoint": 1,
+        "pointsPerAdditionalStop": 300,
+        "requirementFocusMaximumPoints": 1500,
+        "contractBonusCentsPerPeriod": "100000",
+        "penaltyRates": {
+          "punctuality": "10",
+          "cancellation": "10000",
+          "seats": "100",
+          "connections": "1000"
+        },
+        "penaltyFocusMultiplierBasisPoints": 20000,
+        "publicOperationSurchargeBasisPoints": 2000,
+        "failedPackageFeeStepBasisPoints": 500,
+        "failedPackageReductionStepBasisPoints": 400
+      },
+      "tenderProfiles": [
+        {
+          "id": "price",
+          "weights": {
+            "price": 7000,
+            "quality": 3000
+          },
+          "requirementFocus": "capacity",
+          "penaltyFocus": "punctuality",
+          "viabilitySurchargeBasisPoints": 1000
+        },
+        {
+          "id": "quality",
+          "weights": {
+            "price": 3000,
+            "quality": 7000
+          },
+          "requirementFocus": "accessibility",
+          "penaltyFocus": "connections",
+          "viabilitySurchargeBasisPoints": 1500
+        }
+      ],
+      "checksum": "35b5199c3949ec7af65762f38184462d23fc23c584aaf5f02e35da44ae9e9857"
+    },
+    "operatingCosts": [
+      {
+        "typeId": "fixture.et.101",
+        "centsPerTrainKm": 750
+      },
+      {
+        "typeId": "fixture.et.102",
+        "centsPerTrainKm": 750
+      },
+      {
+        "typeId": "fixture.et.103",
+        "centsPerTrainKm": 750
+      }
+    ],
+    "projectionSha256": "bc5af7daff87ae582ff3962d955a20440b558d0e082db5d10d7af7a11d16c035"
+  },
+  "assets": [
+    {
+      "id": "fixture-interior-vehicle-1",
+      "numericId": 1101,
+      "operatorId": "fixture-operator",
+      "typeId": "fixture.et.101",
+      "buildYear": 2024,
+      "acquisitionYear": 2025,
+      "procurementChannel": "leasing",
+      "approvedLineIds": [
+        "fixture-line-1"
+      ],
+      "maintenanceDeadlines": [
+        {
+          "kind": "revision",
+          "dueAt": 500
+        }
+      ],
+      "installedProtection": [
+        "pzb"
+      ],
+      "deliveredAt": 50,
+      "retiredAt": 1000,
+      "orientation": "along",
+      "condition": {
+        "mechanicsBasisPoints": 10000,
+        "driveBasisPoints": 10000,
+        "brakesBasisPoints": 10000,
+        "kilometresSinceMaintenance": 0,
+        "operatingHoursSinceMaintenance": 0,
+        "openObservations": 0
+      },
+      "restrictions": {},
+      "history": [
+        "Ausdruecklich fiktive M5-Spielkonfiguration fuer reproduzierbare Innenraumtests; keine realen Baureihenmasse."
+      ],
+      "vehicleConfiguration": {
+        "schemaVersion": "m5-vehicle-configuration/v1",
+        "structural": {
+          "doorCountPerSide": 4,
+          "doorWidthMm": 1300,
+          "bodyLengthMm": 70000
+        },
+        "interior": {
+          "firstClassSeats": 16,
+          "secondClassSeats": 104,
+          "density": "standard",
+          "seatType": "row",
+          "multipurpose": {
+            "bicycles": 12,
+            "pushchairs": 4,
+            "wheelchairs": 2,
+            "standing": 40
+          },
+          "toilets": 2,
+          "accessibleToilets": 1,
+          "amenities": [
+            "air_conditioning",
+            "passenger_information"
+          ]
+        }
+      }
+    },
+    {
+      "id": "fixture-interior-vehicle-2",
+      "numericId": 1102,
+      "operatorId": "fixture-operator",
+      "typeId": "fixture.et.102",
+      "buildYear": 2024,
+      "acquisitionYear": 2025,
+      "procurementChannel": "leasing",
+      "approvedLineIds": [
+        "fixture-line-1"
+      ],
+      "maintenanceDeadlines": [
+        {
+          "kind": "revision",
+          "dueAt": 500
+        }
+      ],
+      "installedProtection": [
+        "pzb"
+      ],
+      "deliveredAt": 50,
+      "retiredAt": 1000,
+      "orientation": "along",
+      "condition": {
+        "mechanicsBasisPoints": 10000,
+        "driveBasisPoints": 10000,
+        "brakesBasisPoints": 10000,
+        "kilometresSinceMaintenance": 0,
+        "operatingHoursSinceMaintenance": 0,
+        "openObservations": 0
+      },
+      "restrictions": {},
+      "history": [
+        "Ausdruecklich fiktive M5-Spielkonfiguration fuer reproduzierbare Innenraumtests; keine realen Baureihenmasse."
+      ],
+      "vehicleConfiguration": {
+        "schemaVersion": "m5-vehicle-configuration/v1",
+        "structural": {
+          "doorCountPerSide": 6,
+          "doorWidthMm": 1400,
+          "bodyLengthMm": 70000
+        },
+        "interior": {
+          "firstClassSeats": 16,
+          "secondClassSeats": 184,
+          "density": "spacious",
+          "seatType": "face_to_face",
+          "multipurpose": {
+            "bicycles": 12,
+            "pushchairs": 2,
+            "wheelchairs": 2,
+            "standing": 20
+          },
+          "toilets": 3,
+          "accessibleToilets": 1,
+          "amenities": [
+            "air_conditioning",
+            "passenger_information"
+          ]
+        }
+      }
+    },
+    {
+      "id": "fixture-interior-vehicle-3",
+      "numericId": 1103,
+      "operatorId": "fixture-operator",
+      "typeId": "fixture.et.103",
+      "buildYear": 2024,
+      "acquisitionYear": 2025,
+      "procurementChannel": "leasing",
+      "approvedLineIds": [
+        "fixture-line-1"
+      ],
+      "maintenanceDeadlines": [
+        {
+          "kind": "revision",
+          "dueAt": 500
+        }
+      ],
+      "installedProtection": [
+        "pzb"
+      ],
+      "deliveredAt": 50,
+      "retiredAt": 1000,
+      "orientation": "along",
+      "condition": {
+        "mechanicsBasisPoints": 10000,
+        "driveBasisPoints": 10000,
+        "brakesBasisPoints": 10000,
+        "kilometresSinceMaintenance": 0,
+        "operatingHoursSinceMaintenance": 0,
+        "openObservations": 0
+      },
+      "restrictions": {},
+      "history": [
+        "Ausdruecklich fiktive M5-Spielkonfiguration fuer reproduzierbare Innenraumtests; keine realen Baureihenmasse."
+      ],
+      "vehicleConfiguration": {
+        "schemaVersion": "m5-vehicle-configuration/v1",
+        "structural": {
+          "doorCountPerSide": 8,
+          "doorWidthMm": 1600,
+          "bodyLengthMm": 70000
+        },
+        "interior": {
+          "firstClassSeats": 16,
+          "secondClassSeats": 80,
+          "density": "dense",
+          "seatType": "folding",
+          "multipurpose": {
+            "bicycles": 12,
+            "pushchairs": 8,
+            "wheelchairs": 2,
+            "standing": 48
+          },
+          "toilets": 1,
+          "accessibleToilets": 1,
+          "amenities": [
+            "air_conditioning",
+            "passenger_information"
+          ]
+        }
+      }
+    }
+  ],
+  "formations": [
+    {
+      "id": "fixture-interior-formation-1",
+      "predecessorId": null,
+      "vehicleIds": [
+        "fixture-interior-vehicle-1"
+      ],
+      "pathReceiptId": "fixture-path-1"
+    },
+    {
+      "id": "fixture-interior-formation-2",
+      "predecessorId": null,
+      "vehicleIds": [
+        "fixture-interior-vehicle-2"
+      ],
+      "pathReceiptId": "fixture-path-1"
+    },
+    {
+      "id": "fixture-interior-formation-3",
+      "predecessorId": null,
+      "vehicleIds": [
+        "fixture-interior-vehicle-3"
+      ],
+      "pathReceiptId": "fixture-path-1"
+    }
+  ],
+  "personnelPools": [
+    {
+      "id": "fixture-personnel-1",
+      "numericId": 2001,
+      "operatorId": "fixture-operator",
+      "capacitySeconds": 28800,
+      "minimumRestSeconds": 39600,
+      "classDesignations": [
+        "ET101",
+        "ET102",
+        "ET103"
+      ],
+      "pathReceiptIds": [
+        "fixture-path-1"
+      ],
+      "qualificationHash": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+    }
+  ],
+  "pathReceipts": [
+    {
+      "id": "fixture-path-1",
+      "numericRouteId": 3001,
+      "operatorId": "fixture-operator",
+      "serviceLineIds": [
+        "fixture-line-1"
+      ],
+      "decision": "confirmed",
+      "validFrom": 0,
+      "validUntil": 1000,
+      "platformLengthsMm": [
+        100000
+      ],
+      "electrifications": [
+        "overhead-ac15kv"
+      ],
+      "requiredProtection": [
+        "pzb"
+      ],
+      "approvedClasses": [
+        "ET101",
+        "ET102",
+        "ET103"
+      ],
+      "plannerStateHash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "conflictCheckHash": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+    }
+  ]
+}

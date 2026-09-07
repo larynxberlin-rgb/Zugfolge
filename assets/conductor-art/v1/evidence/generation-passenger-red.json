@@ -1,0 +1,51 @@
+{
+  "schemaVersion": "conductor-art-generation-evidence/v1",
+  "source": "sources/passenger-red.png",
+  "sourceSha256": "b30657809b5262048e4f5a288b9122d0c7dc37b018a3e6686e4caf92596594d7",
+  "tool": "image_gen.imagegen",
+  "prompt": "Use case: stylized-concept. Asset type: original production pixel-art animation sprite sheet for Zugfolge, a railway management game. Not concept art, no mockup. Deliver an exact 1280 by 1024 PNG with genuinely transparent background. It is a 5-column by 4-row sheet of equal 256x256 cells; no lines, margins, labels or borders. Each cell is a 64x64 logical-pixel sprite magnified precisely 4x with nearest-neighbor hard square pixels. Every visible edge snaps to this 4px grid. Camera is orthogonal directly above, true top-down, no isometric tilt, no vanishing points. A person's footprint is 22x28 logical pixels centered at x32,y32 inside every cell, identical anchor in all frames. No antialiasing, smooth gradients, drop shadow outside silhouette, text, numbers, badges, logos, watermarks, recognizable franchise motifs or copied brands. Original understated European railway atmosphere. Small strictly limited flat palette: graphite #101419 #181e25 #202830 #303b46; light #f5f7fa #b5c0cc #93a2b1; red #e5233d; accent #7cddba #f5bf65; natural skin #e8b894 #be8060 #805342; hair #382c28. Each ROW shows ONE facing: row1 south/towards bottom, row2 west/left, row3 east/right, row4 north/away. Each COLUMN shows one animation phase: col1 idle feet together, col2 walk left foot forward, col3 passing step, col4 right foot forward, col5 opposite passing step. The character's costume, scale, anatomy and anchor stay consistent through all 20 separately drawn frames. Walk frames must be visibly different, not duplicate idle images. The head is seen from above, shoulders and hands clearly legible, no side-view full-height standing portrait. Transparent cells, no floor. Create only the sprite sheet. Subject: adult passenger with a short dark hairstyle, red overshirt over cream top, dark graphite trousers, small sand-colored shoulder bag on the right. Friendly neutral ordinary traveler, no uniform. Skin warm medium. At 32logical pixels per meter, readable silhouette.",
+  "metadata": {
+    "container": "PNG/caBX/JUMBF/c2pa.actions.v2",
+    "cborSha256": "593d1456d51672f78e73ecdabfac519dfd5a7dbb3be77f3e7808bbd95cf9a4bb",
+    "actions": {
+      "actions": [
+        {
+          "action": "c2pa.created",
+          "when": "2026-09-05T00:00:00Z",
+          "softwareAgent": {
+            "name": "gpt-image",
+            "version": "2.0"
+          },
+          "digitalSourceType": "http://cv.iptc.org/newscodes/digitalsourcetype/trainedAlgorithmicMedia"
+        },
+        {
+          "action": "c2pa.converted",
+          "when": "2026-09-05T00:00:00Z"
+        },
+        {
+          "action": "c2pa.watermarked.unbound",
+          "when": "2026-09-05T00:00:00Z"
+        }
+      ],
+      "allActionsIncluded": false
+    },
+    "softwareAgent": {
+      "name": "gpt-image",
+      "version": "2.0"
+    },
+    "interpretation": "Providerdeklarierte Modellangabe; keine Prüfung der C2PA-Signatur oder Aussage über interne Gewichte."
+  },
+  "technicalProcessing": {
+    "script": "tools/art-atlas/prepare.py",
+    "pillowVersion": "12.3.0",
+    "operations": [
+      "crop",
+      "edge-connected-neutral-checkerboard-removal",
+      "alpha-threshold-128",
+      "nearest-neighbor-resize",
+      "fixed-palette-no-dither",
+      "atlas-pack"
+    ],
+    "authorization": "Auftraggeber: Ja, technisch aufbereiten (06.09.2026)."
+  }
+}
