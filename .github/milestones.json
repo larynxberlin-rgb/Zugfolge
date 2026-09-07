@@ -347,6 +347,7 @@
         { "label": "M15.1/M15.2 Teilabnahme und offene Abhängigkeiten", "url": "docs/m15-abnahme.md" },
         { "label": "M15.3 Grafikatlas, Pflichtkatalog und Freigabevertrag", "url": "docs/art-atlas.md" },
         { "label": "M15.3 Freigabe, Korpusprüfung und Browsernachweise", "url": "docs/art-atlas/README.md" },
+        { "label": "M15.3/M15.6 Dauerhafte Signaturen und registrierte Alpha-Weltpins", "url": "docs/conductor-release-signing.md" },
         { "label": "M15.4 Innenraum-, Konfigurations- und Bewegungsvertrag", "url": "docs/conductor-interior.md" },
         { "label": "M15.4 Native Plattformintegration und begehbarer Browsernachweis", "url": "docs/conductor-interior/README.md" },
         { "label": "M15.5–M15.12: integrierte Implementierung und tatsächliche Abnahmegrenzen", "url": "docs/m15-integration.md" }

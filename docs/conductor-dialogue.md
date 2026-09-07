@@ -160,3 +160,11 @@ nach vollständigem Erfolg einen Bericht; der vorliegende Lauf steht in
 `outputs/M15-Sitzung/dialogue-http-report.json` (Windows, 221,11 Sekunden).
 Dieser Bericht belegt HTTP und native Kernpfade; die zusammenhängende
 Desktop-/Touchdarstellung und produktive Signatur bleiben gesonderte Belege.
+
+Die tatsächliche dauerhafte Signatur und die getrennte Registrierung von
+öffentlichem Dialogtrust, Weltpin und Reviewhash für die bestehende Alpha-Welt
+sind inzwischen in [conductor-release-signing.md](conductor-release-signing.md)
+belegt. Die erneute Abschlussanweisung autorisierte die erforderliche
+Erstbereitstellung; der unabhängige öffentliche Prüfbefehl liest keinen
+Privatschlüssel und bestätigt den unveränderten Korpus mit dem echten nativen
+Validator. Eine laufende produktive Weltaktivierung wird daraus nicht abgeleitet.

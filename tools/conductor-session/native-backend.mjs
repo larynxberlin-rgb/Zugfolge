@@ -1,10 +1,11 @@
 /** Local browser proof: unchanged production routes/DOM, real DB and native domain producers. */
-import { randomBytes } from "node:crypto";
-import { readFile } from "node:fs/promises";
-import { resolve } from "node:path";
+import { createHash, randomBytes } from "node:crypto";
+import { mkdtemp, readFile, rmdir, unlink, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import Fastify from "../../apps/game-api/node_modules/fastify/fastify.js";
-import { createServer } from "../../apps/livemap/node_modules/vite/dist/node/index.js";
+import { build, createServer } from "../../apps/livemap/node_modules/vite/dist/node/index.js";
 import { createConductorSessionNativeFixture } from "../../apps/game-api/dist/conductor-session.native-fixture.js";
 import { registerConductorSessionRoutes } from "../../apps/game-api/dist/conductor-session-routes.js";
 import { loadConductorContext } from "../../apps/game-api/dist/conductor-context.js";
@@ -24,7 +25,31 @@ const noControlEffects = {
   },
 };
 
-export async function startConductorSessionBrowserBackend({ control = noControlEffects, sceneEpochUtcTimeOfDayMs, fixtureFactory, entryOnly = false } = {}) {
+async function compileFrontend(html) {
+  const parent = resolve(tmpdir());
+  const directory = await mkdtemp(resolve(parent, "zugfolge-conductor-build-"));
+  if (dirname(directory) !== parent) throw new Error("Unexpected frontend build directory.");
+  const entry = resolve(directory, "index.html");
+  try {
+    await writeFile(entry, html, { flag: "wx" });
+    const result = await build({ root: directory, configFile: false, logLevel: "error", publicDir: false,
+      resolve: { alias: [{ find: /^\/src\//u, replacement: `${resolve(ROOT, "apps/livemap/src").replaceAll("\\", "/")}/` }] },
+      build: { write: false, sourcemap: false, minify: true, rollupOptions: { input: entry } },
+    });
+    if (Array.isArray(result) || !("output" in result)) throw new Error("Unexpected production frontend output.");
+    return result.output.map((item) => {
+      if (item.fileName.startsWith("/") || item.fileName.split("/").includes("..")) throw new Error("Unsafe production asset name.");
+      const bytes = Buffer.from(item.type === "chunk" ? item.code : item.source);
+      return { file: item.fileName, bytes, sha256: createHash("sha256").update(bytes).digest("hex") };
+    });
+  } finally {
+    // Only the one input created above is removed; the build never writes assets.
+    await unlink(entry).catch((error) => { if (error.code !== "ENOENT") throw error; });
+    await rmdir(directory);
+  }
+}
+
+export async function startConductorSessionBrowserBackend({ control = noControlEffects, sceneEpochUtcTimeOfDayMs, fixtureFactory, entryOnly = false, productionFrontend = false } = {}) {
   const fixture = fixtureFactory ? await fixtureFactory() : await createConductorSessionNativeFixture(control, { sceneEpochUtcTimeOfDayMs });
   const app = Fastify({ logger: false }), token = randomBytes(24).toString("hex");
   const streams = new Set(), requests = [];
@@ -39,8 +64,6 @@ export async function startConductorSessionBrowserBackend({ control = noControlE
       if (request.headers.authorization !== `Bearer ${token}`) { await reply.code(401).send({ code: "test_token_invalid", error: "Lokaler Prüftoken fehlt." }); return; }
       request.identity = { keycloakSubject: fixture.access.keycloakSubject, displayName: "Native Browserabnahme" };
     } });
-    await app.listen({ host: "127.0.0.1", port: 0 });
-    const apiOrigin = `http://127.0.0.1:${app.server.address().port}`;
     const world = await fixture.db.query.worlds.findFirst({ where: (row, { eq }) => eq(row.id, fixture.access.worldId) });
     const operator = await fixture.db.query.operators.findFirst({ where: (row, { eq, and }) => and(eq(row.worldId, fixture.access.worldId), eq(row.id, fixture.access.operatorId)) });
     if (!world || !operator) throw new Error("The actual browser fixture requires its world and operator names.");
@@ -74,7 +97,25 @@ export async function startConductorSessionBrowserBackend({ control = noControlE
         const api=new ConductorApi('',c.worldId,operatorId,trainRunId,async()=>c.token);
         void appendConductorEntry({host:document.querySelector('#entry-host'),api,trainLabel,worldLabel:c.worldLabel,operatorLabel,isCurrent:()=>selected});</script></html>`;
     }
-    vite = await createServer({ root: resolve(ROOT, "apps/livemap"), configFile: false, logLevel: "error",
+    let frontend = { mode: "vite-development", files: [] };
+    if (productionFrontend) {
+      const assets = await compileFrontend(html);
+      const index = assets.find((asset) => asset.file === "index.html");
+      if (!index) throw new Error("Production build did not produce the actual entry document.");
+      const contentType = (file) => file.endsWith(".html") ? "text/html; charset=utf-8"
+        : file.endsWith(".js") ? "text/javascript; charset=utf-8" : file.endsWith(".css") ? "text/css; charset=utf-8"
+          : file.endsWith(".svg") ? "image/svg+xml" : file.endsWith(".png") ? "image/png"
+            : file.endsWith(".woff2") ? "font/woff2" : "application/octet-stream";
+      const serve = (asset) => (_request, reply) => reply.type(contentType(asset.file)).header("x-content-type-options", "nosniff")
+        .header("cache-control", "no-store").send(asset.bytes);
+      for (const asset of assets) app.get(`/${asset.file}`, serve(asset));
+      app.get("/", serve(index)); app.get("/conductor-proof", serve(index));
+      frontend = { mode: "vite-production", files: assets.map(({ file, bytes, sha256 }) => ({ file, bytes: bytes.length, sha256 })) };
+    }
+    await app.listen({ host: "127.0.0.1", port: 0 });
+    const apiOrigin = `http://127.0.0.1:${app.server.address().port}`;
+    if (!productionFrontend) {
+      vite = await createServer({ root: resolve(ROOT, "apps/livemap"), configFile: false, logLevel: "error",
       server: { host: "127.0.0.1", port: 0, strictPort: false, fs: { strict: true, allow: [ROOT] },
         proxy: { "/worlds": { target: apiOrigin, changeOrigin: false } } },
       plugins: [{ name: "actual-conductor-component-proof", configureServer(server) {
@@ -84,8 +125,9 @@ export async function startConductorSessionBrowserBackend({ control = noControlE
         });
       } }],
     });
-    await vite.listen();
-    const url = `http://127.0.0.1:${vite.httpServer.address().port}/conductor-proof`;
+      await vite.listen();
+    }
+    const url = `${productionFrontend ? apiOrigin : `http://127.0.0.1:${vite.httpServer.address().port}`}/conductor-proof`;
     const route = `/worlds/${config.worldId}/operators/${config.operatorId}/trains/${config.trainRunId}/conductor-sessions`;
     const receipt = JSON.parse(await readFile(resolve(fixture.compiled.output, "vehicle-catalog-compile-receipt-v4.json"), "utf8"));
     return {
@@ -99,7 +141,7 @@ export async function startConductorSessionBrowserBackend({ control = noControlE
           .flatMap((manifest) => manifest.passengers.filter((person) => person.alightingStopId === finalStopId).map((person) => person.passengerKey)))];
       },
       evidence: { source: "Explicit fictional infrastructure and M5 game configurations; real compiler, PGlite, OperationalWorker, M10 DemandService and session core",
-        nativeTransport, nativeBuildProfile, nativeBuildProfileEvidence: "Inferred from explicitly configured native program paths",
+        nativeTransport, nativeBuildProfile, nativeBuildProfileEvidence: "Inferred from explicitly configured native program paths", frontend,
         controlIntegration: fixture.control ? "Actual native fare-control, police and ledger integration" : control === noControlEffects ? "Unconfigured: all nonempty control effects fail closed" : "Explicit caller-provided integration",
         worldId: config.worldId, trainRunId: config.trainRunId, compilerOutputSetHash: receipt.outputSetSha256,
         demandFinalitySteps: fixture.demandFinalitySteps ?? [],
@@ -128,12 +170,12 @@ export async function startConductorSessionBrowserBackend({ control = noControlE
         });
         tail = next.catch(() => {}); return next;
       },
-      disconnectStreams() { for (const stream of streams) stream.destroy(); vite.httpServer.closeAllConnections(); },
+      disconnectStreams() { for (const stream of streams) stream.destroy(); (vite?.httpServer ?? app.server).closeAllConnections(); },
       requestSummary: () => requests.map((request) => ({ ...request })),
       async close() {
         if (closed) return; closed = true;
         for (const stream of streams) stream.destroy();
-        await tail; await vite.close(); await app.close(); await fixture.dispose();
+        await tail; await vite?.close(); await app.close(); await fixture.dispose();
       },
     };
   } catch (error) {

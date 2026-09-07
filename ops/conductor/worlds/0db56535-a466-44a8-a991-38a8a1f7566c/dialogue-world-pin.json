@@ -1,0 +1,8 @@
+{
+  "schemaVersion": "conductor-dialogue-world-pin/v1",
+  "worldId": "0db56535-a466-44a8-a991-38a8a1f7566c",
+  "releaseId": "dialogue-de-2026-v1",
+  "releaseSha256": "a602cc60e168cc7cc39e60fddfa57e44cf10f4c9b72cfe79fb014f0679e5e651",
+  "editorialReviewSha256": "a6237b876de24b16e5b0f9b0c0eac28b06ddbd7c512885762a9b803190a995ab",
+  "signingKeyId": "zugfolge-conductor-dialogue-2026.1"
+}

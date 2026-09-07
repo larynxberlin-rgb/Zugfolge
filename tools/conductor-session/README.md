@@ -138,7 +138,11 @@ CONDUCTOR_CAPACITY_BROWSER_TEST=1 node --test tools/conductor-session/capacity-b
 Der Bericht misst zwölf authentifizierte lokale Snapshotrundläufe und je
 24 tatsächliche Deckwechsel bis zum nächsten Browserframe auf Desktop,
 390 und 320 Pixel Breite. Die Zeiten umfassen den lokalen DB-/HTTP-/nativen
-Transport beziehungsweise den Vite-Entwicklungsbuild; sie behaupten weder
+Transport beziehungsweise einen mit Vite kompilierten Produktionsbuild der
+unveränderten Schaffneroberfläche. Fastify liefert dessen tatsächlich erzeugte
+HTML-/JS-/CSS-Dateien aus; der Browser lädt weder Vite-Client noch TypeScript-
+Quellmodule. Der Bericht bindet jede ausgelieferte Builddatei an Bytezahl und
+SHA-256 und nennt CPU-, RAM-, Plattform- und Browserstand. Die Messungen behaupten weder
 ein bestandenes Produktionsbudget noch eine weltweit maximal freigegebene
 SPNV-Formation. `CONDUCTOR_CAPACITY_REPORT_PATH` steuert die Berichtdatei.
 

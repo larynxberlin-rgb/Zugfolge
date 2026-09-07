@@ -385,12 +385,14 @@ Atlas-Prüfbericht. Eine erneute allgemeine Freigabe wird dafür nicht benötigt
 
 Der [Prüfnachweis des vorhandenen Korpus](art-atlas/README.md) verlinkt
 den vollständigen Korpus, Herkunftsbelege, die lokale Galerie und tatsächliche
-Browserbilder. Für den produktiven Abschluss fehlen noch der extern
-bereitgestellte Art-Signierschlüssel, sein unabhängig vertrauter öffentlicher
-Eintrag, ein bestehender passender Weltpin und die damit erzeugte gültige
-Signatur. Diese Eingaben werden weder aus anderen Releases übernommen noch
-automatisch erzeugt. Der vorbereitete Signiereinstieg ist ein prüfbares Werkzeug;
-er behauptet keine bereits erfolgte Signierung oder Aktivierung.
+Browserbilder. Die erneute Abschlussanweisung des Eigentümers autorisierte
+die getrennte dauerhafte Schlüsselbereitstellung und Registrierung für die
+bestehende Alpha-Welt. Die damit tatsächlich erzeugte Signatur, der separate
+öffentliche Art-Trust und der exakte Weltpin sind in
+[conductor-release-signing.md](conductor-release-signing.md) belegt und mit
+dem produktiven Loader öffentlich nachprüfbar. Der Originalkorpus bleibt
+unverändert. Diese Releasefreigabe behauptet keine bereits ausgeführte
+Aktivierung eines laufenden Weltservers.
 
 M15.4 [#214](https://github.com/larynxberlin-rgb/Zugfolge/issues/214) bleibt
 für die aus Fahrzeugkonfigurationen abgeleitete begehbare Innenraumgeometrie

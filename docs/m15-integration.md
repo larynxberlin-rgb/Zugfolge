@@ -115,10 +115,15 @@ Sitzungsdaten nicht verdecken.
 
 ## Verbleibende Release- und Gesamtannahmebedingungen
 
-Die Asset-, Referenz- und Releasefreigabe des Auftraggebers liegt vor. Für die
-produktive kryptografische Auslieferung fehlen weiterhin die tatsächlich
-autorisierten Signierschlüssel und die unabhängige Schlüsselzuordnung der
-Zielwelt. Temporäre Testschlüssel gelten ausschließlich für Testkorpora.
+Die Asset-, Referenz- und Releasefreigabe des Auftraggebers liegt vor. Seine
+erneute Abschlussanweisung autorisierte die erforderliche erstmalige
+Schlüsselbereitstellung. Die unveränderten Art- und Dialogkorpora sind nun
+mit getrennten dauerhaften Ed25519-Schlüsseln signiert und über separate
+öffentliche Rollenverzeichnisse und Weltpins für die bestehende Alpha-Welt
+registriert. [Signatur- und Bereitstellungsnachweis](conductor-release-signing.md)
+verwendet die tatsächlichen Loader und den Rust-Dialogvalidator. Dies aktiviert
+keinen fehlenden Zielserver; temporäre Testschlüssel bleiben auf Testfahrten
+beschränkt.
 
 Der Szenencompiler verarbeitet amtliche, belegte Stations- und
 Gemeindequellen. Der vollständige ursprüngliche Operational-InfraRelease
@@ -137,5 +142,6 @@ allgemeinen Produktionsproducer nicht.
 M15 wird erst vollständig geschlossen, wenn der zusammenhängende
 Mehrzug-/Browser-/Ledgernachweis, die maximal freigegebene SPNV-Formation,
 der signierte Abnahmekorpus und die vier CI-Jobs für denselben abschließenden
-Stand vorliegen. Die offenen Issues #213, #215, #216 und #222 behalten ihre
-entsprechenden konkreten Gates.
+Stand vorliegen. Die offenen Issues #215 und #222 behalten ihre konkreten
+Daten-, Formations- und Laufzeitbedingungen; #213/#216 sind durch die
+tatsächliche Signierung und öffentliche Weltregistrierung erfüllt.

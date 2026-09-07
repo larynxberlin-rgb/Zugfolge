@@ -1,0 +1,21 @@
+{
+  "schemaVersion": "conductor-release-binding/v1",
+  "worldId": "0db56535-a466-44a8-a991-38a8a1f7566c",
+  "worldIdentityFile": "tools/region-import/specifications/alpha-world-germany-2026.3.identity.json",
+  "worldIdentityCanonicalSha256": "0173f92a02f4973dfaa08d33be891a2a2ef23c4c6bf4dae6951d526f5eef3854",
+  "roles": {
+    "art": {
+      "keyId": "zugfolge-conductor-art-2026.1",
+      "publicSpkiSha256": "5e3463fc466301ab359b435f9d7330312c0f7f2ea8ef0405de949eea976709d9"
+    },
+    "dialogue": {
+      "keyId": "zugfolge-conductor-dialogue-2026.1",
+      "publicSpkiSha256": "69edb323b81860fbe500227f06fe8180cdf864b89244984f31758b0dc50e1dce"
+    }
+  },
+  "authorization": {
+    "basis": "owner-authorized-initial-provisioning",
+    "record": "docs/conductor-release-signing.md"
+  },
+  "deploymentStatus": "registered_not_activated"
+}

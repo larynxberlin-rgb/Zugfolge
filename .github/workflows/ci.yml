@@ -175,6 +175,19 @@ jobs:
       - name: M3-Planning-Worker und TypeScript-Grenzen bauen
         run: pnpm --filter @zugfolge/planning-worker... build
 
+      - name: Registrierte Art- und Dialogsignaturen für die Alpha-Welt prüfen
+        run: |
+          pnpm --filter @zugfolge/conductor-art... --filter @zugfolge/conductor-dialogue... build
+          node --test tools/conductor-release/verify.test.mjs
+          node tools/conductor-release/verify.mjs > "$RUNNER_TEMP/conductor-registered-release-verification.json"
+
+      - name: Öffentlichen M15-Signaturnachweis aufbewahren
+        uses: actions/upload-artifact@v4
+        with:
+          name: conductor-registered-release-verification
+          path: ${{ runner.temp }}/conductor-registered-release-verification.json
+          if-no-files-found: error
+
       - name: M3-Planning-Node-Addon mit registrierter NAPI-Grenze bauen
         run: cargo build --release --locked -p zugfolge-planning-runtime-napi --features node-addon
 

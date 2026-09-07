@@ -259,7 +259,7 @@ Liste ist keine vollständige Karte des Repositoriums, sondern die Zuordnung
 | `infra-pipeline` | `crates/zugfolge-infra/**` | aktiv | **der einzige Ort mit Gleitkommarechnung** — sie endet in ganzzahligen Fahrzeittabellen |
 | `world-isolation` | `packages/db/**` | aktiv | Postgres-Zugriff der Game-Services; Wurzel der Weltisolation — `worlds`, das Event-Log und das weltgebundene Repository (M2.2) |
 | `release-tools` | `tools/audits/**`, `tools/reference-corpus/**`, `tools/reference-model/**`, `tools/region-import/**`, `tools/tiles/**` | aktiv | nicht autoritative Datei-I/O-, Import- und Kartenadapter; Freigabeentscheidungen bleiben in Rust |
-| `operations-tools` | `tools/alpha-ops/**`, `tools/art-atlas/**`, `tools/conductor-interior/**`, `tools/guards/**`, `tools/load/**`, `tools/m7-acceptance/**`, `tools/m7-e2e/**`, `tools/ui-preview/**` | aktiv | Betriebs-, Abnahme-, Last-, UI-Vorschau- und Governance-Werkzeuge ohne fachliche Laufzeitautorität |
+| `operations-tools` | `tools/alpha-ops/**`, `tools/art-atlas/**`, `tools/conductor-interior/**`, `tools/conductor-release/**`, `tools/guards/**`, `tools/load/**`, `tools/m7-acceptance/**`, `tools/m7-e2e/**`, `tools/ui-preview/**` | aktiv | Betriebs-, Abnahme-, Last-, UI-Vorschau- und Governance-Werkzeuge ohne fachliche Laufzeitautorität |
 | `platform-services` | explizit aufgezählte übrige `packages/*` und `apps/*` | aktiv | vollständige Zuordnung aller Produktionspakete; neue Pakete erzwingen vor dem ersten Commit eine bewusste Wächterentscheidung |
 
 **Status ist kein Kommentar, sondern eine Prüfung.** Eine `aktive` Domäne muss

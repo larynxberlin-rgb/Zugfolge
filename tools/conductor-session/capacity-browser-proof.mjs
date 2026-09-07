@@ -4,6 +4,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { performance } from "node:perf_hooks";
+import { cpus, totalmem } from "node:os";
 import test from "node:test";
 import { chromium } from "../../apps/game-api/node_modules/playwright-core/index.mjs";
 import { createConductorSessionNativeFixture } from "../../apps/game-api/dist/conductor-session.native-fixture.js";
@@ -19,11 +20,12 @@ const stats = (samples) => ({ samplesMs: samples, p95Ms: [...samples].sort((a, b
 test("the complete 220-passenger M5 double-deck configuration remains accessible through the actual browser and native stairs", {
   skip: process.env.CONDUCTOR_CAPACITY_BROWSER_TEST !== "1", timeout: 360000,
 }, async () => {
-  const backend = await startConductorSessionBrowserBackend({ fixtureFactory: () => createConductorSessionNativeFixture(noControlEffects, { configurationIndex: 2 }) });
+  const backend = await startConductorSessionBrowserBackend({ productionFrontend: true,
+    fixtureFactory: () => createConductorSessionNativeFixture(noControlEffects, { configurationIndex: 2 }) });
   const output = resolve(process.env.CONDUCTOR_SESSION_SCREENSHOT_DIR ?? resolve(ROOT, "outputs/M15-Sitzung/screenshots"));
   const reportPath = resolve(process.env.CONDUCTOR_CAPACITY_REPORT_PATH ?? resolve(output, "../capacity-browser-report.json"));
   let browser, page;
-  const screenshots = [], errors = [], timings = [];
+  const screenshots = [], errors = [], timings = [], loadedScripts = [];
   try {
     await mkdir(output, { recursive: true }); await mkdir(dirname(reportPath), { recursive: true });
     browser = await chromium.launch({ headless: true,
@@ -31,6 +33,7 @@ test("the complete 220-passenger M5 double-deck configuration remains accessible
         : process.platform === "win32" ? { channel: "msedge" } : {}) });
     page = await browser.newPage({ viewport: { width: 1440, height: 1080 }, reducedMotion: "reduce", hasTouch: true });
     page.setDefaultTimeout(60000); page.on("pageerror", (error) => errors.push(error.message));
+    page.on("response", (response) => { if (response.request().resourceType() === "script") loadedScripts.push(new URL(response.url()).pathname); });
     const request = async () => {
       const response = await page.request.get(`${new URL(backend.url).origin}${backend.route}/snapshot`, { headers: { authorization: `Bearer ${backend.token}` } });
       assert.equal(response.status(), 200, await response.text()); return response.json();
@@ -41,6 +44,14 @@ test("the complete 220-passenger M5 double-deck configuration remains accessible
     };
     await page.goto(backend.url); await page.getByRole("button", { name: "Schaffnermodus öffnen", exact: true }).click();
     await page.waitForFunction(() => document.querySelector("canvas")?.dataset.renderer === "webgl", null, { timeout: 90000 });
+    assert.equal(backend.evidence.frontend.mode, "vite-production");
+    assert.ok(loadedScripts.length > 0 && loadedScripts.every((path) => path.startsWith("/assets/") && path.endsWith(".js")), "The real browser must load compiled production bundles only.");
+    for (const asset of backend.evidence.frontend.files) {
+      const response = await page.request.get(`${new URL(backend.url).origin}/${asset.file}`);
+      assert.equal(response.status(), 200);
+      const bytes = await response.body(); assert.equal(bytes.length, asset.bytes);
+      assert.equal(createHash("sha256").update(bytes).digest("hex"), asset.sha256);
+    }
     const initial = await request(), people = initial.snapshot.passengers.passengers;
     assert.equal(people.length, 220); assert.equal(new Set(people.map((row) => row.passengerKey)).size, 220);
     assert.equal(initial.layout.capacity.standardSeats + initial.layout.capacity.premiumSeats, 200);
@@ -108,12 +119,14 @@ test("the complete 220-passenger M5 double-deck configuration remains accessible
     assert.deepEqual(errors, []);
     const report = { schemaVersion: "conductor-session-capacity-browser-proof/v1", evidence: backend.evidence,
       browser: { version: browser.version(), platform: process.platform, arch: process.arch },
+      host: { logicalCpus: cpus().length, cpuModel: cpus()[0]?.model ?? "unknown", physicalMemoryBytes: totalmem(), node: process.version },
+      loadedScripts,
       runtimeTransport: process.env.ZUGFOLGE_RUNTIME_NATIVE_PATH ? "Linux NAPI addon" : "Native Rust test CLI processes",
       capacity: initial.layout.capacity, fullPassengerCount: people.length, layoutHash: initial.layout.layoutHash,
       stairs: { before: initial.snapshot.position, after: crossed.snapshot.position, edges: initial.layout.edges.filter((edge) => edge.kind === "stair") },
       measurements: { authenticatedSnapshotLocalRoundTrip: stats(timings), deckChangeToNextAnimationFrame: frameMeasurements },
       limits: ["Largest complete fictional M5 configuration in this corpus, not a globally approved maximal SPNV formation",
-        "Local real DB and native runtime transport; Vite development browser build; descriptive measurements without a productive budget assertion",
+        "Local real DB and native runtime transport; hashed production frontend bundles; descriptive measurements without a productive budget assertion",
         "Temporary test signatures; no productive world activation"], screenshots, pageErrors: errors };
     await writeFile(reportPath, `${JSON.stringify(report, null, 2)}\n`);
     console.log(JSON.stringify({ reportPath, fullPassengerCount: people.length, screenshots: screenshots.length, measurements: report.measurements }));

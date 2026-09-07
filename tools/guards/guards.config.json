@@ -123,6 +123,7 @@
         "tools/conductor-interior/**",
         "tools/conductor-scenes/**",
         "tools/conductor-dialogue/**",
+        "tools/conductor-release/**",
         "tools/conductor-session/**",
         "tools/guards/**",
         "tools/load/**",
