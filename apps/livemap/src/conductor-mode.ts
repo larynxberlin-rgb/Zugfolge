@@ -1,7 +1,9 @@
 import type { ConductorCommandActionV1, ConductorCommandV1, InteriorDeckId, InteriorPointV1, VisiblePassengerV2 } from "@zugfolge/runtime-native";
+import { railwayBrand } from "@zugfolge/design-system";
 import { ConductorApi, ConductorApiError, type ConductorResponse } from "./conductor-api.js";
 import { createConductorRenderer, type ConductorRenderer } from "./conductor-renderer.js";
 import { openConductorReport, renderConductorControlReport } from "./conductor-report.js";
+import { trapConductorDialogFocus } from "./conductor-dialog.js";
 import "./conductor.css";
 
 const deckLabels = { main: "Hauptdeck", lower: "Unterdeck", upper: "Oberdeck" };
@@ -14,13 +16,19 @@ const sameSpace = (a: InteriorPointV1, b: InteriorPointV1) => a.vehicleId === b.
 const distance = (a: InteriorPointV1, b: InteriorPointV1) => sameSpace(a, b) ? Math.abs(a.xMm - b.xMm) + Math.abs(a.yMm - b.yMm) : Infinity;
 const pause = (duration: number) => new Promise<void>((resolve) => setTimeout(resolve, duration));
 
-export async function openConductorMode(input: { api: ConductorApi; trainLabel: string; returnFocus: HTMLElement }): Promise<void> {
+export async function openConductorMode(input: { api: ConductorApi; trainLabel: string; worldLabel?: string; operatorLabel?: string; returnFocus: HTMLElement }): Promise<void> {
   const { api } = input;
   const dialog = element("dialog", undefined, "conductor-mode");
+  trapConductorDialogFocus(dialog);
   dialog.setAttribute("aria-labelledby", "conductor-title");
   const header = element("header", undefined, "conductor-header"), heading = element("div");
-  heading.append(element("p", "UNTERWEGS IM ZUG", "conductor-eyebrow"));
+  const identity = element("div", undefined, "conductor-identity"), brand = button("", () => { void leave(false); });
+  brand.className = "conductor-brand"; brand.setAttribute("aria-label", "Zugfolge – zur LiveMap");
+  const mark = element("template"); mark.innerHTML = railwayBrand("#");
+  brand.append(mark.content.querySelector(".zf-brand__mark")!);
+  identity.append(brand, element("p", "UNTERWEGS IM ZUG", "conductor-eyebrow")); heading.append(identity);
   const title = element("h1", input.trainLabel); title.id = "conductor-title"; heading.append(title);
+  if (input.worldLabel || input.operatorLabel) heading.append(element("p", [input.worldLabel, input.operatorLabel].filter(Boolean).join(" · "), "conductor-context"));
   const close = button("Zur Karte", () => { void leave(false); }); close.className = "conductor-back"; header.append(heading, close);
   const status = element("p", "Fahrt wird geöffnet …", "conductor-status"); status.setAttribute("role", "status"); status.setAttribute("aria-live", "polite");
   const problem = element("p", undefined, "conductor-problem"); problem.setAttribute("role", "alert"); problem.hidden = true;
@@ -256,7 +264,8 @@ export async function openConductorMode(input: { api: ConductorApi; trainLabel: 
   function confirm(titleText: string, explanation: string): Promise<boolean> {
     return new Promise((resolve) => {
       const modal = element("dialog", undefined, "conductor-confirm"), title = element("h2", titleText); title.id = "conductor-confirm-title";
-      modal.setAttribute("aria-labelledby", title.id); modal.append(title, element("p", explanation));
+      trapConductorDialogFocus(modal);
+      modal.setAttribute("aria-labelledby", title.id); modal.append(title, element("p", input.trainLabel, "conductor-confirm-train"), element("p", explanation));
       const finish = (value: boolean) => { modal.close(); modal.remove(); encounter.focus(); resolve(value); };
       modal.append(button("Abbrechen", () => finish(false)), button("Bestätigen", () => finish(true)));
       modal.addEventListener("cancel", (event) => { event.preventDefault(); finish(false); }); dialog.append(modal); modal.showModal(); modal.querySelector("button")?.focus();

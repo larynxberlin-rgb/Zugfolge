@@ -501,6 +501,37 @@ async function insertWorld(
 }
 
 describe("operativer v2-Regionalsimulationsworker", () => {
+  it.each(["apply", "batch", "replay", "batch-replay"] as const)("restauriert den öffentlichen Feed nach isoliertem Writer-Commit vor %s", async (mode) => {
+    const { client, db } = await testDatabase();
+    const worldId = "88000000-0000-4000-8000-000000000091";
+    const livemap = new LivemapRegistry(), privateLivemap = new LivemapRegistry();
+    const { runtime } = fakeRuntime();
+    const worker = new RegionalSimulationWorker(db, runtime, livemap);
+    const other = new RegionalSimulationWorker(db, runtime, privateLivemap);
+    try {
+      await insertWorld(db, worldId);
+      const initialized = await worker.initialize(initialization(worldId), EPOCH);
+      await other.restore(worldId, REGION_ID, initialized.initializationHash);
+      const independent = { worldId, regionId: REGION_ID, commandId: "separate-world-commit", command: { type: "advance-to", atMs: 1000 } as const };
+      await other.apply(independent, EPOCH);
+      expect(livemap.initializedWorld(worldId)!.snapshot().operationalRegions![0]!.commitSequence).toBe(0);
+      const publish = vi.spyOn(livemap, "publishOperationalRegionSnapshot");
+      const command = mode.endsWith("replay") ? independent : { ...independent, commandId: "regular-writer-next", command: { type: "advance-to", atMs: 2000 } as const };
+      const result = mode.startsWith("batch")
+        ? await worker.applyBatch({ worldId, regionId: REGION_ID, commands: [command] }, EPOCH)
+        : await worker.apply(command, EPOCH);
+      expect(publish).not.toHaveBeenCalled();
+      const snapshot = livemap.initializedWorld(worldId)!.snapshot();
+      expect(snapshot.operationalRegions![0]!.commitSequence).toBe(result.state.world.commitSequence);
+      expect(worker.readyRegions()[0]!.nowMs).toBe(result.state.world.nowMs);
+      const events = await db.select().from(domainEvents).where(eq(domainEvents.worldId, worldId));
+      expect(events).toHaveLength(mode.endsWith("replay") ? 1 : 2);
+      await worker.apply({ worldId, regionId: REGION_ID, commandId: "ordinary-continuation", command: { type: "advance-to", atMs: 3000 } }, EPOCH);
+      expect(publish).toHaveBeenCalledTimes(1);
+      expect(livemap.initializedWorld(worldId)!.snapshot().operationalRegions![0]!.commitSequence).toBe(result.state.world.commitSequence + 1);
+    } finally { vi.restoreAllMocks(); await client.close(); }
+  });
+
   it("persistiert v2-CAS, Millisekunden-Ereignis und LiveMap-Commit gemeinsam", async () => {
     const { client, db } = await testDatabase();
     const worldId = "88000000-0000-4000-8000-000000000001";

@@ -25,6 +25,9 @@ fn run() -> Result<String, String> {
     let request: Request = serde_json::from_str(&json).map_err(|e| e.to_string())?;
     let args: Vec<&str> = request.args.iter().map(String::as_str).collect();
     let result = match (request.method.as_str(), args.as_slice()) {
+        ("handover", [input, path]) => {
+            zugfolge_sim_runtime::operational_runtime::handover_operational_simulation(input, path)
+        }
         ("initialize", [input, path]) => initialize_operational_simulation(input, path),
         ("restore", [state, path]) => restore_operational_simulation(state, path),
         ("apply", [state, command, path]) => {

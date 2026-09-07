@@ -138,6 +138,7 @@ nicht prüfen, ob ein Eintrag stimmt — dafür steht die Quelle daneben.
 | Herkunft | `Provenance` | Quelle und Vertrauensgrad eines importierten Attributwertes; hängt am einzelnen Band, nicht am Gleis | `daten.md` 2 |
 | Höhenstichprobe | `ElevationSample` | Position-Höhe-Paar eines Höhenmodells entlang der Gleisgeometrie; Eingabe der Neigungsableitung | `betriebsgraph.md` 10 |
 | Infrastruktur-Release | `InfraRelease` | unveränderliches, versioniertes Netz- und Betriebsartefakt mit Graph, gerichteten Kanten, Sicherungselementen, Laufwegvorlagen, RZÜ-Layout, Herkunft, Lizenz, Prüfsumme und Confidence | `betriebsengine.md` 2 |
+| Infrastruktursperrenstopp | `InfrastructureDisruptionStop` | native Ursachenbindung eines durch tatsächliche Infrastruktursperren ausgelösten sicheren Halts; technische Freigabe ersetzt keine neue Fahrdienstleiterzustimmung und hebt andere Haltgründe nicht auf | `betriebsengine.md` |
 | Innenraumgeometriepolicy | `InteriorGeometryPolicyV1` | releasegebundene generische Kasten-, Deck-, Tür-, Gang- und Treppengeometrie zur unveränderten M5-Konfiguration; keine Maße aus Grafikdateien | `conductor-interior.md` 4 |
 | Innenraumlayout | `InteriorLayoutV1` | welt- und formationsgebundene Millimetergeometrie mit zusammenhängendem Passagiernetz, Kollisionen und exaktem M5-Platzinventar; keine erfundene Zuglaufzuordnung | `conductor-interior.md` |
 | Innenraumplatzinventar | `InteriorPassengerPlacesV1` | gepinnte welt- und zuggebundene Liste belegter Sitz-, Steh- und Sonderplätze mit stabilen Kennungen und Millimeterpositionen; M15.2-Eingang aus dem M15.4-Layout | `schaffnermodus.md` 3.3 |
@@ -204,6 +205,7 @@ nicht prüfen, ob ein Eintrag stimmt — dafür steht die Quelle daneben.
 | Referenzlauf | `ReferenceRun` | ein Fahrweg mit Zugcharakteristik und explizit benannter Vergleichsgröße — technische Laufzeit oder Fahrplanzeit dürfen nicht vermischt werden | `betriebsgraph.md` 18 |
 | Regelgrenze | `LimitKind` | konkrete betriebliche Zulässigkeitsprüfung einer Dispositionsmaßnahme, etwa Kapazität, Streckenkenntnis, Fahrzeug, Personal, Vertrag oder Kosten | `betriebsprogramm.md` 2 |
 | Regionsübergabe | `RegionHandover` | Übergang einer Zugfahrt zwischen zwei regionalen Single-Writer-Prozessen, mit Bestätigung | `architektur.md` 3 |
+| Regionsübergabequittung | `FinishedHandoverReceiptV1` | native Abschlussbindung von Zug, Quell-/Zielregion, Zeitpunkt und Payloadhash; gilt für Sitzungen nur zusammen mit der passenden Zielquittung und beiden Initialisierungspins | `conductor-session-platform.md` |
 | Reisenachfragekohorte | `JourneyDemandV1` | Deterministisch erzeugte Reisen mit stabilem Gebiet-, Anlass-, Fenster- und Profilbezug | `personenverkehr.md`, `spfv-planung.md` |
 | Reise- oder Fahrtkette | `JourneyChain` | Ein Zuglauf; neue Spielangebote enthalten genau einen zusammenhängenden Innenabschnitt, historische Replays können Außenabschnitte enthalten | `adr/0034-spielgenerierte-fahrplaene-im-spielgebiet.md` |
 | Reisezugwagen | `VehicleRole::Coach` | nicht angetriebenes Fahrzeug für Fahrgäste; kann Teil eines Wagenparks sein, aber keine eigene Zugfahrt bilden | `betrieb.md` 2.3 |

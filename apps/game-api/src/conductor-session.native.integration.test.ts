@@ -9,6 +9,46 @@ import { ConductorSessionService } from "./conductor-session-service.js";
 import { advanceConductorControlWorld } from "./conductor-session-scheduler.js";
 
 const nativeIt = hasSessionNativeFixture ? it : it.skip;
+nativeIt("synchronisiert Weg und Grafikabrufe nach echtem M10-Fortschritt auch ohne vorherigen Snapshot", async () => {
+  const fixture = await createConductorSessionNativeFixture({ async evidence() { return { encounterEvidence: [], controlReceipts: [] }; },
+    async apply(_tx, _context, _state, effects) { if (effects.length) throw new Error("Diese Leseprobe erzeugt keine Kontrolleffekte."); } });
+  const app = Fastify(); let subject = fixture.access.keycloakSubject;
+  try {
+    app.decorateRequest("identity", null);
+    registerConductorSessionRoutes(app, { conductorSessions: fixture.sessions, async authenticate(request) {
+      request.identity = { keycloakSubject: subject, displayName: "Leseprobe" };
+    } });
+    const url = `/worlds/${fixture.access.worldId}/operators/${fixture.access.operatorId}/trains/${fixture.access.trainRunId}/conductor-sessions`;
+    const started = await app.inject({ method: "POST", url, payload: { schemaVersion: "conductor-command/v1", worldId: fixture.access.worldId,
+      trainRunId: fixture.access.trainRunId, sessionId: "fresh-source-reads", expectedRevision: 0, expectedManifestRevision: null,
+      idempotencyKey: "fresh-source:start", action: { type: "start_session" } } });
+    expect(started.statusCode, started.body).toBe(200);
+    const initial = started.json();
+    const nodeId = initial.layout.interactions[0].nodeId;
+    let atlasFileId = "";
+    for (const kind of ["path", "art", "atlas"] as const) {
+      const [before] = await fixture.db.select().from(conductorTrainStates).where(eq(conductorTrainStates.worldId, fixture.access.worldId));
+      fixture.clock.nowMs += 1000;
+      await fixture.apply(`fresh-source:${kind}`, { type: "advance-to", atMs: fixture.clock.nowMs }); await fixture.refresh();
+      // No /snapshot or SSE may repair the private row before this real read.
+      const path = kind === "path" ? `/path?targetNodeId=${encodeURIComponent(nodeId)}` : kind === "art" ? "/art" : `/atlas/${atlasFileId}`;
+      const response = await app.inject({ method: "GET", url: `${url}${path}` });
+      expect(response.statusCode, response.body.slice(0, 150)).toBe(200);
+      expect(response.headers["cache-control"]).toBe("private, no-store");
+      const [after] = await fixture.db.select().from(conductorTrainStates).where(eq(conductorTrainStates.worldId, fixture.access.worldId));
+      expect(after!.stateHash).not.toBe(before!.stateHash);
+      const state = after!.state as { session: { nowMs: number; position: unknown; pins: { manifestRevision: number } } };
+      expect(state.session.nowMs).toBe(fixture.clock.nowMs); expect(state.session.position).toEqual(initial.snapshot.position);
+      if (kind === "path") expect(response.json().from).toEqual(initial.snapshot.position);
+      if (kind === "art") atlasFileId = response.json().files[0].id;
+      if (kind === "atlas") expect(response.headers["content-type"]).toContain("image/png");
+      subject = "interior-fixture-other";
+      expect((await app.inject({ method: "GET", url: `${url}${path}` })).statusCode).toBe(403);
+      subject = fixture.access.keycloakSubject;
+    }
+    expect(await fixture.db.select().from(conductorCommandReceipts)).toHaveLength(1);
+  } finally { await app.close(); await fixture.dispose(); }
+}, 120_000);
 nativeIt("führt echte M5- und M10-Fakten durch persistente Sitzung, HTTP, Restore, Atlas und Wiederholung", async () => {
   // Dieser Test übt Sitzungsaktionen aus; Geld/Polizei müssen ihren eigenen
   // echten Integrationsadapter erhalten und dürfen hier nicht als Erfolg gelten.

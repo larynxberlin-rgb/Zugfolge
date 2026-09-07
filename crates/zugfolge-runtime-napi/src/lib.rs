@@ -83,7 +83,8 @@ mod regional_simulation;
 pub use regional_simulation::{
     apply_operational_simulation_command, apply_operational_simulation_command_async,
     apply_operational_simulation_command_batch, apply_operational_simulation_command_batch_async,
-    initialize_operational_simulation, restore_operational_simulation,
+    handover_operational_simulation, initialize_operational_simulation,
+    restore_operational_simulation,
 };
 
 /// Initializes the authoritative, revisioned M5 fleet state.

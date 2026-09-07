@@ -21,7 +21,7 @@ test("actual conductor DOM and Pixi WebGL on committed native DB/API facts", { s
     browser = await chromium.launch({ headless: true,
       ...(process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH ? { executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH }
         : process.platform === "win32" ? { channel: "msedge" } : {}) });
-    const context = await browser.newContext({ viewport: { width: 1440, height: 1080 }, reducedMotion: "reduce" });
+    const context = await browser.newContext({ viewport: { width: 1440, height: 1080 }, reducedMotion: "reduce", hasTouch: true });
     page = await context.newPage(); page.setDefaultTimeout(45000);
     page.on("pageerror", (error) => errors.push(error.message));
     const origin = new URL(backend.url).origin;
@@ -92,15 +92,31 @@ test("actual conductor DOM and Pixi WebGL on committed native DB/API facts", { s
     await page.waitForFunction(() => document.querySelector("canvas")?.dataset.playerAnimation === "idle");
     backend.disconnectStreams();
     await page.waitForFunction(() => document.querySelector(".conductor-status")?.textContent.includes("Verbindung unterbrochen"));
+    assert.match(await page.locator(".conductor-problem").innerText(), /Verbindung/u);
+    assert.doesNotMatch(await page.locator(".conductor-problem").innerText(), /network error|Failed to fetch|fetch failed/iu);
     assert.equal(await page.getByRole("button", { name: "Gehen →", exact: true }).isDisabled(), true);
     await screenshot("desktop-disconnected-readonly");
     await page.getByRole("button", { name: "Verbindung wiederherstellen", exact: true }).click();
     await page.waitForFunction(() => !document.querySelector(".conductor-status")?.textContent.includes("Verbindung unterbrochen"));
     assert.deepEqual((await request()).snapshot.position, moved.snapshot.position);
     actions.push({ action: "authenticated-sse-reconnect", positionPreserved: true });
+    let mobilePosition = moved.snapshot.position;
     for (const width of [390, 320]) {
       await page.setViewportSize({ width, height: 900 }); await layout(`mobile-${width}`);
+      if (width === 390) {
+        assert.ok(await page.evaluate(() => navigator.maxTouchPoints > 0));
+        await backend.advance(1000); await page.waitForTimeout(1200);
+        const touchBefore = await request(), target = page.getByRole("button", { name: "Gehen →", exact: true });
+        await target.scrollIntoViewIfNeeded(); const box = await target.boundingBox(); assert.ok(box);
+        await page.touchscreen.tap(box.x + box.width / 2, box.y + box.height / 2);
+        await page.waitForFunction(() => !document.querySelector(".conductor-status")?.textContent.includes("wird bestätigt"));
+        const touchAfter = await request(); assert.equal(touchAfter.snapshot.position.xMm, touchBefore.snapshot.position.xMm + 500);
+        mobilePosition = touchAfter.snapshot.position;
+        actions.push({ action: "touch-move-390", before: touchBefore.snapshot.position, after: mobilePosition,
+          beforeHash: touchBefore.snapshot.snapshotHash, afterHash: touchAfter.snapshot.snapshotHash });
+      }
       assert.equal(await page.locator(".conductor-passenger").count(), initial.snapshot.passengers.passengers.length);
+      await page.locator(".conductor-mode").evaluate((element) => { element.scrollTop = 0; });
       await screenshot(`mobile-${width}`);
     }
     await page.keyboard.press("Escape"); await page.locator(".conductor-mode").waitFor({ state: "detached" });
@@ -108,7 +124,7 @@ test("actual conductor DOM and Pixi WebGL on committed native DB/API facts", { s
     const detached = await request(); assert.equal(detached.snapshot.status, "detached");
     await page.getByRole("button", { name: "Schaffnermodus öffnen", exact: true }).click(); await ready();
     const resumed = await request(); assert.equal(resumed.snapshot.sessionId, initial.snapshot.sessionId); assert.equal(resumed.snapshot.status, "active");
-    assert.deepEqual(resumed.snapshot.position, moved.snapshot.position);
+    assert.deepEqual(resumed.snapshot.position, mobilePosition);
     await screenshot("mobile-320-resumed-session");
     console.log("Browserproof: mobile, disconnect and resume checked");
     await page.setViewportSize({ width: 1440, height: 1080 });

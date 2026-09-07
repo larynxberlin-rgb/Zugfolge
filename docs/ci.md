@@ -29,6 +29,21 @@ wirklich gebaute NAPI-Addon; die Fixture erzeugt fachliche Testdaten mit
 denselben Rust-Kernen. Testsignaturen autorisieren ausschließlich diesen
 gekennzeichneten Korpus. Die vier regulären Jobs bleiben erhalten; ein grüner
 Testkorpus ersetzt keine produktive Release- oder Deutschlandabnahme.
+Der native Job erhält für die zusammenhängenden Browserfahrten und die
+zusätzlichen Regionswechsel-/Ledgernachweise eine Höchstdauer von 30 Minuten.
+Die dateibasierten Szenen-/Evidenzpackerprüfungen und die Regression für den
+nativen Ereigniskalender des Browsertreibers laufen im TypeScript-Job;
+sie benötigen keinen zusätzlichen Browser oder Job.
+Die nativen Browserfahrten prüfen zusätzlich Dokumentkontrolle, spätere
+Nachweise, Zahlungen, Polizei und Tagesbericht sowie den vollständigen
+220-Personen-Doppelstockkorpus. Die Manifestfahrt prüft tatsächlichen
+Fahrgastwechsel über mehrere Halte und eine Infrastruktursperre. Die gemeinsame
+Abnahmefahrt verbindet Originaldialoge, Polizeihalt, Netz- und Vertragsfolgen;
+ihre Quelle und der einzelne Abnahmevertrag bleiben ausdrücklich fiktiv.
+Der Evidenzpacker bindet sämtliche positiven
+Berichte und Screenshots an den tatsächlichen CI-Commit. Die zusätzliche
+Dialog-CLI liefert ausschließlich private Auswahlbelege aus Originaldialogen;
+die Sitzungs- und Kontrollkommandos verwenden unter Linux das echte NAPI-Addon.
 
 ## Lokal arbeiten
 

@@ -574,7 +574,9 @@ async function appendConductorEntry(selection: MapSelection, operatorId: string)
     note.textContent = "Begehbarer Innenraum, Fahrgäste und Fahrkartenkontrolle in deiner aktuellen Fahrt.";
     entry.addEventListener("click", async () => {
       entry.disabled = true;
-      try { const { openConductorMode } = await import("./conductor-mode.js"); await openConductorMode({ api: conductor, trainLabel: selection.label, returnFocus: entry }); }
+      try { const { openConductorMode } = await import("./conductor-mode.js"); await openConductorMode({ api: conductor, trainLabel: selection.label,
+        worldLabel: worldLabel.textContent ?? undefined, operatorLabel: [...operatorSelector.options].find((option) => option.value === operatorId)?.textContent ?? undefined,
+        returnFocus: entry }); }
       catch (error) { note.textContent = error instanceof Error ? error.message : "Der Schaffnermodus konnte nicht geöffnet werden."; }
       finally { entry.disabled = false; }
     });

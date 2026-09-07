@@ -451,6 +451,20 @@ Bewegungsabschnitts erzeugt den Abfahrtsbeleg. Ein Signalhalt, Dispatchauftrag,
 SafeStop oder Erreichen einer Sollzeit ist kein Fahrgastwechsel. Der Endhalt
 erzeugt keine weitere Abfahrt.
 
+Die technische Aufhebung einer Infrastruktursperre darf ausschließlich den
+durch genau diese Aktivierung belegten Sicherheitsstopp lösen. Der native
+Checkpoint hält dafür die noch wirksamen Sperrenkennungen und die entzogene
+Fahrberechtigung als Schutzbeleg fest; leere Zustände lassen dieses Feld aus.
+Mehrere überlagerte Sperren müssen alle aufgehoben sein. Ein anderer
+Sicherheitsstopp, ein abgebrochener Haltplan oder ein aktiver Kontrollhalt
+bleibt wirksam. Alte Checkpoints ohne Ursachenbeleg erhalten keine abgeleitete
+Freigabe. Der aufgehobene Sperrenstopp wird nur zum gesicherten Stillstand:
+Fahrstraßen und Belegungen bleiben geschützt, die Fahrberechtigung bleibt
+entzogen und Signale bleiben bis zur erneuten regulären FDL-Prüfung auf Halt.
+Der FDL darf dabei die belegte verbleibende Teilfahrstraße erneut prüfen;
+keine Position und kein Haltbeleg wird beim Wiederanlauf erfunden. Eine
+Regionsübergabe mit noch offenem Wiederanlaufbeleg wird abgewiesen.
+
 `OperationalPassengerStopReceipt` verwendet das Schema
 `zugfolge-operational-passenger-stop-receipt/v1`. Es bindet Welt, Tagesfahrt,
 Zuglauf, Haltkennung/-folge, Planhash, Route, Formation, Art, tatsächliche Zeit

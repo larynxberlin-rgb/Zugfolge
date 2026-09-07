@@ -22,6 +22,9 @@ use zugfolge_sim::operational::{
 
 use crate::initialization_hash::operational_initialization_hash;
 
+mod handover;
+pub use handover::handover_operational_simulation;
+
 pub const INITIALIZE_SCHEMA: &str = "zugfolge-operational-simulation-initialize/v2";
 pub const COMMAND_SCHEMA: &str = "zugfolge-operational-simulation-command/v2";
 pub const COMMAND_BATCH_SCHEMA: &str = "zugfolge-operational-simulation-command-batch/v1";

@@ -1,4 +1,5 @@
 import type { ConductorApi, ConductorControlStatus } from "./conductor-api.js";
+import { trapConductorDialogFocus } from "./conductor-dialog.js";
 import "./conductor.css";
 
 function element<K extends keyof HTMLElementTagNameMap>(tag: K, text?: string): HTMLElementTagNameMap[K] {
@@ -13,6 +14,8 @@ function euro(value: string): string {
 /** Renders only native public amounts. No balance, premium or cap calculation. */
 export function renderConductorControlReport(host: HTMLElement, control: ConductorControlStatus, nowMs?: number): void {
   const expanded = new Set([...host.querySelectorAll<HTMLDetailsElement>("details[open][data-case-id]")].map((row) => row.dataset["caseId"]));
+  const focusedCaseId = document.activeElement instanceof HTMLElement && host.contains(document.activeElement)
+    ? document.activeElement.closest<HTMLDetailsElement>("details[data-case-id]")?.dataset["caseId"] : undefined;
   host.replaceChildren(element("h2", "Fälle dieser Fahrt"));
   if (control.hold) {
     const labels = { requested: "Polizei angefordert · Halt wird vorbereitet", active: "Polizeihalt aktiv · die Fahrt wartet", released: "Polizeihalt freigegeben" };
@@ -25,11 +28,12 @@ export function renderConductorControlReport(host: HTMLElement, control: Conduct
   const statuses = { open: "In Bearbeitung", closed_without_claim: "Ohne Forderung abgeschlossen", claim_open: "Forderung offen", settled: "Abgerechnet" };
   control.cases.forEach((row, index) => {
     const detail = element("details"); detail.dataset["caseId"] = row.caseId; detail.open = expanded.has(row.caseId);
-    detail.append(element("summary", `Fall ${index + 1} · ${statuses[row.status]}`));
+    const summary = element("summary", `Fall ${index + 1} · ${statuses[row.status]}`);
+    summary.dataset["conductorFocus"] = `case:${row.caseId}`; detail.append(summary);
     if (row.claimKind) {
       detail.append(element("p", `${row.claimKind === "provisional" ? "Vorläufige" : "Reguläre"} Forderung: ${euro(row.claimCents)}`),
         element("p", `Gezahlt: ${euro(row.paidCents)} · Kosten: ${euro(row.costsCents)}`), element("p", `Abgeschrieben: ${euro(row.writtenOffCents)}`));
-      if (row.claimKind === "provisional" && row.status === "claim_open") {
+      if (row.claimKind === "provisional") {
         const minutes = nowMs === undefined ? undefined : Math.max(0, Math.ceil((row.proofDeadlineMs - nowMs) / 60000));
         detail.append(element("p", minutes === undefined ? `Nachweisfrist: Spielminute ${Math.ceil(row.proofDeadlineMs / 60000)}.`
           : minutes > 0 ? `Nachweisfrist: noch ${minutes} Spielminuten beim letzten bestätigten Stand.` : "Die Nachweisfrist ist abgelaufen."));
@@ -48,10 +52,15 @@ export function renderConductorControlReport(host: HTMLElement, control: Conduct
     host.append(detail);
   }
   host.append(element("p", "Betriebliche Verspätungen und Vertragspönalen werden in der regulären Abrechnung geführt."));
+  if (focusedCaseId) {
+    const replacement = [...host.querySelectorAll<HTMLDetailsElement>("details[data-case-id]")].find((row) => row.dataset["caseId"] === focusedCaseId);
+    replacement?.querySelector("summary")?.focus({ preventScroll: true });
+  }
 }
 
 export async function openConductorReport(input: { api: ConductorApi; trainLabel: string; returnFocus: HTMLElement }): Promise<void> {
   const dialog = element("dialog"); dialog.className = "conductor-confirm conductor-report";
+  trapConductorDialogFocus(dialog);
   const title = element("h1", `Kontrollbericht · ${input.trainLabel}`); title.id = "conductor-report-title";
   dialog.setAttribute("aria-labelledby", title.id);
   const status = element("p", "Bestätigte Abrechnung wird geladen …"); status.setAttribute("role", "status"); status.setAttribute("aria-live", "polite");

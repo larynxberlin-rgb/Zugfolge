@@ -342,6 +342,9 @@ impl OperationalWorld {
         if let Some(retained) = self.fare_control_remaining_template(train_id)? {
             return Ok(Some(retained));
         }
+        if let Some(retained) = self.infrastructure_remaining_template(train_id)? {
+            return Ok(Some(retained));
+        }
         self.infrastructure()?
             .train_interlocking_route(route_template_id, head)
     }
@@ -525,12 +528,6 @@ impl OperationalWorld {
         outcome: FareControlHoldOutcomeV1,
         causality: &str,
     ) -> Result<(), OperationalError> {
-        let may_depart = self.trains.get(train_id).is_some_and(|t| {
-            !matches!(t.motion_state, MotionState::SafeStop { .. })
-                && t.passenger_stops
-                    .as_ref()
-                    .is_none_or(|p| p.cancellation.is_none())
-        });
         let state = self
             .fare_control_state
             .as_mut()
@@ -545,6 +542,14 @@ impl OperationalWorld {
         hold.causality_id = causality.into();
         hold.revision += 1;
         state.scheduled.retain(|s| s.train_id != train_id);
+        self.refresh_released_infrastructure_stop(train_id)?;
+        let may_depart = self.trains.get(train_id).is_some_and(|t| {
+            !matches!(t.motion_state, MotionState::SafeStop { .. })
+                && t.passenger_stops
+                    .as_ref()
+                    .is_none_or(|p| p.cancellation.is_none())
+        });
+        let state = self.fare_control_state.as_mut().expect("Holdzustand");
         if let Some(mut request) = state
             .resume_requests
             .remove(train_id)

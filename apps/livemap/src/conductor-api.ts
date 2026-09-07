@@ -41,7 +41,10 @@ export class ConductorApi {
   private async request(path: string, init: RequestInit = {}, refreshed = false): Promise<Response> {
     const accessToken = await this.token(refreshed);
     const response = await fetch(`${this.#base}${path}`, { ...init, cache: "no-store", credentials: "omit",
-      headers: { ...init.headers, authorization: `Bearer ${accessToken}` } });
+      headers: { ...init.headers, authorization: `Bearer ${accessToken}` } }).catch((error: unknown) => {
+      if (init.signal?.aborted) throw error;
+      throw new Error("Die Verbindung zur Fahrt wurde unterbrochen. Stelle die Verbindung erneut her.");
+    });
     if (response.status === 401 && !refreshed) return this.request(path, init, true);
     if (!response.ok) {
       const problem = await response.json().catch(() => ({})) as { code?: unknown; error?: unknown };
@@ -80,7 +83,10 @@ export class ConductorApi {
     let buffer = "";
     try {
       while (!signal.aborted) {
-        const chunk = await reader.read();
+        const chunk = await reader.read().catch((error: unknown) => {
+          if (signal.aborted) throw error;
+          throw new Error("Die Verbindung zur Fahrt wurde unterbrochen. Stelle die Verbindung erneut her.");
+        });
         if (chunk.done) throw new Error("Die Verbindung wurde unterbrochen.");
         buffer += decoder.decode(chunk.value, { stream: true });
         if (buffer.length > 16 * 1024 * 1024) throw new Error("Der Sitzungsstrom ist zu groß.");

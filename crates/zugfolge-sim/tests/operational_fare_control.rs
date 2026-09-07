@@ -41,6 +41,133 @@ fn active_world(wait: i64) -> OperationalWorld {
 }
 
 #[test]
+fn infrastructure_release_does_not_bypass_active_hold_or_cancelled_stop_plan() {
+    for cancel in [false, true] {
+        let mut world = active_world(60_000);
+        let resources = world.trains["train:stops"].occupied_blocks.clone();
+        let resource = resources.first().unwrap().clone();
+        world
+            .activate_disruption(
+                "test-infrastructure-closure",
+                OperationalDisruption::ResourceClosed {
+                    resource_id: resource,
+                },
+            )
+            .unwrap();
+        if cancel {
+            let expected_stop_plan_hash = world.trains["train:stops"]
+                .passenger_stops
+                .as_ref()
+                .unwrap()
+                .plan_hash
+                .clone();
+            world
+                .cancel_passenger_stop_plan(&CancelPassengerStopPlanInputV1 {
+                    train_id: "train:stops".into(),
+                    expected_stop_plan_hash,
+                    causality_id: "test-disposition-cancel".into(),
+                })
+                .unwrap();
+        }
+        world
+            .clear_disruption("test-infrastructure-closure", "test-technical-release")
+            .unwrap();
+        assert!(matches!(
+            world.trains["train:stops"].motion_state,
+            MotionState::SafeStop { .. }
+        ));
+        assert!(world.trains["train:stops"].authority.is_none());
+        assert_eq!(world.trains["train:stops"].occupied_blocks, resources);
+        if !cancel {
+            assert_eq!(
+                world.fare_control_hold("train:stops").unwrap().status,
+                FareControlHoldStatusV1::Active
+            );
+        }
+        world.verify_invariants().unwrap();
+    }
+}
+
+#[test]
+fn infrastructure_and_hold_release_order_both_allow_only_rechecked_departure() {
+    for infrastructure_first in [false, true] {
+        let mut world = active_world(60_000);
+        let head = world.trains["train:stops"].head_route_mm;
+        let resource = world.trains["train:stops"]
+            .occupied_blocks
+            .first()
+            .unwrap()
+            .clone();
+        world
+            .activate_disruption(
+                "overlap",
+                OperationalDisruption::ResourceClosed {
+                    resource_id: resource,
+                },
+            )
+            .unwrap();
+        if infrastructure_first {
+            world
+                .clear_disruption("overlap", "test-technical-release")
+                .unwrap();
+            assert!(matches!(
+                world.trains["train:stops"].motion_state,
+                MotionState::SafeStop { .. }
+            ));
+        }
+        let hold = world.fare_control_hold("train:stops").unwrap().clone();
+        world
+            .resolve_fare_control_hold(&ResolveFareControlHoldInputV1 {
+                train_id: hold.train_run_id,
+                hold_id: hold.hold_id,
+                expected_revision: hold.revision,
+                model_hash: hold.model_hash,
+                outcome: ResolveFareControlHoldOutcomeV1::IdentityConfirmed,
+                causality_id: "test-real-model-result".into(),
+            })
+            .unwrap();
+        if !infrastructure_first {
+            assert!(matches!(
+                world.trains["train:stops"].motion_state,
+                MotionState::SafeStop { .. }
+            ));
+            world
+                .clear_disruption("overlap", "test-technical-release")
+                .unwrap();
+        }
+        assert_eq!(world.trains["train:stops"].head_route_mm, head);
+        assert_eq!(
+            world.fare_control_hold("train:stops").unwrap().status,
+            FareControlHoldStatusV1::Released
+        );
+        if world.trains["train:stops"].authority.is_none() {
+            assert_eq!(
+                world.trains["train:stops"].motion_state,
+                MotionState::Standing
+            );
+            assert_eq!(
+                world
+                    .submit_dispatch_requests(&[dispatch_request(
+                        "train:stops",
+                        "interlocking:train:b",
+                        world.now_ms
+                    )])
+                    .unwrap(),
+                vec!["train:stops"]
+            );
+        }
+        assert_eq!(
+            world.trains["train:stops"].motion_state,
+            MotionState::Moving
+        );
+        assert!(world.trains["train:stops"].authority.is_some());
+        world.verify_invariants().unwrap();
+        let restored = OperationalWorld::restore(&world.checkpoint()).unwrap();
+        assert_eq!(world.state_hash(), restored.state_hash());
+    }
+}
+
+#[test]
 fn policy_welt_quote_buendelung_und_polizeiaufloesung_bleiben_gebunden() {
     let (infra, input) = passenger_stop_fixture();
     let mut world = world_with_release(infra);

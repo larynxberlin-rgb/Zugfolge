@@ -57,7 +57,9 @@ Sie entstehen erst nach erfolgreichen Assertions des jeweiligen Falles.
 Der Basisfall prüft vollständige Fahrgastliste, sieben Atlasdateien,
 Ansichtswechsel ohne Positionsänderung, serverbestätigte Bewegung und
 Wagenübergang, reduzierte Bewegung, Trennen/Wiederaufnahme sowie 390 und
-320 Pixel Breite. Der Szenenfall prüft eine gepinnte Nachtkonfiguration und
+320 Pixel Breite. Ein Touch-fähiger Browserkontext sendet zusätzlich einen
+tatsächlichen Touch auf die Bewegungsschaltfläche; der Bericht hält die
+nativ bestätigte Positions- und Hashänderung fest. Der Szenenfall prüft eine gepinnte Nachtkonfiguration und
 einen tatsächlichen Infrastruktur-Sperrbefehl, dessen native Projektion
 Stillstand und rote Signalbegriffe liefert. Der Browser erzeugt selbst
 keine Signale, Geschwindigkeiten oder Haltebelege.
@@ -87,3 +89,87 @@ Probe verändert keinen gespeicherten Zustand. Sie überträgt weder diese
 Fakten noch ein vorhergesagtes Ergebnis an den Browser. Jede berichtete
 Kontrolle beginnt anschließend über den wirklichen UI-Button und erhält
 ihre tatsächlichen Belege aus dem autorisierten Sitzungs- und Kontrollpfad.
+Die erste Kontrolle verwendet echte Touch-Ereignisse bei 320 Pixel Breite.
+Vor jeder Kontrolle muss die tatsächliche Spielerposition den nativen
+Interaktionsknoten erreicht haben; ein aktivierter Button beweist keine Nähe.
+Reguläre Forderung, vorläufige Forderung mit späterem Nachweis und Polizeihalt
+werden getrennt anhand der öffentlich bestätigten Ergebnisse geprüft.
+
+Ein angeforderter Polizeihalt folgt den bereits gespeicherten nativen
+Betriebsereignissen bis zu seiner Aktivierung. Danach laufen kurze tatsächliche
+Scheduler-Schritte. Der Nachweis erzeugt weder Ankunft noch Polizeireaktion.
+Ein reguläres Sitzungsende am Endhalt lässt den unabhängigen Kontrollbericht
+weiter zugänglich. Der native Tagesabschluss benötigt keinen neuen
+Fahrgastmanifest; ein aktualisierter Bericht zeigt die bestätigten Buchungen.
+
+Der Kontrolllauf liest außerdem den tatsächlichen Accessibilitybaum des
+Browsers: Die öffentliche Äußerung, sämtliche angebotenen Antworten und der
+bestätigte Prüf- und Fahrtstatus müssen darin vorkommen. Die kurzen Snapshots
+stehen im Bericht. Dies ist eine Prüfung der konkreten semantischen Oberfläche,
+kein vollständiger WCAG-Audit und keine Screenreader-Nutzerstudie.
+
+## Voll besetzter Doppelstockzug
+
+`capacity-browser-proof.mjs` verwendet die zweite originale M5-Konfiguration
+mit drei Doppelstockkästen und allen 220 tatsächlich von M10 erzeugten
+Fahrgästen. Die wirkliche Sitzungsoberfläche zeigt Unter- und Oberdeck; der
+serverbestätigte Weg benutzt eine reale Treppenkante. Fahrzeug-/Deckauswahl
+und Touch-Kamerabewegung verändern die Spielerposition nicht. Alle Personen
+bleiben in DOM und logischer Renderprojektion auch bei 320 Pixel Breite.
+
+```sh
+CONDUCTOR_CAPACITY_BROWSER_TEST=1 node --test tools/conductor-session/capacity-browser-proof.mjs
+```
+
+Der Bericht misst zwölf authentifizierte lokale Snapshotrundläufe und je
+24 tatsächliche Deckwechsel bis zum nächsten Browserframe auf Desktop,
+390 und 320 Pixel Breite. Die Zeiten umfassen den lokalen DB-/HTTP-/nativen
+Transport beziehungsweise den Vite-Entwicklungsbuild; sie behaupten weder
+ein bestandenes Produktionsbudget noch eine weltweit maximal freigegebene
+SPNV-Formation. `CONDUCTOR_CAPACITY_REPORT_PATH` steuert die Berichtdatei.
+
+## Zusammenhängende Gesamtabnahme
+
+`acceptance-browser-proof.mjs` verwendet denselben tatsächlichen DOM-/API-
+Treiber wie die Kontrollregression (`browser-driver.mjs`). Die sechs
+Originalsituationen werden vorab im exakten verbundenen M10-Korpus geprüft;
+der Browser läuft zu den wirklichen Interaktionspunkten und betätigt die
+angebotenen Antworten. Ein siebter kontrollierter Fahrgast liefert den
+eigenständigen nativen Identitätsbefund für die Polizeianforderung.
+
+Der Netzkorpus und der ausdrückliche fiktive Einfahrtenvertrag entstehen vor
+allen Releasepins. Eine wirkliche Infrastruktur-Sperre hält den Zug vor dem
+Mittelhalt. Erst ihre quittierte Freigabe und eine neue FDL-Prüfung lassen
+die Fahrt weiterlaufen. Der Treiber liest alle gespeicherten Ereigniskalender,
+einschließlich `fareControlState.scheduled`, sowie die nativ geprüften
+Kontrollfälligkeiten. Bereits zum aktuellen Zeitpunkt fällige Betriebsereignisse
+durchlaufen ein echtes `advance-to` derselben Zeit. Längere Wartezeiten benutzen bestätigte UI-Gehschritte
+hin und zurück zur Sitzungserhaltung; der Bericht führt die Positionen und
+Leasequittungen auf. Es gibt keine direkte Lease-Änderung.
+
+```sh
+CONDUCTOR_ACCEPTANCE_BROWSER_TEST=1 node --test tools/conductor-session/acceptance-browser-proof.mjs
+```
+
+`CONDUCTOR_ACCEPTANCE_REPORT_PATH` bestimmt die Berichtdatei. Ein Beleg wird
+erst nach den gemeinsamen UI-, Betriebs-, Nachfrage- und Ledgerassertions
+geschrieben. Die nach der Fahrt tatsächlich abgerechnete M6-Pönale und der
+bestätigte Vertragsumsatz bleiben an denselben Tagesfahrtabschluss gebunden.
+Die allgemeine Tagesplan-Vollständigkeit aus Issue #518 bleibt ausdrücklich
+gesperrt. Der gesonderte Originaldialog-HTTP-Nachweis bindet die sechs
+Situationen zusätzlich an ihren unveränderten nativen Korpus.
+
+Nach erfolgreichen Läufen lassen sich die sechs Browserberichte (Basis,
+Nacht, Kontrolle, Kapazität, Manifest und Gesamtabnahme), der Originaldialog-
+HTTP-Bericht und sämtliche referenzierten Bilder reproduzierbar zusammenfassen:
+
+```sh
+node tools/conductor-session/package-evidence.mjs outputs/M15-Sitzung <40-stellige-git-revision> [ci-run-url]
+```
+
+`evidence-manifest.json` bindet die unveränderten Bericht-/PNG-Bytes an den
+angegebenen Quellstand. Der Packer weist fehlende Berichte, Browserfehler,
+fremde Dateipfade und abweichende Bildhashes zurück. Das Ergebnis bleibt ein
+ausdrücklich als `testOnly` bezeichneter Nachweis und ist keine produktive
+Releasefreigabe. Während eines laufenden oder fehlgeschlagenen Tests werden
+Zwischenstände nicht als fertiges Paket veröffentlicht.

@@ -1,6 +1,6 @@
 import { expect, it } from "vitest";
 import Fastify from "fastify";
-import { conductorControlStates, conductorTrainStates, ledgerAccounts, ledgerEntries, ledgerTransactions, worldAccesses, worlds } from "@zugfolge/db";
+import { conductorControlStates, conductorTrainStates, ledgerAccounts, ledgerEntries, ledgerTransactions, regionalSimulationStates, worldAccesses, worlds } from "@zugfolge/db";
 import { and, eq } from "drizzle-orm";
 import type { ConductorCommandActionV1, ConductorCommandV1, InteriorPointV1 } from "@zugfolge/runtime-native";
 import { createFareControlNativeFixture, hasFareControlNative } from "./conductor-control.native-fixture.js";
@@ -127,3 +127,40 @@ nativeIt("führt echte M10-Fahrgäste über Prüfung und Forderung in den unver�
 // Lokale Windows-CLI-Belege starten jeden echten Rust-Aufruf als Prozess;
 // die Linux-NAPI-CI behält ihr bisheriges Zeitbudget.
 }, process.platform === "win32" && process.env["ZUGFOLGE_RUNTIME_NATIVE_PATH"] === undefined ? 240_000 : 120_000);
+
+nativeIt("setzt den regulären Writer nach isoliertem tatsächlichem Polizeicommit ohne Sequenzlücke fort", async () => {
+  const f = await createFareControlNativeFixture();
+  try {
+    const context = await f.controlContext();
+    const police = createConductorPoliceAdapter({ runtime: f.native.operational, regionBindings: f.dependencies.regionBindings });
+    const read = async () => (await f.db.select().from(regionalSimulationStates).where(and(eq(regionalSimulationStates.worldId, f.access.worldId),
+      eq(regionalSimulationStates.regionId, f.initialization.regionId))))[0]!;
+    const before = await read();
+    const request = { caseId: "test-only:writer-fanout-case", reason: "identity_refusal" as const, causalityId: "test-only:writer-fanout-request" };
+    // Hier wird ausschließlich die Betriebs-/Transaktionsgrenze geprüft;
+    // diese explizite Testabsicht ersetzt keinen tatsächlich geführten Dialog.
+    await expect(f.db.transaction(async (tx) => {
+      await tx.select().from(worlds).where(eq(worlds.id, f.access.worldId)).for("update");
+      await police.request(tx, context, request);
+      throw new Error("test-only:rollback-police-commit");
+    })).rejects.toThrow("test-only:rollback-police-commit");
+    expect((await read()).stateHash).toBe(before.stateHash);
+    const requested = await f.db.transaction(async (tx) => {
+      await tx.select().from(worlds).where(eq(worlds.id, f.access.worldId)).for("update");
+      return police.request(tx, context, request);
+    });
+    expect(requested.hold.status).toBe("requested");
+    const afterPolice = await read();
+    expect(afterPolice.revision).toBe(before.revision + 1);
+    f.clock.nowMs += 1;
+    const result = await f.apply("test-only:writer-after-police", { type: "advance-to", atMs: f.clock.nowMs });
+    expect(result.state.revision).toBe(afterPolice.revision + 1);
+    expect(f.worker.isReady(f.access.worldId, f.initialization.regionId)).toBe(true);
+    await f.refresh();
+    const restored = f.native.operational.restore(result.state, result.state.initializationHash);
+    expect(restored.stateHash).toBe((await read()).stateHash);
+    const hold = await f.db.transaction((tx) => police.read(tx, f.access));
+    expect(hold!.hold.holdId).toBe(requested.hold.holdId);
+    expect(hold!.hold.caseIds).toEqual([request.caseId]);
+  } finally { await f.dispose(); }
+}, 120_000);

@@ -290,6 +290,128 @@ fn genuine_and_false_phone_problem_stay_identical_until_actual_proof() {
     }
 }
 #[test]
+fn observed_invalid_document_creates_regular_claim_and_preserves_exact_replay() {
+    let mut source = pin(FareFactV1::Invalid);
+    source
+        .inspection_policy
+        .invalid_document_presented_basis_points = 10_000;
+    source.inspection_policy.content_hash =
+        fare_inspection_policy_hash(&source.inspection_policy).unwrap();
+    let mut state = inspected(source);
+    assert_eq!(
+        state.cases["case"].evidence.document_status,
+        DocumentStatusV1::VerifiedInvalid
+    );
+    assert_eq!(
+        state.cases["case"].evidence.identity_status,
+        IdentityStatusV1::Confirmed
+    );
+    let request = command(
+        &state,
+        0,
+        FareControlActionV1::CreateClaim {
+            case_id: "case".into(),
+            kind: FareClaimKindV1::Regular,
+        },
+    );
+    let result = apply_fare_control(&state, &state.state_hash, &request).unwrap();
+    assert_eq!(
+        apply_fare_control(&result.state, &result.state.state_hash, &request).unwrap(),
+        result
+    );
+    state = result.state;
+    assert_eq!(
+        state.cases["case"].claim_kind,
+        Some(FareClaimKindV1::Regular)
+    );
+    assert_eq!(state.cases["case"].claim_cents, "6000");
+    step(&mut state, 2 * DAY, FareControlActionV1::AdvanceTime);
+    assert_eq!(state.cases["case"].paid_cents, "6000");
+    assert_eq!(
+        restore_fare_control(&state, &state.state_hash).unwrap(),
+        state
+    );
+}
+
+#[test]
+fn actual_danger_can_authorize_police_without_inventing_an_invalid_ticket() {
+    let mut source = pin(FareFactV1::Valid);
+    source.inspection_policy.concrete_danger_basis_points = 10_000;
+    source.inspection_policy.content_hash =
+        fare_inspection_policy_hash(&source.inspection_policy).unwrap();
+    let mut state = opened(source);
+    let model = police_model(10_000, 1000, 10_000);
+    let request = FareControlActionV1::PlanPolice {
+        hold_id: "danger-hold".into(),
+        train_run_id: "train".into(),
+        target_stop_id: "target".into(),
+        case_ids: vec!["case".into()],
+        model: model.clone(),
+    };
+    // Der Familienmarker allein ist kein Ereignis: vor der Beobachtung fehlt der Grund.
+    assert!(
+        apply_fare_control(
+            &state,
+            &state.state_hash,
+            &command(&state, 0, request.clone())
+        )
+        .is_err()
+    );
+    step(
+        &mut state,
+        0,
+        FareControlActionV1::InspectDocument {
+            case_id: "case".into(),
+        },
+    );
+    assert!(state.cases["case"].evidence.concrete_danger);
+    assert_eq!(
+        state.cases["case"].evidence.document_status,
+        DocumentStatusV1::VerifiedValid
+    );
+    assert_eq!(
+        state.cases["case"].evidence.identity_status,
+        IdentityStatusV1::Unknown
+    );
+    step(&mut state, 0, request);
+    step(
+        &mut state,
+        2000,
+        FareControlActionV1::ResolvePolice {
+            evidence: PoliceOperationalEvidenceV1 {
+                world_id: "world".into(),
+                train_run_id: "train".into(),
+                hold_id: "danger-hold".into(),
+                target_stop_id: "target".into(),
+                model_hash: model.content_hash,
+                operational_state_hash: "f".repeat(64),
+                activated_at_ms: Some(1000),
+                deadline_ms: Some(60000),
+                released_at_ms: Some(2000),
+                target_unavailable: false,
+                outcome: PoliceResolutionV1::IdentityConfirmed,
+            },
+        },
+    );
+    assert_eq!(
+        state.cases["case"].status,
+        FareInspectionCaseStatusV1::ClosedWithoutClaim
+    );
+    assert_eq!(state.cases["case"].claim_kind, None);
+    assert_eq!(state.cases["case"].claim_cents, "0");
+    assert_eq!(state.cases["case"].costs_cents, "300");
+    assert!(
+        state
+            .ledger_events
+            .values()
+            .all(|event| event.kind == FareLedgerEventKindV1::HandlingCost)
+    );
+    assert_eq!(
+        restore_fare_control(&state, &state.state_hash).unwrap(),
+        state
+    );
+}
+#[test]
 fn valid_ticket_missing_tariff_and_purchase_exception_create_no_claim() {
     let valid = inspected(pin(FareFactV1::Valid));
     assert_eq!(

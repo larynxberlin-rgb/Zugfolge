@@ -57,7 +57,7 @@
     },
     {
       "path": "crates/zugfolge-conductor-session/examples/session_fixture.rs",
-      "sha256": "1b7ac6ce11fd0e9c3b763e14e56fa83f5aca43cac992514502688a798d609a14"
+      "sha256": "8ed2a9822a9647e6f0d2d2055551cc7efcb46ce4c77d587d79b691e28971e344"
     },
     {
       "path": "crates/zugfolge-conductor-session/examples/session_json.rs",
@@ -641,7 +641,7 @@
     },
     {
       "path": "crates/zugfolge-sim/src/operational.rs",
-      "sha256": "09140b01583e3690e293ed72abe65cc51bd8781aa0bd58f1ac9b620892db1b7d"
+      "sha256": "64a589f7e39288f6d1b22221dde0cfc44366f3273b89bebaa769d66107360c14"
     },
     {
       "path": "crates/zugfolge-sim/src/operational/fare_control_types.rs",
@@ -649,7 +649,11 @@
     },
     {
       "path": "crates/zugfolge-sim/src/operational/fare_control.rs",
-      "sha256": "1aefac904d06e60eee8c2064433f3c5510df10aae8f6f85a72c47218bbac57eb"
+      "sha256": "1482fec0355a8a0d3c7d7ad170829cbfd8d98c0656667d753c690a1d9d9a3010"
+    },
+    {
+      "path": "crates/zugfolge-sim/src/operational/infrastructure_recovery.rs",
+      "sha256": "2a09bd0989d94cd260147cdbe9fae5a812040c6b0ff5798dcb91ae490adc09f6"
     },
     {
       "path": "crates/zugfolge-sim/src/operational/passenger_stops.rs",
@@ -665,11 +669,11 @@
     },
     {
       "path": "crates/zugfolge-sim/tests/operational_engine.rs",
-      "sha256": "bc8c1d3b768ef074b850ce46099d10219940af38527b6b505bec8ddba4f0dce1"
+      "sha256": "53f8ffbdc009a5250d9cc760ff83e33f329a65999707d42435f0f4ccf16e7071"
     },
     {
       "path": "crates/zugfolge-sim/tests/operational_fare_control.rs",
-      "sha256": "0836422c65cef44e1cf5e6ab2349b3dd161adb670c3eeda8c1e1f37b79c577a0"
+      "sha256": "c616f7c725acbda32b3957f6e188e5835474d2066feab78d86b96e2726aa1503"
     },
     {
       "path": "crates/zugfolge-sim/tests/support/passenger_stops.rs",

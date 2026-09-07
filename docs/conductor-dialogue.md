@@ -128,3 +128,35 @@ den echten NAPI-Pfad `ZUGFOLGE_RUNTIME_NATIVE_PATH`; für lokale Windowsnachweis
 kann `ZUGFOLGE_DIALOGUE_TEST_BINARY` auf das tatsächlich gebaute Beispiel
 `cargo build -p zugfolge-conductor-dialogue --example dialogue_json` zeigen.
 Es gibt keinen fachlichen TypeScript-Ersatzresolver.
+
+Der ergänzende HTTP-Nachweis für #216 wählt ausschließlich bereits vom echten
+M10-Kern erzeugte Personen derselben Fahrt. Eine isolierte Node-Probe lässt den
+nativen Dialogresolver die ursprünglichen Seeds und unveränderten Releasebäume
+prüfen. Sie darf weder FareFacts noch Text, Gewichte oder Personen ersetzen.
+Die anschließenden sechs Kontrollen müssen über autorisierte HTTP-Kommandos,
+native Wege, tatsächliche Betriebszeit und persistierte Kontrollbelege laufen:
+freundliches Zugeben, belegtes und falsches Handyproblem, unfreundliche Reaktion,
+kooperative Betrunkenheit sowie Verweigerung. Jede Probe trennt das anfängliche
+Autorenprofil von der erst durch Dokumentprüfung bestätigten Evidenz. Fehlt eine
+Kombination im konkreten Originalmanifest, wird sie als fehlender Nachweis
+benannt; ein anderer Dialogbaum wird nicht untergeschoben.
+
+Dieser HTTP-Nachweis ist am 07.09.2026 mit dem festen fiktiven M10-Seed `138`
+positiv ausgeführt: `admission-07` (regulär), `empty_phone-12` bei zwei
+unterschiedlichen tatsächlichen Personen (gültig/nicht vorzeigbar beziehungsweise
+ungültig), `hostile_reaction-03`, `intoxication-04` und `refusal-04`. Die letzten
+drei Fälle besitzen gültige Fahrkarten und erzeugen weder Forderung noch
+grundlose Polizeianforderung. Alle Texte und Familien bleiben Originalbytes.
+Jede Dokumentprüfung wird mit identischem Kommando wiederholt; eine neu
+erzeugte Sitzungsdienstinstanz setzt den aktiven Dialog aus dem nativen
+Datenbankrestore exakt fort. Die Kontrollen erfolgen über die autorisierte
+HTTP-Route nach echten nativen Laufwegen.
+
+Reproduktion: `conductor-dialogue-scenarios.native.integration.test.ts` im
+Game-API-Paket mit denselben nativen Fixturepfaden wie die Kontrollintegration.
+Die isolierte Originalauswahl benötigt zusätzlich das tatsächliche
+`dialogue_json`-Beispiel. `ZUGFOLGE_DIALOGUE_SCENARIOS_REPORT_PATH` schreibt erst
+nach vollständigem Erfolg einen Bericht; der vorliegende Lauf steht in
+`outputs/M15-Sitzung/dialogue-http-report.json` (Windows, 221,11 Sekunden).
+Dieser Bericht belegt HTTP und native Kernpfade; die zusammenhängende
+Desktop-/Touchdarstellung und produktive Signatur bleiben gesonderte Belege.

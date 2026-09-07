@@ -27,6 +27,32 @@ Eine bestehende Sitzung in einer anderen Region wird ausschließlich gegen
 deren eigenen bestätigten Betriebsstand bereinigt. Die weiter fortgeschrittene
 Uhr des angefragten Zuges darf keine fremde Lease vorzeitig freigeben.
 
+Ein Regionsübergang beendet keine Sitzung. `finish_handover` hinterlegt einen
+typisierten `finishedHandoverReceipts`-Beleg mit Zug, Quelle, Ziel, Zeitpunkt und
+Payloadhash im Quellcheckpoint. Der Resolver folgt ausschließlich solchen
+Belegen, deren Hash auch in `acceptedHandovers` des unabhängig initialisierungs-
+gepinnten, nativ restaurierten Zielcheckpoints steht. Beide DB-Köpfe müssen
+stimmen. Fehlende Belege, fehlende Zielpins und vorbereitete Übergaben oder
+gleichzeitige Zugkopien sperren den Zugriff, ohne Sitzung oder Lease vorzeitig
+zu beenden. Nach bestätigtem Abschluss wandert nur die gespeicherte Regions-
+zuordnung; Sitzung, Position, Dialog und Fahrgastidentitäten bleiben erhalten.
+Mehrere abgeschlossene Übergaben werden zeitlich geordnet und begrenzt verfolgt.
+Alte leere Belegfelder bleiben bei der Serialisierung ausgelassen; ein alter
+opaque Hash allein berechtigt nicht zum Regionswechsel.
+Die weltweite Bereinigung überspringt vorübergehend gesperrte Übergaben und
+prüft die übrigen Sitzungen weiter. Jeder restaurierte Sitzungszustand muss
+auch mit Welt, Zug, Revision und Zeit seiner privaten DB-Zeile übereinstimmen.
+
+Der enge native Adapter `handoverOperationalSimulation` nimmt zwei vollständige
+Restore-Eingänge mit unabhängig erwarteten Initialisierungshashes, eine
+Übergabekennung, Zugkennung und geschützte Ressourcen entgegen. Er führt die
+vorhandenen `begin_handover`, `accept_handover` und `finish_handover` aus und
+liefert die drei nativ gehashten Zwischen-/Endzustände samt Betriebsereignissen.
+Die originale signierte Haltplanvorlage wird ausschließlich aus dem geprüften
+Quellzustand übernommen. Der aufrufende Weltwriter muss die beiden endgültigen
+Köpfe atomar und per Compare-and-set gegen ihre gelesenen Vorgänger speichern;
+der Adapter besitzt keine DB- oder Browserberechtigung und ist kein Scheduler.
+
 Der Dienst liest die signiert gebundenen regionalen Checkpoints und lässt
 den betreffenden Zustand durch die vorhandene Operational-v2-Runtime
 restaurieren. Initialisierungspin, Zustandshash, Revision, Welt und Region
@@ -112,6 +138,16 @@ vorläufige Veröffentlichungen auf; vor dem äußeren Commit wird kein
 öffentlicher Spielstrom verändert. Der reguläre Regionalwriter liest bei seinem
 nächsten Übergang den tatsächlich committed Kopf und veröffentlicht diesen.
 Ein fehlender Policy-/Modellpin wird nicht durch eine Browserregel ersetzt.
+
+Der reguläre Regionalwriter merkt sich den Kopfhash seiner zuletzt erfolgreich
+veröffentlichten Projektion. Liegt sein nächster gelesener DB-Kopf nach einem
+separaten Kontrollcommit bereits weiter, ist dessen Folgecommit kein lückenloses
+Delta für den alten öffentlichen Feed. Nach dem erfolgreichen CAS rekonstruiert
+der Writer deshalb den vorhandenen Vollfeed aus nativ restaurierten und
+unabhängig gepinnten DB-Köpfen. Das gilt auch für einen reinen idempotenten
+Abruf und einen Batch mit nur einem neuen Befehl. Erfindung ausgelassener
+Zwischenframes, Veröffentlichung vor dem äußeren Commit und Lockerung der
+monotonen Regionssequenz sind unzulässig.
 
 Nach jedem angenommenen Kontrolleffekt lädt die Sitzung den Kontext im selben
 Commit erneut. Ihr Betriebs-, Manifest- und Szenenstand kann deshalb keinen

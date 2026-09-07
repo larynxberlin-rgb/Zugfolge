@@ -531,6 +531,11 @@ export const GENERATED_GLOSSARY_ENTRIES = Object.freeze([
     "definition": "unveränderliches, versioniertes Netz- und Betriebsartefakt mit Graph, gerichteten Kanten, Sicherungselementen, Laufwegvorlagen, RZÜ-Layout, Herkunft, Lizenz, Prüfsumme und Confidence"
   },
   {
+    "term": "Infrastruktursperrenstopp",
+    "code": "InfrastructureDisruptionStop",
+    "definition": "native Ursachenbindung eines durch tatsächliche Infrastruktursperren ausgelösten sicheren Halts; technische Freigabe ersetzt keine neue Fahrdienstleiterzustimmung und hebt andere Haltgründe nicht auf"
+  },
+  {
     "term": "Innenraumgeometriepolicy",
     "code": "InteriorGeometryPolicyV1",
     "definition": "releasegebundene generische Kasten-, Deck-, Tür-, Gang- und Treppengeometrie zur unveränderten M5-Konfiguration; keine Maße aus Grafikdateien"
@@ -859,6 +864,11 @@ export const GENERATED_GLOSSARY_ENTRIES = Object.freeze([
     "term": "Regionsübergabe",
     "code": "RegionHandover",
     "definition": "Übergang einer Zugfahrt zwischen zwei regionalen Single-Writer-Prozessen, mit Bestätigung"
+  },
+  {
+    "term": "Regionsübergabequittung",
+    "code": "FinishedHandoverReceiptV1",
+    "definition": "native Abschlussbindung von Zug, Quell-/Zielregion, Zeitpunkt und Payloadhash; gilt für Sitzungen nur zusammen mit der passenden Zielquittung und beiden Initialisierungspins"
   },
   {
     "term": "Reisenachfragekohorte",

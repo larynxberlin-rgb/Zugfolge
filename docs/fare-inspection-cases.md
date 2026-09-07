@@ -173,11 +173,14 @@ Mock-Callbacks gelten nicht als positiver Fachnachweis.
 
 Nachweisstand 2026-09-07:
 
-- `cargo test -p zugfolge-fare-control --offline`: zwölf native Fachtests;
+- `cargo test -p zugfolge-fare-control --offline`: vierzehn native Fachtests;
   `cargo clippy -p zugfolge-fare-control --all-targets --offline -- -D warnings`
   ohne Warnungen. Enthalten sind auch unabhängige Mehrzug-Tagesdeckel,
   gebündelte erfolglose/nicht verfügbare/abgebrochene Polizeifälle, die
   Abschreibungskorrektur ohne neue Prämie und extreme zulässige Centwerte.
+  Eine tatsächlich als ungültig geprüfte Fahrkarte führt zur regulären
+  Forderung mit Zahlung/Replay. Beobachtete konkrete Gefahr erlaubt einen
+  Polizeivorgang auch bei gültiger Fahrkarte; daraus entsteht keine EBE.
 - `packages/economy/src/fare-revenue.test.ts`: tatsächlicher M6-Periodenproducer,
   persistente Outbox und bestehender Ledgeradapter. 10000 Cent Brutto und
   1700 Cent Pönale ergeben tatsächlich 8300 Cent Kasse; der gebundene
@@ -208,3 +211,70 @@ alle Züge; die Fallliste bleibt auf den angefragten Zug beschränkt. Die intern
 Lesemethode `publicHistory(tx, {worldId, operatorId, trainRunId})` benötigt
 keinen aktiven Fahrgastmanifest- oder Sitzungskontext. Ihre Aufrufer müssen
 vorher den aktuellen Konto-, Welt-, EVU- und Zugzugriff autorisieren.
+
+Der zusätzliche Pönalen-Nachweis verwendet einen ausdrücklich fiktiven Vertrag
+für genau eine Tagesfahrt. Der vorhandene native `ServiceOutcomePolicy` bindet
+die Kapazität aus dem tatsächlichen M5-Compilerergebnis; seine konkrete
+`ServiceOutcomeBinding` erklärt die bestellten Sitze und ausdrücklich keine
+vertraglichen Anschlüsse. Ein Lauf ohne Halt bildet die Vergleichsbasis zum
+gleichen nativen Lauf mit Polizeihalt. Nur tatsächlich persistierte
+`operations.train-outcome`-Ereignisse und daraus erzeugte Tagesberichte dürfen
+die M6-Periodenabrechnung dieser expliziten Einfahrtenprobe speisen.
+
+`conductor-control-penalty.native.integration.test.ts` belegt diesen Weg mit
+einem fiktiven 50-Minuten-Fahrplan und einem tatsächlichen Zwischenhalt bis zur
+gepinnten 60-Minuten-Höchstfrist: unveränderte Kilometer und Kapazität,
+gegenüber dem Vergleichslauf gemessener Pünktlichkeitsverlust, genau ein
+Regionsabschluss, 9000 Cent M6-Pünktlichkeitspönale und genau eine ausgeglichene
+Ledgertransaktion nach Outbox-Retry. Die Probe erfindet keine Betriebskosten;
+sie prüft ausdrücklich diesen abgegrenzten Vertrags- und Pönalenbestandteil.
+
+Für den zusammenhängenden M15-Abnahmebrowser darf derselbe explizite
+Einfahrtenvertrag bereits vor der nativen Betriebsinitialisierung gepinnt
+werden. `conductor-acceptance.native-fixture.ts` besitzt ausschließlich
+Testkonfiguration: ursprünglicher M10-Seed, unveränderter Dialogkorpus,
+vollständige M5-Kapazität, Fahrt-/Tagesidentität und bereits vergebener
+fiktiver M6-Vertrag. Eine tatsächliche Ressourcensperre vor dem Zwischenhalt
+hält dessen Ist-Ankunft offen, bis die normalen Kontrollhandlungen beendet
+sind. Vergleichs- und Kontrolllauf verwenden dieselbe Sperre und Freigabe;
+nur der tatsächliche zusätzliche Polizeihalt unterscheidet sie.
+
+Der nachgelagerte Testhelfer zur Abrechnung verlangt genau den nativen
+Abschluss der vorher benannten Fahrt, den dazu erzeugten Tagesbericht und
+den tatsächlichen M6-Zustand. Er ruft die bestehenden Abrechnungs-,
+Persistenz-, Outbox- und Ledgerproduzenten auf. Er verändert keine
+Fahrtfakten, Kosten oder allgemeinen Vollständigkeitsflags. Der zurückgegebene
+Nachweis nennt Bruttoentgelt, konkrete Pönale, bestätigten Kassenunterschied
+und den tatsächlichen Journalbezug; die private Kontrolltagesansicht wird
+danach ausschließlich durch ihren regulären Scheduler aktualisiert.
+
+Der fiktive Zuschlag verwendet das wirkliche M5-Fahrzeugkonzept und die
+bestehende Gebotsprüfung. Sein Vertragsstart ist an die tatsächliche
+Verfügbarkeit der Formation gebunden; `settlementReadyAtMs` nennt das Ende
+der ersten 24-Stunden-Periode. Der Preis von 10000 Cent je tatsächlich
+gefahrenem Kilometer ist eine explizite Testvertragsregel.
+`nextAcceptanceWakeup()` liest ausschließlich restaurierte Operational- und
+Kontrollzustände: Betriebskalender, Holdfrist, native Zahlungs-/Nachweisfrist
+und die gespeicherte Antwortdauer ab tatsächlicher Holdaktivierung. Die
+native Polizeiprüfung muss die Antwort am vorgeschlagenen Zeitpunkt zulassen.
+Diese Node-Auswahlhilfe ist kein öffentlicher Zeit- oder Polizeipolicy-Eingang.
+
+Der gemeinsame Netzkorpus verwendet ausdrücklich den globalen Testseed 167
+vor den ersten Nachfragepins. Die frische Producer-Auswahl in
+`outputs/M15-Sitzung/acceptance-network-candidates.json` bestätigt originale
+Dialoge `admission-03` (ungültig, Identität bestätigt), `empty_phone-10`
+(gültig, momentan nicht vorzeigbar, Identität bestätigt), `empty_phone-02`
+(ungültig, Identität bestätigt) und einen gesonderten Polizeikandidaten
+`defective_phone-09` (ungültig, Identität tatsächlich verweigert). Ebenso sind
+unfreundliche, kooperativ alkoholisierte und verweigernde Originaldialoge
+vorhanden. Diese private Node-Vorprüfung erzeugt keine Kontrollfälle und ist
+noch kein zusammenhängender Browsernachweis. Der bestehende Sechsfall-HTTP-
+Nachweis behält seinen eigenständigen Einzugkorpus mit Testseed 138.
+
+Dies schließt die allgemeine Basisabhängigkeit #518
+nicht: Der produktive Abschluss eines vollständigen Tagesplans samt
+Kosten-/Vertrags-/Anschlussbelegen bleibt gesondert erforderlich. Der
+Pönalen-Nachweis setzt weder `dayPlanComplete` noch `evidenceComplete` der
+allgemeinen Tagesberichte auf wahr und gibt die dort gesperrte HTTP-Abrechnung
+nicht frei. Fehlende Anschlussfakten werden niemals als ausgefallener Anschluss
+erfunden; hier wird die tatsächliche Pünktlichkeitsfolge bewertet.

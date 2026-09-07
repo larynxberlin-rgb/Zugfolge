@@ -49,9 +49,9 @@ Millisekunden und die tatsächlichen sichtbaren Snapshotgrößen sind:
 
 | Fiktiver M5-Typ | Personen | Layout | M10 | Fahrgastprojektion | Sitzungsstart | Restore | Snapshotbytes |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| 101 | 160 | 6,692 | 9,949 | 4,163 | 18,486 | 3,800 | 60.135 |
-| 102 | 220 | 8,053 | 15,545 | 6,515 | 24,135 | 4,921 | 81.903 |
-| 103 | 144 | 6,307 | 11,928 | 4,445 | 18,713 | 4,141 | 54.539 |
+| 101 | 160 | 7,574 | 8,829 | 5,062 | 20,349 | 3,419 | 60.135 |
+| 102 | 220 | 9,237 | 14,362 | 5,982 | 20,747 | 5,715 | 81.903 |
+| 103 | 144 | 6,264 | 8,770 | 4,557 | 14,948 | 3,266 | 54.539 |
 
 Alle Wiederholungen ergeben je Konfiguration dieselben Fachhashes. Rohwerte,
 Binärhash und Quellpins stehen in
@@ -79,6 +79,9 @@ Fahrzeug-/Formationsmaterialisierung auf derselben Strecke; der Kapazitäts-
 und Innenraumbeweis gehört den drei vom M5-Compiler erzeugten Konfigurationen.
 [input-manifest-v1.json](evidence/input-manifest-v1.json) bindet deren
 Eingabedateien, den vollständigen lokalen Rust-Abhängigkeitsbaum und den
-Messadapter mit SHA-256 über UTF-8 mit LF. Die Messung wurde nach der Korrektur
-des Einpunkt-Bremsrests neu erzeugt; die Betriebs- und M10-Golden-Hashes bleiben
-unverändert.
+Messadapter mit SHA-256 über UTF-8 mit LF. Die Messung wurde nach dem
+Einpunkt-Bremsrest, der nativen Regionsübergabequittung, der Auswahl aller
+drei M5-Konfigurationen und dem ursachenbelegten Wiederanlauf nach
+Infrastruktursperren einschließlich beider Kontrollhalt-Freigabereihenfolgen
+im Plattformfixture neu erzeugt;
+die Betriebs- und M10-Golden-Hashes bleiben unverändert.

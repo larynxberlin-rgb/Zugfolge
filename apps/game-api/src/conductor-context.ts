@@ -70,25 +70,72 @@ export async function requireConductorAccount(tx: IdentityDatabase, access: Cond
   return account.id;
 }
 
+/** Folgt ausschließlich nativ bestätigten Übergaben zwischen unabhängig gepinnten Köpfen. */
+export async function resolveConductorRegion(tx: IdentityDatabase, worldId: string, trainRunId: string,
+  deps: Pick<ConductorContextDependencies, "regionBindings" | "operationalRuntime">,
+  origin?: { readonly regionId: string; readonly atMs: number }) {
+  const bindings = deps.regionBindings(worldId);
+  requireFact(bindings.length > 0 && bindings.length <= 256 && new Set(bindings.map((row) => row.regionId)).size === bindings.length);
+  const candidates = await tx.select().from(regionalSimulationStates).where(and(eq(regionalSimulationStates.worldId, worldId),
+    inArray(regionalSimulationStates.regionId, bindings.map((row) => row.regionId)),
+    sql`${regionalSimulationStates.state}->'world'->'trains' ? ${trainRunId}`));
+  requireFact(candidates.length <= 1, "conductor_handover_pending", 409);
+  if (origin === undefined) requireFact(candidates.length === 1, "conductor_train_unavailable", 409);
+  let regionId = origin?.regionId ?? candidates[0]!.regionId;
+  let atMs = origin?.atMs ?? 0;
+  const visited = new Set<string>();
+  let expectedReceipt: { id: string; hash: string } | undefined;
+  while (!visited.has(regionId) && visited.size < bindings.length) {
+    visited.add(regionId);
+    const initializationHash = bindings.find((row) => row.regionId === regionId)?.initializationHash;
+    const [head] = await tx.select().from(regionalSimulationStates).where(and(eq(regionalSimulationStates.worldId, worldId), eq(regionalSimulationStates.regionId, regionId)));
+    requireFact(initializationHash !== undefined && head !== undefined && head.initializationHash === initializationHash);
+    let restored: ReturnType<ConductorContextDependencies["operationalRuntime"]["restore"]>;
+    try { restored = deps.operationalRuntime.restore(head.state as OperationalSimulationState, initializationHash); }
+    catch { throw new ConductorAccessError(503, "conductor_source_unavailable", "Der regionale Betriebsstand ist nicht bestätigt."); }
+    requireFact(restored.stateHash === head.stateHash && restored.state.revision === head.revision
+      && restored.state.publisherSequence === head.publisherSequence && restored.initializationHash === initializationHash
+      && restored.state.world.worldId === worldId && restored.state.world.regionId === regionId && restored.state.world.nowMs >= atMs);
+    const world = restored.state.world;
+    if (expectedReceipt !== undefined)
+      requireFact(demandRecord(world["acceptedHandovers"] ?? {})[expectedReceipt.id] === expectedReceipt.hash, "conductor_handover_unconfirmed");
+    requireFact(!Object.values(demandRecord(world["preparedHandovers"] ?? {})).some((value) =>
+      demandRecord(demandRecord(value)["train"])["id"] === trainRunId), "conductor_handover_pending", 409);
+    if (demandRecord(world["trains"])[trainRunId] !== undefined) {
+      requireFact(candidates.length === 1 && candidates[0]!.regionId === regionId, "conductor_handover_unconfirmed");
+      return { head, restored, initializationHash };
+    }
+    const receipts = Object.entries(demandRecord(world["finishedHandoverReceipts"] ?? {}))
+      .map(([id, value]) => ({ id, value: demandRecord(value) }))
+      .filter(({ value }) => value["trainRunId"] === trainRunId && Number(value["atMs"]) >= atMs)
+      .sort((a, b) => Number(b.value["atMs"]) - Number(a.value["atMs"]));
+    const receipt = receipts[0];
+    if (receipt === undefined) {
+      // Eine wirklich entfernte Fahrt kann enden; eine andere Zugkopie oder
+      // ein alter, nicht zuordenbarer Übergabehash darf diesen Schluss nicht erzeugen.
+      const typedReceipts = demandRecord(world["finishedHandoverReceipts"] ?? {});
+      requireFact(candidates.length === 0 && Object.keys(demandRecord(world["finishedHandovers"] ?? {})).every((id) => typedReceipts[id] !== undefined),
+        "conductor_handover_unconfirmed");
+      return { head, restored, initializationHash };
+    }
+    const proof = receipt.value;
+    requireFact(proof["handoverId"] === receipt.id && proof["worldId"] === worldId && proof["sourceRegionId"] === regionId
+      && typeof proof["targetRegionId"] === "string" && typeof proof["payloadHash"] === "string"
+      && demandRecord(world["finishedHandovers"] ?? {})[receipt.id] === proof["payloadHash"]
+      && Number.isSafeInteger(proof["atMs"]) && Number(proof["atMs"]) <= world.nowMs
+      && (receipts[1] === undefined || receipts[1].value["atMs"] !== proof["atMs"]), "conductor_handover_unconfirmed");
+    expectedReceipt = { id: receipt.id, hash: proof["payloadHash"] };
+    requireFact(bindings.some((binding) => binding.regionId === proof["targetRegionId"]));
+    atMs = Number(proof["atMs"]); regionId = proof["targetRegionId"];
+  }
+  throw new ConductorAccessError(503, "conductor_handover_unconfirmed", "Der Regionsübergang dieser Fahrt ist noch nicht bestätigt.");
+}
+
 /** M4, M5 und M10 werden aus demselben serialisierten DB-Stand zusammengesetzt. */
 export async function loadConductorContext(tx: IdentityDatabase, access: ConductorAccess,
   deps: ConductorContextDependencies): Promise<ConductorCommittedContext> {
   const accountId = await requireConductorAccount(tx, access);
-  const bindings = deps.regionBindings(access.worldId);
-  requireFact(bindings.length > 0 && bindings.length <= 256 && new Set(bindings.map((row) => row.regionId)).size === bindings.length);
-  // JSON-Pfad und Wert sind gebundene Parameter. Eine ähnlich benannte Fahrt
-  // oder ein LiveMap-Cache ist kein Ersatz für den committed Betriebszustand.
-  const rows = await tx.select().from(regionalSimulationStates).where(and(eq(regionalSimulationStates.worldId, access.worldId),
-    inArray(regionalSimulationStates.regionId, bindings.map((row) => row.regionId)),
-    sql`${regionalSimulationStates.state}->'world'->'trains' ? ${access.trainRunId}`));
-  requireFact(rows.length === 1, "conductor_train_unavailable", 409);
-  const head = rows[0]!;
-  const initializationHash = bindings.find((row) => row.regionId === head.regionId)?.initializationHash;
-  requireFact(initializationHash !== undefined && head.initializationHash === initializationHash);
-  const restored = deps.operationalRuntime.restore(head.state as OperationalSimulationState, initializationHash);
-  requireFact(restored.stateHash === head.stateHash && restored.state.revision === head.revision
-    && restored.state.publisherSequence === head.publisherSequence && restored.initializationHash === initializationHash
-    && restored.state.world.worldId === access.worldId && restored.state.world.regionId === head.regionId);
+  const { head, restored, initializationHash } = await resolveConductorRegion(tx, access.worldId, access.trainRunId, deps);
   const operationalWorld = restored.state.world;
   const nowMs = operationalWorld.nowMs;
   requireFact(Number.isSafeInteger(nowMs) && nowMs >= 0);

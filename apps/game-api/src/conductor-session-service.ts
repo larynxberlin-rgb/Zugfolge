@@ -5,7 +5,7 @@ import type { ConductorCommandReceiptV1, ConductorCommandV1, ConductorSessionAcc
   ConductorSessionEffectV1, ConductorSessionPolicyV1, ConductorSessionRuntime, ConductorSessionSnapshotV1, ConductorSessionSourceV1,
   ConductorSessionTransitionV1, ConductorTrainStateV1, DialogueEvidenceV1, InteriorLayoutV1, InteriorPointV1, ConductorSceneRuntime, SceneProjectionV1, OperationalSimulationState } from "@zugfolge/runtime-native";
 import { and, asc, eq, gt, isNull, lt } from "drizzle-orm";
-import { ConductorAccessError, conductorHoldsVehicles, loadConductorFleet, loadConductorContext, requireConductorAccount, type ConductorAccess, type ConductorCommittedContext, type ConductorContextDependencies } from "./conductor-context.js";
+import { ConductorAccessError, conductorHoldsVehicles, loadConductorFleet, loadConductorContext, requireConductorAccount, resolveConductorRegion, type ConductorAccess, type ConductorCommittedContext, type ConductorContextDependencies } from "./conductor-context.js";
 import { demandHash, demandRecord, demandText } from "./demand-store.js";
 import type { ConductorSceneDeployment } from "./conductor-scene-configuration.js";
 import type { ConductorControlStatusV1 } from "./conductor-control.js";
@@ -129,14 +129,20 @@ export class ConductorSessionService {
       const releases = this.deps.sessionReleases.resolve(worldId, policy.periodId, Number(raw.session["startedAtMs"]));
       if (releases === undefined) reject(503, "conductor_release_unavailable", "Eine bestehende Sitzung benötigt ihren aufbewahrten Regelstand.");
       const state = this.deps.sessionRuntime.restore(raw, stored.stateHash, releases.dialogueReleases), session = state.session!;
-      const region = this.deps.regionBindings(worldId).find((row) => row.regionId === stored.regionId);
-      const [head] = await tx.select().from(regionalSimulationStates).where(and(eq(regionalSimulationStates.worldId, worldId), eq(regionalSimulationStates.regionId, stored.regionId)));
-      if (region === undefined || head === undefined || head.initializationHash !== region.initializationHash)
-        reject(503, "conductor_source_unavailable", "Der bestätigte regionale Betriebsstand fehlt.");
-      const restored = this.deps.operationalRuntime.restore(head.state as OperationalSimulationState, region.initializationHash);
-      if (restored.stateHash !== head.stateHash || restored.state.revision !== head.revision || restored.state.publisherSequence !== head.publisherSequence
-        || restored.state.world.worldId !== worldId || restored.state.world.regionId !== stored.regionId)
-        reject(503, "conductor_source_unavailable", "Der regionale Betriebsstand ist nicht bestätigt.");
+      if (state.worldId !== worldId || state.trainRunId !== stored.trainRunId || state.revision !== stored.revision || state.nowMs !== stored.atMs)
+        reject(503, "conductor_state_invalid", "Der gespeicherte Sitzungsstand konnte nicht bestätigt werden.");
+      let region: Awaited<ReturnType<typeof resolveConductorRegion>>;
+      try { region = await resolveConductorRegion(tx, worldId, state.trainRunId, this.deps,
+        { regionId: stored.regionId, atMs: state.nowMs }); }
+      catch (error) {
+        // Eine gesperrte Übergabe darf die unabhängige Bereinigung anderer
+        // Züge nicht verhindern. Der konkrete Benutzerabruf bleibt gesperrt.
+        if (trainRunId === undefined && error instanceof ConductorAccessError && error.code === "conductor_handover_pending") continue;
+        throw error;
+      }
+      const { head, restored } = region;
+      if (head.regionId !== stored.regionId)
+        await tx.update(conductorTrainStates).set({ regionId: head.regionId }).where(and(eq(conductorTrainStates.worldId, worldId), eq(conductorTrainStates.trainRunId, state.trainRunId)));
       const world = restored.state.world, train = demandRecord(world["trains"])[state.trainRunId] as Record<string, unknown> | undefined;
       const [owner] = await tx.select({ accountId: accounts.id, subject: accounts.keycloakSubject, access: worldAccesses.status }).from(conductorOwners)
         .innerJoin(accounts, and(eq(accounts.worldId, conductorOwners.worldId), eq(accounts.id, conductorOwners.accountId), isNull(accounts.erasedAt)))
@@ -332,18 +338,16 @@ export class ConductorSessionService {
 
   async art(access: ConductorAccess) {
     return this.underWorld(access, async (tx, context) => {
-      const authorization = await this.access(tx, access, context, false), state = await this.state(tx, access, context);
-      this.deps.sessionRuntime.project(state, authorization, await this.source(tx, context, state));
+      await this.synchronizedSnapshot(tx, context, access);
       return context.period.atlas.renderView(access.worldId);
     });
   }
 
   async path(access: ConductorAccess, targetNodeId: string) {
     return this.underWorld(access, async (tx, context) => {
-      const authorization = await this.access(tx, access, context, false), state = await this.state(tx, access, context);
-      const snapshot = this.deps.sessionRuntime.project(state, authorization, await this.source(tx, context, state));
-      if (snapshot === null || state.layout === null || snapshot.status !== "active") reject(409, "conductor_session_inactive", "Die Sitzung ist nicht aktiv.");
-      const layout = state.layout, from = snapshot.position;
+      const { snapshot, layout } = await this.synchronizedSnapshot(tx, context, access);
+      if (snapshot.status !== "active") reject(409, "conductor_session_inactive", "Die Sitzung ist nicht aktiv.");
+      const from = snapshot.position;
       const candidates = layout.nodes.filter(({ point }) => point.vehicleId === from.vehicleId && point.bodyId === from.bodyId && point.deckId === from.deckId)
         .map((node) => ({ node, distance: Math.abs(node.point.xMm - from.xMm) + Math.abs(node.point.yMm - from.yMm) }))
         .sort((a, b) => a.distance - b.distance || a.node.nodeId.localeCompare(b.node.nodeId));
@@ -364,8 +368,7 @@ export class ConductorSessionService {
 
   async atlasFile(access: ConductorAccess, fileId: string): Promise<Uint8Array> {
     return this.underWorld(access, async (tx, context) => {
-      const authorization = await this.access(tx, access, context, false), state = await this.state(tx, access, context);
-      this.deps.sessionRuntime.project(state, authorization, await this.source(tx, context, state));
+      await this.synchronizedSnapshot(tx, context, access);
       if (!context.period.atlas.renderView(access.worldId).files.some((file) => file.id === fileId))
         reject(404, "conductor_atlas_missing", "Die Grafikdatei gehört nicht zum freigegebenen Atlas.");
       return context.period.atlas.file(access.worldId, fileId);

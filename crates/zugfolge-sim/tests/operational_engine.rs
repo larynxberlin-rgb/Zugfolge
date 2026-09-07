@@ -975,6 +975,23 @@ fn moving_handover_transfers_events_locks_vehicles_and_survives_retries_and_rest
     target = OperationalWorld::restore(&target.checkpoint()).unwrap();
     source.finish_handover(&handover).unwrap();
     let finished = source.state_hash();
+    let serialized = serde_json::to_value(&source).unwrap();
+    let receipt = &serialized["finishedHandoverReceipts"]["h"];
+    assert_eq!(receipt["trainRunId"], "t");
+    assert_eq!(receipt["targetRegionId"], "region:b");
+    assert_eq!(receipt["payloadHash"], handover.payload_hash);
+    for (field, value) in [
+        ("worldId", serde_json::json!("foreign")),
+        ("sourceRegionId", serde_json::json!("region:b")),
+        ("targetRegionId", serde_json::json!(source.region_id)),
+        ("atMs", serde_json::json!(1)),
+        ("payloadHash", serde_json::json!("0".repeat(64))),
+    ] {
+        let mut changed = serialized.clone();
+        changed["finishedHandoverReceipts"]["h"][field] = value;
+        let changed: OperationalWorld = serde_json::from_value(changed).unwrap();
+        assert!(changed.verify_invariants().is_err(), "{field}");
+    }
     source.finish_handover(&handover).unwrap();
     assert_eq!(finished, source.state_hash());
     assert!(!source.vehicles.contains_key("vehicle:1"));
@@ -5050,6 +5067,167 @@ fn dispatcher_batch_preserves_priorities_and_replay_across_input_permutations() 
             world.verify_invariants().unwrap();
         }
     }
+}
+
+#[test]
+fn infrastructure_release_rechecks_fdl_and_retains_position_resources_and_restore() {
+    for advanced_ms in [0, 1_000] {
+        let mut world = dispatched_profile_world(release());
+        world.advance_to(advanced_ms).unwrap();
+        let head = world.trains["t"].head_route_mm;
+        let occupied = world.trains["t"].occupied_intervals.clone();
+        world
+            .activate_disruption(
+                "closure",
+                OperationalDisruption::ResourceClosed {
+                    resource_id: "block:b".into(),
+                },
+            )
+            .unwrap();
+        let locks = world.route_locks.clone();
+        let checkpoint = world.checkpoint();
+        let mut replay = OperationalWorld::restore(&checkpoint).unwrap();
+        for candidate in [&mut world, &mut replay] {
+            candidate
+                .clear_disruption("closure", "test-only-technical-release")
+                .unwrap();
+            assert_eq!(candidate.trains["t"].motion_state, MotionState::Standing);
+            assert!(candidate.trains["t"].authority.is_none());
+            assert_eq!(candidate.trains["t"].head_route_mm, head);
+            assert_eq!(candidate.trains["t"].occupied_intervals, occupied);
+            assert_eq!(candidate.route_locks, locks);
+            assert!(
+                candidate
+                    .signal_aspects
+                    .values()
+                    .all(|aspect| *aspect != SignalAspect::Proceed)
+            );
+            candidate.verify_invariants().unwrap();
+            assert_eq!(
+                candidate.plan_motion("t"),
+                Err(OperationalError::NoAuthority)
+            );
+            assert_eq!(
+                candidate
+                    .submit_dispatch_requests(&[dispatch_request(
+                        "t",
+                        "interlocking:train",
+                        advanced_ms
+                    )])
+                    .unwrap(),
+                vec!["t"]
+            );
+            assert_eq!(candidate.trains["t"].motion_state, MotionState::Moving);
+            assert_eq!(candidate.trains["t"].head_route_mm, head);
+            candidate.verify_invariants().unwrap();
+            assert!(
+                serde_json::to_value(&*candidate)
+                    .unwrap()
+                    .get("infrastructureDisruptionStops")
+                    .is_none()
+            );
+        }
+        assert_eq!(world.state_hash(), replay.state_hash());
+    }
+}
+
+#[test]
+fn infrastructure_release_needs_every_cause_and_preserves_unrelated_safe_stops() {
+    for unrelated in [
+        None,
+        Some("manual-danger"),
+        Some("infrastructure-disruption"),
+    ] {
+        let mut world = dispatched_profile_world(release());
+        world
+            .activate_disruption(
+                "closure-a",
+                OperationalDisruption::ResourceClosed {
+                    resource_id: "block:a".into(),
+                },
+            )
+            .unwrap();
+        world
+            .activate_disruption(
+                "closure-b",
+                OperationalDisruption::ResourceClosed {
+                    resource_id: "block:b".into(),
+                },
+            )
+            .unwrap();
+        world.clear_disruption("closure-a", "technical-a").unwrap();
+        assert!(matches!(
+            world.trains["t"].motion_state,
+            MotionState::SafeStop { .. }
+        ));
+        assert!(
+            world
+                .submit_dispatch_requests(&[dispatch_request("t", "interlocking:train", 0)])
+                .is_err()
+        );
+        if let Some(reason) = unrelated {
+            world.safe_stop("t", reason).unwrap();
+        }
+        world.clear_disruption("closure-b", "technical-b").unwrap();
+        if unrelated.is_some() {
+            assert!(matches!(
+                world.trains["t"].motion_state,
+                MotionState::SafeStop { .. }
+            ));
+        } else {
+            assert_eq!(world.trains["t"].motion_state, MotionState::Standing);
+        }
+        world.verify_invariants().unwrap();
+    }
+    let mut world = dispatched_profile_world(release());
+    world.safe_stop("t", "manual-danger").unwrap();
+    world
+        .activate_disruption(
+            "later",
+            OperationalDisruption::ResourceClosed {
+                resource_id: "block:a".into(),
+            },
+        )
+        .unwrap();
+    world.clear_disruption("later", "technical-later").unwrap();
+    assert_eq!(
+        world.trains["t"].motion_state,
+        MotionState::SafeStop {
+            reason: "manual-danger".into()
+        }
+    );
+    world.verify_invariants().unwrap();
+}
+
+#[test]
+fn infrastructure_release_cannot_infer_missing_historical_cause() {
+    let mut world = dispatched_profile_world(release());
+    world
+        .activate_disruption(
+            "closure",
+            OperationalDisruption::ResourceClosed {
+                resource_id: "block:b".into(),
+            },
+        )
+        .unwrap();
+    // Derselbe generische Grund ohne Aktivierungsbindung kann auch aus einer
+    // älteren Version stammen. Der Grundtext allein ist keine Freigabe.
+    world.safe_stop("t", "infrastructure-disruption").unwrap();
+    assert!(
+        serde_json::to_value(&world)
+            .unwrap()
+            .get("infrastructureDisruptionStops")
+            .is_none()
+    );
+    let mut legacy = OperationalWorld::restore(&world.checkpoint()).unwrap();
+    legacy
+        .clear_disruption("closure", "test-legacy-release")
+        .unwrap();
+    assert!(matches!(
+        legacy.trains["t"].motion_state,
+        MotionState::SafeStop { .. }
+    ));
+    legacy.verify_invariants().unwrap();
 }
 
 #[test]

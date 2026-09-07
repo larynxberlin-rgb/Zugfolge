@@ -34,14 +34,20 @@ export async function startConductorSessionBrowserBackend({ control = noControlE
     } });
     await app.listen({ host: "127.0.0.1", port: 0 });
     const apiOrigin = `http://127.0.0.1:${app.server.address().port}`;
-    const config = { worldId: fixture.access.worldId, operatorId: fixture.access.operatorId, trainRunId: fixture.access.trainRunId, token };
+    const world = await fixture.db.query.worlds.findFirst({ where: (row, { eq }) => eq(row.id, fixture.access.worldId) });
+    const operator = await fixture.db.query.operators.findFirst({ where: (row, { eq, and }) => and(eq(row.worldId, fixture.access.worldId), eq(row.id, fixture.access.operatorId)) });
+    if (!world || !operator) throw new Error("The actual browser fixture requires its world and operator names.");
+    const config = { worldId: fixture.access.worldId, operatorId: fixture.access.operatorId, trainRunId: fixture.access.trainRunId,
+      worldLabel: world.name, operatorLabel: operator.name, token };
     const html = `<!doctype html><html lang="de"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Native Schaffnerabnahme</title>
       <style>body{margin:0;background:#101419;color:#edf0f3;font:16px system-ui}main{padding:24px}button{font:inherit;padding:12px 18px}p{max-width:70ch}</style>
       <main><h1>Native Abnahmefahrt</h1><p>Fiktive Testinfrastruktur durch echte M5-, Betriebs-, M10- und Sitzungskerne. Temporäre Testsignaturen; keine produktive Weltaktivierung.</p>
-      <button id="open-conductor">Schaffnermodus öffnen</button><p id="harness-error" role="alert"></p></main>
-      <script type="module">import { openConductorMode } from '/src/conductor-mode.ts'; import { ConductorApi } from '/src/conductor-api.ts';
+      <button id="open-conductor">Schaffnermodus öffnen</button><button id="open-control-report">Kontrollbericht öffnen</button><p id="harness-error" role="alert"></p></main>
+      <script type="module">import { openConductorMode } from '/src/conductor-mode.ts'; import { ConductorApi } from '/src/conductor-api.ts'; import { openConductorReport } from '/src/conductor-report.ts';
       const c=${JSON.stringify(config)}; const entry=document.querySelector('#open-conductor');
-      entry.addEventListener('click',()=>openConductorMode({api:new ConductorApi('',c.worldId,c.operatorId,c.trainRunId,async()=>c.token),trainLabel:'Abnahmefahrt · drei M5-Wagenkästen',returnFocus:entry}).catch(()=>{document.querySelector('#harness-error').textContent='Die native Abnahme konnte nicht gestartet werden.';}));</script></html>`;
+      const api=new ConductorApi('',c.worldId,c.operatorId,c.trainRunId,async()=>c.token); const reportEntry=document.querySelector('#open-control-report');
+      entry.addEventListener('click',()=>openConductorMode({api,trainLabel:'Abnahmefahrt · drei M5-Wagenkästen',worldLabel:c.worldLabel,operatorLabel:c.operatorLabel,returnFocus:entry}).catch(()=>{document.querySelector('#harness-error').textContent='Die native Abnahme konnte nicht gestartet werden.';}));
+      reportEntry.addEventListener('click',()=>openConductorReport({api,trainLabel:'Abnahmefahrt · drei M5-Wagenkästen',returnFocus:reportEntry}));</script></html>`;
     vite = await createServer({ root: resolve(ROOT, "apps/livemap"), configFile: false, logLevel: "error",
       server: { host: "127.0.0.1", port: 0, strictPort: false, fs: { strict: true, allow: [ROOT] },
         proxy: { "/worlds": { target: apiOrigin, changeOrigin: false } } },
@@ -72,7 +78,7 @@ export async function startConductorSessionBrowserBackend({ control = noControlE
         fleetStateHash: fixture.checkpoint.stateHash, authorityReleaseHash: fixture.checkpoint.state.authorityReleaseHash,
         artVerification: "Approved corpus with temporary test signature; no productive key or world activation" },
       async advance(milliseconds) {
-        if (!Number.isSafeInteger(milliseconds) || milliseconds < 1 || milliseconds > 120000) throw new Error("Invalid explicit proof time step.");
+        if (!Number.isSafeInteger(milliseconds) || milliseconds < 1 || milliseconds > 86_400_000) throw new Error("Invalid explicit proof time step.");
         const next = tail.then(async () => {
           fixture.clock.nowMs += milliseconds;
           await fixture.apply(`browser-proof:advance:${++advanceSequence}`, { type: "advance-to", atMs: fixture.clock.nowMs });
@@ -82,7 +88,9 @@ export async function startConductorSessionBrowserBackend({ control = noControlE
         tail = next.catch(() => {}); return next;
       },
       async advanceForReport(atMs) {
-        if (!fixture.advanceControl || !Number.isSafeInteger(atMs) || atMs <= fixture.clock.nowMs || atMs > 86_400_001) throw new Error("Invalid explicit report time boundary.");
+        const finalEvidenceAtMs = fixture.settlementReadyAtMs ?? 86_400_001;
+        if (!fixture.advanceControl || !Number.isSafeInteger(finalEvidenceAtMs) || !Number.isSafeInteger(atMs)
+          || atMs <= fixture.clock.nowMs || atMs > Math.max(86_400_001, finalEvidenceAtMs)) throw new Error("Invalid explicit report time boundary.");
         const next = tail.then(async () => {
           fixture.clock.nowMs = atMs;
           await fixture.apply(`browser-proof:report:${++advanceSequence}`, { type: "advance-to", atMs });
