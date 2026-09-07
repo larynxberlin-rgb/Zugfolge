@@ -6830,6 +6830,7 @@ mod invariant_tests {
             infra: None,
             handover_protection_by_train: BTreeMap::new(),
             service_outcome_state: None,
+            service_day_state: None,
             fare_control_state: None,
             infrastructure_disruption_stops: BTreeMap::new(),
             prepared_handovers: BTreeMap::new(),

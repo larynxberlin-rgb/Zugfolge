@@ -49,9 +49,9 @@ Millisekunden und die tatsächlichen sichtbaren Snapshotgrößen sind:
 
 | Fiktiver M5-Typ | Personen | Layout | M10 | Fahrgastprojektion | Sitzungsstart | Restore | Snapshotbytes |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| 101 | 160 | 6,447 | 9,276 | 3,789 | 17,812 | 4,691 | 60.135 |
-| 102 | 220 | 10,289 | 14,999 | 6,643 | 22,123 | 4,600 | 81.903 |
-| 103 | 144 | 7,514 | 8,915 | 3,520 | 15,815 | 3,297 | 54.539 |
+| 101 | 160 | 10,118 | 14,124 | 6,733 | 20,976 | 4,615 | 60.135 |
+| 102 | 220 | 11,850 | 13,079 | 6,152 | 29,311 | 6,841 | 81.903 |
+| 103 | 144 | 7,319 | 11,393 | 5,833 | 17,661 | 3,014 | 54.539 |
 
 Alle Wiederholungen ergeben je Konfiguration dieselben Fachhashes. Rohwerte,
 Binärhash und Quellpins stehen in

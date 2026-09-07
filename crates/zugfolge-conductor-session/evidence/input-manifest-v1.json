@@ -641,7 +641,7 @@
     },
     {
       "path": "crates/zugfolge-sim/src/operational.rs",
-      "sha256": "a5328bab2b527eea2693c9ff73c03bd8991c0172ea87a16f3988360408354e9e"
+      "sha256": "b8b4219cefba9b8db2d74fb6f19293f658961d21b6838e5988276445aed4e0f3"
     },
     {
       "path": "crates/zugfolge-sim/src/operational/fare_control_types.rs",
