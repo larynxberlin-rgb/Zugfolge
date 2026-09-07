@@ -40,12 +40,21 @@ Nachweise, Zahlungen, Polizei und Tagesbericht sowie den vollständigen
 Fahrgastwechsel über mehrere Halte und eine Infrastruktursperre. Die gemeinsame
 Abnahmefahrt verbindet Originaldialoge, Polizeihalt, Netz- und Vertragsfolgen;
 ihre Quelle und der einzelne Abnahmevertrag bleiben ausdrücklich fiktiv.
-Der Evidenzpacker bindet sämtliche positiven
-Berichte und Screenshots an den tatsächlichen CI-Commit. Die zusätzliche
+Der gesonderte Einstiegsbeleg verwendet dieselbe Zugdetailkomponente wie die
+LiveMap mit tatsächlichen Verfügbarkeits-, Berechtigungs- und Resume-Antworten.
+Der Evidenzpacker bindet sämtliche sieben positiven Browserberichte, den
+separaten Originaldialog-HTTP-Beleg und die zugehörigen
+Screenshots an den tatsächlichen CI-Commit. Die zusätzliche
 Dialog-CLI liefert ausschließlich private Auswahlbelege aus Originaldialogen;
 die Sitzungs- und Kontrollkommandos verwenden unter Linux das echte NAPI-Addon.
 
 ## Lokal arbeiten
+
+Der Rust-Job führt außerdem den tatsächlichen `operational_json`-CLI-Einstieg
+in isolierten Kindprozessen aus. Erfolg und fachliche Ablehnung nach Restore
+müssen den temporären Infrastrukturindex beim Prozessende freigeben. Dieser
+Ressourcentest verändert keine Betriebs- oder Replayregeln und benötigt keinen
+zusätzlichen CI-Job.
 
 Die Toolchain steht in [`monorepo.md`](monorepo.md#2-werkzeugkette).
 Einmal installieren und den Workspace bauen:

@@ -44,9 +44,14 @@ nativeIt("führt drei Compilerformationen über tatsächliche Kontrollhaltfolge,
     const finished = await driver.finishAfterRelease();
     expect(finished.leaderDelayMs).toBeGreaterThan(0); expect(finished.followerDelayMs).toBeGreaterThan(0);
     expect(finished.demand.replannedPassengers).toBeGreaterThan(0);
+    expect(finished.resourceWaits.map((wait: { trainRunId: string }) => wait.trainRunId)).toEqual(["regional-follow", "network-empty"]);
+    for (const wait of finished.resourceWaits) {
+      expect(wait.blockedByTrainRunId).toBe(fixture.access.trainRunId);
+      expect(wait.occupiedByLeader || wait.leaderRouteLockIds.length > 0).toBe(true);
+    }
     expect(fork.baseline.finalStateHash).toBe(fork.baseline.replayStateHash);
     console.log(JSON.stringify({ leaderDelayMs: finished.leaderDelayMs, followerDelayMs: finished.followerDelayMs,
-      replannedPassengers: finished.demand.replannedPassengers, shuntingEnd: finished.actualCompleted["network-shunt"],
+      replannedPassengers: finished.demand.replannedPassengers, resourceWaits: finished.resourceWaits, shuntingEnd: finished.actualCompleted["network-shunt"],
       actualStateHash: finished.actualStateHash, baselineStateHash: finished.baselineStateHash }));
   } finally { await fixture.dispose(); }
 }, 600_000);

@@ -2,6 +2,15 @@
 
 Der Einstieg steht in der privaten Zugansicht eines eigenen aktiven Zuges. Der Server prüft Weltzugang, EVU-Eigentum, laufende Betriebsformation, M5-Konfiguration, M10-Manifest und freigegebene Periodenpins. Die Oberfläche öffnet einen fokussierten Dialog mit Fahrtkontext und Rückkehr zur unveränderten Karte. Ein fehlender oder abgelaufener Vertrag erklärt die Nichtverfügbarkeit.
 
+Die gemeinsame Komponente `conductor-entry.ts` führt diese Verfügbarkeitsabfrage
+für die normale Zugdetailansicht und den separaten nativen Einstiegsnachweis
+identisch aus. Bis zur Antwort bleibt der Einstieg gesperrt; eine Ablehnung
+zeigt den tatsächlichen Servergrund. Antworten für eine inzwischen verlassene
+Auswahl dürfen keinen Einstieg mehr aktivieren. Start und Fortsetzung behalten
+Fahrt-, Welt- und Unternehmenskontext; die Rückkehr fokussiert denselben
+Einstieg. Der separate Browsernachweis benutzt echte Availability-, Start-,
+Detach- und Resume-Antworten. Er prüft diese Komponente ohne nachgebildete Karte.
+
 Die Kopfzeile behält die bekannten Welt- und Unternehmensnamen aus dem
 Spielkontext. Die gemeinsame rote Gleismarke und „Zur Karte“ schließen den
 Modus mit erhaltener Kartenauswahl. Bestätigungen nennen zusätzlich zu den
@@ -42,7 +51,7 @@ Berichtdialogs innerhalb des jeweiligen Dialogs. Die aktive Äußerung steht
 als einzelne Sprechblase im festen Kontrollbereich und verdeckt keine
 Fahrgäste oder Antwortschaltflächen.
 
-Der Evidenzpacker bindet die sechs erfolgreichen Browserberichte, den
+Der Evidenzpacker bindet die sieben erfolgreichen Browserberichte, den
 separaten Originaldialog-HTTP-Beleg und jede
 referenzierte PNG-Datei mit SHA-256 an den angegebenen Quellstand und optional
 an den CI-Lauf. Fehlende Berichte, Browserfehler, fremde Pfade oder geänderte

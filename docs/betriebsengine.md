@@ -79,6 +79,23 @@ Zugspitze, Wendezugfähigkeit und wirksame Zugsicherung. Ein ausschließlich aus
 nicht angetriebenen Fahrzeugen bestehender Wagenpark bleibt als immobile
 Formation zulässig.
 
+### Lebensdauer temporärer CLI-Indizes
+
+Der native Operational-v2-Cache hält validierte Infrastrukturindizes während
+eines Serverprozesses warm. Kurzlebige Prüf-CLIs geben ihre Cacheeinträge nach
+Abwicklung des Aufrufs ausdrücklich frei, sowohl bei Erfolg als auch bei einer
+fachlichen Ablehnung nach Restore. Statische Rust-Werte besitzen beim
+Prozessende keinen automatischen Destruktorlauf. Erst die Freigabe des letzten
+Handles schließt die redb-Datei; anschließend wird ausschließlich das vom Store
+selbst angelegte temporäre Verzeichnis entfernt. Fremde oder noch benutzte
+Verzeichnisse werden nicht gesucht oder gelöscht. Ein Prozessabbruch ohne
+Abwicklung ist von dieser normalen Aufräumgarantie ausgenommen.
+
+Diese Ressourcenfreigabe ändert weder Quell-, Zustands- oder Kommandobelege noch
+den warmen NAPI-Pfad. Der Prozessnachweis für `operational_json` prüft echte
+Initialisierung und eine Ablehnung nach tatsächlichem Wiederanbinden des
+Zustands jeweils mit isoliertem Temp-Verzeichnis.
+
 ## 3. Weltzustand und Einheiten
 
 `OperationalWorld` ist je Welt und Region der einzige Writer. Er enthält:

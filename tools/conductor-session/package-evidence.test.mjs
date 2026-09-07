@@ -16,14 +16,15 @@ test("binds all browser artifacts deterministically and rejects changed images, 
     const report = { evidence: { worldId: "test-world", trainRunId: "test-train" }, pageErrors: [], screenshots: [{ file: "test.png", sha256: createHash("sha256").update(image).digest("hex") }] };
     for (const [file, schemaVersion] of [["browser-report.json", "conductor-session-browser-proof/v1"], ["scene-browser-report.json", "conductor-session-scene-browser-proof/v1"],
       ["control-browser-report.json", "conductor-control-browser-proof/v1"], ["capacity-browser-report.json", "conductor-session-capacity-browser-proof/v1"],
-      ["manifest-browser-report.json", "conductor-manifest-browser-proof/v1"], ["acceptance-browser-report.json", "conductor-acceptance-browser-proof/v1"]]) await writeFile(join(root, file), JSON.stringify({ ...report, schemaVersion }));
+      ["manifest-browser-report.json", "conductor-manifest-browser-proof/v1"], ["acceptance-browser-report.json", "conductor-acceptance-browser-proof/v1"],
+      ["entry-browser-report.json", "conductor-entry-browser-proof/v1"]]) await writeFile(join(root, file), JSON.stringify({ ...report, schemaVersion }));
     const dialogue = { schemaVersion: "conductor-dialogue-http-proof/v1", testOnly: true,
       worldId: "test-world", trainRunId: "test-train", dialogueReleaseHash: "b".repeat(64), initialDemandStateHash: "c".repeat(64),
       nativeM10Producer: true, httpCommands: true, reloadAndCommandReplay: true, originalFareFactsUnchanged: true,
       cases: Array.from({ length: 6 }, (_, index) => ({ scenario: `test-scenario-${index}`, restoredStateHash: "d".repeat(64) })) };
     await writeFile(join(root, "dialogue-http-report.json"), JSON.stringify(dialogue));
     const valid = await packageConductorEvidence({ root, revision });
-    assert.equal(valid.testOnly, true); assert.equal(valid.proofs.length, 7); assert.equal(valid.files.length, 8);
+    assert.equal(valid.testOnly, true); assert.equal(valid.proofs.length, 8); assert.equal(valid.files.length, 9);
     assert.deepEqual(await packageConductorEvidence({ root, revision }), valid);
     await writeFile(join(root, "dialogue-http-report.json"), JSON.stringify({ ...dialogue, originalFareFactsUnchanged: false }));
     await assert.rejects(packageConductorEvidence({ root, revision }), /Unsuccessful original dialogue HTTP report/u);

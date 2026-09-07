@@ -78,6 +78,18 @@ die spätere Szene ist leer und behauptet keine fortgesetzte Fahrt.
 Der Beleg umfasst fünf visuell geprüfte Browserbilder. Den endgültigen
 Linux-NAPI-Nachweis liefert der entsprechende Lauf von PR #539.
 
+Der zusätzliche verbundene Service-/M6-Beleg besteht lokal mit zwei Tests.
+Eine tatsächliche Identitätsverweigerung fordert den mittleren Kontrollhalt
+an. Nach technischer Sperrenfreigabe und neuer FDL-Prüfung folgt die native
+Polizeireaktion nach 59 Minuten auch bei bereits beendeter Schaffnersitzung.
+Der tatsächliche verspätete Fahrtabschluss ergibt im ausdrücklich fiktiven
+Einzelfahrtvertrag 9.000 Cent Pönale und 1.000 Cent Auszahlung. Die
+ausgeglichene Ledgerbuchung bleibt beim Retry einmalig. Der Vergleichszweig
+derselben ursprünglichen Fahrt mit identischer Infrastruktursperre und
+Freigabe ohne Polizeianforderung bleibt innerhalb der Pünktlichkeitstoleranz.
+Dieser Servicebeleg ist vom Mehrzugvergleich abzugrenzen, der ausschließlich
+die zusätzliche Dauer eines bereits aktiven Polizeihalts vergleicht.
+
 Der erste vollständige Integrationsstand `3d2b6fd` besteht alle vier Jobs in
 [CI-Lauf 34066385323](https://github.com/larynxberlin-rgb/Zugfolge/actions/runs/34066385323),
 einschließlich echter Linux-NAPI-, PostgreSQL-, Sitzungs-/Ledger- und

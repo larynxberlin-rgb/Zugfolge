@@ -99,6 +99,15 @@ nativeIt("bindet den gemeinsamen Originalkorpus an einen tatsächlichen M6-Absch
     const baselineEnd = await baselineApply({ type: "advance-to", atMs: f.settlementReadyAtMs });
     const baselineOutcome = JSON.parse(String(baselineEnd.events.find((event) => event["kind"] === "train-outcome")!["detail"]));
     expect(baselineOutcome.delaySeconds).toBeLessThanOrEqual(300);
+    const pinnedTarget = (controlRecord(f.initialization.trains[0]!.stopPlan)["stops"] as unknown[]).map(controlRecord)
+      .find((row) => row["stopId"] === middleStopId)!;
+    const earliestActivationMs = Number(pinnedTarget["scheduledDepartureMs"]);
+    expect(Number.isSafeInteger(earliestActivationMs)).toBe(true);
+    expect(earliestActivationMs).toBeGreaterThan(f.clock.nowMs);
+    // Vor der nativ gepinnten Zielabfahrt kann noch kein Zusatzhalt aktiv sein.
+    // Der echte Advance verarbeitet auch kurze Bewegungssegmente intern;
+    // weder eine Istankunft noch ein Polizeiergebnis werden dabei gesetzt.
+    await advance(earliestActivationMs, false);
     const steps = [];
     let history = await f.sessions.report(f.access);
     for (let count = 0; count < 20 && controlRecord(controlRecord(history.control)["hold"])["status"] !== "released"; count++) {
@@ -127,7 +136,8 @@ nativeIt("bindet den gemeinsamen Originalkorpus an einen tatsächlichen M6-Absch
     if (reportPath !== undefined) writeFileSync(reportPath, JSON.stringify({ schemaVersion: "conductor-acceptance-components-proof/v1",
       testOnly: true, source: f.acceptanceSource, settlementReadyAtMs: f.settlementReadyAtMs,
       sessionId: start.sessionId, originalCandidates: selected, policeCandidate: police, nativeSteps: steps, policeHistory: history,
-      comparison: { sameSourceClosureAndRelease: true, baselineStartStateHash, baselineOutcome }, settlement: result }, null, 2) + "\n");
+      comparison: { sameSourceClosureAndRelease: true, baselineStartStateHash, baselineOutcome },
+      pinnedTargetDepartureMs: earliestActivationMs, settlement: result }, null, 2) + "\n");
   } finally { await f.dispose(); }
 }, 180_000);
 

@@ -57,6 +57,21 @@ type InfrastructureHandle = Arc<dyn OperationalInfrastructure>;
 static INFRASTRUCTURE_CACHE: OnceLock<Mutex<BTreeMap<String, InfrastructureHandle>>> =
     OnceLock::new();
 
+/// Gibt die Cache-Handles nach dem letzten Aufruf eines kurzlebigen CLI frei.
+///
+/// Der warme NAPI-Pfad ruft diese Funktion nicht auf. Bereits ausgeliehene
+/// Handles bleiben gültig; der letzte Handle schließt den Index vor dem
+/// Entfernen seines eigenen Verzeichnisses. Auch ein vergifteter Cache muss
+/// beim geordneten CLI-Abschluss seine Ressourcen freigeben können.
+pub fn release_operational_infrastructure_cache() {
+    if let Some(cache) = INFRASTRUCTURE_CACHE.get() {
+        cache
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clear();
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct OperationalRuntimeError {
     code: &'static str,

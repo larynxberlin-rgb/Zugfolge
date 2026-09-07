@@ -109,7 +109,10 @@ export function createConductorProofDriver({ backend, page, output, screenshots 
     if (!atTarget(current.snapshot.position)) {
       await page.getByRole("button", { name: "Zum Fahrgast gehen", exact: true }).click();
       for (let step = 0; step < 140 && !atTarget(current.snapshot.position); step++) {
-        await backend.advance(1500); await page.waitForTimeout(800); current = await request();
+        await backend.advance(1500); await page.waitForTimeout(800);
+        // Let the actual UI command and its bounded stale-revision retry
+        // finish before the proof produces another M10 clock revision.
+        await idle(); current = await request();
         if (step % 20 === 0) console.log(`Control path ${label}: step ${step}, ${JSON.stringify(current.snapshot.position)}`);
         assert.equal(await page.locator(".conductor-problem").isVisible(), false, await page.locator(".conductor-problem").textContent());
       }

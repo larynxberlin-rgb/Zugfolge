@@ -30,6 +30,7 @@ import {
 
 import { LivemapApiClient } from "./api.js";
 import { ConductorApi } from "./conductor-api.js";
+import { appendConductorEntry as appendSharedConductorEntry } from "./conductor-entry.js";
 import { renderAttentionRail, renderAttentionUnavailable } from "./attention.js";
 import { ensureAccessToken, loadRuntimeConfiguration } from "./auth.js";
 import {
@@ -558,29 +559,11 @@ async function appendConductorEntry(selection: MapSelection, operatorId: string)
   const configuration = loadRuntimeConfiguration();
   const conductor = new ConductorApi(configuration.gameApiUrl, worldId, operatorId, selection.id,
     (refresh) => ensureAccessToken(configuration, refresh));
-  const section = document.createElement("section"); section.className = "owner-action";
-  const entry = document.createElement("button"); entry.type = "button"; entry.textContent = "Als Schaffner mitfahren"; entry.disabled = true;
-  const note = document.createElement("p"); note.textContent = "Verfügbarkeit der Fahrt wird geprüft …";
-  const report = document.createElement("button"); report.type = "button"; report.textContent = "Kontrollbericht";
-  report.addEventListener("click", async () => {
-    const { openConductorReport } = await import("./conductor-report.js");
-    await openConductorReport({ api: conductor, trainLabel: selection.label, returnFocus: report });
-  });
-  section.append(entry, report, note); detailsContent.append(section);
-  try {
-    const available = await conductor.availability();
-    if (selected?.id !== selection.id || selected.kind !== "train" || !section.isConnected) return;
-    entry.disabled = false; entry.textContent = available.sessionId === null ? "Als Schaffner mitfahren" : "Schaffnersitzung fortsetzen";
-    note.textContent = "Begehbarer Innenraum, Fahrgäste und Fahrkartenkontrolle in deiner aktuellen Fahrt.";
-    entry.addEventListener("click", async () => {
-      entry.disabled = true;
-      try { const { openConductorMode } = await import("./conductor-mode.js"); await openConductorMode({ api: conductor, trainLabel: selection.label,
-        worldLabel: worldLabel.textContent ?? undefined, operatorLabel: [...operatorSelector.options].find((option) => option.value === operatorId)?.textContent ?? undefined,
-        returnFocus: entry }); }
-      catch (error) { note.textContent = error instanceof Error ? error.message : "Der Schaffnermodus konnte nicht geöffnet werden."; }
-      finally { entry.disabled = false; }
-    });
-  } catch (error) { note.textContent = error instanceof Error ? error.message : "Der Schaffnermodus ist für diese Fahrt nicht verfügbar."; }
+  const company = [...operatorSelector.options].find((option) => option.value === operatorId)?.textContent;
+  await appendSharedConductorEntry({ host: detailsContent, api: conductor, trainLabel: selection.label,
+    ...(worldLabel.textContent === null ? {} : { worldLabel: worldLabel.textContent }),
+    ...(company == null ? {} : { operatorLabel: company }),
+    isCurrent: () => selected?.kind === "train" && selected.id === selection.id });
 }
 
 function showSelectionMenu(selections: readonly MapSelection[], left: number, top: number): void {

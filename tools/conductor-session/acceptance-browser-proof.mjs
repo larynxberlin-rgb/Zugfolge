@@ -160,6 +160,11 @@ test("one actual browser trip connects six original dialogues, police, network, 
       }
     };
     const advanceTravel = async (atMs) => {
+      if (atMs === f.clock.nowMs) {
+        await command({ type: "advance-to", atMs });
+        await captureStation(await request());
+        return;
+      }
       const before = await request();
       if (before.snapshot.status === "ended") {
         if (atMs > f.clock.nowMs) await backend.advance(atMs - f.clock.nowMs);
@@ -172,7 +177,7 @@ test("one actual browser trip connects six original dialogues, police, network, 
         && !stationScenes.some((row) => row.station.size === "large")) {
         // Materialize an actual interior time of the committed final motion
         // segment. An ended/frozen snapshot is never presented as an approach.
-        const sampleAtMs = Math.floor((f.clock.nowMs + segment.validUntilMs) / 2);
+        const sampleAtMs = segment.validUntilMs - 1;
         if (sampleAtMs > f.clock.nowMs && sampleAtMs < segment.validUntilMs) {
           await driver.advanceKeepingSession(sampleAtMs);
           const approach = await request(); assert.equal(approach.snapshot.status, "active");
@@ -193,6 +198,13 @@ test("one actual browser trip connects six original dialogues, police, network, 
       return current;
     };
     let current = await request();
+    const earliestMiddleHoldAtMs = f.initialization.trains[0].stopPlan.stops[1].scheduledDepartureMs;
+    if (current.control.hold.status === "requested" && f.clock.nowMs < earliestMiddleHoldAtMs) {
+      // Native hold activation cannot precede this pinned scheduled departure.
+      // advance-to processes every actual intervening motion/arrival event;
+      // this bound does not claim an actual arrival at the planned time.
+      await advanceTravel(earliestMiddleHoldAtMs); current = await request();
+    }
     for (let count = 0; count < 100 && current.control.hold.status !== "active"; count++) current = await tick();
     assert.equal(current.control.hold.status, "active");
     assert.equal(current.scene.speedMmps, 0);

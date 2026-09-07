@@ -98,8 +98,9 @@ werden getrennt anhand der öffentlich bestätigten Ergebnisse geprüft.
 Ein angeforderter Polizeihalt folgt den bereits gespeicherten nativen
 Betriebsereignissen bis zu seiner Aktivierung. Danach laufen kurze tatsächliche
 Scheduler-Schritte. Der Nachweis erzeugt weder Ankunft noch Polizeireaktion.
-Ein reguläres Sitzungsende am Endhalt lässt den unabhängigen Kontrollbericht
-weiter zugänglich. Der native Tagesabschluss benötigt keinen neuen
+Ein tatsächliches Sitzungsende, auch nach Ablauf der Lease, lässt den
+unabhängigen Kontrollbericht weiter zugänglich. Die Gesamtabnahme prüft zusätzlich
+die bis zum tatsächlichen Endhalt aktive Fahrt. Der native Tagesabschluss benötigt keinen neuen
 Fahrgastmanifest; ein aktualisierter Bericht zeigt die bestätigten Buchungen.
 
 Der Kontrolllauf liest außerdem den tatsächlichen Accessibilitybaum des
@@ -143,7 +144,10 @@ Mittelhalt. Erst ihre quittierte Freigabe und eine neue FDL-Prüfung lassen
 die Fahrt weiterlaufen. Der Treiber liest alle gespeicherten Ereigniskalender,
 einschließlich `fareControlState.scheduled`, sowie die nativ geprüften
 Kontrollfälligkeiten. Bereits zum aktuellen Zeitpunkt fällige Betriebsereignisse
-durchlaufen ein echtes `advance-to` derselben Zeit. Längere Wartezeiten benutzen bestätigte UI-Gehschritte
+durchlaufen ein echtes `advance-to` derselben Zeit. Vor der frühestmöglichen
+Halteaktivierung darf der native Kern seine kurzen Bewegungsereignisse bis
+zur gepinnten planmäßigen Zielabfahrt intern abarbeiten. Eine tatsächliche
+Ankunft wird daraus nicht abgeleitet. Längere Wartezeiten benutzen bestätigte UI-Gehschritte
 hin und zurück zur Sitzungserhaltung; der Bericht führt die Positionen und
 Leasequittungen auf. Es gibt keine direkte Lease-Änderung.
 
@@ -159,8 +163,8 @@ Die allgemeine Tagesplan-Vollständigkeit aus Issue #518 bleibt ausdrücklich
 gesperrt. Der gesonderte Originaldialog-HTTP-Nachweis bindet die sechs
 Situationen zusätzlich an ihren unveränderten nativen Korpus.
 
-Nach erfolgreichen Läufen lassen sich die sechs Browserberichte (Basis,
-Nacht, Kontrolle, Kapazität, Manifest und Gesamtabnahme), der Originaldialog-
+Nach erfolgreichen Läufen lassen sich die sieben Browserberichte (Basis,
+Nacht, Kontrolle, Kapazität, Manifest, Gesamtabnahme und Einstieg), der Originaldialog-
 HTTP-Bericht und sämtliche referenzierten Bilder reproduzierbar zusammenfassen:
 
 ```sh

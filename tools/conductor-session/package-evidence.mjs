@@ -10,6 +10,7 @@ const reports = [
   ["capacity-browser-report.json", "conductor-session-capacity-browser-proof/v1"],
   ["manifest-browser-report.json", "conductor-manifest-browser-proof/v1"],
   ["acceptance-browser-report.json", "conductor-acceptance-browser-proof/v1"],
+  ["entry-browser-report.json", "conductor-entry-browser-proof/v1"],
 ];
 const sha = (bytes) => createHash("sha256").update(bytes).digest("hex");
 function require(value, message) { if (!value) throw new Error(message); }

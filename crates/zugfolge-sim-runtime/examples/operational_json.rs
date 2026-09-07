@@ -1,9 +1,9 @@
-//! Native JSON bridge for integration evidence, using the same release loader as N-API.
+//! Native JSON-Prüfgrenze mit demselben Release-Loader wie NAPI.
 use std::io::{self, Read};
 use zugfolge_sim_runtime::operational_runtime::{
     apply_operational_simulation_command, apply_operational_simulation_command_batch,
     hash_operational_simulation_command, initialize_operational_simulation,
-    restore_operational_simulation,
+    release_operational_infrastructure_cache, restore_operational_simulation,
 };
 
 #[derive(serde::Deserialize)]
@@ -46,7 +46,9 @@ fn run() -> Result<String, String> {
 }
 
 fn main() {
-    match run() {
+    let result = run();
+    release_operational_infrastructure_cache();
+    match result {
         Ok(output) => print!("{output}"),
         Err(error) => {
             eprintln!("{error}");
@@ -54,3 +56,7 @@ fn main() {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "operational_json/tests.rs"]
+mod tests;

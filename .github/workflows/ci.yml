@@ -39,7 +39,9 @@ jobs:
         run: cargo clippy --workspace --all-targets --locked -- -D warnings
 
       - name: Tests und Golden-Master
-        run: cargo test --workspace --locked
+        run: |
+          cargo test --workspace --locked
+          cargo test --locked --offline -p zugfolge-sim-runtime --example operational_json
 
       - name: Freie Nachfragequellen und Holdout-Trennung
         run: python3 -m unittest discover -s tools/demand-calibration -p 'test_*.py'
@@ -284,12 +286,14 @@ jobs:
           CONDUCTOR_CAPACITY_BROWSER_TEST: "1"
           CONDUCTOR_MANIFEST_BROWSER_TEST: "1"
           CONDUCTOR_ACCEPTANCE_BROWSER_TEST: "1"
+          CONDUCTOR_ENTRY_BROWSER_TEST: "1"
           CONDUCTOR_SESSION_SCREENSHOT_DIR: ${{ runner.temp }}/conductor-session/screenshots
           CONDUCTOR_SESSION_REPORT_PATH: ${{ runner.temp }}/conductor-session/browser-report.json
           CONDUCTOR_CONTROL_REPORT_PATH: ${{ runner.temp }}/conductor-session/control-browser-report.json
           CONDUCTOR_CAPACITY_REPORT_PATH: ${{ runner.temp }}/conductor-session/capacity-browser-report.json
           CONDUCTOR_MANIFEST_REPORT_PATH: ${{ runner.temp }}/conductor-session/manifest-browser-report.json
           CONDUCTOR_ACCEPTANCE_REPORT_PATH: ${{ runner.temp }}/conductor-session/acceptance-browser-report.json
+          CONDUCTOR_ENTRY_REPORT_PATH: ${{ runner.temp }}/conductor-session/entry-browser-report.json
         run: |
           set -euo pipefail
           for conductor_browser in "${ZUGFOLGE_BROWSER_EXECUTABLE:-}" /usr/bin/google-chrome /usr/bin/chromium; do
@@ -304,6 +308,7 @@ jobs:
           node --test tools/conductor-session/capacity-browser-proof.mjs
           node --test tools/conductor-session/manifest-browser-proof.mjs
           node --test tools/conductor-session/acceptance-browser-proof.mjs
+          node --test tools/conductor-session/entry-browser-proof.mjs
           node tools/conductor-session/package-evidence.mjs "$RUNNER_TEMP/conductor-session" "$GITHUB_SHA" "https://github.com/larynxberlin-rgb/Zugfolge/actions/runs/$GITHUB_RUN_ID"
 
       - name: M15-Browserbelege aufbewahren

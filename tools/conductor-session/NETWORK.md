@@ -38,6 +38,14 @@ ereignisabhängigen Retirementregeln. Der Gegenlauf erreicht niemals M6 oder
 das Ledger; allein der tatsächliche Zweig liefert Geldbelege. Nachlaufende Halt-, Bewegungs-, M10- und
 M6-Belege müssen die gemessenen Unterschiede tragen.
 
+Der Wartebeleg bindet die native Ressourcenwarteschlange, den stehenden Zug
+und die tatsächliche Belegung oder Fahrstraßenverriegelung des Anführers im
+selben restaurierten Zustand. Bei der Folgefahrt wird die tatsächlich
+blockierte Ressource des gemeinsamen Laufwegs verwendet; die Kreuzungsfahrt
+muss an ihrer ausdrücklich gemeinsamen Ressource `block:stop:2` warten.
+Eine Warteschlangenzugehörigkeit ohne nachgewiesenen blockierenden Anführer
+genügt nicht.
+
 Die Implementierung dieses Quellhooks allein ist keine Abnahme. Maßgeblich
 sind der erfolgreiche native Integrationslauf und der unveränderte tatsächliche
 Kontrollbrowser samt Journal-, Snapshot- und Bildhashes. Temporäre Signaturen

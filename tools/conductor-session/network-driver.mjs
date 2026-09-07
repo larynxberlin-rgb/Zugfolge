@@ -45,7 +45,7 @@ export function createConductorNetworkProofDriver({ fixture: f, command, advance
         formationVersionId: train.formationVersionId }];
     });
     trace.push({ atMs: world.nowMs, stateHash: restored.stateHash, revision: restored.state.revision, trains,
-      waitingByResource: world.waitingByResource });
+      waitingByResource: world.waitingByResource, routeLocks: world.routeLocks });
     return world;
   };
   const initialCommands = (nowMs) => {
@@ -163,12 +163,21 @@ export function createConductorNetworkProofDriver({ fixture: f, command, advance
       assert.ok(replannedPassengers > 0, "Der Original-M10-Consumer muss einen tatsächlich verpassten geplanten Anschluss neu wählen.");
       assert.equal(actualCompleted["network-shunt"].formationVersionId, f.initialization.trains.find((train) => train.id === "network-empty").formationVersionId);
       const final = await readActual();
-      const resourceId = f.network.evidence.crossingResourceId;
       const resourceWaits = ["regional-follow", "network-empty"].map((id) => {
-        const evidence = actualTrace.find((row) => row.waitingByResource?.[resourceId]?.includes(id)
-          && row.trains.some((train) => train.id === id && train.speedMmps === 0 && train.waitingReason === "waiting-for-route-lock"));
-        assert.ok(evidence, `Die tatsächliche Ressourcenwarteschlange für ${id} muss belegt sein.`);
-        return { trainRunId: id, resourceId, atMs: evidence.atMs, operationalStateHash: evidence.stateHash };
+        for (const row of actualTrace) {
+          const waiting = row.trains.find((train) => train.id === id);
+          if (waiting?.speedMmps !== 0 || waiting.waitingReason !== "waiting-for-route-lock") continue;
+          const leader = row.trains.find((train) => train.id === trainRunId);
+          for (const [resourceId, trainIds] of Object.entries(row.waitingByResource ?? {})) {
+            if (!trainIds.includes(id) || (id === "network-empty" && resourceId !== f.network.evidence.crossingResourceId)) continue;
+            const occupiedByLeader = leader?.occupiedBlocks.includes(resourceId) ?? false;
+            const leaderLocks = Object.values(row.routeLocks ?? {}).filter((lock) => lock.trainId === trainRunId && lock.resources.includes(resourceId));
+            if (!occupiedByLeader && leaderLocks.length === 0) continue;
+            return { trainRunId: id, resourceId, atMs: row.atMs, operationalStateHash: row.stateHash,
+              blockedByTrainRunId: trainRunId, occupiedByLeader, leaderRouteLockIds: leaderLocks.map((lock) => lock.id) };
+          }
+        }
+        assert.fail(`Die tatsächliche Ressourcenwarteschlange für ${id} samt blockierendem Anführer muss belegt sein: ${JSON.stringify(actualTrace.filter((row) => Object.values(row.waitingByResource ?? {}).some((waiting) => waiting.includes(id))))}`);
       });
       const journal = await f.client.query("select sequence,event_type,payload from domain_events where world_id=$1 and event_type in ('operational.movement-continued','operations.passenger-stop-arrival','operations.passenger-stop-departure','operations.fare-control-hold-activated','operations.fare-control-hold-released') order by sequence", [worldId]);
       const continuation = journal.rows.filter((row) => row.event_type === "operational.movement-continued" && row.payload.subjectId === "network-shunt");
