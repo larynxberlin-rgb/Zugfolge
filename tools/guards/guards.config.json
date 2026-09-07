@@ -125,6 +125,7 @@
         "tools/conductor-dialogue/**",
         "tools/conductor-release/**",
         "tools/conductor-session/**",
+        "tools/conductor-offline/**",
         "tools/guards/**",
         "tools/load/**",
         "tools/m7-acceptance/**",

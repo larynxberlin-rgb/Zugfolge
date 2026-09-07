@@ -1,0 +1,133 @@
+{
+  "schemaVersion": "conductor-offline-art-provenance/v1",
+  "testOnly": true,
+  "generationTool": "image_gen",
+  "authorization": "User requested original demo artwork, its technical preparation and inclusion in PR #539.",
+  "publicationScope": "Local fictional demo artwork; not a signed production ArtAtlasManifestV1 release.",
+  "externalReferenceImages": [],
+  "images": [
+    {
+      "id": "characters",
+      "file": "characters-source.png",
+      "prompt": "characters.prompt.txt",
+      "references": [],
+      "sha256": "774d6378ea129e51d8c17e20d6b87e4411f678530d0ba574b6faccbb2c249730",
+      "bytes": 1346352,
+      "promptSha256": "59c408cb7ad514bc130a6f3e8be8442cacba3aa8d36782c6fbe3171dcaec5728",
+      "providerDeclaredModel": {
+        "name": "gpt-image",
+        "version": "2.0",
+        "evidence": "PNG caBX embedded C2PA metadata",
+        "metadataSha256": "7aa39c906a0bd5ad9ebbf6e0d38bc4d39de74415449a5c06b99cea33d57a298b",
+        "signatureVerification": "not_performed"
+      }
+    },
+    {
+      "id": "idle",
+      "file": "idle-source.png",
+      "prompt": "idle.prompt.txt",
+      "references": [
+        "characters"
+      ],
+      "sha256": "0a44a6a82d689f55a46cd792d5ba0567aa3d049daff2f1dc5c8c409d1c2fecd8",
+      "bytes": 1582180,
+      "promptSha256": "a3fa04277c43ee1b12156579c8fcc1a50f00530bf348c9951f65e34c27d57641",
+      "providerDeclaredModel": {
+        "name": "gpt-image",
+        "version": "2.0",
+        "evidence": "PNG caBX embedded C2PA metadata",
+        "metadataSha256": "ae66015e45f5feb713b2222a427064607884abec2c9384e1ea0e641c6f426e40",
+        "signatureVerification": "not_performed"
+      }
+    },
+    {
+      "id": "environment",
+      "file": "environment-source.png",
+      "prompt": "environment.prompt.txt",
+      "references": [],
+      "sha256": "d65f4d54d03a9bfcd5a20e002ba0db0b82f6f054502c229648df4979066ee047",
+      "bytes": 2296144,
+      "promptSha256": "b8cc9e4ac826d74e54611765c923ffdc11fffa6fa7128873acfd2213f0af820a",
+      "providerDeclaredModel": {
+        "name": "gpt-image",
+        "version": "2.0",
+        "evidence": "PNG caBX embedded C2PA metadata",
+        "metadataSha256": "a7054430242738de39906ce2c5799e84d6bb59c94bb45e70de75fa2b20c84737",
+        "signatureVerification": "not_performed"
+      }
+    }
+  ],
+  "technicalPreparation": {
+    "drawsNewMotifs": false,
+    "python": "3.12.14",
+    "pillow": "12.3.0",
+    "numpy": "2.3.5",
+    "raster": "Nearest-neighbour resizing and exact grid placement; binary alpha; source palette retained.",
+    "checks": [
+      "python tools/conductor-offline/assets-v2/prepare.py --check",
+      "python tools/conductor-offline/assets-v2/prepare-environment.py --check"
+    ]
+  },
+  "files": [
+    {
+      "file": "characters-source.png",
+      "bytes": 1346352,
+      "sha256": "774d6378ea129e51d8c17e20d6b87e4411f678530d0ba574b6faccbb2c249730"
+    },
+    {
+      "file": "idle-source.png",
+      "bytes": 1582180,
+      "sha256": "0a44a6a82d689f55a46cd792d5ba0567aa3d049daff2f1dc5c8c409d1c2fecd8"
+    },
+    {
+      "file": "environment-source.png",
+      "bytes": 2296144,
+      "sha256": "d65f4d54d03a9bfcd5a20e002ba0db0b82f6f054502c229648df4979066ee047"
+    },
+    {
+      "file": "characters.png",
+      "bytes": 89957,
+      "sha256": "ccc31d39c4cf5885dd643adb6d75885edd955879dfb212e44032a61d82007217"
+    },
+    {
+      "file": "environment.png",
+      "bytes": 39856,
+      "sha256": "13816265464f2b1a68a1844ba3a18fcbb8590a434d76d370c66f617a25a83d21"
+    },
+    {
+      "file": "characters.prompt.txt",
+      "bytes": 1975,
+      "sha256": "59c408cb7ad514bc130a6f3e8be8442cacba3aa8d36782c6fbe3171dcaec5728"
+    },
+    {
+      "file": "idle.prompt.txt",
+      "bytes": 1676,
+      "sha256": "a3fa04277c43ee1b12156579c8fcc1a50f00530bf348c9951f65e34c27d57641"
+    },
+    {
+      "file": "environment.prompt.txt",
+      "bytes": 1527,
+      "sha256": "b8cc9e4ac826d74e54611765c923ffdc11fffa6fa7128873acfd2213f0af820a"
+    },
+    {
+      "file": "prepare.py",
+      "bytes": 3398,
+      "sha256": "7ab5c316a03356afb615037ccd8260a850c4ecf0ab9fb0e4a7a75b52f3b68eda"
+    },
+    {
+      "file": "prepare-environment.py",
+      "bytes": 1941,
+      "sha256": "425c0f68b89d7abba76693d33487dd07792a6d9d90c98c4efd40ee4af3cdc738"
+    },
+    {
+      "file": "preparation.json",
+      "bytes": 14420,
+      "sha256": "90c704a71e2e567e25535d52e9b7b3db2d1bd230ee57ceef95bf48efe7e85a56"
+    },
+    {
+      "file": "environment-preparation.json",
+      "bytes": 1334,
+      "sha256": "179ceb3f7096a6713d72f419bda4c5490f00d89e186421a3e39b20b5078f192a"
+    }
+  ]
+}

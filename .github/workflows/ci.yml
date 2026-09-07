@@ -89,6 +89,9 @@ jobs:
       - name: Typprüfung
         run: pnpm -r --stream typecheck
 
+      - name: Offline-Schaffnerspiel strikt typprüfen
+        run: node apps/livemap/node_modules/typescript/bin/tsc -p tools/conductor-offline/tsconfig.ui.json
+
       - name: App- und Pakettests einmal ausfuehren
         run: pnpm test
 
@@ -336,6 +339,27 @@ jobs:
         with:
           name: conductor-session-browser-evidence
           path: ${{ runner.temp }}/conductor-session
+          if-no-files-found: ignore
+
+      - name: Offline-Schaffnerspiel als einzelne HTML-Datei prüfen
+        shell: bash
+        run: |
+          set -euo pipefail
+          for offline_browser in "${ZUGFOLGE_BROWSER_EXECUTABLE:-}" /usr/bin/google-chrome /usr/bin/chromium; do
+            if [[ -n "${offline_browser}" && -x "${offline_browser}" ]]; then
+              export PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH="${offline_browser}"
+              break
+            fi
+          done
+          test -n "${PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH:-}"
+          node tools/conductor-offline/check.mjs
+
+      - name: Offline-Demo und zugehörige Browserbelege aufbewahren
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: conductor-offline-demo
+          path: outputs/conductor-offline
           if-no-files-found: ignore
 
   guards:

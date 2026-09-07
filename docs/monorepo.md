@@ -62,6 +62,7 @@ tools/                      Werkzeuge für CI und Entwicklung
   conductor-scenes/         M15.5: belegte Quellenaufnahme und infrastrukturell gebundener Szenencompiler
   conductor-dialogue/       M15.6: ursprünglicher Dialogkorpus, redaktionelle Prüfung und Signierwerkzeug
   conductor-session/        M15.8/M15.12: tatsächliches Produkt-DOM und PixiJS gegen native Kerne und DB im Browser
+  conductor-offline/        lokale spielbare HTML-Demo mit originalem Rust-WASM, Pixelanimationen und Offline-Browserprüfungen
   guards/                   die Wächter der harten Invarianten
   load/                     äußerer Lastmessharnisch für 180.000 Fahrten und ≥2 Mio. Ereignisse (M4.11)
   m7-acceptance/            echter 48h-Rust-Ereigniserzeuger für die M7-Abnahme

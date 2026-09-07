@@ -1,0 +1,119 @@
+{
+  "schemaVersion": "conductor-offline-practice-qa/v1",
+  "testOnly": true,
+  "selectionProbesAreNotControls": true,
+  "browserAcceptance": "pending",
+  "kernelSha256": "1b154c352e57bfadd57750327f5e81f26c95090c60902c1dcf64ba7a9b98b593",
+  "fixtureHash": "cf919194900a8a15465f7c7375f0bee6e236f3be209b7b86a15c0d1d83f1f3e8",
+  "seed": "0",
+  "passengers": 40,
+  "formationCapacity": 220,
+  "retainedSourceHashes": {
+    "interior": "405fccab3f752fdc76850aeef18ef4e6dffddd7062fd880823d0c6725bfa4b46",
+    "infrastructure": "3fd4cd4dd59cac808d1727ed78350d5ae0be7107a1d3d40be5c6c479de1411b4",
+    "operationalWorld": "7addd04310fe51e689aa953cf1242d173118f8e67c71be7ca10e95bd47839399",
+    "service": "a6631c4c3423902e95ec399a9b00926f03cb38a6826dfef488d9c8792914d5e5",
+    "dialogue": "82aeb64f617014d42438b21579634a20e15458d78e198d807e32069aedb1321b",
+    "economy": "ec2002853a86b9587a0dfa0882dcbdd670a7156ae7011c7b180ec23952817bbc"
+  },
+  "globalLearningCompliance": {
+    "provenance": "balanced",
+    "schemaVersion": "fare-compliance-policy/v1",
+    "sourceIds": [],
+    "unpresentableBasisPoints": 3000,
+    "validBasisPoints": 3500
+  },
+  "inspectionPolicy": {
+    "schemaVersion": "fare-inspection-policy/v1",
+    "policyId": "offline-practice-inspection-v1",
+    "worldId": "00000000-0000-4000-8000-000000000387",
+    "periodId": "period-1",
+    "contentHash": "661ae873519c220d83dd9a3070df24c7e84780e2cefd6d6691d2c6ceebafd4e0",
+    "invalidDocumentPresentedBasisPoints": 10000,
+    "identityRefusalBasisPoints": 1500,
+    "concreteDangerBasisPoints": 0
+  },
+  "actualStopProgress": {
+    "asOfMs": 600001,
+    "receiptId": "test-committed-6",
+    "schemaVersion": "demand-operational-progress/v1",
+    "trains": [
+      {
+        "stops": [
+          {
+            "actualArrivalMs": 0,
+            "actualDepartureMs": 600000,
+            "stopId": "regional-leipzig"
+          }
+        ],
+        "trainRunId": "regional-1"
+      }
+    ],
+    "worldId": "00000000-0000-4000-8000-000000000387"
+  },
+  "targets": [
+    {
+      "label": "Übung 1",
+      "passengerKey": "7baae105e2d23a3828367325d05d169c098192547b5b5b161f49a0e31e88e148",
+      "placeId": "place-7dd11faadb29570a708e164d0fbe1159",
+      "targetNodeId": "node-b707be3d0125e4dbf9a8fe3d36c216b3",
+      "position": {
+        "vehicleId": "fixture-interior-vehicle-2",
+        "bodyId": "body-0",
+        "deckId": "upper",
+        "xMm": 6500,
+        "yMm": 775
+      },
+      "pathLengthMm": 9500,
+      "expectedFareFact": "valid",
+      "expectedEvidence": {
+        "acquisitionException": "excluded",
+        "concreteDanger": false,
+        "documentStatus": "verified_valid",
+        "identityStatus": "unknown"
+      }
+    },
+    {
+      "label": "Übung 2",
+      "passengerKey": "02546ca21045c26c69eef4889db6e9a24bc90a4483d42aca3a162319d63eb345",
+      "placeId": "place-7cda6e06b80cde5c5ac002f006b58e9e",
+      "targetNodeId": "node-6e8ed22b832e0aca26148cc86101fa4f",
+      "position": {
+        "vehicleId": "fixture-interior-vehicle-2",
+        "bodyId": "body-0",
+        "deckId": "upper",
+        "xMm": 7750,
+        "yMm": 775
+      },
+      "pathLengthMm": 10750,
+      "expectedFareFact": "invalid",
+      "expectedEvidence": {
+        "acquisitionException": "excluded",
+        "concreteDanger": false,
+        "documentStatus": "verified_invalid",
+        "identityStatus": "confirmed"
+      }
+    },
+    {
+      "label": "Übung 3",
+      "passengerKey": "8b1bf8620dfadcc35380fd749b358ff34a32f6a101c7f1a6dcfe63d3393f3520",
+      "placeId": "place-d859adc446f1bfc9ecca7afb5971c3df",
+      "targetNodeId": "node-6e8ed22b832e0aca26148cc86101fa4f",
+      "position": {
+        "vehicleId": "fixture-interior-vehicle-2",
+        "bodyId": "body-0",
+        "deckId": "upper",
+        "xMm": 7750,
+        "yMm": 325
+      },
+      "pathLengthMm": 10750,
+      "expectedFareFact": "valid_unpresentable",
+      "expectedEvidence": {
+        "acquisitionException": "excluded",
+        "concreteDanger": false,
+        "documentStatus": "not_presentable",
+        "identityStatus": "confirmed"
+      }
+    }
+  ]
+}

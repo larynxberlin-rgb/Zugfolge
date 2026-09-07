@@ -1,0 +1,5098 @@
+{
+  "schemaVersion": "conductor-art-view/v1",
+  "releaseId": "conductor-art-2026.1",
+  "manifestSha256": "1503e2a3199d7f7b217e83b346e7ed3af8664e6b692642e9b140d312164453a3",
+  "pixelsPerMetre": 32,
+  "files": [
+    {
+      "id": "passenger-red",
+      "sha256": "7f0cd9c264bc5404d957675bc84ed886039dc84f2faab54b8e8d8a1e72b4b346",
+      "widthPx": 320,
+      "heightPx": 256,
+      "sourceScale": 1
+    },
+    {
+      "id": "passenger-teal",
+      "sha256": "3aaadd3f90131877bd5f482c6d96b292b8f42471ef699bf4c4ea0e8cdd9c33ad",
+      "widthPx": 320,
+      "heightPx": 256,
+      "sourceScale": 1
+    },
+    {
+      "id": "passenger-amber",
+      "sha256": "e781ead10d891f00ea99b744c2232441311bb70b8b53b1a5ab3c99fb7653ad04",
+      "widthPx": 320,
+      "heightPx": 256,
+      "sourceScale": 1
+    },
+    {
+      "id": "passenger-slate",
+      "sha256": "c1807f78b0318d07ec1000004a4035600f82640f211c6455e04acec2ee998480",
+      "widthPx": 320,
+      "heightPx": 256,
+      "sourceScale": 1
+    },
+    {
+      "id": "conductor",
+      "sha256": "e42490973eb0ea458a500b0b5278382d48fdbcdd1ed83424263151d1422a8c4a",
+      "widthPx": 320,
+      "heightPx": 256,
+      "sourceScale": 1
+    },
+    {
+      "id": "modules",
+      "sha256": "9ddda097bed0c264600f1416cf3b7ce708e56201096be699cbb6e316ded1eb3c",
+      "widthPx": 2048,
+      "heightPx": 2048,
+      "sourceScale": 1
+    },
+    {
+      "id": "vehicles",
+      "sha256": "9af3e9b1add565fe91e248db0b3e7c99c9d97a1627f15def8404672eae266323",
+      "widthPx": 2048,
+      "heightPx": 1024,
+      "sourceScale": 1
+    }
+  ],
+  "assets": [
+    {
+      "id": "actor.passenger-01.south.idle",
+      "fileId": "passenger-red",
+      "rect": {
+        "x": 0,
+        "y": 0,
+        "width": 64,
+        "height": 64
+      },
+      "pivot": {
+        "x": 32,
+        "y": 50
+      },
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000
+    },
+    {
+      "id": "actor.passenger-01.south.walk.1",
+      "fileId": "passenger-red",
+      "rect": {
+        "x": 64,
+        "y": 0,
+        "width": 64,
+        "height": 64
+      },
+      "pivot": {
+        "x": 32,
+        "y": 50
+      },
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000
+    },
+    {
+      "id": "actor.passenger-01.south.walk.2",
+      "fileId": "passenger-red",
+      "rect": {
+        "x": 128,
+        "y": 0,
+        "width": 64,
+        "height": 64
+      },
+      "pivot": {
+        "x": 32,
+        "y": 50
+      },
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000
+    },
+    {
+      "id": "actor.passenger-01.south.walk.3",
+      "fileId": "passenger-red",
+      "rect": {
+        "x": 192,
+        "y": 0,
+        "width": 64,
+        "height": 64
+      },
+      "pivot": {
+        "x": 32,
+        "y": 50
+      },
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000
+    },
+    {
+      "id": "actor.passenger-01.south.walk.4",
+      "fileId": "passenger-red",
+      "rect": {
+        "x": 256,
+        "y": 0,
+        "width": 64,
+        "height": 64
+      },
+      "pivot": {
+        "x": 32,
+        "y": 50
+      },
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000
+    },
+    {
+      "id": "actor.passenger-01.west.idle",
+      "fileId": "passenger-red",
+      "rect": {
+        "x": 0,
+        "y": 64,
+        "width": 64,
+        "height": 64
+      },
+      "pivot": {
+        "x": 32,
+        "y": 50
+      },
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000
+    },
+    {
+      "id": "actor.passenger-01.west.walk.1",
+      "fileId": "passenger-red",
+      "rect": {
+        "x": 64,
+        "y": 64,
+        "width": 64,
+        "height": 64
+      },
+      "pivot": {
+        "x": 32,
+        "y": 50
+      },
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000
+    },
+    {
+      "id": "actor.passenger-01.west.walk.2",
+      "fileId": "passenger-red",
+      "rect": {
+        "x": 128,
+        "y": 64,
+        "width": 64,
+        "height": 64
+      },
+      "pivot": {
+        "x": 32,
+        "y": 50
+      },
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000
+    },
+    {
+      "id": "actor.passenger-01.west.walk.3",
+      "fileId": "passenger-red",
+      "rect": {
+        "x": 192,
+        "y": 64,
+        "width": 64,
+        "height": 64
+      },
+      "pivot": {
+        "x": 32,
+        "y": 50
+      },
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000
+    },
+    {
+      "id": "actor.passenger-01.west.walk.4",
+      "fileId": "passenger-red",
+      "rect": {
+        "x": 256,
+        "y": 64,
+        "width": 64,
+        "height": 64
+      },
+      "pivot": {
+        "x": 32,
+        "y": 50
+      },
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000
+    },
+    {
+      "id": "actor.passenger-01.east.idle",
+      "fileId": "passenger-red",
+      "rect": {
+        "x": 0,
+        "y": 128,
+        "width": 64,
+        "height": 64
+      },
+      "pivot": {
+        "x": 32,
+        "y": 50
+      },
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000
+    },
+    {
+      "id": "actor.passenger-01.east.walk.1",
+      "fileId": "passenger-red",
+      "rect": {
+        "x": 64,
+        "y": 128,
+        "width": 64,
+        "height": 64
+      },
+      "pivot": {
+        "x": 32,
+        "y": 50
+      },
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000
+    },
+    {
+      "id": "actor.passenger-01.east.walk.2",
+      "fileId": "passenger-red",
+      "rect": {
+        "x": 128,
+        "y": 128,
+        "width": 64,
+        "height": 64
+      },
+      "pivot": {
+        "x": 32,
+        "y": 50
+      },
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000
+    },
+    {
+      "id": "actor.passenger-01.east.walk.3",
+      "fileId": "passenger-red",
+      "rect": {
+        "x": 192,
+        "y": 128,
+        "width": 64,
+        "height": 64
+      },
+      "pivot": {
+        "x": 32,
+        "y": 50
+      },
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000
+    },
+    {
+      "id": "actor.passenger-01.east.walk.4",
+      "fileId": "passenger-red",
+      "rect": {
+        "x": 256,
+        "y": 128,
+        "width": 64,
+        "height": 64
+      },
+      "pivot": {
+        "x": 32,
+        "y": 50
+      },
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000
+    },
+    {
+      "id": "actor.passenger-01.north.idle",
+      "fileId": "passenger-red",
+      "rect": {
+        "x": 0,
+        "y": 192,
+        "width": 64,
+        "height": 64
+      },
+      "pivot": {
+        "x": 32,
+        "y": 50
+      },
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000
+    },
+    {
+      "id": "actor.passenger-01.north.walk.1",
+      "fileId": "passenger-red",
+      "rect": {
+        "x": 64,
+        "y": 192,
+        "width": 64,
+        "height": 64
+      },
+      "pivot": {
+        "x": 32,
+        "y": 50
+      },
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000
+    },
+    {
+      "id": "actor.passenger-01.north.walk.2",
+      "fileId": "passenger-red",
+      "rect": {
+        "x": 128,
+        "y": 192,
+        "width": 64,
+        "height": 64
+      },
+      "pivot": {
+        "x": 32,
+        "y": 50
+      },
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000
+    },
+    {
+      "id": "actor.passenger-01.north.walk.3",
+      "fileId": "passenger-red",
+      "rect": {
+        "x": 192,
+        "y": 192,
+        "width": 64,
+        "height": 64
+      },
+      "pivot": {
+        "x": 32,
+        "y": 50
+      },
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000
+    },
+    {
+      "id": "actor.passenger-01.north.walk.4",
+      "fileId": "passenger-red",
+      "rect": {
+        "x": 256,
+        "y": 192,
+        "width": 64,
+        "height": 64
+      },
+      "pivot": {
+        "x": 32,
+        "y": 50
+      },
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000
+    },
+    {
+      "id": "actor.passenger-02.south.idle",
+      "fileId": "passenger-teal",
+      "rect": {
+        "x": 0,
+        "y": 0,
+        "width": 64,
+        "height": 64
+      },
+      "pivot": {
+        "x": 32,
+        "y": 50
+      },
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000
+    },
+    {
+      "id": "actor.passenger-02.south.walk.1",
+      "fileId": "passenger-teal",
+      "rect": {
+        "x": 64,
+        "y": 0,
+        "width": 64,
+        "height": 64
+      },
+      "pivot": {
+        "x": 32,
+        "y": 50
+      },
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000
+    },
+    {
+      "id": "actor.passenger-02.south.walk.2",
+      "fileId": "passenger-teal",
+      "rect": {
+        "x": 128,
+        "y": 0,
+        "width": 64,
+        "height": 64
+      },
+      "pivot": {
+        "x": 32,
+        "y": 50
+      },
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000
+    },
+    {
+      "id": "actor.passenger-02.south.walk.3",
+      "fileId": "passenger-teal",
+      "rect": {
+        "x": 192,
+        "y": 0,
+        "width": 64,
+        "height": 64
+      },
+      "pivot": {
+        "x": 32,
+        "y": 50
+      },
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000
+    },
+    {
+      "id": "actor.passenger-02.south.walk.4",
+      "fileId": "passenger-teal",
+      "rect": {
+        "x": 256,
+        "y": 0,
+        "width": 64,
+        "height": 64
+      },
+      "pivot": {
+        "x": 32,
+        "y": 50
+      },
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000
+    },
+    {
+      "id": "actor.passenger-02.west.idle",
+      "fileId": "passenger-teal",
+      "rect": {
+        "x": 0,
+        "y": 64,
+        "width": 64,
+        "height": 64
+      },
+      "pivot": {
+        "x": 32,
+        "y": 50
+      },
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000
+    },
+    {
+      "id": "actor.passenger-02.west.walk.1",
+      "fileId": "passenger-teal",
+      "rect": {
+        "x": 64,
+        "y": 64,
+        "width": 64,
+        "height": 64
+      },
+      "pivot": {
+        "x": 32,
+        "y": 50
+      },
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000
+    },
+    {
+      "id": "actor.passenger-02.west.walk.2",
+      "fileId": "passenger-teal",
+      "rect": {
+        "x": 128,
+        "y": 64,
+        "width": 64,
+        "height": 64
+      },
+      "pivot": {
+        "x": 32,
+        "y": 50
+      },
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000
+    },
+    {
+      "id": "actor.passenger-02.west.walk.3",
+      "fileId": "passenger-teal",
+      "rect": {
+        "x": 192,
+        "y": 64,
+        "width": 64,
+        "height": 64
+      },
+      "pivot": {
+        "x": 32,
+        "y": 50
+      },
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000
+    },
+    {
+      "id": "actor.passenger-02.west.walk.4",
+      "fileId": "passenger-teal",
+      "rect": {
+        "x": 256,
+        "y": 64,
+        "width": 64,
+        "height": 64
+      },
+      "pivot": {
+        "x": 32,
+        "y": 50
+      },
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000
+    },
+    {
+      "id": "actor.passenger-02.east.idle",
+      "fileId": "passenger-teal",
+      "rect": {
+        "x": 0,
+        "y": 128,
+        "width": 64,
+        "height": 64
+      },
+      "pivot": {
+        "x": 32,
+        "y": 50
+      },
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000
+    },
+    {
+      "id": "actor.passenger-02.east.walk.1",
+      "fileId": "passenger-teal",
+      "rect": {
+        "x": 64,
+        "y": 128,
+        "width": 64,
+        "height": 64
+      },
+      "pivot": {
+        "x": 32,
+        "y": 50
+      },
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000
+    },
+    {
+      "id": "actor.passenger-02.east.walk.2",
+      "fileId": "passenger-teal",
+      "rect": {
+        "x": 128,
+        "y": 128,
+        "width": 64,
+        "height": 64
+      },
+      "pivot": {
+        "x": 32,
+        "y": 50
+      },
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000
+    },
+    {
+      "id": "actor.passenger-02.east.walk.3",
+      "fileId": "passenger-teal",
+      "rect": {
+        "x": 192,
+        "y": 128,
+        "width": 64,
+        "height": 64
+      },
+      "pivot": {
+        "x": 32,
+        "y": 50
+      },
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000
+    },
+    {
+      "id": "actor.passenger-02.east.walk.4",
+      "fileId": "passenger-teal",
+      "rect": {
+        "x": 256,
+        "y": 128,
+        "width": 64,
+        "height": 64
+      },
+      "pivot": {
+        "x": 32,
+        "y": 50
+      },
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000
+    },
+    {
+      "id": "actor.passenger-02.north.idle",
+      "fileId": "passenger-teal",
+      "rect": {
+        "x": 0,
+        "y": 192,
+        "width": 64,
+        "height": 64
+      },
+      "pivot": {
+        "x": 32,
+        "y": 50
+      },
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000
+    },
+    {
+      "id": "actor.passenger-02.north.walk.1",
+      "fileId": "passenger-teal",
+      "rect": {
+        "x": 64,
+        "y": 192,
+        "width": 64,
+        "height": 64
+      },
+      "pivot": {
+        "x": 32,
+        "y": 50
+      },
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000
+    },
+    {
+      "id": "actor.passenger-02.north.walk.2",
+      "fileId": "passenger-teal",
+      "rect": {
+        "x": 128,
+        "y": 192,
+        "width": 64,
+        "height": 64
+      },
+      "pivot": {
+        "x": 32,
+        "y": 50
+      },
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000
+    },
+    {
+      "id": "actor.passenger-02.north.walk.3",
+      "fileId": "passenger-teal",
+      "rect": {
+        "x": 192,
+        "y": 192,
+        "width": 64,
+        "height": 64
+      },
+      "pivot": {
+        "x": 32,
+        "y": 50
+      },
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000
+    },
+    {
+      "id": "actor.passenger-02.north.walk.4",
+      "fileId": "passenger-teal",
+      "rect": {
+        "x": 256,
+        "y": 192,
+        "width": 64,
+        "height": 64
+      },
+      "pivot": {
+        "x": 32,
+        "y": 50
+      },
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000
+    },
+    {
+      "id": "actor.passenger-03.south.idle",
+      "fileId": "passenger-amber",
+      "rect": {
+        "x": 0,
+        "y": 0,
+        "width": 64,
+        "height": 64
+      },
+      "pivot": {
+        "x": 32,
+        "y": 50
+      },
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000
+    },
+    {
+      "id": "actor.passenger-03.south.walk.1",
+      "fileId": "passenger-amber",
+      "rect": {
+        "x": 64,
+        "y": 0,
+        "width": 64,
+        "height": 64
+      },
+      "pivot": {
+        "x": 32,
+        "y": 50
+      },
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000
+    },
+    {
+      "id": "actor.passenger-03.south.walk.2",
+      "fileId": "passenger-amber",
+      "rect": {
+        "x": 128,
+        "y": 0,
+        "width": 64,
+        "height": 64
+      },
+      "pivot": {
+        "x": 32,
+        "y": 50
+      },
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000
+    },
+    {
+      "id": "actor.passenger-03.south.walk.3",
+      "fileId": "passenger-amber",
+      "rect": {
+        "x": 192,
+        "y": 0,
+        "width": 64,
+        "height": 64
+      },
+      "pivot": {
+        "x": 32,
+        "y": 50
+      },
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000
+    },
+    {
+      "id": "actor.passenger-03.south.walk.4",
+      "fileId": "passenger-amber",
+      "rect": {
+        "x": 256,
+        "y": 0,
+        "width": 64,
+        "height": 64
+      },
+      "pivot": {
+        "x": 32,
+        "y": 50
+      },
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000
+    },
+    {
+      "id": "actor.passenger-03.west.idle",
+      "fileId": "passenger-amber",
+      "rect": {
+        "x": 0,
+        "y": 64,
+        "width": 64,
+        "height": 64
+      },
+      "pivot": {
+        "x": 32,
+        "y": 50
+      },
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000
+    },
+    {
+      "id": "actor.passenger-03.west.walk.1",
+      "fileId": "passenger-amber",
+      "rect": {
+        "x": 64,
+        "y": 64,
+        "width": 64,
+        "height": 64
+      },
+      "pivot": {
+        "x": 32,
+        "y": 50
+      },
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000
+    },
+    {
+      "id": "actor.passenger-03.west.walk.2",
+      "fileId": "passenger-amber",
+      "rect": {
+        "x": 128,
+        "y": 64,
+        "width": 64,
+        "height": 64
+      },
+      "pivot": {
+        "x": 32,
+        "y": 50
+      },
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000
+    },
+    {
+      "id": "actor.passenger-03.west.walk.3",
+      "fileId": "passenger-amber",
+      "rect": {
+        "x": 192,
+        "y": 64,
+        "width": 64,
+        "height": 64
+      },
+      "pivot": {
+        "x": 32,
+        "y": 50
+      },
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000
+    },
+    {
+      "id": "actor.passenger-03.west.walk.4",
+      "fileId": "passenger-amber",
+      "rect": {
+        "x": 256,
+        "y": 64,
+        "width": 64,
+        "height": 64
+      },
+      "pivot": {
+        "x": 32,
+        "y": 50
+      },
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000
+    },
+    {
+      "id": "actor.passenger-03.east.idle",
+      "fileId": "passenger-amber",
+      "rect": {
+        "x": 0,
+        "y": 128,
+        "width": 64,
+        "height": 64
+      },
+      "pivot": {
+        "x": 32,
+        "y": 50
+      },
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000
+    },
+    {
+      "id": "actor.passenger-03.east.walk.1",
+      "fileId": "passenger-amber",
+      "rect": {
+        "x": 64,
+        "y": 128,
+        "width": 64,
+        "height": 64
+      },
+      "pivot": {
+        "x": 32,
+        "y": 50
+      },
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000
+    },
+    {
+      "id": "actor.passenger-03.east.walk.2",
+      "fileId": "passenger-amber",
+      "rect": {
+        "x": 128,
+        "y": 128,
+        "width": 64,
+        "height": 64
+      },
+      "pivot": {
+        "x": 32,
+        "y": 50
+      },
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000
+    },
+    {
+      "id": "actor.passenger-03.east.walk.3",
+      "fileId": "passenger-amber",
+      "rect": {
+        "x": 192,
+        "y": 128,
+        "width": 64,
+        "height": 64
+      },
+      "pivot": {
+        "x": 32,
+        "y": 50
+      },
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000
+    },
+    {
+      "id": "actor.passenger-03.east.walk.4",
+      "fileId": "passenger-amber",
+      "rect": {
+        "x": 256,
+        "y": 128,
+        "width": 64,
+        "height": 64
+      },
+      "pivot": {
+        "x": 32,
+        "y": 50
+      },
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000
+    },
+    {
+      "id": "actor.passenger-03.north.idle",
+      "fileId": "passenger-amber",
+      "rect": {
+        "x": 0,
+        "y": 192,
+        "width": 64,
+        "height": 64
+      },
+      "pivot": {
+        "x": 32,
+        "y": 50
+      },
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000
+    },
+    {
+      "id": "actor.passenger-03.north.walk.1",
+      "fileId": "passenger-amber",
+      "rect": {
+        "x": 64,
+        "y": 192,
+        "width": 64,
+        "height": 64
+      },
+      "pivot": {
+        "x": 32,
+        "y": 50
+      },
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000
+    },
+    {
+      "id": "actor.passenger-03.north.walk.2",
+      "fileId": "passenger-amber",
+      "rect": {
+        "x": 128,
+        "y": 192,
+        "width": 64,
+        "height": 64
+      },
+      "pivot": {
+        "x": 32,
+        "y": 50
+      },
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000
+    },
+    {
+      "id": "actor.passenger-03.north.walk.3",
+      "fileId": "passenger-amber",
+      "rect": {
+        "x": 192,
+        "y": 192,
+        "width": 64,
+        "height": 64
+      },
+      "pivot": {
+        "x": 32,
+        "y": 50
+      },
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000
+    },
+    {
+      "id": "actor.passenger-03.north.walk.4",
+      "fileId": "passenger-amber",
+      "rect": {
+        "x": 256,
+        "y": 192,
+        "width": 64,
+        "height": 64
+      },
+      "pivot": {
+        "x": 32,
+        "y": 50
+      },
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000
+    },
+    {
+      "id": "actor.passenger-04.south.idle",
+      "fileId": "passenger-slate",
+      "rect": {
+        "x": 0,
+        "y": 0,
+        "width": 64,
+        "height": 64
+      },
+      "pivot": {
+        "x": 32,
+        "y": 50
+      },
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000
+    },
+    {
+      "id": "actor.passenger-04.south.walk.1",
+      "fileId": "passenger-slate",
+      "rect": {
+        "x": 64,
+        "y": 0,
+        "width": 64,
+        "height": 64
+      },
+      "pivot": {
+        "x": 32,
+        "y": 50
+      },
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000
+    },
+    {
+      "id": "actor.passenger-04.south.walk.2",
+      "fileId": "passenger-slate",
+      "rect": {
+        "x": 128,
+        "y": 0,
+        "width": 64,
+        "height": 64
+      },
+      "pivot": {
+        "x": 32,
+        "y": 50
+      },
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000
+    },
+    {
+      "id": "actor.passenger-04.south.walk.3",
+      "fileId": "passenger-slate",
+      "rect": {
+        "x": 192,
+        "y": 0,
+        "width": 64,
+        "height": 64
+      },
+      "pivot": {
+        "x": 32,
+        "y": 50
+      },
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000
+    },
+    {
+      "id": "actor.passenger-04.south.walk.4",
+      "fileId": "passenger-slate",
+      "rect": {
+        "x": 256,
+        "y": 0,
+        "width": 64,
+        "height": 64
+      },
+      "pivot": {
+        "x": 32,
+        "y": 50
+      },
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000
+    },
+    {
+      "id": "actor.passenger-04.west.idle",
+      "fileId": "passenger-slate",
+      "rect": {
+        "x": 0,
+        "y": 64,
+        "width": 64,
+        "height": 64
+      },
+      "pivot": {
+        "x": 32,
+        "y": 50
+      },
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000
+    },
+    {
+      "id": "actor.passenger-04.west.walk.1",
+      "fileId": "passenger-slate",
+      "rect": {
+        "x": 64,
+        "y": 64,
+        "width": 64,
+        "height": 64
+      },
+      "pivot": {
+        "x": 32,
+        "y": 50
+      },
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000
+    },
+    {
+      "id": "actor.passenger-04.west.walk.2",
+      "fileId": "passenger-slate",
+      "rect": {
+        "x": 128,
+        "y": 64,
+        "width": 64,
+        "height": 64
+      },
+      "pivot": {
+        "x": 32,
+        "y": 50
+      },
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000
+    },
+    {
+      "id": "actor.passenger-04.west.walk.3",
+      "fileId": "passenger-slate",
+      "rect": {
+        "x": 192,
+        "y": 64,
+        "width": 64,
+        "height": 64
+      },
+      "pivot": {
+        "x": 32,
+        "y": 50
+      },
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000
+    },
+    {
+      "id": "actor.passenger-04.west.walk.4",
+      "fileId": "passenger-slate",
+      "rect": {
+        "x": 256,
+        "y": 64,
+        "width": 64,
+        "height": 64
+      },
+      "pivot": {
+        "x": 32,
+        "y": 50
+      },
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000
+    },
+    {
+      "id": "actor.passenger-04.east.idle",
+      "fileId": "passenger-slate",
+      "rect": {
+        "x": 0,
+        "y": 128,
+        "width": 64,
+        "height": 64
+      },
+      "pivot": {
+        "x": 32,
+        "y": 50
+      },
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000
+    },
+    {
+      "id": "actor.passenger-04.east.walk.1",
+      "fileId": "passenger-slate",
+      "rect": {
+        "x": 64,
+        "y": 128,
+        "width": 64,
+        "height": 64
+      },
+      "pivot": {
+        "x": 32,
+        "y": 50
+      },
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000
+    },
+    {
+      "id": "actor.passenger-04.east.walk.2",
+      "fileId": "passenger-slate",
+      "rect": {
+        "x": 128,
+        "y": 128,
+        "width": 64,
+        "height": 64
+      },
+      "pivot": {
+        "x": 32,
+        "y": 50
+      },
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000
+    },
+    {
+      "id": "actor.passenger-04.east.walk.3",
+      "fileId": "passenger-slate",
+      "rect": {
+        "x": 192,
+        "y": 128,
+        "width": 64,
+        "height": 64
+      },
+      "pivot": {
+        "x": 32,
+        "y": 50
+      },
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000
+    },
+    {
+      "id": "actor.passenger-04.east.walk.4",
+      "fileId": "passenger-slate",
+      "rect": {
+        "x": 256,
+        "y": 128,
+        "width": 64,
+        "height": 64
+      },
+      "pivot": {
+        "x": 32,
+        "y": 50
+      },
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000
+    },
+    {
+      "id": "actor.passenger-04.north.idle",
+      "fileId": "passenger-slate",
+      "rect": {
+        "x": 0,
+        "y": 192,
+        "width": 64,
+        "height": 64
+      },
+      "pivot": {
+        "x": 32,
+        "y": 50
+      },
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000
+    },
+    {
+      "id": "actor.passenger-04.north.walk.1",
+      "fileId": "passenger-slate",
+      "rect": {
+        "x": 64,
+        "y": 192,
+        "width": 64,
+        "height": 64
+      },
+      "pivot": {
+        "x": 32,
+        "y": 50
+      },
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000
+    },
+    {
+      "id": "actor.passenger-04.north.walk.2",
+      "fileId": "passenger-slate",
+      "rect": {
+        "x": 128,
+        "y": 192,
+        "width": 64,
+        "height": 64
+      },
+      "pivot": {
+        "x": 32,
+        "y": 50
+      },
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000
+    },
+    {
+      "id": "actor.passenger-04.north.walk.3",
+      "fileId": "passenger-slate",
+      "rect": {
+        "x": 192,
+        "y": 192,
+        "width": 64,
+        "height": 64
+      },
+      "pivot": {
+        "x": 32,
+        "y": 50
+      },
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000
+    },
+    {
+      "id": "actor.passenger-04.north.walk.4",
+      "fileId": "passenger-slate",
+      "rect": {
+        "x": 256,
+        "y": 192,
+        "width": 64,
+        "height": 64
+      },
+      "pivot": {
+        "x": 32,
+        "y": 50
+      },
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000
+    },
+    {
+      "id": "actor.conductor-01.south.idle",
+      "fileId": "conductor",
+      "rect": {
+        "x": 0,
+        "y": 0,
+        "width": 64,
+        "height": 64
+      },
+      "pivot": {
+        "x": 32,
+        "y": 50
+      },
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000
+    },
+    {
+      "id": "actor.conductor-01.south.walk.1",
+      "fileId": "conductor",
+      "rect": {
+        "x": 64,
+        "y": 0,
+        "width": 64,
+        "height": 64
+      },
+      "pivot": {
+        "x": 32,
+        "y": 50
+      },
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000
+    },
+    {
+      "id": "actor.conductor-01.south.walk.2",
+      "fileId": "conductor",
+      "rect": {
+        "x": 128,
+        "y": 0,
+        "width": 64,
+        "height": 64
+      },
+      "pivot": {
+        "x": 32,
+        "y": 50
+      },
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000
+    },
+    {
+      "id": "actor.conductor-01.south.walk.3",
+      "fileId": "conductor",
+      "rect": {
+        "x": 192,
+        "y": 0,
+        "width": 64,
+        "height": 64
+      },
+      "pivot": {
+        "x": 32,
+        "y": 50
+      },
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000
+    },
+    {
+      "id": "actor.conductor-01.south.walk.4",
+      "fileId": "conductor",
+      "rect": {
+        "x": 256,
+        "y": 0,
+        "width": 64,
+        "height": 64
+      },
+      "pivot": {
+        "x": 32,
+        "y": 50
+      },
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000
+    },
+    {
+      "id": "actor.conductor-01.west.idle",
+      "fileId": "conductor",
+      "rect": {
+        "x": 0,
+        "y": 64,
+        "width": 64,
+        "height": 64
+      },
+      "pivot": {
+        "x": 32,
+        "y": 50
+      },
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000
+    },
+    {
+      "id": "actor.conductor-01.west.walk.1",
+      "fileId": "conductor",
+      "rect": {
+        "x": 64,
+        "y": 64,
+        "width": 64,
+        "height": 64
+      },
+      "pivot": {
+        "x": 32,
+        "y": 50
+      },
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000
+    },
+    {
+      "id": "actor.conductor-01.west.walk.2",
+      "fileId": "conductor",
+      "rect": {
+        "x": 128,
+        "y": 64,
+        "width": 64,
+        "height": 64
+      },
+      "pivot": {
+        "x": 32,
+        "y": 50
+      },
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000
+    },
+    {
+      "id": "actor.conductor-01.west.walk.3",
+      "fileId": "conductor",
+      "rect": {
+        "x": 192,
+        "y": 64,
+        "width": 64,
+        "height": 64
+      },
+      "pivot": {
+        "x": 32,
+        "y": 50
+      },
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000
+    },
+    {
+      "id": "actor.conductor-01.west.walk.4",
+      "fileId": "conductor",
+      "rect": {
+        "x": 256,
+        "y": 64,
+        "width": 64,
+        "height": 64
+      },
+      "pivot": {
+        "x": 32,
+        "y": 50
+      },
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000
+    },
+    {
+      "id": "actor.conductor-01.east.idle",
+      "fileId": "conductor",
+      "rect": {
+        "x": 0,
+        "y": 128,
+        "width": 64,
+        "height": 64
+      },
+      "pivot": {
+        "x": 32,
+        "y": 50
+      },
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000
+    },
+    {
+      "id": "actor.conductor-01.east.walk.1",
+      "fileId": "conductor",
+      "rect": {
+        "x": 64,
+        "y": 128,
+        "width": 64,
+        "height": 64
+      },
+      "pivot": {
+        "x": 32,
+        "y": 50
+      },
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000
+    },
+    {
+      "id": "actor.conductor-01.east.walk.2",
+      "fileId": "conductor",
+      "rect": {
+        "x": 128,
+        "y": 128,
+        "width": 64,
+        "height": 64
+      },
+      "pivot": {
+        "x": 32,
+        "y": 50
+      },
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000
+    },
+    {
+      "id": "actor.conductor-01.east.walk.3",
+      "fileId": "conductor",
+      "rect": {
+        "x": 192,
+        "y": 128,
+        "width": 64,
+        "height": 64
+      },
+      "pivot": {
+        "x": 32,
+        "y": 50
+      },
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000
+    },
+    {
+      "id": "actor.conductor-01.east.walk.4",
+      "fileId": "conductor",
+      "rect": {
+        "x": 256,
+        "y": 128,
+        "width": 64,
+        "height": 64
+      },
+      "pivot": {
+        "x": 32,
+        "y": 50
+      },
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000
+    },
+    {
+      "id": "actor.conductor-01.north.idle",
+      "fileId": "conductor",
+      "rect": {
+        "x": 0,
+        "y": 192,
+        "width": 64,
+        "height": 64
+      },
+      "pivot": {
+        "x": 32,
+        "y": 50
+      },
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000
+    },
+    {
+      "id": "actor.conductor-01.north.walk.1",
+      "fileId": "conductor",
+      "rect": {
+        "x": 64,
+        "y": 192,
+        "width": 64,
+        "height": 64
+      },
+      "pivot": {
+        "x": 32,
+        "y": 50
+      },
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000
+    },
+    {
+      "id": "actor.conductor-01.north.walk.2",
+      "fileId": "conductor",
+      "rect": {
+        "x": 128,
+        "y": 192,
+        "width": 64,
+        "height": 64
+      },
+      "pivot": {
+        "x": 32,
+        "y": 50
+      },
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000
+    },
+    {
+      "id": "actor.conductor-01.north.walk.3",
+      "fileId": "conductor",
+      "rect": {
+        "x": 192,
+        "y": 192,
+        "width": 64,
+        "height": 64
+      },
+      "pivot": {
+        "x": 32,
+        "y": 50
+      },
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000
+    },
+    {
+      "id": "actor.conductor-01.north.walk.4",
+      "fileId": "conductor",
+      "rect": {
+        "x": 256,
+        "y": 192,
+        "width": 64,
+        "height": 64
+      },
+      "pivot": {
+        "x": 32,
+        "y": 50
+      },
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000
+    },
+    {
+      "id": "actor.passenger-01.south.sitting",
+      "fileId": "modules",
+      "rect": {
+        "x": 0,
+        "y": 0,
+        "width": 64,
+        "height": 64
+      },
+      "pivot": {
+        "x": 32,
+        "y": 50
+      },
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000
+    },
+    {
+      "id": "actor.passenger-01.west.sitting",
+      "fileId": "modules",
+      "rect": {
+        "x": 66,
+        "y": 0,
+        "width": 64,
+        "height": 64
+      },
+      "pivot": {
+        "x": 32,
+        "y": 50
+      },
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000
+    },
+    {
+      "id": "actor.passenger-01.north.sitting",
+      "fileId": "modules",
+      "rect": {
+        "x": 132,
+        "y": 0,
+        "width": 64,
+        "height": 64
+      },
+      "pivot": {
+        "x": 32,
+        "y": 50
+      },
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000
+    },
+    {
+      "id": "actor.passenger-01.east.sitting",
+      "fileId": "modules",
+      "rect": {
+        "x": 198,
+        "y": 0,
+        "width": 64,
+        "height": 64
+      },
+      "pivot": {
+        "x": 32,
+        "y": 50
+      },
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000
+    },
+    {
+      "id": "actor.passenger-02.south.sitting",
+      "fileId": "modules",
+      "rect": {
+        "x": 264,
+        "y": 0,
+        "width": 64,
+        "height": 64
+      },
+      "pivot": {
+        "x": 32,
+        "y": 50
+      },
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000
+    },
+    {
+      "id": "actor.passenger-02.west.sitting",
+      "fileId": "modules",
+      "rect": {
+        "x": 330,
+        "y": 0,
+        "width": 64,
+        "height": 64
+      },
+      "pivot": {
+        "x": 32,
+        "y": 50
+      },
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000
+    },
+    {
+      "id": "actor.passenger-02.north.sitting",
+      "fileId": "modules",
+      "rect": {
+        "x": 396,
+        "y": 0,
+        "width": 64,
+        "height": 64
+      },
+      "pivot": {
+        "x": 32,
+        "y": 50
+      },
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000
+    },
+    {
+      "id": "actor.passenger-02.east.sitting",
+      "fileId": "modules",
+      "rect": {
+        "x": 462,
+        "y": 0,
+        "width": 64,
+        "height": 64
+      },
+      "pivot": {
+        "x": 32,
+        "y": 50
+      },
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000
+    },
+    {
+      "id": "actor.passenger-03.south.sitting",
+      "fileId": "modules",
+      "rect": {
+        "x": 528,
+        "y": 0,
+        "width": 64,
+        "height": 64
+      },
+      "pivot": {
+        "x": 32,
+        "y": 50
+      },
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000
+    },
+    {
+      "id": "actor.passenger-03.west.sitting",
+      "fileId": "modules",
+      "rect": {
+        "x": 594,
+        "y": 0,
+        "width": 64,
+        "height": 64
+      },
+      "pivot": {
+        "x": 32,
+        "y": 50
+      },
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000
+    },
+    {
+      "id": "actor.passenger-03.north.sitting",
+      "fileId": "modules",
+      "rect": {
+        "x": 660,
+        "y": 0,
+        "width": 64,
+        "height": 64
+      },
+      "pivot": {
+        "x": 32,
+        "y": 50
+      },
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000
+    },
+    {
+      "id": "actor.passenger-03.east.sitting",
+      "fileId": "modules",
+      "rect": {
+        "x": 726,
+        "y": 0,
+        "width": 64,
+        "height": 64
+      },
+      "pivot": {
+        "x": 32,
+        "y": 50
+      },
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000
+    },
+    {
+      "id": "actor.passenger-04.south.sitting",
+      "fileId": "modules",
+      "rect": {
+        "x": 792,
+        "y": 0,
+        "width": 64,
+        "height": 64
+      },
+      "pivot": {
+        "x": 32,
+        "y": 50
+      },
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000
+    },
+    {
+      "id": "actor.passenger-04.west.sitting",
+      "fileId": "modules",
+      "rect": {
+        "x": 858,
+        "y": 0,
+        "width": 64,
+        "height": 64
+      },
+      "pivot": {
+        "x": 32,
+        "y": 50
+      },
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000
+    },
+    {
+      "id": "actor.passenger-04.north.sitting",
+      "fileId": "modules",
+      "rect": {
+        "x": 924,
+        "y": 0,
+        "width": 64,
+        "height": 64
+      },
+      "pivot": {
+        "x": 32,
+        "y": 50
+      },
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000
+    },
+    {
+      "id": "actor.passenger-04.east.sitting",
+      "fileId": "modules",
+      "rect": {
+        "x": 990,
+        "y": 0,
+        "width": 64,
+        "height": 64
+      },
+      "pivot": {
+        "x": 32,
+        "y": 50
+      },
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000
+    },
+    {
+      "id": "actor.conductor-01.south.sitting",
+      "fileId": "modules",
+      "rect": {
+        "x": 1056,
+        "y": 0,
+        "width": 64,
+        "height": 64
+      },
+      "pivot": {
+        "x": 32,
+        "y": 50
+      },
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000
+    },
+    {
+      "id": "actor.conductor-01.west.sitting",
+      "fileId": "modules",
+      "rect": {
+        "x": 1122,
+        "y": 0,
+        "width": 64,
+        "height": 64
+      },
+      "pivot": {
+        "x": 32,
+        "y": 50
+      },
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000
+    },
+    {
+      "id": "actor.conductor-01.north.sitting",
+      "fileId": "modules",
+      "rect": {
+        "x": 1188,
+        "y": 0,
+        "width": 64,
+        "height": 64
+      },
+      "pivot": {
+        "x": 32,
+        "y": 50
+      },
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000
+    },
+    {
+      "id": "actor.conductor-01.east.sitting",
+      "fileId": "modules",
+      "rect": {
+        "x": 1254,
+        "y": 0,
+        "width": 64,
+        "height": 64
+      },
+      "pivot": {
+        "x": 32,
+        "y": 50
+      },
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000
+    },
+    {
+      "id": "interior.floor",
+      "fileId": "modules",
+      "rect": {
+        "x": 1320,
+        "y": 0,
+        "width": 64,
+        "height": 64
+      },
+      "pivot": {
+        "x": 32,
+        "y": 32
+      },
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000
+    },
+    {
+      "id": "interior.wall",
+      "fileId": "modules",
+      "rect": {
+        "x": 1386,
+        "y": 0,
+        "width": 64,
+        "height": 64
+      },
+      "pivot": {
+        "x": 32,
+        "y": 32
+      },
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000
+    },
+    {
+      "id": "interior.window",
+      "fileId": "modules",
+      "rect": {
+        "x": 1452,
+        "y": 0,
+        "width": 64,
+        "height": 64
+      },
+      "pivot": {
+        "x": 32,
+        "y": 32
+      },
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000
+    },
+    {
+      "id": "interior.door-closed",
+      "fileId": "modules",
+      "rect": {
+        "x": 1518,
+        "y": 0,
+        "width": 64,
+        "height": 64
+      },
+      "pivot": {
+        "x": 32,
+        "y": 32
+      },
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000
+    },
+    {
+      "id": "interior.door-open",
+      "fileId": "modules",
+      "rect": {
+        "x": 1584,
+        "y": 0,
+        "width": 64,
+        "height": 64
+      },
+      "pivot": {
+        "x": 32,
+        "y": 32
+      },
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000
+    },
+    {
+      "id": "interior.seat",
+      "fileId": "modules",
+      "rect": {
+        "x": 1650,
+        "y": 0,
+        "width": 64,
+        "height": 64
+      },
+      "pivot": {
+        "x": 32,
+        "y": 32
+      },
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000
+    },
+    {
+      "id": "interior.multipurpose",
+      "fileId": "modules",
+      "rect": {
+        "x": 1716,
+        "y": 0,
+        "width": 64,
+        "height": 64
+      },
+      "pivot": {
+        "x": 32,
+        "y": 32
+      },
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000
+    },
+    {
+      "id": "interior.wc",
+      "fileId": "modules",
+      "rect": {
+        "x": 1782,
+        "y": 0,
+        "width": 64,
+        "height": 64
+      },
+      "pivot": {
+        "x": 32,
+        "y": 32
+      },
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000
+    },
+    {
+      "id": "interior.cab",
+      "fileId": "modules",
+      "rect": {
+        "x": 1848,
+        "y": 0,
+        "width": 64,
+        "height": 64
+      },
+      "pivot": {
+        "x": 32,
+        "y": 32
+      },
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000
+    },
+    {
+      "id": "interior.gangway",
+      "fileId": "modules",
+      "rect": {
+        "x": 1914,
+        "y": 0,
+        "width": 64,
+        "height": 64
+      },
+      "pivot": {
+        "x": 32,
+        "y": 32
+      },
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000
+    },
+    {
+      "id": "interior.standing",
+      "fileId": "modules",
+      "rect": {
+        "x": 1980,
+        "y": 0,
+        "width": 64,
+        "height": 64
+      },
+      "pivot": {
+        "x": 32,
+        "y": 32
+      },
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000
+    },
+    {
+      "id": "vehicle.body",
+      "fileId": "modules",
+      "rect": {
+        "x": 0,
+        "y": 66,
+        "width": 96,
+        "height": 640
+      },
+      "pivot": {
+        "x": 48,
+        "y": 320
+      },
+      "worldWidthMm": 3000,
+      "worldHeightMm": 20000
+    },
+    {
+      "id": "vehicle.front",
+      "fileId": "modules",
+      "rect": {
+        "x": 98,
+        "y": 66,
+        "width": 96,
+        "height": 192
+      },
+      "pivot": {
+        "x": 48,
+        "y": 96
+      },
+      "worldWidthMm": 3000,
+      "worldHeightMm": 6000
+    },
+    {
+      "id": "vehicle.roof",
+      "fileId": "modules",
+      "rect": {
+        "x": 196,
+        "y": 66,
+        "width": 96,
+        "height": 640
+      },
+      "pivot": {
+        "x": 48,
+        "y": 320
+      },
+      "worldWidthMm": 3000,
+      "worldHeightMm": 20000
+    },
+    {
+      "id": "station.small.platform",
+      "fileId": "modules",
+      "rect": {
+        "x": 294,
+        "y": 66,
+        "width": 256,
+        "height": 96
+      },
+      "pivot": {
+        "x": 128,
+        "y": 48
+      },
+      "worldWidthMm": 8000,
+      "worldHeightMm": 3000
+    },
+    {
+      "id": "station.medium.platform",
+      "fileId": "modules",
+      "rect": {
+        "x": 552,
+        "y": 66,
+        "width": 320,
+        "height": 128
+      },
+      "pivot": {
+        "x": 160,
+        "y": 64
+      },
+      "worldWidthMm": 10000,
+      "worldHeightMm": 4000
+    },
+    {
+      "id": "station.large.platform",
+      "fileId": "modules",
+      "rect": {
+        "x": 874,
+        "y": 66,
+        "width": 384,
+        "height": 160
+      },
+      "pivot": {
+        "x": 192,
+        "y": 80
+      },
+      "worldWidthMm": 12000,
+      "worldHeightMm": 5000
+    },
+    {
+      "id": "station.small.roof",
+      "fileId": "modules",
+      "rect": {
+        "x": 1260,
+        "y": 66,
+        "width": 256,
+        "height": 128
+      },
+      "pivot": {
+        "x": 128,
+        "y": 64
+      },
+      "worldWidthMm": 8000,
+      "worldHeightMm": 4000
+    },
+    {
+      "id": "station.medium.roof",
+      "fileId": "modules",
+      "rect": {
+        "x": 1518,
+        "y": 66,
+        "width": 320,
+        "height": 160
+      },
+      "pivot": {
+        "x": 160,
+        "y": 80
+      },
+      "worldWidthMm": 10000,
+      "worldHeightMm": 5000
+    },
+    {
+      "id": "station.large.roof",
+      "fileId": "modules",
+      "rect": {
+        "x": 0,
+        "y": 708,
+        "width": 384,
+        "height": 192
+      },
+      "pivot": {
+        "x": 192,
+        "y": 96
+      },
+      "worldWidthMm": 12000,
+      "worldHeightMm": 6000
+    },
+    {
+      "id": "station.small.hall",
+      "fileId": "modules",
+      "rect": {
+        "x": 386,
+        "y": 708,
+        "width": 192,
+        "height": 160
+      },
+      "pivot": {
+        "x": 96,
+        "y": 80
+      },
+      "worldWidthMm": 6000,
+      "worldHeightMm": 5000
+    },
+    {
+      "id": "station.medium.hall",
+      "fileId": "modules",
+      "rect": {
+        "x": 580,
+        "y": 708,
+        "width": 256,
+        "height": 192
+      },
+      "pivot": {
+        "x": 128,
+        "y": 96
+      },
+      "worldWidthMm": 8000,
+      "worldHeightMm": 6000
+    },
+    {
+      "id": "station.large.hall",
+      "fileId": "modules",
+      "rect": {
+        "x": 838,
+        "y": 708,
+        "width": 320,
+        "height": 256
+      },
+      "pivot": {
+        "x": 160,
+        "y": 128
+      },
+      "worldWidthMm": 10000,
+      "worldHeightMm": 8000
+    },
+    {
+      "id": "station.small.stairs",
+      "fileId": "modules",
+      "rect": {
+        "x": 1160,
+        "y": 708,
+        "width": 96,
+        "height": 96
+      },
+      "pivot": {
+        "x": 48,
+        "y": 48
+      },
+      "worldWidthMm": 3000,
+      "worldHeightMm": 3000
+    },
+    {
+      "id": "station.medium.stairs",
+      "fileId": "modules",
+      "rect": {
+        "x": 1258,
+        "y": 708,
+        "width": 128,
+        "height": 128
+      },
+      "pivot": {
+        "x": 64,
+        "y": 64
+      },
+      "worldWidthMm": 4000,
+      "worldHeightMm": 4000
+    },
+    {
+      "id": "station.large.stairs",
+      "fileId": "modules",
+      "rect": {
+        "x": 1388,
+        "y": 708,
+        "width": 192,
+        "height": 128
+      },
+      "pivot": {
+        "x": 96,
+        "y": 64
+      },
+      "worldWidthMm": 6000,
+      "worldHeightMm": 4000
+    },
+    {
+      "id": "station.small.underpass",
+      "fileId": "modules",
+      "rect": {
+        "x": 1582,
+        "y": 708,
+        "width": 192,
+        "height": 160
+      },
+      "pivot": {
+        "x": 96,
+        "y": 80
+      },
+      "worldWidthMm": 6000,
+      "worldHeightMm": 5000
+    },
+    {
+      "id": "station.medium.underpass",
+      "fileId": "modules",
+      "rect": {
+        "x": 1776,
+        "y": 708,
+        "width": 256,
+        "height": 192
+      },
+      "pivot": {
+        "x": 128,
+        "y": 96
+      },
+      "worldWidthMm": 8000,
+      "worldHeightMm": 6000
+    },
+    {
+      "id": "station.large.underpass",
+      "fileId": "modules",
+      "rect": {
+        "x": 0,
+        "y": 966,
+        "width": 320,
+        "height": 256
+      },
+      "pivot": {
+        "x": 160,
+        "y": 128
+      },
+      "worldWidthMm": 10000,
+      "worldHeightMm": 8000
+    },
+    {
+      "id": "environment.rural.vegetation",
+      "fileId": "modules",
+      "rect": {
+        "x": 322,
+        "y": 966,
+        "width": 256,
+        "height": 256
+      },
+      "pivot": {
+        "x": 128,
+        "y": 128
+      },
+      "worldWidthMm": 8000,
+      "worldHeightMm": 8000
+    },
+    {
+      "id": "environment.suburban.vegetation",
+      "fileId": "modules",
+      "rect": {
+        "x": 580,
+        "y": 966,
+        "width": 256,
+        "height": 256
+      },
+      "pivot": {
+        "x": 128,
+        "y": 128
+      },
+      "worldWidthMm": 8000,
+      "worldHeightMm": 8000
+    },
+    {
+      "id": "environment.urban.vegetation",
+      "fileId": "modules",
+      "rect": {
+        "x": 838,
+        "y": 966,
+        "width": 256,
+        "height": 256
+      },
+      "pivot": {
+        "x": 128,
+        "y": 128
+      },
+      "worldWidthMm": 8000,
+      "worldHeightMm": 8000
+    },
+    {
+      "id": "environment.rural.road",
+      "fileId": "modules",
+      "rect": {
+        "x": 1096,
+        "y": 966,
+        "width": 256,
+        "height": 128
+      },
+      "pivot": {
+        "x": 128,
+        "y": 64
+      },
+      "worldWidthMm": 8000,
+      "worldHeightMm": 4000
+    },
+    {
+      "id": "environment.suburban.road",
+      "fileId": "modules",
+      "rect": {
+        "x": 1354,
+        "y": 966,
+        "width": 256,
+        "height": 128
+      },
+      "pivot": {
+        "x": 128,
+        "y": 64
+      },
+      "worldWidthMm": 8000,
+      "worldHeightMm": 4000
+    },
+    {
+      "id": "environment.urban.road",
+      "fileId": "modules",
+      "rect": {
+        "x": 1612,
+        "y": 966,
+        "width": 256,
+        "height": 128
+      },
+      "pivot": {
+        "x": 128,
+        "y": 64
+      },
+      "worldWidthMm": 8000,
+      "worldHeightMm": 4000
+    },
+    {
+      "id": "environment.rural.building",
+      "fileId": "modules",
+      "rect": {
+        "x": 0,
+        "y": 1224,
+        "width": 256,
+        "height": 256
+      },
+      "pivot": {
+        "x": 128,
+        "y": 128
+      },
+      "worldWidthMm": 8000,
+      "worldHeightMm": 8000
+    },
+    {
+      "id": "environment.suburban.building",
+      "fileId": "modules",
+      "rect": {
+        "x": 258,
+        "y": 1224,
+        "width": 256,
+        "height": 256
+      },
+      "pivot": {
+        "x": 128,
+        "y": 128
+      },
+      "worldWidthMm": 8000,
+      "worldHeightMm": 8000
+    },
+    {
+      "id": "environment.urban.building",
+      "fileId": "modules",
+      "rect": {
+        "x": 516,
+        "y": 1224,
+        "width": 256,
+        "height": 256
+      },
+      "pivot": {
+        "x": 128,
+        "y": 128
+      },
+      "worldWidthMm": 8000,
+      "worldHeightMm": 8000
+    },
+    {
+      "id": "signal.stop",
+      "fileId": "modules",
+      "rect": {
+        "x": 774,
+        "y": 1224,
+        "width": 32,
+        "height": 96
+      },
+      "pivot": {
+        "x": 16,
+        "y": 48
+      },
+      "worldWidthMm": 1000,
+      "worldHeightMm": 3000
+    },
+    {
+      "id": "signal.proceed",
+      "fileId": "modules",
+      "rect": {
+        "x": 808,
+        "y": 1224,
+        "width": 32,
+        "height": 96
+      },
+      "pivot": {
+        "x": 16,
+        "y": 48
+      },
+      "worldWidthMm": 1000,
+      "worldHeightMm": 3000
+    },
+    {
+      "id": "accessory.wheelchair.north",
+      "fileId": "modules",
+      "rect": {
+        "x": 842,
+        "y": 1224,
+        "width": 64,
+        "height": 64
+      },
+      "pivot": {
+        "x": 32,
+        "y": 32
+      },
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000
+    },
+    {
+      "id": "accessory.wheelchair.east",
+      "fileId": "modules",
+      "rect": {
+        "x": 908,
+        "y": 1224,
+        "width": 64,
+        "height": 64
+      },
+      "pivot": {
+        "x": 32,
+        "y": 32
+      },
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000
+    },
+    {
+      "id": "accessory.wheelchair.south",
+      "fileId": "modules",
+      "rect": {
+        "x": 974,
+        "y": 1224,
+        "width": 64,
+        "height": 64
+      },
+      "pivot": {
+        "x": 32,
+        "y": 32
+      },
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000
+    },
+    {
+      "id": "accessory.wheelchair.west",
+      "fileId": "modules",
+      "rect": {
+        "x": 1040,
+        "y": 1224,
+        "width": 64,
+        "height": 64
+      },
+      "pivot": {
+        "x": 32,
+        "y": 32
+      },
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000
+    },
+    {
+      "id": "accessory.bicycle.north",
+      "fileId": "modules",
+      "rect": {
+        "x": 1106,
+        "y": 1224,
+        "width": 64,
+        "height": 64
+      },
+      "pivot": {
+        "x": 32,
+        "y": 32
+      },
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000
+    },
+    {
+      "id": "accessory.bicycle.east",
+      "fileId": "modules",
+      "rect": {
+        "x": 1172,
+        "y": 1224,
+        "width": 64,
+        "height": 64
+      },
+      "pivot": {
+        "x": 32,
+        "y": 32
+      },
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000
+    },
+    {
+      "id": "accessory.bicycle.south",
+      "fileId": "modules",
+      "rect": {
+        "x": 1238,
+        "y": 1224,
+        "width": 64,
+        "height": 64
+      },
+      "pivot": {
+        "x": 32,
+        "y": 32
+      },
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000
+    },
+    {
+      "id": "accessory.bicycle.west",
+      "fileId": "modules",
+      "rect": {
+        "x": 1304,
+        "y": 1224,
+        "width": 64,
+        "height": 64
+      },
+      "pivot": {
+        "x": 32,
+        "y": 32
+      },
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000
+    },
+    {
+      "id": "accessory.stroller.north",
+      "fileId": "modules",
+      "rect": {
+        "x": 1370,
+        "y": 1224,
+        "width": 64,
+        "height": 64
+      },
+      "pivot": {
+        "x": 32,
+        "y": 32
+      },
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000
+    },
+    {
+      "id": "accessory.stroller.east",
+      "fileId": "modules",
+      "rect": {
+        "x": 1436,
+        "y": 1224,
+        "width": 64,
+        "height": 64
+      },
+      "pivot": {
+        "x": 32,
+        "y": 32
+      },
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000
+    },
+    {
+      "id": "accessory.stroller.south",
+      "fileId": "modules",
+      "rect": {
+        "x": 1502,
+        "y": 1224,
+        "width": 64,
+        "height": 64
+      },
+      "pivot": {
+        "x": 32,
+        "y": 32
+      },
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000
+    },
+    {
+      "id": "accessory.stroller.west",
+      "fileId": "modules",
+      "rect": {
+        "x": 1568,
+        "y": 1224,
+        "width": 64,
+        "height": 64
+      },
+      "pivot": {
+        "x": 32,
+        "y": 32
+      },
+      "worldWidthMm": 2000,
+      "worldHeightMm": 2000
+    },
+    {
+      "id": "vehicle.regional-double.lower",
+      "fileId": "vehicles",
+      "rect": {
+        "x": 0,
+        "y": 0,
+        "width": 96,
+        "height": 864
+      },
+      "pivot": {
+        "x": 48,
+        "y": 432
+      },
+      "worldWidthMm": 3000,
+      "worldHeightMm": 27000
+    },
+    {
+      "id": "vehicle.regional-double.upper",
+      "fileId": "vehicles",
+      "rect": {
+        "x": 98,
+        "y": 0,
+        "width": 96,
+        "height": 864
+      },
+      "pivot": {
+        "x": 48,
+        "y": 432
+      },
+      "worldWidthMm": 3000,
+      "worldHeightMm": 27000
+    },
+    {
+      "id": "vehicle.regional-double.roof",
+      "fileId": "vehicles",
+      "rect": {
+        "x": 196,
+        "y": 0,
+        "width": 96,
+        "height": 864
+      },
+      "pivot": {
+        "x": 48,
+        "y": 432
+      },
+      "worldWidthMm": 3000,
+      "worldHeightMm": 27000
+    },
+    {
+      "id": "vehicle.intercity-single.body",
+      "fileId": "vehicles",
+      "rect": {
+        "x": 294,
+        "y": 0,
+        "width": 96,
+        "height": 864
+      },
+      "pivot": {
+        "x": 48,
+        "y": 432
+      },
+      "worldWidthMm": 3000,
+      "worldHeightMm": 27000
+    },
+    {
+      "id": "vehicle.intercity-single.roof",
+      "fileId": "vehicles",
+      "rect": {
+        "x": 392,
+        "y": 0,
+        "width": 96,
+        "height": 864
+      },
+      "pivot": {
+        "x": 48,
+        "y": 432
+      },
+      "worldWidthMm": 3000,
+      "worldHeightMm": 27000
+    },
+    {
+      "id": "vehicle.regional-single.body",
+      "fileId": "vehicles",
+      "rect": {
+        "x": 490,
+        "y": 0,
+        "width": 96,
+        "height": 864
+      },
+      "pivot": {
+        "x": 48,
+        "y": 432
+      },
+      "worldWidthMm": 3000,
+      "worldHeightMm": 27000
+    },
+    {
+      "id": "vehicle.regional-single.roof",
+      "fileId": "vehicles",
+      "rect": {
+        "x": 588,
+        "y": 0,
+        "width": 96,
+        "height": 864
+      },
+      "pivot": {
+        "x": 48,
+        "y": 432
+      },
+      "worldWidthMm": 3000,
+      "worldHeightMm": 27000
+    },
+    {
+      "id": "vehicle.intercity-double.lower",
+      "fileId": "vehicles",
+      "rect": {
+        "x": 686,
+        "y": 0,
+        "width": 96,
+        "height": 864
+      },
+      "pivot": {
+        "x": 48,
+        "y": 432
+      },
+      "worldWidthMm": 3000,
+      "worldHeightMm": 27000
+    },
+    {
+      "id": "vehicle.intercity-double.upper",
+      "fileId": "vehicles",
+      "rect": {
+        "x": 784,
+        "y": 0,
+        "width": 96,
+        "height": 864
+      },
+      "pivot": {
+        "x": 48,
+        "y": 432
+      },
+      "worldWidthMm": 3000,
+      "worldHeightMm": 27000
+    },
+    {
+      "id": "vehicle.intercity-double.roof",
+      "fileId": "vehicles",
+      "rect": {
+        "x": 882,
+        "y": 0,
+        "width": 96,
+        "height": 864
+      },
+      "pivot": {
+        "x": 48,
+        "y": 432
+      },
+      "worldWidthMm": 3000,
+      "worldHeightMm": 27000
+    },
+    {
+      "id": "vehicle.dining.body",
+      "fileId": "vehicles",
+      "rect": {
+        "x": 980,
+        "y": 0,
+        "width": 96,
+        "height": 864
+      },
+      "pivot": {
+        "x": 48,
+        "y": 432
+      },
+      "worldWidthMm": 3000,
+      "worldHeightMm": 27000
+    },
+    {
+      "id": "vehicle.dining.roof",
+      "fileId": "vehicles",
+      "rect": {
+        "x": 1078,
+        "y": 0,
+        "width": 96,
+        "height": 864
+      },
+      "pivot": {
+        "x": 48,
+        "y": 432
+      },
+      "worldWidthMm": 3000,
+      "worldHeightMm": 27000
+    },
+    {
+      "id": "vehicle.sleeper.body",
+      "fileId": "vehicles",
+      "rect": {
+        "x": 1176,
+        "y": 0,
+        "width": 96,
+        "height": 864
+      },
+      "pivot": {
+        "x": 48,
+        "y": 432
+      },
+      "worldWidthMm": 3000,
+      "worldHeightMm": 27000
+    },
+    {
+      "id": "vehicle.sleeper.roof",
+      "fileId": "vehicles",
+      "rect": {
+        "x": 1274,
+        "y": 0,
+        "width": 96,
+        "height": 864
+      },
+      "pivot": {
+        "x": 48,
+        "y": 432
+      },
+      "worldWidthMm": 3000,
+      "worldHeightMm": 27000
+    }
+  ],
+  "appearanceVariants": [
+    {
+      "variant": 0,
+      "appearanceId": "passenger-01"
+    },
+    {
+      "variant": 1,
+      "appearanceId": "passenger-02"
+    },
+    {
+      "variant": 2,
+      "appearanceId": "passenger-03"
+    },
+    {
+      "variant": 3,
+      "appearanceId": "passenger-04"
+    },
+    {
+      "variant": 4,
+      "appearanceId": "passenger-01"
+    },
+    {
+      "variant": 5,
+      "appearanceId": "passenger-02"
+    },
+    {
+      "variant": 6,
+      "appearanceId": "passenger-03"
+    },
+    {
+      "variant": 7,
+      "appearanceId": "passenger-04"
+    },
+    {
+      "variant": 8,
+      "appearanceId": "passenger-01"
+    },
+    {
+      "variant": 9,
+      "appearanceId": "passenger-02"
+    },
+    {
+      "variant": 10,
+      "appearanceId": "passenger-03"
+    },
+    {
+      "variant": 11,
+      "appearanceId": "passenger-04"
+    },
+    {
+      "variant": 12,
+      "appearanceId": "passenger-01"
+    },
+    {
+      "variant": 13,
+      "appearanceId": "passenger-02"
+    },
+    {
+      "variant": 14,
+      "appearanceId": "passenger-03"
+    },
+    {
+      "variant": 15,
+      "appearanceId": "passenger-04"
+    },
+    {
+      "variant": 16,
+      "appearanceId": "passenger-01"
+    },
+    {
+      "variant": 17,
+      "appearanceId": "passenger-02"
+    },
+    {
+      "variant": 18,
+      "appearanceId": "passenger-03"
+    },
+    {
+      "variant": 19,
+      "appearanceId": "passenger-04"
+    },
+    {
+      "variant": 20,
+      "appearanceId": "passenger-01"
+    },
+    {
+      "variant": 21,
+      "appearanceId": "passenger-02"
+    },
+    {
+      "variant": 22,
+      "appearanceId": "passenger-03"
+    },
+    {
+      "variant": 23,
+      "appearanceId": "passenger-04"
+    },
+    {
+      "variant": 24,
+      "appearanceId": "passenger-01"
+    },
+    {
+      "variant": 25,
+      "appearanceId": "passenger-02"
+    },
+    {
+      "variant": 26,
+      "appearanceId": "passenger-03"
+    },
+    {
+      "variant": 27,
+      "appearanceId": "passenger-04"
+    },
+    {
+      "variant": 28,
+      "appearanceId": "passenger-01"
+    },
+    {
+      "variant": 29,
+      "appearanceId": "passenger-02"
+    },
+    {
+      "variant": 30,
+      "appearanceId": "passenger-03"
+    },
+    {
+      "variant": 31,
+      "appearanceId": "passenger-04"
+    },
+    {
+      "variant": 32,
+      "appearanceId": "passenger-01"
+    },
+    {
+      "variant": 33,
+      "appearanceId": "passenger-02"
+    },
+    {
+      "variant": 34,
+      "appearanceId": "passenger-03"
+    },
+    {
+      "variant": 35,
+      "appearanceId": "passenger-04"
+    },
+    {
+      "variant": 36,
+      "appearanceId": "passenger-01"
+    },
+    {
+      "variant": 37,
+      "appearanceId": "passenger-02"
+    },
+    {
+      "variant": 38,
+      "appearanceId": "passenger-03"
+    },
+    {
+      "variant": 39,
+      "appearanceId": "passenger-04"
+    },
+    {
+      "variant": 40,
+      "appearanceId": "passenger-01"
+    },
+    {
+      "variant": 41,
+      "appearanceId": "passenger-02"
+    },
+    {
+      "variant": 42,
+      "appearanceId": "passenger-03"
+    },
+    {
+      "variant": 43,
+      "appearanceId": "passenger-04"
+    },
+    {
+      "variant": 44,
+      "appearanceId": "passenger-01"
+    },
+    {
+      "variant": 45,
+      "appearanceId": "passenger-02"
+    },
+    {
+      "variant": 46,
+      "appearanceId": "passenger-03"
+    },
+    {
+      "variant": 47,
+      "appearanceId": "passenger-04"
+    },
+    {
+      "variant": 48,
+      "appearanceId": "passenger-01"
+    },
+    {
+      "variant": 49,
+      "appearanceId": "passenger-02"
+    },
+    {
+      "variant": 50,
+      "appearanceId": "passenger-03"
+    },
+    {
+      "variant": 51,
+      "appearanceId": "passenger-04"
+    },
+    {
+      "variant": 52,
+      "appearanceId": "passenger-01"
+    },
+    {
+      "variant": 53,
+      "appearanceId": "passenger-02"
+    },
+    {
+      "variant": 54,
+      "appearanceId": "passenger-03"
+    },
+    {
+      "variant": 55,
+      "appearanceId": "passenger-04"
+    },
+    {
+      "variant": 56,
+      "appearanceId": "passenger-01"
+    },
+    {
+      "variant": 57,
+      "appearanceId": "passenger-02"
+    },
+    {
+      "variant": 58,
+      "appearanceId": "passenger-03"
+    },
+    {
+      "variant": 59,
+      "appearanceId": "passenger-04"
+    },
+    {
+      "variant": 60,
+      "appearanceId": "passenger-01"
+    },
+    {
+      "variant": 61,
+      "appearanceId": "passenger-02"
+    },
+    {
+      "variant": 62,
+      "appearanceId": "passenger-03"
+    },
+    {
+      "variant": 63,
+      "appearanceId": "passenger-04"
+    },
+    {
+      "variant": 64,
+      "appearanceId": "passenger-01"
+    },
+    {
+      "variant": 65,
+      "appearanceId": "passenger-02"
+    },
+    {
+      "variant": 66,
+      "appearanceId": "passenger-03"
+    },
+    {
+      "variant": 67,
+      "appearanceId": "passenger-04"
+    },
+    {
+      "variant": 68,
+      "appearanceId": "passenger-01"
+    },
+    {
+      "variant": 69,
+      "appearanceId": "passenger-02"
+    },
+    {
+      "variant": 70,
+      "appearanceId": "passenger-03"
+    },
+    {
+      "variant": 71,
+      "appearanceId": "passenger-04"
+    },
+    {
+      "variant": 72,
+      "appearanceId": "passenger-01"
+    },
+    {
+      "variant": 73,
+      "appearanceId": "passenger-02"
+    },
+    {
+      "variant": 74,
+      "appearanceId": "passenger-03"
+    },
+    {
+      "variant": 75,
+      "appearanceId": "passenger-04"
+    },
+    {
+      "variant": 76,
+      "appearanceId": "passenger-01"
+    },
+    {
+      "variant": 77,
+      "appearanceId": "passenger-02"
+    },
+    {
+      "variant": 78,
+      "appearanceId": "passenger-03"
+    },
+    {
+      "variant": 79,
+      "appearanceId": "passenger-04"
+    },
+    {
+      "variant": 80,
+      "appearanceId": "passenger-01"
+    },
+    {
+      "variant": 81,
+      "appearanceId": "passenger-02"
+    },
+    {
+      "variant": 82,
+      "appearanceId": "passenger-03"
+    },
+    {
+      "variant": 83,
+      "appearanceId": "passenger-04"
+    },
+    {
+      "variant": 84,
+      "appearanceId": "passenger-01"
+    },
+    {
+      "variant": 85,
+      "appearanceId": "passenger-02"
+    },
+    {
+      "variant": 86,
+      "appearanceId": "passenger-03"
+    },
+    {
+      "variant": 87,
+      "appearanceId": "passenger-04"
+    },
+    {
+      "variant": 88,
+      "appearanceId": "passenger-01"
+    },
+    {
+      "variant": 89,
+      "appearanceId": "passenger-02"
+    },
+    {
+      "variant": 90,
+      "appearanceId": "passenger-03"
+    },
+    {
+      "variant": 91,
+      "appearanceId": "passenger-04"
+    },
+    {
+      "variant": 92,
+      "appearanceId": "passenger-01"
+    },
+    {
+      "variant": 93,
+      "appearanceId": "passenger-02"
+    },
+    {
+      "variant": 94,
+      "appearanceId": "passenger-03"
+    },
+    {
+      "variant": 95,
+      "appearanceId": "passenger-04"
+    },
+    {
+      "variant": 96,
+      "appearanceId": "passenger-01"
+    },
+    {
+      "variant": 97,
+      "appearanceId": "passenger-02"
+    },
+    {
+      "variant": 98,
+      "appearanceId": "passenger-03"
+    },
+    {
+      "variant": 99,
+      "appearanceId": "passenger-04"
+    },
+    {
+      "variant": 100,
+      "appearanceId": "passenger-01"
+    },
+    {
+      "variant": 101,
+      "appearanceId": "passenger-02"
+    },
+    {
+      "variant": 102,
+      "appearanceId": "passenger-03"
+    },
+    {
+      "variant": 103,
+      "appearanceId": "passenger-04"
+    },
+    {
+      "variant": 104,
+      "appearanceId": "passenger-01"
+    },
+    {
+      "variant": 105,
+      "appearanceId": "passenger-02"
+    },
+    {
+      "variant": 106,
+      "appearanceId": "passenger-03"
+    },
+    {
+      "variant": 107,
+      "appearanceId": "passenger-04"
+    },
+    {
+      "variant": 108,
+      "appearanceId": "passenger-01"
+    },
+    {
+      "variant": 109,
+      "appearanceId": "passenger-02"
+    },
+    {
+      "variant": 110,
+      "appearanceId": "passenger-03"
+    },
+    {
+      "variant": 111,
+      "appearanceId": "passenger-04"
+    },
+    {
+      "variant": 112,
+      "appearanceId": "passenger-01"
+    },
+    {
+      "variant": 113,
+      "appearanceId": "passenger-02"
+    },
+    {
+      "variant": 114,
+      "appearanceId": "passenger-03"
+    },
+    {
+      "variant": 115,
+      "appearanceId": "passenger-04"
+    },
+    {
+      "variant": 116,
+      "appearanceId": "passenger-01"
+    },
+    {
+      "variant": 117,
+      "appearanceId": "passenger-02"
+    },
+    {
+      "variant": 118,
+      "appearanceId": "passenger-03"
+    },
+    {
+      "variant": 119,
+      "appearanceId": "passenger-04"
+    },
+    {
+      "variant": 120,
+      "appearanceId": "passenger-01"
+    },
+    {
+      "variant": 121,
+      "appearanceId": "passenger-02"
+    },
+    {
+      "variant": 122,
+      "appearanceId": "passenger-03"
+    },
+    {
+      "variant": 123,
+      "appearanceId": "passenger-04"
+    },
+    {
+      "variant": 124,
+      "appearanceId": "passenger-01"
+    },
+    {
+      "variant": 125,
+      "appearanceId": "passenger-02"
+    },
+    {
+      "variant": 126,
+      "appearanceId": "passenger-03"
+    },
+    {
+      "variant": 127,
+      "appearanceId": "passenger-04"
+    },
+    {
+      "variant": 128,
+      "appearanceId": "passenger-01"
+    },
+    {
+      "variant": 129,
+      "appearanceId": "passenger-02"
+    },
+    {
+      "variant": 130,
+      "appearanceId": "passenger-03"
+    },
+    {
+      "variant": 131,
+      "appearanceId": "passenger-04"
+    },
+    {
+      "variant": 132,
+      "appearanceId": "passenger-01"
+    },
+    {
+      "variant": 133,
+      "appearanceId": "passenger-02"
+    },
+    {
+      "variant": 134,
+      "appearanceId": "passenger-03"
+    },
+    {
+      "variant": 135,
+      "appearanceId": "passenger-04"
+    },
+    {
+      "variant": 136,
+      "appearanceId": "passenger-01"
+    },
+    {
+      "variant": 137,
+      "appearanceId": "passenger-02"
+    },
+    {
+      "variant": 138,
+      "appearanceId": "passenger-03"
+    },
+    {
+      "variant": 139,
+      "appearanceId": "passenger-04"
+    },
+    {
+      "variant": 140,
+      "appearanceId": "passenger-01"
+    },
+    {
+      "variant": 141,
+      "appearanceId": "passenger-02"
+    },
+    {
+      "variant": 142,
+      "appearanceId": "passenger-03"
+    },
+    {
+      "variant": 143,
+      "appearanceId": "passenger-04"
+    },
+    {
+      "variant": 144,
+      "appearanceId": "passenger-01"
+    },
+    {
+      "variant": 145,
+      "appearanceId": "passenger-02"
+    },
+    {
+      "variant": 146,
+      "appearanceId": "passenger-03"
+    },
+    {
+      "variant": 147,
+      "appearanceId": "passenger-04"
+    },
+    {
+      "variant": 148,
+      "appearanceId": "passenger-01"
+    },
+    {
+      "variant": 149,
+      "appearanceId": "passenger-02"
+    },
+    {
+      "variant": 150,
+      "appearanceId": "passenger-03"
+    },
+    {
+      "variant": 151,
+      "appearanceId": "passenger-04"
+    },
+    {
+      "variant": 152,
+      "appearanceId": "passenger-01"
+    },
+    {
+      "variant": 153,
+      "appearanceId": "passenger-02"
+    },
+    {
+      "variant": 154,
+      "appearanceId": "passenger-03"
+    },
+    {
+      "variant": 155,
+      "appearanceId": "passenger-04"
+    },
+    {
+      "variant": 156,
+      "appearanceId": "passenger-01"
+    },
+    {
+      "variant": 157,
+      "appearanceId": "passenger-02"
+    },
+    {
+      "variant": 158,
+      "appearanceId": "passenger-03"
+    },
+    {
+      "variant": 159,
+      "appearanceId": "passenger-04"
+    },
+    {
+      "variant": 160,
+      "appearanceId": "passenger-01"
+    },
+    {
+      "variant": 161,
+      "appearanceId": "passenger-02"
+    },
+    {
+      "variant": 162,
+      "appearanceId": "passenger-03"
+    },
+    {
+      "variant": 163,
+      "appearanceId": "passenger-04"
+    },
+    {
+      "variant": 164,
+      "appearanceId": "passenger-01"
+    },
+    {
+      "variant": 165,
+      "appearanceId": "passenger-02"
+    },
+    {
+      "variant": 166,
+      "appearanceId": "passenger-03"
+    },
+    {
+      "variant": 167,
+      "appearanceId": "passenger-04"
+    },
+    {
+      "variant": 168,
+      "appearanceId": "passenger-01"
+    },
+    {
+      "variant": 169,
+      "appearanceId": "passenger-02"
+    },
+    {
+      "variant": 170,
+      "appearanceId": "passenger-03"
+    },
+    {
+      "variant": 171,
+      "appearanceId": "passenger-04"
+    },
+    {
+      "variant": 172,
+      "appearanceId": "passenger-01"
+    },
+    {
+      "variant": 173,
+      "appearanceId": "passenger-02"
+    },
+    {
+      "variant": 174,
+      "appearanceId": "passenger-03"
+    },
+    {
+      "variant": 175,
+      "appearanceId": "passenger-04"
+    },
+    {
+      "variant": 176,
+      "appearanceId": "passenger-01"
+    },
+    {
+      "variant": 177,
+      "appearanceId": "passenger-02"
+    },
+    {
+      "variant": 178,
+      "appearanceId": "passenger-03"
+    },
+    {
+      "variant": 179,
+      "appearanceId": "passenger-04"
+    },
+    {
+      "variant": 180,
+      "appearanceId": "passenger-01"
+    },
+    {
+      "variant": 181,
+      "appearanceId": "passenger-02"
+    },
+    {
+      "variant": 182,
+      "appearanceId": "passenger-03"
+    },
+    {
+      "variant": 183,
+      "appearanceId": "passenger-04"
+    },
+    {
+      "variant": 184,
+      "appearanceId": "passenger-01"
+    },
+    {
+      "variant": 185,
+      "appearanceId": "passenger-02"
+    },
+    {
+      "variant": 186,
+      "appearanceId": "passenger-03"
+    },
+    {
+      "variant": 187,
+      "appearanceId": "passenger-04"
+    },
+    {
+      "variant": 188,
+      "appearanceId": "passenger-01"
+    },
+    {
+      "variant": 189,
+      "appearanceId": "passenger-02"
+    },
+    {
+      "variant": 190,
+      "appearanceId": "passenger-03"
+    },
+    {
+      "variant": 191,
+      "appearanceId": "passenger-04"
+    },
+    {
+      "variant": 192,
+      "appearanceId": "passenger-01"
+    },
+    {
+      "variant": 193,
+      "appearanceId": "passenger-02"
+    },
+    {
+      "variant": 194,
+      "appearanceId": "passenger-03"
+    },
+    {
+      "variant": 195,
+      "appearanceId": "passenger-04"
+    },
+    {
+      "variant": 196,
+      "appearanceId": "passenger-01"
+    },
+    {
+      "variant": 197,
+      "appearanceId": "passenger-02"
+    },
+    {
+      "variant": 198,
+      "appearanceId": "passenger-03"
+    },
+    {
+      "variant": 199,
+      "appearanceId": "passenger-04"
+    },
+    {
+      "variant": 200,
+      "appearanceId": "passenger-01"
+    },
+    {
+      "variant": 201,
+      "appearanceId": "passenger-02"
+    },
+    {
+      "variant": 202,
+      "appearanceId": "passenger-03"
+    },
+    {
+      "variant": 203,
+      "appearanceId": "passenger-04"
+    },
+    {
+      "variant": 204,
+      "appearanceId": "passenger-01"
+    },
+    {
+      "variant": 205,
+      "appearanceId": "passenger-02"
+    },
+    {
+      "variant": 206,
+      "appearanceId": "passenger-03"
+    },
+    {
+      "variant": 207,
+      "appearanceId": "passenger-04"
+    },
+    {
+      "variant": 208,
+      "appearanceId": "passenger-01"
+    },
+    {
+      "variant": 209,
+      "appearanceId": "passenger-02"
+    },
+    {
+      "variant": 210,
+      "appearanceId": "passenger-03"
+    },
+    {
+      "variant": 211,
+      "appearanceId": "passenger-04"
+    },
+    {
+      "variant": 212,
+      "appearanceId": "passenger-01"
+    },
+    {
+      "variant": 213,
+      "appearanceId": "passenger-02"
+    },
+    {
+      "variant": 214,
+      "appearanceId": "passenger-03"
+    },
+    {
+      "variant": 215,
+      "appearanceId": "passenger-04"
+    },
+    {
+      "variant": 216,
+      "appearanceId": "passenger-01"
+    },
+    {
+      "variant": 217,
+      "appearanceId": "passenger-02"
+    },
+    {
+      "variant": 218,
+      "appearanceId": "passenger-03"
+    },
+    {
+      "variant": 219,
+      "appearanceId": "passenger-04"
+    },
+    {
+      "variant": 220,
+      "appearanceId": "passenger-01"
+    },
+    {
+      "variant": 221,
+      "appearanceId": "passenger-02"
+    },
+    {
+      "variant": 222,
+      "appearanceId": "passenger-03"
+    },
+    {
+      "variant": 223,
+      "appearanceId": "passenger-04"
+    },
+    {
+      "variant": 224,
+      "appearanceId": "passenger-01"
+    },
+    {
+      "variant": 225,
+      "appearanceId": "passenger-02"
+    },
+    {
+      "variant": 226,
+      "appearanceId": "passenger-03"
+    },
+    {
+      "variant": 227,
+      "appearanceId": "passenger-04"
+    },
+    {
+      "variant": 228,
+      "appearanceId": "passenger-01"
+    },
+    {
+      "variant": 229,
+      "appearanceId": "passenger-02"
+    },
+    {
+      "variant": 230,
+      "appearanceId": "passenger-03"
+    },
+    {
+      "variant": 231,
+      "appearanceId": "passenger-04"
+    },
+    {
+      "variant": 232,
+      "appearanceId": "passenger-01"
+    },
+    {
+      "variant": 233,
+      "appearanceId": "passenger-02"
+    },
+    {
+      "variant": 234,
+      "appearanceId": "passenger-03"
+    },
+    {
+      "variant": 235,
+      "appearanceId": "passenger-04"
+    },
+    {
+      "variant": 236,
+      "appearanceId": "passenger-01"
+    },
+    {
+      "variant": 237,
+      "appearanceId": "passenger-02"
+    },
+    {
+      "variant": 238,
+      "appearanceId": "passenger-03"
+    },
+    {
+      "variant": 239,
+      "appearanceId": "passenger-04"
+    },
+    {
+      "variant": 240,
+      "appearanceId": "passenger-01"
+    },
+    {
+      "variant": 241,
+      "appearanceId": "passenger-02"
+    },
+    {
+      "variant": 242,
+      "appearanceId": "passenger-03"
+    },
+    {
+      "variant": 243,
+      "appearanceId": "passenger-04"
+    },
+    {
+      "variant": 244,
+      "appearanceId": "passenger-01"
+    },
+    {
+      "variant": 245,
+      "appearanceId": "passenger-02"
+    },
+    {
+      "variant": 246,
+      "appearanceId": "passenger-03"
+    },
+    {
+      "variant": 247,
+      "appearanceId": "passenger-04"
+    },
+    {
+      "variant": 248,
+      "appearanceId": "passenger-01"
+    },
+    {
+      "variant": 249,
+      "appearanceId": "passenger-02"
+    },
+    {
+      "variant": 250,
+      "appearanceId": "passenger-03"
+    },
+    {
+      "variant": 251,
+      "appearanceId": "passenger-04"
+    },
+    {
+      "variant": 252,
+      "appearanceId": "passenger-01"
+    },
+    {
+      "variant": 253,
+      "appearanceId": "passenger-02"
+    },
+    {
+      "variant": 254,
+      "appearanceId": "passenger-03"
+    },
+    {
+      "variant": 255,
+      "appearanceId": "passenger-04"
+    }
+  ],
+  "animations": [
+    {
+      "appearanceId": "passenger-01",
+      "direction": "south",
+      "state": "idle",
+      "frames": [
+        {
+          "assetId": "actor.passenger-01.south.idle",
+          "durationMs": 1000
+        }
+      ]
+    },
+    {
+      "appearanceId": "passenger-01",
+      "direction": "south",
+      "state": "walk",
+      "frames": [
+        {
+          "assetId": "actor.passenger-01.south.walk.1",
+          "durationMs": 160
+        },
+        {
+          "assetId": "actor.passenger-01.south.walk.2",
+          "durationMs": 160
+        },
+        {
+          "assetId": "actor.passenger-01.south.walk.3",
+          "durationMs": 160
+        },
+        {
+          "assetId": "actor.passenger-01.south.walk.4",
+          "durationMs": 160
+        }
+      ]
+    },
+    {
+      "appearanceId": "passenger-01",
+      "direction": "west",
+      "state": "idle",
+      "frames": [
+        {
+          "assetId": "actor.passenger-01.west.idle",
+          "durationMs": 1000
+        }
+      ]
+    },
+    {
+      "appearanceId": "passenger-01",
+      "direction": "west",
+      "state": "walk",
+      "frames": [
+        {
+          "assetId": "actor.passenger-01.west.walk.1",
+          "durationMs": 160
+        },
+        {
+          "assetId": "actor.passenger-01.west.walk.2",
+          "durationMs": 160
+        },
+        {
+          "assetId": "actor.passenger-01.west.walk.3",
+          "durationMs": 160
+        },
+        {
+          "assetId": "actor.passenger-01.west.walk.4",
+          "durationMs": 160
+        }
+      ]
+    },
+    {
+      "appearanceId": "passenger-01",
+      "direction": "east",
+      "state": "idle",
+      "frames": [
+        {
+          "assetId": "actor.passenger-01.east.idle",
+          "durationMs": 1000
+        }
+      ]
+    },
+    {
+      "appearanceId": "passenger-01",
+      "direction": "east",
+      "state": "walk",
+      "frames": [
+        {
+          "assetId": "actor.passenger-01.east.walk.1",
+          "durationMs": 160
+        },
+        {
+          "assetId": "actor.passenger-01.east.walk.2",
+          "durationMs": 160
+        },
+        {
+          "assetId": "actor.passenger-01.east.walk.3",
+          "durationMs": 160
+        },
+        {
+          "assetId": "actor.passenger-01.east.walk.4",
+          "durationMs": 160
+        }
+      ]
+    },
+    {
+      "appearanceId": "passenger-01",
+      "direction": "north",
+      "state": "idle",
+      "frames": [
+        {
+          "assetId": "actor.passenger-01.north.idle",
+          "durationMs": 1000
+        }
+      ]
+    },
+    {
+      "appearanceId": "passenger-01",
+      "direction": "north",
+      "state": "walk",
+      "frames": [
+        {
+          "assetId": "actor.passenger-01.north.walk.1",
+          "durationMs": 160
+        },
+        {
+          "assetId": "actor.passenger-01.north.walk.2",
+          "durationMs": 160
+        },
+        {
+          "assetId": "actor.passenger-01.north.walk.3",
+          "durationMs": 160
+        },
+        {
+          "assetId": "actor.passenger-01.north.walk.4",
+          "durationMs": 160
+        }
+      ]
+    },
+    {
+      "appearanceId": "passenger-02",
+      "direction": "south",
+      "state": "idle",
+      "frames": [
+        {
+          "assetId": "actor.passenger-02.south.idle",
+          "durationMs": 1000
+        }
+      ]
+    },
+    {
+      "appearanceId": "passenger-02",
+      "direction": "south",
+      "state": "walk",
+      "frames": [
+        {
+          "assetId": "actor.passenger-02.south.walk.1",
+          "durationMs": 160
+        },
+        {
+          "assetId": "actor.passenger-02.south.walk.2",
+          "durationMs": 160
+        },
+        {
+          "assetId": "actor.passenger-02.south.walk.3",
+          "durationMs": 160
+        },
+        {
+          "assetId": "actor.passenger-02.south.walk.4",
+          "durationMs": 160
+        }
+      ]
+    },
+    {
+      "appearanceId": "passenger-02",
+      "direction": "west",
+      "state": "idle",
+      "frames": [
+        {
+          "assetId": "actor.passenger-02.west.idle",
+          "durationMs": 1000
+        }
+      ]
+    },
+    {
+      "appearanceId": "passenger-02",
+      "direction": "west",
+      "state": "walk",
+      "frames": [
+        {
+          "assetId": "actor.passenger-02.west.walk.1",
+          "durationMs": 160
+        },
+        {
+          "assetId": "actor.passenger-02.west.walk.2",
+          "durationMs": 160
+        },
+        {
+          "assetId": "actor.passenger-02.west.walk.3",
+          "durationMs": 160
+        },
+        {
+          "assetId": "actor.passenger-02.west.walk.4",
+          "durationMs": 160
+        }
+      ]
+    },
+    {
+      "appearanceId": "passenger-02",
+      "direction": "east",
+      "state": "idle",
+      "frames": [
+        {
+          "assetId": "actor.passenger-02.east.idle",
+          "durationMs": 1000
+        }
+      ]
+    },
+    {
+      "appearanceId": "passenger-02",
+      "direction": "east",
+      "state": "walk",
+      "frames": [
+        {
+          "assetId": "actor.passenger-02.east.walk.1",
+          "durationMs": 160
+        },
+        {
+          "assetId": "actor.passenger-02.east.walk.2",
+          "durationMs": 160
+        },
+        {
+          "assetId": "actor.passenger-02.east.walk.3",
+          "durationMs": 160
+        },
+        {
+          "assetId": "actor.passenger-02.east.walk.4",
+          "durationMs": 160
+        }
+      ]
+    },
+    {
+      "appearanceId": "passenger-02",
+      "direction": "north",
+      "state": "idle",
+      "frames": [
+        {
+          "assetId": "actor.passenger-02.north.idle",
+          "durationMs": 1000
+        }
+      ]
+    },
+    {
+      "appearanceId": "passenger-02",
+      "direction": "north",
+      "state": "walk",
+      "frames": [
+        {
+          "assetId": "actor.passenger-02.north.walk.1",
+          "durationMs": 160
+        },
+        {
+          "assetId": "actor.passenger-02.north.walk.2",
+          "durationMs": 160
+        },
+        {
+          "assetId": "actor.passenger-02.north.walk.3",
+          "durationMs": 160
+        },
+        {
+          "assetId": "actor.passenger-02.north.walk.4",
+          "durationMs": 160
+        }
+      ]
+    },
+    {
+      "appearanceId": "passenger-03",
+      "direction": "south",
+      "state": "idle",
+      "frames": [
+        {
+          "assetId": "actor.passenger-03.south.idle",
+          "durationMs": 1000
+        }
+      ]
+    },
+    {
+      "appearanceId": "passenger-03",
+      "direction": "south",
+      "state": "walk",
+      "frames": [
+        {
+          "assetId": "actor.passenger-03.south.walk.1",
+          "durationMs": 160
+        },
+        {
+          "assetId": "actor.passenger-03.south.walk.2",
+          "durationMs": 160
+        },
+        {
+          "assetId": "actor.passenger-03.south.walk.3",
+          "durationMs": 160
+        },
+        {
+          "assetId": "actor.passenger-03.south.walk.4",
+          "durationMs": 160
+        }
+      ]
+    },
+    {
+      "appearanceId": "passenger-03",
+      "direction": "west",
+      "state": "idle",
+      "frames": [
+        {
+          "assetId": "actor.passenger-03.west.idle",
+          "durationMs": 1000
+        }
+      ]
+    },
+    {
+      "appearanceId": "passenger-03",
+      "direction": "west",
+      "state": "walk",
+      "frames": [
+        {
+          "assetId": "actor.passenger-03.west.walk.1",
+          "durationMs": 160
+        },
+        {
+          "assetId": "actor.passenger-03.west.walk.2",
+          "durationMs": 160
+        },
+        {
+          "assetId": "actor.passenger-03.west.walk.3",
+          "durationMs": 160
+        },
+        {
+          "assetId": "actor.passenger-03.west.walk.4",
+          "durationMs": 160
+        }
+      ]
+    },
+    {
+      "appearanceId": "passenger-03",
+      "direction": "east",
+      "state": "idle",
+      "frames": [
+        {
+          "assetId": "actor.passenger-03.east.idle",
+          "durationMs": 1000
+        }
+      ]
+    },
+    {
+      "appearanceId": "passenger-03",
+      "direction": "east",
+      "state": "walk",
+      "frames": [
+        {
+          "assetId": "actor.passenger-03.east.walk.1",
+          "durationMs": 160
+        },
+        {
+          "assetId": "actor.passenger-03.east.walk.2",
+          "durationMs": 160
+        },
+        {
+          "assetId": "actor.passenger-03.east.walk.3",
+          "durationMs": 160
+        },
+        {
+          "assetId": "actor.passenger-03.east.walk.4",
+          "durationMs": 160
+        }
+      ]
+    },
+    {
+      "appearanceId": "passenger-03",
+      "direction": "north",
+      "state": "idle",
+      "frames": [
+        {
+          "assetId": "actor.passenger-03.north.idle",
+          "durationMs": 1000
+        }
+      ]
+    },
+    {
+      "appearanceId": "passenger-03",
+      "direction": "north",
+      "state": "walk",
+      "frames": [
+        {
+          "assetId": "actor.passenger-03.north.walk.1",
+          "durationMs": 160
+        },
+        {
+          "assetId": "actor.passenger-03.north.walk.2",
+          "durationMs": 160
+        },
+        {
+          "assetId": "actor.passenger-03.north.walk.3",
+          "durationMs": 160
+        },
+        {
+          "assetId": "actor.passenger-03.north.walk.4",
+          "durationMs": 160
+        }
+      ]
+    },
+    {
+      "appearanceId": "passenger-04",
+      "direction": "south",
+      "state": "idle",
+      "frames": [
+        {
+          "assetId": "actor.passenger-04.south.idle",
+          "durationMs": 1000
+        }
+      ]
+    },
+    {
+      "appearanceId": "passenger-04",
+      "direction": "south",
+      "state": "walk",
+      "frames": [
+        {
+          "assetId": "actor.passenger-04.south.walk.1",
+          "durationMs": 160
+        },
+        {
+          "assetId": "actor.passenger-04.south.walk.2",
+          "durationMs": 160
+        },
+        {
+          "assetId": "actor.passenger-04.south.walk.3",
+          "durationMs": 160
+        },
+        {
+          "assetId": "actor.passenger-04.south.walk.4",
+          "durationMs": 160
+        }
+      ]
+    },
+    {
+      "appearanceId": "passenger-04",
+      "direction": "west",
+      "state": "idle",
+      "frames": [
+        {
+          "assetId": "actor.passenger-04.west.idle",
+          "durationMs": 1000
+        }
+      ]
+    },
+    {
+      "appearanceId": "passenger-04",
+      "direction": "west",
+      "state": "walk",
+      "frames": [
+        {
+          "assetId": "actor.passenger-04.west.walk.1",
+          "durationMs": 160
+        },
+        {
+          "assetId": "actor.passenger-04.west.walk.2",
+          "durationMs": 160
+        },
+        {
+          "assetId": "actor.passenger-04.west.walk.3",
+          "durationMs": 160
+        },
+        {
+          "assetId": "actor.passenger-04.west.walk.4",
+          "durationMs": 160
+        }
+      ]
+    },
+    {
+      "appearanceId": "passenger-04",
+      "direction": "east",
+      "state": "idle",
+      "frames": [
+        {
+          "assetId": "actor.passenger-04.east.idle",
+          "durationMs": 1000
+        }
+      ]
+    },
+    {
+      "appearanceId": "passenger-04",
+      "direction": "east",
+      "state": "walk",
+      "frames": [
+        {
+          "assetId": "actor.passenger-04.east.walk.1",
+          "durationMs": 160
+        },
+        {
+          "assetId": "actor.passenger-04.east.walk.2",
+          "durationMs": 160
+        },
+        {
+          "assetId": "actor.passenger-04.east.walk.3",
+          "durationMs": 160
+        },
+        {
+          "assetId": "actor.passenger-04.east.walk.4",
+          "durationMs": 160
+        }
+      ]
+    },
+    {
+      "appearanceId": "passenger-04",
+      "direction": "north",
+      "state": "idle",
+      "frames": [
+        {
+          "assetId": "actor.passenger-04.north.idle",
+          "durationMs": 1000
+        }
+      ]
+    },
+    {
+      "appearanceId": "passenger-04",
+      "direction": "north",
+      "state": "walk",
+      "frames": [
+        {
+          "assetId": "actor.passenger-04.north.walk.1",
+          "durationMs": 160
+        },
+        {
+          "assetId": "actor.passenger-04.north.walk.2",
+          "durationMs": 160
+        },
+        {
+          "assetId": "actor.passenger-04.north.walk.3",
+          "durationMs": 160
+        },
+        {
+          "assetId": "actor.passenger-04.north.walk.4",
+          "durationMs": 160
+        }
+      ]
+    },
+    {
+      "appearanceId": "conductor-01",
+      "direction": "south",
+      "state": "idle",
+      "frames": [
+        {
+          "assetId": "actor.conductor-01.south.idle",
+          "durationMs": 1000
+        }
+      ]
+    },
+    {
+      "appearanceId": "conductor-01",
+      "direction": "south",
+      "state": "walk",
+      "frames": [
+        {
+          "assetId": "actor.conductor-01.south.walk.1",
+          "durationMs": 160
+        },
+        {
+          "assetId": "actor.conductor-01.south.walk.2",
+          "durationMs": 160
+        },
+        {
+          "assetId": "actor.conductor-01.south.walk.3",
+          "durationMs": 160
+        },
+        {
+          "assetId": "actor.conductor-01.south.walk.4",
+          "durationMs": 160
+        }
+      ]
+    },
+    {
+      "appearanceId": "conductor-01",
+      "direction": "west",
+      "state": "idle",
+      "frames": [
+        {
+          "assetId": "actor.conductor-01.west.idle",
+          "durationMs": 1000
+        }
+      ]
+    },
+    {
+      "appearanceId": "conductor-01",
+      "direction": "west",
+      "state": "walk",
+      "frames": [
+        {
+          "assetId": "actor.conductor-01.west.walk.1",
+          "durationMs": 160
+        },
+        {
+          "assetId": "actor.conductor-01.west.walk.2",
+          "durationMs": 160
+        },
+        {
+          "assetId": "actor.conductor-01.west.walk.3",
+          "durationMs": 160
+        },
+        {
+          "assetId": "actor.conductor-01.west.walk.4",
+          "durationMs": 160
+        }
+      ]
+    },
+    {
+      "appearanceId": "conductor-01",
+      "direction": "east",
+      "state": "idle",
+      "frames": [
+        {
+          "assetId": "actor.conductor-01.east.idle",
+          "durationMs": 1000
+        }
+      ]
+    },
+    {
+      "appearanceId": "conductor-01",
+      "direction": "east",
+      "state": "walk",
+      "frames": [
+        {
+          "assetId": "actor.conductor-01.east.walk.1",
+          "durationMs": 160
+        },
+        {
+          "assetId": "actor.conductor-01.east.walk.2",
+          "durationMs": 160
+        },
+        {
+          "assetId": "actor.conductor-01.east.walk.3",
+          "durationMs": 160
+        },
+        {
+          "assetId": "actor.conductor-01.east.walk.4",
+          "durationMs": 160
+        }
+      ]
+    },
+    {
+      "appearanceId": "conductor-01",
+      "direction": "north",
+      "state": "idle",
+      "frames": [
+        {
+          "assetId": "actor.conductor-01.north.idle",
+          "durationMs": 1000
+        }
+      ]
+    },
+    {
+      "appearanceId": "conductor-01",
+      "direction": "north",
+      "state": "walk",
+      "frames": [
+        {
+          "assetId": "actor.conductor-01.north.walk.1",
+          "durationMs": 160
+        },
+        {
+          "assetId": "actor.conductor-01.north.walk.2",
+          "durationMs": 160
+        },
+        {
+          "assetId": "actor.conductor-01.north.walk.3",
+          "durationMs": 160
+        },
+        {
+          "assetId": "actor.conductor-01.north.walk.4",
+          "durationMs": 160
+        }
+      ]
+    },
+    {
+      "appearanceId": "passenger-01",
+      "direction": "south",
+      "state": "sitting",
+      "frames": [
+        {
+          "assetId": "actor.passenger-01.south.sitting",
+          "durationMs": 1000
+        }
+      ]
+    },
+    {
+      "appearanceId": "passenger-01",
+      "direction": "west",
+      "state": "sitting",
+      "frames": [
+        {
+          "assetId": "actor.passenger-01.west.sitting",
+          "durationMs": 1000
+        }
+      ]
+    },
+    {
+      "appearanceId": "passenger-01",
+      "direction": "north",
+      "state": "sitting",
+      "frames": [
+        {
+          "assetId": "actor.passenger-01.north.sitting",
+          "durationMs": 1000
+        }
+      ]
+    },
+    {
+      "appearanceId": "passenger-01",
+      "direction": "east",
+      "state": "sitting",
+      "frames": [
+        {
+          "assetId": "actor.passenger-01.east.sitting",
+          "durationMs": 1000
+        }
+      ]
+    },
+    {
+      "appearanceId": "passenger-02",
+      "direction": "south",
+      "state": "sitting",
+      "frames": [
+        {
+          "assetId": "actor.passenger-02.south.sitting",
+          "durationMs": 1000
+        }
+      ]
+    },
+    {
+      "appearanceId": "passenger-02",
+      "direction": "west",
+      "state": "sitting",
+      "frames": [
+        {
+          "assetId": "actor.passenger-02.west.sitting",
+          "durationMs": 1000
+        }
+      ]
+    },
+    {
+      "appearanceId": "passenger-02",
+      "direction": "north",
+      "state": "sitting",
+      "frames": [
+        {
+          "assetId": "actor.passenger-02.north.sitting",
+          "durationMs": 1000
+        }
+      ]
+    },
+    {
+      "appearanceId": "passenger-02",
+      "direction": "east",
+      "state": "sitting",
+      "frames": [
+        {
+          "assetId": "actor.passenger-02.east.sitting",
+          "durationMs": 1000
+        }
+      ]
+    },
+    {
+      "appearanceId": "passenger-03",
+      "direction": "south",
+      "state": "sitting",
+      "frames": [
+        {
+          "assetId": "actor.passenger-03.south.sitting",
+          "durationMs": 1000
+        }
+      ]
+    },
+    {
+      "appearanceId": "passenger-03",
+      "direction": "west",
+      "state": "sitting",
+      "frames": [
+        {
+          "assetId": "actor.passenger-03.west.sitting",
+          "durationMs": 1000
+        }
+      ]
+    },
+    {
+      "appearanceId": "passenger-03",
+      "direction": "north",
+      "state": "sitting",
+      "frames": [
+        {
+          "assetId": "actor.passenger-03.north.sitting",
+          "durationMs": 1000
+        }
+      ]
+    },
+    {
+      "appearanceId": "passenger-03",
+      "direction": "east",
+      "state": "sitting",
+      "frames": [
+        {
+          "assetId": "actor.passenger-03.east.sitting",
+          "durationMs": 1000
+        }
+      ]
+    },
+    {
+      "appearanceId": "passenger-04",
+      "direction": "south",
+      "state": "sitting",
+      "frames": [
+        {
+          "assetId": "actor.passenger-04.south.sitting",
+          "durationMs": 1000
+        }
+      ]
+    },
+    {
+      "appearanceId": "passenger-04",
+      "direction": "west",
+      "state": "sitting",
+      "frames": [
+        {
+          "assetId": "actor.passenger-04.west.sitting",
+          "durationMs": 1000
+        }
+      ]
+    },
+    {
+      "appearanceId": "passenger-04",
+      "direction": "north",
+      "state": "sitting",
+      "frames": [
+        {
+          "assetId": "actor.passenger-04.north.sitting",
+          "durationMs": 1000
+        }
+      ]
+    },
+    {
+      "appearanceId": "passenger-04",
+      "direction": "east",
+      "state": "sitting",
+      "frames": [
+        {
+          "assetId": "actor.passenger-04.east.sitting",
+          "durationMs": 1000
+        }
+      ]
+    },
+    {
+      "appearanceId": "conductor-01",
+      "direction": "south",
+      "state": "sitting",
+      "frames": [
+        {
+          "assetId": "actor.conductor-01.south.sitting",
+          "durationMs": 1000
+        }
+      ]
+    },
+    {
+      "appearanceId": "conductor-01",
+      "direction": "west",
+      "state": "sitting",
+      "frames": [
+        {
+          "assetId": "actor.conductor-01.west.sitting",
+          "durationMs": 1000
+        }
+      ]
+    },
+    {
+      "appearanceId": "conductor-01",
+      "direction": "north",
+      "state": "sitting",
+      "frames": [
+        {
+          "assetId": "actor.conductor-01.north.sitting",
+          "durationMs": 1000
+        }
+      ]
+    },
+    {
+      "appearanceId": "conductor-01",
+      "direction": "east",
+      "state": "sitting",
+      "frames": [
+        {
+          "assetId": "actor.conductor-01.east.sitting",
+          "durationMs": 1000
+        }
+      ]
+    }
+  ],
+  "accessoryBindings": [
+    {
+      "spaceNeeds": "wheelchair",
+      "direction": "north",
+      "assetId": "accessory.wheelchair.north",
+      "appearanceIds": [
+        "passenger-01",
+        "passenger-02",
+        "passenger-03",
+        "passenger-04"
+      ]
+    },
+    {
+      "spaceNeeds": "wheelchair",
+      "direction": "east",
+      "assetId": "accessory.wheelchair.east",
+      "appearanceIds": [
+        "passenger-01",
+        "passenger-02",
+        "passenger-03",
+        "passenger-04"
+      ]
+    },
+    {
+      "spaceNeeds": "wheelchair",
+      "direction": "south",
+      "assetId": "accessory.wheelchair.south",
+      "appearanceIds": [
+        "passenger-01",
+        "passenger-02",
+        "passenger-03",
+        "passenger-04"
+      ]
+    },
+    {
+      "spaceNeeds": "wheelchair",
+      "direction": "west",
+      "assetId": "accessory.wheelchair.west",
+      "appearanceIds": [
+        "passenger-01",
+        "passenger-02",
+        "passenger-03",
+        "passenger-04"
+      ]
+    },
+    {
+      "spaceNeeds": "bicycle",
+      "direction": "north",
+      "assetId": "accessory.bicycle.north",
+      "appearanceIds": [
+        "passenger-01",
+        "passenger-02",
+        "passenger-03",
+        "passenger-04"
+      ]
+    },
+    {
+      "spaceNeeds": "bicycle",
+      "direction": "east",
+      "assetId": "accessory.bicycle.east",
+      "appearanceIds": [
+        "passenger-01",
+        "passenger-02",
+        "passenger-03",
+        "passenger-04"
+      ]
+    },
+    {
+      "spaceNeeds": "bicycle",
+      "direction": "south",
+      "assetId": "accessory.bicycle.south",
+      "appearanceIds": [
+        "passenger-01",
+        "passenger-02",
+        "passenger-03",
+        "passenger-04"
+      ]
+    },
+    {
+      "spaceNeeds": "bicycle",
+      "direction": "west",
+      "assetId": "accessory.bicycle.west",
+      "appearanceIds": [
+        "passenger-01",
+        "passenger-02",
+        "passenger-03",
+        "passenger-04"
+      ]
+    },
+    {
+      "spaceNeeds": "stroller",
+      "direction": "north",
+      "assetId": "accessory.stroller.north",
+      "appearanceIds": [
+        "passenger-01",
+        "passenger-02",
+        "passenger-03",
+        "passenger-04"
+      ]
+    },
+    {
+      "spaceNeeds": "stroller",
+      "direction": "east",
+      "assetId": "accessory.stroller.east",
+      "appearanceIds": [
+        "passenger-01",
+        "passenger-02",
+        "passenger-03",
+        "passenger-04"
+      ]
+    },
+    {
+      "spaceNeeds": "stroller",
+      "direction": "south",
+      "assetId": "accessory.stroller.south",
+      "appearanceIds": [
+        "passenger-01",
+        "passenger-02",
+        "passenger-03",
+        "passenger-04"
+      ]
+    },
+    {
+      "spaceNeeds": "stroller",
+      "direction": "west",
+      "assetId": "accessory.stroller.west",
+      "appearanceIds": [
+        "passenger-01",
+        "passenger-02",
+        "passenger-03",
+        "passenger-04"
+      ]
+    }
+  ],
+  "conductorAppearanceId": "conductor-01"
+}

@@ -160,3 +160,19 @@ freigegebene SPNV-Formation mit vorab festgelegtem Laufzeitbudget und dem
 gemeinsamen signierten Abnahmekorpus. Die offenen Issues #215 und #222 behalten ihre konkreten
 Daten-, Formations- und Laufzeitbedingungen; #213/#216 sind durch die
 tatsächliche Signierung und öffentliche Weltregistrierung erfüllt.
+
+## Lokale Offline-Demo
+
+Die [spielbare Offline-Demo](conductor-offline-demo.md) ist mit Quellcode,
+Bildherkunft, ursprünglichem WASM-Kern und portablen Build-/Browserprüfungen
+unter `tools/conductor-offline` versioniert. Sie enthält die überarbeitete
+Pixelspielansicht mit Atmung, Gehbewegung, vorbeiziehender Landschaft,
+verankerten Sprechblasen und sichtbaren Kontrollfolgen. Der fiktive
+40-Personen-Korpus belegt gültige Kontrollen, reguläre Forderungen und
+spätere Nachweise über die tatsächliche Oberfläche. Der CI-Build liefert
+eine ohne Server zu öffnende HTML-Datei samt gebundenen Prüfberichten.
+
+Diese Demoaufnahme ist eine Ergänzung des PR-Umfangs. Ihre eigene Oberfläche
+und zusätzlichen Bilddateien sind keine Umstellung der produktiven
+HTTP-/SSE-Spielansicht oder der registrierten Atlasreleases. Ihre
+Bedienprüfung ersetzt keine der oben genannten Gesamt-Abnahmebedingungen.

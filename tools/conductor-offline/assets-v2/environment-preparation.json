@@ -1,0 +1,92 @@
+{
+  "schemaVersion": "offline-environment-preparation/v2",
+  "technicalOnly": true,
+  "sourceSha256": "d65f4d54d03a9bfcd5a20e002ba0db0b82f6f054502c229648df4979066ee047",
+  "frames": [
+    {
+      "row": 0,
+      "column": 0,
+      "sourceRect": [
+        32,
+        94,
+        429,
+        387
+      ],
+      "size": [
+        60,
+        54
+      ]
+    },
+    {
+      "row": 0,
+      "column": 1,
+      "sourceRect": [
+        538,
+        41,
+        461,
+        441
+      ],
+      "size": [
+        60,
+        57
+      ]
+    },
+    {
+      "row": 0,
+      "column": 2,
+      "sourceRect": [
+        1068,
+        71,
+        438,
+        411
+      ],
+      "size": [
+        60,
+        56
+      ]
+    },
+    {
+      "row": 1,
+      "column": 0,
+      "sourceRect": [
+        26,
+        595,
+        456,
+        380
+      ],
+      "size": [
+        60,
+        50
+      ]
+    },
+    {
+      "row": 1,
+      "column": 1,
+      "sourceRect": [
+        546,
+        547,
+        440,
+        428
+      ],
+      "size": [
+        60,
+        58
+      ]
+    },
+    {
+      "row": 1,
+      "column": 2,
+      "sourceRect": [
+        1050,
+        552,
+        460,
+        428
+      ],
+      "size": [
+        60,
+        56
+      ]
+    }
+  ],
+  "outputSha256": "13816265464f2b1a68a1844ba3a18fcbb8590a434d76d370c66f617a25a83d21"
+}

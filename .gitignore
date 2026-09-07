@@ -92,6 +92,7 @@ docker-compose.override.yml
 # ─────────────────────────────────────────────────────────────
 /test-results/
 /playwright-report/
+/outputs/conductor-offline/
 /benchmarks/out/
 /var/
 /tmp/

@@ -1,0 +1,12 @@
+{
+  "testOnly": true,
+  "artReleaseId": "conductor-art-2026.1",
+  "artManifestSha256": "1503e2a3199d7f7b217e83b346e7ed3af8664e6b692642e9b140d312164453a3",
+  "layoutHash": "e06618bd62a498f714ae800b112bfb2ae0681a266a275b5a82a13ddcd54edf1f",
+  "passengerPlacesHash": "efdc902ed2907821c87d84672ba7838c45e57151586e4abedc4078e8e84d0e28",
+  "sourceLayoutHash": "e06618bd62a498f714ae800b112bfb2ae0681a266a275b5a82a13ddcd54edf1f",
+  "producers": [
+    "zugfolge_conductor::build_interior_layout",
+    "zugfolge_conductor::bind_interior_passenger_places"
+  ]
+}

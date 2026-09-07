@@ -60,6 +60,17 @@ Er benötigt dafür ausschließlich öffentliche Dateien und bewahrt das separat
 Artefakt `conductor-registered-release-verification` auf. Die Weltregistrierung
 ist in [conductor-release-signing.md](conductor-release-signing.md) belegt.
 
+Die [Offline-Demo](conductor-offline-demo.md) erhält eine eigene strikte
+Typprüfung im TypeScript-Job. Der vorhandene Native-ABI-Job baut anschließend
+die einzelne HTML-Datei und prüft sie mit ausgeschaltetem Netzwerk im
+Systembrowser. Worker-/Restore-/Pausenregressionen, drei tatsächliche
+Kontrollabläufe, sichtbare Geldfolgen, Touchbedienung und gerenderte Atemphasen
+gehören zu diesem Lauf. Er nutzt den quellgebundenen vorhandenen WASM-Kern;
+ein Browserdownload, weiterer Server oder fünfter CI-Job ist nicht erforderlich.
+Das Artefakt `conductor-offline-demo` enthält die spielbare Datei und die an
+ihren Hash gebundenen Berichte/Bilder. Die Kompilierung des WASM-Wrappers ist
+separat dokumentiert und wird durch dessen Quell-/Byteprüfung nicht behauptet.
+
 ## Lokal arbeiten
 
 Der Rust-Job führt außerdem den tatsächlichen `operational_json`-CLI-Einstieg
