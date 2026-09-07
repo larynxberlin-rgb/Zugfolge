@@ -224,12 +224,9 @@ test("actual native night scene and red signals after a committed infrastructure
     assert.equal(stillStopped.scene.environment.scrollMm, stopped.scene.environment.scrollMm);
     assert.equal(stillStopped.scene.speedMmps, 0);
 
-    // Der normale Rückkehr-/Wiederaufnahmeweg lädt den bestätigten Signalhalt
-    // frisch. Danach bleibt die native Uhr für beide Canvas-Aufnahmen stehen;
-    // nur ein echter Seitenreload trennt die identischen Ansichten.
-    await page.getByRole("button", { name: "Zur Karte", exact: true }).click();
-    await page.locator("dialog.conductor-mode").waitFor({ state: "detached" });
-    assert.equal((await request()).snapshot.status, "detached");
+    // Ein erster echter Reload lädt den durch die Testfahrt fortgeschriebenen
+    // Signalhalt frisch. Danach bleibt die native Uhr stehen; ein zweiter
+    // echter Reload trennt die beiden identischen Canvas-Aufnahmen.
     const openStoppedView = async () => {
       await page.getByRole("button", { name: "Schaffnermodus öffnen", exact: true }).click();
       await page.waitForFunction(() => {
@@ -288,6 +285,8 @@ test("actual native night scene and red signals after a committed infrastructure
         layoutHash: confirmed.layout.layoutHash, projectionHash: confirmed.snapshot.pins.projectionHash,
         position: confirmed.snapshot.position } };
     };
+    await page.reload();
+    assert.equal(await page.evaluate(() => performance.getEntriesByType("navigation")[0].type), "reload");
     await openStoppedView();
     const beforeRestore = await canvasShot("desktop-native-night-stop-before-reload");
     const documentBefore = await page.evaluate(() => performance.timeOrigin);
@@ -304,7 +303,7 @@ test("actual native night scene and red signals after a committed infrastructure
       `Canvas nach echtem Reload muss bytegleich sein: ${beforeRestore.record.sha256} / ${afterRestore.record.sha256}`);
     const visualRestore = { schemaVersion: "conductor-scene-visual-restore/v1", comparison: "exact-png-bytes", identical: true,
       navigation: "reload", nativeClockAdvancedBetweenCaptures: false,
-      preparation: "Actual detach_session/resume_session through the unchanged public return/open controls",
+      preparation: "First actual page reload and public open control load the confirmed native stop before the comparison reload",
       before: beforeRestore.record, after: afterRestore.record };
     await page.setViewportSize({ width: 320, height: 900 });
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
