@@ -51,6 +51,15 @@ Screenshots an den tatsächlichen CI-Commit. Die zusätzliche
 Dialog-CLI liefert ausschließlich private Auswahlbelege aus Originaldialogen;
 die Sitzungs- und Kontrollkommandos verwenden unter Linux das echte NAPI-Addon.
 
+Der Kapazitätslauf lädt tatsächlich minifizierte Vite-Produktionsdateien im
+Browser und prüft deren ausgelieferte Bytes gegen die Buildhashes. Seine
+220-Personen-Spielkonfiguration und gemessenen Zeiten bleiben ein begrenzter
+Testnachweis. Zusätzlich verifiziert der native Job die dauerhaften Art- und
+Dialogsignaturen sowie die öffentlichen Weltpins der registrierten Alpha-Welt.
+Er benötigt dafür ausschließlich öffentliche Dateien und bewahrt das separate
+Artefakt `conductor-registered-release-verification` auf. Die Weltregistrierung
+ist in [conductor-release-signing.md](conductor-release-signing.md) belegt.
+
 ## Lokal arbeiten
 
 Der Rust-Job führt außerdem den tatsächlichen `operational_json`-CLI-Einstieg
@@ -128,6 +137,17 @@ konkret abgelehnten unvollständigen Beleg. Seine temporäre Testsignatur
 belegt die Auslieferungsprüfung; sie aktiviert keinen Produktivschlüssel.
 
 ## Welche Tests bleiben sinnvoll?
+
+Die reguläre Privacy-Suite enthält die Schema-37-Archivlöschung mit echten
+Schema-33-/36-Backups, 90-/365-Tage-Grenzen, M15-Entkopplung, unverändertem
+Originalseal und unabhängig gepinntem Restore. `pnpm test:tools` führt zusätzlich
+`database-rollback-binding.pglite.test.mjs` aus: Die historischen Verträge bleiben
+eingefroren, Schema 37 qualifiziert die beiden neuen Redaktionsbelegtabellen und
+73 Schutztrigger als `zugfolge-database-rollback-proof/v7`. Die
+[Restorebeschreibung](datenschutz-archivgrenze.md) trennt den ursprünglichen
+Rohrestore von Redaktion, neuer Sicherungsquelle und produktiver Freigabe.
+Lokal werden die schweren PGlite-Suiten nacheinander ausgeführt; ein wegen
+Hostressourcen abgebrochener Testlauf gilt nicht als bestandener Gesamtbeleg.
 
 - Konfliktfreiheit, Determinismus, Autorisierung, Weltisolation und korrekte
   Zugdarstellung werden über ihr Verhalten geprüft.

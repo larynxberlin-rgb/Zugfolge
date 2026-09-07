@@ -86,7 +86,7 @@ async function schema31MigrationsFolder(): Promise<string> {
   return folder;
 }
 
-it("migriert Schema 28 atomar bis 36 und bindet alle Welt-Writer an die DB-Instanz", async () => {
+it("migriert Schema 28 atomar bis 37 und bindet alle Welt-Writer an die DB-Instanz", async () => {
   const previousMigrationsFolder = await schema28MigrationsFolder();
   const client = new PGlite();
   const db = drizzle(client);

@@ -54,8 +54,9 @@ test("Schema35 liefert aus dem echten Katalog einen vollständigen v5-Restorebel
 
 test("Schema36 bindet Sitzungszustände und blockiert das Ausblenden im historischen Siegel", async () => {
   const client = new PGlite();
+  const schema36 = await migrationsThrough(36);
   try {
-    await migrate(drizzle(client), { migrationsFolder: sourceMigrationsFolder });
+    await migrate(drizzle(client), { migrationsFolder: schema36 });
     const source = await inspectLiveDatabaseRollbackSnapshot(adapter(client));
     assert.equal(source.migrationLedger.length, 36);
     assert.equal(source.guards.length, 61);
@@ -73,6 +74,21 @@ test("Schema36 bindet Sitzungszustände und blockiert das Ausblenden im historis
     await assert.rejects(worldFinalHistorySeal(adapter(client), worldId, { schemaVersion: "zugfolge-world-final-history-seal/v3" }), /Schema-36-Fakten/u);
     await client.query("update worlds set lifecycle_status='archived' where id=$1", [worldId]);
     await assert.rejects(client.query("update conductor_train_states set revision=2 where world_id=$1", [worldId]), /fenced/u);
+  } finally { await client.close(); await rm(schema36, { recursive: true, force: true }); }
+});
+
+test("Schema37 qualifiziert die feste Redaktionsverdrahtung und beide unveränderlichen Belegtabellen als v7-Restore", async () => {
+  const client = new PGlite();
+  try {
+    await migrate(drizzle(client), { migrationsFolder: sourceMigrationsFolder });
+    const source = await inspectLiveDatabaseRollbackSnapshot(adapter(client));
+    assert.equal(source.migrationLedger.length, 37);
+    assert.equal(source.guards.length, 73);
+    const evidence = databaseRollbackEvidenceFixtures(source);
+    const proof = createDatabaseRollbackProof({ releaseId: "infra-deutschland-2026.4", previousReleaseId: "infra-deutschland-2026.2", source,
+      ...evidence, writersQuiesced: true, rollbackWindow: "pre-activation-only" });
+    assert.equal(proof.schema, "zugfolge-database-rollback-proof/v7");
+    assert.equal(validateDatabaseRollbackProof(proof), proof);
   } finally { await client.close(); }
 });
 

@@ -110,7 +110,7 @@ describe("exportAccountData (Auskunft)", () => {
 });
 
 describe("eraseAccountData (Löschung)", () => {
-  it("isoliert einen durch die Archiv-Fence verhinderten Purge von anderen Konten", async () => {
+  it("bereinigt fällige Konten in archivierten und aktiven Welten über deren jeweilige Schreibgrenze", async () => {
     const archived = await requestWorldAccess(db, { worldId: WORLD_LHE, keycloakSubject: "kc-archived", displayName: "Archiv" });
     await eraseAccountData(db, { worldId: WORLD_LHE, targetKeycloakSubject: "kc-archived", actingKeycloakSubject: "kc-archived", erasedAt: new Date("2026-01-01Z") });
     await db.update(worlds).set({ lifecycleStatus: "archived" });
@@ -119,8 +119,8 @@ describe("eraseAccountData (Löschung)", () => {
     const active = await requestWorldAccess(db, { worldId: activeWorld, keycloakSubject: "kc-active", displayName: "Aktiv" });
     await eraseAccountData(db, { worldId: activeWorld, targetKeycloakSubject: "kc-active", actingKeycloakSubject: "kc-active", erasedAt: new Date("2026-01-01Z") });
     const result = await purgeExpiredAccountData(db, new Date("2026-04-02Z"));
-    expect(result.purgedAccountIds).toEqual([active.id]);
-    expect(result.failures).toMatchObject([{ worldId: WORLD_LHE, accountId: archived.id }]);
+    expect(result.purgedAccountIds.sort()).toEqual([active.id, archived.id].sort());
+    expect(result.failures).toBeUndefined();
   });
   it("erhaelt den ersten Loeschzeitpunkt bei zeitversetzten und parallelen Retries", async () => {
     const own = await requestWorldAccess(db, { worldId: WORLD_LHE, keycloakSubject: "kc-retry", displayName: "Retry" });

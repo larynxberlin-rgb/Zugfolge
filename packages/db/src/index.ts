@@ -1,4 +1,5 @@
 export { createDatabase, type Database } from "./client.js";
+export { redactArchivedPersonalData, type ArchivePrivacyAction } from "./archive-privacy.js";
 export {
   createDatabaseHealthCheck,
   createEconomyOutboxHealthCheck,

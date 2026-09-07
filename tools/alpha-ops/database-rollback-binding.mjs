@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { inspectArchivePrivacyContract, readArchivePrivacyRedactions, redactedHistoryTableFingerprint } from "./archive-privacy-binding.mjs";
 
 import { validateDatabaseRollbackProof } from "../tiles/map-release-build-evidence.mjs";
 import {
@@ -162,6 +163,7 @@ export async function inspectLiveDatabaseRollbackSnapshot(sql, { inspectKeycloak
     from drizzle.__drizzle_migrations
     order by id
   `);
+  if (migrationHeadRows.length === 37) await inspectArchivePrivacyContract(sql);
   const [identityRows, migrationRows, constraintRows, guardRows, details, regionalCountRows, keycloakState] = await Promise.all([
     sql.unsafe(`select database_id::text as database_id from zugfolge_database_identity where singleton = 1`),
     Promise.resolve(migrationHeadRows),
@@ -225,6 +227,8 @@ export async function inspectLiveDatabaseRollbackSnapshot(sql, { inspectKeycloak
             'zugfolge_enforce_operational_initialization_immutability'
           )
           or left(trigger.tgname, length('zugfolge_world_guard_')) = 'zugfolge_world_guard_'
+          or left(trigger.tgname, length('zugfolge_archive_privacy_capture_')) = 'zugfolge_archive_privacy_capture_'
+          or trigger.tgname in ('archive_privacy_requests_apply','archive_privacy_requests_immutable','archive_privacy_rows_immutable')
         )
       order by trigger.tgname
     `),
@@ -326,9 +330,10 @@ export async function worldFinalHistorySeal(sql, worldId, { schemaVersion } = {}
   const [migrationHead] = await sql.unsafe("select count(*)::int as migration_count from drizzle.__drizzle_migrations");
   const migrationCount = migrationHead?.migration_count;
   databaseAuthoritativeCatalog(migrationCount);
-  const selectedSchema = schemaVersion ?? (migrationCount === 36 ? WORLD_HISTORY_SEAL_SCHEMA_36 : migrationCount === 35 ? WORLD_HISTORY_SEAL_SCHEMA_35 : migrationCount === 34 ? WORLD_HISTORY_SEAL_SCHEMA_34 : WORLD_HISTORY_SEAL_SCHEMA);
+  const redactions = migrationCount === 37 ? await readArchivePrivacyRedactions(sql, worldId) : null;
+  const selectedSchema = schemaVersion ?? (migrationCount >= 36 ? WORLD_HISTORY_SEAL_SCHEMA_36 : migrationCount === 35 ? WORLD_HISTORY_SEAL_SCHEMA_35 : migrationCount === 34 ? WORLD_HISTORY_SEAL_SCHEMA_34 : WORLD_HISTORY_SEAL_SCHEMA);
   invariant([WORLD_HISTORY_SEAL_SCHEMA, WORLD_HISTORY_SEAL_SCHEMA_34, WORLD_HISTORY_SEAL_SCHEMA_35, WORLD_HISTORY_SEAL_SCHEMA_36].includes(selectedSchema)
-    && (selectedSchema !== WORLD_HISTORY_SEAL_SCHEMA_36 || migrationCount === 36)
+    && (selectedSchema !== WORLD_HISTORY_SEAL_SCHEMA_36 || migrationCount >= 36)
     && (selectedSchema !== WORLD_HISTORY_SEAL_SCHEMA_35 || migrationCount >= 35)
     && (selectedSchema !== WORLD_HISTORY_SEAL_SCHEMA_34 || migrationCount >= 34), "Welt-Historienseal besitzt keine passende Schema-/Spaltenversion.");
   const worldBindingRows = await sql.unsafe(`
@@ -339,7 +344,7 @@ export async function worldFinalHistorySeal(sql, worldId, { schemaVersion } = {}
       and (
         (columns.table_name = 'worlds' and columns.column_name = 'id')
         or (
-          columns.table_name <> 'world_cutover_receipts'
+          columns.table_name not in ('world_cutover_receipts','archive_privacy_requests','archive_privacy_rows')
           and (columns.column_name = 'world_id' or columns.column_name like '%\\_world_id' escape '\\')
         )
       )
@@ -370,7 +375,8 @@ export async function worldFinalHistorySeal(sql, worldId, { schemaVersion } = {}
     }
     const omitted = selectedSchema === WORLD_HISTORY_SEAL_SCHEMA && migrationCount >= 34
       ? HISTORY_COLUMNS_ADDED_IN_SCHEMA_34[binding.table] ?? [] : [];
-    tableStates.push(await tableFingerprint(sql, binding.table, binding.columns, [worldId], omitted));
+    const reconstructed = redactions === null ? null : await redactedHistoryTableFingerprint(sql, binding.table, worldId, redactions, selectedSchema === WORLD_HISTORY_SEAL_SCHEMA);
+    tableStates.push(reconstructed ?? await tableFingerprint(sql, binding.table, binding.columns, [worldId], omitted));
   }
   const worldsState = tableStates.find(({ table }) => table === "worlds");
   invariant(worldsState?.rowCount === "1", `Vorgaengerwelt '${worldId}' fehlt fuer die finale Historienversiegelung.`);

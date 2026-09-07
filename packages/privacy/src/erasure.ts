@@ -11,7 +11,7 @@
  * bleibt verboten.
  */
 
-import { accountRoles, accounts, worldAccesses, worldParticipations, worlds } from "@zugfolge/db";
+import { accountRoles, accounts, worldAccesses, worldParticipations, worlds, redactArchivedPersonalData } from "@zugfolge/db";
 import {
   AuthorizationError,
   getAccount,
@@ -60,6 +60,7 @@ export async function eraseAccountData(
   },
 ): Promise<AccountRecord> {
   return db.transaction(async (tx) => {
+    await tx.execute(sql`select pg_advisory_xact_lock(('x'||substr(md5(${input.worldId}),1,16))::bit(64)::bigint)`);
     await tx.select({ id: worlds.id }).from(worlds).where(eq(worlds.id, input.worldId)).for("update");
     const db = tx;
     await requireSelfOrWorldAdmin(db, input.worldId, input.actingKeycloakSubject, input.targetKeycloakSubject);
@@ -70,6 +71,12 @@ export async function eraseAccountData(
     });
     if (target === undefined) {
       throw new PersonalDataNotFoundError(input.worldId, input.targetKeycloakSubject);
+    }
+
+    if (await redactArchivedPersonalData(tx, { worldId: input.worldId, action: "account-request", objectId: target.id, asOf: input.erasedAt })) {
+      const [updated] = await tx.select().from(accounts).where(and(eq(accounts.worldId, input.worldId), eq(accounts.id, target.id)));
+      if (updated === undefined) throw new PersonalDataNotFoundError(input.worldId, input.targetKeycloakSubject);
+      return { ...updated, roles: target.roles };
     }
 
     await revokeWorldAccess(db, {
@@ -128,6 +135,7 @@ export async function purgeExpiredAccountData(
     const pseudonymousSubject = `erased:${candidate.id}`;
     try {
       const purged = await db.transaction(async (tx) => {
+        if (await redactArchivedPersonalData(tx, { worldId: candidate.worldId, action: "account-purge", objectId: candidate.id, asOf })) return true;
         await tx
           .update(worldAccesses)
           .set({ keycloakSubject: pseudonymousSubject })
@@ -148,6 +156,7 @@ export async function purgeExpiredAccountData(
         await tx
           .delete(accountRoles)
           .where(and(eq(accountRoles.worldId, candidate.worldId), eq(accountRoles.accountId, candidate.id)));
+        await eraseConductorPersonalData(tx, candidate.worldId, candidate.id);
         return true;
       });
       if (purged) purgedAccountIds.push(candidate.id);

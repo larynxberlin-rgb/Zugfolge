@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { ARCHIVE_PRIVACY_TABLES, ARCHIVE_PRIVACY_REDACTABLE_TABLES, ARCHIVE_PRIVACY_FUNCTION_SOURCES } from "./archive-privacy-binding.mjs";
 
 function sortedValue(value) {
   if (Array.isArray(value)) return value.map(sortedValue);
@@ -124,16 +125,30 @@ export const DATABASE_CONDUCTOR_TABLES = Object.freeze([
 ]);
 export const DATABASE_AUTHORITATIVE_TABLES_SCHEMA_36 = Object.freeze([...DATABASE_AUTHORITATIVE_TABLES_SCHEMA_35, ...DATABASE_CONDUCTOR_TABLES].sort());
 export const DATABASE_AUTHORITATIVE_TABLE_SET_SHA256_SCHEMA_36 = definitionSha256(DATABASE_AUTHORITATIVE_TABLES_SCHEMA_36);
+export const DATABASE_AUTHORITATIVE_TABLES_SCHEMA_37 = Object.freeze([...DATABASE_AUTHORITATIVE_TABLES_SCHEMA_36, ...ARCHIVE_PRIVACY_TABLES].sort());
+export const DATABASE_AUTHORITATIVE_TABLE_SET_SHA256_SCHEMA_37 = definitionSha256(DATABASE_AUTHORITATIVE_TABLES_SCHEMA_37);
 
 export function databaseWorldHistoryBindings(migrationCount) {
   databaseAuthoritativeCatalog(migrationCount);
-  if (migrationCount === 36) return [...DATABASE_WORLD_HISTORY_BINDINGS.filter(({ table }) => !RETIRED_TABLES.has(table)),
+  if (migrationCount >= 36) return [...DATABASE_WORLD_HISTORY_BINDINGS.filter(({ table }) => !RETIRED_TABLES.has(table)),
     ...DATABASE_CONDUCTOR_TABLES.map((table) => ({ table, columns: ["world_id"] }))].sort((a, b) => a.table.localeCompare(b.table, "en"));
   return migrationCount === 35 ? DATABASE_WORLD_HISTORY_BINDINGS.filter(({ table }) => !RETIRED_TABLES.has(table)) : DATABASE_WORLD_HISTORY_BINDINGS;
 }
 
 export function databaseCutoverGuards(migrationCount) {
   databaseAuthoritativeCatalog(migrationCount);
+  if (migrationCount === 37) return [
+    ...databaseCutoverGuards(36).map((item) => item.functionName === "zugfolge_enforce_world_writer_guard"
+      ? guard(item.name, item.relation, item.type, item.functionName, item.triggerDefinition, ARCHIVE_PRIVACY_FUNCTION_SOURCES[item.functionName]) : item),
+    ...ARCHIVE_PRIVACY_REDACTABLE_TABLES.map((table) => guard(`zugfolge_archive_privacy_capture_${table}`, table, 27, "zugfolge_archive_privacy_capture",
+      `CREATE TRIGGER zugfolge_archive_privacy_capture_${table} BEFORE DELETE OR UPDATE ON ${table} FOR EACH ROW EXECUTE FUNCTION zugfolge_archive_privacy_capture()`, ARCHIVE_PRIVACY_FUNCTION_SOURCES.zugfolge_archive_privacy_capture)),
+    guard("archive_privacy_rows_immutable", "archive_privacy_rows", 31, "zugfolge_archive_privacy_rows_guard",
+      "CREATE TRIGGER archive_privacy_rows_immutable BEFORE INSERT OR DELETE OR UPDATE ON archive_privacy_rows FOR EACH ROW EXECUTE FUNCTION zugfolge_archive_privacy_rows_guard()", ARCHIVE_PRIVACY_FUNCTION_SOURCES.zugfolge_archive_privacy_rows_guard),
+    guard("archive_privacy_requests_immutable", "archive_privacy_requests", 31, "zugfolge_archive_privacy_request_guard",
+      "CREATE TRIGGER archive_privacy_requests_immutable BEFORE INSERT OR DELETE OR UPDATE ON archive_privacy_requests FOR EACH ROW EXECUTE FUNCTION zugfolge_archive_privacy_request_guard()", ARCHIVE_PRIVACY_FUNCTION_SOURCES.zugfolge_archive_privacy_request_guard),
+    guard("archive_privacy_requests_apply", "archive_privacy_requests", 5, "zugfolge_archive_privacy_apply",
+      "CREATE TRIGGER archive_privacy_requests_apply AFTER INSERT ON archive_privacy_requests FOR EACH ROW EXECUTE FUNCTION zugfolge_archive_privacy_apply()", ARCHIVE_PRIVACY_FUNCTION_SOURCES.zugfolge_archive_privacy_apply),
+  ].sort((a,b) => a.name.localeCompare(b.name,"en") || a.relation.localeCompare(b.relation,"en"));
   if (migrationCount === 36) return [...DATABASE_CUTOVER_GUARDS.filter(({ relation }) => !RETIRED_TABLES.has(relation)),
     ...DATABASE_CONDUCTOR_TABLES.map((table) => guard(`zugfolge_world_guard_${table}`, table, 31, "zugfolge_enforce_world_writer_guard",
       `CREATE TRIGGER zugfolge_world_guard_${table} BEFORE INSERT OR DELETE OR UPDATE ON ${table} FOR EACH ROW EXECUTE FUNCTION zugfolge_enforce_world_writer_guard('world_id')`,
@@ -142,6 +157,7 @@ export function databaseCutoverGuards(migrationCount) {
 }
 
 export function databaseAuthoritativeCatalog(migrationCount) {
+  if (migrationCount === 37) return Object.freeze({ tables: DATABASE_AUTHORITATIVE_TABLES_SCHEMA_37, tableSetSha256: DATABASE_AUTHORITATIVE_TABLE_SET_SHA256_SCHEMA_37 });
   if (migrationCount === 36) return Object.freeze({ tables: DATABASE_AUTHORITATIVE_TABLES_SCHEMA_36, tableSetSha256: DATABASE_AUTHORITATIVE_TABLE_SET_SHA256_SCHEMA_36 });
   if (migrationCount === 35) return Object.freeze({ tables: DATABASE_AUTHORITATIVE_TABLES_SCHEMA_35, tableSetSha256: DATABASE_AUTHORITATIVE_TABLE_SET_SHA256_SCHEMA_35 });
   if (migrationCount === 33) return Object.freeze({ tables: DATABASE_AUTHORITATIVE_TABLES, tableSetSha256: DATABASE_AUTHORITATIVE_TABLE_SET_SHA256 });
