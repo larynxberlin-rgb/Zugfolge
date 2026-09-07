@@ -426,6 +426,11 @@ export const GENERATED_GLOSSARY_ENTRIES = Object.freeze([
     "definition": "Sitzaufteilung, Bestuhlung, Mehrzweckbereiche, Türen und Ausstattung eines Fahrzeugs; vollständiger nativer Transport als vehicleConfiguration im individuellen Authority-Asset"
   },
   {
+    "term": "Fahrzeugkostenbeleg",
+    "code": "ServiceVehicleCostPolicyV1",
+    "definition": "gepinnter M5-Betriebskostensatz je tatsächlich eingesetztem Fahrzeug; native gefahrene Millimeter belegen die Kostenbasis, ohne die M6-Buchung zu verdoppeln"
+  },
+  {
     "term": "Fahrzeuglebenslauf",
     "code": "VehicleLifeEvent",
     "definition": "unveränderliche, zeitlich geordnete Historie eines konkreten Fahrzeugs: Welteintritt, Halter/Nutzer, Leasing, Wartung, Umbau, Schaden, Marktwechsel und Ausmusterung"
@@ -1031,9 +1036,19 @@ export const GENERATED_GLOSSARY_ENTRIES = Object.freeze([
     "definition": "benannter Teilstrom des Weltseeds; ein neuer Strom verändert die bestehenden nicht"
   },
   {
+    "term": "Tagesabschluss",
+    "code": "service-day-closed",
+    "definition": "nativer Abschluss erst nach Tagesgrenze und jedem erwarteten tatsächlichen Fahrtabschluss; fehlende Fahrten halten den Tag offen"
+  },
+  {
     "term": "Tagesbericht",
     "code": "DailyReport",
     "definition": "asynchrone Rückmeldung an den Spieler: was ist passiert, welche Regel hat wann was getan"
+  },
+  {
+    "term": "Tagesplankatalog",
+    "code": "ServiceDayPolicyV1",
+    "definition": "vollständige, signierte Menge ursprünglicher Basisfahrten mit Tagesinstanzierung; umfasst auch noch nie gestartete Fahrten"
   },
   {
     "term": "Tarifprodukt",

@@ -641,7 +641,7 @@
     },
     {
       "path": "crates/zugfolge-sim/src/operational.rs",
-      "sha256": "64a589f7e39288f6d1b22221dde0cfc44366f3273b89bebaa769d66107360c14"
+      "sha256": "a5328bab2b527eea2693c9ff73c03bd8991c0172ea87a16f3988360408354e9e"
     },
     {
       "path": "crates/zugfolge-sim/src/operational/fare_control_types.rs",
@@ -660,8 +660,12 @@
       "sha256": "4c59e5f3b0bb0aaf2be5d09a3b81048e01c22dce348e39f97c18b36c9dc943ae"
     },
     {
+      "path": "crates/zugfolge-sim/src/operational/service_days.rs",
+      "sha256": "5315dbf56955b77fb756825284f130c0b931272b6d7e9c2de72f96d111fb5176"
+    },
+    {
       "path": "crates/zugfolge-sim/src/operational/service_outcomes.rs",
-      "sha256": "757c318e35e241bf034af15bbd26291720ee5d53e235ee72a6c73bb602f8c5cc"
+      "sha256": "f97fbb6678fb9257368a9591fb66caa4b00c76958b98e43d730ca7a0026e8572"
     },
     {
       "path": "crates/zugfolge-sim/tests/determinismus.rs",

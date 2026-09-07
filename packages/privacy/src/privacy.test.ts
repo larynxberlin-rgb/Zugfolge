@@ -42,7 +42,7 @@ afterEach(async () => {
 });
 
 describe("exportAccountData (Auskunft)", () => {
-  it("liefert im v3-Export ausschließlich die eigenen kaufmännischen Belege", async () => {
+  it("liefert im v4-Export ausschließlich die eigenen kaufmännischen Belege", async () => {
     const timestamp = new Date("2026-02-01T00:00:00Z");
     for (const subject of ["own", "other"]) {
       await requestWorldAccess(db, { worldId: WORLD_LHE, keycloakSubject: subject, displayName: subject });
@@ -58,7 +58,8 @@ describe("exportAccountData (Auskunft)", () => {
       });
     }
     const result = await exportAccountData(db, { worldId: WORLD_LHE, keycloakSubject: "own", exportedAt: timestamp });
-    expect(result.schemaVersion).toBe("zugfolge-personal-data-export/v3");
+    expect(result.schemaVersion).toBe("zugfolge-personal-data-export/v4");
+    expect(result.archivePrivacy.requests).toEqual([]);
     expect(result.commerceEntitlements.map((row) => row.keycloakSubject)).toEqual(["own"]);
     expect(result.commerceWorldClaims.map((row) => row.entitlementId)).toEqual([result.commerceEntitlements[0]!.id]);
     expect(result.worldParticipations.map((row) => row.keycloakSubject)).toEqual(["own"]);

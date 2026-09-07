@@ -545,11 +545,15 @@ serialisierten Bytes und erzeugen keine nachtraeglich erfundenen Ergebnisse.
 Tagesberichte ordnen diese Ereignisse anhand des signierten Betriebstags ein,
 auch bei verspaeteter Ankunft am Folgetag. Sie summieren Millimeter vor der
 Umrechnung zu ganzen Zugkilometern. `knownServicesComplete` bewertet nur die
-bereits publizierten Plaene. Ein vollstaendiges Tagesplanmanifest samt
-Day-Close-Vertrag fehlt derzeit; `dayPlanComplete` und die uebergeordnete
-Vollstaendigkeit bleiben deshalb false. Auch der lueckenlose native
-Kostenbeleg sowie die bei Tendervergabe aktualisierte Betreiber-/Vertrags-
-und Anschlussbindung fehlen noch. Die Vertragsabrechnung verlangt diese
+bereits publizierten Plaene. Der optionale vollständige Tagesplankatalog und
+native Day-Close sind in [operational-service-days.md](operational-service-days.md)
+definiert. Neue Alpha-Builds binden damit die ursprüngliche Tagesmenge samt
+vorhandener M5-Fahrzeugkostenbasis; alte Starts erhalten keine nachträglich
+erfundene Policy. Ohne passenden Day-Close bleibt `dayPlanComplete` falsch.
+Die lückenlose allgemeine Kostenabdeckung sowie die bei Tendervergabe
+aktualisierte Betreiber-/Vertrags- und Anschlussbindung bleiben offen;
+die übergeordnete Vollständigkeit folgt nicht allein aus einem Tagesabschluss.
+Die Vertragsabrechnung verlangt diese
 Nachweise explizit und bleibt fuer diese unvollstaendige Ausgangslage gesperrt.
 Diese verbleibenden Integrationen gehoeren zu Issue #518; aktive Cancel-Run-
 Massnahmen erfordern zudem den autoritativen Dispositionsvertrag aus #517.

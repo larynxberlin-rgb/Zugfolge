@@ -34,7 +34,12 @@ pub use passenger_stops::{
     OperationalPassengerStopPlan, OperationalPassengerStopProgress,
     OperationalPassengerStopReceipt,
 };
+mod service_days;
 mod service_outcomes;
+use service_days::ServiceDayState;
+pub use service_days::{
+    ServiceDayPolicyV1, ServiceDayTemplateV1, ServiceVehicleCostPolicyV1, ServiceVehicleCostRateV1,
+};
 use service_outcomes::ServiceOutcomeState;
 pub use service_outcomes::{
     ServiceConnectionAssessment, ServiceOutcomeBinding, ServiceOutcomePolicy,
@@ -1653,6 +1658,8 @@ pub struct OperationalWorld {
     fare_control_state: Option<FareControlState>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     service_outcome_state: Option<ServiceOutcomeState>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    service_day_state: Option<ServiceDayState>,
     pub world_id: String,
     pub region_id: String,
     pub infra_release_id: String,
@@ -2082,6 +2089,7 @@ impl OperationalWorld {
             completed_movement_continuations: BTreeMap::new(),
             route_completed_at_ms: BTreeMap::new(),
             service_outcome_state: None,
+            service_day_state: None,
             infrastructure_disruption_stops: BTreeMap::new(),
             fare_control_state: None,
             prepared_handovers: BTreeMap::new(),
@@ -4445,6 +4453,7 @@ impl OperationalWorld {
                 next_continuation_ms,
                 next_passenger_ms,
                 self.fare_control_next_at(),
+                self.service_day_next_at(),
             ]
             .into_iter()
             .flatten()
@@ -4475,10 +4484,12 @@ impl OperationalWorld {
             self.progress_fare_control_holds()?;
             self.progress_passenger_departures()?;
             self.progress_movement_continuations()?;
+            self.close_ready_service_days()?;
         }
         self.now_ms = target_ms;
         self.progress_fare_control_holds()?;
         self.progress_movement_continuations()?;
+        self.close_ready_service_days()?;
         Ok(())
     }
 
@@ -4517,6 +4528,7 @@ impl OperationalWorld {
         let intervals = intervals_for(&route, tail, head)?;
         self.ensure_intervals_free(train_id, &intervals)?;
         let mut blocks = blocks_for(&route, tail, head);
+        self.measure_service_vehicle_cost(train_id, head)?;
         if let Some(protection) = self.handover_protection_by_train.get(train_id) {
             blocks.extend(protection.iter().cloned());
         }
@@ -4883,6 +4895,7 @@ impl OperationalWorld {
             .collect();
         let mut occupied_blocks = blocks_for(&route, tail, head);
         occupied_blocks.extend(retained_protection_resources);
+        self.measure_service_vehicle_cost(train_id, head)?;
         self.formations
             .insert(formation.id.clone(), formation.clone());
         let train = self.trains.get_mut(train_id).expect("train exists");
@@ -5387,6 +5400,18 @@ impl OperationalWorld {
         target_region_id: impl Into<String>,
         mut protected_resources: BTreeSet<String>,
     ) -> Result<RegionHandover, OperationalError> {
+        // Der optionale regionale Tagesvertrag besitzt noch keinen weltweiten
+        // Belegtransfer. Eine aktive Fahrt darf ihre Mengenbasis nicht verlieren.
+        if self.service_day_state.is_some()
+            && self.trains.get(train_id).is_some_and(|train| {
+                train
+                    .service_outcome
+                    .as_ref()
+                    .is_some_and(|progress| !progress.completed)
+            })
+        {
+            return Err(OperationalError::InvalidServiceDay);
+        }
         let id = handover_id.into();
         let target_region_id = target_region_id.into();
         if protected_resources.is_empty() {
@@ -5775,6 +5800,7 @@ impl OperationalWorld {
         self.verify_fare_control()?;
         self.verify_passenger_stops()?;
         self.verify_service_outcomes()?;
+        self.verify_service_days()?;
         for (id, handover) in &self.prepared_handovers {
             if id != &handover.id
                 || handover.acknowledged
@@ -6594,6 +6620,7 @@ fn first_boundary_or_event_ms(
 pub enum OperationalError {
     InvalidPassengerStopPlan,
     InvalidServiceOutcome,
+    InvalidServiceDay,
     ArithmeticOverflow,
     EventBudgetExceeded,
     OutsideMotionValidity,

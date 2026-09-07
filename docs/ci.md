@@ -140,8 +140,10 @@ belegt die Auslieferungsprüfung; sie aktiviert keinen Produktivschlüssel.
 
 Die reguläre Privacy-Suite enthält die Schema-37-Archivlöschung mit echten
 Schema-33-/36-Backups, 90-/365-Tage-Grenzen, M15-Entkopplung, unverändertem
-Originalseal und unabhängig gepinntem Restore. `pnpm test:tools` führt zusätzlich
-`database-rollback-binding.pglite.test.mjs` aus: Die historischen Verträge bleiben
+Originalseal und unabhängig gepinntem Restore. Der TypeScript-Job prüft zusätzlich
+die betroffenen Backup-/Recoverywerkzeuge, die Tagesplanquelle und
+`database-rollback-binding.pglite.test.mjs` nacheinander. Auch der erweiterte
+Werkzeuglauf enthält diese Prüfungen. Die historischen Verträge bleiben
 eingefroren, Schema 37 qualifiziert die beiden neuen Redaktionsbelegtabellen und
 73 Schutztrigger als `zugfolge-database-rollback-proof/v7`. Die
 [Restorebeschreibung](datenschutz-archivgrenze.md) trennt den ursprünglichen

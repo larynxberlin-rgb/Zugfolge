@@ -204,6 +204,29 @@ export interface OperationalServiceOutcomePolicy {
   readonly vehicleCapacities: readonly Readonly<{ vehicleId: string; seats: number; sourceReference: string }>[];
 }
 
+/** Vollständige signierte Tagesvorlagen; keine bereits gestartete Teilmenge. */
+export interface OperationalServiceDayPolicyV1 {
+  readonly schemaVersion: "zugfolge-operational-service-day-policy/v1";
+  readonly epochServiceDay: string;
+  readonly dayLengthMs: 86400000;
+  readonly services: readonly {
+    readonly trainRunId: string;
+    readonly operatorId: string;
+    readonly firstDayIndex: number;
+    readonly scheduledDepartureMs: number;
+    readonly binding: OperationalServiceOutcomeBinding;
+  }[];
+  readonly vehicleCostPolicy: null | {
+    readonly economyReleaseHash: string;
+    readonly fleetAuthorityReleaseHash: string;
+    readonly vehicleCosts: readonly {
+      readonly vehicleId: string;
+      readonly centsPerTrainKm: number;
+      readonly sourceReference: string;
+    }[];
+  };
+}
+
 export interface OperationalPassengerStopPlan {
   readonly schemaVersion: "zugfolge-operational-passenger-stop-plan/v1";
   readonly worldId: string;
@@ -314,6 +337,7 @@ export interface OperationalInitializationValidationReceipt {
 export interface OperationalSimulationInitialization {
   readonly fareControlPolicy?: FareControlPolicyV1;
   readonly serviceOutcomePolicy?: OperationalServiceOutcomePolicy;
+  readonly serviceDayPolicy?: OperationalServiceDayPolicyV1;
   readonly schemaVersion: typeof OPERATIONAL_SIMULATION_INITIALIZE_SCHEMA;
   readonly worldId: string;
   readonly regionId: string;
@@ -351,6 +375,7 @@ export interface OperationalDispatchRequest {
 }
 
 export type OperationalSimulationCommandPayload =
+  | { readonly type: "open-service-day"; readonly dayIndex: number }
   | OperationalFareControlCommand
   | { readonly type: "materialize"; readonly train: OperationalTrainInitialization }
   | { readonly type: "retire"; readonly trainId: string }

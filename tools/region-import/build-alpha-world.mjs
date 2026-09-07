@@ -5,6 +5,7 @@ import { basename, dirname, join, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 import { StringDecoder } from "node:string_decoder";
 import { pathToFileURL } from "node:url";
+import { serviceDayPolicy } from "./service-day-policy-v1.mjs";
 
 import { alphaCanonicalJson, alphaHash } from "../../packages/alpha/dist/index.js";
 import { buildEconomyRelease, deriveTenderAuthorityBudgetCents, encodeEconomyValue, lotsFromGtfsPlanning, parseStartingCapitalPolicy, serializeStartingCapitalPolicy, startEconomyWorld, TENDER_GENERATION_SCHEMA } from "../../packages/economy/dist/index.js";
@@ -1538,6 +1539,12 @@ const operationalProgramTrains = movementAllocation.programTrains.map((train) =>
   ...(train.publicPassengerStop ? { serviceOutcome: passengerOutcomes.get(train.id) } : {}),
 }));
 invariant(operationalProgramTrains.every((train) => !train.publicPassengerStop || train.serviceOutcome !== undefined), "Fahrtenabschluss bildet nicht jede Personenfahrt ab.");
+const economyRelease = buildEconomyRelease({
+  version: economySpecification.version,
+  rates: economySpecification.rates,
+  rules: economySpecification.rules,
+  tenderProfiles: economySpecification.tenderProfiles,
+});
 const operationalSimulation = Object.freeze({
   schemaVersion: "zugfolge-operational-simulation-initialize/v2",
   worldId: WORLD_ID,
@@ -1551,6 +1558,10 @@ const operationalSimulation = Object.freeze({
   formations: operationalFleet.formations,
   trains: Object.freeze(operationalProgramTrains),
   movementContinuations: movementAllocation.movementContinuations,
+  serviceDayPolicy: serviceDayPolicy({ trains: operationalProgramTrains, movementContinuations: movementAllocation.movementContinuations,
+    vehicles: operationalFleet.vehicles, authorityAssets: fleet.authorityRelease.assets,
+    authorityReleaseHash: fleetEvidence.authorityReleaseHash, economyReleaseHash: economyRelease.checksum,
+    epochServiceDay: publicDeployConfiguration.worldDefinition.epoch.slice(0, 10), repeatEveryMs }),
   serviceOutcomePolicy: serviceOutcomePolicy({
     vehicles: operationalFleet.vehicles,
     authorityAssets: fleet.authorityRelease.assets,
@@ -1559,12 +1570,6 @@ const operationalSimulation = Object.freeze({
   }),
 });
 
-const economyRelease = buildEconomyRelease({
-  version: economySpecification.version,
-  rates: economySpecification.rates,
-  rules: economySpecification.rules,
-  tenderProfiles: economySpecification.tenderProfiles,
-});
 const economyLots = lotsFromGtfsPlanning(servicePlanning, WORLD_ID);
 const tenderGeneration = {
   schemaVersion: TENDER_GENERATION_SCHEMA,
@@ -1663,6 +1668,7 @@ function assertOperationalV2Initialization(value, receipt) {
     || value.trains.length !== expectedTrains.size
     || alphaCanonicalJson(value.movementContinuations) !== alphaCanonicalJson(movementAllocation.movementContinuations)
     || alphaCanonicalJson(value.serviceOutcomePolicy) !== alphaCanonicalJson(operationalSimulation.serviceOutcomePolicy)
+    || alphaCanonicalJson(value.serviceDayPolicy) !== alphaCanonicalJson(operationalSimulation.serviceDayPolicy)
   ) throw new Error("Operatives v2-Initialisierungsartefakt ist unvollstaendig oder nicht releasegebunden.");
   assertOperationalInfrastructureV2ReleaseBinding({
     initialization: value,

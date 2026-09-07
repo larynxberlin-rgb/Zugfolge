@@ -1115,7 +1115,10 @@ für 15.3/15.6 sind in [conductor-release-signing.md](conductor-release-signing.
 mit der bestehenden Alpha-Weltidentität nachgewiesen. M15 bleibt insgesamt
 offen: 15.5 benötigt den vollständigen ursprünglichen Deutschland-InfraRelease
 und 15.12 die vollständige freigegebene Abnahmeformation
-samt Budget und signiertem Korpus. Die Basisgrenzen #518 und #520 bleiben erhalten.
+samt Budget und signiertem Korpus. Die allgemeine Betriebsbindung aus #518
+bleibt separat offen. Die Archivlöschung aus #520 ist mit Schema 37 und
+unveränderten Originalbelegen implementiert; ihr
+[Restorevertrag](datenschutz-archivgrenze.md) bleibt verbindlich.
 
 **M15.1/M15.2-Stand:** Der versionierte Fachvertrag und seine
 Aktions-/Autoritätsmatrix sind vollständig dokumentiert. E28 ist mit #530

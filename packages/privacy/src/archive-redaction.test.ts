@@ -9,6 +9,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { purgeExpiredMailboxMessages } from "@zugfolge/mailbox";
 import { eraseAccountData, purgeExpiredAccountData } from "./erasure.js";
+import { exportAccountData, PersonalDataNotFoundError } from "./export.js";
 
 const WORLD = "11111111-1111-4111-8111-111111111520";
 const ACCOUNT = "22222222-2222-4222-8222-222222222520";
@@ -161,6 +162,60 @@ it("führt den fälligen produktiven Kontopurge im Archiv aus, lässt gewöhnlic
     expect(JSON.stringify(journal)).not.toMatch(/private-subject|Privater Name/u);
     await expect(client.query("delete from archive_privacy_rows where world_id=$1", [WORLD])).rejects.toThrow();
     expect((await purgeExpiredAccountData(db, new Date("2026-01-03Z"))).purgedAccountIds).toEqual([]);
+  } finally { await client.close(); }
+}, 60_000);
+
+it("exportiert vor der Subjectentkopplung nur eigene Konto- und Postfachredaktionen samt Hashzeilen", async () => {
+  const client = new PGlite(), db = drizzle(client);
+  const otherAccount = "55555555-5555-4555-8555-555555555520";
+  const otherWorldAccount = "66666666-6666-4666-8666-666666666520";
+  const ownMessage = "77777777-7777-4777-8777-777777777520";
+  const otherMessage = "88888888-8888-4888-8888-888888888520";
+  const otherWorldMessage = "99999999-9999-4999-8999-999999999520";
+  try {
+    await migrate(db, { migrationsFolder: MIGRATIONS_FOLDER });
+    await client.query("insert into worlds(id,name,schedule_period_weeks,epoch) values($1,'Eigenes Archiv',4,'2025-01-01Z'),($2,'Andere Welt',4,'2025-01-01Z')", [WORLD, OTHER_WORLD]);
+    for (const [worldId, accountId, subject, messageId] of [
+      [WORLD, ACCOUNT, "export-own", ownMessage],
+      [WORLD, otherAccount, "export-other", otherMessage],
+      [OTHER_WORLD, otherWorldAccount, "export-own", otherWorldMessage],
+    ]) {
+      await client.query("insert into accounts(id,world_id,keycloak_subject,display_name) values($1,$2,$3,'Exportperson')", [accountId, worldId, subject]);
+      await client.query("insert into mailbox_messages(id,world_id,recipient_account_id,message_type,payload,sent_at) values($1,$2,$3,'private.message','{\"privateText\":\"Nicht wiederherstellbarer Altinhalt\"}','2025-01-01Z')", [messageId, worldId, accountId]);
+    }
+    await client.query("update worlds set lifecycle_status='archived' where id in ($1,$2)", [WORLD, OTHER_WORLD]);
+    for (const [worldId, subject] of [[WORLD, "export-own"], [WORLD, "export-other"], [OTHER_WORLD, "export-own"]]) {
+      await eraseAccountData(db, { worldId: worldId!, targetKeycloakSubject: subject!, actingKeycloakSubject: subject!, erasedAt: new Date("2026-01-01Z") });
+    }
+    for (const worldId of [WORLD, OTHER_WORLD]) {
+      await purgeExpiredMailboxMessages(db, { worldId, asOf: new Date("2026-01-02Z") });
+    }
+    const input = { worldId: WORLD, keycloakSubject: "export-own", exportedAt: new Date("2026-01-02Z") };
+    const own = await exportAccountData(db, input);
+    expect(own.schemaVersion).toBe("zugfolge-personal-data-export/v4");
+    expect(own.mailboxMessages).toEqual([]);
+    expect(own.archivePrivacy.requests.map((request) => [request.action, request.objectId])).toEqual([
+      ["account-request", ACCOUNT], ["mailbox-purge", ownMessage],
+    ]);
+    for (const request of own.archivePrivacy.requests) {
+      expect(request.worldId).toBe(WORLD);
+      expect(request.rows.length).toBeGreaterThan(0);
+      for (const row of request.rows) {
+        expect(row.worldId).toBe(WORLD); expect(row.requestId).toBe(request.requestId);
+        expect(row.beforeSha256).toMatch(/^[a-f0-9]{64}$/u);
+        expect(row.afterSha256).toMatch(/^[a-f0-9]{64}$/u);
+      }
+    }
+    const serialized = JSON.stringify(own.archivePrivacy);
+    for (const foreign of [OTHER_WORLD, otherAccount, otherWorldAccount, otherMessage, otherWorldMessage, "Nicht wiederherstellbarer Altinhalt", "export-other"]) {
+      expect(serialized).not.toContain(foreign);
+    }
+    const elsewhere = await exportAccountData(db, { ...input, worldId: OTHER_WORLD });
+    expect(elsewhere.archivePrivacy.requests.map((request) => request.objectId)).toEqual([otherWorldAccount, otherWorldMessage]);
+    await expect(exportAccountData(db, { ...input, worldId: OTHER_WORLD, keycloakSubject: "export-other" })).rejects.toBeInstanceOf(PersonalDataNotFoundError);
+    expect((await purgeExpiredAccountData(db, new Date("2026-04-01Z"))).failures).toBeUndefined();
+    await expect(exportAccountData(db, input)).rejects.toBeInstanceOf(PersonalDataNotFoundError);
+    await expect(exportAccountData(db, { ...input, worldId: OTHER_WORLD })).rejects.toBeInstanceOf(PersonalDataNotFoundError);
   } finally { await client.close(); }
 }, 60_000);
 

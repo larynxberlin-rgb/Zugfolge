@@ -98,6 +98,12 @@ jobs:
       - name: Szenenquellen, Compilerbindungen und Browser-Evidenzpaket prüfen
         run: node --test tools/conductor-scenes/source-compiler.test.mjs tools/conductor-session/package-evidence.test.mjs tools/conductor-session/browser-driver.test.mjs
 
+      - name: Archivredaktion, historische Sicherungen und Tagesplanquelle prüfen
+        run: |
+          node --test --test-concurrency=1 tools/alpha-ops/database-rollback-binding.pglite.test.mjs
+          node --test --test-concurrency=1 tools/alpha-ops/database-rollback-binding.test.mjs tools/alpha-ops/create-database-rollback-proof.test.mjs tools/alpha-ops/create-database-backup-restore-evidence.test.mjs tools/alpha-ops/production-recovery-contract.test.mjs tools/region-import/service-outcome-binding.test.mjs
+          node --test --test-name-pattern="Datenbank-Rollbackbeleg" tools/tiles/map-release-build-evidence.test.mjs
+
   native-runtime-smoke:
     name: Native Runtime ABI (Linux, echtes NAPI)
     runs-on: ubuntu-latest

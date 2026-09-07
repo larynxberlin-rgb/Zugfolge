@@ -71,6 +71,8 @@ export interface DailyOperationsReport {
   readonly evidenceComplete?: boolean;
   readonly knownServicesComplete?: boolean;
   readonly dayPlanComplete?: boolean;
+  readonly vehicleCostEvidenceComplete?: boolean;
+  readonly formationOperatingCostCents?: string | null;
   readonly plannedServiceRunIds?: readonly string[];
   readonly missingServiceRunIds?: readonly string[];
   readonly schema: "daily-operations-report/v1";
@@ -96,6 +98,8 @@ export interface DailyOperationsReport {
     readonly evidenceComplete?: boolean;
     readonly knownServicesComplete?: boolean;
     readonly dayPlanComplete?: boolean;
+    readonly vehicleCostEvidenceComplete?: boolean;
+    readonly formationOperatingCostCents?: string | null;
     readonly plannedServiceRunIds?: readonly string[];
     readonly missingServiceRunIds?: readonly string[];
     readonly trainRuns: { readonly distanceMm?: string; readonly minimumSeatsProvided?: number | null; readonly total: number; readonly punctual: number; readonly cancelled: number; readonly trainKm: string; readonly missingSeats: number | null; readonly missedConnections: number | null };
@@ -254,7 +258,7 @@ export function buildDailyReport(events: readonly LoggedEvent[], operatorId: str
   if (!/^\d{4}-\d{2}-\d{2}$/.test(serviceDay)) throw new RangeError("Betriebstag muss YYYY-MM-DD entsprechen.");
   const selected = events.filter((event) => {
     const value = payload(event.payload);
-    const native = value?.["schemaVersion"] === "zugfolge-operational-train-service-planned/v1" || value?.["schemaVersion"] === "zugfolge-operational-train-outcome/v1";
+    const native = ["zugfolge-operational-train-service-planned/v1", "zugfolge-operational-train-outcome/v1", "zugfolge-operational-service-day-planned/v1", "zugfolge-operational-service-day-closed/v1", "zugfolge-operational-service-vehicle-cost/v1"].includes(String(value?.["schemaVersion"]));
     return native ? value?.["serviceDay"] === serviceDay : event.occurredAt.toISOString().slice(0, 10) === serviceDay;
   }).filter((event) => {
     const value = payload(event.payload);
@@ -293,7 +297,7 @@ export function buildDailyReport(events: readonly LoggedEvent[], operatorId: str
   for (const event of selected) {
     const value = payload(event.payload)!;
     const impact = payload(value.impact) ?? {};
-    if (event.eventType === "operations.train-service-planned") evidenceFor(value);
+    if (["operations.train-service-planned", "operations.service-day-planned", "operations.service-day-closed"].includes(event.eventType)) evidenceFor(value);
     if (event.eventType === "operations.train-outcome") {
       const contract = evidenceFor(value);
       total += 1;
@@ -367,7 +371,9 @@ export function buildDailyReport(events: readonly LoggedEvent[], operatorId: str
   const completeness = (evidence: ServiceOutcomeEvidence | undefined) => evidence === undefined ? {} : {
     evidenceComplete: false,
     knownServicesComplete: evidence.evidenceComplete,
-    dayPlanComplete: false,
+    dayPlanComplete: evidence.dayPlanComplete ?? false,
+    ...(evidence.vehicleCostEvidenceComplete === undefined ? {} : { vehicleCostEvidenceComplete: evidence.vehicleCostEvidenceComplete,
+      formationOperatingCostCents: evidence.formationOperatingCostCents ?? null }),
     plannedServiceRunIds: evidence.plannedServiceRunIds,
     missingServiceRunIds: evidence.missingServiceRunIds,
   };

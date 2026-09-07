@@ -1,4 +1,5 @@
 import { decodeOperationalServiceEvent } from "./operational-service-outcome.js";
+import { decodeOperationalServiceDayEvent } from "./operational-service-day.js";
 import { decodeOperationalPassengerStop } from "./operational-passenger-stop.js";
 import { decodeFareControlHoldEvent, FARE_CONTROL_CAUSE } from "@zugfolge/runtime-native";
 import type {
@@ -253,6 +254,11 @@ export function adaptOperationalDomainEvents(
       subjectId: event.subjectId,
       detail: event.detail,
     };
+    if (["service-day-planned", "service-day-closed", "service-vehicle-cost"].includes(event.kind)) {
+      if (worldId === undefined) throw new TypeError("Tagesbeleg benötigt eine gebundene Welt.");
+      const facts = decodeOperationalServiceDayEvent(event.kind, event.detail, event.subjectId, event.atMs, worldId, regionId);
+      return Object.freeze({ eventType: `operations.${event.kind}`, payload: Object.freeze({ ...common, ...facts }) });
+    }
     if (["fare-control-hold-requested", "fare-control-hold-activated", "fare-control-hold-released"].includes(event.kind)) {
       if (worldId === undefined) throw new TypeError("Kontrollhaltereignis benötigt die gebundene Welt.");
       let value: unknown;

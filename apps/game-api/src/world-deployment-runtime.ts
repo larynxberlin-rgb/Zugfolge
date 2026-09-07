@@ -711,6 +711,14 @@ function boundaryCommands(
   return Object.freeze(commands);
 }
 
+function serviceDayOpening(program: OperationalDeploymentProgram, day: number): OperationalScheduledCommand | undefined {
+  if (program.initialization.serviceDayPolicy === undefined) return undefined;
+  const atMs = day * program.repeatEveryMs;
+  if (!Number.isSafeInteger(atMs)) throw new RangeError("Tagesplangrenze ist ungültig.");
+  return Object.freeze({ commandId: `${program.deploymentHash}:service-day:${program.regionId}:${day}`, atMs,
+    command: Object.freeze({ type: "open-service-day", dayIndex: day }) });
+}
+
 class PlanningInfrastructureReleaseRegistry implements PlanningInfrastructureReleaseCatalog {
   readonly #releases = new Map<string, PlanningInfrastructureRelease>();
   readonly #hashes = new Map<string, string>();
@@ -1044,6 +1052,10 @@ export class ActiveWorldDeploymentRuntime implements RegionalScheduledCommandCat
     if (program === undefined) return [];
     safeNonnegativeInteger(atMs, "Betriebsprogrammzeit ist ungueltig.");
     const commands: OperationalScheduledCommand[] = [];
+    if (atMs % program.repeatEveryMs === 0) {
+      const opening = serviceDayOpening(program, atMs / program.repeatEveryMs);
+      if (opening !== undefined) commands.push(opening);
+    }
     for (const boundary of program.boundaries) {
       if (atMs < boundary.departureOffsetMs) continue;
       const elapsed = atMs - boundary.departureOffsetMs;
@@ -1067,6 +1079,11 @@ export class ActiveWorldDeploymentRuntime implements RegionalScheduledCommandCat
     const firstDay = Math.max(0, Math.floor(afterMs / program.repeatEveryMs));
     const lastDay = Math.floor(throughMs / program.repeatEveryMs);
     for (let day = firstDay; day <= lastDay; day += 1) {
+      const opening = serviceDayOpening(program, day);
+      if (opening !== undefined && opening.atMs > afterMs && opening.atMs <= throughMs
+        && !program.boundaries.some((boundary) => boundary.departureOffsetMs === 0)) {
+        yield Object.freeze({ atMs: opening.atMs, commands: [opening] });
+      }
       for (const boundary of program.boundaries) {
         const atMs = boundary.departureOffsetMs + day * program.repeatEveryMs;
         if (!Number.isSafeInteger(atMs)) {
@@ -1075,7 +1092,7 @@ export class ActiveWorldDeploymentRuntime implements RegionalScheduledCommandCat
         if (atMs <= afterMs || atMs > throughMs) continue;
         yield Object.freeze({
           atMs,
-          commands: boundaryCommands(program, boundary, day),
+          commands: [...(opening !== undefined && boundary.departureOffsetMs === 0 ? [opening] : []), ...boundaryCommands(program, boundary, day)],
         });
       }
     }

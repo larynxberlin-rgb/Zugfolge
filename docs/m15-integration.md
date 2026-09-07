@@ -113,6 +113,16 @@ Fallfolgen laufen unabhängig weiter. Schema-36-Sicherungen besitzen eigene
 Rollback-/Historiensealversionen; ältere Schema-35-Belege dürfen neue
 Sitzungsdaten nicht verdecken.
 
+Migration 37 ergänzt den begrenzten Archivlöschpfad aus
+[Issue #520](https://github.com/larynxberlin-rgb/Zugfolge/issues/520). Die
+produktiven Konto- und Postfachjobs redigieren auch archivierte Welten; die
+vier privaten M15-Tabellen gehören ausdrücklich dazu. Originale
+Cutoverquittungen und Historienseals bleiben identisch. Ein separat gepinnter
+Redaktionsbeleg verhindert, dass ein älteres Backup gelöschte Kontozuordnungen
+wieder einführt. Die [Archivgrenze](datenschutz-archivgrenze.md) beschreibt
+die tatsächliche Wiederherstellung und die neue Sicherungsqualifizierung des
+bereinigten Stands.
+
 ## Verbleibende Release- und Gesamtannahmebedingungen
 
 Die Asset-, Referenz- und Releasefreigabe des Auftraggebers liegt vor. Seine
@@ -133,15 +143,20 @@ Deutschlandabdeckung und keine Freigabe realer Stationsarchitektur.
 
 Die reguläre Vertragsabrechnung besitzt mit
 [Issue #518](https://github.com/larynxberlin-rgb/Zugfolge/issues/518) eine
-bereits dokumentierte offene Basisabhängigkeit: vollständiger Tagesplan mit
-Day-Close, native Kostenbelege und aktuelle Vertragsbindung. Das vorhandene
-Vollständigkeitsgate bleibt unverändert. Einzelne vollständig definierte
-Abnahmeverträge und deren echte M6-/Ledgerfolgen ersetzen diesen fehlenden
-allgemeinen Produktionsproducer nicht.
+separate offene Basisabhängigkeit. Die additive
+[native Tagesplanung](operational-service-days.md) umfasst jetzt auch nie
+gestartete Sollfahrten, wartet beim Day-Close auf alle tatsächlichen Abschlüsse
+und belegt die Fahrzeugkosten anhand tatsächlich gefahrener Strecken. Diese
+Kosten werden nicht doppelt gebucht. Allgemeine Kostenabdeckung und spätere
+[Betreiber-/Vertragsübergänge](operating-contract-cutover.md) sind damit noch
+nicht vollständig angebunden. Das bestehende HTTP-Vollständigkeitsgate bleibt
+erhalten. Die vollständig definierte M15-Abnahmefahrt belegt ihre tatsächlichen
+M6-/Ledgerfolgen; sie behauptet keine allgemeine Abnahme von #518.
 
-M15 wird erst vollständig geschlossen, wenn der zusammenhängende
-Mehrzug-/Browser-/Ledgernachweis, die maximal freigegebene SPNV-Formation,
-der signierte Abnahmekorpus und die vier CI-Jobs für denselben abschließenden
-Stand vorliegen. Die offenen Issues #215 und #222 behalten ihre konkreten
+Die zusammenhängende Mehrzug-/Browser-/Ledgerfahrt ist im ausgewiesenen
+Testkorpus nachgewiesen. Für die vollständige Schließung von M15 fehlen der
+ursprüngliche Deutschlandkorpus und dessen Szenenabdeckung sowie die maximal
+freigegebene SPNV-Formation mit vorab festgelegtem Laufzeitbudget und dem
+gemeinsamen signierten Abnahmekorpus. Die offenen Issues #215 und #222 behalten ihre konkreten
 Daten-, Formations- und Laufzeitbedingungen; #213/#216 sind durch die
 tatsächliche Signierung und öffentliche Weltregistrierung erfüllt.

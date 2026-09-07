@@ -117,6 +117,7 @@ nicht prüfen, ob ein Eintrag stimmt — dafür steht die Quelle daneben.
 | Fahrzeugepoche | `VehicleEra` | Weltfilter für zulässige Bau- oder Beschaffungsjahre; beide Epochen sind unabhängig und können alle Jahre umfassen | `betrieb.md` 2.1 |
 | Fahrzeugkatalog-Release | `VehicleCatalogRelease` | unveränderlicher, versionierter Typkatalog mit faktischer Baureihenbezeichnung, fiktivem Handelsnamen, Bauzeit, Marktfenstern, typgenauer Zugsicherung, Quellen und Prüfsumme | `betrieb.md` 2.1 |
 | Fahrzeugkonfiguration | `VehicleConfiguration` | Sitzaufteilung, Bestuhlung, Mehrzweckbereiche, Türen und Ausstattung eines Fahrzeugs; vollständiger nativer Transport als `vehicleConfiguration` im individuellen Authority-Asset | `betrieb.md` 3, `m5-interior-configuration.md` |
+| Fahrzeugkostenbeleg | `ServiceVehicleCostPolicyV1` | gepinnter M5-Betriebskostensatz je tatsächlich eingesetztem Fahrzeug; native gefahrene Millimeter belegen die Kostenbasis, ohne die M6-Buchung zu verdoppeln | `operational-service-days.md` |
 | Fahrzeuglebenslauf | `VehicleLifeEvent` | unveränderliche, zeitlich geordnete Historie eines konkreten Fahrzeugs: Welteintritt, Halter/Nutzer, Leasing, Wartung, Umbau, Schaden, Marktwechsel und Ausmusterung | `betrieb.md` 3.6 |
 | Fahrzeugmarktstatus | `VehicleMarketStatus` | autoritativer Zustand eines konkreten Fahrzeugs: Eigentum, Leasing, serverseitiges Leasingangebot, Gebrauchtangebot oder Ausmusterung | `betrieb.md` 3.6 |
 | Fahrzeugzustand | `VehicleCondition` | mehrdimensionaler, ganzzahliger Zustand für Mechanik, Antrieb, Bremsen, Betrieb und Innenraum; wird im Lebenslauf fortgeschrieben | `betrieb.md` 3.6 |
@@ -238,7 +239,9 @@ nicht prüfen, ob ein Eintrag stimmt — dafür steht die Quelle daneben.
 | Steuerwagen | `VehicleRole::ControlCar` | nicht angetriebener Reisezugwagen mit einem oder zwei Steuerständen; ermöglicht bei passender Endlage den Wendezugbetrieb | `betrieb.md` 2.3 |
 | Störung | `Disruption` | ungeplantes Ereignis mit Wirkung auf den Betrieb; Entstehung und Fortpflanzung sind getrennt modelliert | `betrieb.md` 5 |
 | Substream | `Substream` | benannter Teilstrom des Weltseeds; ein neuer Strom verändert die bestehenden nicht | `architektur.md` 4 |
+| Tagesabschluss | `service-day-closed` | nativer Abschluss erst nach Tagesgrenze und jedem erwarteten tatsächlichen Fahrtabschluss; fehlende Fahrten halten den Tag offen | `operational-service-days.md` |
 | Tagesbericht | `DailyReport` | asynchrone Rückmeldung an den Spieler: was ist passiert, welche Regel hat wann was getan | `betrieb.md` 1 |
+| Tagesplankatalog | `ServiceDayPolicyV1` | vollständige, signierte Menge ursprünglicher Basisfahrten mit Tagesinstanzierung; umfasst auch noch nie gestartete Fahrten | `operational-service-days.md` |
 | Tarifprodukt | `FareProductV1` | Abschnittspreis, Komfortklasse, Vertriebsverfügbarkeit und Reservierungspflicht | `personenverkehr.md`, `spfv-planung.md` |
 | Toleranz | `Tolerance` | vorab definierte zulässige Abweichung zwischen berechneter und gleichartig definierter Referenzzeit — absoluter Sockel und relativer Anteil, der größere gilt | `betriebsgraph.md` 18 |
 | Trasse | `TrainPath` | zugewiesenes Recht, einen Laufweg zu einer Zeitlage zu befahren | `infrastruktur.md` 2 |

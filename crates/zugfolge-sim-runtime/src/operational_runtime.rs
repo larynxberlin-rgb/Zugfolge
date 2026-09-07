@@ -205,6 +205,8 @@ struct Initialization {
     fare_control_policy: Option<zugfolge_sim::operational::FareControlPolicyV1>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     service_outcome_policy: Option<zugfolge_sim::operational::ServiceOutcomePolicy>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    service_day_policy: Option<zugfolge_sim::operational::ServiceDayPolicyV1>,
     schema_version: String,
     world_id: String,
     region_id: String,
@@ -228,6 +230,9 @@ struct Initialization {
     deny_unknown_fields
 )]
 enum CommandPayload {
+    OpenServiceDay {
+        day_index: u32,
+    },
     CancelPassengerStopPlan {
         cancellation: zugfolge_sim::operational::CancelPassengerStopPlanInputV1,
     },
@@ -1619,6 +1624,9 @@ fn execute(
 ) -> Result<(), OperationalRuntimeError> {
     let rejected = operational_command_rejection;
     match command {
+        CommandPayload::OpenServiceDay { day_index } => {
+            world.open_service_day(day_index).map_err(rejected)
+        }
         CommandPayload::CancelPassengerStopPlan { cancellation } => world
             .cancel_passenger_stop_plan(&cancellation)
             .map(|_| ())
@@ -1715,6 +1723,78 @@ fn inspect_program_template(
         })
 }
 
+fn validate_service_day_initialization(
+    input: &Initialization,
+) -> Result<(), OperationalRuntimeError> {
+    let Some(policy) = &input.service_day_policy else {
+        return Ok(());
+    };
+    let invalid = || {
+        OperationalRuntimeError::new(
+            "invalid_service_day_policy",
+            "Tageskatalog stimmt nicht mit dem tatsächlichen Betriebsprogramm überein",
+        )
+    };
+    let passengers: BTreeMap<_, _> = input
+        .trains
+        .iter()
+        .filter(|train| train.public_passenger_stop)
+        .map(|train| (train.id.as_str(), train))
+        .collect();
+    if policy.services.len() != passengers.len()
+        || input
+            .repeat_every_ms
+            .is_some_and(|repeat| repeat != 86_400_000)
+    {
+        return Err(invalid());
+    }
+    let mut offsets = BTreeMap::new();
+    if input.repeat_every_ms.is_none() {
+        offsets.extend(input.trains.iter().map(|train| (train.id.as_str(), 0_u32)));
+    } else {
+        let outgoing: BTreeMap<_, _> = input
+            .movement_continuations
+            .iter()
+            .map(|edge| (edge.predecessor_train_id.as_str(), edge))
+            .collect();
+        for root in input
+            .movement_continuations
+            .iter()
+            .filter(|edge| edge.daily_boundary)
+            .map(|edge| edge.successor_train_id.as_str())
+        {
+            let mut cursor = root;
+            let mut offset = 0_u32;
+            loop {
+                if offsets.insert(cursor, offset).is_some() {
+                    return Err(invalid());
+                }
+                let edge = outgoing.get(cursor).ok_or_else(invalid)?;
+                if edge.daily_boundary {
+                    break;
+                }
+                offset = offset
+                    .checked_add(u32::from(edge.successor_day_offset))
+                    .ok_or_else(invalid)?;
+                cursor = edge.successor_train_id.as_str();
+            }
+        }
+    }
+    for service in &policy.services {
+        let train = passengers
+            .get(service.train_run_id.as_str())
+            .ok_or_else(invalid)?;
+        if train.operator_id != service.operator_id
+            || train.service_outcome.as_ref() != Some(&service.binding)
+            || train.scheduled_departure_ms != Some(service.scheduled_departure_ms)
+            || offsets.get(train.id.as_str()) != Some(&service.first_day_index)
+        {
+            return Err(invalid());
+        }
+    }
+    Ok(())
+}
+
 pub fn initialize_operational_simulation(
     input_json: &str,
     resolved_infrastructure_path: &str,
@@ -1730,6 +1810,7 @@ pub fn initialize_operational_simulation(
         OperationalRuntimeError::new("invalid_initialization_hash_input", detail)
     })?;
     let input: Initialization = decode(input_json, "OperationalInitialization")?;
+    validate_service_day_initialization(&input)?;
     if input.schema_version != INITIALIZE_SCHEMA {
         return Err(OperationalRuntimeError::new(
             "unknown_initialize_schema",
@@ -1788,6 +1869,14 @@ pub fn initialize_operational_simulation(
     if let Some(policy) = input.service_outcome_policy {
         world.configure_service_outcomes(policy).map_err(|error| {
             OperationalRuntimeError::new("invalid_service_outcome_policy", error.to_string())
+        })?;
+    }
+    if let Some(policy) = input.service_day_policy {
+        world.configure_service_days(policy).map_err(|_| {
+            OperationalRuntimeError::new(
+                "invalid_service_day_policy",
+                "Vollständiger Tagesvertrag ist ungültig",
+            )
         })?;
     }
     let program_train_count = input.trains.len();
@@ -2465,6 +2554,7 @@ mod tests {
     };
 
     use super::*;
+    include!("operational_service_day_tests.rs");
 
     fn set(values: &[&str]) -> BTreeSet<String> {
         values.iter().map(|value| (*value).to_owned()).collect()
@@ -2595,6 +2685,7 @@ mod tests {
             release_after_tail_route_mm: 100_000,
         };
         Initialization {
+            service_day_policy: None,
             service_outcome_policy: None,
             fare_control_policy: None,
             schema_version: INITIALIZE_SCHEMA.to_owned(),

@@ -716,9 +716,12 @@ Private Diagnose darf nur über die vorhandene autorisierte Auditgrenze laufen.
 Manifest- und Fallsnapshots bleiben für bitgleiches Replay an ihre Releases
 gebunden. Die Kontozuordnung wird getrennt nach der veröffentlichten
 Aufbewahrungsregel entfernt; verbindliche Betriebs-, Ressourcen- und
-Buchungsbelege bleiben fachlich nachvollziehbar. Die noch offene
-Archiv-Purge-Grenze [#520](https://github.com/larynxberlin-rgb/Zugfolge/issues/520)
-wird durch diesen Vertrag nicht umgangen und bleibt ein Produktionsgate.
+Buchungsbelege bleiben fachlich nachvollziehbar. Die
+[Archivredaktion aus Schema 37](datenschutz-archivgrenze.md) löst die
+Löschgrenze aus [#520](https://github.com/larynxberlin-rgb/Zugfolge/issues/520)
+über feste Redaktionsaufträge und unveränderliche Hashbelege. Ein Restore
+muss den unabhängig gepinnten Löschstand übernehmen; ursprüngliche
+Historien- und Cutoverquittungen dürfen nicht umgeschrieben werden.
 
 ## 12. Nichtfunktionale Anforderungen
 
