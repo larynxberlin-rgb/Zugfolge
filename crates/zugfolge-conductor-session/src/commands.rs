@@ -135,12 +135,9 @@ fn refresh(
 ) -> Result<(), ConductorSessionError> {
     if let Some(id) = active_id(state) {
         let record = &state.encounters[&id];
-        if !live
-            .passengers
-            .passengers
-            .iter()
-            .any(|p| p.passenger_key == record.passenger_key)
-        {
+        if !live.passengers.passengers.iter().any(|p| {
+            p.passenger_key == record.passenger_key && p.activity == PassengerActivityV1::Onboard
+        }) {
             close_encounter(state, source, cause, effects)?;
         }
     }

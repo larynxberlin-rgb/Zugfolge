@@ -13,6 +13,7 @@ import { loadConductorContext } from "./conductor-context.js";
 import { createConductorSessionNativeFixture, hasSessionNativeFixture } from "./conductor-session.native-fixture.js";
 import { callInteriorFixtureRust } from "./conductor-interior.native-fixture.js";
 import { advanceConductorControlWorld } from "./conductor-session-scheduler.js";
+import { DemandStore, demandInteger, demandList, demandRecord } from "./demand-store.js";
 
 const ROOT = fileURLToPath(new URL("../../../", import.meta.url));
 export const fareControlBinary = process.env["ZUGFOLGE_FARE_CONTROL_TEST_BINARY"] ?? resolve(ROOT, `target/debug/examples/fare_control_json${process.platform === "win32" ? ".exe" : ""}`);
@@ -94,6 +95,43 @@ export async function createFareControlNativeFixture(options: FareControlNativeF
     const releases = parseConductorControlDeployment({ bytes, expectedSha256: createHash("sha256").update(bytes).digest("hex"), worldId, runtime });
     const police = createConductorPoliceAdapter({ runtime: fixture.native.operational, regionBindings: fixture.dependencies.regionBindings, controlRuntime: runtime });
     control = createConductorControlIntegration({ runtime, releases, police });
+    const advanceControl = async () => {
+      await advanceConductorControlWorld({ db: fixture.db, worldId, regions: fixture.dependencies.regionBindings(),
+        runtime: fixture.native.operational, control: control! });
+    };
+    const demandStore = new DemandStore(fixture.db, fixture.native.demand);
+    const demandFinalitySteps: { fromMs: number; toMs: number; trainRunId: string; safeThroughMs: number;
+      throughWorldSequence: number; demandStateHash: string; confirmedDemandStateHash: string;
+      receipts: { receiptId: string; kind: string; stopId: string; actualTimeMs: number }[] }[] = [];
+    const refreshConductorCycle = async () => {
+      // Historische Tagesberichte verwenden weiterhin ausschließlich advanceControl.
+      await fixture.refresh(); await advanceControl(); await fixture.refresh();
+      const stopCount = fixture.initialization.trains[0]!.stopPlan!.stops.length;
+      for (let pass = 0; pass <= stopCount; pass++) {
+        const latest = await demandStore.latest(worldId);
+        if (latest === undefined) throw new Error("Der bestätigte Nachfragecursor fehlt.");
+        const cursor = demandRecord(latest.progressCursor);
+        const pending = demandList(cursor["pendingReceipts"]).filter((row) => row["trainRunId"] === fixture.access.trainRunId);
+        if (pending.length === 0) return;
+        const fromMs = fixture.clock.nowMs, safeThroughMs = demandInteger(cursor["safeThroughMs"]);
+        const toMs = Math.max(...pending.map((row) => demandInteger(row["actualTimeMs"]))) + 1;
+        if (!Number.isSafeInteger(toMs) || toMs !== fromMs + 1 || pending.some((row) => Number(row["actualTimeMs"]) <= safeThroughMs))
+          throw new Error("Die ausstehende Haltquittung besitzt keine eindeutige lokale Finalitätsgrenze.");
+        fixture.clock.nowMs = toMs;
+        await fixture.apply(`control-fixture:stop-finality:${toMs}`, { type: "advance-to", atMs: toMs });
+        await fixture.refresh(); await advanceControl(); await fixture.refresh();
+        const confirmed = await demandStore.latest(worldId);
+        if (confirmed === undefined) throw new Error("Der fortgeschriebene Nachfragebeleg fehlt.");
+        const receipts = demandList(demandRecord(confirmed.progressCursor)["receipts"]);
+        if (pending.some((row) => !receipts.some((entry) => entry["receiptId"] === row["receiptId"])))
+          throw new Error("Der Nachfrageproduzent hat die tatsächliche Haltquittung nicht bestätigt.");
+        demandFinalitySteps.push({ fromMs, toMs, trainRunId: fixture.access.trainRunId, safeThroughMs,
+          throughWorldSequence: demandInteger(cursor["throughWorldSequence"]), demandStateHash: String(latest.result["stateHash"]),
+          confirmedDemandStateHash: String(confirmed.result["stateHash"]), receipts: pending.map((row) => ({
+            receiptId: String(row["receiptId"]), kind: String(row["kind"]), stopId: String(row["stopId"]), actualTimeMs: demandInteger(row["actualTimeMs"]) })) });
+      }
+      throw new Error("Die begrenzte Haltquittungs-Finalisierung wurde nicht abgeschlossen.");
+    };
     return { ...fixture, control, controlRuntime: runtime, controlReleases: releases, controlDeploymentBytes: bytes, economy,
       controlContext: () => loadConductorContext(fixture.db, fixture.access, fixture.dependencies), operatorId,
       async originalDialogueCandidates(options: { fareFacts?: readonly string[] } = {}) {
@@ -186,9 +224,6 @@ export async function createFareControlNativeFixture(options: FareControlNativeF
         }
         return options.all === true ? measured : [...selected.values()];
       },
-      async advanceControl() {
-        await advanceConductorControlWorld({ db: fixture.db, worldId, regions: fixture.dependencies.regionBindings(),
-          runtime: fixture.native.operational, control: control! });
-      } };
+      advanceControl, refreshConductorCycle, demandFinalitySteps };
   } catch (error) { await fixture.dispose(); throw error; }
 }

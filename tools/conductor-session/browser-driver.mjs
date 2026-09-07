@@ -146,7 +146,9 @@ export function createConductorProofDriver({ backend, page, output, screenshots 
       let current = await request(); assert.equal(current.snapshot.status, "active");
       const boundary = atMs < current.snapshot.leaseUntilMs - 2000 ? atMs : current.snapshot.leaseUntilMs - 10_000;
       if (boundary > backend.fixture.clock.nowMs) await backend.advance(boundary - backend.fixture.clock.nowMs);
-      if (backend.fixture.clock.nowMs === atMs) return;
+      // Eine echte ausstehende Haltquittung kann den M10-Finalitätstakt bis
+      // strikt hinter ihre Ereigniszeit erfordern; danach keine Leasebewegung.
+      if (backend.fixture.clock.nowMs >= atMs) return;
       const reportWasOpen = await page.locator(".conductor-report").isVisible();
       if (reportWasOpen) await page.locator(".conductor-report").getByRole("button", { name: "Zurück", exact: true }).click();
       current = await request(); const before = current.snapshot;

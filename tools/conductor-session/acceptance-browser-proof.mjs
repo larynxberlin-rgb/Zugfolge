@@ -8,6 +8,7 @@ import { createConductorAcceptanceNativeFixture } from "../../apps/game-api/dist
 import { DemandStore } from "../../apps/game-api/dist/demand-store.js";
 import { startConductorSessionBrowserBackend } from "./native-backend.mjs";
 import { createConductorProofDriver, samePoint } from "./browser-driver.mjs";
+import { assertEncounterAttribution } from "./encounter-proof.mjs";
 
 const ROOT = fileURLToPath(new URL("../../", import.meta.url));
 const phone = (row) => ["empty_phone", "defective_phone", "technical_issue"].includes(row.presentation);
@@ -34,7 +35,7 @@ test("one actual browser trip connects six original dialogues, police, network, 
     const { request, shot, idle, option, reportReady, historyRequest } = driver;
     const command = async (payload) => {
       const result = await f.apply(`acceptance-browser:operational:${++serial}`, payload);
-      await f.refresh(); await f.advanceControl();
+      await f.refreshConductorCycle();
       events.push({ kind: "command", command: payload, atMs: f.clock.nowMs, stateHash: result.state.stateHash });
       return result;
     };
@@ -112,6 +113,7 @@ test("one actual browser trip connects six original dialogues, police, network, 
           assert.equal(checked.snapshot.activeEncounter.hints.documentStatus,
             candidate.fareFact === "invalid" ? "verified_invalid" : candidate.fareFact === "valid_unpresentable" ? "not_presentable" : "verified_valid");
           assert.equal(checked.snapshot.activeEncounter.hints.concreteDanger, false);
+          await assertEncounterAttribution({ page, request, expectedPassengerKey: candidate.passengerKey });
           await driver.assertAccessibility(checked, plan.id);
           assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
           await shot(`acceptance-${plan.id}-checked`);
@@ -142,6 +144,7 @@ test("one actual browser trip connects six original dialogues, police, network, 
     await page.waitForFunction(() => document.querySelector("canvas")?.dataset.renderer === "webgl", null, { timeout: 90000 });
     const restored = await request(); assert.deepEqual(restored.snapshot.activeEncounter, checked.snapshot.activeEncounter);
     assert.deepEqual(restored.snapshot.position, checked.snapshot.position);
+    const restoredAttribution = await assertEncounterAttribution({ page, request, expectedPassengerKey: police.candidate.passengerKey, selectDifferent: true });
     const requested = await option("police", true);
     assert.equal(requested.control.hold.status, "requested");
     assert.equal(requested.control.hold.targetStopId, f.initialization.trains[0].stopPlan.stops[1].stopId);
@@ -238,7 +241,7 @@ test("one actual browser trip connects six original dialogues, police, network, 
     await shot("acceptance-mobile-320-final-report"); assert.deepEqual(driver.errors, []);
     await writeFile(reportPath, JSON.stringify({ schemaVersion: "conductor-acceptance-browser-proof/v1", testOnly: true,
       browser: browser.version(), evidence: backend.evidence, source: f.acceptanceSource, sessionId, cases, events,
-      originalFareFactsUnchanged: true, activeDialogReload: true, leaseActivity: driver.leaseActivity,
+      originalFareFactsUnchanged: true, activeDialogReload: true, restoredAttribution, leaseActivity: driver.leaseActivity,
       accessibilityChecks: driver.accessibilityChecks, heldNetwork, releasedNetwork, stationScenes,
       demand: { initialStateHash: initialDemand.result.stateHash, finalStateHash: finalDemand.result.stateHash,
         initialRevision: initialDemand.result.revision, finalRevision: finalDemand.result.revision,

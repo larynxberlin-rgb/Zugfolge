@@ -102,6 +102,7 @@ export async function startConductorSessionBrowserBackend({ control = noControlE
         nativeTransport, nativeBuildProfile, nativeBuildProfileEvidence: "Inferred from explicitly configured native program paths",
         controlIntegration: fixture.control ? "Actual native fare-control, police and ledger integration" : control === noControlEffects ? "Unconfigured: all nonempty control effects fail closed" : "Explicit caller-provided integration",
         worldId: config.worldId, trainRunId: config.trainRunId, compilerOutputSetHash: receipt.outputSetSha256,
+        demandFinalitySteps: fixture.demandFinalitySteps ?? [],
         fleetStateHash: fixture.checkpoint.stateHash, authorityReleaseHash: fixture.checkpoint.state.authorityReleaseHash,
         artVerification: "Approved corpus with temporary test signature; no productive key or world activation" },
       async advance(milliseconds) {
@@ -109,8 +110,8 @@ export async function startConductorSessionBrowserBackend({ control = noControlE
         const next = tail.then(async () => {
           fixture.clock.nowMs += milliseconds;
           await fixture.apply(`browser-proof:advance:${++advanceSequence}`, { type: "advance-to", atMs: fixture.clock.nowMs });
-          await fixture.refresh();
-          if (fixture.advanceControl) await fixture.advanceControl();
+          if (fixture.refreshConductorCycle) await fixture.refreshConductorCycle();
+          else await fixture.refresh();
         });
         tail = next.catch(() => {}); return next;
       },

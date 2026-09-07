@@ -45,7 +45,9 @@ export interface ConductorSessionSnapshotV1 {
   readonly sessionId: string; readonly operatorId: string; readonly status: ConductorSessionStatusV1;
   readonly revision: number; readonly sequence: number; readonly nowMs: number; readonly leaseUntilMs: number;
   readonly endReason: ConductorSessionEndReasonV1 | null; readonly position: InteriorPointV1; readonly pins: ConductorSessionPinsV1;
-  readonly passengers: PassengerProjectionV2; readonly activeEncounter: PassengerEncounterV1 | null; readonly snapshotHash: string;
+  readonly passengers: PassengerProjectionV2; readonly activeEncounter: PassengerEncounterV1 | null;
+  /** Fehlend bei unveränderten V1-Altbelegen: keine öffentliche Personenzuordnung herleiten. */
+  readonly activePassengerKey?: string | null; readonly snapshotHash: string;
 }
 export type ConductorCommandActionV1 = { readonly type: "start_session" | "detach_session" | "resume_session" | "end_session" }
   | { readonly type: "move"; readonly to: InteriorPointV1; readonly transitionEdgeId: string | null }

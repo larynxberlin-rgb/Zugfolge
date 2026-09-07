@@ -88,16 +88,7 @@ pub(crate) fn validate_state(
             digest(&canonical)? == passengers.state_hash,
             "conductor_session_projection_hash_mismatch",
         )?;
-        if let Some(id) = &session.active_encounter_id {
-            require(
-                state.encounters.get(id).is_some_and(|record| {
-                    !record.closed_by_session
-                        && record.dialogue.status
-                            == zugfolge_conductor_dialogue::EncounterStatusV1::Active
-                }),
-                "conductor_session_encounter_missing",
-            )?;
-        }
+        active_encounter_record(state, session, passengers)?;
     } else {
         require(
             state.layout.is_none()
@@ -191,6 +182,40 @@ pub fn restore_conductor_session_state(
     Ok(input.state.clone())
 }
 
+fn active_encounter_record<'a>(
+    state: &'a ConductorTrainStateV1,
+    session: &ConductorSessionV1,
+    passengers: &zugfolge_conductor::PassengerProjectionV2,
+) -> Result<Option<&'a ConductorEncounterRecordV1>, ConductorSessionError> {
+    session
+        .active_encounter_id
+        .as_ref()
+        .map(|id| {
+            let record = state
+                .encounters
+                .get(id)
+                .ok_or(ConductorSessionError("conductor_session_encounter_missing"))?;
+            require(
+                session.status != ConductorSessionStatusV1::Ended
+                    && !record.closed_by_session
+                    && record.encounter_id == *id
+                    && record.dialogue.encounter_id == *id
+                    && record.dialogue.world_id == state.world_id
+                    && record.dialogue.train_run_id == state.train_run_id
+                    && record.dialogue.status
+                        == zugfolge_conductor_dialogue::EncounterStatusV1::Active
+                    && record.dialogue.passenger_key == record.passenger_key
+                    && passengers
+                        .passengers
+                        .iter()
+                        .any(|passenger| passenger.passenger_key == record.passenger_key),
+                "conductor_session_encounter_missing",
+            )?;
+            Ok(record)
+        })
+        .transpose()
+}
+
 pub(crate) fn snapshot(
     state: &ConductorTrainStateV1,
     releases: &[DialogueReleaseV1],
@@ -199,14 +224,20 @@ pub(crate) fn snapshot(
         .session
         .as_ref()
         .ok_or(ConductorSessionError("conductor_session_missing"))?;
-    let active_encounter = session
-        .active_encounter_id
-        .as_ref()
-        .map(|id| {
-            let record = state
-                .encounters
-                .get(id)
-                .ok_or(ConductorSessionError("conductor_session_encounter_missing"))?;
+    let passengers = state.passengers.as_ref().ok_or(ConductorSessionError(
+        "conductor_session_passengers_missing",
+    ))?;
+    let active_record = active_encounter_record(state, session, passengers)?;
+    let active_passenger_key = active_record.map(|record| record.passenger_key.clone());
+    let active_encounter = active_record
+        .map(|record| {
+            require(
+                passengers.passengers.iter().any(|passenger| {
+                    passenger.passenger_key == record.passenger_key
+                        && passenger.activity == zugfolge_conductor::PassengerActivityV1::Onboard
+                }),
+                "conductor_session_encounter_missing",
+            )?;
             project_encounter(
                 source::dialogue_release(releases, &record.dialogue.release_hash)?,
                 &record.dialogue,
@@ -228,10 +259,9 @@ pub(crate) fn snapshot(
         end_reason: session.end_reason,
         position: session.position.clone(),
         pins: session.pins.clone(),
-        passengers: state.passengers.clone().ok_or(ConductorSessionError(
-            "conductor_session_passengers_missing",
-        ))?,
+        passengers: passengers.clone(),
         active_encounter,
+        active_passenger_key,
         snapshot_hash: String::new(),
     };
     snapshot.snapshot_hash = digest(&snapshot)?;

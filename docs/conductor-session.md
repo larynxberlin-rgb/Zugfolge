@@ -86,6 +86,29 @@ Es läuft höchstens eine Begegnung zugleich. Der Dialogzustand kommt aus
 werden nicht in den Sitzungssnapshot übernommen. Während eines offenen Dialogs
 wird keine neue Kontrolle begonnen und keine Bewegung ausgeführt.
 
+Frisch erzeugte öffentliche Snapshots enthalten außerdem das Feld
+`activePassengerKey`, wenn `activeEncounter` gesetzt ist. Es stammt
+ausschließlich aus der tatsächlich aktiven Begegnung im
+nativen Zugzustand. Der Schlüssel muss im selben autorisierten Snapshot zu
+einem noch an Bord befindlichen Fahrgast gehören. Der Snapshot-Hash bindet
+diese Zuordnung; private Fahrberechtigung oder Dialogbaumdaten werden nicht
+mitgegeben. Reload, Detach und Resume erhalten dieselbe Zuordnung. Eine rein
+lokale Listenauswahl darf weder den Gesprächspartner wechseln noch dessen
+Sprechblase einer anderen Person zuordnen. Gesprächsende, Ausstieg oder
+Sitzungsende setzen `activeEncounter` auf `null` und lassen `activePassengerKey`
+weg. Die native Projektion weist fehlende oder widersprüchliche Zuordnungen
+ab. Bereits gespeicherte V1-Quittungen und SSE-Snapshots ohne das neue Feld
+bleiben unverändert lesbar und behalten ihre ursprünglichen Bytes und Hashes.
+Der Transport ergänzt keinen Standardwert. Eine alte aktive Begegnung ohne
+dieses Feld besitzt ausdrücklich noch keine öffentliche Personenzuordnung;
+die Oberfläche wartet dafür auf einen frischen nativen Snapshot. Ein
+vorhandenes Feld muss zur aktiven Begegnung und sichtbaren Person passen;
+explizites `null` ist nur ohne aktive Begegnung zulässig.
+Ein alter privater V1-Zustand, der eine Begegnung noch während des Ausstiegs
+enthält, bleibt ohne Hashumschreibung restaurierbar. Die nächste native
+Synchronisation schließt sie anhand der tatsächlichen M10-Aktivität, bevor
+ein neuer zugeordneter Snapshot ausgegeben wird.
+
 Fallbelege und offenbarte Evidence stammen aus dem serverautoritativen
 Kontrollfall. Der Dialog erzeugt Absichten; Forderung, Geldbetrag und Polizeihalt
 werden ausschließlich von ihren jeweiligen Domänen entschieden. Bindend

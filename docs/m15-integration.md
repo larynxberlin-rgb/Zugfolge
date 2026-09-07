@@ -90,6 +90,14 @@ Freigabe ohne Polizeianforderung bleibt innerhalb der Pünktlichkeitstoleranz.
 Dieser Servicebeleg ist vom Mehrzugvergleich abzugrenzen, der ausschließlich
 die zusätzliche Dauer eines bereits aktiven Polizeihalts vergleicht.
 
+Die getrennte vollständige Kontrollfahrt besteht im Windows-Release-Browser
+mit tatsächlicher Dokumentprüfung, regulärer Forderung, späterem gültigem
+Nachweis, bestätigten Zahlungen, Dialog-Reload, Polizeifreigabe und anschließendem
+Tagesbericht. Ihre 13 Bilder umfassen auch 320 Pixel breite Touchansichten.
+Ohne bestätigten Vertragserlös bleibt die positive Tagesprämie in diesem
+Kontrollkorpus gesperrt; die verbundene Abnahmefahrt prüft zusätzlich die
+tatsächliche Erlösgrundlage aus ihrem Einzelfahrtvertrag.
+
 Der erste vollständige Integrationsstand `3d2b6fd` besteht alle vier Jobs in
 [CI-Lauf 34066385323](https://github.com/larynxberlin-rgb/Zugfolge/actions/runs/34066385323),
 einschließlich echter Linux-NAPI-, PostgreSQL-, Sitzungs-/Ledger- und

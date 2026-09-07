@@ -65,7 +65,7 @@
     },
     {
       "path": "crates/zugfolge-conductor-session/src/commands.rs",
-      "sha256": "6554f765fc17596dbd5c050bf3e22b45552fcf340148b483c978804623125f49"
+      "sha256": "9c967e152f1c7803b0c4cb910707f80b8823d769c4a956a7e06acd9d8f81a42b"
     },
     {
       "path": "crates/zugfolge-conductor-session/src/common.rs",
@@ -81,7 +81,7 @@
     },
     {
       "path": "crates/zugfolge-conductor-session/src/state.rs",
-      "sha256": "5390c3fd654560557cd69825d1556624a1cfc51454d07160dd994984713b0072"
+      "sha256": "7a0120c50b2b4ab74f83276e0d9da8a5bcdfae2be02406a7f1f2fbdc3d6ee3dd"
     },
     {
       "path": "crates/zugfolge-conductor-session/src/transport.rs",
@@ -89,7 +89,7 @@
     },
     {
       "path": "crates/zugfolge-conductor-session/src/types.rs",
-      "sha256": "56df30e68294cfc107e398407602bf410395e808eb924dc3bd5d4e07b254d47d"
+      "sha256": "0c15486b3e57fd3ac2cdf7899c3aab02e0953036631c379133f000e8e357a708"
     },
     {
       "path": "crates/zugfolge-conductor-session/tests/acceptance.rs",
@@ -97,7 +97,7 @@
     },
     {
       "path": "crates/zugfolge-conductor-session/tests/session.rs",
-      "sha256": "1a02f506c11fd9c54ad36cac64a862ae12128d3d154c615541e40fa6744d9748"
+      "sha256": "d741a2f5cf53c45fa4520f4e1fd57498ff8ba73ca51031bd3b4b46a3ce9116aa"
     },
     {
       "path": "crates/zugfolge-conductor-session/tests/support/acceptance.rs",

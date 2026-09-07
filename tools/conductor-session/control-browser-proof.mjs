@@ -8,6 +8,7 @@ import { createFareControlNativeFixture } from "../../apps/game-api/dist/conduct
 import { ledgerEntries, ledgerTransactions, regionalSimulationStates } from "../../packages/db/dist/index.js";
 import { startConductorSessionBrowserBackend } from "./native-backend.mjs";
 import { createConductorProofDriver, operationalEventTimes } from "./browser-driver.mjs";
+import { assertEncounterAttribution } from "./encounter-proof.mjs";
 import { and, eq } from "../../apps/game-api/node_modules/drizzle-orm/index.js";
 
 const ROOT = fileURLToPath(new URL("../../", import.meta.url));
@@ -63,6 +64,7 @@ test("one real native browser session connects document checks, claims, proof, p
       const checked = await option("check", false, touch);
       assert.equal(checked.snapshot.activeEncounter.hints.documentStatus, plan.fact === "valid" ? "verified_valid" : plan.fact === "invalid" ? "verified_invalid" : "not_presentable");
       assert.equal(checked.snapshot.activeEncounter.hints.identityStatus, plan.identity);
+      await assertEncounterAttribution({ page, request, expectedPassengerKey: candidate.passengerKey });
       await assertAccessibility(checked, plan.id);
       if (touch) {
         assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
@@ -75,8 +77,9 @@ test("one real native browser session connects document checks, claims, proof, p
         const resumed = await request(); assert.equal(resumed.snapshot.sessionId, sessionId);
         assert.deepEqual(resumed.snapshot.activeEncounter, checked.snapshot.activeEncounter);
         assert.deepEqual(resumed.snapshot.position, checked.snapshot.position);
+        const attribution = await assertEncounterAttribution({ page, request, expectedPassengerKey: candidate.passengerKey, selectDifferent: true });
         checks.push({ scenario: "active-dialogue-reload", encounterId: checked.snapshot.activeEncounter.encounterId,
-          sessionId, position: resumed.snapshot.position, originalEncounterPreserved: true });
+          sessionId, position: resumed.snapshot.position, originalEncounterPreserved: true, attribution });
         await shot("control-active-dialogue-restored");
       }
       const settled = await option(plan.finish, plan.finish !== "close");
@@ -120,7 +123,7 @@ test("one real native browser session connects document checks, claims, proof, p
             nativeEventSteps.push({ fromMs, toMs: nextAtMs, holdStatus: "requested" });
             if (nextAtMs === context.nowMs) {
               await backend.fixture.apply(`control-browser:due-event:${tick}`, { type: "advance-to", atMs: nextAtMs });
-              await backend.fixture.refresh(); await backend.fixture.advanceControl();
+              await backend.fixture.refreshConductorCycle();
             } else await backend.advance(nextAtMs - context.nowMs);
             const frame = await request();
             if (!largeStationScene && frame.snapshot.status === "active" && frame.scene?.station?.size === "large") {

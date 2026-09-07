@@ -143,11 +143,19 @@ export async function openConductorMode(input: { api: ConductorApi; trainLabel: 
       }
     }
     const active = snapshot.activeEncounter;
-    const newEncounterKey = `${active?.encounterId}:${active?.revision}:${active ? snapshot.nowMs >= active.availableAtMs : true}`;
+    const activePassenger = people.find((person) => person.passengerKey === snapshot.activePassengerKey);
+    const conversationLabel = activePassenger ? passengerLabel(activePassenger) : undefined;
+    const newEncounterKey = `${active?.encounterId}:${active?.revision}:${snapshot.activePassengerKey}:${conversationLabel}:${selectedKey}:${active ? snapshot.nowMs >= active.availableAtMs : true}`;
     if (encounterKey !== newEncounterKey) {
       encounterKey = newEncounterKey; encounter.replaceChildren();
       if (active) {
-        encounter.append(element("h2", active.status === "closed" ? "Kontrolle abgeschlossen" : "Fahrkartenkontrolle"), element("blockquote", active.passengerText));
+        encounter.append(element("h2", active.status === "closed" ? "Kontrolle abgeschlossen" : "Fahrkartenkontrolle"));
+        if (conversationLabel) {
+          encounter.append(element("p", `Gespräch mit ${conversationLabel}`, "conductor-encounter-passenger"));
+          if (selectedKey && selectedKey !== snapshot.activePassengerKey) encounter.append(element("p",
+            "Du hast eine andere Person ausgewählt. Dieses Gespräch gehört weiterhin zur oben genannten Person.", "conductor-encounter-selection"));
+        } else encounter.append(element("p", "Laufendes Gespräch · die Fahrgastzuordnung ist noch nicht bestätigt.", "conductor-encounter-passenger"));
+        encounter.append(element("blockquote", active.passengerText));
         const documentLabels = { unchecked: "Fahrkarte noch nicht geprüft", verified_valid: "Gültiger Nachweis bestätigt", not_presentable: "Nachweis derzeit nicht vorzeigbar", verified_invalid: "Ungültiger Nachweis bestätigt" };
         encounter.append(element("p", documentLabels[active.hints.documentStatus], "conductor-evidence"));
         if (active.hints.identityStatus === "refused") encounter.append(element("p", "Identitätsklärung wurde verweigert.", "conductor-evidence"));

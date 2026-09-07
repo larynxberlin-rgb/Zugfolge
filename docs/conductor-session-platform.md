@@ -93,6 +93,18 @@ keine Deltafolge über einen unbekannten Grundzustand legen. Die Oberfläche
 beendet ihre lokale Interaktion bei Verbindungsverlust und lädt vor weiteren
 Befehlen den aktuellen Stand.
 
+Der lokale Browsernachweis führt nach einem Betriebscommit wie der produktive
+Weltzyklus Nachfrage, fällige Kontrollfolgen und erneut Nachfrage fort. Eine
+dabei am aktuellen Zeitpunkt entstandene Haltquittung bleibt gemäß M10 bis
+`regionalNowMs - 1` ausdrücklich ausstehend. Nur wenn der tatsächliche private
+Nachfragecursor eine solche Quittung der betrachteten Fahrt enthält, schreitet
+der Prüftreiber durch einen echten Betriebsbefehl bis zur ersten ganzzahligen
+Millisekunde hinter ihrer belegten Ereigniszeit fort. Danach bestätigt der
+reguläre Nachfrageproduzent die unveränderte Quittung. Der Nachweis hält
+Zeitgrenze, Quittungskennungen und Nachfragehashes fest. Es gibt keinen
+pauschalen Zeitaufschlag auf Bewegungs- oder Bahnhofsszenenproben; fehlende oder
+widersprüchliche Belege scheitern weiterhin an der nativen Sitzungsprüfung.
+
 Ein nativ bestätigter Sitzungsabschluss bleibt für sein weiterhin berechtigtes
 Konto lesbar, auch wenn die physische Fahrt bereits entfernt oder abgebrochen
 wurde. Dieser reine Abschlussabruf prüft die aktuelle Welt-/EVU-Berechtigung,

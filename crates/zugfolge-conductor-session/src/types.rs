@@ -233,6 +233,8 @@ pub struct ConductorSessionSnapshotV1 {
     pub pins: ConductorSessionPinsV1,
     pub passengers: PassengerProjectionV2,
     pub active_encounter: Option<PassengerEncounterV1>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub active_passenger_key: Option<String>,
     pub snapshot_hash: String,
 }
 

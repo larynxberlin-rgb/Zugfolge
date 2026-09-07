@@ -49,9 +49,9 @@ Millisekunden und die tatsächlichen sichtbaren Snapshotgrößen sind:
 
 | Fiktiver M5-Typ | Personen | Layout | M10 | Fahrgastprojektion | Sitzungsstart | Restore | Snapshotbytes |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| 101 | 160 | 7,574 | 8,829 | 5,062 | 20,349 | 3,419 | 60.135 |
-| 102 | 220 | 9,237 | 14,362 | 5,982 | 20,747 | 5,715 | 81.903 |
-| 103 | 144 | 6,264 | 8,770 | 4,557 | 14,948 | 3,266 | 54.539 |
+| 101 | 160 | 5,528 | 7,358 | 3,348 | 12,259 | 2,706 | 60.135 |
+| 102 | 220 | 6,557 | 10,779 | 6,145 | 21,962 | 3,657 | 81.903 |
+| 103 | 144 | 5,552 | 6,864 | 3,069 | 12,155 | 2,839 | 54.539 |
 
 Alle Wiederholungen ergeben je Konfiguration dieselben Fachhashes. Rohwerte,
 Binärhash und Quellpins stehen in
@@ -83,5 +83,6 @@ Messadapter mit SHA-256 über UTF-8 mit LF. Die Messung wurde nach dem
 Einpunkt-Bremsrest, der nativen Regionsübergabequittung, der Auswahl aller
 drei M5-Konfigurationen und dem ursachenbelegten Wiederanlauf nach
 Infrastruktursperren einschließlich beider Kontrollhalt-Freigabereihenfolgen
-im Plattformfixture neu erzeugt;
+im Plattformfixture sowie der öffentlichen aktiven Gesprächszuordnung mit
+kompatiblem V1-Restore und quittiertem Ausstieg neu erzeugt;
 die Betriebs- und M10-Golden-Hashes bleiben unverändert.

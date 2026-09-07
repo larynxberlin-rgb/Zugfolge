@@ -51,8 +51,10 @@ const endReasons = ["requested", "lease_expired", "access_revoked", "train_compl
 
 /** Strikte öffentliche Whitelist; insbesondere keine Account-, FareFact- oder Zukunftsknoten. */
 export function parseConductorSessionSnapshot(value: unknown): ConductorSessionSnapshotV1 {
+  const hasPassengerKey = Object.hasOwn(record(value), "activePassengerKey");
   const row = record(value, ["schemaVersion", "worldId", "trainRunId", "sessionId", "operatorId", "status", "revision", "sequence",
-    "nowMs", "leaseUntilMs", "endReason", "position", "pins", "passengers", "activeEncounter", "snapshotHash"]);
+    "nowMs", "leaseUntilMs", "endReason", "position", "pins", "passengers", "activeEncounter", "snapshotHash",
+    ...(hasPassengerKey ? ["activePassengerKey"] : [])]);
   if (row["schemaVersion"] !== "conductor-session-snapshot/v1") fail();
   for (const key of ["worldId", "trainRunId", "sessionId", "operatorId"]) text(row[key]);
   for (const key of ["revision", "sequence", "nowMs", "leaseUntilMs"]) natural(row[key]);
@@ -71,11 +73,18 @@ export function parseConductorSessionSnapshot(value: unknown): ConductorSessionS
   if (passengers.binding.worldId !== row["worldId"] || passengers.binding.trainRunId !== row["trainRunId"]
     || passengers.binding.operatorId !== row["operatorId"] || passengers.binding.manifestRevision !== pins["manifestRevision"]
     || passengers.stateHash !== pins["projectionHash"] || passengers.sourceLayoutHash !== pins["interiorLayoutHash"]) fail();
+  if (hasPassengerKey && (row["activeEncounter"] === null) !== (row["activePassengerKey"] === null)) fail();
   if (row["activeEncounter"] !== null) {
+    if (row["status"] === "ended") fail();
+    if (hasPassengerKey) {
+      text(row["activePassengerKey"]);
+      if (!passengers.passengers.some((passenger) =>
+        passenger.passengerKey === row["activePassengerKey"] && passenger.activity === "onboard")) fail();
+    }
     const encounter = record(row["activeEncounter"], ["schemaVersion", "encounterId", "revision", "status", "passengerText", "options", "hints", "availableAtMs"]);
     if (encounter["schemaVersion"] !== "passenger-encounter/v1") fail();
     text(encounter["encounterId"]); text(encounter["passengerText"], 600); natural(encounter["revision"]); natural(encounter["availableAtMs"]);
-    oneOf(encounter["status"], ["active", "closed"]);
+    oneOf(encounter["status"], ["active"]);
     const options = encounter["options"];
     if (!Array.isArray(options) || options.length > 12) return fail();
     const ids: string[] = [];

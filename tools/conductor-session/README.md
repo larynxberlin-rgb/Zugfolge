@@ -109,6 +109,12 @@ bestätigte Prüf- und Fahrtstatus müssen darin vorkommen. Die kurzen Snapshots
 stehen im Bericht. Dies ist eine Prüfung der konkreten semantischen Oberfläche,
 kein vollständiger WCAG-Audit und keine Screenreader-Nutzerstudie.
 
+Die Gesprächsüberschrift bindet die vom Server bestätigte aktive Person.
+Nach einem echten Neuladen und der Auswahl einer anderen Person muss diese
+Zuordnung in DOM, Accessibilitybaum und Sitzung unverändert bleiben. Alte
+V1-Antworten ohne Zuordnungsfeld werden als noch nicht bestätigt bezeichnet;
+die lokale Auswahl ersetzt keinen serverseitigen Beleg.
+
 ## Voll besetzter Doppelstockzug
 
 `capacity-browser-proof.mjs` verwendet die zweite originale M5-Konfiguration
@@ -150,6 +156,16 @@ zur gepinnten planmäßigen Zielabfahrt intern abarbeiten. Eine tatsächliche
 Ankunft wird daraus nicht abgeleitet. Längere Wartezeiten benutzen bestätigte UI-Gehschritte
 hin und zurück zur Sitzungserhaltung; der Bericht führt die Positionen und
 Leasequittungen auf. Es gibt keine direkte Lease-Änderung.
+
+Nach Betriebs- und Kontrollkommandos werden die echten Nachfrage- und
+Kontrollproduzenten in ihrer bestätigten Reihenfolge ausgeführt. Eine im
+Nachfragecursor tatsächlich ausstehende Haltquittung dieser Fahrt darf einen
+zusätzlichen nativen Zeitschritt genau auf `actualTimeMs + 1` auslösen: Der
+Nachfrage-Watermark muss strikt hinter der Ereigniszeit liegen. Der Bericht
+bindet vorherigen Cursor, originale Quittungskennung, Zeit und Nachfragehashes
+in `demandFinalitySteps`. Ohne eine solche gespeicherte Quittung wird keine
+Zeit hinzugefügt; die letzte Millisekunde einer tatsächlichen Anfahrt bleibt
+als eigenständige Szenenprobe erhalten.
 
 ```sh
 CONDUCTOR_ACCEPTANCE_BROWSER_TEST=1 node --test tools/conductor-session/acceptance-browser-proof.mjs

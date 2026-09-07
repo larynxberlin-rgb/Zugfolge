@@ -7,6 +7,7 @@ import { and, eq } from "drizzle-orm";
 import { createConductorAcceptanceNativeFixture } from "./conductor-acceptance.native-fixture.js";
 import { hasFareControlNative } from "./conductor-control.native-fixture.js";
 import { controlRecord } from "./conductor-control-runtime.js";
+import { DemandStore, demandList, demandRecord } from "./demand-store.js";
 
 const nativeIt = hasFareControlNative ? it : it.skip;
 nativeIt("bindet den gemeinsamen Originalkorpus an einen tatsächlichen M6-Abschluss mit idempotentem Ledger", async () => {
@@ -45,8 +46,8 @@ nativeIt("bindet den gemeinsamen Originalkorpus an einen tatsächlichen M6-Absch
     const advance = async (atMs: number, snapshot = true) => {
       f.clock.nowMs = atMs;
       await f.apply(`acceptance:clock:${++serial}`, { type: "advance-to", atMs });
-      await f.advanceControl();
-      if (snapshot) { await f.refresh(); response = await f.sessions.snapshot(f.access); }
+      if (snapshot) { await f.refreshConductorCycle(); response = await f.sessions.snapshot(f.access); }
+      else { await f.refresh(); await f.advanceControl(); }
     };
     const passenger = response.snapshot.passengers.passengers.find((row) => row.passengerKey === police!.passengerKey)!;
     const target = response.layout.interactions.find((row) => row.targetId === (passenger.spaceNeeds === "wheelchair" ? passenger.spaceId : passenger.placeId))!;
@@ -121,6 +122,32 @@ nativeIt("bindet den gemeinsamen Originalkorpus an einen tatsächlichen M6-Absch
     }
     expect(controlRecord(controlRecord(history.control)["hold"]), JSON.stringify(steps)).toMatchObject({ status: "released", outcome: "identity_confirmed" });
     expect(steps.some((row) => row.candidates.some((candidate) => candidate.atMs === row.atMs && candidate.cause === "native-police-response-due"))).toBe(true);
+    // Exakt am Freigabezeitpunkt ist die echte Abfahrt im Betrieb committed,
+    // aber M10 lässt Ereignisse am noch offenen Zeitpunkt ausdrücklich pending.
+    await f.refresh();
+    const demandStore = new DemandStore(f.db, f.native.demand);
+    const pendingHead = (await demandStore.latest(f.access.worldId))!;
+    const pendingCursor = demandRecord(pendingHead.progressCursor);
+    const departure = demandList(pendingCursor["pendingReceipts"]).find((row) => row["trainRunId"] === f.access.trainRunId
+      && row["stopId"] === middleStopId && row["kind"] === "departure");
+    expect(departure).toBeDefined();
+    expect(departure!["actualTimeMs"]).toBe(f.clock.nowMs);
+    expect(pendingCursor["safeThroughMs"]).toBe(f.clock.nowMs - 1);
+    const observer: ConductorCommandV1 = { ...start, sessionId: "acceptance-after-police", idempotencyKey: "acceptance:after-police:start" };
+    await expect(f.sessions.command(f.access, observer)).rejects.toMatchObject({ code: "conductor_stop_receipt_mismatch" });
+    const beforeFinality = f.clock.nowMs;
+    await f.refreshConductorCycle();
+    expect(f.clock.nowMs).toBe(beforeFinality + 1);
+    const finality = f.demandFinalitySteps.at(-1)!;
+    expect(finality.receipts).toContainEqual({ receiptId: departure!["receiptId"], kind: "departure", stopId: middleStopId, actualTimeMs: beforeFinality });
+    const confirmedHead = (await demandStore.latest(f.access.worldId))!;
+    expect(demandList(demandRecord(confirmedHead.progressCursor)["receipts"])).toContainEqual(departure);
+    const observed = await f.sessions.command(f.access, observer);
+    expect(observed.snapshot.status).toBe("active");
+    await f.refreshConductorCycle();
+    expect(f.clock.nowMs).toBe(beforeFinality + 1); // Ohne neue Quittung kein pauschaler Zeitaufschlag.
+    await f.sessions.command(f.access, { ...observer, idempotencyKey: "acceptance:after-police:end", expectedRevision: observed.snapshot.revision,
+      expectedManifestRevision: observed.snapshot.pins.manifestRevision, action: { type: "end_session" } });
     f.clock.nowMs = f.settlementReadyAtMs;
     await f.apply("acceptance:actual-day-end", { type: "advance-to", atMs: f.clock.nowMs });
     const result = await f.settleAcceptanceContract();
@@ -137,7 +164,7 @@ nativeIt("bindet den gemeinsamen Originalkorpus an einen tatsächlichen M6-Absch
       testOnly: true, source: f.acceptanceSource, settlementReadyAtMs: f.settlementReadyAtMs,
       sessionId: start.sessionId, originalCandidates: selected, policeCandidate: police, nativeSteps: steps, policeHistory: history,
       comparison: { sameSourceClosureAndRelease: true, baselineStartStateHash, baselineOutcome },
-      pinnedTargetDepartureMs: earliestActivationMs, settlement: result }, null, 2) + "\n");
+      pinnedTargetDepartureMs: earliestActivationMs, demandFinalitySteps: f.demandFinalitySteps, settlement: result }, null, 2) + "\n");
   } finally { await f.dispose(); }
 }, 180_000);
 

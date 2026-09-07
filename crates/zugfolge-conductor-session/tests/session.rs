@@ -190,6 +190,14 @@ fn echte_quellen_starten_eine_wiederherstellbare_sitzung() {
     );
     let result = apply_conductor_session_command(&input).unwrap();
     assert_eq!(result.events.len(), 1);
+    assert!(
+        result
+            .snapshot
+            .as_ref()
+            .unwrap()
+            .active_passenger_key
+            .is_none()
+    );
     assert_eq!(result.state.session.as_ref().unwrap().revision, 1);
     let restored = restore_conductor_session_state(&RestoreConductorSessionStateInputV1 {
         schema_version: "conductor-session-restore-input/v1".into(),
@@ -467,6 +475,41 @@ fn reload_disconnect_und_end_session_bewahren_dialog_und_kontrollhalt() {
         .unwrap()
         .active_encounter
         .clone();
+    let passenger_key = inspection.state.encounters[&encounter.as_ref().unwrap().encounter_id]
+        .passenger_key
+        .clone();
+    assert_eq!(
+        inspection
+            .snapshot
+            .as_ref()
+            .unwrap()
+            .active_passenger_key
+            .as_ref(),
+        Some(&passenger_key)
+    );
+    let other_passenger = inspection
+        .state
+        .passengers
+        .as_ref()
+        .unwrap()
+        .passengers
+        .iter()
+        .find(|passenger| passenger.passenger_key != passenger_key)
+        .unwrap()
+        .passenger_key
+        .clone();
+    assert_eq!(
+        apply_conductor_session_command(&fixture.input(
+            inspection.state.clone(),
+            "other-selection",
+            ConductorCommandActionV1::StartInspection {
+                passenger_key: other_passenger,
+            },
+        ))
+        .unwrap_err()
+        .0,
+        "conductor_encounter_active"
+    );
     let detached = apply_conductor_session_command(&fixture.input(
         inspection.state.clone(),
         "detach",
@@ -477,6 +520,15 @@ fn reload_disconnect_und_end_session_bewahren_dialog_und_kontrollhalt() {
         detached.snapshot.as_ref().unwrap().active_encounter,
         encounter
     );
+    assert_eq!(
+        detached
+            .snapshot
+            .as_ref()
+            .unwrap()
+            .active_passenger_key
+            .as_ref(),
+        Some(&passenger_key)
+    );
     let restored = restore_conductor_session_state(&RestoreConductorSessionStateInputV1 {
         schema_version: "conductor-session-restore-input/v1".into(),
         state: detached.state.clone(),
@@ -484,6 +536,16 @@ fn reload_disconnect_und_end_session_bewahren_dialog_und_kontrollhalt() {
         dialogue_releases: fixture.source.dialogue_releases.clone(),
     })
     .unwrap();
+    let reloaded = project_conductor_session_snapshot(&ProjectConductorSessionSnapshotInputV1 {
+        schema_version: "conductor-session-project-input/v1".into(),
+        expected_state_hash: restored.state_hash.clone(),
+        state: restored.clone(),
+        access: fixture.access(),
+        source: fixture.source.clone(),
+    })
+    .unwrap();
+    assert_eq!(reloaded.active_passenger_key.as_ref(), Some(&passenger_key));
+    assert_eq!(reloaded.active_encounter, encounter);
     let resumed = apply_conductor_session_command(&fixture.input(
         restored,
         "resume",
@@ -493,6 +555,15 @@ fn reload_disconnect_und_end_session_bewahren_dialog_und_kontrollhalt() {
     assert_eq!(
         resumed.snapshot.as_ref().unwrap().active_encounter,
         encounter
+    );
+    assert_eq!(
+        resumed
+            .snapshot
+            .as_ref()
+            .unwrap()
+            .active_passenger_key
+            .as_ref(),
+        Some(&passenger_key)
     );
     let encounter_id = encounter.unwrap().encounter_id;
     let mut sync = fixture.sync(resumed.state, "control-receipt");
@@ -519,8 +590,185 @@ fn reload_disconnect_und_end_session_bewahren_dialog_und_kontrollhalt() {
         ended.state.session.as_ref().unwrap().end_reason,
         Some(ConductorSessionEndReasonV1::Requested)
     );
-    assert!(ended.snapshot.unwrap().active_encounter.is_none());
+    let ended_snapshot = ended.snapshot.unwrap();
+    assert!(ended_snapshot.active_encounter.is_none());
+    assert!(ended_snapshot.active_passenger_key.is_none());
+    assert!(
+        !serde_json::to_string(&ended_snapshot)
+            .unwrap()
+            .contains("activePassengerKey")
+    );
     assert_eq!(ended.effects.len(), 1);
+}
+
+#[test]
+fn aktive_begegnung_verlangt_den_tatsaechlichen_sichtbaren_fahrgast() {
+    use sha2::{Digest, Sha256};
+    let fixture = Fixture::new();
+    let inspection = inspect(&fixture, start(&fixture));
+    let key = inspection
+        .snapshot
+        .as_ref()
+        .unwrap()
+        .active_passenger_key
+        .as_ref()
+        .unwrap();
+    let mut state = inspection.state.clone();
+    let passengers = state.passengers.as_mut().unwrap();
+    passengers
+        .passengers
+        .retain(|passenger| &passenger.passenger_key != key);
+    passengers.state_hash.clear();
+    passengers.state_hash = Sha256::digest(serde_json::to_vec(&*passengers).unwrap())
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect();
+    state.session.as_mut().unwrap().pins.projection_hash = passengers.state_hash.clone();
+    state.state_hash = conductor_session_state_hash(&state).unwrap();
+    assert_eq!(
+        restore_conductor_session_state(&RestoreConductorSessionStateInputV1 {
+            schema_version: "conductor-session-restore-input/v1".into(),
+            expected_state_hash: state.state_hash.clone(),
+            state,
+            dialogue_releases: fixture.source.dialogue_releases.clone(),
+        })
+        .unwrap_err()
+        .0,
+        "conductor_session_encounter_missing"
+    );
+}
+
+#[test]
+fn tatsaechlicher_ausstieg_loescht_die_oeffentliche_dialogzuordnung() {
+    let fixture = Fixture::new();
+    let state = start(&fixture);
+    let mut arrival = Fixture::new();
+    arrival.advance(650_000);
+    arrival
+        .source
+        .operational_world
+        .lock_route("regional-1", "interlocking:train:b")
+        .unwrap();
+    arrival
+        .source
+        .operational_world
+        .plan_motion("regional-1")
+        .unwrap();
+    arrival.advance(700_000);
+    let arrived =
+        synchronize_conductor_session(&arrival.sync(state.clone(), "arrival-preview")).unwrap();
+    let layout = state.layout.as_ref().unwrap();
+    let position = &state.session.as_ref().unwrap().position;
+    let passenger_key = arrived
+        .snapshot
+        .as_ref()
+        .unwrap()
+        .passengers
+        .passengers
+        .iter()
+        .filter(|passenger| {
+            passenger.activity == zugfolge_conductor::PassengerActivityV1::Alighting
+        })
+        .find(|passenger| {
+            let interaction = layout
+                .interactions
+                .iter()
+                .find(|interaction| interaction.target_id == passenger.place_id)
+                .unwrap();
+            let point = &layout
+                .nodes
+                .iter()
+                .find(|node| node.node_id == interaction.node_id)
+                .unwrap()
+                .point;
+            point.vehicle_id == position.vehicle_id
+                && point.body_id == position.body_id
+                && point.deck_id == position.deck_id
+                && point.x_mm.abs_diff(position.x_mm) + point.y_mm.abs_diff(position.y_mm) <= 2500
+        })
+        .expect("echter M10-Aussteiger in Reichweite des originalen Einstiegs")
+        .passenger_key
+        .clone();
+    let inspection = apply_conductor_session_command(&fixture.input(
+        state,
+        "inspect-alighter",
+        ConductorCommandActionV1::StartInspection {
+            passenger_key: passenger_key.clone(),
+        },
+    ))
+    .unwrap();
+    assert_eq!(
+        inspection
+            .snapshot
+            .as_ref()
+            .unwrap()
+            .active_passenger_key
+            .as_ref(),
+        Some(&passenger_key)
+    );
+    let closed =
+        synchronize_conductor_session(&arrival.sync(inspection.state.clone(), "actual-alighting"))
+            .unwrap();
+    let snapshot = closed.snapshot.unwrap();
+    assert!(snapshot.active_encounter.is_none() && snapshot.active_passenger_key.is_none());
+    assert_eq!(closed.effects.len(), 1);
+    assert_eq!(
+        closed.effects[0].kind,
+        ConductorSessionEffectKindV1::CloseWithoutAction
+    );
+    // Frühere private V1-Stände konnten die Begegnung bis zur Abfahrt behalten.
+    let mut legacy = closed.state;
+    legacy.encounters = inspection.state.encounters;
+    legacy.session.as_mut().unwrap().active_encounter_id =
+        inspection.state.session.unwrap().active_encounter_id;
+    legacy.state_hash = conductor_session_state_hash(&legacy).unwrap();
+    let restored = restore_conductor_session_state(&RestoreConductorSessionStateInputV1 {
+        schema_version: "conductor-session-restore-input/v1".into(),
+        expected_state_hash: legacy.state_hash.clone(),
+        state: legacy.clone(),
+        dialogue_releases: fixture.source.dialogue_releases.clone(),
+    })
+    .unwrap();
+    assert_eq!(restored, legacy);
+    let migrated =
+        synchronize_conductor_session(&arrival.sync(restored, "legacy-alighting")).unwrap();
+    assert!(
+        migrated
+            .snapshot
+            .as_ref()
+            .unwrap()
+            .active_passenger_key
+            .is_none()
+    );
+    assert!(
+        migrated
+            .snapshot
+            .as_ref()
+            .unwrap()
+            .active_encounter
+            .is_none()
+    );
+}
+
+#[test]
+fn alte_snapshotbytes_ohne_oeffentliche_zuordnung_bleiben_unveraendert() {
+    use sha2::{Digest, Sha256};
+    let fixture = Fixture::new();
+    let mut legacy = inspect(&fixture, start(&fixture)).snapshot.unwrap();
+    // Historischer V1-Transportbeleg ohne Zuordnungsfeld, keine neue Fachquelle.
+    legacy.active_passenger_key = None;
+    legacy.snapshot_hash.clear();
+    legacy.snapshot_hash = Sha256::digest(serde_json::to_vec(&legacy).unwrap())
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect();
+    let original = serde_json::to_string(&legacy).unwrap();
+    assert!(!original.contains("activePassengerKey"));
+    let restored: ConductorSessionSnapshotV1 = serde_json::from_str(&original).unwrap();
+    assert_eq!(serde_json::to_string(&restored).unwrap(), original);
+    assert_eq!(restored.snapshot_hash, legacy.snapshot_hash);
+    assert!(restored.active_passenger_key.is_none());
+    assert!(restored.active_encounter.is_some());
 }
 
 #[test]
