@@ -89,6 +89,10 @@ function projection(): PlanningProjectionV1 {
 }
 
 describe("Bildfahrplan-Renderer", () => {
+  const timeline: NonNullable<PlanningResultProjection["timeline"]> = {
+    requested: [{ stationId: "a", arrivalS: 25_800, departureS: 25_800, kind: "origin" }, { stationId: "b", arrivalS: 26_400, departureS: 26_400, kind: "destination" }],
+    planned: [{ stationId: "a", arrivalS: 25_920, departureS: 25_920, kind: "origin" }, { stationId: "b", arrivalS: 26_700, departureS: 26_700, kind: "destination" }],
+  };
   const allocated: PlanningResultProjection = {
     status: "allocated", requestedDepartureS: 25_800, plannedDepartureS: 25_920,
     adjustments: [
@@ -98,6 +102,46 @@ describe("Bildfahrplan-Renderer", () => {
       { kind: "running-time-extension", stationId: "b", requestedS: 600, plannedS: 840, explanation: "Gesamtfahrtdauer mit längeren Aufenthalten." },
     ],
   };
+
+  it("öffnet den vollständigen Vergleich groß und erhält den Bildfahrplan als auswählbare Ansicht", () => {
+    const base = projection();
+    const data = { ...base, conflicts: [], trains: base.trains.map((train, index) => index === 0 ? { ...train, planning: { ...allocated, timeline } } : train) };
+    const comparison = renderProjection(data, options);
+    expect(comparison).toContain('class="planning-comparison-workspace"');
+    expect(comparison).toContain("Ursprüngliche Planung");
+    expect(comparison).toContain("Zugewiesene Trasse");
+    expect(comparison).not.toContain('id="diagram-card"');
+    expect(comparison).not.toContain('id="steps"');
+    expect(comparison).toContain('id="planning-train"');
+    const diagram = renderProjection(data, { ...options, planningView: "diagram" });
+    expect(diagram).toContain('id="diagram-card"');
+    expect(diagram).toContain('id="steps"');
+    expect(diagram).not.toContain('id="planning-comparison"');
+  });
+
+  it("vergleicht nur den Vorschlag der gewählten Fahrt und lässt die echte Übernahme erreichbar", () => {
+    const base = projection();
+    const proposed: PlanningResultProjection = { ...allocated, status: "proposed", timeline };
+    const data = { ...base, conflicts: [{ ...base.conflicts[0]!, alternative: { ...base.conflicts[0]!.alternative!, planning: proposed } }] };
+    const html = renderProjection(data, options);
+    expect(html).toContain("Trassenvorschlag");
+    expect(html.indexOf('data-apply-alternative="offer-stable"')).toBeLessThan(html.indexOf('class="planning-comparison-details"'));
+    const otherTrain = renderProjection(data, { ...options, selectedTrainId: "t2", planningView: "comparison" });
+    expect(otherTrain).toContain("keine vollständigen Vergleichsangaben");
+    expect(otherTrain).not.toContain('aria-label="Trassenvorschlag · A"');
+    expect(otherTrain).not.toContain('class="planning-comparison-times"');
+  });
+
+  it("hält die Konfliktauswahl vor den eingeklappten Detailangaben erreichbar", () => {
+    const base = projection();
+    const data = { ...base, trains: base.trains.map((train, index) => index === 0 ? { ...train, planning: { ...allocated, timeline } } : train) };
+    const html = renderProjection(data, options);
+    const details = html.indexOf('class="planning-comparison-details"');
+    for (const conflict of data.conflicts) {
+      expect(html.indexOf(`data-conflict="${conflict.id}"`)).toBeLessThan(details);
+      expect(html.slice(details)).not.toContain(`data-conflict="${conflict.id}"`);
+    }
+  });
 
   it("zeigt zugeteilte Anpassungen mit Wunsch/Plan, Sekundenwerten, Ursachen und nichtfarblichen Markierungen", () => {
     const base = projection();

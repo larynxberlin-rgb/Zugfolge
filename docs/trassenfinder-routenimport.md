@@ -177,6 +177,42 @@ erhalten keine nachträglich erfundene Wunschzeit und keine Behauptung einer
 unveränderten Planung. Der bestehende Freigabeweg bleibt erhalten; eine
 Vorschau oder ein CSV-Import nimmt eine Alternative nicht automatisch an.
 
+### Fahrplanvergleich links und rechts
+
+Der optionale Block `planning.timeline` enthält zwei vollständige geordnete
+Betriebsstellenfolgen: `requested` aus dem nativen Ausgangsfahrprofil mit der
+ursprünglichen Wunschabfahrt und `planned` aus dem tatsächlich gewählten
+Kandidatenprofil. Jeder Punkt nennt die native `stationId`, `arrivalS`,
+`departureS` und seine Rolle als Start, Ziel, Fahrgasthalt, Betriebshalt oder
+Durchfahrt. Auch Durchfahrtpunkte ohne Aufenthalt bleiben sichtbar. Diese
+Zeiten stammen vollständig aus Zugfolge; die CSV liefert weiterhin keine
+Fahrzeiten oder Halte.
+
+Die Oberfläche zeigt den gewünschten Fahrplan links und den vorgeschlagenen
+beziehungsweise zugeteilten Fahrplan rechts. Gemeinsame Punkte werden anhand
+ihrer Stationskennung so nebeneinander angeordnet, dass die ursprüngliche
+Reihenfolge in jeder Spalte erhalten bleibt. Bei unterschiedlichen Fahrwegen
+bleiben nur einseitig vorhandene Punkte sichtbar; auf der anderen Seite steht
+keine erfundene Ankunft oder Abfahrt.
+
+Eine Zeitänderung wird gelb beziehungsweise bernsteinfarben markiert. Ab einer
+absoluten Änderung von fünf Minuten bei Ankunft, Abfahrt oder Aufenthalt wird
+der betroffene Vergleich rot; die Grenze gilt auch für frühere Zeiten.
+Ein neu hinzugefügter Betriebshalt ab fünf Minuten wird ebenfalls rot
+markiert, auch wenn die Betriebsstelle im ursprünglichen Fahrweg fehlt.
+Fahrwegänderungen ohne Zeitänderung bleiben bernsteinfarben. Eine Ablehnung
+oder ein nicht erfüllter gewünschter Fahrgasthalt wird rot gekennzeichnet.
+Klartext, Minutenwerte und die Art des Halts erklären die Bedeutung neben der
+Farbe. Die Fünf-Minuten-Grenze ist eine Darstellungsregel, keine zusätzliche
+Planungsfreiheit und keine automatische Ablehnung der Trasse.
+
+Bei `requested` und `rejected` ist `planned` ausdrücklich `null`; eine
+Ablehnung erhält keinen erfundenen Alternativfahrplan. `proposed` bleibt ein
+Vorschlag bis zur bestehenden Übernahme, während `allocated` die zugeteilte
+Trasse bezeichnet. Historische Projektionen ohne `timeline` zeigen den
+fehlenden Vergleich verständlich an, statt ihn aus wenigen Diagrammpunkten
+oder nachträglich berechneten Zeiten zu ergänzen.
+
 ## Daten- und Rechtegrenze
 
 Die Datei dient der unmittelbaren Übernahme eines einzelnen, vom Nutzer

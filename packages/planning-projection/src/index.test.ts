@@ -133,6 +133,75 @@ describe("PlanningProjection v1", () => {
     expect(() => parsePlanningProjection(withPlanning({ ...proposed, status: "requested", plannedDepartureS: null }))).toThrow();
   });
 
+  const timeline = {
+    requested: [
+      { stationId: "a", arrivalS: 1_799_999_880, departureS: 1_799_999_880, kind: "origin" as const },
+      { stationId: "c", arrivalS: 1_800_000_060, departureS: 1_800_000_120, kind: "passenger-stop" as const },
+      { stationId: "b", arrivalS: 1_800_000_360, departureS: 1_800_000_360, kind: "destination" as const },
+    ],
+    planned: [
+      { stationId: "a", arrivalS: 1_800_000_000, departureS: 1_800_000_000, kind: "origin" as const },
+      { stationId: "c", arrivalS: 1_800_000_180, departureS: 1_800_000_360, kind: "passenger-stop" as const },
+      { stationId: "b", arrivalS: 1_800_000_600, departureS: 1_800_000_600, kind: "destination" as const },
+    ],
+  };
+  const timelineResult: PlanningResultProjection = { ...planning, timeline,
+    adjustments: [planning.adjustments[0]!,
+      { kind: "dwell-extension", stationId: "c", requestedS: 60, plannedS: 180, explanation: "Aufenthalt für Gegenfahrt verlängert." },
+      { kind: "running-time-extension", stationId: "b", requestedS: 480, plannedS: 600, explanation: "Verlängerter Aufenthalt erhöht die Fahrtdauer." }],
+  };
+  const withTimeline = (value: unknown = timeline) => {
+    const base = withPlanning({ ...timelineResult, timeline: value });
+    return { ...base, stations: [...base.stations, { id: "c", name: "Mitte", distanceMm: 6_000_000 }] };
+  };
+
+  it("erhält beide vollständigen Fahrprofile einschließlich Aufenthalt und absoluten Zeiten", () => {
+    expect(parsePlanningProjection(withTimeline()).trains[0]!.planning).toEqual(timelineResult);
+    expect(parsePlanningProjection(withPlanning(planning)).trains[0]!.planning).not.toHaveProperty("timeline");
+  });
+
+  it("zeigt vor einer Zuteilung nur den belegten ursprünglichen Lauf", () => {
+    for (const status of ["requested", "rejected"] as const) {
+      const base = withTimeline();
+      const pending = { status, requestedDepartureS: planning.requestedDepartureS, plannedDepartureS: null, adjustments: [],
+        timeline: { requested: timeline.requested, planned: null } };
+      const data = { ...base, trains: base.trains.map((train, index) => index === 0 ? { ...train, planning: pending,
+        calls: [{ stationId: "a", timeS: 1_799_999_880 }, { stationId: "b", timeS: 1_800_000_360 }] } : train) };
+      expect(parsePlanningProjection(data).trains[0]!.planning?.timeline).toEqual(pending.timeline);
+      expect(() => parsePlanningProjection({ ...data, trains: data.trains.map((train, index) => index === 0
+        ? { ...train, planning: { ...pending, timeline } } : train) })).toThrow(/Planlauf/);
+    }
+  });
+
+  it("weist unvollständige, nicht chronologische oder erfundene Vergleichszeiten zurück", () => {
+    const planned = timeline.planned;
+    for (const invalid of [null, { ...timeline, extra: true }, { ...timeline, planned: null },
+      { ...timeline, requested: [] }, { ...timeline, planned: [planned[0]] },
+      { ...timeline, planned: Array.from({ length: 513 }, () => planned[0]) },
+      { ...timeline, planned: [planned[0], { ...planned[1], stationId: "unknown" }, planned[2]] },
+      { ...timeline, planned: [planned[0], { ...planned[1], stationId: "a" }, planned[2]] },
+      { ...timeline, planned: [planned[0], { ...planned[1], arrivalS: 1_799_999_999 }, planned[2]] },
+      { ...timeline, planned: [planned[0], { ...planned[1], departureS: 1_800_000_179 }, planned[2]] },
+      { ...timeline, planned: [planned[0], { ...planned[1], arrivalS: 1.5 }, planned[2]] },
+      { ...timeline, planned: [planned[0], { ...planned[1], kind: "pass" }, planned[2]] },
+      { ...timeline, planned: [planned[0], { ...planned[1], kind: "operational-stop", departureS: planned[1]!.arrivalS }, planned[2]] },
+      { ...timeline, planned: [planned[0], { ...planned[1], kind: "origin" }, planned[2]] },
+      { ...timeline, planned: [{ ...planned[0], arrivalS: 1_800_000_001, departureS: 1_800_000_001 }, planned[1], planned[2]] },
+      { ...timeline, planned: [planned[0], planned[1], { ...planned[2], stationId: "c" }] },
+      { ...timeline, planned: [planned[0], planned[1], { ...planned[2], arrivalS: 1_800_000_700, departureS: 1_800_000_700 }] },
+    ]) expect(() => parsePlanningProjection(withTimeline(invalid))).toThrow();
+  });
+
+  it("bindet den vollständigen Alternativlauf an seine vorgeschlagene Abfahrt", () => {
+    const base = withTimeline();
+    const proposed = { ...timelineResult, status: "proposed" as const };
+    const data = { ...base, conflicts: [{ ...base.conflicts[0]!, alternative: { ...base.conflicts[0]!.alternative!,
+      departureShiftS: 120, planning: proposed } }] };
+    expect(parsePlanningProjection(data).conflicts[0]!.alternative!.planning?.timeline).toEqual(timeline);
+    expect(() => parsePlanningProjection({ ...data, conflicts: [{ ...data.conflicts[0]!, alternative: { ...data.conflicts[0]!.alternative!,
+      planning: { ...proposed, timeline: { ...timeline, planned: timeline.requested } } } }] })).toThrow(/belegten Abfahrt/);
+  });
+
   it("akzeptiert alle sechs Sperrzeitanteile und alle vier Konfliktarten", () => {
     const parsed = parsePlanningProjection(projection());
     expect(parsed.occupations.map((occupation) => occupation.phase)).toEqual(BLOCKING_PHASES);

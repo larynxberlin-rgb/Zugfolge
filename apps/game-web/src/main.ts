@@ -108,6 +108,7 @@ let api: GameApiClient | undefined;
 
 let density: Density = "control";
 let showBlockingTimes = true;
+let planningView: "comparison" | "diagram" | undefined;
 let selectedTrainId = parameters.get("train") ?? "";
 let selectedConflictId = "";
 let projection: PlanningProjectionV1 | undefined;
@@ -308,6 +309,7 @@ function render(): void {
   app.innerHTML = renderProjection(projection, {
     density,
     showBlockingTimes,
+    planningView,
     selectedTrainId,
     selectedConflictId,
     message,
@@ -974,6 +976,20 @@ function loadVehicleHistory(vehicleId: string): Promise<void> {
 }
 
 function bind(): void {
+  app.querySelectorAll<HTMLButtonElement>("[data-planning-view]").forEach((node) => {
+    node.addEventListener("click", () => {
+      planningView = node.dataset.planningView === "comparison" ? "comparison" : "diagram";
+      render();
+      app.querySelector<HTMLElement>(`[data-planning-view="${planningView}"]`)?.focus();
+    });
+  });
+  app.querySelector<HTMLSelectElement>("#planning-train")?.addEventListener("change", (event) => {
+    selectedTrainId = (event.currentTarget as HTMLSelectElement).value;
+    selectedConflictId = projection ? conflictsForTrain(projection, selectedTrainId)[0]?.id ?? "" : "";
+    message = "";
+    render();
+    app.querySelector<HTMLElement>("#planning-train")?.focus();
+  });
   app.querySelector("#density")?.addEventListener("click", () => {
     density = density === "control" ? "document" : "control";
     render();
@@ -1050,7 +1066,7 @@ async function applyAlternative(alternativeId: string): Promise<void> {
   } finally {
     applyingAlternativeId = "";
     render();
-    app.querySelector<HTMLElement>("#diagram-card")?.focus();
+    app.querySelector<HTMLElement>("#planning-comparison, #diagram-card")?.focus();
   }
 }
 
