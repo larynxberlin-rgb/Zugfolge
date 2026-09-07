@@ -17,11 +17,11 @@
     "@zugfolge/db": "workspace:*",
     "@zugfolge/health": "workspace:*",
     "drizzle-orm": "^0.45.2",
-    "jose": "^6.2.9"
+    "jose": "^6.2.11"
   },
   "devDependencies": {
     "@electric-sql/pglite": "^0.5.8",
-    "@types/node": "26.4.0",
+    "@types/node": "26.4.1",
     "typescript": "^7.0.2",
     "vitest": "^5.0.0"
   }
