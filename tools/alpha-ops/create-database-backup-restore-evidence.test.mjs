@@ -35,7 +35,7 @@ function snapshot(overrides = {}, migrationCount = 33) {
       createdAt: 1_787_000_000_000 + index,
     })),
     constraints: databaseCutoverConstraintProofs(),
-    guards: databaseCutoverGuardProofs(),
+    guards: databaseCutoverGuardProofs(migrationCount),
     heads: { total: 0, v2: 0, nonNullInitializationHash: 0, incompatible: 0 },
     authoritativeHead: {
       schema: "zugfolge-database-authoritative-head/v1",
@@ -135,8 +135,8 @@ async function missing(path) {
   await assert.rejects(access(path), { code: "ENOENT" });
 }
 
-for (const migrationCount of [33, 34]) {
-test(`erzeugt aus Schema ${migrationCount} das kanonische v1-Paar und einen gueltigen v${migrationCount === 34 ? 4 : 3}-Rollbackbeleg`, async () => {
+for (const migrationCount of [33, 34, 35, 36, 37, 38]) {
+test(`erzeugt aus Schema ${migrationCount} das kanonische v1-Paar und einen gueltigen v${migrationCount - 30}-Rollbackbeleg`, async () => {
   const value = await fixture({ migrationCount });
   const inspect = inspectPair({ sourceSnapshot: snapshot({}, migrationCount) });
   try {
@@ -169,7 +169,7 @@ test(`erzeugt aus Schema ${migrationCount} das kanonische v1-Paar und einen guel
       inspect,
     });
     assert.match(rollback.proofHash, /^[a-f0-9]{64}$/u);
-    assert.equal(JSON.parse(await readFile(value.paths.rollbackProofPath, "utf8")).schema, `zugfolge-database-rollback-proof/v${migrationCount === 34 ? 4 : 3}`);
+    assert.equal(JSON.parse(await readFile(value.paths.rollbackProofPath, "utf8")).schema, `zugfolge-database-rollback-proof/v${migrationCount - 30}`);
   } finally {
     await rm(value.root, { recursive: true, force: true });
   }
@@ -180,7 +180,7 @@ for (const scenario of [
   { name: "Schema-34-Manifest mit Schema-33-Datenbank", migrationCount: 34, sourceSnapshot: snapshot(), error: /Schema-34-Migrationsledger/u },
   { name: "Schema-33-Manifest mit Schema-34-Datenbank", migrationCount: 33, sourceSnapshot: snapshot({}, 34), error: /Schema-33-Migrationsledger/u },
   { name: "Schema-34-Ledger mit historischem Schema-33-Tabellensatz", migrationCount: 34, sourceSnapshot: snapshot({ authoritativeHead: snapshot().authoritativeHead }, 34), error: /Schema-34-Tabellensatz/u },
-  { name: "unqualifiziertes Schema 36", migrationCount: 36, sourceSnapshot: snapshot(), error: /keinen qualifizierten autoritativen Tabellenvertrag/u },
+  { name: "unqualifiziertes Schema 39", migrationCount: 39, sourceSnapshot: snapshot(), error: /keinen qualifizierten autoritativen Tabellenvertrag/u },
 ]) {
   test(`publiziert keine Belege fuer ${scenario.name}`, async () => {
     const value = await fixture({ migrationCount: scenario.migrationCount });

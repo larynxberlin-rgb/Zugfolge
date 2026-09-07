@@ -53,16 +53,23 @@ function sameValue(left, right) {
   return JSON.stringify(sortedValue(left)) === JSON.stringify(sortedValue(right));
 }
 
-async function expectedMigrationLedger(count) {
-  const journal = JSON.parse(await readFile(new URL("meta/_journal.json", MIGRATIONS_FOLDER), "utf8"));
-  invariant(Array.isArray(journal.entries) && [33, 34, 35].includes(journal.entries.length), "Das digestgebundene Image besitzt keinen freigegebenen Schema-33/34/35-Journalvertrag.");
+export function validateSchema31ImageJournal(journal) {
+  invariant(Array.isArray(journal?.entries) && [33, 34, 35, 36, 37, 38].includes(journal.entries.length), "Das digestgebundene Image besitzt keinen freigegebenen Schema-33/34/35/36/37/38-Journalvertrag.");
   if (journal.entries.length >= 34) invariant(journal.entries[33]?.tag === "0034_platform_audit_boundaries", "Migration 0034 fehlt oder steht an falscher Position.");
-  if (journal.entries.length === 35) invariant(journal.entries[34]?.tag === "0035_remove_tutorial_worlds", "Migration 0035 fehlt oder steht an falscher Position.");
+  if (journal.entries.length >= 35) invariant(journal.entries[34]?.tag === "0035_remove_tutorial_worlds", "Migration 0035 fehlt oder steht an falscher Position.");
+  if (journal.entries.length >= 36) invariant(journal.entries[35]?.tag === "0036_conductor_private_sessions", "Migration 0036 fehlt oder steht an falscher Position.");
+  if (journal.entries.length >= 37) invariant(journal.entries[36]?.tag === "0037_archive_privacy_redaction", "Migration 0037 fehlt oder steht an falscher Position.");
+  if (journal.entries.length >= 38) invariant(journal.entries[37]?.tag === "0038_persistent_vehicle_registry", "Migration 0038 fehlt oder steht an falscher Position.");
   invariant(journal.entries[28]?.tag === "0029_operational_initialization_binding", "Migrationskopf 29 ist nicht kanonisch.");
   invariant(journal.entries[29]?.tag === "0030_legacy_runtime_rollback_window", "Migration 0030 fehlt oder steht an falscher Position.");
   invariant(journal.entries[30]?.tag === "0031_database_bound_cutover_receipts", "Migration 0031 fehlt oder steht an falscher Position.");
   invariant(journal.entries[31]?.tag === "0032_world_writer_guard", "Migration 0032 fehlt oder steht an falscher Position.");
   invariant(journal.entries[32]?.tag === "0033_operational_command_receipt_ledger", "Migration 0033 fehlt oder steht an falscher Position.");
+}
+
+async function expectedMigrationLedger(count) {
+  const journal = JSON.parse(await readFile(new URL("meta/_journal.json", MIGRATIONS_FOLDER), "utf8"));
+  validateSchema31ImageJournal(journal);
   const entries = journal.entries.slice(0, count);
   return Promise.all(entries.map(async (entry) => ({
     createdAt: String(entry.when),

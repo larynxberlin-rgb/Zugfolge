@@ -9,6 +9,8 @@
 
 mod assets;
 mod catalog;
+mod configuration;
+mod fare_economy;
 mod market;
 mod mobilization;
 mod operations;
@@ -23,6 +25,12 @@ pub use catalog::{
     ProtectionOption, VehicleCatalogBuilder, VehicleCatalogEntry, VehicleCatalogRelease,
     VehicleEra, VehicleTypeId, VehicleWorldSettings, YearRange,
 };
+pub use configuration::{
+    AmenityV1, InteriorConfigurationV1, MultipurposeAreaV1, SeatTypeV1, SeatingDensityV1,
+    StructuralConfigurationV1, VEHICLE_CONFIGURATION_SCHEMA, VehicleConfigurationError,
+    VehicleConfigurationFacts, VehicleConfigurationV1, deserialize_optional_vehicle_configuration,
+};
+pub use fare_economy::{FareInspectionEconomyV1, deserialize_optional_fare_inspection};
 pub use market::{
     CONDITION_MAX, LeaseReturnReason, LessorProfile, PersistentVehicle, PersistentVehicleMarket,
     ServerLeaseQuote, TrafficKind, VehicleCondition, VehicleLifeEvent, VehicleLifeEventKind,

@@ -1,0 +1,51 @@
+{
+  "schemaVersion": "conductor-art-generation-evidence/v1",
+  "source": "sources/accessories-north-south.png",
+  "sourceSha256": "e7402bd29633d8fd759690eb9c600dbe0e81ca53919107317d6c78261417da38",
+  "tool": "image_gen.imagegen",
+  "prompt": "Use case: stylized-concept. OriginalZugfolgegamepixelart. CreateanewtransparentPNGdirectioncorrection sheet for the accessoriesintheattachedreference. Referenceonlyforidentityandpalette. 2columns3rows,1024x1536pixels,no labels. LEFTcolumn eachaccessoryfacingAWAY/TOWARDTOPofthemap/NORTH: showREARBACKSIDE withrearpushhandlesonbottom, frontfootrestsorfrontwheel pointing towardTOP. RIGHTcolumn facingTOWARDviewer/BOTTOM/SOUTH: showfrontwithfootrests/frontwheelonthebottom,pushhandlesattop. Row1emptyredcushionedgraphitewheelchair. Row2graphitebicyclewithredrearbag. Row3amberfabricgraphitestroller(empty). TheleftandrightimagesMUSTbeoppositedirections,NOTtwofrontviews. NordwheelchairmustshowBACKofthebackrestinthebottompartandfootrestsattheTOP; southwheelchairshowsredseatwithfootrestsBOTTOM. Strollerrear-facingnorthexposespushbarattheBOTTOMandambercanopyfacesawaytowardsTOP; southrevealsemptyseatopeningandfootresttowardsBOTTOM. OrthogonaltopdownRPGpixelartmatchesreferencecharacterstyle,neverisometric. Compactactualpixelartwithhardoutlinedsilhouettesandlimitedgraphite/red/amber/greycolors,sharpnearestneighborpixelblocks,noantialiasing,nosmoothgradients. Same scaleandanchoracrossbothdirections. Nopeople,babies,logos,text,numbers,watermarks. Trulytransparentbackground.",
+  "metadata": {
+    "container": "PNG/caBX/JUMBF/c2pa.actions.v2",
+    "cborSha256": "593d1456d51672f78e73ecdabfac519dfd5a7dbb3be77f3e7808bbd95cf9a4bb",
+    "actions": {
+      "actions": [
+        {
+          "action": "c2pa.created",
+          "when": "2026-09-05T00:00:00Z",
+          "softwareAgent": {
+            "name": "gpt-image",
+            "version": "2.0"
+          },
+          "digitalSourceType": "http://cv.iptc.org/newscodes/digitalsourcetype/trainedAlgorithmicMedia"
+        },
+        {
+          "action": "c2pa.converted",
+          "when": "2026-09-05T00:00:00Z"
+        },
+        {
+          "action": "c2pa.watermarked.unbound",
+          "when": "2026-09-05T00:00:00Z"
+        }
+      ],
+      "allActionsIncluded": false
+    },
+    "softwareAgent": {
+      "name": "gpt-image",
+      "version": "2.0"
+    },
+    "interpretation": "Providerdeklarierte Modellangabe; keine Prüfung der C2PA-Signatur oder Aussage über interne Gewichte."
+  },
+  "technicalProcessing": {
+    "script": "tools/art-atlas/prepare.py",
+    "pillowVersion": "12.3.0",
+    "operations": [
+      "crop",
+      "edge-connected-neutral-checkerboard-removal",
+      "alpha-threshold-128",
+      "nearest-neighbor-resize",
+      "fixed-palette-no-dither",
+      "atlas-pack"
+    ],
+    "authorization": "Auftraggeber: Ja, technisch aufbereiten (06.09.2026)."
+  }
+}

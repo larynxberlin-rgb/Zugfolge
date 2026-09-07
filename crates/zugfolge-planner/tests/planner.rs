@@ -19,7 +19,7 @@ use zugfolge_determinism::SimTime;
 use zugfolge_infra::{OperatingPointId, TrackId, TrainCharacteristics};
 use zugfolge_planner::{
     PathDecision, PathRequest, PathRequestId, PathTolerances, PlannerError, PlannerOptions,
-    TrainPathPlanner,
+    RequestedStop, TrainPathPlanner, enumerate_itineraries,
 };
 
 /// Nordstadt.
@@ -88,8 +88,12 @@ fn ast_fenster(infra: &Infrastructure, laufweg: &Itinerary) -> (i64, i64) {
 /// von Nordstadt um [`WUNSCH_S`] abfahrender Zug ihn befahren würde.
 fn buch_mit_gegenzug(infra: &Infrastructure) -> OccupationLedger {
     let hin = nordstadt_bis_talheim(infra);
+    buch_mit_gegenzug_fuer_laufweg(infra, &hin)
+}
+
+fn buch_mit_gegenzug_fuer_laufweg(infra: &Infrastructure, hin: &Itinerary) -> OccupationLedger {
     let zurueck = talheim_bis_nordstadt(infra);
-    let (hin_von, hin_bis) = ast_fenster(infra, &hin);
+    let (hin_von, hin_bis) = ast_fenster(infra, hin);
     let (zurueck_von, zurueck_bis) = ast_fenster(infra, &zurueck);
 
     // Die Mitten beider Astbelegungen zur Deckung bringen — so entsteht die
@@ -209,6 +213,82 @@ fn in_ein_leeres_netz_passt_die_wunschlage() {
     assert!(angebot.deviation().is_exact(), "{}", angebot.explain());
     assert!(ergebnis.desired_conflicts().is_clear());
     assert!(ergebnis.explain().contains("Annahme"));
+}
+
+#[test]
+fn ein_vorhandener_halt_wird_auf_dem_bestellten_fahrweg_konfliktfrei_verlaengert() {
+    let infra = reference_infrastructure();
+    let planner = TrainPathPlanner::new(&infra);
+    let request = |extra| {
+        PathRequest::new(
+            PathRequestId::new(1),
+            TrainNumber::new(TrainCategory::Regional, 26802).unwrap(),
+            regional_train(),
+            OperatingPointId::new(NORDSTADT),
+            OperatingPointId::new(TALHEIM),
+            vec![RequestedStop::new(OperatingPointId::new(SANDBERG), 60).unwrap()],
+            SimTime::from_seconds(WUNSCH_S),
+            OperatingDays::DAILY,
+            PathTolerances::new(0, 0, 60, extra, 0).unwrap(),
+        )
+        .unwrap()
+        .with_via_points(vec![
+            OperatingPointId::new(WALDHOF),
+            OperatingPointId::new(SANDBERG),
+        ])
+        .unwrap()
+    };
+    let strict = request(0);
+    let base = enumerate_itineraries(infra.graph(), &strict, 1).unwrap();
+    let ledger = buch_mit_gegenzug_fuer_laufweg(&infra, &base[0]);
+    assert_eq!(
+        planner.plan(&ledger, &strict).unwrap().decision(),
+        PathDecision::Rejected
+    );
+    let flexible = request(1800);
+    let result = planner.plan(&ledger, &flexible).unwrap();
+    assert_eq!(
+        result.decision(),
+        PathDecision::Alternative,
+        "{}",
+        result.explain()
+    );
+    let offer = result.offer().unwrap();
+    assert_eq!(offer.deviation().shift_s(), 0);
+    assert!(
+        offer.deviation().operational_stops().is_empty(),
+        "eine Haltverlängerung ist kein neuer Betriebshalt"
+    );
+    assert!(
+        offer.deviation().extra_running_time_s() > 0
+            && offer.deviation().extra_running_time_s() <= 1800
+    );
+    let call = offer
+        .profile()
+        .station_calls()
+        .iter()
+        .find(|call| call.station == OperatingPointId::new(SANDBERG))
+        .unwrap();
+    assert!(call.departure_s - call.arrival_s > 60);
+    assert!(
+        offer
+            .itinerary()
+            .legs()
+            .iter()
+            .any(|leg| leg.to() == OperatingPointId::new(WALDHOF))
+    );
+    for day in 0..7 {
+        assert!(
+            ledger
+                .check(&offer.pattern().materialise(day).unwrap())
+                .is_clear()
+        );
+    }
+    assert_eq!(
+        planner.plan(&ledger, &flexible).unwrap().candidates(),
+        result.candidates(),
+        "gleiche Eingaben behalten dieselbe Alternative"
+    );
 }
 
 #[test]

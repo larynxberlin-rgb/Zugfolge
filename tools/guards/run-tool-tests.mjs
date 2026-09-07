@@ -21,6 +21,7 @@ for (const paths of [
     "tools/audits/keycloak-public-catalog-selection.test.mjs",
   ],
   ["tools/region-import/*.test.mjs"],
+  ["tools/conductor-scenes/source-compiler.test.mjs", "tools/conductor-session/package-evidence.test.mjs", "tools/conductor-session/browser-driver.test.mjs"],
   [
     "tools/tiles/gdal-semantic-pmtiles.test.mjs",
     "tools/tiles/map-build-cache-inventory.test.mjs",

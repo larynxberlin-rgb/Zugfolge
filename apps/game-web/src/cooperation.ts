@@ -1,4 +1,5 @@
 import { railwayTabs } from "@zugfolge/design-system";
+import { routeImportMarkup } from "./route-import.js";
 import type {
   ContractType,
   CooperationPageView,
@@ -10,6 +11,8 @@ import type {
   VehicleAssetView,
   VehicleHistoryEventView,
   VehicleMarketListingView,
+  VehicleRegistryEntryView,
+  VehicleRegistryEventView,
 } from "./api.js";
 import { renderComparisonWorkbench } from "./comparison.js";
 
@@ -27,6 +30,15 @@ export interface CooperationSurfaceState {
   readonly selectedHistoryVehicleId?: string;
   readonly contractType: ContractType;
   readonly marketQuery: string;
+  readonly marketType?: "all" | "sale" | "rental";
+  readonly marketSort?: "newest" | "price" | "deadline";
+  readonly vehicleRegistry?: readonly VehicleRegistryEntryView[];
+  readonly registryQuery?: string;
+  readonly registryNextCursor?: string | null;
+  readonly selectedVehiclePassport?: VehicleRegistryEntryView;
+  readonly vehicleRegistryHistory?: readonly VehicleRegistryEventView[];
+  readonly registryHistoryNextCursor?: string | null;
+  readonly registryHistoryPage?: number;
   readonly contractPageView: CooperationPageView;
   readonly listingPageView: CooperationPageView;
   readonly contractNextCursor: string | null;
@@ -56,6 +68,12 @@ export interface CooperationSurfaceActions {
   readonly changeOperator?: (operatorId: string) => void | Promise<void>;
   readonly changeContractType?: (contractType: ContractType) => void;
   readonly changeMarketQuery?: (query: string) => void;
+  readonly changeMarketType?: (value: "all" | "sale" | "rental") => void;
+  readonly changeMarketSort?: (value: "newest" | "price" | "deadline") => void;
+  readonly changeRegistryQuery?: (value: string) => void | Promise<void>;
+  readonly loadMoreRegistry?: () => void | Promise<void>;
+  readonly loadMoreRegistryHistory?: () => void | Promise<void>;
+  readonly loadPreviousRegistryHistory?: () => void | Promise<void>;
   readonly changeContractPageView?: (view: CooperationPageView) => void | Promise<void>;
   readonly changeListingPageView?: (view: CooperationPageView) => void | Promise<void>;
   readonly loadMoreContracts?: () => void | Promise<void>;
@@ -226,8 +244,8 @@ export function formFields(form: HTMLFormElement): Readonly<Record<string, strin
   return Object.fromEntries(Object.entries(fields).map(([key, values]) => [key, values.join(",")]));
 }
 
-function field(name: string, label: string, options: { readonly type?: string; readonly value?: string; readonly min?: number; readonly required?: boolean } = {}): string {
-  return `<label class="m12-field"><span>${escapeHtml(label)}</span><input name="${escapeHtml(name)}" type="${escapeHtml(options.type ?? "text")}" value="${escapeHtml(options.value ?? "")}"${options.min === undefined ? "" : ` min="${options.min}"`}${options.required === false ? "" : " required"}></label>`;
+function field(name: string, label: string, options: { readonly type?: string; readonly value?: string; readonly min?: number; readonly max?: number; readonly required?: boolean } = {}): string {
+  return `<label class="m12-field"><span>${escapeHtml(label)}</span><input name="${escapeHtml(name)}" type="${escapeHtml(options.type ?? "text")}" value="${escapeHtml(options.value ?? "")}"${options.min === undefined ? "" : ` min="${options.min}"`}${options.max === undefined ? "" : ` max="${options.max}"`}${options.required === false ? "" : " required"}></label>`;
 }
 
 function resourceOptions(options: readonly CooperationResourceOption[]): string {
@@ -338,22 +356,24 @@ function disclosedValue(disclosure: Readonly<Record<string, unknown>>, key: stri
     ? (configuration as Readonly<Record<string, unknown>>)[key] : undefined;
 }
 
-function listingMatches(listing: VehicleMarketListingView, query: string): boolean {
+function listingMatches(state: CooperationSurfaceState, listing: VehicleMarketListingView, query: string): boolean {
   const needle = query.trim().toLocaleLowerCase("de");
   if (needle === "") return true;
-  return `${listing.vehicleId} ${JSON.stringify(listing.disclosure)} ${listing.listingType} ${listing.status}`.toLocaleLowerCase("de").includes(needle);
+  return `${listing.vehicleId} ${JSON.stringify(listing.disclosure)} ${listing.listingType === "sale" ? "Kauf Verkauf" : "Miete Vermietung"} ${LISTING_STATUS[listing.status]} ${operatorName(state, listing.offeringOperatorId)}`.toLocaleLowerCase("de").includes(needle);
 }
 
 function listingActions(state: CooperationSurfaceState, listing: VehicleMarketListingView): string {
+  if (state.activeOperatorId === "") return '<p class="market-note">Gründe ein Unternehmen, um Fahrzeuge zu übernehmen.</p>';
   const own = listing.offeringOperatorId === state.activeOperatorId;
-  if (own && ["open", "reserved"].includes(listing.status)) {
+  if (own && listing.status === "reserved") return '<span class="market-note">Für ein anderes Unternehmen reserviert</span>';
+  if (own && listing.status === "open" && listing.expiresAtS > state.atS) {
     return `<button class="secondary" type="button" data-listing-cancel="${escapeHtml(listing.id)}" data-revision="${listing.revision}">Angebot zurückziehen</button>`;
   }
-  if (listing.status === "open") {
+  if (listing.status === "open" && listing.expiresAtS > state.atS) {
     return `<button type="button" data-listing-reserve="${escapeHtml(listing.id)}" data-revision="${listing.revision}">10 Minuten reservieren</button>`;
   }
-  if (listing.status === "reserved" && listing.reservedByOperatorId === state.activeOperatorId) {
-    return `<button type="button" data-listing-transfer="${escapeHtml(listing.id)}" data-revision="${listing.revision}">Übergabe verbindlich ausführen</button>`;
+  if (listing.status === "reserved" && listing.reservedByOperatorId === state.activeOperatorId && (listing.reservedUntilS === undefined || listing.reservedUntilS === null || listing.reservedUntilS > state.atS)) {
+    return `<button type="button" data-listing-transfer="${escapeHtml(listing.id)}" data-revision="${listing.revision}">${listing.listingType === "sale" ? "Verbindlich kaufen" : "Verbindlich mieten"}</button>`;
   }
   if (listing.status === "transferred" && listing.reservedByOperatorId === state.activeOperatorId) {
     return `<form id="listing-reversal-${escapeHtml(listing.id)}" class="reversal-request" data-preserve-draft data-listing-reversal="${escapeHtml(listing.id)}"><label><span>Bestätigter Mangelgrund</span><input name="reasonCode" minlength="1" maxlength="200" autocomplete="off" required placeholder="Begründung aus dem Mangelbeleg"></label><button class="secondary danger-action" type="submit">Rückabwicklung beantragen</button><small>Ausführung nur mit einem zeitlich und fachlich passenden Mangelbeleg.</small></form>`;
@@ -361,19 +381,126 @@ function listingActions(state: CooperationSurfaceState, listing: VehicleMarketLi
   return "";
 }
 
+function recordValue(value: unknown): Readonly<Record<string, unknown>> {
+  return typeof value === "object" && value !== null && !Array.isArray(value) ? value as Readonly<Record<string, unknown>> : {};
+}
+
+export function marketDeadline(targetS: unknown, atS: number): string {
+  if (typeof targetS !== "number" || !Number.isSafeInteger(targetS) || targetS < 0) return "Frist nicht belegt";
+  const delta = targetS - atS;
+  const absolute = Math.abs(delta);
+  const days = Math.floor(absolute / 86_400);
+  const hours = Math.floor(absolute % 86_400 / 3_600);
+  const minutes = Math.floor(absolute % 3_600 / 60);
+  const duration = absolute < 60 ? "unter 1 Min." : absolute < 3_600 ? `${minutes} Min.` : absolute < 86_400 ? `${hours} Std.${minutes === 0 ? "" : ` ${minutes} Min.`}` : `${days} Tag${days === 1 ? "" : "en"}${hours === 0 ? "" : ` ${hours} Std.`}`;
+  const clock = `${String(Math.floor(targetS % 86_400 / 3_600)).padStart(2, "0")}:${String(Math.floor(targetS % 3_600 / 60)).padStart(2, "0")}`;
+  return `Tag ${Math.floor(targetS / 86_400) + 1}, ${clock} · ${delta === 0 ? "jetzt fällig" : delta < 0 ? `seit ${duration} fällig` : `in ${duration}`}`;
+}
+
+function maintenanceSummary(disclosure: Readonly<Record<string, unknown>>, atS: number): string {
+  const deadlines = disclosure["maintenanceDeadlines"];
+  if (!Array.isArray(deadlines)) return "Fristen nicht belegt";
+  if (deadlines.length === 0) return "Keine Fristen offengelegt";
+  const times = deadlines.map((entry) => recordValue(entry)["dueAtS"]).filter((value): value is number => typeof value === "number" && Number.isSafeInteger(value));
+  if (times.length === 0) return `${deadlines.length} Frist${deadlines.length === 1 ? "" : "en"} · Termin nicht belegt`;
+  const nearest = Math.min(...times);
+  return `${nearest <= atS ? "Wartung fällig" : "Nächste Wartung"} · ${marketDeadline(nearest, atS)}`;
+}
+
+function vehicleCondition(disclosure: Readonly<Record<string, unknown>>): string {
+  const profile = recordValue(disclosure["conditionProfile"]);
+  return `<div class="vehicle-condition">${[["Mechanik", "mechanicsBasisPoints"], ["Antrieb", "driveBasisPoints"], ["Bremsen", "brakesBasisPoints"]].map(([label, key]) => `<div><span>${label}</span><strong>${conditionPercent(profile[key!])}</strong></div>`).join("")}</div>`;
+}
+
+function vehicleDisclosure(disclosure: Readonly<Record<string, unknown>>, atS: number): string {
+  const deadlines = disclosure["maintenanceDeadlines"];
+  const damages = disclosure["damages"];
+  const deadlineList = !Array.isArray(deadlines) ? "Fristen nicht belegt" : deadlines.length === 0 ? "Keine Fristen offengelegt" : `<ul>${deadlines.map((entry) => { const deadline = recordValue(entry); return `<li><strong>${escapeHtml(deadline["kind"] ?? deadline["code"] ?? "Wartung")}</strong><span>${escapeHtml(marketDeadline(deadline["dueAtS"], atS))}</span>${deadline["dueOdometerMetres"] === undefined ? "" : `<span>bei ${escapeHtml(odometerKilometres(deadline["dueOdometerMetres"]))}</span>`}</li>`; }).join("")}</ul>`;
+  const damageList = !Array.isArray(damages) ? "Schäden nicht belegt" : damages.length === 0 ? "Keine Schäden offengelegt" : `<ul>${damages.map((entry) => { const damage = recordValue(entry); return `<li><strong>${escapeHtml(damage["description"] ?? damage["code"] ?? "Schadenhinweis")}</strong>${damage["severity"] === undefined ? "" : `<span>Schweregrad: ${escapeHtml(damage["severity"])}</span>`}</li>`; }).join("")}</ul>`;
+  return `${vehicleCondition(disclosure)}<div class="vehicle-pass-grid"><section><h4>Wartung & Fristen</h4>${deadlineList}</section><section><h4>Offengelegte Schäden</h4>${damageList}</section><section><h4>Ausstattung & Einsatz</h4><dl><div><dt>Sitzplätze</dt><dd>${escapeHtml(disclosedValue(disclosure, "seats") ?? "Nicht belegt")}</dd></div><div><dt>Zulassung</dt><dd>${escapeHtml(compatibilityExplanation(disclosure))}</dd></div><div><dt>Betriebliche Grenzen</dt><dd>${escapeHtml(disclosureList(disclosure["operatingLimits"], "Keine offengelegt"))}</dd></div></dl></section></div>`;
+}
+
+function listingPriceNote(listing: VehicleMarketListingView, atS: number): string {
+  if (listing.listingType === "rental") return `Gesamtmiete · Mietende ${marketDeadline(listing.rentalValidUntilS, atS)}`;
+  const value = listing.disclosure["valueCents"];
+  if (typeof value !== "string" || !/^\d+$/.test(value)) return "Einmaliger Kaufpreis · Fahrzeugwert nicht belegt";
+  return `Einmaliger Kaufpreis · Fahrzeugwert ${formatCents(value)}`;
+}
+
 function listingCard(state: CooperationSurfaceState, listing: VehicleMarketListingView): string {
   const disclosure = listing.disclosure;
+  const reserved = listing.status === "reserved";
+  const status = reserved && listing.reservedByOperatorId === state.activeOperatorId ? "Für dich reserviert" : LISTING_STATUS[listing.status];
+  const deadline = reserved ? listing.reservedUntilS : listing.expiresAtS;
+  const damageCount = Array.isArray(disclosure["damages"]) ? disclosure["damages"].length : undefined;
   return `<article class="m12-item market-item status-${escapeHtml(listing.status)}" id="listing-${escapeHtml(listing.id)}" tabindex="-1">
-    <div class="m12-item-head"><div><strong>${escapeHtml(String(disclosure["classDesignation"] ?? "Baureihe unbekannt"))}</strong><small>${listing.listingType === "sale" ? "Verkauf" : "Vermietung"} von ${escapeHtml(operatorName(state, listing.offeringOperatorId))}</small></div><span class="state-word">${escapeHtml(LISTING_STATUS[listing.status])}</span></div>
-    <dl><div><dt>Preis</dt><dd>${escapeHtml(formatCents(listing.priceCents))}</dd></div><div><dt>Zustand</dt><dd>${escapeHtml(conditionPercent(disclosure["conditionBasisPoints"]))}</dd></div><div><dt>Laufleistung</dt><dd>${escapeHtml(odometerKilometres(disclosure["odometerMetres"]))}</dd></div><div><dt>Schäden</dt><dd>${escapeHtml(disclosureList(disclosure["damages"], "Keine offengelegt"))}</dd></div><div><dt>Wartungsfristen</dt><dd>${escapeHtml(disclosureList(disclosure["maintenanceDeadlines"], "Keine offengelegt"))}</dd></div><div><dt>Zulassung</dt><dd>${escapeHtml(compatibilityExplanation(disclosure))}</dd></div><div><dt>Technischer Beleg</dt><dd><details><summary>Technische Details</summary><dl><div><dt>Fahrzeugkennung</dt><dd><code>${escapeHtml(listing.vehicleId)}</code></dd></div><div><dt>Fachrevision</dt><dd><code>${listing.revision}</code></dd></div><div><dt>Release</dt><dd><code>${escapeHtml(String(disclosure["authorityReleaseId"] ?? "nicht angegeben"))}</code></dd></div><div><dt>Offenlegungsbeleg</dt><dd><code>${escapeHtml(listing.disclosureHash)}</code></dd></div></dl></details></dd></div></dl>
-    <div class="m12-actions">${listingActions(state, listing)}<button class="secondary" type="button" data-vehicle-history="${escapeHtml(listing.vehicleId)}">Lebenslauf ansehen</button></div>
+    <div class="market-trade-row"><div class="market-identity"><span class="market-kind">${listing.listingType === "sale" ? "KAUF" : "MIETE"}</span><h3>${escapeHtml(String(disclosure["classDesignation"] ?? "Baureihe unbekannt"))}</h3><small>${escapeHtml(listing.vehicleId)} · ${escapeHtml(operatorName(state, listing.offeringOperatorId))}</small></div><div class="market-quote"><strong>${escapeHtml(formatCents(listing.priceCents))}</strong><small>${escapeHtml(listingPriceNote(listing, state.atS))}</small></div><div class="market-condition"><strong>${escapeHtml(conditionPercent(disclosure["conditionBasisPoints"]))}</strong><small>Zustand · ${damageCount === undefined ? "Schäden nicht belegt" : `${damageCount} Schadenhinweise`}</small></div><div class="market-mileage"><strong>${escapeHtml(odometerKilometres(disclosure["odometerMetres"]))}</strong><small>${escapeHtml(String(disclosedValue(disclosure, "seats") ?? "–"))} Sitzplätze</small></div></div>
+    <div class="market-decision"><span class="state-word">${escapeHtml(status)}</span><span>${reserved ? "Reservierung" : "Angebotsende"}: ${escapeHtml(marketDeadline(deadline, state.atS))}</span><span>${escapeHtml(maintenanceSummary(disclosure, state.atS))}</span></div>
+    <details class="vehicle-offer-disclosure" data-preserve-disclosure="offer-${escapeHtml(listing.id)}"><summary id="offer-pass-${escapeHtml(listing.id)}">Zustand, Fristen & Ausstattung prüfen</summary>${vehicleDisclosure(disclosure, state.atS)}<details class="vehicle-technical" data-preserve-disclosure="technical-${escapeHtml(listing.id)}"><summary>Technische Details</summary><dl><div><dt>Release</dt><dd><code>${escapeHtml(String(disclosure["authorityReleaseId"] ?? "nicht angegeben"))}</code></dd></div><div><dt>Fachrevision</dt><dd>${listing.revision}</dd></div><div><dt>Offenlegungsbeleg</dt><dd><code>${escapeHtml(listing.disclosureHash)}</code></dd></div></dl></details></details>
+    <div class="m12-actions">${listingActions(state, listing)}<button id="history-${escapeHtml(listing.id)}" class="secondary" type="button" data-vehicle-history="${escapeHtml(listing.vehicleId)}">Fahrzeugpass & Lebenslauf</button></div>
   </article>`;
 }
 
 function historySurface(state: CooperationSurfaceState): string {
   if (state.selectedVehicleHistory === undefined) return "";
-  const entries = state.selectedVehicleHistory.map((event) => `<li><span>${escapeHtml(formatRelativeS(event.atS, state.atS))}</span><strong>${escapeHtml(HISTORY_LABELS[event.eventType])}</strong><details><summary>Technische Details</summary><code>${escapeHtml(event.resultingHistoryHash)}</code></details></li>`).join("");
-  return `<section class="vehicle-history"><div class="journey-heading"><h3>Die Geschichte dieses Fahrzeugs</h3></div><ol>${entries || "<li>Keine Historieneinträge.</li>"}</ol></section>`;
+  const transactions = state.selectedVehicleHistory.filter((event) => event.eventType !== "registered" && event.eventType !== "condition-updated");
+  if (transactions.length === 0) return "";
+  const entries = transactions.map((event) => {
+    const details = event.details;
+    const from = details["fromOwnerOperatorId"] ?? details["fromHolderOperatorId"];
+    const to = details["toOwnerOperatorId"] ?? details["toHolderOperatorId"];
+    const parties = typeof from === "string" && typeof to === "string" ? `${operatorName(state, from)} → ${operatorName(state, to)}` : "";
+    return `<li><span>Tag ${Math.floor(event.atS / 86_400) + 1}</span><div><strong>${escapeHtml(HISTORY_LABELS[event.eventType])}</strong>${parties === "" ? "" : `<p>${escapeHtml(parties)}</p>`}${typeof details["priceCents"] === "string" && /^\d+$/.test(details["priceCents"]) ? `<p>${escapeHtml(formatCents(details["priceCents"]))}</p>` : ""}</div><details><summary>Technische Details</summary><code>${escapeHtml(event.resultingHistoryHash)}</code></details></li>`;
+  }).join("");
+  return `<section class="vehicle-history"><div class="journey-heading"><h3>Handel & Überlassung</h3></div><p class="market-note">Jeder Eintrag gehört zu demselben Fahrzeug. Besitzwechsel und Rückgaben setzen seinen Lebenslauf nicht zurück.</p><ol>${entries}</ol></section>`;
+}
+
+export function vehiclePassportFragment(vehicleId: string): string {
+  return `#vehicle-${encodeURIComponent(vehicleId)}`;
+}
+
+function registryEventSummary(state: CooperationSurfaceState, event: VehicleRegistryEventView): string {
+  const source = recordValue(event.details["source"]);
+  const holding = recordValue(event.details["holding"]);
+  const condition = recordValue(source["condition"]);
+  const owner = holding["ownerOperatorId"];
+  const holder = holding["holderOperatorId"];
+  const lines: string[] = [];
+  if (typeof owner === "string") lines.push(`Eigentümer: ${operatorName(state, owner)}`);
+  if (typeof holder === "string") lines.push(`Halter: ${operatorName(state, holder)}`);
+  if (Object.keys(condition).length > 0) {
+    lines.push(`Mechanik ${conditionPercent(condition["mechanicsBasisPoints"])} · Antrieb ${conditionPercent(condition["driveBasisPoints"])} · Bremsen ${conditionPercent(condition["brakesBasisPoints"])}`);
+    if (typeof condition["kilometresSinceMaintenance"] === "number") lines.push(`${condition["kilometresSinceMaintenance"].toLocaleString("de-DE")} km seit der letzten Wartung`);
+    if (typeof condition["openObservations"] === "number") lines.push(`${condition["openObservations"]} offene Befunde`);
+  }
+  const deadlines = source["maintenanceDeadlines"];
+  if (Array.isArray(deadlines)) for (const deadline of deadlines) {
+    const value = recordValue(deadline);
+    lines.push(`${String(value["kind"] ?? "Wartung")}: ${marketDeadline(value["dueAt"], event.atS)}`);
+  }
+  if (Array.isArray(source["history"])) for (const item of source["history"]) if (typeof item === "string") lines.push(item);
+  return lines.map((line) => `<p>${escapeHtml(line)}</p>`).join("");
+}
+
+function registrySurface(state: CooperationSurfaceState): string {
+  const entries = state.vehicleRegistry;
+  const listing = entries === undefined ? '<p class="m12-empty">Das Fahrzeugregister wird geladen …</p>' : entries.length === 0 ? '<p class="m12-empty">Keine Fahrzeuge für diese Suche gefunden.</p>' : `<div class="vehicle-register-list">${entries.map((vehicle) => `<button class="vehicle-register-entry secondary" type="button" data-vehicle-history="${escapeHtml(vehicle.vehicleId)}"><span><strong>${escapeHtml(vehicle.classDesignation)}</strong><small>${escapeHtml(vehicle.vehicleId)}</small></span><span>${escapeHtml(operatorName(state, vehicle.ownerOperatorId))}</span><span class="state-word">${vehicle.retiredAtS !== null && vehicle.retiredAtS <= state.atS ? "Ausgemustert" : vehicle.introducedAtS > state.atS ? "Noch nicht geliefert" : vehicle.holderOperatorId !== vehicle.ownerOperatorId ? "Vermietet" : "Im Bestand"}</span><span aria-hidden="true">→</span></button>`).join("")}</div>`;
+  const selected = state.selectedVehiclePassport;
+  let passport = "";
+  if (selected !== undefined) {
+    const source = recordValue(selected.facts["source"]);
+    const holding = recordValue(selected.facts["holding"]);
+    const profile = recordValue(source["condition"]);
+    const passenger = recordValue(source["passenger"]);
+    const technical = recordValue(source["technical"]);
+    const disclosure = { conditionProfile: profile, maintenanceDeadlines: Array.isArray(source["maintenanceDeadlines"]) ? source["maintenanceDeadlines"].map((entry) => ({ ...recordValue(entry), dueAtS: recordValue(entry)["dueAt"] })) : undefined, approvals: source["approvedLineIds"], actualConfiguration: passenger, operatingLimits: Object.keys(recordValue(source["restrictions"])) };
+    const events = state.vehicleRegistryHistory;
+    const eventLabels: Readonly<Record<string, string>> = { registered: "In die Spielwelt aufgenommen", "condition-updated": "Fahrzeugstand fortgeschrieben", "operator-exit": "Rücklauf nach Betriebsende" };
+    const chronology = events === undefined ? '<p class="market-note">Lebenslauf wird geladen …</p>' : `<ol>${events.map((event) => `<li><span>Tag ${Math.floor(event.atS / 86_400) + 1}</span><div><strong>${escapeHtml(eventLabels[event.eventType] ?? event.eventType)}</strong>${registryEventSummary(state, event)}<details data-preserve-disclosure="registry-event-${escapeHtml(event.id)}"><summary>Technische Details dieses Eintrags</summary><pre>${escapeHtml(JSON.stringify(event.details, null, 2))}</pre></details></div></li>`).join("") || "<li>Keine Einträge vorhanden.</li>"}</ol>`;
+    const sourceHistory = Array.isArray(source["history"]) && source["history"].length > 0 ? `<section><h4>Dokumentierte Vorgeschichte</h4><ul>${source["history"].map((entry) => `<li>${escapeHtml(entry)}</li>`).join("")}</ul></section>` : "";
+    passport = `<article class="vehicle-passport" id="vehicle-${escapeHtml(selected.vehicleId)}" tabindex="-1" aria-labelledby="vehicle-passport-title"><div class="journey-heading"><div><p class="eyebrow">ÖFFENTLICHER FAHRZEUGPASS · ${escapeHtml(selected.vehicleId)}</p><h3 id="vehicle-passport-title">${escapeHtml(selected.classDesignation)}</h3></div><span class="state-word">${(selected.retiredAtS === null || selected.retiredAtS > state.atS) ? selected.introducedAtS > state.atS ? "Bestellt · noch nicht geliefert" : "In der Spielwelt" : "Ausgemustert"}</span></div><p class="market-note">Ein Fahrzeug, ein Lebenslauf – auch nach der Ausmusterung. Für alle in dieser Welt einsehbar. Datenstand: Tag ${Math.floor(selected.dataAtS / 86400) + 1}, ${String(Math.floor(selected.dataAtS % 86400 / 3600)).padStart(2, "0")}:${String(Math.floor(selected.dataAtS % 3600 / 60)).padStart(2, "0")} Uhr.</p><dl class="vehicle-identity-data"><div><dt>Eigentümer</dt><dd>${escapeHtml(operatorName(state, selected.ownerOperatorId))}</dd></div><div><dt>Halter</dt><dd>${escapeHtml(operatorName(state, selected.holderOperatorId))}</dd></div><div><dt>Baujahr</dt><dd>${escapeHtml(source["buildYear"] ?? "Nicht belegt")}</dd></div><div><dt>Höchstgeschwindigkeit</dt><dd>${technical["maximumSpeedKph"] === undefined ? "Nicht belegt" : `${escapeHtml(technical["maximumSpeedKph"])} km/h`}</dd></div><div><dt>${selected.introducedAtS > state.atS ? "Vorgesehene Lieferung" : "In der Spielwelt seit"}</dt><dd>Tag ${Math.floor(selected.introducedAtS / 86_400) + 1}</dd></div>${(selected.retiredAtS === null || selected.retiredAtS > state.atS) ? "" : `<div><dt>Ausgemustert</dt><dd>Tag ${Math.floor(selected.retiredAtS / 86_400) + 1}</dd></div>`}${holding["validUntilS"] == null ? "" : `<div><dt>Mietende</dt><dd>${escapeHtml(marketDeadline(holding["validUntilS"], state.atS))}</dd></div>`}</dl>${vehicleDisclosure(disclosure, state.atS)}<dl class="vehicle-identity-data"><div><dt>Seit letzter Wartung</dt><dd>${typeof profile["kilometresSinceMaintenance"] === "number" ? `${profile["kilometresSinceMaintenance"].toLocaleString("de-DE")} km` : "Nicht belegt"}</dd></div><div><dt>Betriebsstunden seit Wartung</dt><dd>${escapeHtml(profile["operatingHoursSinceMaintenance"] ?? "Nicht belegt")}</dd></div><div><dt>Offene Befunde</dt><dd>${escapeHtml(profile["openObservations"] ?? "Nicht belegt")}</dd></div></dl>${sourceHistory}<section class="vehicle-history"><h3>Der vollständige Lebenslauf</h3>${chronology}<div class="m12-actions">${(state.registryHistoryPage ?? 1) > 1 ? '<button id="vehicle-registry-history-previous" class="secondary" type="button">Vorherige Lebenslaufseite</button>' : ""}<span class="market-note">Seite ${state.registryHistoryPage ?? 1}</span>${state.registryHistoryNextCursor ? '<button id="vehicle-registry-history-more" class="secondary" type="button">Weitere Lebenslaufeinträge laden</button>' : ""}</div></section>${historySurface(state)}<details class="vehicle-technical" data-preserve-disclosure="passport-proof-${escapeHtml(selected.vehicleId)}"><summary>Technische Details & Herkunft</summary><dl><div><dt>Fahrzeugkennung</dt><dd>${escapeHtml(selected.vehicleId)}</dd></div><div><dt>Flottenrevision</dt><dd>${selected.fleetRevision}</dd></div><div><dt>Lebenslaufbeleg</dt><dd><code>${escapeHtml(selected.historyHash)}</code></dd></div></dl><pre>${escapeHtml(JSON.stringify(selected.facts, null, 2))}</pre></details><a class="vehicle-pass-link" href="${escapeHtml(vehiclePassportFragment(selected.vehicleId))}">Dauerhafter Link zu diesem Fahrzeug</a></article>`;
+  }
+  return `<section class="journey-card m12-card" id="vehicle-register"><div class="journey-heading"><div><p class="eyebrow">DAS GEDÄCHTNIS DER FLOTTE</p><h2>Jeder Zug bleibt Teil dieser Welt.</h2></div></div><p class="market-note">Neu gekauft, weiterverkauft, zurückgegeben oder ausgemustert: Suche jedes Fahrzeug unabhängig vom aktuellen Marktangebot.</p><form id="vehicle-registry-search" class="vehicle-register-search" data-preserve-draft><label class="m12-search"><span>Öffentliches Fahrzeugregister durchsuchen</span><input id="vehicle-registry-query" name="query" type="search" value="${escapeHtml(state.registryQuery ?? "")}" placeholder="Baureihe oder Fahrzeugkennung"></label><button type="submit">Suchen</button></form>${passport}${selected === undefined ? historySurface(state) : ""}${listing}${state.registryNextCursor ? '<button id="vehicle-registry-more" class="secondary" type="button">Weitere Fahrzeuge laden</button>' : ""}</section>`;
 }
 
 function compatibilityExplanation(disclosure: Readonly<Record<string, unknown>>): string {
@@ -392,12 +519,22 @@ function robustnessExplanation(disclosure: Readonly<Record<string, unknown>>): s
 }
 
 function marketSurface(state: CooperationSurfaceState): string {
-  const filtered = state.listings.filter((listing) => listingMatches(listing, state.marketQuery)).slice(0, MAX_RENDERED_COOPERATION_ITEMS);
+  const marketType = state.marketType ?? "all";
+  const marketSort = state.marketSort ?? "newest";
+  const filtered = state.listings.filter((listing) => (marketType === "all" || listing.listingType === marketType) && listingMatches(state, listing, state.marketQuery)).sort((a, b) => {
+    if (marketSort === "deadline") return a.expiresAtS - b.expiresAtS || a.id.localeCompare(b.id);
+    if (marketSort === "price") {
+      if (a.listingType !== b.listingType) return a.listingType === "sale" ? -1 : 1;
+      const difference = BigInt(a.priceCents) - BigInt(b.priceCents);
+      return difference < 0n ? -1 : difference > 0n ? 1 : a.id.localeCompare(b.id);
+    }
+    return b.listedAtS - a.listedAtS || a.id.localeCompare(b.id);
+  }).slice(0, MAX_RENDERED_COOPERATION_ITEMS);
   const marketAlternatives = filtered.slice(0, 8).map((listing) => ({ id: listing.id, label: String(listing.disclosure["classDesignation"] ?? "Fahrzeugangebot"), dimensions: { price: formatCents(listing.priceCents), type: listing.listingType === "sale" ? "Fahrzeugkauf" : "Leasing", capacity: `${String(disclosedValue(listing.disclosure, "seats") ?? "–")} Sitzplätze`, condition: conditionPercent(listing.disclosure["conditionBasisPoints"]), mileage: odometerKilometres(listing.disclosure["odometerMetres"]), maintenance: disclosureList(listing.disclosure["maintenanceDeadlines"], "Keine Frist offengelegt"), robustness: robustnessExplanation(listing.disclosure), penaltyRisk: "Nicht berechenbar: noch kein Einsatzvertrag gebunden", compatibility: compatibilityExplanation(listing.disclosure), provenance: listing.disclosure["authorityReleaseId"] === undefined ? "Bestätigter Weltstand" : "Gepinnter Flottenrelease" } }));
   const pathAlternatives = (state.pathAlternatives ?? []).slice(0, 8).map((path) => ({ id: path.id, label: path.label, dimensions: { price: "Getrennte Trassenabrechnung", type: "Trassenalternative", capacity: "Fahrt geprüft", condition: "Nicht anwendbar", mileage: "Nicht anwendbar", maintenance: "Nicht anwendbar", robustness: `Konfliktgeprüfte Zeitlage ${path.shift} · Reserve nicht separat ausgewiesen`, penaltyRisk: "Nicht berechenbar: noch kein Leistungsvertrag gebunden", compatibility: path.compatibility, provenance: path.provenance, shift: path.shift } }));
   const comparison = renderComparisonWorkbench("Fahrzeuge, Leasing und Trassen in dieser Welt", { type: "Entscheidungsart", price: "Kosten", capacity: "Kapazität", condition: "Zustand", mileage: "Laufleistung", maintenance: "Wartung", robustness: "Robustheit", penaltyRisk: "Pönalerisiko", shift: "Zeitlage", compatibility: "Zulassung und Kompatibilität", provenance: "Datenherkunft" }, [...marketAlternatives, ...pathAlternatives]);
   return `<section class="journey-card m12-card" id="vehicle-market">
-    <div class="journey-heading"><div><p class="eyebrow">DEINE FLOTTE WÄCHST</p><h2>Finde deinen nächsten Zug.</h2></div><span class="state-word">${filtered.length} Treffer</span></div>
+    <div class="journey-heading"><div><p class="eyebrow">FAHRZEUGE MIT GESCHICHTE</p><h2>Dein nächster Zug. Sein nächstes Kapitel.</h2></div><span class="state-word">${filtered.length} Treffer</span></div>
     <details class="market-compose" data-preserve-disclosure="listing-compose"><summary>Eigenes Fahrzeug anbieten</summary><form id="m12-listing-form" class="m12-form compact-form" data-preserve-draft>
       <label class="m12-field"><span>Eigenes Fahrzeug</span><select name="vehicleId" required>${state.ownedVehicles.map((vehicle) => `<option value="${escapeHtml(vehicle.vehicleId)}">${escapeHtml(vehicle.classDesignation)} · Zustand ${conditionPercent(vehicle.conditionBasisPoints)}</option>`).join("")}</select></label>
       <label class="m12-field"><span>Angebotsart</span><select name="listingType"><option value="sale">Verkauf</option><option value="rental">Vermietung</option></select></label>
@@ -406,9 +543,8 @@ function marketSurface(state: CooperationSurfaceState): string {
       ${field("rentalDurationDays", "Mietdauer · Tage (nur Vermietung)", { type: "number", min: 1, value: "7", required: false })}
       <button type="submit"${state.ownedVehicles.length === 0 ? " disabled" : ""}>Fahrzeug verbindlich anbieten</button>
     </form></details>
-    <div class="m12-filter-row"><label class="m12-filter"><span>Marktansicht</span><select id="m12-listing-view"><option value="actionable"${state.listingPageView === "actionable" ? " selected" : ""}>Offen und reserviert</option><option value="archive"${state.listingPageView === "archive" ? " selected" : ""}>Abgeschlossenes Archiv</option></select></label><label class="m12-search"><span>Fahrzeugmarkt durchsuchen</span><input id="m12-market-query" type="search" value="${escapeHtml(state.marketQuery)}" placeholder="Baureihe, Fahrzeug, Zustand oder Schaden"></label></div>
+    <div class="m12-filter-row market-filters"><label class="m12-search"><span>Fahrzeugmarkt durchsuchen</span><input id="m12-market-query" type="search" value="${escapeHtml(state.marketQuery)}" placeholder="Baureihe, Fahrzeug oder Anbieter"></label><label><span>Beschaffung</span><select id="m12-market-type">${[["all", "Kauf & Miete"], ["sale", "Kaufen"], ["rental", "Mieten"]].map(([value, label]) => `<option value="${value}"${marketType === value ? " selected" : ""}>${label}</option>`).join("")}</select></label><label class="m12-filter"><span>Marktansicht</span><select id="m12-listing-view"><option value="actionable"${state.listingPageView === "actionable" ? " selected" : ""}>Offen und reserviert</option><option value="archive"${state.listingPageView === "archive" ? " selected" : ""}>Abgeschlossenes Archiv</option></select></label><label><span>Reihenfolge</span><select id="m12-market-sort">${[["newest", "Neueste Angebote"], ["price", "Preis je Angebotsart"], ["deadline", "Angebotsende"]].map(([value, label]) => `<option value="${value}"${marketSort === value ? " selected" : ""}>${label}</option>`).join("")}</select></label></div>
     <details class="market-comparison"><summary>Angebote im Detail vergleichen</summary>${comparison}</details><div class="m12-list">${filtered.length === 0 ? `<p class="m12-empty">Keine Marktangebote entsprechen der Suche.</p>` : filtered.map((listing) => listingCard(state, listing)).join("")}</div>${state.listings.length >= MAX_RENDERED_COOPERATION_ITEMS ? '<p class="m12-empty">Nutze die Suche oder das Archiv, um weitere Angebote zu finden.</p>' : state.listingNextCursor === null ? "" : '<button id="m12-listing-more" class="secondary" type="button">Weitere Marktangebote laden</button>'}
-    ${historySurface(state)}
   </section>`;
 }
 
@@ -417,7 +553,7 @@ function operationsSurface(state: CooperationSurfaceState): string {
   const formationOptions = formations.map((formation) => `<option value="${escapeHtml(formation.id)}">${escapeHtml(formation.label)}</option>`).join("");
   const stationOptions = (state.stationOptions ?? []).map((station) => `<option value="${escapeHtml(station.id)}">${escapeHtml(station.label)}</option>`).join("");
   const stationInput = (name: string, label: string) => `<label class="m12-field"><span>${label}</span><input name="${name}" list="planning-stations" required maxlength="200" autocomplete="off" placeholder="Bahnhof auswählen"></label>`;
-  const pathForm = (kind: "schedule" | "empty-run", title: string, leadMinutes: number) => `<form id="${kind === "schedule" ? "schedule-request-form" : "empty-run-request-form"}" class="m12-form compact-form" data-path-request="${kind}" data-preserve-draft><h3>${title}</h3><label class="m12-field"><span>Zugverband</span><select name="formationId" required>${formationOptions}</select></label><p class="form-hint">Deine Fahrt bekommt automatisch eine Zugnummer.</p>${stationInput("originStationId", "Start")}${stationInput("destinationStationId", "Ziel")}${field("departureInMinutes", "Abfahrt in Minuten", { type: "number", min: 1, value: String(leadMinutes) })}<button type="submit"${formations.length === 0 ? " disabled" : ""}>${kind === "schedule" ? "Fahrt anmelden" : "Leerfahrt anfragen"}</button></form>`;
+  const pathForm = (kind: "schedule" | "empty-run", title: string, leadMinutes: number) => `<form id="${kind === "schedule" ? "schedule-request-form" : "empty-run-request-form"}" class="m12-form compact-form" data-path-request="${kind}" data-preserve-draft><h3>${title}</h3><label class="m12-field"><span>Zugverband</span><select name="formationId" required>${formationOptions}</select></label><p class="form-hint">Deine Fahrt bekommt automatisch eine Zugnummer.</p>${stationInput("originStationId", "Start")}${stationInput("destinationStationId", "Ziel")}<div data-route-import>${routeImportMarkup()}</div>${field("departureInMinutes", "Gewünschte Abfahrt in Minuten", { type: "number", min: 1, value: String(leadMinutes) })}<fieldset class="planning-flexibility"><legend>Spielraum bei Konflikten</legend>${field("departureDelayMinutes", "Abfahrt bis zu … Minuten später", { type: "number", min: 0, max: 120, value: kind === "schedule" ? "30" : "5" })}${field("extraRunningMinutes", "Zusätzliche Fahrzeit bis zu … Minuten", { type: "number", min: 0, max: 60, value: kind === "schedule" ? "15" : "5" })}<p class="form-hint">Die Planung kann Betriebshalte einfügen, Aufenthalte verlängern und die Abfahrt verschieben. Prüfe die vorgeschlagenen Änderungen anschließend im Fahrplan.</p></fieldset><button type="submit"${formations.length === 0 ? " disabled" : ""}>${kind === "schedule" ? "Fahrt anmelden" : "Leerfahrt anfragen"}</button></form>`;
   return `<section class="journey-card m12-card" id="betriebsplanung"><div class="journey-heading"><div><p class="eyebrow">BETRIEB</p><h2>Fahrten und Werkstatt</h2></div><span class="state-word">Deine nächste Verbindung</span></div><datalist id="planning-stations">${stationOptions}</datalist><div class="m12-operating-grid">${pathForm("schedule", "Fahrplan planen", 30)}${pathForm("empty-run", "Spontane Leerfahrt", 5)}<form id="maintenance-form" class="m12-form compact-form" data-preserve-draft><h3>Ab in die Werkstatt</h3><label class="m12-field"><span>Zugverband</span><select name="formationId" required>${formationOptions}</select></label>${field("durationHours", "Werkstattdauer · Stunden", { type: "number", min: 1, value: "4" })}<p class="resource-note">Wir prüfen, ob dein Zug und die Werkstatt im gewählten Zeitraum frei sind.</p><button type="submit"${formations.length === 0 ? " disabled" : ""}>Werkstatttermin buchen</button></form></div></section>`;
 }
 
@@ -428,7 +564,7 @@ function tenderLabel(tender: PublicTenderView): string {
 }
 
 export function renderCooperationSurface(state: CooperationSurfaceState): string {
-  if (state.activeOperatorId === "") {
+  if (state.activeOperatorId === "" && state.section !== "markets") {
     return `<section class="journey-card m12-card" id="evu-gruenden" tabindex="-1"><p class="eyebrow">02 · DEINE EIGENE BAHN</p><h2>Unternehmen gründen</h2><p>Wie heißt deine Bahn? Diesen Namen sehen auch andere Spieler. Dein Startkapital erhältst du mit der Gründung.</p><form id="operator-foundation-form" data-preserve-draft><label class="m12-field"><span>Unternehmensname</span><input name="name" minlength="1" maxlength="64" required autocomplete="organization" placeholder="z. B. Nordlicht Bahn"></label><button type="submit"${state.busy ? " disabled" : ""}>Unternehmen gründen</button></form></section>`;
   }
   const own = state.operators.filter((operator) => state.ownOperatorIds.includes(operator.id));
@@ -443,16 +579,16 @@ export function renderCooperationSurface(state: CooperationSurfaceState): string
     : `<section class="journey-card m12-card" id="ausschreibungen"><div class="journey-heading"><div><p class="eyebrow">VERKEHRSVERTRÄGE</p><h2>Finde deinen nächsten Auftrag.</h2></div><span class="state-word">${openTenders.length} offen</span></div>${openTenders.length === 0 ? '<p class="m12-empty">Derzeit ist keine Ausschreibung zur Angebotsabgabe geöffnet.</p>' : `<form id="tender-bid-form" class="m12-form" data-preserve-draft><label class="m12-field"><span>Ausschreibung</span><select id="tender-bid-tender" name="tenderId">${openTenders.map((tender) => `<option value="${escapeHtml(tender.id)}" data-lot-id="${escapeHtml(tender.lotId)}">${escapeHtml(tenderLabel(tender))} · ${tender.bidCount} Angebot(e)</option>`).join("")}</select></label><label class="m12-field"><span>Zug für diesen Auftrag</span><select id="tender-bid-formation" name="formationId">${ownFormationOptions}${facilityOptions}</select></label>${facilityOptions === "" ? "" : '<p class="resource-note">Bei einem Zuschlag erhältst du ein Startpaket aus Zug, Personal und Trasse. Dein Unternehmen trägt die laufenden Betriebskosten.</p>'}${field("orderingFeeEuros", "Dein Preis · Euro je Zug-km", { value: "10,00" })}${field("punctualityPercent", "Versprochene Pünktlichkeit · Prozent", { type: "number", min: 0, value: "95" })}${field("extraSeats", "Zusätzliche Sitzplätze", { type: "number", min: 0, value: "0" })}<button id="tender-bid-submit" type="submit" data-resources-ready="${resourcesReady}"${!resourcesReady || !hasInitialTenderFormation ? " disabled" : ""}>Angebot verbindlich abgeben</button></form>`}</section>`;
   const section = state.section ?? "all";
   const panels = section === "markets"
-    ? `${tenderSurface}${contractSurface(state)}${marketSurface(state)}`
+    ? `${tenderSurface}${contractSurface(state)}${marketSurface(state)}${registrySurface(state)}`
     : section === "operations"
       ? operationsSurface(state)
-      : `${tenderSurface}${operationsSurface(state)}${contractSurface(state)}${marketSurface(state)}`;
+      : `${tenderSurface}${operationsSurface(state)}${contractSurface(state)}${marketSurface(state)}${registrySurface(state)}`;
   const operatorPicker = section === "all"
     ? `<label><span>Dein Unternehmen in ${escapeHtml(state.worldName)}</span><select id="m12-operator">${own.map((operator) => `<option value="${escapeHtml(operator.id)}"${operator.id === state.activeOperatorId ? " selected" : ""}>${escapeHtml(operator.name)}</option>`).join("")}</select></label>`
     : "";
   const html = `<section class="m12-surface m12-surface--${section}" aria-busy="${state.busy}">
     <div class="m12-toolbar">${operatorPicker}<div class="m12-clock"><span>SPIELTAG</span><output id="m12-time">Betriebstag ${Math.floor(state.atS / 86_400) + 1}</output></div><button id="m12-refresh" class="secondary" type="button">Aktualisieren</button></div>
-    ${section === "markets" ? railwayTabs([{id:"ausschreibungen",label:"Aufträge"},{id:"vehicle-market",label:"Fahrzeuge"},{id:"cooperation-contracts",label:"Zusammenarbeit"}]) : ""}<div class="m12-grid">${panels}</div>
+    ${section === "markets" ? railwayTabs([{id:"ausschreibungen",label:"Aufträge"},{id:"vehicle-market",label:"Fahrzeuge"},{id:"cooperation-contracts",label:"Zusammenarbeit"},{id:"vehicle-register",label:"Fahrzeugregister"}]) : ""}<div class="m12-grid">${panels}</div>
   </section>`;
   return state.busy ? html.replace(/<button(?![^>]*\bdisabled\b)/g, '<button disabled aria-disabled="true"') : html;
 }
@@ -468,6 +604,13 @@ function invoke(action: (() => void | Promise<void>) | undefined): void {
 }
 
 export function bindCooperationSurface(root: ParentNode, actions: CooperationSurfaceActions): void {
+  root.querySelectorAll<HTMLDetailsElement>(".vehicle-offer-disclosure, .vehicle-technical").forEach((details) => details.addEventListener("keydown", (event) => {
+    if (event.key !== "Escape" || !details.open) return;
+    event.preventDefault();
+    event.stopPropagation();
+    details.open = false;
+    details.querySelector<HTMLElement>(":scope > summary")?.focus();
+  }));
   const tender = root.querySelector<HTMLSelectElement>("#tender-bid-tender");
   const formation = root.querySelector<HTMLSelectElement>("#tender-bid-formation");
   const submit = root.querySelector<HTMLButtonElement>("#tender-bid-submit");
@@ -498,7 +641,13 @@ export function bindCooperationSurface(root: ParentNode, actions: CooperationSur
   root.querySelector<HTMLFormElement>("#maintenance-form")?.addEventListener("submit", (event) => { event.preventDefault(); invoke(() => actions.scheduleMaintenance?.(formFields(event.currentTarget as HTMLFormElement))); });
   root.querySelector<HTMLSelectElement>("#m12-operator")?.addEventListener("change", (event) => invoke(() => actions.changeOperator?.((event.currentTarget as HTMLSelectElement).value)));
   root.querySelector<HTMLSelectElement>("#m12-contract-type")?.addEventListener("change", (event) => actions.changeContractType?.((event.currentTarget as HTMLSelectElement).value as ContractType));
-  root.querySelector<HTMLInputElement>("#m12-market-query")?.addEventListener("change", (event) => actions.changeMarketQuery?.((event.currentTarget as HTMLInputElement).value));
+  root.querySelector<HTMLInputElement>("#m12-market-query")?.addEventListener("input", (event) => actions.changeMarketQuery?.((event.currentTarget as HTMLInputElement).value));
+  root.querySelector<HTMLSelectElement>("#m12-market-type")?.addEventListener("change", (event) => actions.changeMarketType?.((event.currentTarget as HTMLSelectElement).value as "all" | "sale" | "rental"));
+  root.querySelector<HTMLSelectElement>("#m12-market-sort")?.addEventListener("change", (event) => actions.changeMarketSort?.((event.currentTarget as HTMLSelectElement).value as "newest" | "price" | "deadline"));
+  root.querySelector<HTMLFormElement>("#vehicle-registry-search")?.addEventListener("submit", (event) => { event.preventDefault(); invoke(() => actions.changeRegistryQuery?.(String(new FormData(event.currentTarget as HTMLFormElement).get("query") ?? "").trim())); });
+  root.querySelector<HTMLButtonElement>("#vehicle-registry-more")?.addEventListener("click", () => invoke(actions.loadMoreRegistry));
+  root.querySelector<HTMLButtonElement>("#vehicle-registry-history-previous")?.addEventListener("click", () => invoke(actions.loadPreviousRegistryHistory));
+  root.querySelector<HTMLButtonElement>("#vehicle-registry-history-more")?.addEventListener("click", () => invoke(actions.loadMoreRegistryHistory));
   root.querySelector<HTMLSelectElement>("#m12-contract-view")?.addEventListener("change", (event) => invoke(() => actions.changeContractPageView?.((event.currentTarget as HTMLSelectElement).value as CooperationPageView)));
   root.querySelector<HTMLSelectElement>("#m12-listing-view")?.addEventListener("change", (event) => invoke(() => actions.changeListingPageView?.((event.currentTarget as HTMLSelectElement).value as CooperationPageView)));
   root.querySelector<HTMLButtonElement>("#m12-contract-more")?.addEventListener("click", () => invoke(actions.loadMoreContracts));

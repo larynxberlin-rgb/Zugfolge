@@ -338,7 +338,7 @@ export class GameCooperationAuthority implements CooperationAuthority {
     const vehicleOption = (vehicle: VehicleAsset) => option(
       vehicle.vehicleId,
       `Baureihe ${vehicle.classDesignation}`,
-      `${(vehicle.conditionBasisPoints / 100).toLocaleString("de-DE")} % Zustand · im Besitz des handelnden EVU`,
+      `${vehicle.conditionBasisPoints === null ? "Zustandsprofil im Fahrzeugpass" : `${(vehicle.conditionBasisPoints / 100).toLocaleString("de-DE")} % Zustand`} · im Besitz des handelnden EVU`,
     );
     const rentableVehicles = vehicles
       .filter((vehicle) => vehicle.ownerOperatorId === operatorId && !hasBindings(vehicle.bindings))

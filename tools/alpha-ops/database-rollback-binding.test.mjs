@@ -1,8 +1,10 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 import { createDatabaseRollbackProof, validateDatabaseRollbackProof } from "../tiles/map-release-build-evidence.mjs";
+import { ARCHIVE_PRIVACY_FUNCTION_SOURCES, ARCHIVE_PRIVACY_REDACTABLE_TABLES } from "./archive-privacy-binding.mjs";
 import {
   assertDatabaseRollbackProofMatchesLive,
   inspectMigratedKeycloakState,
@@ -15,6 +17,7 @@ import {
   DATABASE_AUTHORITATIVE_TABLES,
   databaseAuthoritativeCatalog,
   databaseCutoverGuards,
+  databaseWorldHistoryBindings,
   DATABASE_AUTHORITATIVE_TABLES_SCHEMA_34,
   DATABASE_CUTOVER_CONSTRAINTS,
   DATABASE_CUTOVER_GUARDS,
@@ -31,6 +34,21 @@ import {
 
 const DATABASE_A = "00000000-0000-4000-8000-000000000031";
 const DATABASE_B = "00000000-0000-4000-8000-000000000032";
+
+function archivePrivacyCatalogRows(query) {
+  if (query.includes("from pg_proc p join")) {
+    return Object.entries(ARCHIVE_PRIVACY_FUNCTION_SOURCES).sort(([left], [right]) => left.localeCompare(right, "en"))
+      .map(([proname, prosrc]) => ({ proname, prosrc, prosecdef: false }));
+  }
+  if (query.includes("from pg_trigger t join")) {
+    return databaseCutoverGuards(37).filter(({ name, relation }) => name.startsWith("zugfolge_archive_privacy_capture_")
+      || name.startsWith("archive_privacy_")
+      || (name.startsWith("zugfolge_world_guard_") && ARCHIVE_PRIVACY_REDACTABLE_TABLES.includes(relation)))
+      .map(({ name, relation, type, functionName }) => ({ tgname: name, relname: relation, tgenabled: "O", tgtype: type,
+        proname: functionName, function_schema: "public", arguments: name.startsWith("zugfolge_world_guard_") ? Buffer.from("world_id\0").toString("hex") : "" }));
+  }
+  return undefined;
+}
 
 test("Schema 32 sperrt Outbox- und Lifecycle-DML vor seinem ersten Altzustands-Snapshot", async () => {
   const migration = normalizeDatabaseDefinition(await readFile(
@@ -59,6 +77,8 @@ function sqlFixture(databaseIdentity = DATABASE_A, domainRowsSha256 = "d".repeat
   return {
     async unsafe(source) {
       const query = source.replace(/\s+/gu, " ").trim().toLowerCase();
+      const archiveRows = archivePrivacyCatalogRows(query);
+      if (archiveRows !== undefined) return archiveRows;
       if (query.includes("from zugfolge_database_identity")) return [{ database_id: databaseIdentity }];
       if (query.includes("from drizzle.__drizzle_migrations")) {
         return Array.from({ length: migrationCount }, (_, index) => index + 1).map((id) => ({
@@ -265,13 +285,17 @@ test("preseeded Retry-Receipt wird aus allen gespeicherten Spalten rekonstruiert
   );
 });
 
-function worldSealSql(changedTable) {
+function worldSealSql(changedTable, { migrationCount = 33, nonemptyTable, omittedFactsTable } = {}) {
   return {
     async unsafe(source) {
       const query = source.replace(/\s+/gu, " ").trim().toLowerCase();
-      if (query === "select count(*)::int as migration_count from drizzle.__drizzle_migrations") return [{ migration_count: 33 }];
+      const archiveRows = archivePrivacyCatalogRows(query);
+      if (archiveRows !== undefined) return archiveRows;
+      if (query.includes("from zugfolge_database_identity")) return [{ database_id: DATABASE_A }];
+      if (query.includes("from archive_privacy_requests")) return [];
+      if (query === "select count(*)::int as migration_count from drizzle.__drizzle_migrations") return [{ migration_count: migrationCount }];
       if (query.includes("from information_schema.columns as columns")) {
-        return DATABASE_WORLD_HISTORY_BINDINGS
+        return databaseWorldHistoryBindings(migrationCount)
           .flatMap(({ table, columns }) => columns.map((column) => ({ table_name: table, column_name: column })))
           .sort((left, right) => left.table_name.localeCompare(right.table_name, "en") || left.column_name.localeCompare(right.column_name, "en"));
       }
@@ -279,8 +303,9 @@ function worldSealSql(changedTable) {
       if (tableMatch !== null) {
         const table = tableMatch.groups.table;
         return [{
-          row_count: table === "worlds" ? "1" : "0",
-          rows_sha256: table === changedTable ? "f".repeat(64) : "0".repeat(64),
+          row_count: table === "worlds" || table === nonemptyTable ? "1" : "0",
+          omitted_nonnull_rows: table === omittedFactsTable ? "1" : "0",
+          rows_sha256: table === changedTable ? "f".repeat(64) : createHash("sha256").update("").digest("hex"),
         }];
       }
       throw new Error(`Unerwartete Seal-SQL-Abfrage: ${query}`);
@@ -346,4 +371,41 @@ test("Schema35 bindet den bereinigten Tabellen- und Triggerbestand mit einem eig
   const missingGuard = structuredClone(current);
   missingGuard.source.guards.pop();
   assert.throws(() => validateDatabaseRollbackProof(missingGuard), /Unveraenderlichkeitsvertrag/u);
+});
+
+test("Schema38 qualifiziert persistente Fahrzeuge und prueft jeden Schutztrigger beim Live-Snapshot", async () => {
+  const source = await inspectLiveDatabaseRollbackSnapshot(sqlFixture(DATABASE_A, "d".repeat(64), { migrationCount: 38 }));
+  const addedTables = ["vehicle_registry_entries", "vehicle_registry_events"];
+  assert.deepEqual(databaseAuthoritativeCatalog(38).tables.filter((table) => !databaseAuthoritativeCatalog(37).tables.includes(table)), addedTables);
+  assert.equal(source.authoritativeHead.tableCount, databaseAuthoritativeCatalog(37).tables.length + 2);
+  assert.notEqual(source.authoritativeHead.tableSetSha256, databaseAuthoritativeCatalog(37).tableSetSha256);
+  const guards = databaseCutoverGuards(38).filter((entry) => !databaseCutoverGuards(37).some((old) => old.name === entry.name));
+  assert.equal(guards.length, 6);
+  for (const guard of guards) {
+    await assert.rejects(inspectLiveDatabaseRollbackSnapshot(sqlFixture(DATABASE_A, "d".repeat(64), {
+      migrationCount: 38, changedGuard: guard.name,
+    })), /Funktionskoerper.*Sollvertrag/u);
+  }
+  assert.deepEqual(databaseWorldHistoryBindings(38).filter(({ table }) => addedTables.includes(table)), addedTables.map((table) => ({ table, columns: ["world_id"] })));
+  assert.equal(databaseCutoverGuards(37).some(({ name }) => name === "vehicle_assets_no_delete"), false);
+});
+
+test("Schema38-Siegel bindet Register und Lebenslauf und verweigert das Ausblenden neuer Fakten", async () => {
+  const worldId = "00000000-0000-4000-8000-000000000014";
+  const options = { migrationCount: 38 };
+  const baseline = await worldFinalHistorySeal(worldSealSql(undefined, options), worldId);
+  assert.equal(baseline, await worldFinalHistorySeal(worldSealSql(undefined, options), worldId, { schemaVersion: "zugfolge-world-final-history-seal/v5" }));
+  for (const table of ["vehicle_registry_entries", "vehicle_registry_events", "vehicle_assets", "vehicle_asset_history_events"]) {
+    assert.notEqual(await worldFinalHistorySeal(worldSealSql(table, options), worldId), baseline, table);
+  }
+  for (const [schemaVersion, migrationCount] of [["zugfolge-world-final-history-seal/v1", 33], ["zugfolge-world-final-history-seal/v2", 34], ["zugfolge-world-final-history-seal/v3", 35], ["zugfolge-world-final-history-seal/v4", 36]]) {
+    const historical = { schemaVersion };
+    assert.equal(await worldFinalHistorySeal(worldSealSql(undefined, options), worldId, historical),
+      await worldFinalHistorySeal(worldSealSql(undefined, { migrationCount }), worldId, historical));
+    for (const nonemptyTable of ["vehicle_registry_entries", "vehicle_registry_events"]) {
+      await assert.rejects(worldFinalHistorySeal(worldSealSql(undefined, { ...options, nonemptyTable }), worldId, historical), /Schema-38-Fahrzeugregisterdaten/u);
+    }
+    await assert.rejects(worldFinalHistorySeal(worldSealSql(undefined, { ...options, omittedFactsTable: "vehicle_assets" }), worldId, historical), /Schema-38-Fakten/u);
+  }
+  await assert.rejects(worldFinalHistorySeal(worldSealSql(undefined, { migrationCount: 35 }), worldId, { schemaVersion: "zugfolge-world-final-history-seal/v5" }), /Schema-\/Spaltenversion/u);
 });

@@ -1,0 +1,51 @@
+{
+  "schemaVersion": "conductor-art-generation-evidence/v1",
+  "source": "sources/train.png",
+  "sourceSha256": "72f19564ff8899a4b768baac671ff8659e7d488dba7b5322368fd51ab2669b0d",
+  "tool": "image_gen.imagegen",
+  "prompt": "Use case: stylized-concept. Asset type: original production railway sprite atlas for Zugfolge. EXACT1536x1536 PNGwith genuinelytransparentbackground. Threeequal512x1536verticalcells, no gutters orframes. Logicalcanvas768x768exactly2xnearest-neighbor: everypixelblockis2x2, noantialiasing. Orthogonaltruly90degreeoverheadcamera, trainsverticalpointingup; no isometric, no perspective. Palette ONLY flat opaque colors #101419 #181e25 #202830 #303b46 #f5f7fa #b5c0cc #93a2b1 #e5233d #7cddba #f5bf65 #e8b894 #be8060 #805342 #382c28. Threeisolated assets: LEFT cell a complete roofremovedcutaway24metre regionalpassengercar: physical3mwidth=96logicalpxand24mlength=768logicalpx, adaptlengthinsidecanvaswith4pxsafeedges. Bodywidth192actualpxcenteredinthe512cell. Graphitestructure creaminnerwalls redstandardseats pairedonbothsidesofcentralaisle, redframeddoors nearends, accessiblemultipurposeareaby lowerdoors,compactWC andcabendatupperend, horizontal/verticalhardpixelgeometry. MIDDLE cell matching front/noseandcabmoduleonlyatuppercenter,3mwide6mlonglogical96x192pixels, ownroundedrectangularslightpixelstairnosing, darkwindow/redlowerbody, noforeigntrainstyling. RIGHT cell matchingcompleteclosedroof24mcarwithairconditionerandtwoown-genericpantographs,3mwide,graphiteandlightgreywiththinredsideedges. Allassetsconsistentproportionsandstyle, actualfinalpixelart,notprototype. Nopeople,nolettering,nologos,notext,noiconlabels,no floor/no shadowsoutsidebody. Camera directlyabove.",
+  "metadata": {
+    "container": "PNG/caBX/JUMBF/c2pa.actions.v2",
+    "cborSha256": "593d1456d51672f78e73ecdabfac519dfd5a7dbb3be77f3e7808bbd95cf9a4bb",
+    "actions": {
+      "actions": [
+        {
+          "action": "c2pa.created",
+          "when": "2026-09-05T00:00:00Z",
+          "softwareAgent": {
+            "name": "gpt-image",
+            "version": "2.0"
+          },
+          "digitalSourceType": "http://cv.iptc.org/newscodes/digitalsourcetype/trainedAlgorithmicMedia"
+        },
+        {
+          "action": "c2pa.converted",
+          "when": "2026-09-05T00:00:00Z"
+        },
+        {
+          "action": "c2pa.watermarked.unbound",
+          "when": "2026-09-05T00:00:00Z"
+        }
+      ],
+      "allActionsIncluded": false
+    },
+    "softwareAgent": {
+      "name": "gpt-image",
+      "version": "2.0"
+    },
+    "interpretation": "Providerdeklarierte Modellangabe; keine Prüfung der C2PA-Signatur oder Aussage über interne Gewichte."
+  },
+  "technicalProcessing": {
+    "script": "tools/art-atlas/prepare.py",
+    "pillowVersion": "12.3.0",
+    "operations": [
+      "crop",
+      "edge-connected-neutral-checkerboard-removal",
+      "alpha-threshold-128",
+      "nearest-neighbor-resize",
+      "fixed-palette-no-dither",
+      "atlas-pack"
+    ],
+    "authorization": "Auftraggeber: Ja, technisch aufbereiten (06.09.2026)."
+  }
+}

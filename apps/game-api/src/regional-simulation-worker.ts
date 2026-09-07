@@ -409,6 +409,7 @@ export class RegionalSimulationWorker {
   readonly #livemap: LivemapRegistry;
   readonly #operations: OperationsRegistry | undefined;
   readonly #readyRegions = new Map<string, RegionalSimulationReadyRegion>();
+  readonly #publishedStateHashes = new Map<string, string>();
   readonly #expectedInitializationHashes = new Map<string, string>();
   readonly #releasedWorldIds = new Set<string>();
 
@@ -471,6 +472,7 @@ export class RegionalSimulationWorker {
         initializationHash: state.initializationHash,
       }),
     );
+    this.#publishedStateHashes.set(readyKey(state.world.worldId, state.world.regionId), state.stateHash);
   }
 
   #registerExpectedInitializationHash(
@@ -598,7 +600,13 @@ export class RegionalSimulationWorker {
 
   #clearWorldReady(worldId: string): void {
     for (const [key, region] of this.#readyRegions) {
-      if (region.worldId === worldId) this.#readyRegions.delete(key);
+      if (region.worldId === worldId) {
+        this.#readyRegions.delete(key);
+        this.#publishedStateHashes.delete(key);
+      }
+    }
+    for (const key of this.#publishedStateHashes.keys()) {
+      if (key.startsWith(`${worldId}\u0000`)) this.#publishedStateHashes.delete(key);
     }
   }
 
@@ -1004,10 +1012,18 @@ export class RegionalSimulationWorker {
 
     this.#assertNotReleased(work.worldId, work.regionId);
     if (!committed.fanout) {
-      this.#markReady(committed.result.state);
+      if (this.#publishedStateHashes.get(key) !== committed.result.stateHash) await this.#rebuildWorldFeed(work.worldId);
+      else this.#markReady(committed.result.state);
       return committed.result;
     }
     try {
+      // Ein separater Weltwriter kann den echten DB-Kopf fortgeschrieben
+      // haben, ohne diesen Prozessfeed zu publizieren. Kein Delta überspringt
+      // solche Commits; der vorhandene Vollrestore bleibt die einzige Brücke.
+      if (this.#publishedStateHashes.get(key) !== baseRow.stateHash) {
+        await this.#rebuildWorldFeed(work.worldId);
+        return committed.result;
+      }
       this.#publishOperations(work.worldId, committed.appendedEvents);
       const published = this.#livemap.publishOperationalRegionSnapshot(
         work.worldId,
@@ -1278,11 +1294,12 @@ export class RegionalSimulationWorker {
 
     this.#assertNotReleased(work.worldId, work.regionId);
     if (!committed.fanout) {
-      this.#markReady(committed.result.state);
+      if (this.#publishedStateHashes.get(key) !== committed.result.stateHash) await this.#rebuildWorldFeed(work.worldId);
+      else this.#markReady(committed.result.state);
       return committed.result;
     }
     try {
-      if (committed.resetFanout) {
+      if (committed.resetFanout || this.#publishedStateHashes.get(key) !== baseRow.stateHash) {
         // Der Wiederaufbau invalidiert laufende Transporte und publiziert aus
         // dem finalen persistierten Kopf einen autoritativen Vollsnapshot. Er
         // spielt zugleich das dauerhafte Operations-Eventlog idempotent nach.
@@ -1295,8 +1312,8 @@ export class RegionalSimulationWorker {
           projectOperationalLivemap(committed.result.liveMap),
         );
         if (published === undefined) await this.#rebuildWorldFeed(work.worldId);
+        else this.#markReady(committed.result.state);
       }
-      this.#markReady(committed.result.state);
       return committed.result;
     } catch (error) {
       this.#readyRegions.delete(key);

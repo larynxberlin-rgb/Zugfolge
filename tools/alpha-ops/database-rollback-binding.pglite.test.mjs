@@ -13,6 +13,7 @@ import {
 import { keycloakStateInspectorFixture } from "./database-rollback-test-fixtures.mjs";
 import { databaseRollbackEvidenceFixtures } from "./database-rollback-test-fixtures.mjs";
 import { createDatabaseRollbackProof, validateDatabaseRollbackProof } from "../tiles/map-release-build-evidence.mjs";
+import { validateGameDatabaseCatalog } from "./keycloak-public-to-schema.mjs";
 
 const sourceMigrationsFolder = resolve(import.meta.dirname, "../../packages/db/drizzle");
 // Diese Suite attestiert den unveraenderlichen historischen Schema-33-Vertrag.
@@ -39,8 +40,9 @@ function inspectLiveDatabaseRollbackSnapshot(sql) {
 
 test("Schema35 liefert aus dem echten Katalog einen vollständigen v5-Restorebeleg", async () => {
   const client = new PGlite();
+  const schema35 = await migrationsThrough(35);
   try {
-    await migrate(drizzle(client), { migrationsFolder: sourceMigrationsFolder });
+    await migrate(drizzle(client), { migrationsFolder: schema35 });
     const source = await inspectLiveDatabaseRollbackSnapshot(adapter(client));
     assert.equal(source.migrationLedger.length, 35);
     assert.equal(source.guards.length, 55);
@@ -48,8 +50,87 @@ test("Schema35 liefert aus dem echten Katalog einen vollständigen v5-Restorebel
     const proof = createDatabaseRollbackProof({ releaseId: "infra-deutschland-2026.4", previousReleaseId: "infra-deutschland-2026.2", source, ...evidence, writersQuiesced: true, rollbackWindow: "pre-activation-only" });
     assert.equal(proof.schema, "zugfolge-database-rollback-proof/v5");
     assert.equal(validateDatabaseRollbackProof(proof), proof);
-  } finally { await client.close(); }
+  } finally { await client.close(); await rm(schema35, { recursive: true, force: true }); }
 });
+
+test("Schema36 bindet Sitzungszustände und blockiert das Ausblenden im historischen Siegel", async () => {
+  const client = new PGlite();
+  const schema36 = await migrationsThrough(36);
+  try {
+    await migrate(drizzle(client), { migrationsFolder: schema36 });
+    const source = await inspectLiveDatabaseRollbackSnapshot(adapter(client));
+    assert.equal(source.migrationLedger.length, 36);
+    assert.equal(source.guards.length, 61);
+    const evidence = databaseRollbackEvidenceFixtures(source);
+    const proof = createDatabaseRollbackProof({ releaseId: "infra-deutschland-2026.4", previousReleaseId: "infra-deutschland-2026.2", source,
+      ...evidence, writersQuiesced: true, rollbackWindow: "pre-activation-only" });
+    assert.equal(proof.schema, "zugfolge-database-rollback-proof/v6");
+    assert.equal(validateDatabaseRollbackProof(proof), proof);
+    const worldId = "10000000-0000-4000-8000-000000000036";
+    await client.query("insert into worlds(id,name,schedule_period_weeks,epoch) values($1,'Sitzungsarchiv',3,to_timestamp(0))", [worldId]);
+    const before = await worldFinalHistorySeal(adapter(client), worldId);
+    await client.query("insert into conductor_train_states(world_id,train_run_id,region_id,state,state_hash,revision,at_ms) values($1,'train','test-region',$2,$3,1,0)",
+      [worldId, JSON.stringify({ worldId, trainRunId: "train" }), "a".repeat(64)]);
+    assert.notEqual(await worldFinalHistorySeal(adapter(client), worldId), before);
+    await assert.rejects(worldFinalHistorySeal(adapter(client), worldId, { schemaVersion: "zugfolge-world-final-history-seal/v3" }), /Schema-36-Fakten/u);
+    await client.query("update worlds set lifecycle_status='archived' where id=$1", [worldId]);
+    await assert.rejects(client.query("update conductor_train_states set revision=2 where world_id=$1", [worldId]), /fenced/u);
+  } finally { await client.close(); await rm(schema36, { recursive: true, force: true }); }
+});
+
+test("Schema37 qualifiziert die feste Redaktionsverdrahtung und beide unveränderlichen Belegtabellen als v7-Restore", async () => {
+  const client = new PGlite();
+  const schema37 = await migrationsThrough(37);
+  try {
+    await migrate(drizzle(client), { migrationsFolder: schema37 });
+    const source = await inspectLiveDatabaseRollbackSnapshot(adapter(client));
+    assert.equal(source.migrationLedger.length, 37);
+    assert.equal(source.guards.length, 73);
+    const evidence = databaseRollbackEvidenceFixtures(source);
+    const proof = createDatabaseRollbackProof({ releaseId: "infra-deutschland-2026.4", previousReleaseId: "infra-deutschland-2026.2", source,
+      ...evidence, writersQuiesced: true, rollbackWindow: "pre-activation-only" });
+    assert.equal(proof.schema, "zugfolge-database-rollback-proof/v7");
+    assert.equal(validateDatabaseRollbackProof(proof), proof);
+  } finally { await client.close(); await rm(schema37, { recursive: true, force: true }); }
+});
+
+for (const migrationCount of [38]) {
+test(`Schema${migrationCount} liefert aus dem echten Katalog einen vollständigen v${migrationCount - 30}-Restorebeleg`, async () => {
+  const client = new PGlite();
+  const schemaFolder = await migrationsThrough(migrationCount);
+  try {
+    await migrate(drizzle(client), { migrationsFolder: schemaFolder });
+    const source = await inspectLiveDatabaseRollbackSnapshot(adapter(client));
+    assert.equal(source.migrationLedger.length, migrationCount);
+    assert.equal(source.guards.length, 79);
+    const relations = (await client.query("select c.relname from pg_class c join pg_namespace n on n.oid=c.relnamespace where n.nspname='public' and c.relkind='r' order by c.relname")).rows.map((row) => row.relname);
+    const routines = (await client.query("select p.proname as name,pg_get_function_identity_arguments(p.oid) as arguments from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' order by p.proname,pg_get_function_identity_arguments(p.oid)")).rows;
+    assert.equal(validateGameDatabaseCatalog(relations, routines, migrationCount), "schema-38");
+    const evidence = databaseRollbackEvidenceFixtures(source);
+    const proof = createDatabaseRollbackProof({ releaseId: "infra-deutschland-2026.4", previousReleaseId: "infra-deutschland-2026.2", source, ...evidence, writersQuiesced: true, rollbackWindow: "pre-activation-only" });
+    assert.equal(proof.schema, `zugfolge-database-rollback-proof/v${migrationCount - 30}`);
+    assert.equal(validateDatabaseRollbackProof(proof), proof);
+    if (migrationCount === 38) {
+      const worldId = "11111111-1111-4111-8111-111111111136";
+      await client.query("insert into worlds(id,name,schedule_period_weeks,epoch) values($1,'Register38',4,'2026-01-01Z')", [worldId]);
+      await client.query(`insert into vehicle_registry_entries(world_id,vehicle_id,authority_release_id,class_designation,owner_operator_id,holder_operator_id,introduced_at_s,retired_at_s,data_at_s,fleet_revision,source_state_hash,facts,facts_hash,history_hash)
+        values($1,'vehicle-36','authority-36','Klasse 36','public','public',0,1000,0,1,$2,'{}',$2,$2)`, [worldId, "a".repeat(64)]);
+      await client.query(`insert into vehicle_registry_events(world_id,vehicle_id,fleet_revision,at_s,event_type,resulting_history_hash,source_state_hash,details)
+        values($1,'vehicle-36',1,0,'registered',$2,$2,'{}')`, [worldId, "a".repeat(64)]);
+      const before = await worldFinalHistorySeal(adapter(client), worldId);
+      await assert.rejects(client.query("delete from vehicle_registry_entries where world_id=$1", [worldId]), /Fahrzeugidentität/u);
+      await assert.rejects(client.query("update vehicle_registry_events set details='{}' where world_id=$1", [worldId]), /Fahrzeugidentität/u);
+      assert.equal(await worldFinalHistorySeal(adapter(client), worldId), before);
+      await client.query("update worlds set lifecycle_status='archived' where id=$1", [worldId]);
+      const archived = await worldFinalHistorySeal(adapter(client), worldId);
+      await assert.rejects(client.query("update vehicle_registry_entries set data_at_s=1 where world_id=$1", [worldId]), /world writer is fenced/u);
+      await assert.rejects(client.query(`insert into vehicle_registry_events(world_id,vehicle_id,fleet_revision,at_s,event_type,resulting_history_hash,source_state_hash,details)
+        values($1,'vehicle-36',2,1,'condition-updated',$2,$2,'{}')`, [worldId, "b".repeat(64)]), /world writer is fenced/u);
+      assert.equal(await worldFinalHistorySeal(adapter(client), worldId), archived);
+    }
+  } finally { await client.close(); await rm(schemaFolder, { recursive: true, force: true }); }
+});
+}
 
 async function migrationsThrough(count) {
   const folder = await mkdtemp(join(tmpdir(), `zugfolge-migrations-${count}-`));

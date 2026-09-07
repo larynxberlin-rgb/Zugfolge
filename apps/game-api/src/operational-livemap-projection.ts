@@ -10,6 +10,7 @@ import type {
   PublicRouteGeometryPoint,
   PublicTrain,
 } from "@zugfolge/livemap-stream";
+import { isMotionSegmentGeometry } from "@zugfolge/livemap-stream";
 
 function invariant(condition: unknown, message: string): asserts condition {
   if (!condition) throw new TypeError(message);
@@ -57,7 +58,7 @@ function publicTrain(
     `Zug '${train.trainId}' besitzt keinen konsistenten Bewegungszustand.`,
   );
   if (motionSegment != null) {
-    invariant(motionGeometry.length >= 2, `Zug '${train.trainId}' besitzt keinen exakten Bewegungsverlauf.`);
+    invariant(isMotionSegmentGeometry({ ...motionSegment, geometry: motionGeometry }), `Zug '${train.trainId}' besitzt keinen exakten Bewegungsverlauf.`);
     invariant(
       motionSegment.routeVersionId === train.routeVersionId,
       `Zug '${train.trainId}' bewegt sich auf einer fremden Laufwegversion.`,

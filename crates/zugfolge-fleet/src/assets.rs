@@ -448,6 +448,42 @@ impl VehicleAsset {
     pub fn maintenance_deadlines(&self) -> impl Iterator<Item = &MaintenanceDeadline> {
         self.maintenance_deadlines.values()
     }
+
+    /// Bindet alle individuellen Fakten samt Welt und Herkunft fuer den Markt.
+    pub(crate) fn persistent_hash(&self) -> StateHash {
+        let mut hasher = StateHasher::new("persistent-vehicle-asset/v1");
+        hasher
+            .uint("world-id", self.world_id)
+            .hash("catalog", self.catalog_checksum);
+        write_asset_state(self, &mut hasher);
+        hasher.finish()
+    }
+}
+
+fn write_asset_state(vehicle: &VehicleAsset, hasher: &mut StateHasher) {
+    hasher
+        .uint("vehicle-id", vehicle.id)
+        .uint("vehicle-type-id", vehicle.vehicle_type_id)
+        .text("class", vehicle.class_designation.as_str())
+        .text("trade-name", &vehicle.trade_name)
+        .uint("build-year", u64::from(vehicle.build_year))
+        .uint("acquisition-year", u64::from(vehicle.acquisition_year))
+        .text("procurement-channel", vehicle.procurement_channel.tag())
+        .text("ownership", vehicle.ownership.tag())
+        .seq("approvals", vehicle.approvals.len());
+    for approval in &vehicle.approvals {
+        hasher.text("approval", approval.as_str());
+    }
+    hasher.seq("maintenance-deadlines", vehicle.maintenance_deadlines.len());
+    for deadline in vehicle.maintenance_deadlines.values() {
+        hasher
+            .text("maintenance-kind", deadline.kind())
+            .int("maintenance-due-at", deadline.due_at());
+    }
+    hasher.seq("installed-protection", vehicle.installed_protection.count());
+    for system in vehicle.installed_protection.systems() {
+        hasher.text("protection-system", system.tag());
+    }
 }
 
 fn validate_protection_dependency(protection: &TrainProtection) -> Result<(), AssetError> {
@@ -598,29 +634,7 @@ impl DeterministicModel for FleetSnapshot {
             .hash("catalog", self.catalog_checksum)
             .seq("vehicles", self.vehicles.len());
         for vehicle in self.vehicles.values() {
-            hasher
-                .uint("vehicle-id", vehicle.id)
-                .uint("vehicle-type-id", vehicle.vehicle_type_id)
-                .text("class", vehicle.class_designation.as_str())
-                .text("trade-name", &vehicle.trade_name)
-                .uint("build-year", u64::from(vehicle.build_year))
-                .uint("acquisition-year", u64::from(vehicle.acquisition_year))
-                .text("procurement-channel", vehicle.procurement_channel.tag())
-                .text("ownership", vehicle.ownership.tag())
-                .seq("approvals", vehicle.approvals.len());
-            for approval in &vehicle.approvals {
-                hasher.text("approval", approval.as_str());
-            }
-            hasher.seq("maintenance-deadlines", vehicle.maintenance_deadlines.len());
-            for deadline in vehicle.maintenance_deadlines.values() {
-                hasher
-                    .text("maintenance-kind", deadline.kind())
-                    .int("maintenance-due-at", deadline.due_at());
-            }
-            hasher.seq("installed-protection", vehicle.installed_protection.count());
-            for system in vehicle.installed_protection.systems() {
-                hasher.text("protection-system", system.tag());
-            }
+            write_asset_state(vehicle, hasher);
         }
     }
 }

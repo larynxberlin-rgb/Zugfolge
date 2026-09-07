@@ -1,7 +1,7 @@
 # Datenschutzinventar
 
-Inventarversion `zugfolge-personal-data-inventory/v2`, Exportversion
-`zugfolge-personal-data-export/v3`. Jede neue unmittelbar oder mittelbar
+Inventarversion `zugfolge-personal-data-inventory/v3`, Exportversion
+`zugfolge-personal-data-export/v4`. Jede neue unmittelbar oder mittelbar
 kontobezogene Tabelle erfordert eine explizite Entscheidung in diesem Inventar
 und einen Test ihres Exportwegs. Das Weltkonto ist der autorisierte
 Einstiegspunkt; sein Subject stammt ausschliesslich aus dem verifizierten Token.
@@ -16,6 +16,10 @@ Aktiver Spielzugang ist fuer die Selbstauskunft nicht erforderlich.
 | Kommerzielle Berechtigungen | `commerceEntitlements`, alle eigenen globalen Berechtigungen anhand des authentifizierten Subjects; keine fremden Vertragsanbieter-/Kundendaten |
 | Berechtigungsverwendung | `commerceWorldClaims`, eigene Entitlements ausschliesslich in der angefragten Welt |
 | Kaufmaennische Weltteilnahme | `worldParticipations`, eigene Teilnahme in der angefragten Welt |
+| Private Schaffnersitzungen | `conductor`: `conductor_owners` über eigenes Weltkonto, `conductor_leases` über dieselbe Welt/Konto-ID, `conductor_command_receipts` und `conductor_snapshots` ausschließlich über den tatsächlich zugeordneten eigenen `ownerRef`; keine fremden Zugpersonal-Snapshots |
+| Archivredaktionsaufträge | `archivePrivacy.requests`: `archive_privacy_requests` nur in der eigenen Welt; Kontovorgänge über `objectId = account.id`, Postfachvorgänge über den tatsächlich vorhandenen Nachrichtendatensatz mit derselben Welt und `recipientAccountId = account.id`, einschließlich bereits geräumter Zustellbelege |
+| Archivredaktions-Hashzeilen | `archivePrivacy.requests[].rows`: `archive_privacy_rows` ausschließlich über Welt und Kennung eines eigenen exportierten Auftrags; enthalten nur gespeicherte Vorher-/Nachher-Hashes, keine rekonstruierten Altinhalte oder fremden Aufträge |
+| Synthetische Schaffnerfachzustände | `conductor_train_states` und `conductor_control_states` enthalten synthetische Zug-/Kontrollfälle ohne Konto-/Keycloak-Zuordnung; keine vollständige Ausgabe fremder Zugzustände im persönlichen Export |
 | Keycloak-Anmeldedaten | Verantwortungsbereich Identitaetsdienst; Passwoerter, Tokens und Sitzungsgeheimnisse werden niemals im Game-Export gesammelt |
 | Odoo-Rechnung und Zahlungsdaten | Verantwortungsbereich kaufmaennischer Auskunft; das Game exportiert nur seine eigenen gespeicherten Berechtigungs-/Teilnahmereferenzen |
 | Weltjournal, Ledger und Betriebsberichte | EVU-/Weltverlauf, kein pauschaler Export fremder Spielzustaende; pseudonyme Autoritaetsbelege bleiben nach dem Konto-Purge bestehen |
@@ -40,17 +44,17 @@ rechtlich bzw. fachlich unabhaengige Originalbelege liegen im zustaendigen Journ
 Der taegliche Serverlauf raeumt hoechstens 500 Inhalte je Welt und protokolliert
 Anzahl, Fehler und Welten mit weiterem Rueckstand.
 
-Der Writer-Fence archivierter Welten sperrt derzeit auch personenbezogene
-Konten- und Postfachaenderungen. Solche Faelle bleiben als expliziter
-Aufbewahrungsrueckstand protokolliert; andere Konten/Welten werden weiter
-verarbeitet. Die Trennung personenbezogener Daten vom unveraenderlichen
-Archiv-Seal ist ein offener Implementierungsbefund; der Purge umgeht den
-Archivschutz nicht.
-
-Der [geprüfte Archivvertrag](datenschutz-archivgrenze.md) trennt die
-kryptografische Grenze bereits attestierter Cutover-Vorgänger vom möglichen
-künftigen Purge normaler fachlicher Archive und nennt den ausführbaren
-Integrationstest. Issue #520 bleibt offen.
+Der [geprüfte Archivvertrag](datenschutz-archivgrenze.md) erlaubt ab Schema 37
+ausschließlich fest definierte Konten- und Postfachredaktionen unter dem
+Weltlock. Die vier privaten Schaffnersitzungstabellen werden bereits bei der
+Löschvormerkung entfernt. Hashbelege erhalten die Prüfbarkeit originaler
+Historien-/Cutover-Siegel, ohne gelöschte persönliche Inhalte zu behalten.
+Die Aufträge und Hashzeilen bleiben unveränderlich als Redaktionsbelege
+bestehen; vor der endgültigen Subjectentkopplung sind die eigenen Belege im
+Selbstexport enthalten. Nach dem Kontopurge ist über das frühere Subject
+keine Zuordnung und damit keine persönliche Auskunft mehr möglich.
+Wiederherstellung verlangt einen unabhängig gepinnten vollständigen
+Redaktionsstand. Andere Archivschreibvorgänge bleiben gesperrt.
 
 Ein geraeumter Nachrichtendatensatz enthaelt eine leere Payload, einen neutralen
 Typ und den Raeumzeitpunkt. Kennung, Empfaenger, Idempotenzschluessel und
@@ -58,4 +62,13 @@ unveraenderlicher Inhaltshash bleiben als Zustellbeleg erhalten. Ein spaeter
 Outbox-Retry liefert diesen Beleg und erzeugt keinen neuen Postfachinhalt.
 Gleicher Schluessel mit anderer Payload, anderem Typ oder anderer Frist ist ein
 Konflikt. Ein technischer Retry-Versandzeitpunkt verschiebt weder Originalversand
-noch Aufbewahrung. Postfach- und Datenschutzansichten filtern geraeumte Belege.
+noch Aufbewahrung. Postfach- und Datenschutz-Inhaltsansichten filtern geräumte
+Belege; die neue Auskunftskategorie für Archivredaktionen darf ihren weiterhin
+tatsächlich eigenen Zustellbeleg ausschließlich zur Zuordnungsprüfung nutzen.
+
+Die Verhaltenstests in `packages/privacy/src/conductor.test.ts` belegen den
+privaten Sitzungs-Selbstexport und die Löschgrenze. Die erweiterten
+`archive-redaction.test.ts` prüfen eigene Konto- und Postfachredaktionen vor
+der endgültigen Entkopplung, fremde Konten/Welten und den anschließenden
+Fall `PersonalDataNotFoundError` (HTTP 404). Text- oder Kennungsvermutungen
+ersetzen keine tatsächlich gespeicherte Welt-/Empfängerzuordnung.

@@ -8,6 +8,8 @@
 import { operators, worldAccesses, mailboxMessages, commerceEntitlements, commerceWorldClaims, worldParticipations, type MailboxMessage, type Operator, type WorldAccess } from "@zugfolge/db";
 import { getAccountIncludingRevoked, type AccountRecord, type IdentityDatabase } from "@zugfolge/identity";
 import { and, eq, isNull } from "drizzle-orm";
+import { exportConductorPersonalData } from "./conductor.js";
+import { exportArchivePrivacyData } from "./archive-export.js";
 
 /** Für dieses Keycloak-Subject existiert kein Konto in der angefragten Welt. */
 export class PersonalDataNotFoundError extends Error {
@@ -18,7 +20,7 @@ export class PersonalDataNotFoundError extends Error {
 }
 
 export interface PersonalDataExport {
-  readonly schemaVersion: "zugfolge-personal-data-export/v3";
+  readonly schemaVersion: "zugfolge-personal-data-export/v4";
   readonly worldId: string;
   readonly account: AccountRecord;
   readonly worldAccessStatus: "active" | "revoked" | "none";
@@ -28,6 +30,8 @@ export interface PersonalDataExport {
   readonly worldParticipations: readonly (typeof worldParticipations.$inferSelect)[];
   readonly operators: readonly Operator[];
   readonly mailboxMessages: readonly MailboxMessage[];
+  readonly conductor: Awaited<ReturnType<typeof exportConductorPersonalData>>;
+  readonly archivePrivacy: Awaited<ReturnType<typeof exportArchivePrivacyData>>;
   readonly exportedAt: Date;
 }
 
@@ -64,7 +68,7 @@ export async function exportAccountData(
   const participations = await db.select().from(worldParticipations).where(and(eq(worldParticipations.worldId, input.worldId), eq(worldParticipations.keycloakSubject, input.keycloakSubject)));
 
   return {
-    schemaVersion: "zugfolge-personal-data-export/v3",
+    schemaVersion: "zugfolge-personal-data-export/v4",
     worldId: input.worldId,
     account,
     worldAccessStatus: access?.status ?? "none",
@@ -74,6 +78,8 @@ export async function exportAccountData(
     worldParticipations: participations,
     operators: ownedOperators,
     mailboxMessages: messages,
+    conductor: await exportConductorPersonalData(db, input.worldId, account.id),
+    archivePrivacy: await exportArchivePrivacyData(db, input.worldId, account.id),
     exportedAt: input.exportedAt,
   };
 }

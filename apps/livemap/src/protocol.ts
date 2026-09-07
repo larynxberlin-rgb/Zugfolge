@@ -10,7 +10,7 @@ import type {
   PublicOperationalVehicleRestriction,
   PublicRouteGeometryPoint,
 } from "@zugfolge/livemap-stream";
-import { isContinuousRouteGeometry } from "@zugfolge/livemap-stream";
+import { isMotionSegmentGeometry } from "@zugfolge/livemap-stream";
 
 export type OperatingStatus =
   | "planned"
@@ -423,14 +423,14 @@ function parseMotionSegment(value: unknown): NonNullable<PublicOperationalTrainS
       ...(bearing === undefined ? {} : { bearingMilliDegrees: bearing }),
     });
   });
-  if (!isContinuousRouteGeometry(geometry)) {
-    throw new TypeError("Laufweggeometrie ist nicht lückenlos gleisgebunden geordnet.");
-  }
   const startedAtMs = integerField(value, "startedAtMs", 0);
   const validUntilMs = integerField(value, "validUntilMs", 0);
   const startRouteMm = integerField(value, "startRouteMm", 0);
   const authorityEndRouteMm = integerField(value, "authorityEndRouteMm", 0);
   const segmentEndRouteMm = integerField(value, "segmentEndRouteMm", 0);
+  if (!isMotionSegmentGeometry({ geometry, startedAtMs, validUntilMs, startRouteMm, segmentEndRouteMm })) {
+    throw new TypeError("Laufweggeometrie ist nicht lückenlos gleisgebunden geordnet.");
+  }
   if (validUntilMs < startedAtMs) throw new TypeError("Bewegungsabschnitt endet vor seinem Beginn.");
   if (startRouteMm > segmentEndRouteMm || segmentEndRouteMm > authorityEndRouteMm) {
     throw new TypeError("Bewegungsabschnitt verletzt Abschnitts- oder Fahrberechtigungsende.");

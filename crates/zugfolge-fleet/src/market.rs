@@ -551,9 +551,17 @@ impl PersistentVehicleMarket {
         reason: LeaseReturnReason,
     ) -> Result<(), VehicleMarketError> {
         let vehicle = self.vehicle_mut(vehicle_id)?;
-        let VehicleMarketStatus::Leased { lessor_id, .. } = &vehicle.status else {
+        let VehicleMarketStatus::Leased {
+            lessor_id,
+            lease_ends_at,
+            ..
+        } = &vehicle.status
+        else {
             return Err(VehicleMarketError::VehicleNotLeased);
         };
+        if reason == LeaseReturnReason::LeaseEnd && at < *lease_ends_at {
+            return Err(VehicleMarketError::LeaseNotEnded);
+        }
         let lessor_id = lessor_id.clone();
         ensure_history_time(&vehicle.history, at)?;
         vehicle.status = VehicleMarketStatus::AvailableForLease {
@@ -712,6 +720,9 @@ impl PersistentVehicleMarket {
         condition: VehicleCondition,
     ) -> Result<(), VehicleMarketError> {
         let vehicle = self.vehicle_mut(vehicle_id)?;
+        if vehicle.status == VehicleMarketStatus::Retired {
+            return Err(VehicleMarketError::VehicleRetired);
+        }
         ensure_history_time(&vehicle.history, at)?;
         vehicle.condition = condition;
         append_history(
@@ -727,6 +738,9 @@ impl PersistentVehicleMarket {
     /// Mustert ein Fahrzeug endgueltig aus, ohne seinen Lebenslauf zu loeschen.
     pub fn retire(&mut self, at: SimTime, vehicle_id: VehicleId) -> Result<(), VehicleMarketError> {
         let vehicle = self.vehicle_mut(vehicle_id)?;
+        if vehicle.status == VehicleMarketStatus::Retired {
+            return Err(VehicleMarketError::VehicleRetired);
+        }
         if matches!(vehicle.status, VehicleMarketStatus::Leased { .. }) {
             return Err(VehicleMarketError::LeasedVehicleCannotBeRetired);
         }
@@ -756,7 +770,7 @@ impl PersistentVehicleMarket {
 
     /// Kanonischer Zustandshash fuer Replays und persistente Checkpoints.
     pub fn state_hash(&self) -> StateHash {
-        let mut hasher = StateHasher::new("persistent-vehicle-market/v1");
+        let mut hasher = StateHasher::new("persistent-vehicle-market/v2");
         hasher
             .uint("world-id", self.world_id)
             .flag("starter-fleet-configured", self.starter_fleet_configured)
@@ -781,8 +795,7 @@ impl PersistentVehicleMarket {
         hasher.seq("vehicles", self.vehicles.len());
         for vehicle in self.vehicles.values() {
             hasher
-                .uint("vehicle-id", vehicle.asset.id())
-                .uint("vehicle-type", vehicle.asset.vehicle_type_id())
+                .hash("vehicle-asset", vehicle.asset.persistent_hash())
                 .uint(
                     "condition-mechanical",
                     u64::from(vehicle.condition.mechanical),
@@ -1009,6 +1022,7 @@ pub enum VehicleMarketError {
     VehicleNotAvailableForLease,
     InvalidLease,
     VehicleNotLeased,
+    LeaseNotEnded,
     VehicleNotOwned,
     VehicleNotListed,
     InvalidUsedSale,
@@ -1016,6 +1030,7 @@ pub enum VehicleMarketError {
     MissingLiquidationPrice,
     HistoryTimeRegression,
     LeasedVehicleCannotBeRetired,
+    VehicleRetired,
 }
 
 impl fmt::Display for VehicleMarketError {
@@ -1030,13 +1045,14 @@ impl Error for VehicleMarketError {}
 mod tests {
     use std::collections::BTreeMap;
 
-    use zugfolge_infra::{FleetClass, TrainProtection};
+    use zugfolge_determinism::{assert_golden, golden_path};
+    use zugfolge_infra::{FleetClass, ProtectionSystem, TrainProtection};
 
     use super::{
         LeaseReturnReason, PersistentVehicleMarket, TrafficKind, VehicleCondition,
         VehicleMarketError, VehicleMarketStatus, default_server_lessors,
     };
-    use crate::{ProcurementChannel, VehicleAsset};
+    use crate::{MaintenanceDeadline, ProcurementChannel, VehicleAsset};
 
     fn asset(id: u64, channel: ProcurementChannel) -> VehicleAsset {
         VehicleAsset::from_authority_release(
@@ -1058,6 +1074,117 @@ mod tests {
 
     fn condition() -> VehicleCondition {
         VehicleCondition::new(8_000, 7_500, 9_000, 6_500, 5_000).expect("Zustand")
+    }
+
+    #[test]
+    fn regulaeres_leasingende_gilt_erst_ab_vertragsfrist() {
+        let mut market = PersistentVehicleMarket::new(7, default_server_lessors()).expect("Markt");
+        market
+            .add_starter_vehicle(
+                0,
+                "eichenbahn-leasing",
+                asset(1, ProcurementChannel::Used),
+                condition(),
+            )
+            .expect("Startbestand");
+        let quote = market
+            .quote_server_lease(1, TrafficKind::Spnv, 10_000)
+            .expect("Angebot");
+        market
+            .lease_server_vehicle(1, "evu-a", 20, quote)
+            .expect("Leasing");
+        let before = market.state_hash();
+        assert_eq!(
+            market.return_lease(19, 1, LeaseReturnReason::LeaseEnd),
+            Err(VehicleMarketError::LeaseNotEnded)
+        );
+        assert_eq!(market.state_hash(), before);
+        market
+            .return_lease(20, 1, LeaseReturnReason::LeaseEnd)
+            .expect("Regulaerer Ruecklauf");
+        assert_eq!(market.vehicle(1).expect("Asset").history().len(), 3);
+    }
+
+    #[test]
+    fn ausgemustertes_fahrzeug_bleibt_mit_unveraendertem_lebenslauf_im_archiv() {
+        let mut market = PersistentVehicleMarket::new(7, default_server_lessors()).expect("Markt");
+        market
+            .introduce_new_vehicle(
+                0,
+                asset(1, ProcurementChannel::NewBuild),
+                "evu-a",
+                None,
+                condition(),
+            )
+            .expect("Neukauf");
+        market.retire(10, 1).expect("Ausmusterung");
+        let archived = market.vehicle(1).expect("Archiviertes Asset").clone();
+        let before = market.state_hash();
+        assert_eq!(
+            market.record_condition(11, 1, condition()),
+            Err(VehicleMarketError::VehicleRetired)
+        );
+        assert_eq!(
+            market.retire(11, 1),
+            Err(VehicleMarketError::VehicleRetired)
+        );
+        assert_eq!(
+            market.list_owned_vehicle(11, 1, "evu-a", 1_000),
+            Err(VehicleMarketError::VehicleNotOwned)
+        );
+        assert_eq!(market.state_hash(), before);
+        assert_eq!(market.vehicle(1).expect("Archiviertes Asset"), &archived);
+        assert_eq!(market.vehicles().count(), 1);
+    }
+
+    #[test]
+    fn markthash_bindet_fristen_baujahr_zugsicherung_und_release_des_einzelstuecks() {
+        fn market_hash(
+            release: &str,
+            build_year: u16,
+            due_at: i64,
+            protection: TrainProtection,
+        ) -> zugfolge_determinism::StateHash {
+            let asset = VehicleAsset::from_authority_release(
+                release,
+                7,
+                1,
+                42,
+                FleetClass::new("423").expect("Baureihe"),
+                "Mittelzug",
+                build_year,
+                2026,
+                ProcurementChannel::Used,
+                [],
+                [MaintenanceDeadline::new("revision", due_at).expect("Frist")],
+                protection,
+            )
+            .expect("Asset");
+            let mut market =
+                PersistentVehicleMarket::new(7, default_server_lessors()).expect("Markt");
+            market
+                .add_starter_vehicle(0, "eichenbahn-leasing", asset, condition())
+                .expect("Startbestand");
+            market.state_hash()
+        }
+        let baseline = market_hash("release-a", 2010, 100, TrainProtection::from_systems([]));
+        assert_eq!(
+            baseline,
+            market_hash("release-a", 2010, 100, TrainProtection::from_systems([]))
+        );
+        for changed in [
+            market_hash("release-b", 2010, 100, TrainProtection::from_systems([])),
+            market_hash("release-a", 2011, 100, TrainProtection::from_systems([])),
+            market_hash("release-a", 2010, 101, TrainProtection::from_systems([])),
+            market_hash(
+                "release-a",
+                2010,
+                100,
+                TrainProtection::from_systems([ProtectionSystem::Pzb]),
+            ),
+        ] {
+            assert_ne!(baseline, changed);
+        }
     }
 
     #[test]
@@ -1253,5 +1380,9 @@ mod tests {
             market
         }
         assert_eq!(build().state_hash(), build().state_hash());
+        assert_golden(
+            golden_path!("persistent-vehicle-market"),
+            build().state_hash(),
+        );
     }
 }

@@ -11,9 +11,24 @@ import {
   prepareGameSchema31,
   qualifyGameSchema31,
   validatePreSchema33MarkersAbsent,
+  validateSchema31ImageJournal,
 } from "./production-schema31-preparation.mjs";
 
 const root = new URL("../../", import.meta.url);
+
+test("Schema-31 preparation accepts the current vehicle-register image and retains historical journal contracts", async () => {
+  const journal = JSON.parse(await readFile(new URL("packages/db/drizzle/meta/_journal.json", root), "utf8"));
+  for (const length of [33, 34, 35, 36, 37, 38]) {
+    assert.doesNotThrow(() => validateSchema31ImageJournal({ ...journal, entries: journal.entries.slice(0, length) }));
+  }
+  const misordered = structuredClone(journal);
+  [misordered.entries[34], misordered.entries[35]] = [misordered.entries[35], misordered.entries[34]];
+  assert.throws(() => validateSchema31ImageJournal(misordered), /Migration 0035/u);
+  const missingRegistry = structuredClone(journal);
+  missingRegistry.entries[37].tag = "0038_unapproved_change";
+  assert.throws(() => validateSchema31ImageJournal(missingRegistry), /Migration 0038/u);
+  assert.throws(() => validateSchema31ImageJournal({ ...journal, entries: [...journal.entries, { tag: "0039_future" }] }), /Journalvertrag/u);
+});
 
 test("migration ledger keeps numeric database order beyond single digit ids", () => {
   const sql = GAME_MIGRATION_LEDGER_SQL.replace(/\s+/gu, " ").trim();

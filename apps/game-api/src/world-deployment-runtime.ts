@@ -711,6 +711,14 @@ function boundaryCommands(
   return Object.freeze(commands);
 }
 
+function serviceDayOpening(program: OperationalDeploymentProgram, day: number): OperationalScheduledCommand | undefined {
+  if (program.initialization.serviceDayPolicy === undefined) return undefined;
+  const atMs = day * program.repeatEveryMs;
+  if (!Number.isSafeInteger(atMs)) throw new RangeError("Tagesplangrenze ist ungültig.");
+  return Object.freeze({ commandId: `${program.deploymentHash}:service-day:${program.regionId}:${day}`, atMs,
+    command: Object.freeze({ type: "open-service-day", dayIndex: day }) });
+}
+
 class PlanningInfrastructureReleaseRegistry implements PlanningInfrastructureReleaseCatalog {
   readonly #releases = new Map<string, PlanningInfrastructureRelease>();
   readonly #hashes = new Map<string, string>();
@@ -776,6 +784,7 @@ export class ActiveWorldDeploymentRuntime implements RegionalScheduledCommandCat
   readonly #worldId: string;
   #active = false;
   #deploymentHash: string | undefined;
+  #planningReleaseId: string | undefined;
   readonly #realtimeRegions = new Map<string, RegionalRealtimeRegistration>();
   readonly #operationalPrograms = new Map<string, OperationalDeploymentProgram>();
   readonly #operationalInfrastructure = new Map<string, OperationalInfrastructureBinding>();
@@ -968,6 +977,7 @@ export class ActiveWorldDeploymentRuntime implements RegionalScheduledCommandCat
       throw new Error(`Planning-Authority fuer '${deployment.worldId}' steht im Konflikt zum signierten Deployment.`);
     }
     this.#planningRegistry.register(deployment.planning.infrastructureRelease);
+    this.#planningReleaseId = deployment.planning.infrastructureRelease.releaseId;
     this.fleetAuthorityConfigurations[deployment.worldId] = {
       producedAt: deployment.fleet.producedAt,
       authorityRelease: deployment.fleet.authorityRelease,
@@ -1044,6 +1054,10 @@ export class ActiveWorldDeploymentRuntime implements RegionalScheduledCommandCat
     if (program === undefined) return [];
     safeNonnegativeInteger(atMs, "Betriebsprogrammzeit ist ungueltig.");
     const commands: OperationalScheduledCommand[] = [];
+    if (atMs % program.repeatEveryMs === 0) {
+      const opening = serviceDayOpening(program, atMs / program.repeatEveryMs);
+      if (opening !== undefined) commands.push(opening);
+    }
     for (const boundary of program.boundaries) {
       if (atMs < boundary.departureOffsetMs) continue;
       const elapsed = atMs - boundary.departureOffsetMs;
@@ -1067,6 +1081,11 @@ export class ActiveWorldDeploymentRuntime implements RegionalScheduledCommandCat
     const firstDay = Math.max(0, Math.floor(afterMs / program.repeatEveryMs));
     const lastDay = Math.floor(throughMs / program.repeatEveryMs);
     for (let day = firstDay; day <= lastDay; day += 1) {
+      const opening = serviceDayOpening(program, day);
+      if (opening !== undefined && opening.atMs > afterMs && opening.atMs <= throughMs
+        && !program.boundaries.some((boundary) => boundary.departureOffsetMs === 0)) {
+        yield Object.freeze({ atMs: opening.atMs, commands: [opening] });
+      }
       for (const boundary of program.boundaries) {
         const atMs = boundary.departureOffsetMs + day * program.repeatEveryMs;
         if (!Number.isSafeInteger(atMs)) {
@@ -1075,7 +1094,7 @@ export class ActiveWorldDeploymentRuntime implements RegionalScheduledCommandCat
         if (atMs <= afterMs || atMs > throughMs) continue;
         yield Object.freeze({
           atMs,
-          commands: boundaryCommands(program, boundary, day),
+          commands: [...(opening !== undefined && boundary.departureOffsetMs === 0 ? [opening] : []), ...boundaryCommands(program, boundary, day)],
         });
       }
     }
@@ -1090,12 +1109,18 @@ export class ActiveWorldDeploymentRuntime implements RegionalScheduledCommandCat
     return (this.#active && worldId === this.#worldId);
   }
 
+  planningInfrastructureForWorld(worldId: string): PlanningInfrastructureRelease | undefined {
+    if (!this.isRealtimeWorld(worldId) || this.#planningReleaseId === undefined) return undefined;
+    return this.#planningRegistry.get(worldId, this.#planningReleaseId);
+  }
+
   /** Entfernt nur die prozesslokale Projektion einer dauerhaft archivierten Welt. */
   releaseWorld(worldId: string): void {
     if (worldId !== this.#worldId) return;
     const prefix = `${worldId}\u0000`;
     this.#active = false;
     this.#deploymentHash = undefined;
+    this.#planningReleaseId = undefined;
     this.worldEpochs.delete(worldId);
     delete this.fleetAuthorityConfigurations[worldId];
     delete this.fleetAuthorityReleases[worldId];

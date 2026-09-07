@@ -4,6 +4,15 @@ import { isAbsolute } from "node:path";
 
 export * from "./operational-simulation.js";
 export * from "./demand.js";
+export * from "./conductor.js";
+export * from "./vehicle-configuration.js";
+export * from "./interior-types.js";
+export * from "./interior.js";
+export * from "./session-types.js";
+export * from "./session.js";
+export * from "./scene-types.js";
+export * from "./scenes.js";
+import { validateM5VehicleConfiguration, type M5VehicleConfigurationV1 } from "./vehicle-configuration.js";
 
 export const OPERATING_INITIALIZE_SCHEMA = "zugfolge-operating-world-initialize/v1" as const;
 export const OPERATING_STATE_SCHEMA = "zugfolge-operating-world-state/v1" as const;
@@ -190,6 +199,8 @@ export interface FleetAuthorityPassengerData {
 }
 
 interface FleetAuthorityVehicleAssetBase<TTechnical extends FleetAuthorityTechnicalData> {
+  /** Vollständige tatsächliche M5-Konfiguration; Altbestand bleibt ausdrücklich ohne Eintrag. */
+  readonly vehicleConfiguration?: M5VehicleConfigurationV1;
   readonly id: string;
   readonly numericId: number;
   readonly operatorId: string;
@@ -379,7 +390,7 @@ export type NativeFleetCommand =
   | FleetCommandBase & {
       readonly schemaVersion: typeof FLEET_ASSET_TRANSFER_COMMAND_SCHEMA;
       readonly vehicleId: string;
-      readonly transferType: "sale" | "rental-start" | "rental-return" | "reversal";
+      readonly transferType: "sale" | "rental-start" | "rental-return" | "reversal" | "operator-exit";
       readonly fromOwnerOperatorId: string;
       readonly toOwnerOperatorId: string;
       readonly fromHolderOperatorId: string;
@@ -797,7 +808,7 @@ function normalizeFleetCommand(command: NativeFleetCommand): NativeFleetCommand 
         "transferReceiptHash",
       ]);
       nonEmptyString(command.vehicleId, "M5-Transfer-Fahrzeug");
-      invariant(["sale", "rental-start", "rental-return", "reversal"].includes(command.transferType), "M5-Transferart ist ungueltig.");
+      invariant(["sale", "rental-start", "rental-return", "reversal", "operator-exit"].includes(command.transferType), "M5-Transferart ist ungueltig.");
       nonEmptyString(command.fromOwnerOperatorId, "M5-Transfer-Alteigentuemer");
       nonEmptyString(command.toOwnerOperatorId, "M5-Transfer-Neueigentuemer");
       nonEmptyString(command.fromHolderOperatorId, "M5-Transfer-Althalter");
@@ -1306,7 +1317,7 @@ function authorityVehicleAsset(
   exactAuthorityFields(
     value,
     [...commonFields, ...(authorityV2 ? ["orientation", "condition", "restrictions", "history"] : [])],
-    authorityV2 ? [] : ["orientation"],
+    authorityV2 ? ["vehicleConfiguration"] : ["orientation", "vehicleConfiguration"],
     name,
   );
   for (const field of ["id", "operatorId", "classDesignation", "tradeName"] as const) {
@@ -1353,6 +1364,7 @@ function authorityVehicleAsset(
   }
   authorityTechnicalData(value["technical"], `${name}.technical`, authorityV2);
   authorityPassengerData(value["passenger"], `${name}.passenger`);
+  if (Object.hasOwn(value, "vehicleConfiguration")) validateM5VehicleConfiguration(value["vehicleConfiguration"]);
   const technical = value["technical"] as Record<string, unknown>;
   const passenger = value["passenger"] as Record<string, unknown>;
   const role = Object.hasOwn(technical, "role") ? technical["role"] as string : "powered-unit";

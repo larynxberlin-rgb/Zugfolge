@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { inspectArchivePrivacyContract, readArchivePrivacyRedactions, redactedHistoryTableFingerprint } from "./archive-privacy-binding.mjs";
 
 import { validateDatabaseRollbackProof } from "../tiles/map-release-build-evidence.mjs";
 import {
@@ -18,6 +19,11 @@ const AUTHORITATIVE_HEAD_SCHEMA = "zugfolge-database-authoritative-head/v1";
 const WORLD_HISTORY_SEAL_SCHEMA = "zugfolge-world-final-history-seal/v1";
 const WORLD_HISTORY_SEAL_SCHEMA_34 = "zugfolge-world-final-history-seal/v2";
 const WORLD_HISTORY_SEAL_SCHEMA_35 = "zugfolge-world-final-history-seal/v3";
+const WORLD_HISTORY_SEAL_SCHEMA_36 = "zugfolge-world-final-history-seal/v4";
+const WORLD_HISTORY_SEAL_SCHEMA_38 = "zugfolge-world-final-history-seal/v5";
+const HISTORY_COLUMNS_ADDED_IN_SCHEMA_38 = Object.freeze({
+  vehicle_assets: Object.freeze(["condition_profile", "valuation_basis"]),
+});
 const HISTORY_COLUMNS_ADDED_IN_SCHEMA_34 = Object.freeze({
   abuse_observations: Object.freeze(["observation_key", "facts_hash"]),
   mailbox_messages: Object.freeze(["content_hash", "purged_at"]),
@@ -64,7 +70,7 @@ function quotedTableName(value) {
   return `"${value}"`;
 }
 
-async function tableFingerprint(sql, table, filterColumns = [], parameters = [], omittedColumns = []) {
+async function tableFingerprint(sql, table, filterColumns = [], parameters = [], omittedColumns = [], omittedFactsLabel = "Schema-34") {
   const quoted = quotedTableName(table);
   invariant(Array.isArray(filterColumns) && filterColumns.every((column) => /^[a-z_][a-z0-9_]*$/.test(column)), "Der autoritative Tabellenfilter ist nicht fest verdrahtet.");
   const where = filterColumns.length === 0
@@ -88,7 +94,7 @@ async function tableFingerprint(sql, table, filterColumns = [], parameters = [],
   `, parameters), `Tabelle '${table}' besitzt keinen kanonischen Fingerprint.`);
   invariant(/^(?:0|[1-9][0-9]*)$/.test(String(row.row_count)), `Tabelle '${table}' besitzt keinen exakten Row-Count.`);
   invariant(SHA256.test(row.rows_sha256), `Tabelle '${table}' besitzt keinen SHA-256 ueber alle kanonischen Reihen.`);
-  invariant(omittedColumns.length === 0 || String(row.omitted_nonnull_rows) === "0", "Historischer v1-Seal darf keine nichtleeren Schema-34-Fakten ausblenden.");
+  invariant(omittedColumns.length === 0 || String(row.omitted_nonnull_rows) === "0", `Historischer Seal darf keine nichtleeren ${omittedFactsLabel}-Fakten ausblenden.`);
   return Object.freeze({ table, rowCount: String(row.row_count), rowsSha256: row.rows_sha256 });
 }
 
@@ -161,6 +167,7 @@ export async function inspectLiveDatabaseRollbackSnapshot(sql, { inspectKeycloak
     from drizzle.__drizzle_migrations
     order by id
   `);
+  if (migrationHeadRows.length >= 37) await inspectArchivePrivacyContract(sql);
   const [identityRows, migrationRows, constraintRows, guardRows, details, regionalCountRows, keycloakState] = await Promise.all([
     sql.unsafe(`select database_id::text as database_id from zugfolge_database_identity where singleton = 1`),
     Promise.resolve(migrationHeadRows),
@@ -221,9 +228,15 @@ export async function inspectLiveDatabaseRollbackSnapshot(sql, { inspectKeycloak
             'world_cutover_receipts_immutable',
             'zugfolge_database_identity_immutable',
             'zugfolge_capture_operational_command_receipts',
-            'zugfolge_enforce_operational_initialization_immutability'
+            'zugfolge_enforce_operational_initialization_immutability',
+            'vehicle_registry_entries_no_delete',
+            'vehicle_registry_events_append_only',
+            'vehicle_assets_no_delete',
+            'vehicle_asset_history_events_append_only'
           )
           or left(trigger.tgname, length('zugfolge_world_guard_')) = 'zugfolge_world_guard_'
+          or left(trigger.tgname, length('zugfolge_archive_privacy_capture_')) = 'zugfolge_archive_privacy_capture_'
+          or trigger.tgname in ('archive_privacy_requests_apply','archive_privacy_requests_immutable','archive_privacy_rows_immutable')
         )
       order by trigger.tgname
     `),
@@ -325,9 +338,12 @@ export async function worldFinalHistorySeal(sql, worldId, { schemaVersion } = {}
   const [migrationHead] = await sql.unsafe("select count(*)::int as migration_count from drizzle.__drizzle_migrations");
   const migrationCount = migrationHead?.migration_count;
   databaseAuthoritativeCatalog(migrationCount);
-  const selectedSchema = schemaVersion ?? (migrationCount === 35 ? WORLD_HISTORY_SEAL_SCHEMA_35 : migrationCount === 34 ? WORLD_HISTORY_SEAL_SCHEMA_34 : WORLD_HISTORY_SEAL_SCHEMA);
-  invariant([WORLD_HISTORY_SEAL_SCHEMA, WORLD_HISTORY_SEAL_SCHEMA_34, WORLD_HISTORY_SEAL_SCHEMA_35].includes(selectedSchema)
-    && (selectedSchema !== WORLD_HISTORY_SEAL_SCHEMA_35 || migrationCount === 35)
+  const redactions = migrationCount >= 37 ? await readArchivePrivacyRedactions(sql, worldId) : null;
+  const selectedSchema = schemaVersion ?? (migrationCount >= 38 ? WORLD_HISTORY_SEAL_SCHEMA_38 : migrationCount >= 36 ? WORLD_HISTORY_SEAL_SCHEMA_36 : migrationCount === 35 ? WORLD_HISTORY_SEAL_SCHEMA_35 : migrationCount === 34 ? WORLD_HISTORY_SEAL_SCHEMA_34 : WORLD_HISTORY_SEAL_SCHEMA);
+  invariant([WORLD_HISTORY_SEAL_SCHEMA, WORLD_HISTORY_SEAL_SCHEMA_34, WORLD_HISTORY_SEAL_SCHEMA_35, WORLD_HISTORY_SEAL_SCHEMA_36, WORLD_HISTORY_SEAL_SCHEMA_38].includes(selectedSchema)
+    && (selectedSchema !== WORLD_HISTORY_SEAL_SCHEMA_38 || migrationCount >= 38)
+    && (selectedSchema !== WORLD_HISTORY_SEAL_SCHEMA_36 || migrationCount >= 36)
+    && (selectedSchema !== WORLD_HISTORY_SEAL_SCHEMA_35 || migrationCount >= 35)
     && (selectedSchema !== WORLD_HISTORY_SEAL_SCHEMA_34 || migrationCount >= 34), "Welt-Historienseal besitzt keine passende Schema-/Spaltenversion.");
   const worldBindingRows = await sql.unsafe(`
     select columns.table_name, columns.column_name
@@ -337,7 +353,7 @@ export async function worldFinalHistorySeal(sql, worldId, { schemaVersion } = {}
       and (
         (columns.table_name = 'worlds' and columns.column_name = 'id')
         or (
-          columns.table_name <> 'world_cutover_receipts'
+          columns.table_name not in ('world_cutover_receipts','archive_privacy_requests','archive_privacy_rows')
           and (columns.column_name = 'world_id' or columns.column_name like '%\\_world_id' escape '\\')
         )
       )
@@ -352,7 +368,13 @@ export async function worldFinalHistorySeal(sql, worldId, { schemaVersion } = {}
   );
   const tableStates = [];
   const liveBindings = databaseWorldHistoryBindings(migrationCount);
-  const historicalBindings = selectedSchema === WORLD_HISTORY_SEAL_SCHEMA_35 ? liveBindings : databaseWorldHistoryBindings(34);
+  const historicalBindings = selectedSchema === WORLD_HISTORY_SEAL_SCHEMA_38 ? liveBindings
+    : selectedSchema === WORLD_HISTORY_SEAL_SCHEMA_36 ? databaseWorldHistoryBindings(36)
+    : selectedSchema === WORLD_HISTORY_SEAL_SCHEMA_35 ? databaseWorldHistoryBindings(35) : databaseWorldHistoryBindings(34);
+  for (const binding of liveBindings.filter(({ table }) => !historicalBindings.some((historical) => historical.table === table))) {
+    const added = await tableFingerprint(sql, binding.table, binding.columns, [worldId]);
+    invariant(added.rowCount === "0", `Historisches Siegel darf keine nichtleeren ${binding.table.startsWith("vehicle_registry_") ? "Schema-38-Fahrzeugregisterdaten" : "Schema-36-Fakten"} ausblenden.`);
+  }
   for (const binding of historicalBindings) {
     if (!liveBindings.some(({ table }) => table === binding.table)) {
       // Ein historisches Siegel bleibt nur vergleichbar, wenn die entfernte
@@ -361,9 +383,12 @@ export async function worldFinalHistorySeal(sql, worldId, { schemaVersion } = {}
       tableStates.push({ table: binding.table, rowCount: "0", rowsSha256: createHash("sha256").update("").digest("hex") });
       continue;
     }
-    const omitted = selectedSchema === WORLD_HISTORY_SEAL_SCHEMA && migrationCount >= 34
+    const omitted34 = selectedSchema === WORLD_HISTORY_SEAL_SCHEMA && migrationCount >= 34
       ? HISTORY_COLUMNS_ADDED_IN_SCHEMA_34[binding.table] ?? [] : [];
-    tableStates.push(await tableFingerprint(sql, binding.table, binding.columns, [worldId], omitted));
+    const omitted38 = selectedSchema !== WORLD_HISTORY_SEAL_SCHEMA_38 && migrationCount >= 38
+      ? HISTORY_COLUMNS_ADDED_IN_SCHEMA_38[binding.table] ?? [] : [];
+    const reconstructed = redactions === null ? null : await redactedHistoryTableFingerprint(sql, binding.table, worldId, redactions, selectedSchema === WORLD_HISTORY_SEAL_SCHEMA);
+    tableStates.push(reconstructed ?? await tableFingerprint(sql, binding.table, binding.columns, [worldId], [...omitted34, ...omitted38], omitted38.length > 0 ? "Schema-38" : "Schema-34"));
   }
   const worldsState = tableStates.find(({ table }) => table === "worlds");
   invariant(worldsState?.rowCount === "1", `Vorgaengerwelt '${worldId}' fehlt fuer die finale Historienversiegelung.`);
@@ -445,5 +470,7 @@ export const DATABASE_ROLLBACK_BINDING_SCHEMAS = Object.freeze({
   worldHistorySeal: WORLD_HISTORY_SEAL_SCHEMA,
   worldHistorySealSchema34: WORLD_HISTORY_SEAL_SCHEMA_34,
   worldHistorySealSchema35: WORLD_HISTORY_SEAL_SCHEMA_35,
+  worldHistorySealSchema36: WORLD_HISTORY_SEAL_SCHEMA_36,
+  worldHistorySealSchema38: WORLD_HISTORY_SEAL_SCHEMA_38,
   cutoverReceipt: CUTOVER_RECEIPT_SCHEMA,
 });

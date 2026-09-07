@@ -1,0 +1,925 @@
+{
+  "provenance": "Explicit fictional geography; input from scene_fixture_json OperationalWorld, output from scene_json Rust projection. No production coverage claim.",
+  "initial": {
+    "input": {
+      "binding": {
+        "artManifestHash": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+        "artReleaseId": "art:fixture",
+        "commitSequence": 0,
+        "infraReleaseHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "infraReleaseId": "infra:operational:v2",
+        "operationalStateHash": "b33f7e7bbba7581c270296c68081165f912264f00dc934c7879bbc7691b52815",
+        "operatorId": "operator:1",
+        "periodId": "period:fixture",
+        "regionId": "region:a",
+        "sceneReleaseHash": "78f363b796500d1b66873ebb617dec5cb0d4ba1796ef42d8911dc86dc9135b1e",
+        "trainRunId": "train:stops",
+        "validFromMs": 0,
+        "validUntilMs": 86400000,
+        "worldId": "world:1"
+      },
+      "operational": {
+        "activeDisruptions": [],
+        "atMs": 0,
+        "commitSequence": 0,
+        "infraReleaseId": "infra:operational:v2",
+        "kind": "live-map",
+        "regionId": "region:a",
+        "routeLocks": [
+          {
+            "id": "6:train:stops:interlocking:train",
+            "lockedAtMs": 0,
+            "releaseAfterTailRouteMm": 30000,
+            "resources": [
+              "block:stop:1",
+              "flank:1",
+              "overlap:1",
+              "route-resource:common"
+            ],
+            "templateId": "interlocking:train",
+            "trainId": "train:stops"
+          }
+        ],
+        "signals": {
+          "signal:stop:1": "proceed"
+        },
+        "staleAfterMs": 75000,
+        "trains": [
+          {
+            "authorityEndRouteMm": 30000,
+            "direction": "along",
+            "formationVersionId": "formation:1",
+            "headGeometry": {
+              "bearingMilliDegrees": 90000,
+              "edgeId": "edge:a",
+              "edgeOffsetMm": 10000,
+              "latitudeE7": 510000000,
+              "longitudeE7": 120010000,
+              "routeMm": 10000
+            },
+            "headRouteMm": 10000,
+            "motionGeometry": [],
+            "motionSegment": null,
+            "motionState": "standing",
+            "movementKind": "train",
+            "occupiedBlocks": [
+              "block:stop:0"
+            ],
+            "occupiedIntervals": [
+              {
+                "direction": "along",
+                "edgeId": "edge:a",
+                "fromMm": 0,
+                "toMm": 10000
+              }
+            ],
+            "operatorId": "operator:1",
+            "routeVersionId": "route:v1",
+            "speedMmps": 0,
+            "tailGeometry": {
+              "bearingMilliDegrees": 90000,
+              "edgeId": "edge:a",
+              "edgeOffsetMm": 0,
+              "latitudeE7": 510000000,
+              "longitudeE7": 120000000,
+              "routeMm": 0
+            },
+            "tailRouteMm": 0,
+            "trainId": "train:stops",
+            "trainNumber": "RB 1",
+            "waitingReason": "passenger-stop"
+          }
+        ],
+        "worldId": "world:1"
+      },
+      "sampleAtMs": 0,
+      "sceneRelease": {
+        "calendar": {
+          "epochUtcTimeOfDayMs": 18000000,
+          "offsets": [
+            {
+              "fromMs": 0,
+              "untilMs": 86400000,
+              "utcOffsetMinutes": 60
+            }
+          ]
+        },
+        "coverage": "test-fixture",
+        "infraReleaseHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "infraReleaseId": "infra:operational:v2",
+        "policyId": "conductor-scenes/v1",
+        "releaseId": "scene:explicit-test-fixture",
+        "routes": [
+          {
+            "lengthMm": 120000,
+            "routeVersionId": "route:v1",
+            "signals": [
+              {
+                "routeMm": 30000,
+                "signalId": "signal:stop:2"
+              }
+            ],
+            "sourceIds": [
+              "fixture:stations"
+            ],
+            "stations": [
+              {
+                "fromRouteMm": 0,
+                "operatingPointId": "station:a",
+                "platformId": "platform:a",
+                "platformLabel": "1 Süd",
+                "toRouteMm": 20000
+              },
+              {
+                "fromRouteMm": 25000,
+                "operatingPointId": "station:b",
+                "platformId": "platform:b",
+                "platformLabel": "1 Süd",
+                "toRouteMm": 45000
+              },
+              {
+                "fromRouteMm": 100000,
+                "operatingPointId": "station:c",
+                "platformId": "platform:c",
+                "platformLabel": "1 Süd",
+                "toRouteMm": 120000
+              }
+            ],
+            "urbanity": [
+              {
+                "routeMm": 0,
+                "urbanityBasisPoints": 0
+              },
+              {
+                "routeMm": 120000,
+                "urbanityBasisPoints": 10000
+              }
+            ]
+          }
+        ],
+        "schemaVersion": "conductor-scene-release/v1",
+        "sources": [
+          {
+            "provenance": "observed",
+            "rightsEvidenceSha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+            "sourceId": "fixture:stations",
+            "sourceSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+          }
+        ],
+        "stations": [
+          {
+            "category": 7,
+            "categorySourceId": "fixture:stations",
+            "dailyCalls": 120,
+            "kind": "halt",
+            "name": "Kleiner Prüfhaltepunkt Ährenfeld",
+            "operatingPointId": "station:a",
+            "platformCount": 2,
+            "sourceIds": [
+              "fixture:stations"
+            ]
+          },
+          {
+            "category": null,
+            "categorySourceId": null,
+            "dailyCalls": 120,
+            "kind": "station",
+            "name": "Mittlerer Prüfstadtbahnhof mit sehr langem Namen",
+            "operatingPointId": "station:b",
+            "platformCount": 2,
+            "sourceIds": [
+              "fixture:stations"
+            ]
+          },
+          {
+            "category": 1,
+            "categorySourceId": "fixture:stations",
+            "dailyCalls": 120,
+            "kind": "station",
+            "name": "Großer Prüfstadt-Hauptbahnhof Süd",
+            "operatingPointId": "station:c",
+            "platformCount": 2,
+            "sourceIds": [
+              "fixture:stations"
+            ]
+          }
+        ]
+      },
+      "schemaVersion": "conductor-scene-input/v1"
+    },
+    "output": {
+      "schemaVersion": "conductor-scene-projection/v1",
+      "binding": {
+        "worldId": "world:1",
+        "periodId": "period:fixture",
+        "operatorId": "operator:1",
+        "trainRunId": "train:stops",
+        "regionId": "region:a",
+        "infraReleaseId": "infra:operational:v2",
+        "infraReleaseHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "sceneReleaseHash": "78f363b796500d1b66873ebb617dec5cb0d4ba1796ef42d8911dc86dc9135b1e",
+        "artReleaseId": "art:fixture",
+        "artManifestHash": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+        "operationalStateHash": "b33f7e7bbba7581c270296c68081165f912264f00dc934c7879bbc7691b52815",
+        "commitSequence": 0,
+        "validFromMs": 0,
+        "validUntilMs": 86400000
+      },
+      "atMs": 0,
+      "routeVersionId": "route:v1",
+      "routeMm": 10000,
+      "speedMmps": 0,
+      "motionState": "standing",
+      "waitingReason": "passenger-stop",
+      "environment": {
+        "urbanityBasisPoints": 833,
+        "ruralBasisPoints": 8334,
+        "suburbanBasisPoints": 1666,
+        "urbanBasisPoints": 0,
+        "scrollMm": 10000,
+        "provenance": "derived",
+        "assetIds": [
+          "environment.rural.vegetation",
+          "environment.rural.road",
+          "environment.rural.building",
+          "environment.suburban.vegetation",
+          "environment.suburban.road",
+          "environment.suburban.building",
+          "environment.urban.vegetation",
+          "environment.urban.road",
+          "environment.urban.building"
+        ]
+      },
+      "lighting": {
+        "policyId": "conductor-scene-lighting/v1",
+        "localTimeOfDayMs": 21600000,
+        "phase": "dawn",
+        "daylightBasisPoints": 2500,
+        "windowLightBasisPoints": 7500
+      },
+      "station": {
+        "schemaVersion": "station-scene/v1",
+        "operatingPointId": "station:a",
+        "name": "Kleiner Prüfhaltepunkt Ährenfeld",
+        "platformId": "platform:a",
+        "platformLabel": "1 Süd",
+        "size": "small",
+        "category": 7,
+        "classificationProvenance": "observed",
+        "classificationPolicyId": "station-category/v1",
+        "variant": 0,
+        "visibilityBasisPoints": 10000,
+        "atPlatform": true,
+        "assetIds": [
+          "station.small.platform",
+          "station.small.roof",
+          "station.small.hall",
+          "station.small.stairs",
+          "station.small.underpass"
+        ]
+      },
+      "signals": [
+        {
+          "signalId": "signal:stop:2",
+          "distanceMm": 20000,
+          "aspect": "stop",
+          "assetId": "signal.stop"
+        }
+      ],
+      "visualOnly": true,
+      "stateHash": "b656780c88f554ba43db2302c56acb3d1e1633ae0059c9c7a5a5efa0afff55f5"
+    }
+  },
+  "moving": {
+    "input": {
+      "binding": {
+        "artManifestHash": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+        "artReleaseId": "art:fixture",
+        "commitSequence": 0,
+        "infraReleaseHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "infraReleaseId": "infra:operational:v2",
+        "operationalStateHash": "d8cb97a1f0d4a0dc5a31689d0b2d50bbd3de334033a5747503f055e467f815c4",
+        "operatorId": "operator:1",
+        "periodId": "period:fixture",
+        "regionId": "region:a",
+        "sceneReleaseHash": "78f363b796500d1b66873ebb617dec5cb0d4ba1796ef42d8911dc86dc9135b1e",
+        "trainRunId": "train:stops",
+        "validFromMs": 0,
+        "validUntilMs": 86400000,
+        "worldId": "world:1"
+      },
+      "operational": {
+        "activeDisruptions": [],
+        "atMs": 1000,
+        "commitSequence": 0,
+        "infraReleaseId": "infra:operational:v2",
+        "kind": "live-map",
+        "regionId": "region:a",
+        "routeLocks": [
+          {
+            "id": "6:train:stops:interlocking:train",
+            "lockedAtMs": 0,
+            "releaseAfterTailRouteMm": 30000,
+            "resources": [
+              "block:stop:1",
+              "flank:1",
+              "overlap:1",
+              "route-resource:common"
+            ],
+            "templateId": "interlocking:train",
+            "trainId": "train:stops"
+          }
+        ],
+        "signals": {
+          "signal:stop:1": "proceed"
+        },
+        "staleAfterMs": 76000,
+        "trains": [
+          {
+            "authorityEndRouteMm": 30000,
+            "direction": "along",
+            "formationVersionId": "formation:1",
+            "headGeometry": {
+              "bearingMilliDegrees": 90000,
+              "edgeId": "edge:a",
+              "edgeOffsetMm": 10000,
+              "latitudeE7": 510000000,
+              "longitudeE7": 120010000,
+              "routeMm": 10000
+            },
+            "headRouteMm": 10000,
+            "motionGeometry": [
+              {
+                "bearingMilliDegrees": 90000,
+                "edgeId": "edge:a",
+                "edgeOffsetMm": 10000,
+                "latitudeE7": 510000000,
+                "longitudeE7": 120010000,
+                "routeMm": 10000
+              },
+              {
+                "bearingMilliDegrees": 90000,
+                "edgeId": "edge:a",
+                "edgeOffsetMm": 20000,
+                "latitudeE7": 510000000,
+                "longitudeE7": 120020000,
+                "routeMm": 20000
+              }
+            ],
+            "motionSegment": {
+              "accelerationMmps2": 1000,
+              "authorityEndRouteMm": 30000,
+              "routeVersionId": "route:v1",
+              "segmentEndRouteMm": 20000,
+              "startRouteMm": 10000,
+              "startSpeedMmps": 0,
+              "startedAtMs": 1000,
+              "validUntilMs": 5473
+            },
+            "motionState": "moving",
+            "movementKind": "train",
+            "occupiedBlocks": [
+              "block:stop:0"
+            ],
+            "occupiedIntervals": [
+              {
+                "direction": "along",
+                "edgeId": "edge:a",
+                "fromMm": 0,
+                "toMm": 10000
+              }
+            ],
+            "operatorId": "operator:1",
+            "routeVersionId": "route:v1",
+            "speedMmps": 0,
+            "tailGeometry": {
+              "bearingMilliDegrees": 90000,
+              "edgeId": "edge:a",
+              "edgeOffsetMm": 0,
+              "latitudeE7": 510000000,
+              "longitudeE7": 120000000,
+              "routeMm": 0
+            },
+            "tailRouteMm": 0,
+            "trainId": "train:stops",
+            "trainNumber": "RB 1",
+            "waitingReason": null
+          }
+        ],
+        "worldId": "world:1"
+      },
+      "sampleAtMs": 1000,
+      "sceneRelease": {
+        "calendar": {
+          "epochUtcTimeOfDayMs": 18000000,
+          "offsets": [
+            {
+              "fromMs": 0,
+              "untilMs": 86400000,
+              "utcOffsetMinutes": 60
+            }
+          ]
+        },
+        "coverage": "test-fixture",
+        "infraReleaseHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "infraReleaseId": "infra:operational:v2",
+        "policyId": "conductor-scenes/v1",
+        "releaseId": "scene:explicit-test-fixture",
+        "routes": [
+          {
+            "lengthMm": 120000,
+            "routeVersionId": "route:v1",
+            "signals": [
+              {
+                "routeMm": 30000,
+                "signalId": "signal:stop:2"
+              }
+            ],
+            "sourceIds": [
+              "fixture:stations"
+            ],
+            "stations": [
+              {
+                "fromRouteMm": 0,
+                "operatingPointId": "station:a",
+                "platformId": "platform:a",
+                "platformLabel": "1 Süd",
+                "toRouteMm": 20000
+              },
+              {
+                "fromRouteMm": 25000,
+                "operatingPointId": "station:b",
+                "platformId": "platform:b",
+                "platformLabel": "1 Süd",
+                "toRouteMm": 45000
+              },
+              {
+                "fromRouteMm": 100000,
+                "operatingPointId": "station:c",
+                "platformId": "platform:c",
+                "platformLabel": "1 Süd",
+                "toRouteMm": 120000
+              }
+            ],
+            "urbanity": [
+              {
+                "routeMm": 0,
+                "urbanityBasisPoints": 0
+              },
+              {
+                "routeMm": 120000,
+                "urbanityBasisPoints": 10000
+              }
+            ]
+          }
+        ],
+        "schemaVersion": "conductor-scene-release/v1",
+        "sources": [
+          {
+            "provenance": "observed",
+            "rightsEvidenceSha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+            "sourceId": "fixture:stations",
+            "sourceSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+          }
+        ],
+        "stations": [
+          {
+            "category": 7,
+            "categorySourceId": "fixture:stations",
+            "dailyCalls": 120,
+            "kind": "halt",
+            "name": "Kleiner Prüfhaltepunkt Ährenfeld",
+            "operatingPointId": "station:a",
+            "platformCount": 2,
+            "sourceIds": [
+              "fixture:stations"
+            ]
+          },
+          {
+            "category": null,
+            "categorySourceId": null,
+            "dailyCalls": 120,
+            "kind": "station",
+            "name": "Mittlerer Prüfstadtbahnhof mit sehr langem Namen",
+            "operatingPointId": "station:b",
+            "platformCount": 2,
+            "sourceIds": [
+              "fixture:stations"
+            ]
+          },
+          {
+            "category": 1,
+            "categorySourceId": "fixture:stations",
+            "dailyCalls": 120,
+            "kind": "station",
+            "name": "Großer Prüfstadt-Hauptbahnhof Süd",
+            "operatingPointId": "station:c",
+            "platformCount": 2,
+            "sourceIds": [
+              "fixture:stations"
+            ]
+          }
+        ]
+      },
+      "schemaVersion": "conductor-scene-input/v1"
+    },
+    "output": {
+      "schemaVersion": "conductor-scene-projection/v1",
+      "binding": {
+        "worldId": "world:1",
+        "periodId": "period:fixture",
+        "operatorId": "operator:1",
+        "trainRunId": "train:stops",
+        "regionId": "region:a",
+        "infraReleaseId": "infra:operational:v2",
+        "infraReleaseHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "sceneReleaseHash": "78f363b796500d1b66873ebb617dec5cb0d4ba1796ef42d8911dc86dc9135b1e",
+        "artReleaseId": "art:fixture",
+        "artManifestHash": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+        "operationalStateHash": "d8cb97a1f0d4a0dc5a31689d0b2d50bbd3de334033a5747503f055e467f815c4",
+        "commitSequence": 0,
+        "validFromMs": 0,
+        "validUntilMs": 86400000
+      },
+      "atMs": 1000,
+      "routeVersionId": "route:v1",
+      "routeMm": 10000,
+      "speedMmps": 0,
+      "motionState": "moving",
+      "waitingReason": null,
+      "environment": {
+        "urbanityBasisPoints": 833,
+        "ruralBasisPoints": 8334,
+        "suburbanBasisPoints": 1666,
+        "urbanBasisPoints": 0,
+        "scrollMm": 10000,
+        "provenance": "derived",
+        "assetIds": [
+          "environment.rural.vegetation",
+          "environment.rural.road",
+          "environment.rural.building",
+          "environment.suburban.vegetation",
+          "environment.suburban.road",
+          "environment.suburban.building",
+          "environment.urban.vegetation",
+          "environment.urban.road",
+          "environment.urban.building"
+        ]
+      },
+      "lighting": {
+        "policyId": "conductor-scene-lighting/v1",
+        "localTimeOfDayMs": 21601000,
+        "phase": "dawn",
+        "daylightBasisPoints": 2501,
+        "windowLightBasisPoints": 7499
+      },
+      "station": {
+        "schemaVersion": "station-scene/v1",
+        "operatingPointId": "station:a",
+        "name": "Kleiner Prüfhaltepunkt Ährenfeld",
+        "platformId": "platform:a",
+        "platformLabel": "1 Süd",
+        "size": "small",
+        "category": 7,
+        "classificationProvenance": "observed",
+        "classificationPolicyId": "station-category/v1",
+        "variant": 0,
+        "visibilityBasisPoints": 10000,
+        "atPlatform": true,
+        "assetIds": [
+          "station.small.platform",
+          "station.small.roof",
+          "station.small.hall",
+          "station.small.stairs",
+          "station.small.underpass"
+        ]
+      },
+      "signals": [
+        {
+          "signalId": "signal:stop:2",
+          "distanceMm": 20000,
+          "aspect": "stop",
+          "assetId": "signal.stop"
+        }
+      ],
+      "visualOnly": true,
+      "stateHash": "b7d046ff72d49e175bfd00386a399813d645897637416831a8a70073a19ed5e8"
+    }
+  },
+  "restored": {
+    "input": {
+      "binding": {
+        "artManifestHash": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+        "artReleaseId": "art:fixture",
+        "commitSequence": 0,
+        "infraReleaseHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "infraReleaseId": "infra:operational:v2",
+        "operationalStateHash": "d8cb97a1f0d4a0dc5a31689d0b2d50bbd3de334033a5747503f055e467f815c4",
+        "operatorId": "operator:1",
+        "periodId": "period:fixture",
+        "regionId": "region:a",
+        "sceneReleaseHash": "78f363b796500d1b66873ebb617dec5cb0d4ba1796ef42d8911dc86dc9135b1e",
+        "trainRunId": "train:stops",
+        "validFromMs": 0,
+        "validUntilMs": 86400000,
+        "worldId": "world:1"
+      },
+      "operational": {
+        "activeDisruptions": [],
+        "atMs": 1000,
+        "commitSequence": 0,
+        "infraReleaseId": "infra:operational:v2",
+        "kind": "live-map",
+        "regionId": "region:a",
+        "routeLocks": [
+          {
+            "id": "6:train:stops:interlocking:train",
+            "lockedAtMs": 0,
+            "releaseAfterTailRouteMm": 30000,
+            "resources": [
+              "block:stop:1",
+              "flank:1",
+              "overlap:1",
+              "route-resource:common"
+            ],
+            "templateId": "interlocking:train",
+            "trainId": "train:stops"
+          }
+        ],
+        "signals": {
+          "signal:stop:1": "proceed"
+        },
+        "staleAfterMs": 76000,
+        "trains": [
+          {
+            "authorityEndRouteMm": 30000,
+            "direction": "along",
+            "formationVersionId": "formation:1",
+            "headGeometry": {
+              "bearingMilliDegrees": 90000,
+              "edgeId": "edge:a",
+              "edgeOffsetMm": 10000,
+              "latitudeE7": 510000000,
+              "longitudeE7": 120010000,
+              "routeMm": 10000
+            },
+            "headRouteMm": 10000,
+            "motionGeometry": [
+              {
+                "bearingMilliDegrees": 90000,
+                "edgeId": "edge:a",
+                "edgeOffsetMm": 10000,
+                "latitudeE7": 510000000,
+                "longitudeE7": 120010000,
+                "routeMm": 10000
+              },
+              {
+                "bearingMilliDegrees": 90000,
+                "edgeId": "edge:a",
+                "edgeOffsetMm": 20000,
+                "latitudeE7": 510000000,
+                "longitudeE7": 120020000,
+                "routeMm": 20000
+              }
+            ],
+            "motionSegment": {
+              "accelerationMmps2": 1000,
+              "authorityEndRouteMm": 30000,
+              "routeVersionId": "route:v1",
+              "segmentEndRouteMm": 20000,
+              "startRouteMm": 10000,
+              "startSpeedMmps": 0,
+              "startedAtMs": 1000,
+              "validUntilMs": 5473
+            },
+            "motionState": "moving",
+            "movementKind": "train",
+            "occupiedBlocks": [
+              "block:stop:0"
+            ],
+            "occupiedIntervals": [
+              {
+                "direction": "along",
+                "edgeId": "edge:a",
+                "fromMm": 0,
+                "toMm": 10000
+              }
+            ],
+            "operatorId": "operator:1",
+            "routeVersionId": "route:v1",
+            "speedMmps": 0,
+            "tailGeometry": {
+              "bearingMilliDegrees": 90000,
+              "edgeId": "edge:a",
+              "edgeOffsetMm": 0,
+              "latitudeE7": 510000000,
+              "longitudeE7": 120000000,
+              "routeMm": 0
+            },
+            "tailRouteMm": 0,
+            "trainId": "train:stops",
+            "trainNumber": "RB 1",
+            "waitingReason": null
+          }
+        ],
+        "worldId": "world:1"
+      },
+      "sampleAtMs": 1000,
+      "sceneRelease": {
+        "calendar": {
+          "epochUtcTimeOfDayMs": 18000000,
+          "offsets": [
+            {
+              "fromMs": 0,
+              "untilMs": 86400000,
+              "utcOffsetMinutes": 60
+            }
+          ]
+        },
+        "coverage": "test-fixture",
+        "infraReleaseHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "infraReleaseId": "infra:operational:v2",
+        "policyId": "conductor-scenes/v1",
+        "releaseId": "scene:explicit-test-fixture",
+        "routes": [
+          {
+            "lengthMm": 120000,
+            "routeVersionId": "route:v1",
+            "signals": [
+              {
+                "routeMm": 30000,
+                "signalId": "signal:stop:2"
+              }
+            ],
+            "sourceIds": [
+              "fixture:stations"
+            ],
+            "stations": [
+              {
+                "fromRouteMm": 0,
+                "operatingPointId": "station:a",
+                "platformId": "platform:a",
+                "platformLabel": "1 Süd",
+                "toRouteMm": 20000
+              },
+              {
+                "fromRouteMm": 25000,
+                "operatingPointId": "station:b",
+                "platformId": "platform:b",
+                "platformLabel": "1 Süd",
+                "toRouteMm": 45000
+              },
+              {
+                "fromRouteMm": 100000,
+                "operatingPointId": "station:c",
+                "platformId": "platform:c",
+                "platformLabel": "1 Süd",
+                "toRouteMm": 120000
+              }
+            ],
+            "urbanity": [
+              {
+                "routeMm": 0,
+                "urbanityBasisPoints": 0
+              },
+              {
+                "routeMm": 120000,
+                "urbanityBasisPoints": 10000
+              }
+            ]
+          }
+        ],
+        "schemaVersion": "conductor-scene-release/v1",
+        "sources": [
+          {
+            "provenance": "observed",
+            "rightsEvidenceSha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+            "sourceId": "fixture:stations",
+            "sourceSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+          }
+        ],
+        "stations": [
+          {
+            "category": 7,
+            "categorySourceId": "fixture:stations",
+            "dailyCalls": 120,
+            "kind": "halt",
+            "name": "Kleiner Prüfhaltepunkt Ährenfeld",
+            "operatingPointId": "station:a",
+            "platformCount": 2,
+            "sourceIds": [
+              "fixture:stations"
+            ]
+          },
+          {
+            "category": null,
+            "categorySourceId": null,
+            "dailyCalls": 120,
+            "kind": "station",
+            "name": "Mittlerer Prüfstadtbahnhof mit sehr langem Namen",
+            "operatingPointId": "station:b",
+            "platformCount": 2,
+            "sourceIds": [
+              "fixture:stations"
+            ]
+          },
+          {
+            "category": 1,
+            "categorySourceId": "fixture:stations",
+            "dailyCalls": 120,
+            "kind": "station",
+            "name": "Großer Prüfstadt-Hauptbahnhof Süd",
+            "operatingPointId": "station:c",
+            "platformCount": 2,
+            "sourceIds": [
+              "fixture:stations"
+            ]
+          }
+        ]
+      },
+      "schemaVersion": "conductor-scene-input/v1"
+    },
+    "output": {
+      "schemaVersion": "conductor-scene-projection/v1",
+      "binding": {
+        "worldId": "world:1",
+        "periodId": "period:fixture",
+        "operatorId": "operator:1",
+        "trainRunId": "train:stops",
+        "regionId": "region:a",
+        "infraReleaseId": "infra:operational:v2",
+        "infraReleaseHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "sceneReleaseHash": "78f363b796500d1b66873ebb617dec5cb0d4ba1796ef42d8911dc86dc9135b1e",
+        "artReleaseId": "art:fixture",
+        "artManifestHash": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+        "operationalStateHash": "d8cb97a1f0d4a0dc5a31689d0b2d50bbd3de334033a5747503f055e467f815c4",
+        "commitSequence": 0,
+        "validFromMs": 0,
+        "validUntilMs": 86400000
+      },
+      "atMs": 1000,
+      "routeVersionId": "route:v1",
+      "routeMm": 10000,
+      "speedMmps": 0,
+      "motionState": "moving",
+      "waitingReason": null,
+      "environment": {
+        "urbanityBasisPoints": 833,
+        "ruralBasisPoints": 8334,
+        "suburbanBasisPoints": 1666,
+        "urbanBasisPoints": 0,
+        "scrollMm": 10000,
+        "provenance": "derived",
+        "assetIds": [
+          "environment.rural.vegetation",
+          "environment.rural.road",
+          "environment.rural.building",
+          "environment.suburban.vegetation",
+          "environment.suburban.road",
+          "environment.suburban.building",
+          "environment.urban.vegetation",
+          "environment.urban.road",
+          "environment.urban.building"
+        ]
+      },
+      "lighting": {
+        "policyId": "conductor-scene-lighting/v1",
+        "localTimeOfDayMs": 21601000,
+        "phase": "dawn",
+        "daylightBasisPoints": 2501,
+        "windowLightBasisPoints": 7499
+      },
+      "station": {
+        "schemaVersion": "station-scene/v1",
+        "operatingPointId": "station:a",
+        "name": "Kleiner Prüfhaltepunkt Ährenfeld",
+        "platformId": "platform:a",
+        "platformLabel": "1 Süd",
+        "size": "small",
+        "category": 7,
+        "classificationProvenance": "observed",
+        "classificationPolicyId": "station-category/v1",
+        "variant": 0,
+        "visibilityBasisPoints": 10000,
+        "atPlatform": true,
+        "assetIds": [
+          "station.small.platform",
+          "station.small.roof",
+          "station.small.hall",
+          "station.small.stairs",
+          "station.small.underpass"
+        ]
+      },
+      "signals": [
+        {
+          "signalId": "signal:stop:2",
+          "distanceMm": 20000,
+          "aspect": "stop",
+          "assetId": "signal.stop"
+        }
+      ],
+      "visualOnly": true,
+      "stateHash": "b7d046ff72d49e175bfd00386a399813d645897637416831a8a70073a19ed5e8"
+    }
+  }
+}

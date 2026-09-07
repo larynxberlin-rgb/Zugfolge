@@ -312,6 +312,14 @@ ist eine austauschbare Kopie eines Typs. Wird ein Fahrzeug ausgemustert, bleibt
 sein Lebenslauf Teil des Weltarchivs, es kann aber nicht mehr disponiert oder
 gehandelt werden.
 
+**Jedes Fahrzeug bleibt während der gesamten Spielzeit erhalten**, unabhängig
+davon, ob es neu oder gebraucht eingebracht wurde. Alle Teilnehmer der Welt
+können seinen Fahrzeugpass und die vollständige erfasste Historie einsehen,
+auch ohne eigenes EVU oder aktives Marktangebot. Eigentümerwechsel,
+Betreiberende und Ausmusterung entfernen das Fahrzeug nicht aus dem Register.
+Der versionierte [Fahrzeugregister-Vertrag](fahrzeugregister.md) beschreibt
+Sichtbarkeit, Identitätserhalt und die zugehörigen Abnahmekriterien.
+
 Der optionale **Weltstartbestand** wird vor dem Start von der Administration
 als versionierter, auditierter und anschließend unveränderlicher Bestand
 festgelegt. Seine Fahrzeuge sind ausnahmslos gebraucht: Baujahr,
@@ -356,15 +364,19 @@ einen noch laufenden Leasingvertrag.
 
 Der Schaffnermodus leitet ein `InteriorLayoutV1` aus der tatsächlichen
 Formation sowie `StructuralConfiguration` und `InteriorConfiguration` ab.
-Wagenlänge, Übergänge, Türen, Sitz- und Stehplätze, Mehrzweckflächen, WC,
-Fahrrad- und Barrierefreiheitsbereiche bestimmen Geometrie, Begehbarkeit und
-Kapazitätsnachweis. Die Darstellung ist generisch-konfigurationsgetreu und
-behauptet keine exakte reale Baureihenarchitektur.
+M5 bleibt Quelle für Konfiguration und Kapazität. Der vollständige
+Geometrie-, Platz- und Begehbarkeitsvertrag einschließlich fehlender
+Konfigurationen steht in [`conductor-interior.md`](conductor-interior.md).
+Der vollständige Beleg `vehicleConfiguration` wird nach
+[`m5-interior-configuration.md`](m5-interior-configuration.md) im individuellen
+Seed, Authority-Release und nativen Flottenzustand gebunden. Sein Fehlen bleibt
+in historischen M5-Daten erhalten und sperrt den Innenraumeinstieg konkret.
 
-Ein Fahrzeug ohne vollständige Konfiguration ist nicht betretbar; der fehlende
-Nachweis wird sichtbar ausgewiesen. Die Innenraumprojektion ändert weder die
-Formation noch die betriebliche Kapazität. Vollständiger Vertrag:
-[`schaffnermodus.md`](schaffnermodus.md) 4 und 5.
+Der M15.2-Projektor nimmt das daraus belegte Platzinventar nur entgegen.
+Doppelstockplätze tragen in V2 eigene Kasten-/Deckkennungen und nutzen echte
+Treppenverbindungen. Eine Formationsgeometrie beweist noch keine Zuordnung zu
+einem M10-Zuglauf; diese wird gesondert serverseitig geprüft. Die übrigen
+Schaffneraktionen bleiben im [M15-Gesamtvertrag](schaffnermodus.md) geregelt.
 
 ## 4. Versorgung, Instandhaltung und Zusatzfahrten
 

@@ -8,7 +8,7 @@
  */
 
 import { createHash } from "node:crypto";
-import { accounts, mailboxMessages, type MailboxMessage } from "@zugfolge/db";
+import { accounts, mailboxMessages, redactArchivedPersonalData, type MailboxMessage } from "@zugfolge/db";
 import { AuthorizationError, getAccount, type IdentityDatabase } from "@zugfolge/identity";
 import { and, asc, desc, eq, isNull, lte, or } from "drizzle-orm";
 
@@ -241,6 +241,10 @@ export async function purgeExpiredMailboxMessages(db: IdentityDatabase, input: {
   const candidates = await db.select().from(mailboxMessages).where(eligible).orderBy(asc(mailboxMessages.sentAt), asc(mailboxMessages.id)).limit(batchSize + 1);
   const purgedMessageIds: string[] = [];
   for (const candidate of candidates.slice(0, batchSize)) {
+    if (await redactArchivedPersonalData(db, { worldId: input.worldId, action: "mailbox-purge", objectId: candidate.id,
+      asOf: input.asOf, contentHash: candidate.contentHash ?? messageHash(candidate) })) {
+      purgedMessageIds.push(candidate.id); continue;
+    }
     const [purged] = await db.update(mailboxMessages).set({
       payload: {}, messageType: "system.retention-purged", contentHash: candidate.contentHash ?? messageHash(candidate), purgedAt: input.asOf,
     }).where(and(eligible, eq(mailboxMessages.id, candidate.id))).returning({ id: mailboxMessages.id });

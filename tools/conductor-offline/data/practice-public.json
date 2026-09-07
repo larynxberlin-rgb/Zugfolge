@@ -1,0 +1,41 @@
+{
+  "schemaVersion": "conductor-offline-practice/v1",
+  "testOnly": true,
+  "fixtureHash": "cf919194900a8a15465f7c7375f0bee6e236f3be209b7b86a15c0d1d83f1f3e8",
+  "passengers": 40,
+  "targets": [
+    {
+      "label": "Übung 1",
+      "passengerKey": "7baae105e2d23a3828367325d05d169c098192547b5b5b161f49a0e31e88e148",
+      "position": {
+        "vehicleId": "fixture-interior-vehicle-2",
+        "bodyId": "body-0",
+        "deckId": "upper",
+        "xMm": 6500,
+        "yMm": 775
+      }
+    },
+    {
+      "label": "Übung 2",
+      "passengerKey": "02546ca21045c26c69eef4889db6e9a24bc90a4483d42aca3a162319d63eb345",
+      "position": {
+        "vehicleId": "fixture-interior-vehicle-2",
+        "bodyId": "body-0",
+        "deckId": "upper",
+        "xMm": 7750,
+        "yMm": 775
+      }
+    },
+    {
+      "label": "Übung 3",
+      "passengerKey": "8b1bf8620dfadcc35380fd749b358ff34a32f6a101c7f1a6dcfe63d3393f3520",
+      "position": {
+        "vehicleId": "fixture-interior-vehicle-2",
+        "bodyId": "body-0",
+        "deckId": "upper",
+        "xMm": 7750,
+        "yMm": 325
+      }
+    }
+  ]
+}

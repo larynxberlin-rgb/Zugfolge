@@ -24,11 +24,17 @@ lesen, nicht raten.
 | `docs/infrastruktur.md` | Konfliktressourcen, Trassenvergabe, Fahrplanperiode, Kapazitätsschutz, Simulation, Livemap | Solver, Sperrzeiten, Planner, Livemap |
 | `docs/betrieb.md` | Betriebsprogramm, Fahrzeuge, Personal, Versorgung, Zusatzfahrten, Störungen, Baustellenfahrplan | Disposition, Flotte, Umläufe, Wartung, Baustellen |
 | `docs/fahrzeugkatalog.md` | Exakte Fahrzeugtypen, Feldbelege, Rechte-Gate, Welt-Seed und gemeinsame Fleet-/Operational-Projektion | Fahrzeugdaten recherchieren, freigeben, kompilieren oder an Operational v2 anbinden |
+| `docs/personenverkehr.md`, `docs/schaffnermodus.md` | M10-Nachfrage und Manifeste; kanonischer versionierter M15-Fachvertrag mit Autoritäts-, Projektions-, Kontroll- und Abnahmegrenzen | Nachfrage, Fahrgastprojektion oder Schaffnermodus bearbeiten |
+| `docs/art-atlas.md` | M15.3-Pixelartkatalog, ArtAtlasManifestV1, Raster-/Herkunfts-/Freigabegates und Abnahmegrenzen | Schaffnergrafiken erzeugen, prüfen, packen oder ausliefern |
+| `docs/conductor-interior.md`, `docs/m5-interior-configuration.md`, `docs/conductor-interior-platform.md` | M15.4-Innenraumgeometrie, vollständiger M5-Konfigurationsbeleg, autorisierte Plattformbindung und Bewegungsprüfung | Fahrzeuginnenräume, Plätze, Decks, Türen oder Fahrzeugkonfigurationen verändern |
+| `docs/conductor-session.md`, `docs/conductor-session-platform.md`, `docs/conductor-browser.md` | Native Schaffnersitzung, Weltwriter, Releasepins, privater SSE und tatsächliche Browserbedienung | Sitzungs-, API-, Persistenz- oder Schaffneroberfläche verändern |
+| `docs/conductor-scenes.md`, `docs/conductor-dialogue.md`, `docs/conductor-hold.md`, `docs/fare-inspection-cases.md` | Gepinnte Szenen und Dialoge, native Kontrollhalte, Polizeifälle und belegte Geldfolgen | Umgebung, Dialog, Polizeifolgen oder Kontrollwirtschaft verändern |
 | `docs/stoerungen.md` | M8-Fachvertrag: Policies, Ursachenkennungen, Abfahrtsrechte, virtuelle Fahrdienstleiter, Ersatzplanung | Störungen, Baustellen, Ersatzverkehr, Verspätungsursachen |
 | `docs/betriebsengine.md` | Exakte Betriebswirklichkeit: Bewegung, Belegung, Stellwerk, FDL, Lokführer, Rangieren, Projektionen und Cutover | Simulationskern, LiveMap, RZÜ, operative InfraRelease-Artefakte |
 | `docs/betriebsengine-lastnachweis.md` | Reproduzierbarer E31-Kernbenchmark, Messergebnis und offene Systemlast-Gates | Lasttest oder Cutover-Abnahme der Betriebsengine |
 | `docs/wirtschaft.md` | Spielkreislauf, Geschäftsfelder, Nachfrage, Ausschreibung, Eigenbetrieb, Insolvenz, Kooperation | Verträge, Märkte, Geld, Ausschreibungen |
 | `docs/daten.md` | Datenlage OSM/ORM, Quellen, Rechte, Qualitätsklassen | Import-Pipeline, InfraRelease, Lizenzfragen zu Daten |
+| `docs/trassenfinder-routenimport.md` | Optionaler externer Routenentwurf, lokaler CSV-Laufwegimport und getrennte Durchfahrtpunkte | Fahrwegwahl, Trassenfinder-Verknüpfung, nutzergewählte Routendateien |
 | `docs/architektur.md` | Systemarchitektur, Lastgrößen, irreversible Entscheidungen, Determinismus, Sicherheit | Technischer Entwurf, Skalierung, Persistenz |
 | `docs/design.md` | Deutschlandweite LiveMap, rote Gleismarke, Graphitpalette, Spielertexte, kompakte Arbeitsbereiche und Zugänglichkeit | jede Oberflächenarbeit, jedes Diagramm, jede Zustandsdarstellung |
 | `docs/ui-redesign/README.md`, `docs/brand/README.md` | Echte UI-Screenshots mit Beispieldaten, Vorschauprüfung, aktuelle Zeichen und Bildherkunft | neue Oberflächen oder Bilder gestalten, den aktuellen UI-Stand prüfen |
@@ -76,7 +82,7 @@ Begründungen: `docs/entscheidungen.md`. Änderungen dort eintragen und begründ
 | E7 | Gescheiterte Ausschreibungen übernimmt der Eigenbetrieb des Aufgabenträgers |
 | E8 | Insolvenz bedeutet Totalverlust des EVU, mit telegrafierter Eskalationsleiter |
 | E9 | Vollständige Transparenz auf der Livemap |
-| E10 | Trassenfinder ist Kalibrierwerkzeug der Entwicklung, keine Laufzeitabhängigkeit |
+| E10 | Trassenfinder ist optionales externes Planungs- und Kalibrierwerkzeug, keine Laufzeitabhängigkeit; lokale Routendateien liefern nur geprüfte Fahrwegwünsche |
 | E11 | Kein einzelner Optimierungswert |
 | E12 | Rangieren ist ausschließlich automatisiert und wird als vollständige physische Bewegung simuliert |
 | E13 | Der Automatikmodus bleibt in öffentlichen Welten kostenlos |

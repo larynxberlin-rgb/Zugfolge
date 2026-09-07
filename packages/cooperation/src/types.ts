@@ -1,4 +1,5 @@
 import type { OperatorContract, VehicleAsset, VehicleMarketListing } from "@zugfolge/db";
+import type { VehicleValuationSpec } from "./valuation.js";
 
 export type ContractType = "traction" | "vehicle-rental" | "connection" | "disruption-assistance";
 
@@ -77,6 +78,12 @@ export interface RegisterVehicleInput {
   readonly valuationSpecId: string;
   readonly valueCents: bigint;
   readonly acquiredAtS: number;
+  /** Optionaler freigegebener Bewertungsbeleg; spätere Käufe setzen sein Bezugsalter nicht zurück. */
+  readonly valuationBasis?: {
+    readonly baseValueCents: bigint;
+    readonly ageYears: number;
+    readonly spec: VehicleValuationSpec;
+  };
 }
 
 export interface CreateListingInput {

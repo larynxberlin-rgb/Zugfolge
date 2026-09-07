@@ -1,9 +1,13 @@
 import { PGlite } from "@electric-sql/pglite";
 import {
+  accounts,
   fleetMobilizationSnapshots,
   fleetWorldCheckpoints,
   MIGRATIONS_FOLDER,
+  operators,
   schema,
+  vehicleRegistryEntries,
+  vehicleRegistryEvents,
   worlds,
 } from "@zugfolge/db";
 import {
@@ -36,9 +40,11 @@ import {
 import {
   fleetSnapshotHash,
   loadFleetMobilizationSnapshot,
+  persistFleetMobilizationSnapshot,
   type FleetMobilizationSnapshot,
 } from "./fleet-snapshot.js";
 import type { EconomyDatabase } from "./ledger.js";
+import { backfillFleetVehicleRegistry, persistFleetVehicleRegistry } from "./fleet-vehicle-registry.js";
 
 const WORLD = "55555555-5555-4555-8555-555555555555";
 const AUTHORITY_HASH = "d".repeat(64);
@@ -113,6 +119,12 @@ function authorityReleaseV2(): FleetAuthorityReleaseV2 {
     assets: legacy.assets.map((asset) => ({
       ...asset,
       orientation: "along",
+      condition: {
+        mechanicsBasisPoints: 9_000, driveBasisPoints: 8_000, brakesBasisPoints: 9_500,
+        kilometresSinceMaintenance: 120, operatingHoursSinceMaintenance: 40, openObservations: 1,
+      },
+      restrictions: {},
+      history: ["entered-world", "maintenance-completed"],
       technical: {
         ...asset.technical,
         maximumSpeedMmps: 44_444,
@@ -322,6 +334,182 @@ describe("Rust-autoritatives M5-Producer-Gateway", () => {
   });
 
   afterEach(async () => client.close());
+
+  it("weist vor Betriebsaufgabe eingereihte Flottenauftraege beim spaeteren Commit zurueck", async () => {
+    const [account] = await db.insert(accounts).values({
+      worldId: WORLD, keycloakSubject: "exiting-operator", displayName: "Gruender",
+    }).returning();
+    const [operator] = await db.insert(operators).values({
+      worldId: WORLD, foundingAccountId: account!.id, name: "Abschlussbahn",
+    }).returning();
+    const source = authorityRelease();
+    const authority: FleetAuthorityReleaseV1 = { ...source,
+      assets: source.assets.map((asset) => ({ ...asset, operatorId: operator!.id })),
+      pathReceipts: source.pathReceipts.map((receipt) => ({ ...receipt, operatorId: operator!.id })),
+    };
+    const nativeInitialized = initialized(authority);
+    const applyFleetCommand = vi.fn();
+    const runtime: FleetRuntime = { initializeFleet: () => nativeInitialized, applyFleetCommand };
+    await initializeFleetProducer({ db, runtime, initialization: {
+      schemaVersion: FLEET_INITIALIZE_SCHEMA, worldId: WORLD, producedAt: 0, authorityRelease: authority,
+    }, ingestedAt: new Date(0) });
+    const queued = command(nativeInitialized);
+    await db.update(operators).set({ lifecycle: "exited" }).where(and(
+      eq(operators.worldId, WORLD), eq(operators.id, operator!.id),
+    ));
+    await expect(applyFleetProducerCommand({ db, runtime, command: queued, ingestedAt: new Date(1_000) }))
+      .rejects.toThrow(/Beendetes EVU/);
+    expect(applyFleetCommand).not.toHaveBeenCalled();
+    expect(await db.select().from(fleetWorldCheckpoints)).toHaveLength(1);
+    const entries = await db.select().from(vehicleRegistryEntries);
+    expect(entries).toHaveLength(2);
+    expect(entries.every((entry) => entry.fleetRevision === 0)).toBe(true);
+  });
+
+  it("erfasst Neubau und Gebrauchtfahrzeuge oeffentlicher Eigentuemer mit Originalhistorie dauerhaft", async () => {
+    const source = authorityReleaseV2();
+    const authority: FleetAuthorityReleaseV2 = { ...source, assets: source.assets.map((asset, index) => ({
+      ...asset, procurementChannel: index === 0 ? "new-build" : "used", retiredAt: 100,
+    })) };
+    const nativeInitialized = initialized(authority);
+    const runtime: FleetRuntime = { initializeFleet: () => nativeInitialized, applyFleetCommand: vi.fn() };
+    await initializeFleetProducer({ db, runtime, initialization: {
+      schemaVersion: FLEET_INITIALIZE_SCHEMA, worldId: WORLD, producedAt: 0, authorityRelease: authority,
+    }, ingestedAt: new Date(0) });
+    const entries = await db.select().from(vehicleRegistryEntries);
+    expect(entries).toHaveLength(2);
+    expect(entries.map((entry) => entry.ownerOperatorId)).toEqual(["operator-1", "operator-1"]);
+    for (const entry of entries) {
+      expect(entry.facts).toMatchObject({ source: {
+        history: ["entered-world", "maintenance-completed"],
+        condition: { mechanicsBasisPoints: 9_000, kilometresSinceMaintenance: 120 },
+        maintenanceDeadlines: [{ kind: "inspection", dueAt: 100 }],
+      } });
+    }
+    await persistFleetVehicleRegistry(db, { ...nativeInitialized.state, revision: 1, producedAt: 101 }, "b".repeat(64));
+    expect(await db.select().from(vehicleRegistryEntries)).toHaveLength(2);
+    // Zeitfortschritt und Archivierung schreiben keine erfundene Zustandsaenderung.
+    expect(await db.select().from(vehicleRegistryEvents)).toHaveLength(2);
+    const [archived] = await db.select().from(vehicleRegistryEntries);
+    expect(archived).toMatchObject({ retiredAtS: 100, dataAtS: 101 });
+    expect(archived?.historyHash).toBe(entries[0]?.historyHash);
+    await expect(db.delete(vehicleRegistryEntries).where(eq(vehicleRegistryEntries.worldId, WORLD))).rejects.toThrow();
+    expect(await db.select().from(vehicleRegistryEntries)).toHaveLength(2);
+    await expect(db.update(vehicleRegistryEvents).set({ eventType: "operator-exit" })
+      .where(eq(vehicleRegistryEvents.worldId, WORLD))).rejects.toThrow();
+  });
+
+  it("uebernimmt Formation und Werkstatt in den Fahrzeugpass und haelt Replay ereignisfrei", async () => {
+    const nativeInitialized = initialized();
+    const versionedCommand = command(nativeInitialized);
+    const nativeApplied = applied(versionedCommand);
+    const runtime: FleetRuntime = {
+      initializeFleet: () => nativeInitialized,
+      applyFleetCommand: (state, _command, receipt) => receipt === undefined ? nativeApplied
+        : { ...nativeApplied, state, commandReceipt: receipt, idempotentReplay: true },
+    };
+    await initializeFleetProducer({ db, runtime, initialization: {
+      schemaVersion: FLEET_INITIALIZE_SCHEMA, worldId: WORLD, producedAt: 0, authorityRelease: authorityRelease(),
+    }, ingestedAt: new Date(0) });
+    await applyFleetProducerCommand({ db, runtime, command: versionedCommand, ingestedAt: new Date(1_000) });
+    const [bound] = await db.select().from(vehicleRegistryEntries);
+    expect(bound?.facts).toMatchObject({ bindings: { formations: ["formation-1"] } });
+    expect(await db.select().from(vehicleRegistryEvents)).toHaveLength(4);
+    await applyFleetProducerCommand({ db, runtime, command: versionedCommand, ingestedAt: new Date(2_000) });
+    expect(await db.select().from(vehicleRegistryEvents)).toHaveLength(4);
+    const restored = await loadFleetProducerCheckpoint(db, WORLD);
+    expect(restored?.state).toEqual(nativeApplied.state);
+    await persistFleetVehicleRegistry(db, { ...restored!.state, revision: 2, producedAt: 2,
+      maintenanceAssignments: { "formation-1": {
+        formationId: "formation-1", facilityId: "workshop-1", startsAtS: 2, endsAtS: 10,
+      } },
+    }, "f".repeat(64));
+    const [maintained] = await db.select().from(vehicleRegistryEntries);
+    expect(maintained?.facts).toMatchObject({ bindings: { formations: ["formation-1"], workshop: ["workshop-1"] } });
+    expect(await db.select().from(vehicleRegistryEvents)).toHaveLength(6);
+  });
+
+  it("holt alte Checkpoints in Reihenfolge nach und verwirft weltfremde Quellzustaende atomar", async () => {
+    const initial = initialized();
+    const later = applied(command(initial));
+    const values = [initial, later].map((result) => ({
+      worldId: WORLD, revision: result.state.revision, stateSchema: result.state.schemaVersion,
+      state: result.state, stateHash: result.stateHash, snapshotHash: result.snapshotHash,
+      ...("commandReceipt" in result ? {
+        commandId: result.appliedCommandId, commandSchema: FLEET_FORMATION_COMMAND_SCHEMA,
+        commandJson: result.commandReceipt.canonicalCommandJson, commandHash: result.commandReceipt.commandHash,
+      } : {}),
+      producedAt: new Date(result.state.producedAt * 1_000), ingestedAt: new Date(0),
+    }));
+    await db.insert(fleetWorldCheckpoints).values([
+      values[0]!, { ...values[1]!, state: { ...later.state, worldId: "66666666-6666-4666-8666-666666666666" } },
+    ]);
+    await expect(backfillFleetVehicleRegistry(db, WORLD)).rejects.toThrow(/Welt-/);
+    expect(await db.select().from(vehicleRegistryEntries)).toHaveLength(0);
+    expect(await db.select().from(vehicleRegistryEvents)).toHaveLength(0);
+    await db.update(fleetWorldCheckpoints).set({ state: later.state }).where(and(
+      eq(fleetWorldCheckpoints.worldId, WORLD), eq(fleetWorldCheckpoints.revision, 1),
+    ));
+    await backfillFleetVehicleRegistry(db, WORLD);
+    expect(await db.select().from(vehicleRegistryEntries)).toHaveLength(2);
+    const history = await db.select().from(vehicleRegistryEvents);
+    expect(history).toHaveLength(4);
+    const vehicleHistory = history.filter((event) => event.vehicleId === "vehicle-a")
+      .sort((left, right) => left.fleetRevision - right.fleetRevision);
+    expect(vehicleHistory[1]?.priorHistoryHash).toBe(vehicleHistory[0]?.resultingHistoryHash);
+    await backfillFleetVehicleRegistry(db, WORLD);
+    expect(await db.select().from(vehicleRegistryEvents)).toHaveLength(4);
+  });
+
+  it("schreibt archivierte Altwelten beim Registerzugriff nicht nachtraeglich um", async () => {
+    const initial = initialized();
+    await db.insert(fleetWorldCheckpoints).values({
+      worldId: WORLD, revision: initial.state.revision, stateSchema: initial.state.schemaVersion,
+      state: initial.state, stateHash: initial.stateHash, snapshotHash: initial.snapshotHash,
+      producedAt: new Date(0), ingestedAt: new Date(0),
+    });
+    await db.update(worlds).set({ lifecycleStatus: "archived" }).where(eq(worlds.id, WORLD));
+    await expect(backfillFleetVehicleRegistry(db, WORLD)).resolves.toBeUndefined();
+    expect(await db.select().from(vehicleRegistryEntries)).toHaveLength(0);
+    expect(await db.select().from(vehicleRegistryEvents)).toHaveLength(0);
+    const [checkpoint] = await db.select().from(fleetWorldCheckpoints).where(eq(fleetWorldCheckpoints.worldId, WORLD));
+    expect(checkpoint?.state).toEqual(initial.state);
+    await expect(persistFleetVehicleRegistry(db, initial.state, initial.stateHash)).rejects.toThrow();
+  });
+
+  it("holt vor dem ersten neuen Fleet-Commit alle historischen Fahrzeugereignisse nach", async () => {
+    const initial = initialized();
+    const previous = applied(command(initial));
+    for (const result of [initial, previous]) {
+      await db.insert(fleetWorldCheckpoints).values({
+        worldId: WORLD, revision: result.state.revision, stateSchema: result.state.schemaVersion,
+        state: result.state, stateHash: result.stateHash, snapshotHash: result.snapshotHash,
+        ...("commandReceipt" in result ? {
+          commandId: result.appliedCommandId, commandSchema: FLEET_FORMATION_COMMAND_SCHEMA,
+          commandJson: result.commandReceipt.canonicalCommandJson, commandHash: result.commandReceipt.commandHash,
+        } : {}),
+        producedAt: new Date(result.state.producedAt * 1_000), ingestedAt: new Date(0),
+      });
+      await persistFleetMobilizationSnapshot(db, WORLD,
+        { snapshot: result.snapshot, snapshotHash: result.snapshotHash }, new Date(0));
+    }
+    const nextCommand = {
+      schemaVersion: "zugfolge-fleet-attach-path-command/v2", worldId: WORLD,
+      commandId: "path:after-registry-upgrade", expectedStateHash: previous.stateHash,
+      expectedRevision: 1, atS: 2, pathReservationId: "path-reservation-1", pathReceiptId: "path-1",
+    } as const satisfies NativeFleetCommand;
+    const next = appliedPath(previous, nextCommand);
+    const runtime: FleetRuntime = { initializeFleet: () => initial, applyFleetCommand: () => next };
+    expect(await db.select().from(vehicleRegistryEvents)).toHaveLength(0);
+    await applyFleetProducerCommand({ db, runtime, command: nextCommand, ingestedAt: new Date(2_000) });
+    const entries = await db.select().from(vehicleRegistryEntries);
+    expect(entries.map((entry) => entry.fleetRevision)).toEqual([2, 2]);
+    const events = await db.select().from(vehicleRegistryEvents);
+    expect(events).toHaveLength(4);
+    expect(events.filter((event) => event.vehicleId === "vehicle-a")
+      .map((event) => event.fleetRevision).sort()).toEqual([0, 1]);
+    expect(events.find((event) => event.fleetRevision === 0)?.eventType).toBe("registered");
+  });
 
   it("laedt den Rust-State aus der DB und persistiert Kanonform, Receipt, Checkpoint und Snapshot atomar", async () => {
     const nativeInitialized = initialized();

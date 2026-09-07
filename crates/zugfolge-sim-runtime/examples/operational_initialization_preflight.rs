@@ -4,9 +4,17 @@ use std::error::Error;
 use std::fs;
 
 use serde_json::Value;
-use zugfolge_sim_runtime::operational_runtime::initialize_operational_simulation;
+use zugfolge_sim_runtime::operational_runtime::{
+    initialize_operational_simulation, release_operational_infrastructure_cache,
+};
 
 fn main() -> Result<(), Box<dyn Error>> {
+    let result = run();
+    release_operational_infrastructure_cache();
+    result
+}
+
+fn run() -> Result<(), Box<dyn Error>> {
     let mut arguments = std::env::args().skip(1);
     let input_path = arguments
         .next()

@@ -1,6 +1,7 @@
 /** Hält die kanonische Entscheidungsliste, Agentenhinweise und ADRs synchron. */
 
 import type { Finding, Rule, SourceFile } from "../types.js";
+import { posix } from "node:path";
 
 const QUELLE = "docs/entscheidungen.md";
 const AGENTEN = "AGENTS.md";
@@ -97,6 +98,19 @@ export const decisionConsistencyRule: Rule = {
       }
       if (!record.text.includes(`entspricht E${number}`)) {
         report(record.path, `Das E${number} zugeordnete ADR muss sich als E${number} ausweisen.`);
+      }
+      for (const link of record.text.matchAll(/\[[^\]]*\]\(([^\s)]+\.md)(?:#[^\s)]*)?\)/g)) {
+        const target = link[1]!;
+        if (/^[a-z][a-z\d+.-]*:/i.test(target) || target.startsWith("//")) continue;
+        const resolved = posix.normalize(posix.join(posix.dirname(record.path), target));
+        if (resolved.startsWith("../") || target.startsWith("/") || finde(files, resolved) === undefined) {
+          findings.push({
+            rule: "decision-consistency",
+            path: record.path,
+            line: record.text.slice(0, link.index).split("\n").length,
+            message: `Der lokale ADR-Verweis '${target}' erreicht kein Dokument im Repository.`,
+          });
+        }
       }
     }
 

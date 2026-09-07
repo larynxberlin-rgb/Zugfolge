@@ -1,0 +1,183 @@
+{
+  "layouts": [
+    {
+      "screen": "vehicle-market",
+      "viewport": 1440,
+      "width": 1440,
+      "height": 900,
+      "scrollWidth": 1440,
+      "scrollHeight": 900
+    },
+    {
+      "screen": "vehicle-register",
+      "viewport": 1440,
+      "width": 1440,
+      "height": 900,
+      "scrollWidth": 1440,
+      "scrollHeight": 900
+    },
+    {
+      "screen": "retired-passport",
+      "viewport": 1440,
+      "width": 1440,
+      "height": 900,
+      "scrollWidth": 1440,
+      "scrollHeight": 900
+    },
+    {
+      "screen": "direct-passport",
+      "viewport": 1440,
+      "width": 1440,
+      "height": 900,
+      "scrollWidth": 1440,
+      "scrollHeight": 900
+    },
+    {
+      "screen": "vehicle-market",
+      "viewport": 1024,
+      "width": 1024,
+      "height": 900,
+      "scrollWidth": 1024,
+      "scrollHeight": 900
+    },
+    {
+      "screen": "vehicle-register",
+      "viewport": 1024,
+      "width": 1024,
+      "height": 900,
+      "scrollWidth": 1024,
+      "scrollHeight": 900
+    },
+    {
+      "screen": "retired-passport",
+      "viewport": 1024,
+      "width": 1024,
+      "height": 900,
+      "scrollWidth": 1024,
+      "scrollHeight": 900
+    },
+    {
+      "screen": "direct-passport",
+      "viewport": 1024,
+      "width": 1024,
+      "height": 900,
+      "scrollWidth": 1024,
+      "scrollHeight": 900
+    },
+    {
+      "screen": "vehicle-market",
+      "viewport": 390,
+      "width": 390,
+      "height": 844,
+      "scrollWidth": 390,
+      "scrollHeight": 844
+    },
+    {
+      "screen": "vehicle-register",
+      "viewport": 390,
+      "width": 390,
+      "height": 844,
+      "scrollWidth": 390,
+      "scrollHeight": 844
+    },
+    {
+      "screen": "retired-passport",
+      "viewport": 390,
+      "width": 390,
+      "height": 844,
+      "scrollWidth": 390,
+      "scrollHeight": 844
+    },
+    {
+      "screen": "direct-passport",
+      "viewport": 390,
+      "width": 390,
+      "height": 844,
+      "scrollWidth": 390,
+      "scrollHeight": 844
+    },
+    {
+      "screen": "vehicle-market",
+      "viewport": 320,
+      "width": 320,
+      "height": 844,
+      "scrollWidth": 320,
+      "scrollHeight": 844
+    },
+    {
+      "screen": "vehicle-register",
+      "viewport": 320,
+      "width": 320,
+      "height": 844,
+      "scrollWidth": 320,
+      "scrollHeight": 844
+    },
+    {
+      "screen": "retired-passport",
+      "viewport": 320,
+      "width": 320,
+      "height": 844,
+      "scrollWidth": 320,
+      "scrollHeight": 844
+    },
+    {
+      "screen": "direct-passport",
+      "viewport": 320,
+      "width": 320,
+      "height": 844,
+      "scrollWidth": 320,
+      "scrollHeight": 844
+    },
+    {
+      "screen": "company-exit-form",
+      "viewport": 320,
+      "width": 320,
+      "height": 844,
+      "scrollWidth": 320,
+      "scrollHeight": 844
+    }
+  ],
+  "checks": [
+    {
+      "width": 1440,
+      "filtering": true,
+      "keyboardTabs": true,
+      "retainedDraftAndFocus": true,
+      "registrySearch": true,
+      "retiredVehicle": true,
+      "directPassport": true,
+      "readableHistory": true
+    },
+    {
+      "width": 1024,
+      "filtering": true,
+      "keyboardTabs": true,
+      "retainedDraftAndFocus": true,
+      "registrySearch": true,
+      "retiredVehicle": true,
+      "directPassport": true,
+      "readableHistory": true
+    },
+    {
+      "width": 390,
+      "filtering": true,
+      "keyboardTabs": true,
+      "retainedDraftAndFocus": true,
+      "registrySearch": true,
+      "retiredVehicle": true,
+      "directPassport": true,
+      "readableHistory": true
+    },
+    {
+      "width": 320,
+      "filtering": true,
+      "keyboardTabs": true,
+      "retainedDraftAndFocus": true,
+      "registrySearch": true,
+      "retiredVehicle": true,
+      "directPassport": true,
+      "readableHistory": true
+    }
+  ],
+  "errors": []
+}

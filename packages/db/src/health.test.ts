@@ -32,6 +32,11 @@ describe("createDatabaseHealthCheck", () => {
     expect(outcome).toEqual({ status: "ok", code: "schema_current" });
   });
 
+  it("verweigert einen passenden Migrationszähler ohne vollständiges Fahrzeugregister", async () => {
+    await client.query("drop table vehicle_registry_events");
+    await expect(createDatabaseHealthCheck(db).check()).rejects.toThrow(/vehicle_registry_events/u);
+  });
+
   it("wirft, wenn die Verbindung bereits geschlossen ist — die Registry fängt das auf", async () => {
     await client.close();
     await expect(createDatabaseHealthCheck(db).check()).rejects.toThrow();

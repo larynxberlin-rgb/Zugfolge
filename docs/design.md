@@ -9,6 +9,10 @@ Das [Gleiszeichen und die Symbolübersicht](brand/README.md) dokumentieren
 die verwendeten Vektoren. Die [Issue-Zuordnung](ui-redesign/issue-abgleich.md)
 verbindet diese Gestaltung mit den noch offenen Spielerabnahmen.
 
+Der [M15.3-Atlasvertrag](art-atlas.md) führt die eigene Pixelart des
+Schaffnermodus: Figuren, Innenraummodule, Stationen und Umgebung folgen
+derselben Graphit-/Rot-Gestaltung mit eigenen Raster- und Freigabegates.
+
 ## Spielwelt und Orientierung
 
 Zugfolge ist eine deutschlandweite Eisenbahn-Unternehmenssimulation. Die
@@ -67,7 +71,9 @@ werden Inhalte nacheinander angezeigt, ohne die Navigation aus dem Blick zu verl
 
 - LiveMap: große Karte, eigener Zugfilter, Suche, vier priorisierte Fahrten,
   Postfachhinweise und eine aufklappbare Zugübersicht.
-- Markt: Register für Aufträge, Fahrzeuge und Zusammenarbeit. Erstellformulare
+- Markt: Register für Aufträge, Fahrzeuge, Zusammenarbeit und das öffentliche
+  Fahrzeugregister. Der dauerhaft verlinkbare Fahrzeugpass verbindet Angebote,
+  Flotte und Lebenslauf auch nach Verkauf oder Ausmusterung. Erstellformulare
   und ausführliche Vergleiche öffnen sich bei Bedarf.
 - Unternehmen: Geld und Bestand, mit Registern für Finanzen und Flotte.
 - Betrieb: Betriebslage, Automatik und Tagesberichte als getrennte Aufgaben.

@@ -55,7 +55,7 @@ Keycloak-26.7.0-Katalog übereinstimmende Relationen und drei über
 Keycloak-Auswahl wird als vollständige Namensliste eingecheckt; sie beruht
 nicht auf einem Präfix oder einer Heuristik.
 Dieser historische 51er-Satz ist ein eigener, unveränderlicher
-Schema-28-bis-32-Vertrag. Der heutige Schema-33-Laufzeitvertrag umfasst durch
+Schema-28-bis-32-Vertrag. Der historische Schema-33-Laufzeitvertrag umfasst durch
 `regional_simulation_command_receipts` exakt 52 autoritative Game-Tabellen und
 wird nicht rückwirkend zur Klassifikation des Capture vom 25.08.2026 benutzt.
 
@@ -146,16 +146,16 @@ One-shot-Container laufen ausdrücklich nicht als root; ein root-eigenes
 `0700`-Verzeichnis würde deshalb vor jeder Datenbankänderung fehlschlagen.
 
 Im initialen Produktions-Cutover werden diese Komponenten nicht einzeln
-aufgerufen. Nach dem erfolgreichen `--schema35-after-cold` führt ausschließlich
+aufgerufen. Nach dem erfolgreichen `--schema38-after-cold` führt ausschließlich
 der fail-closed Wrapper die ganze Reihenfolge aus:
 
 ```bash
 bash tools/alpha-ops/compose-with-map-release-env.sh \
-  --keycloak-after-schema35 -f /opt/zugfolge/compose.yml
+  --keycloak-after-schema38 -f /opt/zugfolge/compose.yml
 ```
 
 Der Modus stoppt alle Anwendungswriter, startet nur die Datenbank- und
-Prüfdatenbankcontainer und verlangt zunächst exakt 33 Drizzle-Migrationen. Dann
+Prüfdatenbankcontainer und verlangt zunächst exakt 38 Drizzle-Migrationen. Dann
 erstellt er mit dem gepinnten PostgreSQL-16-Hilfscontainer das vollständige
 Shared-Database-Backup; es enthält Game und Keycloak, nicht nur die ausgewählten
 Tabellen. Genau dieser Dump wird in das getrennte, ausschließlich mit dem Präfix
@@ -199,14 +199,14 @@ Wenn `up` committed ist, aber der Prozess vor dem create-new Receipt abbrach,
 wird die Migration **nicht** wiederholt. Der laufende Wrapper versucht in genau
 diesem Fehlerfall automatisch `recover` gegen denselben Plan. Wurde auch der
 Hostprozess unterbrochen, nimmt ausschließlich der enge Recover-Modus die
-vorhandenen create-new Artefakte wieder auf. Er verlangt Schema 33, einen
+vorhandenen create-new Artefakte wieder auf. Er verlangt Schema 38, einen
 eindeutig migrierten Zustand und denselben unveränderten Plan, erzeugt einen
 eigenen Recover-Receipt und prüft Zielzustand, vollständigen Identity-Head und
 alle 544 OIDs erneut:
 
 ```bash
 bash tools/alpha-ops/compose-with-map-release-env.sh \
-  --keycloak-recover-after-schema35 -f /opt/zugfolge/compose.yml
+  --keycloak-recover-after-schema38 -f /opt/zugfolge/compose.yml
 ```
 
 Ein gemischter/partieller Zustand ist kein Recover-Fall. Dann bleiben alle
@@ -231,7 +231,7 @@ Katalog ausdrücklich mit `KC_DB_SCHEMA=public` adressiert, oder durch
 vollständigen Restore von Datenbank, Code und Images. Der gesonderte
 Operational-V2-Abbruch über `compose.alpha.rollback.yml` führt dagegen keine
 Down-Migration aus: Er startet den alten Anwendungsstand gegen den unveränderten
-Schema-33-Hot-Restore und muss deshalb weiterhin `KC_DB_SCHEMA=keycloak`
+Schema-38-Hot-Restore und muss deshalb weiterhin `KC_DB_SCHEMA=keycloak`
 verwenden. Jede Änderung seit dem gebundenen Restorepunkt geht bei einem
 Vollrestore verloren und ist vorab als RPO zu benennen.
 

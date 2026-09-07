@@ -25,6 +25,10 @@ zugfolge-sim = { path = "crates/zugfolge-sim", version = "0.0.0" }
 zugfolge-fleet = { path = "crates/zugfolge-fleet", version = "0.0.0" }
 zugfolge-rules = { path = "crates/zugfolge-rules", version = "0.0.0" }
 zugfolge-disruption = { path = "crates/zugfolge-disruption", version = "0.0.0" }
+zugfolge-conductor-dialogue = { path = "crates/zugfolge-conductor-dialogue", version = "0.0.0" }
+zugfolge-conductor-session = { path = "crates/zugfolge-conductor-session", version = "0.0.0" }
+zugfolge-conductor-scenes = { path = "crates/zugfolge-conductor-scenes", version = "0.0.0" }
+zugfolge-fare-control = { path = "crates/zugfolge-fare-control", version = "0.0.0" }
 
 # Die harten Invarianten aus AGENTS.md, soweit der Compiler sie halten kann.
 # Was der Compiler nicht sieht, prüft `tools/guards` (siehe docs/monorepo.md).

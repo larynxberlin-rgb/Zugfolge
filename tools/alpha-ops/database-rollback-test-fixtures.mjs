@@ -5,7 +5,7 @@ import {
   DATABASE_AUTHORITATIVE_TABLES,
   DATABASE_AUTHORITATIVE_TABLE_SET_SHA256,
   DATABASE_CUTOVER_CONSTRAINTS,
-  DATABASE_CUTOVER_GUARDS,
+  databaseCutoverGuards,
 } from "./database-cutover-schema-contract.mjs";
 
 export const DATABASE_AUTHORITATIVE_TABLE_COUNT = DATABASE_AUTHORITATIVE_TABLES.length;
@@ -19,8 +19,8 @@ export function databaseCutoverConstraintProofs() {
   }));
 }
 
-export function databaseCutoverGuardProofs() {
-  return DATABASE_CUTOVER_GUARDS.map(({ name, definitionSha256 }) => ({
+export function databaseCutoverGuardProofs(migrationCount = 33) {
+  return databaseCutoverGuards(migrationCount).map(({ name, definitionSha256 }) => ({
     name,
     definitionSha256,
     enabled: true,

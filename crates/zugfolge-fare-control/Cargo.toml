@@ -1,0 +1,19 @@
+[package]
+name = "zugfolge-fare-control"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+zugfolge-demand = { path = "../zugfolge-demand", version = "0.0.0" }
+zugfolge-fleet = { path = "../zugfolge-fleet", version = "0.0.0" }
+zugfolge-conductor-dialogue = { path = "../zugfolge-conductor-dialogue", version = "0.0.0" }
+
+[lints]
+workspace = true

@@ -8,6 +8,10 @@ Eine Nachfrageprognose ist keine Trassenzuteilung und kein Betriebsnachweis.
 
 Eine Linie enthält Name, geordnete eindeutige Halte, Formation, Takt,
 Fahrpreis sowie ein halboffenes Zeitfenster `[validFromS, validUntilS)`.
+Optionale `viaStationIds` binden Durchfahrtpunkte unabhängig von den
+Fahrgasthalten. Der externe CSV-Laufweg darf nur diesen Fahrwegwunsch liefern;
+Zeiten und Halteanforderungen stammen aus den Spieleingaben. Der genaue
+Vertrag steht in [Trassenfinder-Routenimport](trassenfinder-routenimport.md).
 Die optionale `referenceTrainId` bezeichnet eine im aktiven Fahrplan belegte
 Referenzfahrt aus dem gepinnten Nachfragekorpus. Neu beantragte oder bestätigte
 Spielerangebote sind keine Referenzquelle. Ohne explizite Kennung wählen
@@ -30,6 +34,12 @@ Versionierte Eingabegrenzen:
   dieser Bereich entspricht dem ganzzahligen Nachfragevertrag.
 - Zwischenhalte werden mit mindestens 60 Sekunden Aufenthalt beantragt.
   Der echte Planner prüft die Betriebsfähigkeit und kann den Antrag ablehnen.
+- `departureFlexibilityS` erlaubt 0 bis 7.200 Sekunden spätere Abfahrt;
+  `extraRunningTimeS` erlaubt 0 bis 3.600 Sekunden zusätzliche Gesamtfahrtdauer.
+  Beide Felder sind optional, fehlen bei historischen Entwürfen und bedeuten
+  dann 0. Neue UI-Entwürfe schlagen 30 beziehungsweise 15 Minuten vor.
+  Betriebshalte und Aufenthaltsverlängerungen bleiben innerhalb dieses
+  Spielraums; zusätzliche Betriebshalte sind auf vier begrenzt.
 
 Die Formation stammt aus dem letzten atomaren M5-Checkpoint. Die native
 Revalidierung bindet Welt, Revision, Zustandszeit, Authority-Hash, Zustands-Hash
@@ -93,7 +103,11 @@ atomaren Rollback nach einem fehlgeschlagenen zweiten Queue-Write.
 
 Der optionale `serviceWindow` in Planning-v4 und im Rust-ServicePattern bindet
 eine Fahrt an absolute Gültigkeit. SPFV beantragt jede Abfahrt als
-`[departureS, departureS + 1)` mit Null Verschiebungstoleranz. Hash,
+`[departureS, departureS + laterS + 1)`. Dabei ist `laterS` das Minimum aus
+`departureFlexibilityS` (fehlend: 0), `headwayS - 1` und
+`validUntilS - departureS - 1`. So bleibt die Abfahrt vor dem nächsten Takt
+und dem Betriebsende. Ohne Spielraum bleibt das historische Fenster
+`[departureS, departureS + 1)` erhalten. Hash,
 Verkehrstageprüfung und Materialisierung berücksichtigen dieses Fenster;
 ältere Zustände ohne Zusatzfeld behalten ihr Serialisierungsformat.
 

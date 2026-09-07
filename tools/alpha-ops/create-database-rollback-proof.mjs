@@ -143,7 +143,7 @@ async function assertArtifactUnchanged(artifact, label) {
   }
 }
 
-export async function inspectDatabaseRollbackEndpoint(databaseUrl, postgresFactory) {
+export async function inspectDatabaseRollbackEndpoint(databaseUrl, postgresFactory, { validateArchivePrivacy } = {}) {
   let factory = postgresFactory;
   if (factory === undefined) {
     const requireFromDb = createRequire(new URL("../../packages/db/package.json", import.meta.url));
@@ -153,6 +153,7 @@ export async function inspectDatabaseRollbackEndpoint(databaseUrl, postgresFacto
   const client = factory(databaseUrl, { max: 1 });
   try {
     return await client.begin("isolation level serializable read only deferrable", async (sql) => {
+      if (validateArchivePrivacy !== undefined) await validateArchivePrivacy(sql);
       const backendRows = await sql.unsafe(`
         select
           control.system_identifier::text as system_identifier,

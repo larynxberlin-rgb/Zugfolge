@@ -1,12 +1,44 @@
 import { describe, expect, it } from "vitest";
-import { parseSpfvCatalog, parseSpfvDraft, parseSpfvPreview, spfvPreviewMarkup, spfvReturnDestination, type SpfvCatalog, type SpfvPreview } from "./spfv.js";
+import { parseSpfvCatalog, parseSpfvDraft, parseSpfvPreview, spfvPreviewMarkup, spfvReturnDestination, spfvStopsForRoute, type SpfvCatalog, type SpfvPreview } from "./spfv.js";
 import { GameApiClient } from "./api.js";
 const catalog: SpfvCatalog = {schemaVersion: "zugfolge-spfv-catalog/v1", worldId: "fixture-world", operatorId: "fixture-own", periodId: "fixture-period", periodStartS: 0, periodEndS: 172_800, asOfS: 0, releaseId: "fixture-release", defaultHeadwayS: 3_600, stops: [{id: "s1", label: "Start"}, {id: "s2", label: "Ziel"}], formations: [{id: "f1", label: "Beispielverband", seats: 200, firstClassSeats: 20}], lines: []};
 const fields = {name: "Neue Linie", headwayMinutes: "60", fareEuro: "29,90", formationId: "f1", firstDay: "1", firstTime: "06:00", lastDay: "1", lastTime: "22:00"};
 const preview: SpfvPreview = {schemaVersion: "zugfolge-spfv-preview/v1", worldId: catalog.worldId, operatorId: catalog.operatorId, previewId: "preview-1", source: "forecast", asOfS: 0, releaseId: "fixture-release", requestedPassengers: 100, servedPassengers: 80, unservedPassengers: 20, capacity: 200, capacityFacts: { standardSeats: 168, premiumSeats: 32, bicycleSpaces: 8, wheelchairSpaces: 2 }, replacementTrainIds: [], replacementTrips: [], fareRevenueCents: "239200", costsCents: null, conflicts: ["Begegnung mit RV 7"], connectionEffects: ["Anschluss nach Ziel: 8 Minuten Übergang"], confirmationAllowed: false};
 describe("Fernverkehrsplanung", () => {
+  const importedRoute = { worldId: catalog.worldId, releaseId: catalog.releaseId, stations: [{ id: "s1", code: "A", name: "Start" }, { id: "junction", code: "J", name: "Abzweig" }, { id: "mid", code: "M", name: "Mitte" }, { id: "s2", code: "Z", name: "Ziel" }] };
+  const routeCatalog: SpfvCatalog = { ...catalog, stops: [...catalog.stops, { id: "mid", label: "Mitte" }, { id: "outside", label: "Anderer Ort" }] };
+  it("übernimmt einen Fahrweg mit Durchfahrtspunkten und erhält nur zuvor ausgewählte Halte auf der Route", () => {
+    const stops = spfvStopsForRoute(importedRoute, ["outside", "mid"], routeCatalog);
+    expect(stops).toEqual(["s1", "mid", "s2"]);
+    const draft = parseSpfvDraft(fields, stops, routeCatalog, undefined, ["junction", "mid"]);
+    expect(draft.viaStationIds).toEqual(["junction", "mid"]);
+    expect(draft.stopIds).not.toContain("junction");
+    expect(spfvStopsForRoute(importedRoute, [], routeCatalog)).toEqual(["s1", "s2"]);
+  });
+  it("prüft Haltereihenfolge, freigegebene Endpunkte und den gemeinsamen Releasestand", () => {
+    expect(() => spfvStopsForRoute({ ...importedRoute, releaseId: "other" }, [], routeCatalog)).toThrow("Stand");
+    expect(() => spfvStopsForRoute({ ...importedRoute, stations: importedRoute.stations.slice(1) }, [], routeCatalog)).toThrow("Fernverkehrshalte");
+    expect(() => parseSpfvDraft(fields, ["s1", "outside", "s2"], routeCatalog, undefined, ["junction", "mid"])).toThrow("Fahrtrichtung");
+    expect(() => parseSpfvDraft(fields, ["s1", "s2"], routeCatalog, undefined, ["s1"])).toThrow("wiederholte");
+    expect(() => parseSpfvDraft(fields, ["s1", "s2"], routeCatalog, undefined, ["junction", "junction"])).toThrow("wiederholte");
+  });
+  it("zeigt vor Bestätigung den vollständigen Fahrweg und kennzeichnet Halte gegenüber Durchfahrten", () => {
+    const draft = parseSpfvDraft(fields, ["s1", "mid", "s2"], routeCatalog, undefined, ["junction", "mid"]);
+    const html = spfvPreviewMarkup(preview, draft, routeCatalog, importedRoute);
+    expect(html).toContain("Abzweig · Durchfahrt");
+    expect(html).toContain("Mitte · Halt");
+    expect(html).toContain('aria-label="Geprüfter Fahrweg"');
+  });
   it("wandelt Eingaben exakt in Cent und Weltsekunden um", () => {
     expect(parseSpfvDraft(fields, ["s1", "s2"], catalog, "t1")).toEqual({name: "Neue Linie", headwayS: 3_600, fareCents: "2990", formationId: "f1", validFromS: 21_600, validUntilS: 79_200, stopIds: ["s1", "s2"], referenceTrainId: "t1"});
+  });
+  it("bindet den gewählten Planungsspielraum an den Entwurf und nennt ihn vor Bestätigung", () => {
+    const draft = parseSpfvDraft({ ...fields, departureDelayMinutes: "30", extraRunningMinutes: "15" }, ["s1", "s2"], catalog);
+    expect(draft).toMatchObject({ departureFlexibilityS: 1800, extraRunningTimeS: 900 });
+    const html = spfvPreviewMarkup(preview, draft, catalog);
+    expect(html).toContain("Abfahrt bis zu 30 Minuten später");
+    expect(html).toContain("bis zu 15 Minuten zusätzliche Fahrzeit");
+    expect(() => parseSpfvDraft({ ...fields, departureDelayMinutes: "121" }, ["s1", "s2"], catalog)).toThrow("120");
   });
   it("verwirft unbekannte Halte, doppelte Halte, Dezimaltakte und Zeitraumverletzungen", () => {
     for (const [overrides, stops] of [[{}, ["s1", "other"]], [{}, ["s1", "s1"]], [{headwayMinutes: "1.5"}, ["s1", "s2"]], [{lastDay: "4"}, ["s1", "s2"]], [{firstTime: "25:00"}, ["s1", "s2"]], [{fareEuro: "-1"}, ["s1", "s2"]]] as const) expect(() => parseSpfvDraft({...fields, ...overrides}, stops, catalog)).toThrow();

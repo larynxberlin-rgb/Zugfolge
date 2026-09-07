@@ -7,7 +7,7 @@ import {
   type CooperationPage,
   type VehicleTransferResult,
 } from "@zugfolge/cooperation";
-import { operators, type OperatorContract, type VehicleMarketListing } from "@zugfolge/db";
+import { operators, worldAccesses, type OperatorContract, type VehicleMarketListing } from "@zugfolge/db";
 import { AuthorizationError, getAccount, type IdentityDatabase } from "@zugfolge/identity";
 import { and, eq } from "drizzle-orm";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
@@ -130,10 +130,16 @@ export function registerCooperationRoutes(
     readonly cooperation: CooperationService;
     readonly authenticate: ReturnType<typeof createAuthenticator>;
     readonly simulationSecond: (worldId: string) => Promise<number>;
+    readonly synchronizeWorld?: (worldId: string, atS: number) => Promise<void>;
     readonly resourceCatalog: (worldId: string, operatorId: string) => Promise<CooperationResourceCatalog>;
     readonly guardAction?: (request: FastifyRequest, subject: string, actionClass: string, target: string, replayKey: string) => Promise<void>;
   },
 ): void {
+  const advance = async (worldId: string): Promise<number> => {
+    const atS = await deps.simulationSecond(worldId);
+    await deps.synchronizeWorld?.(worldId, atS);
+    return atS;
+  };
   app.get<{ Params: { worldId: string; operatorId: string } }>(
     "/worlds/:worldId/operators/:operatorId/cooperation-resources",
     { preHandler: deps.authenticate, schema: { params: operatorParams } },
@@ -142,6 +148,7 @@ export function registerCooperationRoutes(
       if (identity === undefined) return reply.code(401).send({ error: "Keine Identität." });
       try {
         await requireOwner(deps.db, request.params.worldId, request.params.operatorId, identity.keycloakSubject);
+        await advance(request.params.worldId);
         return reply.send(apiPayload(await deps.resourceCatalog(request.params.worldId, request.params.operatorId)));
       } catch (error) {
         return sendCooperationError(reply, error);
@@ -191,7 +198,7 @@ export function registerCooperationRoutes(
     try {
       await deps.guardAction?.(request, identity.keycloakSubject, "operator-contract", request.body.offereeOperatorId, request.body.idempotencyKey);
       const account = await requireOwner(deps.db, request.params.worldId, request.params.operatorId, identity.keycloakSubject);
-      const offeredAtS = await deps.simulationSecond(request.params.worldId);
+      const offeredAtS = await advance(request.params.worldId);
       return reply.code(201).send(contractPayload(await deps.cooperation.offerContract({
         worldId: request.params.worldId,
         offerorOperatorId: request.params.operatorId,
@@ -221,6 +228,7 @@ export function registerCooperationRoutes(
       if (identity === undefined) return reply.code(401).send({ error: "Keine Identität." });
       try {
         await requireOwner(deps.db, request.params.worldId, request.params.operatorId, identity.keycloakSubject);
+        await advance(request.params.worldId);
         return reply.send(pagePayload(
           await deps.cooperation.pageContracts(request.params.worldId, request.params.operatorId, request.query),
           contractPayload,
@@ -246,7 +254,7 @@ export function registerCooperationRoutes(
     try {
       await deps.guardAction?.(request, identity.keycloakSubject, "operator-contract", request.params.contractId, request.body.idempotencyKey);
       const account = await requireOwner(deps.db, request.params.worldId, request.params.operatorId, identity.keycloakSubject);
-      const atS = await deps.simulationSecond(request.params.worldId);
+      const atS = await advance(request.params.worldId);
       const contract = await deps.cooperation.respondToContract({
         worldId: request.params.worldId,
         contractId: request.params.contractId,
@@ -277,7 +285,7 @@ export function registerCooperationRoutes(
     try {
       await deps.guardAction?.(request, identity.keycloakSubject, "operator-contract", request.params.contractId, request.body.idempotencyKey);
       const account = await requireOwner(deps.db, request.params.worldId, request.params.operatorId, identity.keycloakSubject);
-      const atS = await deps.simulationSecond(request.params.worldId);
+      const atS = await advance(request.params.worldId);
       return reply.send(contractPayload(await deps.cooperation.terminateContract({
         worldId: request.params.worldId,
         contractId: request.params.contractId,
@@ -307,7 +315,7 @@ export function registerCooperationRoutes(
     try {
       await deps.guardAction?.(request, identity.keycloakSubject, "operator-contract", request.params.contractId, request.body.idempotencyKey);
       const account = await requireOwner(deps.db, request.params.worldId, request.params.operatorId, identity.keycloakSubject);
-      const atS = await deps.simulationSecond(request.params.worldId);
+      const atS = await advance(request.params.worldId);
       return reply.send(contractPayload(await deps.cooperation.terminateContract({
         worldId: request.params.worldId,
         contractId: request.params.contractId,
@@ -331,6 +339,7 @@ export function registerCooperationRoutes(
       if (identity === undefined) return reply.code(401).send({ error: "Keine Identität." });
       try {
         await actingAccount(deps.db, request.params.worldId, identity.keycloakSubject);
+        await advance(request.params.worldId);
         return reply.send(pagePayload(
           await deps.cooperation.pageListings(request.params.worldId, request.query),
           listingPayload,
@@ -356,7 +365,7 @@ export function registerCooperationRoutes(
     try {
       await deps.guardAction?.(request, identity.keycloakSubject, "vehicle-market", request.params.vehicleId, request.body.idempotencyKey);
       const account = await requireOwner(deps.db, request.params.worldId, request.params.operatorId, identity.keycloakSubject);
-      const listedAtS = await deps.simulationSecond(request.params.worldId);
+      const listedAtS = await advance(request.params.worldId);
       return reply.code(201).send(listingPayload(await deps.cooperation.createListing({
         worldId: request.params.worldId,
         vehicleId: request.params.vehicleId,
@@ -389,7 +398,7 @@ export function registerCooperationRoutes(
     try {
       await deps.guardAction?.(request, identity.keycloakSubject, "vehicle-market", request.params.listingId, request.body.idempotencyKey);
       const account = await requireOwner(deps.db, request.params.worldId, request.body.buyerOperatorId, identity.keycloakSubject);
-      const atS = await deps.simulationSecond(request.params.worldId);
+      const atS = await advance(request.params.worldId);
       return reply.send(listingPayload(await deps.cooperation.reserveListing({
         worldId: request.params.worldId,
         listingId: request.params.listingId,
@@ -419,7 +428,7 @@ export function registerCooperationRoutes(
     try {
       await deps.guardAction?.(request, identity.keycloakSubject, "vehicle-market", request.params.listingId, request.body.idempotencyKey);
       const account = await requireOwner(deps.db, request.params.worldId, request.body.buyerOperatorId, identity.keycloakSubject);
-      const atS = await deps.simulationSecond(request.params.worldId);
+      const atS = await advance(request.params.worldId);
       return reply.send(transferPayload(await deps.cooperation.transferListing({
         worldId: request.params.worldId,
         listingId: request.params.listingId,
@@ -449,7 +458,7 @@ export function registerCooperationRoutes(
     try {
       await deps.guardAction?.(request, identity.keycloakSubject, "vehicle-market", request.params.listingId, request.body.idempotencyKey);
       const account = await requireOwner(deps.db, request.params.worldId, request.body.buyerOperatorId, identity.keycloakSubject);
-      const atS = await deps.simulationSecond(request.params.worldId);
+      const atS = await advance(request.params.worldId);
       return reply.send(transferPayload(await deps.cooperation.reverseTransfer({
         worldId: request.params.worldId,
         listingId: request.params.listingId,
@@ -479,7 +488,7 @@ export function registerCooperationRoutes(
     try {
       await deps.guardAction?.(request, identity.keycloakSubject, "vehicle-market", request.params.listingId, request.body.idempotencyKey);
       const account = await requireOwner(deps.db, request.params.worldId, request.params.operatorId, identity.keycloakSubject);
-      const atS = await deps.simulationSecond(request.params.worldId);
+      const atS = await advance(request.params.worldId);
       return reply.send(listingPayload(await deps.cooperation.cancelListing({
         worldId: request.params.worldId,
         listingId: request.params.listingId,
@@ -502,6 +511,7 @@ export function registerCooperationRoutes(
       if (identity === undefined) return reply.code(401).send({ error: "Keine Identität." });
       try {
         await requireOwner(deps.db, request.params.worldId, request.params.operatorId, identity.keycloakSubject);
+        await advance(request.params.worldId);
         return reply.send(apiPayload(await deps.cooperation.listOwnedVehicles(
           request.params.worldId,
           request.params.operatorId,
@@ -511,6 +521,35 @@ export function registerCooperationRoutes(
       }
     },
   );
+
+  app.post<{
+    Params: { worldId: string; operatorId: string };
+    Body: { idempotencyKey: string; salePrices?: Record<string, string> };
+  }>("/worlds/:worldId/operators/:operatorId/fleet-exit", {
+    preHandler: deps.authenticate,
+    schema: { params: operatorParams, body: {
+      type: "object", additionalProperties: false, required: ["idempotencyKey"],
+      properties: {
+        idempotencyKey: { type: "string", minLength: 1, maxLength: 200 },
+        salePrices: { type: "object", maxProperties: 10000, additionalProperties: { type: "string", pattern: "^[1-9][0-9]*$", maxLength: 19 } },
+      },
+    } },
+  }, async (request, reply) => {
+    const identity = request.identity;
+    if (identity === undefined) return reply.code(401).send({ error: "Keine Identität." });
+    try {
+      await deps.guardAction?.(request, identity.keycloakSubject, "operator-exit", request.params.operatorId, request.body.idempotencyKey);
+      const account = await requireOwner(deps.db, request.params.worldId, request.params.operatorId, identity.keycloakSubject);
+      const atS = await advance(request.params.worldId);
+      const listings = await deps.cooperation.exitOperator({
+        worldId: request.params.worldId, operatorId: request.params.operatorId, actingAccountId: account.id,
+        reason: "business-closure", atS, idempotencyKey: request.body.idempotencyKey,
+        salePrices: request.body.salePrices === undefined ? undefined
+          : Object.fromEntries(Object.entries(request.body.salePrices).map(([vehicleId, value]) => [vehicleId, BigInt(value)])),
+      });
+      return reply.send({ schemaVersion: "zugfolge-operator-fleet-exit/v1", listings: listings.map(listingPayload) });
+    } catch (error) { return sendCooperationError(reply, error); }
+  });
 
   app.get<{ Params: { worldId: string; vehicleId: string } }>(
     "/worlds/:worldId/vehicles/:vehicleId/history",
@@ -522,7 +561,10 @@ export function registerCooperationRoutes(
       const identity = request.identity;
       if (identity === undefined) return reply.code(401).send({ error: "Keine Identität." });
       try {
-        await actingAccount(deps.db, request.params.worldId, identity.keycloakSubject);
+        const [access] = await deps.db.select({ status: worldAccesses.status }).from(worldAccesses).where(and(
+          eq(worldAccesses.worldId, request.params.worldId), eq(worldAccesses.keycloakSubject, identity.keycloakSubject),
+        )).limit(1);
+        if (access?.status !== "active") throw new AuthorizationError("Kein aktiver Weltzugang.");
         return reply.send(apiPayload(await deps.cooperation.listVehicleHistory(request.params.worldId, request.params.vehicleId)));
       } catch (error) {
         return sendCooperationError(reply, error);

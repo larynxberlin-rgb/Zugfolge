@@ -189,7 +189,7 @@ Abweichung. Der Weltbootstrap stabilisiert den v3-Keycloak-Kopf unter einem
 begrenzten `SHARE`-Lock aller 100 Tabellen; erst danach darf der Clientabgleich
 Realm- oder Clientzeilen verändern. Die einmalige, reversible und vollständig
 quieszierte Migration aus `public` läuft im Produktions-Cutover nur über den
-kanonischen Wrappermodus `--keycloak-after-schema35`; das darin gekapselte
+kanonischen Wrappermodus `--keycloak-after-schema38`; das darin gekapselte
 Compose-Profil `keycloak-schema-migration` ist beschrieben in
 [`docs/keycloak-schema-migration.md`](docs/keycloak-schema-migration.md).
 
@@ -242,8 +242,8 @@ vor dem Wrapper-Limit als `unhealthy` abgebrochen.
 
 `--prepare-v2-cold` liest diesen Beleg bytegenau erneut, erzeugt und qualifiziert
 das gekoppelte Schema-31-Backup-/Restore-Paar. Erst der dritte One-shot darf
-danach im selben digestgebundenen Prozess die Migrationen 0032 und 0033 bis
-zum exakten Zielkopf 33 anwenden:
+danach im selben digestgebundenen Prozess die Migrationen 0032 bis 0038 bis
+zum exakten Zielkopf 38 anwenden:
 
 ```bash
 bash tools/alpha-ops/compose-with-map-release-env.sh \
@@ -251,9 +251,9 @@ bash tools/alpha-ops/compose-with-map-release-env.sh \
 bash tools/alpha-ops/compose-with-map-release-env.sh \
   --prepare-v2-cold -f /opt/zugfolge/compose.yml
 bash tools/alpha-ops/compose-with-map-release-env.sh \
-  --schema35-after-cold -f /opt/zugfolge/compose.yml
+  --schema38-after-cold -f /opt/zugfolge/compose.yml
 bash tools/alpha-ops/compose-with-map-release-env.sh \
-  --keycloak-after-schema35 -f /opt/zugfolge/compose.yml
+  --keycloak-after-schema38 -f /opt/zugfolge/compose.yml
 ```
 
 Ein direktes `run game-migrate` ist im kanonischen Wrapper gesperrt. Auch
@@ -263,17 +263,17 @@ dem Keycloak-Modus müssen `KEYCLOAK_SCHEMA_EVIDENCE_HOST_DIR` und
 `KEYCLOAK_SCHEMA_BACKUP_HOST_DIR` auf zwei neue, getrennte, nicht verschachtelte
 und symlinkfreie Operatorverzeichnisse zeigen;
 `KEYCLOAK_SCHEMA_RESTORE_DATABASE` muss ein eigenes `zugfolge_restore_*`-Ziel
-sein. Der Modus prüft zuerst erneut exakt Schema 33, erstellt dann das
+sein. Der Modus prüft zuerst erneut exakt Schema 38, erstellt dann das
 vollständige Shared-Database-Backup, stellt es isoliert wieder her und führt
 `bind-backup` → `plan-up` → `up` aus. Erst `preflight-up` akzeptiert den
 installierten Up- oder Up-Recover-Receipt gegen den weiterhin gestoppten
 Livezustand; ein Fresh-Bootstrap-Receipt ist für diesen Bestands-Cutover
 unzulässig. Ein Prozessabbruch nach dem Up-Commit darf nur mit demselben Plan
-über `--keycloak-recover-after-schema35` abgeschlossen werden.
+über `--keycloak-recover-after-schema38` abgeschlossen werden.
 
 Diese vorbereitenden Modi verwenden kein `down`, überschreiben kein vorhandenes
 Artefakt und droppen keine Live-Datenbank. Nach dem Keycloak-Postcheck bleiben
-die Writer gestoppt. `--prepare-v2-hot` prüft Schema 33 und denselben gültigen
+die Writer gestoppt. `--prepare-v2-hot` prüft Schema 38 und denselben gültigen
 Keycloak-Up-Vertrag nochmals **vor** dem ersten Hot-Backup. Erst dann erzeugt der
 Hot-Drill frische Game-/Odoo-Dumps, den erneuten
 Game-Restore auf dem Prüf-Postgres, beide produktiven create-only
@@ -391,7 +391,7 @@ Im gesperrten Bootstrap wird `proof.source` vor der ersten Weltmutation erneut
 mit dem Live-Kopf verglichen. Der V1-Endzustand wird über `final_state_hash`
 versiegelt; Weltwechsel und unveränderlicher DB-Cutover-Receipt liegen in
 derselben `READ COMMITTED`-Transaktion hinter exklusiven, lexikographisch
-geordneten Candidate-/Predecessor-World-Locks. Alle 50 weltgebundenen Tabellen
+geordneten Candidate-/Predecessor-World-Locks. Alle weltgebundenen Tabellen
 nehmen bei INSERT, UPDATE und DELETE dauerhaft denselben Shared-Xact-Lock;
 damit wird ein bereits schreibender Commit vor dem Receipt sichtbar, während
 ein erst nach Beginn des Cutovers fortgesetzter Writer den archivierten Zustand
@@ -401,10 +401,11 @@ Zusätzlich werden die V1-Regionalheads persistent als
 `legacy_writer_fenced=true` markiert. Der Datenbanktrigger blockiert dadurch
 auch eine fremde, bereits offene Alt-Sitzung nach dem Commit bei Update und
 Delete fail-closed. Der finale V1-Hash umfasst den eingecheckten vollständigen
-Satz weltgebundener Schema-33-Tabellen einschließlich
+Satz weltgebundener Schema-38-Tabellen einschließlich des öffentlichen
+Fahrzeugregisters und
 `regional_simulation_command_receipts`; dessen Schlüssel und Fremdschlüssel
 binden jedes Kommando zusätzlich an den unveränderlichen
-`initialization_hash`. Schema 33 verweigert eine nachträgliche Änderung dieser
+`initialization_hash`. Seit Schema 33 verweigert die Datenbank eine nachträgliche Änderung dieser
 V2-Initialisierungsbindung; eine Reinitialisierung ist nur als Delete mit
 kaskadiertem Ledger und anschließendem neuen Insert zulässig. Der
 Retry-Receipt wird aus allen gespeicherten Spalten kanonisch nachgerechnet.
@@ -479,7 +480,7 @@ Anhangszahl. `continue` verlangt diese drei Köpfe exakt; erst ein erfolgreicher
 Erst nach diesem Erfolg lädt der Wrapper den versionierten Legacy-Override.
 Dieser startet das alte Keycloak-Image ausdrücklich mit
 `KC_DB_SCHEMA=keycloak`, weil der attestierte Anwendungsrückweg den
-unveränderten Schema-33-Hot-Restore verwendet und **keine** Keycloak-
+unveränderten Schema-38-Hot-Restore verwendet und **keine** Keycloak-
 Down-Migration ausführt. `game-api`, `game-web`, `livemap`,
 `operations-center` und `static` werden an die attestierte Legacy-Game-
 Referenz gebunden; `odoo` verwendet getrennt die attestierte Legacy-Odoo-
@@ -614,7 +615,7 @@ zum Abbruch statt zur Löschung regulärer Spielstände.
 Vorhandene reguläre Welten auf getrennte Server mit eigenen Subdomains umziehen,
 bevor sie mit dieser Version gestartet werden. Die Migration teilt solche
 Bestände nicht automatisch auf. Neue Backups und Restorebelege verwenden
-Schema 35. Die genauen Vorbedingungen stehen unter
+Schema 38 einschließlich des persistenten Fahrzeugregisters aus Migration 0038. Die genauen Vorbedingungen stehen unter
 [Upgrade auf Spielhinweise](docs/alpha-betrieb.md#upgrade-auf-spielhinweise).
 
 ## Abnahme und Wiederherstellung

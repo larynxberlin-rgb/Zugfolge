@@ -30,7 +30,7 @@ export function resolveJourneySection(parameters: URLSearchParams, hash: string)
   const target = hash.startsWith("#") ? hash.slice(1) : hash;
   if (target === "postfach") return "mailbox";
   if (target === "betrieb" || target === "betriebsplanung") return "operations";
-  if (target === "vehicle-market" || target === "cooperation-contracts" || target === "ausschreibungen"
+  if (target.startsWith("vehicle-") || target === "cooperation-contracts" || target === "ausschreibungen"
     || target.startsWith("listing-") || target.startsWith("contract-")) return "markets";
   return "world";
 }
@@ -55,7 +55,7 @@ function cooperationTargetId(hash: string): string | undefined {
   } catch {
     return undefined;
   }
-  return id.startsWith("contract-") || id.startsWith("listing-") ? id : undefined;
+  return id.startsWith("contract-") || id.startsWith("listing-") || id.startsWith("vehicle-") ? id : undefined;
 }
 
 /** Fokusiert einen nach dem Datenabruf gerenderten Vertrags- oder Marktbeleg. */
@@ -68,7 +68,7 @@ export function focusCooperationDeepLink(
   if (id === undefined) return false;
   const target = [...root.querySelectorAll<HTMLElement>("[id]")].find((candidate) => candidate.id === id);
   if (target === undefined) return false;
-  target.scrollIntoView({ behavior: reducedMotion ? "auto" : "smooth", block: "center" });
+  target.scrollIntoView({ behavior: reducedMotion ? "auto" : "smooth", block: id.startsWith("vehicle-") ? "start" : "center" });
   target.focus({ preventScroll: true });
   return true;
 }

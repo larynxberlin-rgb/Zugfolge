@@ -34,6 +34,7 @@ import {
   CooperationValidationError,
 } from "./errors.js";
 import { cooperationHash } from "./hash.js";
+import { valueVehicle, type VehicleValuationSpec } from "./valuation.js";
 import {
   CONTRACT_NON_PERFORMANCE_RULE,
   parseDailyOperationEvidenceReference,
@@ -99,7 +100,7 @@ export interface FleetAssetTransferIntent {
   readonly commandId: string;
   readonly atS: number;
   readonly vehicleId: string;
-  readonly transferType: "sale" | "rental-start" | "rental-return" | "reversal";
+  readonly transferType: "sale" | "rental-start" | "rental-return" | "reversal" | "operator-exit";
   readonly fromOwnerOperatorId: string;
   readonly toOwnerOperatorId: string;
   readonly fromHolderOperatorId: string;
@@ -282,9 +283,10 @@ async function assertOperatorAccount(
   worldId: string,
   operatorId: string,
   accountId: string,
+  allowExited = false,
 ): Promise<void> {
   const [operator] = await db
-    .select({ foundingAccountId: operators.foundingAccountId })
+    .select({ foundingAccountId: operators.foundingAccountId, lifecycle: operators.lifecycle })
     .from(operators)
     .where(and(eq(operators.worldId, worldId), eq(operators.id, operatorId)))
     .limit(1);
@@ -292,6 +294,7 @@ async function assertOperatorAccount(
   if (operator.foundingAccountId !== accountId) {
     throw new CooperationAuthorizationError(`Konto darf nicht für EVU '${operatorId}' handeln.`);
   }
+  if (!allowExited && operator.lifecycle !== "active") throw new CooperationConflictError("Beendetes EVU darf keine neuen Markt- oder Vertragsaktionen ausführen.", "operator_exited");
 }
 
 async function worldSimDate(db: CooperationDatabase, worldId: string, atS: number): Promise<Date> {
@@ -301,6 +304,10 @@ async function worldSimDate(db: CooperationDatabase, worldId: string, atS: numbe
   const millis = world.epoch.getTime() + atS * 1_000;
   if (!Number.isSafeInteger(millis)) throw new CooperationValidationError("Ereigniszeit liegt außerhalb des Datumsbereichs.");
   return new Date(millis);
+}
+
+async function lockCooperationWorld(db: CooperationDatabase, worldId: string): Promise<void> {
+  await db.execute(sql`select ${worlds.id} from ${worlds} where ${worlds.id} = ${worldId} for update`);
 }
 
 async function appendEvent(
@@ -327,7 +334,7 @@ async function appendEvent(
 }
 
 interface CooperationCommandDescriptor {
-  readonly kind: "contract-response" | "contract-end" | "listing-reserve" | "listing-cancel";
+  readonly kind: "contract-response" | "contract-end" | "listing-reserve" | "listing-cancel" | "operator-exit" | "vehicle-valuation";
   readonly targetId: string;
   readonly actingOperatorId: string;
   readonly parameters: Readonly<Record<string, unknown>>;
@@ -631,15 +638,17 @@ function discloseVehicle(vehicle: VehicleAsset): Readonly<Record<string, unknown
     actualConfiguration: vehicle.actualConfiguration,
     ownerOperatorId: vehicle.ownerOperatorId,
     holderOperatorId: vehicle.holderOperatorId,
-    odometerMetres: vehicle.odometerMetres.toString(),
+    odometerMetres: vehicle.odometerMetres?.toString() ?? null,
     conditionBasisPoints: vehicle.conditionBasisPoints,
+    conditionProfile: vehicle.conditionProfile,
     damages: vehicle.damages,
     maintenanceDeadlines: vehicle.maintenanceDeadlines,
     approvals: vehicle.approvals,
     operatingLimits: vehicle.operatingLimits,
     bindings: vehicle.bindings,
     valuationSpecId: vehicle.valuationSpecId,
-    valueCents: vehicle.valueCents.toString(),
+    valuationBasis: vehicle.valuationBasis,
+    valueCents: vehicle.valueCents?.toString() ?? null,
     assetRevision: vehicle.revision,
     historyHash: vehicle.historyHash,
   };
@@ -735,8 +744,11 @@ export class CooperationService {
         lessorOperatorId: null, contractId: null, validUntilS: null, transferReceiptHash,
       });
       const historyHash = cooperationHash("vehicle-asset-history/v1", { vehicleId, previousHistoryHash: vehicle.historyHash, contractId: contract.id, transferType: "rental-return", atS });
+      const bindings = record(vehicle.bindings, "Fahrzeugbindungen");
+      const contractBindings = Array.isArray(bindings["contracts"]) ? bindings["contracts"].filter((id) => id !== contract.id) : [];
       const [updated] = await tx.update(vehicleAssets).set({
         holderOperatorId: vehicle.ownerOperatorId, lessorOperatorId: null,
+        bindings: { ...bindings, contracts: contractBindings },
         revision: vehicle.revision + 1, historyHash,
       }).where(and(eq(vehicleAssets.worldId, contract.worldId), eq(vehicleAssets.vehicleId, vehicleId), eq(vehicleAssets.revision, vehicle.revision))).returning();
       if (updated === undefined) throw new CooperationConflictError("Mietfahrzeug wurde parallel geaendert.", "vehicle_revision_conflict");
@@ -766,6 +778,7 @@ export class CooperationService {
       terminationNoticeS: input.terminationNoticeS,
     });
     return this.db.transaction(async (tx) => {
+      await lockCooperationWorld(tx, input.worldId);
       await assertOperatorAccount(tx, input.worldId, input.offerorOperatorId, input.offeredByAccountId);
       const [offeree] = await tx.select({ id: operators.id }).from(operators).where(and(
         eq(operators.worldId, input.worldId), eq(operators.id, input.offereeOperatorId),
@@ -816,6 +829,7 @@ export class CooperationService {
   async respondToContract(input: ContractActionInput & { readonly response: "accept" | "reject" }): Promise<OperatorContract> {
     const occurredAt = await worldSimDate(this.db, input.worldId, input.atS);
     return this.db.transaction(async (tx) => {
+      await lockCooperationWorld(tx, input.worldId);
       await tx.execute(sql`select ${operatorContracts.id} from ${operatorContracts} where ${operatorContracts.worldId} = ${input.worldId} and ${operatorContracts.id} = ${input.contractId} for update`);
       const [contract] = await tx.select().from(operatorContracts).where(and(
         eq(operatorContracts.worldId, input.worldId), eq(operatorContracts.id, input.contractId),
@@ -1034,6 +1048,7 @@ export class CooperationService {
     }
     const occurredAt = await worldSimDate(this.db, input.worldId, input.atS);
     return this.db.transaction(async (tx) => {
+      await lockCooperationWorld(tx, input.worldId);
       await tx.execute(sql`select ${operatorContracts.id} from ${operatorContracts} where ${operatorContracts.worldId} = ${input.worldId} and ${operatorContracts.id} = ${input.contractId} for update`);
       const [contract] = await tx.select().from(operatorContracts).where(and(
         eq(operatorContracts.worldId, input.worldId), eq(operatorContracts.id, input.contractId),
@@ -1148,48 +1163,62 @@ export class CooperationService {
   async advanceContracts(worldId: string, atS: number): Promise<readonly OperatorContract[]> {
     const occurredAt = await worldSimDate(this.db, worldId, atS);
     return this.db.transaction(async (tx) => {
+      await lockCooperationWorld(tx, worldId);
       const candidates = await tx.select().from(operatorContracts).where(and(
         eq(operatorContracts.worldId, worldId),
         or(eq(operatorContracts.status, "offered"), eq(operatorContracts.status, "accepted"), eq(operatorContracts.status, "active"), eq(operatorContracts.status, "termination-pending")),
       )).orderBy(asc(operatorContracts.id));
       const changed: OperatorContract[] = [];
       for (const contract of candidates) {
-        let status: OperatorContract["status"] | undefined;
-        if (contract.status === "termination-pending") {
-          if (contract.terminationEffectiveAtS === null) {
-            throw new CooperationConflictError("Vorgemerkter Kündigung fehlt der serverseitige Wirksamkeitszeitpunkt.", "termination_schedule_invalid");
-          }
-          if (atS >= contract.terminationEffectiveAtS) status = "terminated";
-        }
-        else if (contract.status === "offered" && atS > contract.responseDeadlineS) status = "expired";
-        else if (contract.status === "accepted" && atS >= contract.validFromS && atS < contract.validUntilS) status = "active";
-        else if ((contract.status === "accepted" || contract.status === "active") && atS >= contract.validUntilS) status = "completed";
-        if (status === undefined) continue;
-        const effectiveAtS = status === "terminated" ? contract.terminationEffectiveAtS! : atS;
-        if (status === "completed" || status === "terminated") await this.returnContractRental(tx, contract, effectiveAtS);
-        const [updated] = await tx.update(operatorContracts).set({
-          status,
-          terminatedAtS: status === "terminated" ? contract.terminationEffectiveAtS : undefined,
-          endedAtS: status === "terminated" ? contract.terminationEffectiveAtS : status === "completed" || status === "expired" ? atS : undefined,
-          endReason: status === "completed" ? "regular-end" : status === "expired" ? "response-deadline" : undefined,
-          revision: contract.revision + 1,
-        }).where(and(
-          eq(operatorContracts.worldId, worldId),
-          eq(operatorContracts.id, contract.id),
-          eq(operatorContracts.revision, contract.revision),
-        )).returning();
-        if (updated === undefined) throw new CooperationConflictError("Vertrag wurde parallel geändert.", "revision_conflict");
-        changed.push(updated);
-        const transitionOccurredAt = status === "terminated" ? await worldSimDate(tx, worldId, effectiveAtS) : occurredAt;
-        await appendEvent(tx, worldId, `cooperation.contract-${status}`, { contractId: contract.id, status }, transitionOccurredAt);
-        if (status === "terminated") {
+        try {
+          const updatedContract = await tx.transaction(async (contractTx) => {
+            const tx = contractTx as unknown as CooperationDatabase;
+            let status: OperatorContract["status"] | undefined;
+            if (contract.status === "termination-pending") {
+              if (contract.terminationEffectiveAtS === null) {
+                throw new CooperationConflictError("Vorgemerkter Kündigung fehlt der serverseitige Wirksamkeitszeitpunkt.", "termination_schedule_invalid");
+              }
+              if (atS >= contract.terminationEffectiveAtS) status = "terminated";
+            }
+            else if (contract.status === "offered" && atS > contract.responseDeadlineS) status = "expired";
+            else if (contract.status === "accepted" && atS >= contract.validFromS && atS < contract.validUntilS) status = "active";
+            else if ((contract.status === "accepted" || contract.status === "active") && atS >= contract.validUntilS) status = "completed";
+            if (status === undefined) return undefined;
+            const effectiveAtS = status === "terminated" ? contract.terminationEffectiveAtS! : atS;
+            if (status === "completed" || status === "terminated") await this.returnContractRental(tx, contract, atS);
+            const [updated] = await tx.update(operatorContracts).set({
+              status,
+              terminatedAtS: status === "terminated" ? contract.terminationEffectiveAtS : undefined,
+              endedAtS: status === "terminated" ? contract.terminationEffectiveAtS : status === "completed" || status === "expired" ? atS : undefined,
+              endReason: status === "completed" ? "regular-end" : status === "expired" ? "response-deadline" : undefined,
+              revision: contract.revision + 1,
+            }).where(and(
+              eq(operatorContracts.worldId, worldId),
+              eq(operatorContracts.id, contract.id),
+              eq(operatorContracts.revision, contract.revision),
+            )).returning();
+            if (updated === undefined) throw new CooperationConflictError("Vertrag wurde parallel geändert.", "revision_conflict");
+            const transitionOccurredAt = status === "terminated" ? await worldSimDate(tx, worldId, effectiveAtS) : occurredAt;
+            await appendEvent(tx, worldId, `cooperation.contract-${status}`, { contractId: contract.id, status }, transitionOccurredAt);
+            if (status === "terminated") {
+              await notifyOperators(tx, {
+                worldId,
+                operatorIds: [contract.offerorOperatorId, contract.offereeOperatorId],
+                messageType: "cooperation.contract-terminated",
+                payload: { contractId: contract.id, terminationEffectiveAtS: contract.terminationEffectiveAtS },
+                sentAt: transitionOccurredAt,
+                idempotencyKey: `contract-termination-effective:${contract.id}:${contract.terminationEffectiveAtS}`,
+              });
+            }
+            return updated;
+          });
+          if (updatedContract !== undefined) changed.push(updatedContract);
+        } catch (error) {
+          if (!(error instanceof CooperationConflictError) || contract.contractType !== "vehicle-rental") throw error;
           await notifyOperators(tx, {
-            worldId,
-            operatorIds: [contract.offerorOperatorId, contract.offereeOperatorId],
-            messageType: "cooperation.contract-terminated",
-            payload: { contractId: contract.id, terminationEffectiveAtS: contract.terminationEffectiveAtS },
-            sentAt: transitionOccurredAt,
-            idempotencyKey: `contract-termination-effective:${contract.id}:${contract.terminationEffectiveAtS}`,
+            worldId, operatorIds: [contract.offerorOperatorId, contract.offereeOperatorId],
+            messageType: "cooperation.rental-return-pending", payload: { contractId: contract.id, code: error.code, explanation: error.message },
+            sentAt: occurredAt, idempotencyKey: `rental-return-pending:${contract.id}:${error.code}`,
           });
         }
       }
@@ -1249,14 +1278,28 @@ export class CooperationService {
     if (!Number.isSafeInteger(input.conditionBasisPoints) || input.conditionBasisPoints < 0 || input.conditionBasisPoints > 10_000) {
       throw new CooperationValidationError("Zustand muss in Basispunkten zwischen 0 und 10.000 liegen.");
     }
+    if (input.valuationBasis !== undefined) {
+      const value = valueVehicle({ ...input.valuationBasis, odometerMetres: input.odometerMetres,
+        conditionBasisPoints: input.conditionBasisPoints, damageCodes: input.damages.map((damage) => String(damage["code"] ?? "")) });
+      if (input.valuationBasis.spec.specId !== input.valuationSpecId || value !== input.valueCents) {
+        throw new CooperationValidationError("Bewertungsregel und bestätigter Fahrzeugwert widersprechen sich.", "valuation_mismatch");
+      }
+    }
     const occurredAt = await worldSimDate(this.db, input.worldId, input.acquiredAtS);
     return this.db.transaction(async (tx) => {
+    await lockCooperationWorld(tx, input.worldId);
     const [owner] = await tx.select({ id: operators.id }).from(operators).where(and(
       eq(operators.worldId, input.worldId), eq(operators.id, input.ownerOperatorId),
     )).limit(1);
     if (owner === undefined) throw new CooperationNotFoundError("Fahrzeugeigentümer existiert nicht in dieser Welt.");
     const initial = {
       ...input,
+      valuationBasis: input.valuationBasis === undefined ? null : {
+        schemaVersion: "zugfolge-vehicle-valuation-basis/v1", baseValueCents: input.valuationBasis.baseValueCents.toString(),
+        ageYears: input.valuationBasis.ageYears, atS: input.acquiredAtS,
+        lastValuedAtS: input.acquiredAtS,
+        spec: { ...input.valuationBasis.spec, mileageStepMetres: input.valuationBasis.spec.mileageStepMetres.toString() },
+      },
       holderOperatorId: input.ownerOperatorId,
       lessorOperatorId: null,
       bindings: { formations: [], contracts: [], workshop: [], security: [] },
@@ -1305,13 +1348,35 @@ export class CooperationService {
     }
     const occurredAt = await worldSimDate(this.db, input.worldId, input.listedAtS);
     return this.db.transaction(async (tx) => {
+      await lockCooperationWorld(tx, input.worldId);
       await assertOperatorAccount(tx, input.worldId, input.offeringOperatorId, input.actingAccountId);
+      const [prior] = await tx.select().from(vehicleMarketListings).where(and(
+        eq(vehicleMarketListings.worldId, input.worldId), eq(vehicleMarketListings.offeringOperatorId, input.offeringOperatorId),
+        eq(vehicleMarketListings.idempotencyKey, input.idempotencyKey),
+      )).limit(1);
+      if (prior !== undefined) {
+        if (prior.vehicleId !== input.vehicleId || prior.listingType !== input.listingType
+          || prior.priceCents !== input.priceCents || prior.expiresAtS !== input.expiresAtS
+          || prior.rentalValidUntilS !== (input.rentalValidUntilS ?? null)) {
+          throw new CooperationConflictError("Idempotenzschlüssel gehört zu einem anderen Marktangebot.", "idempotency_conflict");
+        }
+        return prior;
+      }
       await tx.execute(sql`select ${vehicleAssets.vehicleId} from ${vehicleAssets} where ${vehicleAssets.worldId} = ${input.worldId} and ${vehicleAssets.vehicleId} = ${input.vehicleId} for update`);
       const [vehicle] = await tx.select().from(vehicleAssets).where(and(
         eq(vehicleAssets.worldId, input.worldId), eq(vehicleAssets.vehicleId, input.vehicleId),
       )).limit(1);
       if (vehicle === undefined) throw new CooperationNotFoundError("Fahrzeug wurde in dieser Welt nicht gefunden.");
       if (vehicle.ownerOperatorId !== input.offeringOperatorId) throw new CooperationAuthorizationError("Nur der aktuelle Eigentümer darf das Fahrzeug anbieten.");
+      const retiredAtS = record(vehicle.actualConfiguration, "Ist-Konfiguration")["retiredAtS"];
+      if (typeof retiredAtS === "number" && retiredAtS <= input.listedAtS) {
+        throw new CooperationConflictError("Ausgemusterte Fahrzeuge bleiben im Register, sind aber nicht handelbar.", "vehicle_retired");
+      }
+      const [activeListing] = await tx.select({ id: vehicleMarketListings.id }).from(vehicleMarketListings).where(and(
+        eq(vehicleMarketListings.worldId, input.worldId), eq(vehicleMarketListings.vehicleId, input.vehicleId),
+        inArray(vehicleMarketListings.status, ["open", "reserved"]),
+      )).limit(1);
+      if (activeListing !== undefined) throw new CooperationConflictError("Dieses Fahrzeug besitzt bereits ein aktives Angebot.", "vehicle_already_listed");
       const decision = await this.authority.verifyVehicleListing({ worldId: input.worldId, vehicle, listingType: input.listingType, atS: input.listedAtS });
       if (!decision.permitted) throw new CooperationConflictError(decision.explanation, decision.code);
       const disclosure = discloseVehicle(vehicle);
@@ -1368,6 +1433,7 @@ export class CooperationService {
     safeSimSecond(maximumReservedUntilS, "Reservierungsende");
     const occurredAt = await worldSimDate(this.db, input.worldId, input.atS);
     return this.db.transaction(async (tx) => {
+      await lockCooperationWorld(tx, input.worldId);
       await assertOperatorAccount(tx, input.worldId, input.buyerOperatorId, input.actingAccountId);
       await tx.execute(sql`select ${vehicleMarketListings.id} from ${vehicleMarketListings} where ${vehicleMarketListings.worldId} = ${input.worldId} and ${vehicleMarketListings.id} = ${input.listingId} for update`);
       const [listing] = await tx.select().from(vehicleMarketListings).where(and(
@@ -1428,6 +1494,7 @@ export class CooperationService {
     nonEmpty(input.idempotencyKey, "Idempotenzschlüssel");
     const occurredAt = await worldSimDate(this.db, input.worldId, input.atS);
     return this.db.transaction(async (tx) => {
+      await lockCooperationWorld(tx, input.worldId);
       await assertOperatorAccount(tx, input.worldId, input.buyerOperatorId, input.actingAccountId);
       const [existingTransfer] = await tx.select().from(vehicleMarketTransfers).where(and(
         eq(vehicleMarketTransfers.worldId, input.worldId), eq(vehicleMarketTransfers.idempotencyKey, input.idempotencyKey),
@@ -1674,6 +1741,7 @@ export class CooperationService {
   }): Promise<VehicleMarketListing> {
     const occurredAt = await worldSimDate(this.db, input.worldId, input.atS);
     return this.db.transaction(async (tx) => {
+      await lockCooperationWorld(tx, input.worldId);
       await assertOperatorAccount(tx, input.worldId, input.offeringOperatorId, input.actingAccountId);
       await tx.execute(sql`select ${vehicleMarketListings.id} from ${vehicleMarketListings} where ${vehicleMarketListings.worldId} = ${input.worldId} and ${vehicleMarketListings.id} = ${input.listingId} for update`);
       const [listing] = await tx.select().from(vehicleMarketListings).where(and(
@@ -1728,6 +1796,7 @@ export class CooperationService {
     nonEmpty(input.idempotencyKey, "Idempotenzschlüssel");
     const occurredAt = await worldSimDate(this.db, input.worldId, input.atS);
     return this.db.transaction(async (tx) => {
+      await lockCooperationWorld(tx, input.worldId);
       await assertOperatorAccount(tx, input.worldId, input.buyerOperatorId, input.actingAccountId);
       const [existing] = await tx.select().from(vehicleMarketTransfers).where(and(
         eq(vehicleMarketTransfers.worldId, input.worldId), eq(vehicleMarketTransfers.idempotencyKey, input.idempotencyKey),
@@ -1910,6 +1979,316 @@ export class CooperationService {
 
   listListings(worldId: string): Promise<readonly VehicleMarketListing[]> {
     return this.db.select().from(vehicleMarketListings).where(eq(vehicleMarketListings.worldId, worldId)).orderBy(desc(vehicleMarketListings.listedAtS));
+  }
+
+  /**
+   * Übernimmt für ein bestehendes Asset ausschließlich einen unveränderlichen
+   * serverseitigen Freigabebeleg. Diese Methode besitzt keine Spielerroute.
+   */
+  async applyVehicleValuationEvidence(input: {
+    readonly worldId: string;
+    readonly vehicleId: string;
+    readonly sourceEventSequence: number;
+    readonly expectedRevision: number;
+    readonly atS: number;
+    readonly idempotencyKey: string;
+  }): Promise<VehicleAsset> {
+    const occurredAt = await worldSimDate(this.db, input.worldId, input.atS);
+    if (!Number.isSafeInteger(input.sourceEventSequence) || input.sourceEventSequence < 1) throw new CooperationValidationError("Bewertungsfreigabe braucht einen gültigen Ereignisbezug.");
+    return this.db.transaction(async (tx) => {
+      await lockCooperationWorld(tx, input.worldId);
+      const [asset] = await tx.select().from(vehicleAssets).where(and(eq(vehicleAssets.worldId, input.worldId), eq(vehicleAssets.vehicleId, input.vehicleId))).limit(1);
+      if (asset === undefined) throw new CooperationNotFoundError("Fahrzeug existiert in dieser Welt nicht.");
+      const receipt = await claimCooperationCommand(tx, input.worldId, input.idempotencyKey, {
+        kind: "vehicle-valuation", targetId: input.vehicleId, actingOperatorId: "world-valuation-authority",
+        parameters: { sourceEventSequence: input.sourceEventSequence, expectedRevision: input.expectedRevision },
+      });
+      if (receipt.replayed) return asset;
+      if (asset.revision !== input.expectedRevision) throw new CooperationConflictError("Fahrzeug wurde seit Bewertungsfreigabe geändert.", "vehicle_revision_conflict");
+      const [event] = await tx.select().from(domainEvents).where(and(eq(domainEvents.worldId, input.worldId),
+        eq(domainEvents.sequence, input.sourceEventSequence), eq(domainEvents.eventType, "vehicle.valuation-confirmed"))).limit(1);
+      if (event === undefined) throw new CooperationAuthorizationError("Serverseitige Bewertungsfreigabe wurde nicht gefunden.");
+      const evidence = record(event.payload, "Bewertungsfreigabe");
+      const basis = record(evidence["basis"], "Bewertungsbasis");
+      const rawSpec = record(basis["spec"], "Bewertungsregel");
+      const evidenceAtS = evidence["atS"];
+      const odometer = evidence["odometerMetres"];
+      const condition = evidence["conditionBasisPoints"];
+      const deliveredAtS = record(asset.actualConfiguration, "Ist-Konfiguration")["deliveredAtS"];
+      const [registration] = await tx.select({ atS: vehicleAssetHistoryEvents.atS }).from(vehicleAssetHistoryEvents).where(and(
+        eq(vehicleAssetHistoryEvents.worldId, input.worldId), eq(vehicleAssetHistoryEvents.vehicleId, input.vehicleId),
+        eq(vehicleAssetHistoryEvents.eventType, "registered"),
+      )).orderBy(asc(vehicleAssetHistoryEvents.atS)).limit(1);
+      const introducedAtS = typeof deliveredAtS === "number" ? deliveredAtS : registration?.atS ?? asset.acquiredAtS;
+      if (evidence["schemaVersion"] !== "zugfolge-vehicle-valuation-confirmation/v1"
+        || evidence["worldId"] !== input.worldId || evidence["vehicleId"] !== input.vehicleId
+        || evidence["authorityReleaseId"] !== asset.authorityReleaseId
+        || !Number.isSafeInteger(evidenceAtS) || (evidenceAtS as number) > input.atS || (evidenceAtS as number) < introducedAtS
+        || typeof odometer !== "string" || !/^[0-9]+$/.test(odometer)
+        || typeof basis["baseValueCents"] !== "string" || !/^[0-9]+$/.test(basis["baseValueCents"])
+        || typeof rawSpec["mileageStepMetres"] !== "string" || !/^[0-9]+$/.test(rawSpec["mileageStepMetres"])
+        || !Number.isSafeInteger(condition) || !Number.isSafeInteger(basis["ageYears"])) {
+        throw new CooperationAuthorizationError("Bewertungsfreigabe bindet nicht die tatsächlichen Fahrzeug- und Weltfakten.");
+      }
+      const odometerMetres = asset.odometerMetres ?? BigInt(odometer);
+      const conditionBasisPoints = asset.conditionBasisPoints ?? condition as number;
+      const spec = { ...rawSpec, mileageStepMetres: BigInt(rawSpec["mileageStepMetres"]) } as unknown as VehicleValuationSpec;
+      const ageYears = (basis["ageYears"] as number) + Math.floor((input.atS - (evidenceAtS as number)) / 31_536_000);
+      const valueCents = valueVehicle({ baseValueCents: BigInt(basis["baseValueCents"]), ageYears,
+        odometerMetres, conditionBasisPoints, spec,
+        damageCodes: Array.isArray(asset.damages) ? asset.damages.map((damage) => String(record(damage, "Schaden")["code"] ?? "")) : [] });
+      const valuationBasis = { schemaVersion: "zugfolge-vehicle-valuation-basis/v1", baseValueCents: basis["baseValueCents"],
+        ageYears: basis["ageYears"], atS: evidenceAtS, lastValuedAtS: input.atS, spec: rawSpec, sourceEventSequence: event.sequence };
+      const historyHash = cooperationHash("vehicle-asset-history/v1", {
+        worldId: input.worldId, vehicleId: input.vehicleId, previousHistoryHash: asset.historyHash,
+        sourceEventSequence: event.sequence, valueCents, valuationBasis, atS: input.atS,
+      });
+      const [updated] = await tx.update(vehicleAssets).set({ valuationBasis, valuationSpecId: spec.specId, valueCents,
+        conditionBasisPoints, odometerMetres, historyHash, revision: asset.revision + 1,
+      }).where(and(eq(vehicleAssets.worldId, input.worldId), eq(vehicleAssets.vehicleId, input.vehicleId), eq(vehicleAssets.revision, asset.revision))).returning();
+      if (updated === undefined) throw new CooperationConflictError("Bewertungsübernahme wurde parallel verändert.", "vehicle_revision_conflict");
+      await this.appendVehicleHistory(tx, { worldId: input.worldId, vehicleId: input.vehicleId, eventType: "condition-updated", atS: input.atS,
+        priorHistoryHash: asset.historyHash, resultingHistoryHash: historyHash, details: { reason: "valuation-confirmed", sourceEventSequence: event.sequence, valueCents: valueCents.toString() },
+        idempotencyKey: `vehicle-valuation-evidence:${input.idempotencyKey}` });
+      const disclosure = discloseVehicle(updated);
+      await tx.update(vehicleMarketListings).set({ disclosure, disclosureHash: cooperationHash("vehicle-market-disclosure/v1", disclosure),
+        status: "open", reservedByOperatorId: null, reservedUntilS: null, revision: sql`${vehicleMarketListings.revision} + 1`,
+      }).where(and(eq(vehicleMarketListings.worldId, input.worldId), eq(vehicleMarketListings.vehicleId, input.vehicleId), inArray(vehicleMarketListings.status, ["open", "reserved"])));
+      await appendEvent(tx, input.worldId, "vehicle.valuation-applied", { vehicleId: input.vehicleId, sourceEventSequence: event.sequence,
+        ...commandReceiptPayload(input.idempotencyKey, receipt) }, occurredAt);
+      return updated;
+    });
+  }
+
+  /** Kalenderalter folgt dem unveränderlichen Bewertungsbeleg, niemals dem letzten Eigentümerwechsel. */
+  async advanceVehicleValuations(worldId: string, atS: number): Promise<number> {
+    await worldSimDate(this.db, worldId, atS);
+    return this.db.transaction(async (tx) => {
+      await lockCooperationWorld(tx, worldId);
+      const assets = await tx.select().from(vehicleAssets).where(and(eq(vehicleAssets.worldId, worldId), sql`${vehicleAssets.valuationBasis} is not null`))
+        .orderBy(asc(vehicleAssets.vehicleId));
+      let changed = 0;
+      for (const asset of assets) {
+        if (asset.odometerMetres === null || asset.conditionBasisPoints === null) continue;
+        const basis = record(asset.valuationBasis, "Bewertungsbeleg");
+        const rawSpec = record(basis["spec"], "Bewertungsregel");
+        if (basis["schemaVersion"] !== "zugfolge-vehicle-valuation-basis/v1"
+          || typeof basis["baseValueCents"] !== "string" || !/^[0-9]+$/.test(basis["baseValueCents"])
+          || typeof rawSpec["mileageStepMetres"] !== "string" || !/^[0-9]+$/.test(rawSpec["mileageStepMetres"])
+          || !Number.isSafeInteger(basis["atS"]) || !Number.isSafeInteger(basis["ageYears"])) {
+          throw new CooperationConflictError("Persistierter Bewertungsbeleg ist ungültig.", "valuation_basis_invalid");
+        }
+        const lastValuedAtS = typeof basis["lastValuedAtS"] === "number" ? basis["lastValuedAtS"] : basis["atS"] as number;
+        if (atS < Math.max(basis["atS"] as number, lastValuedAtS, asset.acquiredAtS)) continue;
+        const ageYears = (basis["ageYears"] as number) + Math.floor((atS - (basis["atS"] as number)) / 31_536_000);
+        const spec = { ...rawSpec, mileageStepMetres: BigInt(rawSpec["mileageStepMetres"]) } as unknown as VehicleValuationSpec;
+        const valueCents = valueVehicle({ baseValueCents: BigInt(basis["baseValueCents"]), ageYears,
+          odometerMetres: asset.odometerMetres, conditionBasisPoints: asset.conditionBasisPoints,
+          damageCodes: Array.isArray(asset.damages) ? asset.damages.map((damage) => String(record(damage, "Schaden")["code"] ?? "")) : [], spec });
+        if (valueCents === asset.valueCents) continue;
+        const historyHash = cooperationHash("vehicle-asset-history/v1", {
+          worldId, vehicleId: asset.vehicleId, previousHistoryHash: asset.historyHash,
+          valueCents, valuationSpecId: spec.specId, atS, ageYears,
+        });
+        const [updated] = await tx.update(vehicleAssets).set({ valueCents, valuationBasis: { ...basis, lastValuedAtS: atS }, revision: asset.revision + 1, historyHash })
+          .where(and(eq(vehicleAssets.worldId, worldId), eq(vehicleAssets.vehicleId, asset.vehicleId), eq(vehicleAssets.revision, asset.revision))).returning();
+        if (updated === undefined) throw new CooperationConflictError("Fahrzeugbewertung wurde parallel geändert.", "vehicle_revision_conflict");
+        await this.appendVehicleHistory(tx, { worldId, vehicleId: asset.vehicleId, eventType: "condition-updated", atS,
+          priorHistoryHash: asset.historyHash, resultingHistoryHash: historyHash,
+          details: { reason: "valuation-updated", valueCents: valueCents.toString(), priorValueCents: asset.valueCents?.toString() ?? null,
+            valuationSpecId: spec.specId, ageYears }, idempotencyKey: `vehicle-valuation:${asset.vehicleId}:${asset.revision + 1}` });
+        const disclosure = discloseVehicle(updated);
+        await tx.update(vehicleMarketListings).set({ disclosure, disclosureHash: cooperationHash("vehicle-market-disclosure/v1", disclosure),
+          status: "open", reservedByOperatorId: null, reservedUntilS: null, revision: sql`${vehicleMarketListings.revision} + 1`,
+        }).where(and(eq(vehicleMarketListings.worldId, worldId), eq(vehicleMarketListings.vehicleId, asset.vehicleId), inArray(vehicleMarketListings.status, ["open", "reserved"])));
+        changed += 1;
+      }
+      return changed;
+    });
+  }
+
+  /** Fristablauf ist ein persistierter Weltübergang, keine flüchtige Browserfilterung. */
+  async advanceMarket(worldId: string, atS: number): Promise<readonly VehicleMarketListing[]> {
+    const occurredAt = await worldSimDate(this.db, worldId, atS);
+    return this.db.transaction(async (tx) => {
+      await lockCooperationWorld(tx, worldId);
+      const candidates = await tx.select().from(vehicleMarketListings).where(and(
+        eq(vehicleMarketListings.worldId, worldId), inArray(vehicleMarketListings.status, ["open", "reserved"]),
+        or(lte(vehicleMarketListings.expiresAtS, atS), and(eq(vehicleMarketListings.status, "reserved"), lte(vehicleMarketListings.reservedUntilS, atS))),
+      )).orderBy(asc(vehicleMarketListings.id));
+      const changed: VehicleMarketListing[] = [];
+      for (const listing of candidates) {
+        const status = listing.expiresAtS <= atS ? "expired" : "open";
+        const [updated] = await tx.update(vehicleMarketListings).set({
+          status, reservedByOperatorId: null, reservedUntilS: null, revision: listing.revision + 1,
+        }).where(and(eq(vehicleMarketListings.worldId, worldId), eq(vehicleMarketListings.id, listing.id), eq(vehicleMarketListings.revision, listing.revision))).returning();
+        if (updated === undefined) throw new CooperationConflictError("Marktfrist wurde parallel geändert.", "revision_conflict");
+        await appendEvent(tx, worldId, status === "expired" ? "vehicle-market.expired" : "vehicle-market.reservation-released", {
+          listingId: listing.id, vehicleId: listing.vehicleId, revision: updated.revision,
+          effectiveAtS: status === "expired" ? listing.expiresAtS : listing.reservedUntilS,
+        }, occurredAt);
+        changed.push(updated);
+      }
+      return changed;
+    });
+  }
+
+  /**
+   * Rücklauf erst nach betrieblicher Freigabe. Der Rust-Writer prüft jedes Asset
+   * nochmals; ein einziger Konflikt rollt Angebote, Halter und EVU-Ende zurück.
+   * Unbekannte Verwertungswerte werden niemals durch künstliche Preise ersetzt.
+   */
+  async exitOperator(input: {
+    readonly worldId: string;
+    readonly operatorId: string;
+    readonly actingAccountId?: string;
+    readonly reason: "business-closure" | "insolvency";
+    readonly atS: number;
+    readonly idempotencyKey: string;
+    readonly salePrices?: Readonly<Record<string, bigint>>;
+  }): Promise<readonly VehicleMarketListing[]> {
+    nonEmpty(input.idempotencyKey, "Idempotenzschlüssel");
+    const occurredAt = await worldSimDate(this.db, input.worldId, input.atS);
+    return this.db.transaction(async (tx) => {
+      await lockCooperationWorld(tx, input.worldId);
+      const economy = await loadEconomyWorldStateForUpdate(tx, input.worldId);
+      if (input.reason === "insolvency") {
+        if (economy === undefined || !economy.insolventOperators.has(input.operatorId)) {
+          throw new CooperationAuthorizationError("Insolvenz-Rücklauf braucht die bestätigte Economy-Insolvenz.");
+        }
+        if (input.salePrices !== undefined) throw new CooperationValidationError("Insolvenzpreise dürfen nicht vom Spieler stammen.");
+      } else {
+        if (input.actingAccountId === undefined) throw new CooperationAuthorizationError("Betriebsaufgabe braucht die EVU-Identität.");
+        await assertOperatorAccount(tx, input.worldId, input.operatorId, input.actingAccountId, true);
+        if (economy?.insolventOperators.has(input.operatorId)) throw new CooperationConflictError("Insolventes EVU muss über die Gläubigerverwertung zurücklaufen.", "operator_insolvent");
+        if ((economy?.operatorRestrictions?.get(input.operatorId)?.stage ?? 0) >= 2) {
+          throw new CooperationConflictError("Bestätigte Zahlungs- und Kreditverpflichtungen müssen vor der freiwilligen Aufgabe geklärt werden.", "operator_obligations_unsettled");
+        }
+      }
+      const [operator] = await tx.select().from(operators).where(and(eq(operators.worldId, input.worldId), eq(operators.id, input.operatorId))).limit(1);
+      if (operator === undefined) throw new CooperationNotFoundError("EVU wurde in dieser Welt nicht gefunden.");
+      const receipt = await claimCooperationCommand(tx, input.worldId, input.idempotencyKey, {
+        kind: "operator-exit", targetId: input.operatorId, actingOperatorId: input.operatorId,
+        parameters: { reason: input.reason, salePrices: input.salePrices ?? {} },
+      });
+      if (receipt.replayed) return tx.select().from(vehicleMarketListings).where(and(
+        eq(vehicleMarketListings.worldId, input.worldId), eq(vehicleMarketListings.offeringOperatorId, input.operatorId),
+        sql`left(${vehicleMarketListings.idempotencyKey}, ${`operator-exit-listing:${input.idempotencyKey}:`.length}) = ${`operator-exit-listing:${input.idempotencyKey}:`}`,
+      ));
+      if (operator.lifecycle !== "active") throw new CooperationConflictError("EVU ist bereits beendet.", "operator_exited");
+      if ([...(economy?.contracts?.values() ?? [])].some((contract) => contract.operatorId === input.operatorId && contract.endsAt > input.atS)) {
+        throw new CooperationConflictError("Verkehrsverträge müssen vor der Betriebsaufgabe abgewickelt werden.", "operator_service_contracts_active");
+      }
+      const assets = await tx.select().from(vehicleAssets).where(and(eq(vehicleAssets.worldId, input.worldId), or(
+        eq(vehicleAssets.ownerOperatorId, input.operatorId), eq(vehicleAssets.holderOperatorId, input.operatorId),
+      ))).orderBy(asc(vehicleAssets.vehicleId));
+      const contracts = await tx.select().from(operatorContracts).where(and(eq(operatorContracts.worldId, input.worldId),
+        inArray(operatorContracts.status, ["offered", "accepted", "active", "termination-pending"]),
+        or(eq(operatorContracts.offerorOperatorId, input.operatorId), eq(operatorContracts.offereeOperatorId, input.operatorId)),
+      ));
+      if (contracts.some((contract) => contract.contractType !== "vehicle-rental" && contract.status !== "offered")) {
+        throw new CooperationConflictError("Laufende Leistungsvereinbarungen müssen vor der Betriebsaufgabe abgewickelt werden.", "operator_contracts_active");
+      }
+      const prices = new Map<string, bigint>();
+      for (const asset of assets) {
+        if (asset.ownerOperatorId === input.operatorId && asset.holderOperatorId !== input.operatorId) {
+          throw new CooperationConflictError("Vermietete eigene Fahrzeuge müssen vor der Verwertung zurückgeführt werden.", "vehicle_awaiting_return");
+        }
+        const bindings = record(asset.bindings, "Fahrzeugbindungen");
+        const permittedContracts = new Set(contracts.filter((contract) => contract.contractType === "vehicle-rental").map((contract) => contract.id));
+        if (Object.entries(bindings).some(([key, values]) => key === "contracts"
+          ? (Array.isArray(values) ? values.some((id) => !permittedContracts.has(String(id))) : values !== null)
+          : (Array.isArray(values) ? values.length > 0 : values !== null))) {
+          throw new CooperationConflictError("Flotte muss vor dem Rücklauf betrieblich freigegeben und abgestellt sein.", "vehicle_bound");
+        }
+        if (asset.ownerOperatorId === input.operatorId) {
+          const retiredAt = record(asset.actualConfiguration, "Ist-Konfiguration")["retiredAtS"];
+          if (typeof retiredAt === "number" && retiredAt <= input.atS) continue;
+          const price = input.salePrices?.[asset.vehicleId] ?? asset.valueCents;
+          if (price === null || price === undefined || price <= 0n) throw new CooperationConflictError(
+            `Für Fahrzeug '${asset.vehicleId}' fehlt ein bestätigter Verwertungswert.`, "valuation_unavailable");
+          if (price > 9_223_372_036_854_775_807n) throw new CooperationValidationError("Verwertungspreis überschreitet den sicheren Centbereich.");
+          prices.set(asset.vehicleId, price);
+        }
+      }
+      const listings: VehicleMarketListing[] = [];
+      for (const asset of assets) {
+        const retiredAt = record(asset.actualConfiguration, "Ist-Konfiguration")["retiredAtS"];
+        const alreadyArchived = typeof retiredAt === "number" && retiredAt <= input.atS && asset.ownerOperatorId === asset.holderOperatorId;
+        if (!alreadyArchived) await this.applyFleetTransfer(tx, {
+          worldId: input.worldId, commandId: `operator-exit:${input.idempotencyKey}:${asset.vehicleId}`,
+          vehicleId: asset.vehicleId, atS: input.atS, transferType: "operator-exit",
+          fromOwnerOperatorId: asset.ownerOperatorId, toOwnerOperatorId: asset.ownerOperatorId,
+          fromHolderOperatorId: asset.holderOperatorId, toHolderOperatorId: asset.ownerOperatorId,
+          lessorOperatorId: null, contractId: null, validUntilS: null,
+          transferReceiptHash: cooperationHash("operator-fleet-exit/v1", { ...input, vehicleId: asset.vehicleId }),
+        });
+        const historyHash = cooperationHash("vehicle-asset-history/v1", {
+          worldId: input.worldId, vehicleId: asset.vehicleId, previousHistoryHash: asset.historyHash,
+          reason: input.reason, atS: input.atS, holderOperatorId: asset.ownerOperatorId,
+        });
+        const [updated] = await tx.update(vehicleAssets).set({
+          holderOperatorId: asset.ownerOperatorId, lessorOperatorId: null,
+          bindings: { formations: [], contracts: [], workshop: [], security: [] }, revision: asset.revision + 1, historyHash,
+        }).where(and(eq(vehicleAssets.worldId, input.worldId), eq(vehicleAssets.vehicleId, asset.vehicleId), eq(vehicleAssets.revision, asset.revision))).returning();
+        if (updated === undefined) throw new CooperationConflictError("Flottenrücklauf wurde parallel verändert.", "vehicle_revision_conflict");
+        await this.appendVehicleHistory(tx, {
+          worldId: input.worldId, vehicleId: asset.vehicleId, atS: input.atS,
+          eventType: asset.ownerOperatorId === input.operatorId ? "condition-updated" : "rental-return",
+          priorHistoryHash: asset.historyHash, resultingHistoryHash: historyHash,
+          details: { reason: input.reason, fromHolderOperatorId: asset.holderOperatorId, toHolderOperatorId: asset.ownerOperatorId },
+          idempotencyKey: `operator-exit-history:${input.idempotencyKey}:${asset.vehicleId}`,
+        });
+        await tx.update(vehicleMarketListings).set({ status: "cancelled", reservedByOperatorId: null, reservedUntilS: null,
+          revision: sql`${vehicleMarketListings.revision} + 1`,
+        }).where(and(eq(vehicleMarketListings.worldId, input.worldId), eq(vehicleMarketListings.vehicleId, asset.vehicleId), inArray(vehicleMarketListings.status, ["open", "reserved"])));
+        const price = prices.get(asset.vehicleId);
+        if (price !== undefined) {
+          const disclosure = discloseVehicle(updated);
+          const [listing] = await tx.insert(vehicleMarketListings).values({
+            worldId: input.worldId, vehicleId: asset.vehicleId, offeringOperatorId: input.operatorId, listingType: "sale", priceCents: price,
+            disclosure, disclosureHash: cooperationHash("vehicle-market-disclosure/v1", discloseVehicle(updated)),
+            listedAtS: input.atS, expiresAtS: Number.MAX_SAFE_INTEGER, status: "open",
+            idempotencyKey: `operator-exit-listing:${input.idempotencyKey}:${asset.vehicleId}`,
+          }).returning();
+          listings.push(listing!);
+        }
+      }
+      for (const contract of contracts) await tx.update(operatorContracts).set({
+        status: contract.status === "offered" ? "expired" : "terminated", endedAtS: input.atS,
+        terminatedAtS: input.atS, endReason: input.reason, revision: contract.revision + 1,
+      }).where(and(eq(operatorContracts.worldId, input.worldId), eq(operatorContracts.id, contract.id)));
+      await tx.update(operators).set({ lifecycle: "exited" }).where(and(eq(operators.worldId, input.worldId), eq(operators.id, input.operatorId)));
+      await appendEvent(tx, input.worldId, "vehicle-market.operator-exited", {
+        operatorId: input.operatorId, reason: input.reason, vehicleIds: assets.map((asset) => asset.vehicleId),
+        listingIds: listings.map((listing) => listing.id), ...commandReceiptPayload(input.idempotencyKey, receipt),
+      }, occurredAt);
+      await notifyOperators(tx, { worldId: input.worldId, operatorIds: [input.operatorId], messageType: "vehicle-market.operator-exited",
+        payload: { reason: input.reason, vehicleIds: assets.map((asset) => asset.vehicleId), listingIds: listings.map((listing) => listing.id) },
+        sentAt: occurredAt, idempotencyKey: `operator-exit:${input.idempotencyKey}` });
+      return listings;
+    });
+  }
+
+  async advanceInsolvencies(worldId: string, atS: number): Promise<void> {
+    const economy = await this.db.transaction((tx) => loadEconomyWorldStateForUpdate(tx, worldId));
+    if (economy === undefined) return;
+    for (const operatorId of [...economy.insolventOperators].sort()) {
+      const [operator] = await this.db.select({ lifecycle: operators.lifecycle }).from(operators)
+        .where(and(eq(operators.worldId, worldId), eq(operators.id, operatorId))).limit(1);
+      if (operator?.lifecycle !== "active") continue;
+      try {
+        await this.exitOperator({ worldId, operatorId, reason: "insolvency", atS, idempotencyKey: `insolvency-fleet:${operatorId}` });
+      } catch (error) {
+        if (!(error instanceof CooperationConflictError)) throw error;
+        const sentAt = await worldSimDate(this.db, worldId, atS);
+        await this.db.transaction((tx) => notifyOperators(tx, {
+          worldId, operatorIds: [operatorId], messageType: "vehicle-market.liquidation-pending",
+          payload: { code: error.code, explanation: error.message }, sentAt,
+          idempotencyKey: `liquidation-pending:${operatorId}:${error.code}`,
+        }));
+      }
+    }
   }
 
   async pageListings(worldId: string, options: CooperationPageOptions = {}): Promise<CooperationPage<VehicleMarketListing>> {

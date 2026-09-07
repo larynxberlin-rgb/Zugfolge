@@ -20,6 +20,9 @@ const contract = {
   let browser: Browser;
   let origin: string;
   const requests: { method: string; url: string }[] = [];
+  const companyOperatorId = "33333333-3333-4333-8333-333333333333";
+  let companyEnabled = false;
+  const exitBodies: unknown[] = [];
 
   beforeAll(async () => {
     app = Fastify();
@@ -43,11 +46,16 @@ const contract = {
     });
     app.get("/runtime-config.js", async (_request, reply) => reply.type("text/javascript").send(`globalThis.__ZUGFOLGE_RUNTIME_CONFIG__=${JSON.stringify({ publicWorldId: worldId, gameApiUrl: "/api", keycloakUrl: "http://localhost/keycloak" })};sessionStorage.setItem('zugfolge.oidc.game-web.accessToken','test');sessionStorage.setItem('zugfolge.oidc.game-web.accessTokenExpiresAt',String(Date.now()+3600000));`));
     app.get("/api/public-world-contracts", async () => [contract, { ...contract, worldId: "22222222-2222-4222-8222-222222222222", name: "Fremdes Netz" }]);
-    app.get(`/api/worlds/${worldId}/me/operator-context`, async () => ({ schemaVersion: "zugfolge-operator-context/v1", worldId, operators: [] }));
+    app.get(`/api/worlds/${worldId}/me/operator-context`, async () => ({ schemaVersion: "zugfolge-operator-context/v1", worldId, operators: companyEnabled ? [{ id: companyOperatorId, name: "Testbahn", finance: { mode: "finite", ledgerBalanceCents: "500000", pendingDebitCents: "0", availableCents: "500000" } }] : [] }));
     app.get(`/api/worlds/${worldId}/simulation-time`, async () => ({ atS: 0 }));
-    app.get(`/api/worlds/${worldId}/operators`, async () => []);
+    app.get(`/api/worlds/${worldId}/operators`, async () => companyEnabled ? [{ id: companyOperatorId, worldId, name: "Testbahn" }] : []);
     app.get(`/api/worlds/${worldId}/mailbox`, async () => []);
     app.get(`/api/worlds/${worldId}/vehicle-market/listings`, async () => ({ schemaVersion: "zugfolge-cooperation-page/v1", items: [], nextCursor: null }));
+    app.get(`/api/worlds/${worldId}/vehicle-register`, async () => ({ schemaVersion: "zugfolge-vehicle-register-page/v1", worldId, items: [], nextCursor: null }));
+    app.get(`/api/worlds/${worldId}/operators/${companyOperatorId}/contracts`, async () => ({ schemaVersion: "zugfolge-cooperation-page/v1", items: [], nextCursor: null }));
+    app.get(`/api/worlds/${worldId}/operators/${companyOperatorId}/vehicles`, async () => [{ worldId, vehicleId: "vehicle-442", classDesignation: "Baureihe 442", ownerOperatorId: companyOperatorId, holderOperatorId: companyOperatorId, odometerMetres: null, conditionBasisPoints: null, conditionProfile: {}, damages: [], maintenanceDeadlines: [], bindings: {}, valueCents: "150000000", revision: 1, historyHash: "f".repeat(64) }]);
+    app.get(`/api/worlds/${worldId}/operators/${companyOperatorId}/cooperation-resources`, async () => ({ schemaVersion: "zugfolge-cooperation-resource-catalog/v1", worldId, operatorId: companyOperatorId, fleetRevision: 1, fleetSnapshotHash: "f".repeat(64), trainRuns: [], connectionTrainRuns: [], formations: [], publicEntryFacilities: [], personnelDuties: [], pathReceipts: [], disruptions: [], rentableVehicles: [], assistanceVehicles: [] }));
+    app.post(`/api/worlds/${worldId}/operators/${companyOperatorId}/fleet-exit`, async request => { exitBodies.push(request.body); companyEnabled = false; return { ended: true }; });
     origin = await app.listen({ host: "127.0.0.1", port: 0 });
     const executablePath = [process.env["ZUGFOLGE_BROWSER_EXECUTABLE"], "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe", "C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe", "/usr/bin/google-chrome", "/usr/bin/chromium"].find((path) => path !== undefined && existsSync(path));
     if (executablePath === undefined) throw new Error("Browserprüfung braucht Chrome oder Chromium.");
@@ -120,5 +128,29 @@ const contract = {
       expect(errors).toEqual([]);
       if (process.env["ZUGFOLGE_HINT_SCREENSHOT"] !== undefined) await page.screenshot({ path: process.env["ZUGFOLGE_HINT_SCREENSHOT"], fullPage: true });
     } finally { await context.close(); }
+  });
+
+  it("sendet eine Betriebsaufgabe erst nach der ausdrücklichen Bestätigung und erhält zuvor den Preis", async () => {
+    companyEnabled = true;
+    const context = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+    const page = await context.newPage();
+    try {
+      await page.goto(`${origin}/?view=journey&section=company#company-fleet`);
+      await page.getByText("Betrieb aufgeben", { exact: true }).click();
+      await page.locator('#company-exit-form input[name="price:vehicle-442"]').fill("1.234.567,89");
+      await page.locator('#company-exit-form input[name="confirmExit"]').check();
+      await page.locator('#company-exit-form button[type="submit"]').click();
+      await page.locator("#journey-confirmation").waitFor({ state: "visible" });
+      expect(exitBodies).toHaveLength(0);
+      expect(await page.locator("#confirmation-detail").innerText()).toContain("1.234.567,89 €");
+      expect(await page.locator("#confirmation-detail").innerText()).toContain("dauerhaft beendet");
+      await page.locator("#confirmation-cancel").click();
+      expect(exitBodies).toHaveLength(0);
+      expect(await page.locator('#company-exit-form input[name="price:vehicle-442"]').inputValue()).toBe("1.234.567,89");
+      await page.locator('#company-exit-form button[type="submit"]').click();
+      await page.locator("#confirmation-submit").click();
+      await expect.poll(() => exitBodies.length).toBe(1);
+      expect(exitBodies[0]).toMatchObject({ salePrices: { "vehicle-442": "123456789" }, idempotencyKey: expect.any(String) });
+    } finally { companyEnabled = false; await context.close(); }
   });
 });

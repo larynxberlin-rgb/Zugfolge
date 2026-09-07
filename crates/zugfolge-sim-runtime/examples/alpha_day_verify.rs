@@ -8,7 +8,8 @@ use std::path::PathBuf;
 use serde_json::{Map, Value, json};
 use zugfolge_sim_runtime::operational_runtime::{
     COMMAND_SCHEMA, RESTORE_SCHEMA, apply_operational_simulation_command,
-    initialize_operational_simulation, restore_operational_simulation,
+    initialize_operational_simulation, release_operational_infrastructure_cache,
+    restore_operational_simulation,
 };
 
 const SERVICE_DAYS: usize = 3;
@@ -224,6 +225,12 @@ fn apply(
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
+    let result = run();
+    release_operational_infrastructure_cache();
+    result
+}
+
+fn run() -> Result<(), Box<dyn Error>> {
     let deployment_path = std::env::args()
         .nth(1)
         .ok_or("Aufruf: alpha_day_verify DEPLOYMENT.json")?;

@@ -52,7 +52,21 @@ export interface EconomyRelease {
   readonly rates: EconomyRates;
   readonly rules: EconomyRules;
   readonly tenderProfiles: readonly TenderProfile[];
+  readonly fareInspection?: FareInspectionEconomyV1;
   readonly checksum: string;
+}
+
+/** Vollständiger gehashter M15-Vertrag; fachliche Berechnung und Validierung erfolgen in Rust. */
+export interface FareInspectionEconomyV1 {
+  readonly schemaVersion: "fare-inspection-economy/v1";
+  readonly minimumClaimCents: bigint; readonly ordinaryFareMultiplier: number; readonly reducedClaimCents: bigint;
+  readonly proofWindowDays: number; readonly dayLengthMs: number; readonly handlingCostCents: bigint;
+  readonly proofHandlingCostCents: bigint; readonly policeHandlingCostCents: bigint;
+  readonly fullPaymentBasisPoints: number; readonly partialPaymentBasisPoints: number;
+  readonly partialPaymentShareBasisPoints: number; readonly paymentDelayMs: number; readonly writeOffDelayMs: number;
+  readonly validProofSubmissionBasisPoints: number; readonly validProofDelayMs: number;
+  readonly premiumMultiplierBasisPoints: number; readonly positiveDailyCapBasisPoints: number;
+  readonly revenueAllocation: "uniform_settled_service_interval/v1";
 }
 
 function canonical(value: unknown): string {
@@ -75,7 +89,8 @@ export function buildEconomyRelease(input: Omit<EconomyRelease, "schema" | "chec
   }
   for (const rate of Object.values(input.rates)) if (typeof rate === "bigint" ? rate < 0n : rate < 0) throw new Error("Kostensätze dürfen nicht negativ sein.");
   for (const rule of [...Object.values(input.rules).flatMap((value) => typeof value === "object" ? Object.values(value) : [value])]) if (typeof rule === "bigint" ? rule < 0n : rule < 0) throw new Error("Wirtschaftsregeln dürfen nicht negativ sein.");
-  const body = { schema: "economy-release/v1" as const, version: input.version, rates: input.rates, rules: input.rules, tenderProfiles: [...input.tenderProfiles].sort((a, b) => compareUtf8(a.id, b.id)) };
+  const body = { schema: "economy-release/v1" as const, version: input.version, rates: input.rates, rules: input.rules, tenderProfiles: [...input.tenderProfiles].sort((a, b) => compareUtf8(a.id, b.id)),
+    ...(input.fareInspection === undefined ? {} : { fareInspection: input.fareInspection }) };
   return Object.freeze({ ...body, checksum: createHash("sha256").update(canonical(body)).digest("hex") });
 }
 

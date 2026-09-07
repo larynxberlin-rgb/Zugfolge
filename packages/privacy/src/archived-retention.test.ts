@@ -18,23 +18,24 @@ const NEXT_WORLD = "33333333-3333-4333-8333-333333333520";
 const NOW = new Date("2026-01-02T00:00:00Z");
 
 /** Ein echter alter Migrationsstand, kein umgeschriebener aktueller Sollvertrag. */
-async function schema33Migrations(): Promise<string> {
+async function schema33Migrations(count = 33): Promise<string> {
   const folder = await mkdtemp(join(tmpdir(), "zugfolge-privacy-archive33-"));
   await mkdir(join(folder, "meta"));
   const journal = JSON.parse(await readFile(join(MIGRATIONS_FOLDER, "meta", "_journal.json"), "utf8")) as { entries: { tag: string }[] };
-  const entries = journal.entries.slice(0, 33);
+  const entries = journal.entries.slice(0, count);
   await writeFile(join(folder, "meta", "_journal.json"), JSON.stringify({ ...journal, entries }));
   await Promise.all(entries.map(({ tag }) => copyFile(join(MIGRATIONS_FOLDER, `${tag}.sql`), join(folder, `${tag}.sql`))));
   return folder;
 }
 
-it("belegt #520: historische Cutover-PII laesst sich nicht gleichzeitig purgen und unter demselben Vollzeilenseal validieren", async () => {
+it("bewahrt den historischen Schema-36-Gegenbeweis vor Einführung der Schema-37-Redaktionsbrücke", async () => {
   const bindingsUrl = new URL("../../../tools/alpha-ops/database-rollback-binding.mjs", import.meta.url);
   const { worldFinalHistorySeal, worldCutoverReceiptHash, validateStoredWorldCutoverReceipt } = await import(bindingsUrl.href);
   const historical = { schemaVersion: "zugfolge-world-final-history-seal/v1" };
   const client = new PGlite();
   const db = drizzle(client);
   const folder33 = await schema33Migrations();
+  const folder36 = await schema33Migrations(36);
   const adapter = { unsafe: async (source: string, parameters: unknown[] = []) => (await client.query(source, parameters)).rows };
   try {
     await migrate(db, { migrationsFolder: folder33 });
@@ -55,7 +56,7 @@ it("belegt #520: historische Cutover-PII laesst sich nicht gleichzeitig purgen u
     const [storedReceipt] = (await client.query("select * from world_cutover_receipts where candidate_world_id=$1", [NEXT_WORLD])).rows;
     expect(validateStoredWorldCutoverReceipt(storedReceipt).receiptHash).toBe(receiptHash);
 
-    await migrate(db, { migrationsFolder: MIGRATIONS_FOLDER });
+    await migrate(db, { migrationsFolder: folder36 });
     expect(await worldFinalHistorySeal(adapter, WORLD, historical)).toBe(before);
     const blocked = await purgeExpiredAccountData(db, NOW);
     expect(blocked.purgedAccountIds).toEqual([]);
@@ -90,5 +91,6 @@ it("belegt #520: historische Cutover-PII laesst sich nicht gleichzeitig purgen u
   } finally {
     await client.close();
     await rm(folder33, { recursive: true, force: true });
+    await rm(folder36, { recursive: true, force: true });
   }
 }, 60_000);

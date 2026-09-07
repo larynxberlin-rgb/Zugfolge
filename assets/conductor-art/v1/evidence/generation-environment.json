@@ -1,0 +1,51 @@
+{
+  "schemaVersion": "conductor-art-generation-evidence/v1",
+  "source": "sources/environment.png",
+  "sourceSha256": "79442f78a68f77c17cd08fa761658be537289e59522d244609bcf558e0fed610",
+  "tool": "image_gen.imagegen",
+  "prompt": "Use case: stylized-concept. Asset type: final original pixel-art environment tilesheet for Zugfolge. Exact1536x1024transparentPNG. Threecolumns bythreerows, eachcell512x~341pixels,9isolatedmotifs with ampletransparentgaps. Columns rural,suburban,urban; rows vegetation,road,building. Strict small flat pixel palette #101419 #181e25 #202830 #303b46 #f5f7fa #b5c0cc #93a2b1 #e5233d #7cddba #f5bf65 #e8b894 #be8060 #805342 #382c28. Restrained originalGerman railwayatmosphere, orthogonaloverheadcamera, northsouth/eastwestalignedonly, no isometric/perspective. Row1: rural clustereddeciduoustrees, suburban hedges/smallgardens, urbanstreettreeplanters. Row2:rural narrowpaved countryroadwithgrassverge,suburbanstreetwithsidewalk andredroofbus shelter,urbanbroadroadwithmedianandpedestrianstripes. Row3:ruralbarnwithreddishtileroof,suburbanhousewithroof/chimney/fencedgarden,urbanperimeterapartmentblockwithcourtyardandroof details. Matchgraphitearchitecture,mutednaturalgreens,mintforvegetationhighlights,warmbrickred accents. Hardpixelart edges,nosoftshadows outsideobjects,noantialiasing,no gradient,no logos,text,letters,numbers,trainsor people. No borrowed game motifs. Eachmotif iscomplete standalone reusable tilegroup,notroughconcept.",
+  "metadata": {
+    "container": "PNG/caBX/JUMBF/c2pa.actions.v2",
+    "cborSha256": "593d1456d51672f78e73ecdabfac519dfd5a7dbb3be77f3e7808bbd95cf9a4bb",
+    "actions": {
+      "actions": [
+        {
+          "action": "c2pa.created",
+          "when": "2026-09-05T00:00:00Z",
+          "softwareAgent": {
+            "name": "gpt-image",
+            "version": "2.0"
+          },
+          "digitalSourceType": "http://cv.iptc.org/newscodes/digitalsourcetype/trainedAlgorithmicMedia"
+        },
+        {
+          "action": "c2pa.converted",
+          "when": "2026-09-05T00:00:00Z"
+        },
+        {
+          "action": "c2pa.watermarked.unbound",
+          "when": "2026-09-05T00:00:00Z"
+        }
+      ],
+      "allActionsIncluded": false
+    },
+    "softwareAgent": {
+      "name": "gpt-image",
+      "version": "2.0"
+    },
+    "interpretation": "Providerdeklarierte Modellangabe; keine Prüfung der C2PA-Signatur oder Aussage über interne Gewichte."
+  },
+  "technicalProcessing": {
+    "script": "tools/art-atlas/prepare.py",
+    "pillowVersion": "12.3.0",
+    "operations": [
+      "crop",
+      "edge-connected-neutral-checkerboard-removal",
+      "alpha-threshold-128",
+      "nearest-neighbor-resize",
+      "fixed-palette-no-dither",
+      "atlas-pack"
+    ],
+    "authorization": "Auftraggeber: Ja, technisch aufbereiten (06.09.2026)."
+  }
+}

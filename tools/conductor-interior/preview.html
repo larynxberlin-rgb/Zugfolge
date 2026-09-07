@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="color-scheme" content="dark"><title>Zugfolge · Innenraum prüfen</title>
+  <link rel="stylesheet" href="/preview.css"><script type="module" src="/preview.mjs"></script>
+</head>
+<body>
+  <a class="skip" href="#main">Zur Innenraumprüfung</a>
+  <header><a class="wordmark" href="/"><img src="/brand.svg" alt=""><span>ZUGFOLGE<small>DEINE BAHN. DEINE WELT.</small></span></a><span class="mode">Konfigurationsprüfung · keine laufende Schaffnersitzung</span></header>
+  <main id="main" data-state="loading">
+    <section class="intro"><div><p class="eyebrow">SCHAFFNERMODUS / M15.4</p><h1>Jeder Platz hat seinen Ort.</h1><p>Den aus der Fahrzeugkonfiguration erzeugten Innenraum begehen.</p></div><span id="source-badge" class="badge">Prüfstand wird geladen</span></section>
+    <p id="status" role="status" aria-live="polite">Lade die tatsächlichen Geometrien.</p>
+    <div class="workspace">
+      <aside class="configuration" aria-label="Fahrzeugkonfiguration">
+        <label>Zugverband<select id="case"></select></label><p id="case-description" class="small"></p>
+        <div id="capacity" class="capacity"></div>
+        <div id="vehicle-configs"></div>
+        <details><summary>Quelle & Bindung</summary><dl id="evidence"></dl></details>
+      </aside>
+      <section class="layout-panel" aria-labelledby="layout-title">
+        <div class="section-heading"><div><h2 id="layout-title">Innenraum</h2><p id="layout-subtitle" class="small">Kästen und Innenebenen aus der geprüften Konfiguration.</p></div><span id="layout-badge" class="badge">Noch kein Layout</span></div>
+        <div id="blocked" class="blocked" hidden><h3>Einstieg nicht möglich</h3><p id="blocked-reason"></p><code id="blocked-code"></code></div>
+        <div id="valid-layout" hidden>
+          <div class="view-controls"><label>Wagenkasten<select id="body"></select></label><label>Ansicht<select id="deck"></select></label><fieldset><legend>Pixelzoom</legend><div id="zooms"><button data-zoom="1" aria-pressed="true">1×</button><button data-zoom="2" aria-pressed="false">2×</button><button data-zoom="3" aria-pressed="false">3×</button><button data-zoom="4" aria-pressed="false">4×</button></div></fieldset><label class="check"><input id="network" type="checkbox" checked> Wege zeigen</label></div>
+          <div class="viewport" id="viewport" tabindex="0" aria-label="Innenraum mit echten Millimetermaßen, innen scrollbar. Pfeiltasten bewegen die Prüffigur entlang benachbarter geprüfter Wege."><canvas id="layout" width="900" height="260" aria-label="Konfigurationsgetreuer Innenraum mit Plätzen, Sonderflächen und Laufwegen"></canvas></div>
+          <div class="legend"><span><i class="seat"></i>Sitzplatz</span><span><i class="standing"></i>Stehplatz</span><span><i class="special"></i>Sonderfläche</span><span><i class="path"></i>Geprüfter Weg</span><span><i class="current"></i>Prüffigur</span></div>
+          <p class="small caption">32 Pixel pro Meter · ganzzahliger Zoom · Flächen zeigen die tatsächliche Kapazität. Ansicht wechseln bewegt die Figur nicht.</p>
+          <div class="walk-controls"><label>Erreichbaren Punkt wählen<select id="destination"></select></label><button id="walk" class="primary">Zum Punkt gehen</button><button id="follow">Figur zeigen</button><label class="check"><input id="wheelchair" type="checkbox"> Ohne Treppen prüfen</label></div>
+          <p id="movement" role="status" aria-live="polite">Die Prüffigur steht am bestätigten Einstieg.</p>
+          <div class="step-controls" aria-label="Entlang des Wegenetzes bewegen"><button data-direction="west" aria-label="Im Bild nach links gehen">←</button><button data-direction="north" aria-label="Im Bild nach oben gehen">↑</button><button data-direction="south" aria-label="Im Bild nach unten gehen">↓</button><button data-direction="east" aria-label="Im Bild nach rechts gehen">→</button><button id="transition">Treppe oder Übergang benutzen</button></div>
+          <details id="collision-details"><summary>Kollisionsprüfung</summary><p class="small">Prüft einen gezielten Weg in eine echte Sitz- oder Wandfläche. Eine Ablehnung verändert die Figur nicht.</p><button id="collision">Kollidierenden Weg prüfen</button><p id="collision-result" role="status"></p></details>
+        </div>
+      </section>
+    </div>
+    <footer><span>Fiktive konfigurierte Spielassets · echter M5- und Rust-Pfad</span><span>Keine Baureihenmessung · keine betriebliche Zuglaufzuordnung</span></footer>
+  </main>
+</body>
+</html>

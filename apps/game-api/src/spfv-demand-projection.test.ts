@@ -39,16 +39,17 @@ describe("Bestätigte SPFV-Fahrten speisen die Nachfrage", () => {
 
   // Explicit transport fixtures: native Rust tests separately prove acceptance,
   // actual profile stop times, baseline competition and future-only replacement.
-  async function submitted(id: string, departure = 3_600, fareCents = "1200", corruptPreview = false) {
+  async function submitted(id: string, departure = 3_600, fareCents = "1200", corruptPreview = false, flexibility = 0, shift = 0) {
     const draft = { lineId: "line", name: "Linie", stopIds: ["a", "c"], headwayS: 3_600, fareCents,
-      formationId: "formation", validFromS: departure, validUntilS: departure + 3_600, referenceTrainId: "reference" };
+      formationId: "formation", validFromS: departure, validUntilS: departure + 3_600, referenceTrainId: "reference",
+      ...(flexibility === 0 ? {} : { departureFlexibilityS: flexibility }) };
     const body = { schemaVersion: "zugfolge-spfv-preview/v1", worldId: WORLD, operatorId: OPERATOR, lineId: "line", draft,
       fleetStateHash: "f".repeat(64), capacityFacts: { standardSeats: 100, premiumSeats: 20, bicycleSpaces: 8, wheelchairSpaces: 2 } };
     const previewId = demandHash(body);
     await event("spfv.preview", { ...body, previewId, accountId, ...(corruptPreview ? { capacityFacts: { standardSeats: 9999 } } : {}) });
     const payload = { schemaVersion: "planning.path-request/v4", worldId: WORLD, operatorId: OPERATOR, requestingAccountId: accountId,
       trainId: id, formationId: "formation", fleetStateHash: "f".repeat(64), trainCategory: "long-distance", desiredDepartureS: departure,
-      serviceWindow: { validFromS: departure, validUntilS: departure + 1 } };
+      serviceWindow: { validFromS: departure, validUntilS: departure + Math.min(flexibility, 3_599) + 1 } };
     const [request] = await db.insert(simulationCommands).values({ worldId: WORLD, requestingAccountId: accountId,
       idempotencyKey: `request-${id}`, commandType: "planning.path-request", payload, submittedAt: new Date(0), status: "processed", resultEventSequence: sequence + 3 }).returning();
     const [coordinate] = await db.insert(simulationCommands).values({ worldId: WORLD, requestingAccountId: accountId,
@@ -58,7 +59,7 @@ describe("Bestätigte SPFV-Fahrten speisen die Nachfrage", () => {
       submission: { worldId: WORLD, operatorId: OPERATOR, lineId: "line", previewId, status: "submitted", planningRequestIds: [request!.id], planningCoordinationId: coordinate!.id } });
     return { request: request!, coordinate: coordinate!, payload,
       reservation: { train: { id }, serviceWindow: payload.serviceWindow,
-        passengerStops: [{ stationId: "a", arrivalS: departure, departureS: departure }, { stationId: "c", arrivalS: departure + 300, departureS: departure + 300 }] } };
+        passengerStops: [{ stationId: "a", arrivalS: departure + shift, departureS: departure + shift }, { stationId: "c", arrivalS: departure + shift + 300, departureS: departure + shift + 300 }] } };
   }
 
   async function committed(reservations: Record<string, unknown>, revision = 1) {
@@ -82,6 +83,16 @@ describe("Bestätigte SPFV-Fahrten speisen die Nachfrage", () => {
     expect(await loadCommittedSpfvServices(db, WORLD, REFERENCE)).toEqual(loaded);
     expect(query).toHaveBeenCalledTimes(1);
     query.mockRestore();
+  });
+
+  it("übernimmt die zugeteilte Abfahrtsverschiebung nur innerhalb des bestätigten Spielraums", async () => {
+    const shifted = await submitted("shifted", 3_600, "1200", false, 1_800, 120);
+    await committed({ shifted: shifted.reservation });
+    const loaded = await loadCommittedSpfvServices(db, WORLD, REFERENCE);
+    expect(loaded.services[0]).toMatchObject({ stops: [{ departureMs: 3_720_000 }, { arrivalMs: 4_020_000 }] });
+    await committed({ shifted: { ...shifted.reservation, passengerStops: [
+      { stationId: "a", arrivalS: 5_401, departureS: 5_401 }, { stationId: "c", arrivalS: 5_701, departureS: 5_701 }] } }, 2);
+    await expect(loadCommittedSpfvServices(db, WORLD, REFERENCE)).rejects.toThrow("Abfahrtsfenster");
   });
 
   it.each(["pending", "failed"] as const)("nimmt %s Anträge trotz Vorschau und Beleg nicht als Angebot auf", async (status) => {

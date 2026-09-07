@@ -521,7 +521,10 @@ describe("aktive World-Deployment-Runtime", () => {
   it("entfernt eine dauerhaft abgeschlossene Welt idempotent aus allen Scheduler- und Authority-Projektionen", () => {
     const deployment = signed();
     const runtime = deploymentRuntime({ worldId: WORLD_ID });
+    expect(runtime.planningInfrastructureForWorld(WORLD_ID)).toBeUndefined();
     runtime.register(deployment, EPOCH);
+    expect(runtime.planningInfrastructureForWorld(WORLD_ID)).toEqual(deployment.deployment.planning.infrastructureRelease);
+    expect(runtime.planningInfrastructureForWorld("foreign-world")).toBeUndefined();
 
     expect(runtime.worldIds()).toEqual([WORLD_ID]);
     expect(runtime.realtimeWorldIds()).toEqual([WORLD_ID]);
@@ -531,6 +534,7 @@ describe("aktive World-Deployment-Runtime", () => {
 
     runtime.releaseWorld(WORLD_ID);
     runtime.releaseWorld(WORLD_ID);
+    expect(runtime.planningInfrastructureForWorld(WORLD_ID)).toBeUndefined();
 
     expect(runtime.worldIds()).toEqual([]);
     expect(runtime.realtimeWorldIds()).toEqual([]);
@@ -602,6 +606,11 @@ describe("aktive World-Deployment-Runtime", () => {
         } }],
       } },
     };
+    const native = deployment.deployment.regionalSimulation;
+    const withDays = { ...deployment, deployment: { ...deployment.deployment, regionalSimulation: { ...native,
+      serviceDayPolicy: { schemaVersion: "zugfolge-operational-service-day-policy/v1" as const, epochServiceDay: "2026-09-05", dayLengthMs: 86400000 as const,
+        services: [{ trainRunId: original.id, operatorId: original.operatorId, firstDayIndex: 0, scheduledDepartureMs: original.scheduledDepartureMs!, binding: native.trains[0]!.serviceOutcome }],
+        vehicleCostPolicy: null } } } };
     const runtime = deploymentRuntime();
     runtime.register(deployment, EPOCH);
     const commands = runtime.at(WORLD_ID, "mitteldeutschland-b", 0);
@@ -610,6 +619,11 @@ describe("aktive World-Deployment-Runtime", () => {
       serviceId: original.id, serviceRunId: `${original.id}:service-day:2026-09-06`, serviceDay: "2026-09-06",
       scheduledArrivalMs: 176_400_000, requiredSeats: null, connectionAssessment: "unavailable",
     } } } });
+    const dayRuntime = deploymentRuntime();
+    dayRuntime.register(withDays, EPOCH);
+    expect(dayRuntime.at(WORLD_ID, "mitteldeutschland-b", 0)[0]?.command).toEqual({ type: "open-service-day", dayIndex: 0 });
+    const following = [...dayRuntime.dueBoundaries(WORLD_ID, "mitteldeutschland-b", 0, 86400000)];
+    expect(following.at(-1)?.commands[0]?.command).toEqual({ type: "open-service-day", dayIndex: 1 });
   });
 
   it("uebergibt eine Formation zwischen mehreren Tagesfahrten und ueber Mitternacht exakt", () => {

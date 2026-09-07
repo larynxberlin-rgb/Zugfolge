@@ -177,18 +177,18 @@ Er erzeugt das vollständige Schema-31-Cold-Backup-/Restore-Paar und bindet den
 Schema-29-Ausgangsdrill transitiv in
 `$PRODUCTION_RECOVERY_ID.cold-qualified.json`.
 
-Nur dieser Modus darf danach die initiale 0032/0033-DDL bis Zielkopf 33 starten:
+Nur dieser Modus darf danach die initiale DDL von 0032 bis 0038 bis Zielkopf 38 starten:
 
 ```bash
 bash tools/alpha-ops/compose-with-map-release-env.sh \
-  --schema35-after-cold -f /opt/zugfolge/compose.yml
+  --schema38-after-cold -f /opt/zugfolge/compose.yml
 ```
 
 `game-schema33-migrate` prüft beide Receipt-Hashes, Containerinventar, den unveränderten
 Schema-31-Game-Kopf, die Odoo-Datenbank und den Live-Filestore erneut. Erst
 danach wird `packages/db/dist/migrate.js` im selben Prozess gestartet und der
-Wrapper verlangt exakt 33 Migrationen einschließlich
-`0033_operational_command_receipt_ledger`. Dessen weltgebundener Ledger trägt
+Wrapper verlangt exakt 38 Migrationen einschließlich
+`0038_persistent_vehicle_registry`. Der mit Migration 0033 eingeführte weltgebundener Ledger trägt
 den unveränderlichen `initialization_hash`; ein eigener BEFORE-UPDATE-Trigger
 verweigert jede nachträgliche V2-Reinitialisierung, während der AFTER-Trigger
 auch erfolgreiche Schema-31-Altwriter-Kommandos dauerhaft in den Ledger
@@ -202,17 +202,17 @@ Hostpfade neu, getrennt, nicht verschachtelt und symlinkfrei sein; das
 
 ```bash
 bash tools/alpha-ops/compose-with-map-release-env.sh \
-  --keycloak-after-schema35 -f /opt/zugfolge/compose.yml
+  --keycloak-after-schema38 -f /opt/zugfolge/compose.yml
 ```
 
-Dieser einzige Produktionsmodus prüft erneut den exakten Schema-33-Kopf,
+Dieser einzige Produktionsmodus prüft erneut den exakten Schema-38-Kopf,
 erstellt das vollständige Shared-Database-Backup, stellt es in der isolierten
 Keycloak-Prüfdatenbank wieder her und führt anschließend `bind-backup`,
 `plan-up`, `up` und `preflight-up` aus. Der letzte Schritt akzeptiert nur einen
 zum Live-Endpunkt und Objektkatalog passenden Up- oder Up-Recover-Receipt; ein
 Fresh-Bootstrap-Receipt ist hier unzulässig. Bricht der Prozess nach dem
 DB-Commit, aber vor dem Receipt ab, wird ausschließlich derselbe Plan über
-`--keycloak-recover-after-schema35` wieder aufgenommen. Jeder andere Fehler
+`--keycloak-recover-after-schema38` wieder aufgenommen. Jeder andere Fehler
 lässt alle Writer gestoppt.
 
 Erst danach folgt der Hot-Drill:
@@ -222,8 +222,8 @@ bash tools/alpha-ops/compose-with-map-release-env.sh \
   --prepare-v2-hot -f /opt/zugfolge/compose.yml
 ```
 
-Vor dem ersten Dump prüft `--prepare-v2-hot` Schema 33 und den installierten
-Keycloak-Up-Vertrag erneut. Er erzeugt dann neue Schema-33-Dumps und
+Vor dem ersten Dump prüft `--prepare-v2-hot` Schema 38 und den installierten
+Keycloak-Up-Vertrag erneut. Er erzeugt dann neue Schema-38-Dumps und
 Operationsbelege, einen unabhängigen
 Game-Prüfrestore, die beiden tatsächlichen create-only V1-Recovery-Ziele samt
 Odoo-Filestore sowie `zugfolge-database-backup-manifest/v1`,
@@ -440,7 +440,7 @@ harter Fehler.
 
 Der attestierte V1-Anwendungsrückweg ist keine Keycloak-Down-Migration. Sein
 Rollback-Compose startet das alte Keycloak-Image gegen den unveränderten
-Schema-33-Hot-Restore deshalb ausschließlich mit `KC_DB_SCHEMA=keycloak`.
+Schema-38-Hot-Restore deshalb ausschließlich mit `KC_DB_SCHEMA=keycloak`.
 `KC_DB_SCHEMA=public` bleibt auf den getrennten, portlosen
 `schema29-keycloak-runtime` des realen Schema-29-Ausgangsdrills begrenzt; ein
 Rollbackstart mit `public` gegen das Hot-Recovery-Ziel ist vertragswidrig und
