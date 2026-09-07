@@ -40,6 +40,8 @@ import {
   DATABASE_AUTHORITATIVE_TABLES_SCHEMA_28_TO_32_SET_SHA256,
   DATABASE_AUTHORITATIVE_TABLES_SCHEMA_33_ADDITIONS,
   DATABASE_AUTHORITATIVE_TABLES_SCHEMA_34,
+  DATABASE_AUTHORITATIVE_TABLES_SCHEMA_35,
+  DATABASE_AUTHORITATIVE_TABLES_SCHEMA_36,
 } from "./database-cutover-schema-contract.mjs";
 
 const DATABASE_URL = "postgresql://operator:secret@postgres:5432/zugfolge";
@@ -441,6 +443,15 @@ test("Schema-31 bleibt ohne 0033-Ledger kompatibel und Schema-33 bindet Relation
   assert.equal(validateGameDatabaseCatalog(schema33Relations, schema33Routines, 33), "schema-31-to-33");
   assert.equal(validateGameDatabaseCatalog([...DATABASE_AUTHORITATIVE_TABLES_SCHEMA_34, "world_cutover_receipts", "zugfolge_database_identity"].sort(), schema33Routines, 34), "schema-34");
   assert.throws(() => validateGameDatabaseCatalog(schema33Relations, schema33Routines, 34), /Relationssatz/u);
+  const schema36Relations = [...DATABASE_AUTHORITATIVE_TABLES_SCHEMA_36, "world_cutover_receipts", "zugfolge_database_identity"].sort();
+  const schema36Routines = [...schema33Routines, { name: "protect_vehicle_registry_history", arguments: "" }]
+    .sort((left, right) => left.name.localeCompare(right.name, "en"));
+  assert.equal(validateGameDatabaseCatalog([...DATABASE_AUTHORITATIVE_TABLES_SCHEMA_35, "world_cutover_receipts", "zugfolge_database_identity"].sort(), schema33Routines, 35), "schema-35");
+  assert.equal(validateGameDatabaseCatalog(schema36Relations, schema36Routines, 36), "schema-36");
+  assert.throws(() => validateGameDatabaseCatalog(schema36Relations.filter((name) => name !== "vehicle_registry_events"), schema36Routines, 36), /Relationssatz/u);
+  assert.throws(() => validateGameDatabaseCatalog(schema36Relations, schema33Routines, 36), /Routinenkatalog/u);
+  assert.throws(() => validateGameDatabaseCatalog(schema36Relations, schema36Routines, 35), /Relationssatz/u);
+  assert.throws(() => validateGameDatabaseCatalog(schema36Relations, schema36Routines, 37), /nicht freigegeben/u);
   assert.equal(DATABASE_AUTHORITATIVE_TABLES_SCHEMA_28_TO_32.length, 51);
   assert.equal(DATABASE_AUTHORITATIVE_TABLES_SCHEMA_28_TO_32_SET_SHA256, "9a16cf2644ff1e457b0b77e8f42451d202bee48a2ebcf61e966708fd5dd952b3");
   assert.deepEqual(DATABASE_AUTHORITATIVE_TABLES_SCHEMA_33_ADDITIONS, ["regional_simulation_command_receipts"]);

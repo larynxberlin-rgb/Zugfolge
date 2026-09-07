@@ -83,12 +83,15 @@ von Fahrzeugen und das Ändern oder Löschen bestehender Historienereignisse.
 Aktuelle Registerfakten werden zusammen mit jedem bestätigten Fleet-Commit
 geschrieben; Zustandshash und verkettete Historienhashes binden die Belege.
 
-Bereits bestehende Welten werden vor dem ersten neuen Fleet-Commit und beim
+Bereits bestehende aktive Welten werden vor dem ersten neuen Fleet-Commit und beim
 Registerzugriff aus ihren gespeicherten Fleet-Checkpoints chronologisch
 nachgeführt. Die bestätigten Revisionen bleiben die Quelle; es werden keine
 vermuteten Zwischenereignisse ergänzt. Die Register- und Historienendpunkte
 verwenden weltgebundene Cursor und liefern alle Seiten ohne Abschneiden alter
 Einträge. Der direkte Spielerlink lautet `#vehicle-<kodierte Fahrzeugkennung>`.
+Archivierte Welten behalten ihren versiegelten Stand. Bereits vorhandene
+Fahrzeugpässe bleiben lesbar; vor Einführung des Registers geschlossene
+Archive werden nicht nachträglich umgeschrieben.
 
 Der Rust-Marktvertrag heißt nun `persistent-vehicle-market/v2`: Sein Hash
 bindet zusätzlich die vollständigen ursprünglichen Fahrzeugfakten. Der

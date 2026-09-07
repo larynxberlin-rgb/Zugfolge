@@ -461,6 +461,22 @@ describe("Rust-autoritatives M5-Producer-Gateway", () => {
     expect(await db.select().from(vehicleRegistryEvents)).toHaveLength(4);
   });
 
+  it("schreibt archivierte Altwelten beim Registerzugriff nicht nachtraeglich um", async () => {
+    const initial = initialized();
+    await db.insert(fleetWorldCheckpoints).values({
+      worldId: WORLD, revision: initial.state.revision, stateSchema: initial.state.schemaVersion,
+      state: initial.state, stateHash: initial.stateHash, snapshotHash: initial.snapshotHash,
+      producedAt: new Date(0), ingestedAt: new Date(0),
+    });
+    await db.update(worlds).set({ lifecycleStatus: "archived" }).where(eq(worlds.id, WORLD));
+    await expect(backfillFleetVehicleRegistry(db, WORLD)).resolves.toBeUndefined();
+    expect(await db.select().from(vehicleRegistryEntries)).toHaveLength(0);
+    expect(await db.select().from(vehicleRegistryEvents)).toHaveLength(0);
+    const [checkpoint] = await db.select().from(fleetWorldCheckpoints).where(eq(fleetWorldCheckpoints.worldId, WORLD));
+    expect(checkpoint?.state).toEqual(initial.state);
+    await expect(persistFleetVehicleRegistry(db, initial.state, initial.stateHash)).rejects.toThrow();
+  });
+
   it("holt vor dem ersten neuen Fleet-Commit alle historischen Fahrzeugereignisse nach", async () => {
     const initial = initialized();
     const previous = applied(command(initial));

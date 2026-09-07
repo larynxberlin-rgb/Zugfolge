@@ -107,10 +107,15 @@ historische Projektion. Es gibt keinen automatischen Hashvergleich mit
 ausgeblendeten Fakten und keine Aenderung archivierter Zeilen.
 
 Der gestufte neue Installationspfad endet nach dem kalten Schema-31-Nachweis mit
-`--schema35-after-cold`, `--keycloak-after-schema35` und `--prepare-v2-hot` auf
-exakt Schema 35. Die aelteren `schema33`-Flag-/Dienstnamen sind
+`--schema36-after-cold`, `--keycloak-after-schema36` und `--prepare-v2-hot` auf
+exakt Schema 36. Die aelteren `schema33`-, `schema34`- und `schema35`-Flags
+sowie die bisherigen `schema33`-Dienstnamen sind
 Kompatibilitaetsaliasnamen fuer diesen aktuellen Gatepfad. Der Wrapper prueft
-nach der Migration und vor Keycloak/Hot-Backup immer den tatsaechlichen Stand 35.
+nach der Migration und vor Keycloak/Hot-Backup immer den tatsaechlichen Stand 36.
+Migration 0036 ergänzt das persistente
+öffentliche Fahrzeugregister und dessen unveränderliche Ereignisgeschichte.
+Die historischen Schema-35-Belege zur Entfernung der Tutorialtabellen behalten
+ihren ursprünglichen Vertrag; sie werden nicht als Schema-36-Nachweis verwendet.
 
 `ops/alpha/backup-game.sh` erzeugt einen PostgreSQL-Custom-Dump samt SHA-256-
 Manifest, Dateigröße und der tatsächlich gesicherten Drizzle-Migrationszahl.

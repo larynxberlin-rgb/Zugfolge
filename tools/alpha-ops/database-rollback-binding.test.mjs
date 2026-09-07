@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
@@ -15,6 +16,7 @@ import {
   DATABASE_AUTHORITATIVE_TABLES,
   databaseAuthoritativeCatalog,
   databaseCutoverGuards,
+  databaseWorldHistoryBindings,
   DATABASE_AUTHORITATIVE_TABLES_SCHEMA_34,
   DATABASE_CUTOVER_CONSTRAINTS,
   DATABASE_CUTOVER_GUARDS,
@@ -265,13 +267,13 @@ test("preseeded Retry-Receipt wird aus allen gespeicherten Spalten rekonstruiert
   );
 });
 
-function worldSealSql(changedTable) {
+function worldSealSql(changedTable, { migrationCount = 33, nonemptyTable, omittedFactsTable } = {}) {
   return {
     async unsafe(source) {
       const query = source.replace(/\s+/gu, " ").trim().toLowerCase();
-      if (query === "select count(*)::int as migration_count from drizzle.__drizzle_migrations") return [{ migration_count: 33 }];
+      if (query === "select count(*)::int as migration_count from drizzle.__drizzle_migrations") return [{ migration_count: migrationCount }];
       if (query.includes("from information_schema.columns as columns")) {
-        return DATABASE_WORLD_HISTORY_BINDINGS
+        return databaseWorldHistoryBindings(migrationCount)
           .flatMap(({ table, columns }) => columns.map((column) => ({ table_name: table, column_name: column })))
           .sort((left, right) => left.table_name.localeCompare(right.table_name, "en") || left.column_name.localeCompare(right.column_name, "en"));
       }
@@ -279,8 +281,9 @@ function worldSealSql(changedTable) {
       if (tableMatch !== null) {
         const table = tableMatch.groups.table;
         return [{
-          row_count: table === "worlds" ? "1" : "0",
-          rows_sha256: table === changedTable ? "f".repeat(64) : "0".repeat(64),
+          row_count: table === "worlds" || table === nonemptyTable ? "1" : "0",
+          omitted_nonnull_rows: table === omittedFactsTable ? "1" : "0",
+          rows_sha256: table === changedTable ? "f".repeat(64) : createHash("sha256").update("").digest("hex"),
         }];
       }
       throw new Error(`Unerwartete Seal-SQL-Abfrage: ${query}`);
@@ -346,4 +349,41 @@ test("Schema35 bindet den bereinigten Tabellen- und Triggerbestand mit einem eig
   const missingGuard = structuredClone(current);
   missingGuard.source.guards.pop();
   assert.throws(() => validateDatabaseRollbackProof(missingGuard), /Unveraenderlichkeitsvertrag/u);
+});
+
+test("Schema36 qualifiziert persistente Fahrzeuge und prueft jeden Schutztrigger beim Live-Snapshot", async () => {
+  const source = await inspectLiveDatabaseRollbackSnapshot(sqlFixture(DATABASE_A, "d".repeat(64), { migrationCount: 36 }));
+  const addedTables = ["vehicle_registry_entries", "vehicle_registry_events"];
+  assert.deepEqual(databaseAuthoritativeCatalog(36).tables.filter((table) => !databaseAuthoritativeCatalog(35).tables.includes(table)), addedTables);
+  assert.equal(source.authoritativeHead.tableCount, databaseAuthoritativeCatalog(35).tables.length + 2);
+  assert.notEqual(source.authoritativeHead.tableSetSha256, databaseAuthoritativeCatalog(35).tableSetSha256);
+  const guards = databaseCutoverGuards(36).filter((entry) => !databaseCutoverGuards(35).some((old) => old.name === entry.name));
+  assert.equal(guards.length, 6);
+  for (const guard of guards) {
+    await assert.rejects(inspectLiveDatabaseRollbackSnapshot(sqlFixture(DATABASE_A, "d".repeat(64), {
+      migrationCount: 36, changedGuard: guard.name,
+    })), /Funktionskoerper.*Sollvertrag/u);
+  }
+  assert.deepEqual(databaseWorldHistoryBindings(36).filter(({ table }) => addedTables.includes(table)), addedTables.map((table) => ({ table, columns: ["world_id"] })));
+  assert.equal(databaseCutoverGuards(35).some(({ name }) => name === "vehicle_assets_no_delete"), false);
+});
+
+test("Schema36-Siegel bindet Register und Lebenslauf und verweigert das Ausblenden neuer Fakten", async () => {
+  const worldId = "00000000-0000-4000-8000-000000000014";
+  const options = { migrationCount: 36 };
+  const baseline = await worldFinalHistorySeal(worldSealSql(undefined, options), worldId);
+  assert.equal(baseline, await worldFinalHistorySeal(worldSealSql(undefined, options), worldId, { schemaVersion: "zugfolge-world-final-history-seal/v4" }));
+  for (const table of ["vehicle_registry_entries", "vehicle_registry_events", "vehicle_assets", "vehicle_asset_history_events"]) {
+    assert.notEqual(await worldFinalHistorySeal(worldSealSql(table, options), worldId), baseline, table);
+  }
+  for (const [schemaVersion, migrationCount] of [["zugfolge-world-final-history-seal/v1", 33], ["zugfolge-world-final-history-seal/v2", 34], ["zugfolge-world-final-history-seal/v3", 35]]) {
+    const historical = { schemaVersion };
+    assert.equal(await worldFinalHistorySeal(worldSealSql(undefined, options), worldId, historical),
+      await worldFinalHistorySeal(worldSealSql(undefined, { migrationCount }), worldId, historical));
+    for (const nonemptyTable of ["vehicle_registry_entries", "vehicle_registry_events"]) {
+      await assert.rejects(worldFinalHistorySeal(worldSealSql(undefined, { ...options, nonemptyTable }), worldId, historical), /Schema-36-Fahrzeugregisterdaten/u);
+    }
+    await assert.rejects(worldFinalHistorySeal(worldSealSql(undefined, { ...options, omittedFactsTable: "vehicle_assets" }), worldId, historical), /Schema-36-Fakten/u);
+  }
+  await assert.rejects(worldFinalHistorySeal(worldSealSql(undefined, { migrationCount: 35 }), worldId, { schemaVersion: "zugfolge-world-final-history-seal/v4" }), /Schema-\/Spaltenversion/u);
 });

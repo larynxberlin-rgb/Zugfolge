@@ -120,17 +120,31 @@ const RETIRED_TABLES = new Set(["tutorial_progress", "tutorial_sessions", "tutor
 export const DATABASE_AUTHORITATIVE_TABLES_SCHEMA_35 = Object.freeze(DATABASE_AUTHORITATIVE_TABLES_SCHEMA_34.filter((table) => !RETIRED_TABLES.has(table)));
 export const DATABASE_AUTHORITATIVE_TABLE_SET_SHA256_SCHEMA_35 = definitionSha256(DATABASE_AUTHORITATIVE_TABLES_SCHEMA_35);
 
+// Neue Fahrzeugidentitaeten und ihre Lebenslaeufe sind autoritative Weltdaten.
+// Die Tabellen- und Triggervertraege bereits signierter Belege bleiben unveraendert.
+export const DATABASE_AUTHORITATIVE_TABLES_SCHEMA_36 = Object.freeze([
+  ...DATABASE_AUTHORITATIVE_TABLES_SCHEMA_35,
+  "vehicle_registry_entries",
+  "vehicle_registry_events",
+].sort((left, right) => left.localeCompare(right, "en")));
+export const DATABASE_AUTHORITATIVE_TABLE_SET_SHA256_SCHEMA_36 = definitionSha256(DATABASE_AUTHORITATIVE_TABLES_SCHEMA_36);
+
 export function databaseWorldHistoryBindings(migrationCount) {
   databaseAuthoritativeCatalog(migrationCount);
-  return migrationCount === 35 ? DATABASE_WORLD_HISTORY_BINDINGS.filter(({ table }) => !RETIRED_TABLES.has(table)) : DATABASE_WORLD_HISTORY_BINDINGS;
+  const bindings = migrationCount >= 35 ? DATABASE_WORLD_HISTORY_BINDINGS.filter(({ table }) => !RETIRED_TABLES.has(table)) : DATABASE_WORLD_HISTORY_BINDINGS;
+  return migrationCount === 36 ? [...bindings, ...DATABASE_WORLD_HISTORY_BINDINGS_SCHEMA_36_ADDITIONS]
+    .sort((left, right) => left.table.localeCompare(right.table, "en")) : bindings;
 }
 
 export function databaseCutoverGuards(migrationCount) {
   databaseAuthoritativeCatalog(migrationCount);
-  return migrationCount === 35 ? DATABASE_CUTOVER_GUARDS.filter(({ relation }) => !RETIRED_TABLES.has(relation)) : DATABASE_CUTOVER_GUARDS;
+  const guards = migrationCount >= 35 ? DATABASE_CUTOVER_GUARDS.filter(({ relation }) => !RETIRED_TABLES.has(relation)) : DATABASE_CUTOVER_GUARDS;
+  return migrationCount === 36 ? [...guards, ...DATABASE_CUTOVER_GUARDS_SCHEMA_36_ADDITIONS]
+    .sort((left, right) => left.name.localeCompare(right.name, "en")) : guards;
 }
 
 export function databaseAuthoritativeCatalog(migrationCount) {
+  if (migrationCount === 36) return Object.freeze({ tables: DATABASE_AUTHORITATIVE_TABLES_SCHEMA_36, tableSetSha256: DATABASE_AUTHORITATIVE_TABLE_SET_SHA256_SCHEMA_36 });
   if (migrationCount === 35) return Object.freeze({ tables: DATABASE_AUTHORITATIVE_TABLES_SCHEMA_35, tableSetSha256: DATABASE_AUTHORITATIVE_TABLE_SET_SHA256_SCHEMA_35 });
   if (migrationCount === 33) return Object.freeze({ tables: DATABASE_AUTHORITATIVE_TABLES, tableSetSha256: DATABASE_AUTHORITATIVE_TABLE_SET_SHA256 });
   if (migrationCount === 34) return Object.freeze({ tables: DATABASE_AUTHORITATIVE_TABLES_SCHEMA_34, tableSetSha256: DATABASE_AUTHORITATIVE_TABLE_SET_SHA256_SCHEMA_34 });
@@ -189,6 +203,10 @@ export const DATABASE_WORLD_HISTORY_BINDINGS = Object.freeze([
   ["world_participations", ["world_id"]],
   ["worlds", ["id"]],
 ].map(([table, columns]) => Object.freeze({ table, columns: Object.freeze(columns) })));
+
+const DATABASE_WORLD_HISTORY_BINDINGS_SCHEMA_36_ADDITIONS = Object.freeze([
+  "vehicle_registry_entries", "vehicle_registry_events",
+].map((table) => Object.freeze({ table, columns: Object.freeze(["world_id"]) })));
 
 export const DATABASE_GLOBAL_AUTHORITATIVE_TABLES = Object.freeze([
   "commerce_entitlements",
@@ -800,6 +818,30 @@ export const DATABASE_CUTOVER_GUARDS = Object.freeze([
   ...DATABASE_BASE_CUTOVER_GUARDS,
   ...DATABASE_WORLD_WRITER_GUARDS,
 ].sort((left, right) => left.name.localeCompare(right.name, "en")));
+
+const VEHICLE_HISTORY_PERSISTENCE_SOURCE = `
+BEGIN
+ RAISE EXCEPTION 'Fahrzeugidentität und Lebenslauf bleiben während der Weltlaufzeit erhalten';
+END;
+`;
+
+const DATABASE_CUTOVER_GUARDS_SCHEMA_36_ADDITIONS = Object.freeze([
+  ...[
+    ["vehicle_registry_entries_no_delete", "vehicle_registry_entries", 11, "DELETE"],
+    ["vehicle_registry_events_append_only", "vehicle_registry_events", 27, "DELETE OR UPDATE"],
+    ["vehicle_assets_no_delete", "vehicle_assets", 11, "DELETE"],
+    ["vehicle_asset_history_events_append_only", "vehicle_asset_history_events", 27, "DELETE OR UPDATE"],
+  ].map(([name, relation, type, events]) => guard(
+    name, relation, type, "protect_vehicle_registry_history",
+    `CREATE TRIGGER ${name} BEFORE ${events} ON ${relation} FOR EACH ROW EXECUTE FUNCTION protect_vehicle_registry_history()`,
+    VEHICLE_HISTORY_PERSISTENCE_SOURCE,
+  )),
+  ...DATABASE_WORLD_HISTORY_BINDINGS_SCHEMA_36_ADDITIONS.map(({ table }) => guard(
+    `zugfolge_world_guard_${table}`, table, 31, "zugfolge_enforce_world_writer_guard",
+    `CREATE TRIGGER zugfolge_world_guard_${table} BEFORE INSERT OR DELETE OR UPDATE ON ${table} FOR EACH ROW EXECUTE FUNCTION zugfolge_enforce_world_writer_guard('world_id')`,
+    WORLD_WRITER_GUARD_SOURCE,
+  )),
+]);
 
 export const DATABASE_CUTOVER_SCHEMA_CONTRACT = Object.freeze({
   constraints: DATABASE_CUTOVER_CONSTRAINTS,

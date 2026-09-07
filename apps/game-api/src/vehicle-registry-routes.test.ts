@@ -1,6 +1,7 @@
 import { PGlite } from "@electric-sql/pglite";
 import { MIGRATIONS_FOLDER, vehicleRegistryEntries, vehicleRegistryEvents, worldAccesses, worlds } from "@zugfolge/db";
 import * as schema from "@zugfolge/db/schema";
+import { eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/pglite";
 import { migrate } from "drizzle-orm/pglite/migrator";
 import Fastify from "fastify";
@@ -10,6 +11,7 @@ import { registerVehicleRegistryRoutes } from "./vehicle-registry-routes.js";
 
 const WORLD = "11111111-1111-4111-8111-111111111111";
 const OTHER = "22222222-2222-4222-8222-222222222222";
+const ARCHIVED = "33333333-3333-4333-8333-333333333333";
 const hash = "a".repeat(64);
 const client = new PGlite();
 const db = drizzle(client, { schema });
@@ -25,13 +27,16 @@ const entry = (worldId: string, vehicleId: string, retiredAtS = 9000) => ({
 
 beforeAll(async () => {
   await migrate(db, { migrationsFolder: MIGRATIONS_FOLDER });
-  await db.insert(worlds).values([WORLD, OTHER].map((id) => ({ id, name: id, schedulePeriodWeeks: 4, epoch: new Date("2026-01-01T00:00:00Z") })));
+  await db.insert(worlds).values([WORLD, OTHER, ARCHIVED].map((id) => ({ id, name: id, schedulePeriodWeeks: 4, epoch: new Date("2026-01-01T00:00:00Z") })));
   // Bewusst kein Konto und kein Unternehmen: Alle aktiven Weltteilnehmer können lesen.
   await db.insert(worldAccesses).values([
     { worldId: WORLD, keycloakSubject: "spectator" },
+    { worldId: ARCHIVED, keycloakSubject: "spectator" },
     { worldId: WORLD, keycloakSubject: "revoked", status: "revoked" },
   ]);
   await db.insert(vehicleRegistryEntries).values([entry(WORLD, "asset-a", 50), entry(WORLD, "asset-b"), entry(WORLD, "asset%"), entry(OTHER, "foreign-only")]);
+  await db.insert(vehicleRegistryEntries).values(entry(ARCHIVED, "archived-asset", 50));
+  await db.update(worlds).set({ lifecycleStatus: "archived" }).where(eq(worlds.id, ARCHIVED));
   for (const revision of [1, 2, 3]) await db.insert(vehicleRegistryEvents).values({
     worldId: WORLD, vehicleId: "asset-a", fleetRevision: revision, atS: revision * 10,
     eventType: revision === 1 ? "registered" : "condition-updated", priorHistoryHash: revision === 1 ? null : hash,
@@ -42,6 +47,13 @@ beforeAll(async () => {
 afterAll(async () => { await app.close(); await client.close(); });
 
 describe("Öffentliches weltgebundenes Fahrzeugregister", () => {
+  it("laesst den vorhandenen Fahrzeugpass einer archivierten Welt rein lesend offen", async () => {
+    const response = await app.inject({ url: `/worlds/${ARCHIVED}/vehicle-register/archived-asset`, headers: auth });
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({ worldId: ARCHIVED, vehicleId: "archived-asset", historyHash: hash });
+    expect(await db.select().from(vehicleRegistryEvents).where(eq(vehicleRegistryEvents.worldId, ARCHIVED))).toHaveLength(0);
+  });
+
   it("zeigt ein ausgemustertes öffentliches Fahrzeug ohne Konto, EVU oder Angebot", async () => {
     const response = await app.inject({ url: `/worlds/${WORLD}/vehicle-register/asset-a`, headers: auth });
     expect(response.statusCode).toBe(200);

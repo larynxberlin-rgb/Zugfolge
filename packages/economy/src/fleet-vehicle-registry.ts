@@ -126,6 +126,9 @@ export async function persistFleetVehicleRegistry(
 export async function backfillFleetVehicleRegistry(db: EconomyDatabase, worldId: string): Promise<void> {
   await db.transaction(async (tx) => {
     await tx.execute(sql`select ${worlds.id} from ${worlds} where ${worlds.id} = ${worldId} for update`);
+    const [world] = await tx.select({ lifecycle: worlds.lifecycleStatus }).from(worlds).where(eq(worlds.id, worldId)).limit(1);
+    // Historische Archive bleiben versiegelt; vorhandene Registerdaten sind weiterhin lesbar.
+    if (world === undefined || world.lifecycle === "archived") return;
     const [head] = await tx.select({ revision: max(vehicleRegistryEntries.fleetRevision) }).from(vehicleRegistryEntries)
       .where(eq(vehicleRegistryEntries.worldId, worldId));
     const rows = await tx.select().from(fleetWorldCheckpoints).where(and(

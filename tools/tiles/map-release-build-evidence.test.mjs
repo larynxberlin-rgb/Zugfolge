@@ -15,6 +15,7 @@ import {
   materializeCurrentAnnualOperationalAuthority,
   materializeOperationalBuildAuthorityFromBuildEvidenceSpec,
   materializeMapReleaseBuildEvidence,
+  parseCanonicalDatabaseRollbackProof,
   preflightMapReleaseActivation,
   preflightMapReleaseRollback,
   prepareEmptyBuildCacheRestore,
@@ -28,6 +29,7 @@ import {
   validateFirstClassOperationalSidecarEvidence,
   validateMapReleaseBuildEvidence,
   validateMapReleaseBuildEvidenceSpec,
+  validateUnsignedMapRollbackAttestation,
   validateCurrentAnnualOperationalAuthority,
   verifyGithubAttestationSubject,
   verifyCurrentAnnualOperationalAuthorityLocal,
@@ -62,13 +64,14 @@ import {
 import { movementResourceSetSha256 } from "../region-import/movement-route-templates-v2.mjs";
 import { canonicalSyntheticOperationalValue } from "../region-import/germany/synthetic-operational-quality.mjs";
 import {
-  DATABASE_AUTHORITATIVE_TABLE_COUNT,
-  DATABASE_AUTHORITATIVE_TABLE_SET_SHA256,
   databaseCutoverConstraintProofs,
-  databaseCutoverGuardProofs,
   databaseRollbackEvidenceFixtures,
   keycloakIdentityHeadFixture,
 } from "../alpha-ops/database-rollback-test-fixtures.mjs";
+import {
+  databaseAuthoritativeCatalog,
+  databaseCutoverGuards,
+} from "../alpha-ops/database-cutover-schema-contract.mjs";
 
 const RELEASE_ID = "infra-deutschland-2026.2";
 const PREVIOUS_RELEASE_ID = "infra-deutschland-2026.1";
@@ -90,10 +93,11 @@ const LAYERS = [
   "rail_context",
 ];
 
-function databaseRollbackSnapshot() {
+function databaseRollbackSnapshot(migrationCount = 33) {
+  const catalog = databaseAuthoritativeCatalog(migrationCount);
   return {
     databaseIdentity: DATABASE_ID,
-    migrationLedger: Array.from({ length: 33 }, (_, index) => {
+    migrationLedger: Array.from({ length: migrationCount }, (_, index) => {
       const id = index < 28 ? index + 1 : index + 2;
       return {
         id,
@@ -102,7 +106,7 @@ function databaseRollbackSnapshot() {
       };
     }),
     constraints: databaseCutoverConstraintProofs(),
-    guards: databaseCutoverGuardProofs(),
+    guards: databaseCutoverGuards(migrationCount).map(({ name, definitionSha256 }) => ({ name, definitionSha256, enabled: true })),
     heads: {
       total: 4,
       v2: 0,
@@ -111,8 +115,8 @@ function databaseRollbackSnapshot() {
     },
     authoritativeHead: {
       schema: "zugfolge-database-authoritative-head/v1",
-      tableCount: DATABASE_AUTHORITATIVE_TABLE_COUNT,
-      tableSetSha256: DATABASE_AUTHORITATIVE_TABLE_SET_SHA256,
+      tableCount: catalog.tables.length,
+      tableSetSha256: catalog.tableSetSha256,
       worldCount: 2,
       regionalStateCount: 4,
       domainEventCount: "19",
@@ -3399,6 +3403,83 @@ test("Datenbank-Rollbackbeleg bindet DB-Identitaet, Schema, autoritativen Kopf, 
   const tampered = structuredClone(proof);
   tampered.backupManifestSha256 = "f".repeat(64);
   assert.throws(() => validateDatabaseRollbackProof(tampered), /semantische Backup-Manifest nicht kanonisch/u);
+});
+
+test("Datenbank-Rollbackbeleg v6 bindet Schema 36 und bewahrt historische Schema-33/34/35-Nachweise", () => {
+  for (const [migrationCount, schemaVersion] of [[33, 3], [34, 4], [35, 5], [36, 6]]) {
+    const proof = databaseRollbackProof({ source: databaseRollbackSnapshot(migrationCount) });
+    assert.equal(proof.schema, `zugfolge-database-rollback-proof/v${schemaVersion}`);
+    assert.equal(validateDatabaseRollbackProof(proof), proof);
+    const parsed = parseCanonicalDatabaseRollbackProof(serializeMapReleaseBuildEvidence(proof));
+    assert.deepEqual(parsed.proof, proof);
+    assert.equal(proof.source.migrationLedger.length, migrationCount);
+    assert.equal(proof.source.authoritativeHead.tableSetSha256, databaseAuthoritativeCatalog(migrationCount).tableSetSha256);
+  }
+
+  const missingGuard = databaseRollbackSnapshot(36);
+  missingGuard.guards = missingGuard.guards.filter(({ name }) => name !== "vehicle_registry_events_append_only");
+  assert.throws(() => databaseRollbackProof({ source: missingGuard }), /exakten Unveraenderlichkeitsvertrag/u);
+
+  const disabledWriterGuard = databaseRollbackSnapshot(36);
+  disabledWriterGuard.guards.find(({ name }) => name === "zugfolge_world_guard_vehicle_registry_entries").enabled = false;
+  assert.throws(() => databaseRollbackProof({ source: disabledWriterGuard }), /nicht aktiviert/u);
+
+  const oldCatalog = databaseRollbackSnapshot(36);
+  const schema35 = databaseAuthoritativeCatalog(35);
+  oldCatalog.authoritativeHead.tableCount = schema35.tables.length;
+  oldCatalog.authoritativeHead.tableSetSha256 = schema35.tableSetSha256;
+  assert.throws(() => databaseRollbackProof({ source: oldCatalog }), /Schema-36-Tabellensatz/u);
+
+  const relabelled = databaseRollbackProof({ source: databaseRollbackSnapshot(35) });
+  relabelled.schema = "zugfolge-database-rollback-proof/v6";
+  assert.throws(() => validateDatabaseRollbackProof(relabelled), /Migrationsledger mit 36 Eintraegen/u);
+
+  const downgraded = databaseRollbackProof({ source: databaseRollbackSnapshot(36) });
+  downgraded.schema = "zugfolge-database-rollback-proof/v5";
+  assert.throws(() => validateDatabaseRollbackProof(downgraded), /Migrationsledger mit 35 Eintraegen/u);
+});
+
+test("Datenbank-Runtimebindung akzeptiert v6 ausschließlich mit dem Schema-36-Fahrzeugregister", () => {
+  const digest = "a".repeat(64);
+  const worldId = "00000000-0000-4000-8000-000000000036";
+  for (const migrationCount of [33, 34, 35, 36]) {
+    const proof = databaseRollbackProof({ source: databaseRollbackSnapshot(migrationCount) });
+    const artifact = parseCanonicalDatabaseRollbackProof(serializeMapReleaseBuildEvidence(proof));
+    const databaseRollback = {
+      schema: proof.schema, bytes: artifact.bytes, sha256: artifact.sha256, proofHash: proof.proofHash,
+      releaseId: proof.releaseId, previousReleaseId: proof.previousReleaseId,
+      rollbackWindow: proof.rollbackWindow, writersQuiesced: proof.writersQuiesced,
+      migrationLedgerPairSha256: proof.migrationLedgerPairSha256, backupManifestSha256: proof.backupManifestSha256,
+      restoreProofSha256: proof.restoreProofSha256, restoreSeparation: proof.restoreSeparation,
+      databaseIdentity: proof.source.databaseIdentity, sourceAuthoritativeHead: proof.source.authoritativeHead,
+      sourceHeads: proof.source.heads, sourceKeycloakIdentityHead: proof.source.keycloakIdentityHead,
+    };
+    const attestation = {
+      schema: "zugfolge-map-rollback-attestation/v3", previousReleaseId: PREVIOUS_RELEASE_ID,
+      packageManifest: { file: ".zugfolge-map-package.json", bytes: 1, sha256: digest },
+      deliveryManifest: { file: "manifests/release.json", bytes: 1, sha256: digest },
+      approvalGate: { status: "missing" }, signature: null,
+      runtimeTuple: {
+        schema: "zugfolge-runtime-rollback-tuple/v3", mapReleaseId: PREVIOUS_RELEASE_ID,
+        sourceCommit: "1".repeat(40), imageDigest: `sha256:${digest}`, odooImageDigest: `sha256:${"b".repeat(64)}`,
+        worldDeployment: { schema: "zugfolge-alpha-world-deployment/v1", bytes: 1, sha256: digest,
+          worldId, deploymentHash: digest, worldEpoch: "2026-01-01T00:00:00.000Z", repeatEveryS: 86400, keyId: "world-key" },
+        readModel: { schema: "zugfolge-livemap-read-model-sqlite/v2", infrastructureReleaseId: PREVIOUS_RELEASE_ID,
+          applicationId: 1, userVersion: 2, repeatEveryS: 86400, bytes: 1, sha256: digest,
+          worldId, worldEpoch: "2026-01-01T00:00:00.000Z" },
+        trainMapProjection: { schema: "zugfolge-train-map-projection/v2", infrastructureReleaseId: PREVIOUS_RELEASE_ID,
+          applicationId: 1, userVersion: 2, schemaSqlSha256: digest, bytes: 1, sha256: digest, worldId, deploymentHash: digest },
+        databaseRollback,
+      },
+    };
+    assert.equal(validateUnsignedMapRollbackAttestation(attestation).schema, attestation.schema);
+
+    const foreignSchema = migrationCount === 36 ? 35 : 36;
+    const foreignCatalog = databaseAuthoritativeCatalog(foreignSchema);
+    databaseRollback.sourceAuthoritativeHead = { ...databaseRollback.sourceAuthoritativeHead,
+      tableCount: foreignCatalog.tables.length, tableSetSha256: foreignCatalog.tableSetSha256 };
+    assert.throws(() => validateUnsignedMapRollbackAttestation(attestation), /fremden Schema-Tabellensatz/u);
+  }
 });
 
 test("verweigert ein als .1 etikettiertes v2/v1-Mismatch vor der Runtime-Attestation", async () => {

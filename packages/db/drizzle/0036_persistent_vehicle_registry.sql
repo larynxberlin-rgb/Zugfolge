@@ -62,3 +62,7 @@ CREATE TRIGGER "vehicle_registry_events_append_only" BEFORE UPDATE OR DELETE ON 
 CREATE TRIGGER "vehicle_assets_no_delete" BEFORE DELETE ON "vehicle_assets" FOR EACH ROW EXECUTE FUNCTION "protect_vehicle_registry_history"();
 --> statement-breakpoint
 CREATE TRIGGER "vehicle_asset_history_events_append_only" BEFORE UPDATE OR DELETE ON "vehicle_asset_history_events" FOR EACH ROW EXECUTE FUNCTION "protect_vehicle_registry_history"();
+--> statement-breakpoint
+CREATE TRIGGER "zugfolge_world_guard_vehicle_registry_entries" BEFORE INSERT OR DELETE OR UPDATE ON "vehicle_registry_entries" FOR EACH ROW EXECUTE FUNCTION "zugfolge_enforce_world_writer_guard"('world_id');
+--> statement-breakpoint
+CREATE TRIGGER "zugfolge_world_guard_vehicle_registry_events" BEFORE INSERT OR DELETE OR UPDATE ON "vehicle_registry_events" FOR EACH ROW EXECUTE FUNCTION "zugfolge_enforce_world_writer_guard"('world_id');

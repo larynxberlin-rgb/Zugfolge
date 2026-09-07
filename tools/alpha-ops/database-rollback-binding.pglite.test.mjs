@@ -37,19 +37,40 @@ function inspectLiveDatabaseRollbackSnapshot(sql) {
   return inspectSnapshotWithoutKeycloakFixture(sql, { inspectKeycloakState: keycloakStateInspectorFixture() });
 }
 
-test("Schema35 liefert aus dem echten Katalog einen vollständigen v5-Restorebeleg", async () => {
+for (const migrationCount of [35, 36]) {
+test(`Schema${migrationCount} liefert aus dem echten Katalog einen vollständigen v${migrationCount - 30}-Restorebeleg`, async () => {
   const client = new PGlite();
+  const schemaFolder = await migrationsThrough(migrationCount);
   try {
-    await migrate(drizzle(client), { migrationsFolder: sourceMigrationsFolder });
+    await migrate(drizzle(client), { migrationsFolder: schemaFolder });
     const source = await inspectLiveDatabaseRollbackSnapshot(adapter(client));
-    assert.equal(source.migrationLedger.length, 35);
-    assert.equal(source.guards.length, 55);
+    assert.equal(source.migrationLedger.length, migrationCount);
+    assert.equal(source.guards.length, migrationCount === 36 ? 61 : 55);
     const evidence = databaseRollbackEvidenceFixtures(source);
     const proof = createDatabaseRollbackProof({ releaseId: "infra-deutschland-2026.4", previousReleaseId: "infra-deutschland-2026.2", source, ...evidence, writersQuiesced: true, rollbackWindow: "pre-activation-only" });
-    assert.equal(proof.schema, "zugfolge-database-rollback-proof/v5");
+    assert.equal(proof.schema, `zugfolge-database-rollback-proof/v${migrationCount - 30}`);
     assert.equal(validateDatabaseRollbackProof(proof), proof);
-  } finally { await client.close(); }
+    if (migrationCount === 36) {
+      const worldId = "11111111-1111-4111-8111-111111111136";
+      await client.query("insert into worlds(id,name,schedule_period_weeks,epoch) values($1,'Register36',4,'2026-01-01Z')", [worldId]);
+      await client.query(`insert into vehicle_registry_entries(world_id,vehicle_id,authority_release_id,class_designation,owner_operator_id,holder_operator_id,introduced_at_s,retired_at_s,data_at_s,fleet_revision,source_state_hash,facts,facts_hash,history_hash)
+        values($1,'vehicle-36','authority-36','Klasse 36','public','public',0,1000,0,1,$2,'{}',$2,$2)`, [worldId, "a".repeat(64)]);
+      await client.query(`insert into vehicle_registry_events(world_id,vehicle_id,fleet_revision,at_s,event_type,resulting_history_hash,source_state_hash,details)
+        values($1,'vehicle-36',1,0,'registered',$2,$2,'{}')`, [worldId, "a".repeat(64)]);
+      const before = await worldFinalHistorySeal(adapter(client), worldId);
+      await assert.rejects(client.query("delete from vehicle_registry_entries where world_id=$1", [worldId]), /Fahrzeugidentität/u);
+      await assert.rejects(client.query("update vehicle_registry_events set details='{}' where world_id=$1", [worldId]), /Fahrzeugidentität/u);
+      assert.equal(await worldFinalHistorySeal(adapter(client), worldId), before);
+      await client.query("update worlds set lifecycle_status='archived' where id=$1", [worldId]);
+      const archived = await worldFinalHistorySeal(adapter(client), worldId);
+      await assert.rejects(client.query("update vehicle_registry_entries set data_at_s=1 where world_id=$1", [worldId]), /world writer is fenced/u);
+      await assert.rejects(client.query(`insert into vehicle_registry_events(world_id,vehicle_id,fleet_revision,at_s,event_type,resulting_history_hash,source_state_hash,details)
+        values($1,'vehicle-36',2,1,'condition-updated',$2,$2,'{}')`, [worldId, "b".repeat(64)]), /world writer is fenced/u);
+      assert.equal(await worldFinalHistorySeal(adapter(client), worldId), archived);
+    }
+  } finally { await client.close(); await rm(schemaFolder, { recursive: true, force: true }); }
 });
+}
 
 async function migrationsThrough(count) {
   const folder = await mkdtemp(join(tmpdir(), `zugfolge-migrations-${count}-`));
