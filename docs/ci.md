@@ -30,7 +30,10 @@ denselben Rust-Kernen. Testsignaturen autorisieren ausschließlich diesen
 gekennzeichneten Korpus. Die vier regulären Jobs bleiben erhalten; ein grüner
 Testkorpus ersetzt keine produktive Release- oder Deutschlandabnahme.
 Der native Job erhält für die zusammenhängenden Browserfahrten und die
-zusätzlichen Regionswechsel-/Ledgernachweise eine Höchstdauer von 30 Minuten.
+zusätzlichen Regionswechsel-/Ledgernachweise eine Höchstdauer von 45 Minuten.
+Der gemessene Zwischenlauf benötigte bereits 27 Minuten bis zur verbundenen
+Abnahmefahrt; deren vollständiger Netzabschluss und der anschließende
+Einstiegsnachweis müssen innerhalb desselben Jobs ausgeführt werden können.
 Die dateibasierten Szenen-/Evidenzpackerprüfungen und die Regression für den
 nativen Ereigniskalender des Browsertreibers laufen im TypeScript-Job;
 sie benötigen keinen zusätzlichen Browser oder Job.

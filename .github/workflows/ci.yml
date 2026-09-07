@@ -101,7 +101,7 @@ jobs:
   native-runtime-smoke:
     name: Native Runtime ABI (Linux, echtes NAPI)
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
     services:
       postgres:
         image: postgres:16.14-trixie
