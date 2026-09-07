@@ -16,6 +16,361 @@ use zugfolge_sim::operational::{
     operational_train_number_numeric_part,
 };
 
+fn passenger_stop_fixture() -> (OperationalInfraRelease, TrainMaterialization) {
+    use zugfolge_sim::operational::{OperationalPassengerStop, OperationalPassengerStopPlan};
+    let mut infra = release();
+    let template = infra.interlocking_routes["interlocking:train"].clone();
+    infra
+        .interlocking_routes
+        .retain(|_, route| route.movement_kind != MovementKind::Train);
+    let original = infra.route_versions["route:v1"].legs.clone();
+    let mut legs = Vec::new();
+    for (index, (start, end, id)) in [
+        (0, 10_000, "interlocking:seed"),
+        (10_000, 30_000, "interlocking:train"),
+        (30_000, 60_000, "interlocking:train:b"),
+        (60_000, 120_000, "interlocking:train:c"),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let mut leg = original[usize::from(start >= 60_000)].clone();
+        if start < 60_000 {
+            leg.edge_entry_mm = start;
+            leg.edge_exit_mm = end;
+        }
+        leg.route_start_mm = start;
+        leg.block_ids = BTreeSet::from([format!("block:stop:{index}")]);
+        infra.block_resources.extend(leg.block_ids.iter().cloned());
+        let mut locking = template.clone();
+        locking.id = id.to_owned();
+        locking.signal_id = format!("signal:stop:{index}");
+        locking.authority_start_route_mm = start;
+        locking.authority_end_route_mm = end;
+        locking.release_after_tail_route_mm = end;
+        locking.path_resources = leg.block_ids.clone();
+        infra.signals.insert(locking.signal_id.clone());
+        infra
+            .interlocking_routes
+            .insert(locking.id.clone(), locking);
+        legs.push(leg);
+    }
+    for route in infra.route_versions.values_mut() {
+        route.legs = legs.clone();
+    }
+    for (id, edge, from_mm, to_mm, direction) in [
+        ("platform:a", "edge:a", 0, 20_000, Direction::Along),
+        ("platform:b", "edge:a", 25_000, 45_000, Direction::Along),
+        ("platform:c", "edge:b", 0, 20_000, Direction::Against),
+    ] {
+        infra.platform_intervals.insert(
+            id.to_owned(),
+            TrackInterval {
+                edge_id: edge.to_owned(),
+                from_mm,
+                to_mm,
+                direction,
+            },
+        );
+    }
+    let mut input = program_template("train:stops", MovementKind::Train, 10_000);
+    input.public_passenger_stop = true;
+    input.scheduled_departure_ms = Some(1_000);
+    input.stop_plan = Some(OperationalPassengerStopPlan {
+        schema_version: "zugfolge-operational-passenger-stop-plan/v1".to_owned(),
+        world_id: "world:1".to_owned(),
+        infrastructure_release_id: infra.id.clone(),
+        timetable_release_id: "timetable:fixture".to_owned(),
+        service_id: input.id.clone(),
+        service_run_id: "service:stops:day-0".to_owned(),
+        train_run_id: input.id.clone(),
+        route_version_id: input.route_version_id.clone(),
+        source_binding_hash: "1".repeat(64),
+        stops: [
+            ("a", 10_000, 0, 1_000, 1_000),
+            ("b", 40_000, 10_000, 15_000, 5_000),
+            ("c", 120_000, 30_000, 30_000, 0),
+        ]
+        .into_iter()
+        .enumerate()
+        .map(
+            |(
+                stop_sequence,
+                (name, route_mm, scheduled_arrival_ms, scheduled_departure_ms, minimum_dwell_ms),
+            )| OperationalPassengerStop {
+                stop_id: format!("train:stops:{stop_sequence}"),
+                station_id: format!("station:{name}"),
+                stop_sequence,
+                route_mm,
+                platform_id: format!("platform:{name}"),
+                scheduled_arrival_ms,
+                scheduled_departure_ms,
+                minimum_dwell_ms,
+            },
+        )
+        .collect(),
+    });
+    (infra, input)
+}
+
+fn stop_receipts(
+    world: &OperationalWorld,
+) -> Vec<zugfolge_sim::operational::OperationalPassengerStopReceipt> {
+    world
+        .events
+        .iter()
+        .filter(|event| event.kind.starts_with("passenger-stop-"))
+        .map(|event| {
+            let receipt: zugfolge_sim::operational::OperationalPassengerStopReceipt =
+                serde_json::from_str(&event.detail).unwrap();
+            assert_eq!(receipt.actual_time_ms, event.at_ms);
+            assert_eq!(receipt.train_run_id, event.subject_id);
+            receipt
+        })
+        .collect()
+}
+
+fn advance_stop_train_until_standing(world: &mut OperationalWorld) {
+    for _ in 0..300 {
+        let Some(segment) = world.trains["train:stops"].motion_segment.clone() else {
+            return;
+        };
+        world.advance_to(segment.valid_until_ms).unwrap();
+        world.verify_invariants().unwrap();
+    }
+    panic!("bounded stop fixture did not reach its next stop");
+}
+
+#[test]
+fn native_passenger_stops_three_halts_signal_dwell_and_restore() {
+    let (infra, input) = passenger_stop_fixture();
+    let mut world = world_with_release(infra);
+    world.materialize(input).unwrap();
+    assert_eq!(stop_receipts(&world).len(), 1);
+    assert_eq!(stop_receipts(&world)[0].actual_time_ms, 0);
+    world
+        .lock_route("train:stops", "interlocking:train")
+        .unwrap();
+    let before = world.state_hash();
+    assert_eq!(
+        world.plan_motion("train:stops"),
+        Err(OperationalError::PassengerDepartureTooEarly)
+    );
+    assert_eq!(world.state_hash(), before);
+    world.advance_to(999).unwrap();
+    assert_eq!(stop_receipts(&world).len(), 1);
+    world.advance_to(1_000).unwrap();
+    assert_eq!(stop_receipts(&world)[1].kind, "departure");
+    assert_eq!(stop_receipts(&world)[1].actual_time_ms, 1_000);
+    let mut mid_motion = OperationalWorld::restore(&world.checkpoint()).unwrap();
+    advance_stop_train_until_standing(&mut world);
+    advance_stop_train_until_standing(&mut mid_motion);
+    assert_eq!(world.state_hash(), mid_motion.state_hash());
+    assert_eq!(world.trains["train:stops"].head_route_mm, 30_000);
+    // A genuine signal stop between A and B produces no passenger arrival.
+    assert_eq!(stop_receipts(&world).len(), 2);
+    world.advance_to(world.now_ms + 17_000).unwrap();
+    assert_eq!(stop_receipts(&world).len(), 2);
+    world
+        .submit_dispatch_requests(&[dispatch_request(
+            "train:stops",
+            "interlocking:train:b",
+            world.now_ms,
+        )])
+        .unwrap();
+    advance_stop_train_until_standing(&mut world);
+    assert_eq!(world.trains["train:stops"].head_route_mm, 40_000);
+    let arrival_b = world.now_ms;
+    assert!(arrival_b > 15_000);
+    assert_eq!(stop_receipts(&world).len(), 3);
+    assert!(world.trains["train:stops"].authority.is_some());
+    let mut restored = OperationalWorld::restore(&world.checkpoint()).unwrap();
+    let tail_from = world.event_sequence;
+    world.advance_to(arrival_b + 4_999).unwrap();
+    assert_eq!(world.trains["train:stops"].speed_mmps, 0);
+    assert_eq!(stop_receipts(&world).len(), 3);
+    world.advance_to(arrival_b + 5_000).unwrap();
+    assert_eq!(stop_receipts(&world)[3].actual_time_ms, arrival_b + 5_000);
+    advance_stop_train_until_standing(&mut world);
+    restored.advance_to(world.now_ms).unwrap();
+    assert_eq!(world.state_hash(), restored.state_hash());
+    assert_eq!(
+        world
+            .events
+            .iter()
+            .filter(|event| event.event_sequence > tail_from)
+            .cloned()
+            .collect::<Vec<_>>(),
+        restored.events
+    );
+    let receipts = stop_receipts(&world);
+    assert_eq!(
+        receipts
+            .iter()
+            .map(|r| (r.stop_sequence, r.kind.as_str()))
+            .collect::<Vec<_>>(),
+        vec![
+            (0, "arrival"),
+            (0, "departure"),
+            (1, "arrival"),
+            (1, "departure"),
+            (2, "arrival")
+        ]
+    );
+    assert_eq!(
+        receipts
+            .iter()
+            .map(|r| &r.receipt_id)
+            .collect::<BTreeSet<_>>()
+            .len(),
+        5
+    );
+    assert_eq!(world.trains["train:stops"].head_route_mm, 120_000);
+    world.advance_to(world.now_ms + 60_000).unwrap();
+    assert_eq!(stop_receipts(&world), receipts);
+    world.verify_invariants().unwrap();
+}
+
+#[test]
+fn native_passenger_stop_plan_rejects_false_geometry_world_and_tampered_progress() {
+    let (infra, input) = passenger_stop_fixture();
+    for variant in 0..11 {
+        let mut broken = input.clone();
+        let plan = broken.stop_plan.as_mut().unwrap();
+        match variant {
+            0 => plan.world_id = "world:other".to_owned(),
+            1 => plan.stops[1].platform_id = "unknown".to_owned(),
+            2 => plan.stops[1].route_mm = 49_000,
+            3 => plan.stops[1].stop_id = plan.stops[0].stop_id.clone(),
+            4 => plan.stops[1].stop_sequence = 0,
+            5 => plan.route_version_id = "route:v2".to_owned(),
+            6 => plan.stops[1].minimum_dwell_ms = 6_000,
+            7 => plan.stops[2].scheduled_departure_ms = 9_007_199_254_740_992,
+            8 => plan.stops[2].route_mm = 9_007_199_254_740_992,
+            9 => plan.stops[2].scheduled_arrival_ms = 9_007_199_254_740_992,
+            _ => plan.stops[2].minimum_dwell_ms = 9_007_199_254_740_992,
+        }
+        let mut world = world_with_release(infra.clone());
+        let before = world.state_hash();
+        assert_eq!(
+            world.materialize(broken),
+            Err(OperationalError::InvalidPassengerStopPlan)
+        );
+        assert_eq!(world.state_hash(), before);
+    }
+    let mut world = world_with_release(infra);
+    world.materialize(input).unwrap();
+    let mut serialized = serde_json::to_value(&world).unwrap();
+    serialized["trains"]["train:stops"]["passengerStops"]["receipts"][0]["actualDepartureMs"] =
+        0.into();
+    let changed: OperationalWorld = serde_json::from_value(serialized).unwrap();
+    assert_eq!(
+        changed.verify_invariants(),
+        Err(OperationalError::InvalidPassengerStopPlan)
+    );
+    let before = world.state_hash();
+    assert_eq!(
+        world.change_formation(
+            "train:stops",
+            "formation:too-long",
+            vec!["vehicle:3".to_owned()]
+        ),
+        Err(OperationalError::InvalidPassengerStopPlan)
+    );
+    assert_eq!(world.state_hash(), before);
+    assert_eq!(
+        world.advance_to(9_007_199_254_740_992),
+        Err(OperationalError::InvalidPassengerStopPlan)
+    );
+    assert_eq!(world.state_hash(), before);
+    assert_eq!(
+        world.reroute_train("train:stops", "route:v2"),
+        Err(OperationalError::InvalidPassengerStopPlan)
+    );
+    assert_eq!(world.state_hash(), before);
+}
+
+#[test]
+fn native_passenger_stop_handover_transfers_dwell_and_exactly_once_receipts() {
+    let (infra, input) = passenger_stop_fixture();
+    let mut source = world_with_release(infra.clone());
+    let mut target = OperationalWorld::new("world:1", "region:b", 0, infra).unwrap();
+    source.materialize(input).unwrap();
+    source
+        .lock_route("train:stops", "interlocking:train")
+        .unwrap();
+    let first_receipt = stop_receipts(&source)[0].clone();
+    let mut handover = source
+        .begin_handover(
+            "halt:handover",
+            "train:stops",
+            "region:b",
+            set(&["boundary:west"]),
+        )
+        .unwrap();
+    target.accept_handover(&mut handover).unwrap();
+    source.finish_handover(&handover).unwrap();
+    target.accept_handover(&mut handover).unwrap();
+    source.advance_to(1_000).unwrap();
+    target.advance_to(1_000).unwrap();
+    let target_receipts = stop_receipts(&target);
+    assert_eq!(target_receipts.len(), 1);
+    assert_eq!(target_receipts[0].kind, "departure");
+    assert_eq!(target_receipts[0].actual_time_ms, 1_000);
+    assert_eq!(
+        target_receipts[0].stop_plan_hash,
+        first_receipt.stop_plan_hash
+    );
+    assert_eq!(stop_receipts(&source), vec![first_receipt]);
+    target.verify_invariants().unwrap();
+    source.verify_invariants().unwrap();
+}
+
+#[test]
+fn native_passenger_formation_change_checks_current_and_future_platforms_only() {
+    let (mut infra, input) = passenger_stop_fixture();
+    infra
+        .platform_intervals
+        .get_mut("platform:b")
+        .unwrap()
+        .from_mm = 15_000;
+    let mut world = world_with_release(infra);
+    world.materialize(input).unwrap();
+    world
+        .lock_route("train:stops", "interlocking:train")
+        .unwrap();
+    world.advance_to(1_000).unwrap();
+    advance_stop_train_until_standing(&mut world);
+    world
+        .submit_dispatch_requests(&[dispatch_request(
+            "train:stops",
+            "interlocking:train:b",
+            world.now_ms,
+        )])
+        .unwrap();
+    advance_stop_train_until_standing(&mut world);
+    assert_eq!(world.trains["train:stops"].head_route_mm, 40_000);
+    let existing = stop_receipts(&world);
+    // The longer formation fits B and C; it never occupied the shorter origin A.
+    world
+        .change_formation(
+            "train:stops",
+            "formation:long-at-b",
+            vec!["vehicle:3".to_owned()],
+        )
+        .unwrap();
+    assert_eq!(stop_receipts(&world), existing);
+    world.verify_invariants().unwrap();
+    let mut restored = OperationalWorld::restore(&world.checkpoint()).unwrap();
+    world.advance_to(100_000).unwrap();
+    restored.advance_to(100_000).unwrap();
+    assert_eq!(world.state_hash(), restored.state_hash());
+    assert_eq!(
+        stop_receipts(&world).last().unwrap().formation_version_id,
+        "formation:long-at-b"
+    );
+}
+
 fn set(values: &[&str]) -> BTreeSet<String> {
     values.iter().map(|value| (*value).to_owned()).collect()
 }
@@ -620,6 +975,23 @@ fn moving_handover_transfers_events_locks_vehicles_and_survives_retries_and_rest
     target = OperationalWorld::restore(&target.checkpoint()).unwrap();
     source.finish_handover(&handover).unwrap();
     let finished = source.state_hash();
+    let serialized = serde_json::to_value(&source).unwrap();
+    let receipt = &serialized["finishedHandoverReceipts"]["h"];
+    assert_eq!(receipt["trainRunId"], "t");
+    assert_eq!(receipt["targetRegionId"], "region:b");
+    assert_eq!(receipt["payloadHash"], handover.payload_hash);
+    for (field, value) in [
+        ("worldId", serde_json::json!("foreign")),
+        ("sourceRegionId", serde_json::json!("region:b")),
+        ("targetRegionId", serde_json::json!(source.region_id)),
+        ("atMs", serde_json::json!(1)),
+        ("payloadHash", serde_json::json!("0".repeat(64))),
+    ] {
+        let mut changed = serialized.clone();
+        changed["finishedHandoverReceipts"]["h"][field] = value;
+        let changed: OperationalWorld = serde_json::from_value(changed).unwrap();
+        assert!(changed.verify_invariants().is_err(), "{field}");
+    }
     source.finish_handover(&handover).unwrap();
     assert_eq!(finished, source.state_hash());
     assert!(!source.vehicles.contains_key("vehicle:1"));
@@ -687,6 +1059,7 @@ fn program_template(
     head_route_mm: i64,
 ) -> TrainMaterialization {
     TrainMaterialization {
+        stop_plan: None,
         service_outcome: None,
         id: id.to_owned(),
         train_number: "RB 1".to_owned(),
@@ -1205,6 +1578,7 @@ fn continuation(
         predecessor_train_id: predecessor_train_id.to_owned(),
         predecessor_base_route_version_id: predecessor_base_route_version_id.to_owned(),
         successor: TrainMaterialization {
+            stop_plan: None,
             service_outcome: None,
             id: successor_id.to_owned(),
             train_number: successor_number.to_owned(),
@@ -4696,6 +5070,167 @@ fn dispatcher_batch_preserves_priorities_and_replay_across_input_permutations() 
 }
 
 #[test]
+fn infrastructure_release_rechecks_fdl_and_retains_position_resources_and_restore() {
+    for advanced_ms in [0, 1_000] {
+        let mut world = dispatched_profile_world(release());
+        world.advance_to(advanced_ms).unwrap();
+        let head = world.trains["t"].head_route_mm;
+        let occupied = world.trains["t"].occupied_intervals.clone();
+        world
+            .activate_disruption(
+                "closure",
+                OperationalDisruption::ResourceClosed {
+                    resource_id: "block:b".into(),
+                },
+            )
+            .unwrap();
+        let locks = world.route_locks.clone();
+        let checkpoint = world.checkpoint();
+        let mut replay = OperationalWorld::restore(&checkpoint).unwrap();
+        for candidate in [&mut world, &mut replay] {
+            candidate
+                .clear_disruption("closure", "test-only-technical-release")
+                .unwrap();
+            assert_eq!(candidate.trains["t"].motion_state, MotionState::Standing);
+            assert!(candidate.trains["t"].authority.is_none());
+            assert_eq!(candidate.trains["t"].head_route_mm, head);
+            assert_eq!(candidate.trains["t"].occupied_intervals, occupied);
+            assert_eq!(candidate.route_locks, locks);
+            assert!(
+                candidate
+                    .signal_aspects
+                    .values()
+                    .all(|aspect| *aspect != SignalAspect::Proceed)
+            );
+            candidate.verify_invariants().unwrap();
+            assert_eq!(
+                candidate.plan_motion("t"),
+                Err(OperationalError::NoAuthority)
+            );
+            assert_eq!(
+                candidate
+                    .submit_dispatch_requests(&[dispatch_request(
+                        "t",
+                        "interlocking:train",
+                        advanced_ms
+                    )])
+                    .unwrap(),
+                vec!["t"]
+            );
+            assert_eq!(candidate.trains["t"].motion_state, MotionState::Moving);
+            assert_eq!(candidate.trains["t"].head_route_mm, head);
+            candidate.verify_invariants().unwrap();
+            assert!(
+                serde_json::to_value(&*candidate)
+                    .unwrap()
+                    .get("infrastructureDisruptionStops")
+                    .is_none()
+            );
+        }
+        assert_eq!(world.state_hash(), replay.state_hash());
+    }
+}
+
+#[test]
+fn infrastructure_release_needs_every_cause_and_preserves_unrelated_safe_stops() {
+    for unrelated in [
+        None,
+        Some("manual-danger"),
+        Some("infrastructure-disruption"),
+    ] {
+        let mut world = dispatched_profile_world(release());
+        world
+            .activate_disruption(
+                "closure-a",
+                OperationalDisruption::ResourceClosed {
+                    resource_id: "block:a".into(),
+                },
+            )
+            .unwrap();
+        world
+            .activate_disruption(
+                "closure-b",
+                OperationalDisruption::ResourceClosed {
+                    resource_id: "block:b".into(),
+                },
+            )
+            .unwrap();
+        world.clear_disruption("closure-a", "technical-a").unwrap();
+        assert!(matches!(
+            world.trains["t"].motion_state,
+            MotionState::SafeStop { .. }
+        ));
+        assert!(
+            world
+                .submit_dispatch_requests(&[dispatch_request("t", "interlocking:train", 0)])
+                .is_err()
+        );
+        if let Some(reason) = unrelated {
+            world.safe_stop("t", reason).unwrap();
+        }
+        world.clear_disruption("closure-b", "technical-b").unwrap();
+        if unrelated.is_some() {
+            assert!(matches!(
+                world.trains["t"].motion_state,
+                MotionState::SafeStop { .. }
+            ));
+        } else {
+            assert_eq!(world.trains["t"].motion_state, MotionState::Standing);
+        }
+        world.verify_invariants().unwrap();
+    }
+    let mut world = dispatched_profile_world(release());
+    world.safe_stop("t", "manual-danger").unwrap();
+    world
+        .activate_disruption(
+            "later",
+            OperationalDisruption::ResourceClosed {
+                resource_id: "block:a".into(),
+            },
+        )
+        .unwrap();
+    world.clear_disruption("later", "technical-later").unwrap();
+    assert_eq!(
+        world.trains["t"].motion_state,
+        MotionState::SafeStop {
+            reason: "manual-danger".into()
+        }
+    );
+    world.verify_invariants().unwrap();
+}
+
+#[test]
+fn infrastructure_release_cannot_infer_missing_historical_cause() {
+    let mut world = dispatched_profile_world(release());
+    world
+        .activate_disruption(
+            "closure",
+            OperationalDisruption::ResourceClosed {
+                resource_id: "block:b".into(),
+            },
+        )
+        .unwrap();
+    // Derselbe generische Grund ohne Aktivierungsbindung kann auch aus einer
+    // älteren Version stammen. Der Grundtext allein ist keine Freigabe.
+    world.safe_stop("t", "infrastructure-disruption").unwrap();
+    assert!(
+        serde_json::to_value(&world)
+            .unwrap()
+            .get("infrastructureDisruptionStops")
+            .is_none()
+    );
+    let mut legacy = OperationalWorld::restore(&world.checkpoint()).unwrap();
+    legacy
+        .clear_disruption("closure", "test-legacy-release")
+        .unwrap();
+    assert!(matches!(
+        legacy.trains["t"].motion_state,
+        MotionState::SafeStop { .. }
+    ));
+    legacy.verify_invariants().unwrap();
+}
+
+#[test]
 fn motion_geometry_keeps_both_track_offsets_at_the_next_edge_boundary() {
     let mut world = dispatched_profile_world(release());
     for _ in 0..32 {
@@ -4992,6 +5527,7 @@ fn service_outcome_world(complete_contract: bool) -> (OperationalWorld, TrainMat
         })
         .unwrap();
     let train = TrainMaterialization {
+        stop_plan: None,
         id: "service:day-0".into(),
         train_number: "RE 42".into(),
         operator_id: "operator:1".into(),

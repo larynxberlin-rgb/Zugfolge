@@ -1,7 +1,7 @@
 {
     "name": "Zugfolge Administration",
     "summary": "Signierte Game-Projektionen, Freigaben und Monitoring fuer Zugfolge",
-    "version": "19.0.2.0.7",
+    "version": "19.0.2.0.8",
     "category": "Administration",
     "license": "Other proprietary",
     "author": "Zugfolge",
@@ -11,6 +11,7 @@
         "security/ir.model.access.csv",
         "views/zugfolge_admin_views.xml",
         "views/world_offer_views.xml",
+        "views/demand_data_views.xml",
         "views/website_templates.xml",
         "views/snippets.xml",
     ],

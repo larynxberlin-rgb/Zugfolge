@@ -29,6 +29,8 @@ import {
 } from "@zugfolge/player-context";
 
 import { LivemapApiClient } from "./api.js";
+import { ConductorApi } from "./conductor-api.js";
+import { appendConductorEntry as appendSharedConductorEntry } from "./conductor-entry.js";
 import { renderAttentionRail, renderAttentionUnavailable } from "./attention.js";
 import { ensureAccessToken, loadRuntimeConfiguration } from "./auth.js";
 import {
@@ -533,6 +535,7 @@ async function selectObject(selection: MapSelection): Promise<void> {
         : await client.ownerTrain(worldId, operatorId, selection.id);
       if (selected?.id === selection.id && selected.kind === "train") {
         setPanel(trainPanel(publicDetail, ownerDetail));
+        if (ownerDetail !== undefined && operatorId !== undefined) void appendConductorEntry(selection, operatorId);
         void appendTrainDemand(selection.id, ownerDetail === undefined ? undefined : operatorId);
       }
       return;
@@ -550,6 +553,17 @@ async function selectObject(selection: MapSelection): Promise<void> {
     if (selected?.id !== selection.id) return;
     setPanel(messagePanel(error instanceof Error ? error.message : "Detail konnte nicht geladen werden.", "error"));
   }
+}
+
+async function appendConductorEntry(selection: MapSelection, operatorId: string): Promise<void> {
+  const configuration = loadRuntimeConfiguration();
+  const conductor = new ConductorApi(configuration.gameApiUrl, worldId, operatorId, selection.id,
+    (refresh) => ensureAccessToken(configuration, refresh));
+  const company = [...operatorSelector.options].find((option) => option.value === operatorId)?.textContent;
+  await appendSharedConductorEntry({ host: detailsContent, api: conductor, trainLabel: selection.label,
+    ...(worldLabel.textContent === null ? {} : { worldLabel: worldLabel.textContent }),
+    ...(company == null ? {} : { operatorLabel: company }),
+    isCurrent: () => selected?.kind === "train" && selected.id === selection.id });
 }
 
 function showSelectionMenu(selections: readonly MapSelection[], left: number, top: number): void {

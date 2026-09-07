@@ -13,6 +13,27 @@ use std::sync::Arc;
 use serde::{Deserialize, Serialize};
 use zugfolge_determinism::{StateHash, StateHasher};
 
+mod fare_control_types;
+use fare_control_types::FareControlState;
+pub use fare_control_types::{
+    FARE_CONTROL_CAUSE, FARE_CONTROL_HOLD_SCHEMA, FARE_CONTROL_POLICY_SCHEMA,
+    FareControlHandoverV1, FareControlHoldEventV1, FareControlHoldOutcomeV1,
+    FareControlHoldStatusV1, FareControlHoldV1, FareControlPolicyV1, FareControlReasonV1,
+    RequestFareControlHoldInputV1, ResolveFareControlHoldInputV1, ResolveFareControlHoldOutcomeV1,
+};
+mod fare_control;
+pub use fare_control::{fare_control_policy_hash, validate_fare_control_policy};
+mod infrastructure_recovery;
+use infrastructure_recovery::InfrastructureDisruptionStop;
+
+mod passenger_stops;
+use passenger_stops::ScheduledPassengerDeparture;
+pub use passenger_stops::{
+    CancelPassengerStopPlanInputV1, MAX_PASSENGER_STOPS_PER_TRAIN, OperationalPassengerStop,
+    OperationalPassengerStopCancellation, OperationalPassengerStopFact,
+    OperationalPassengerStopPlan, OperationalPassengerStopProgress,
+    OperationalPassengerStopReceipt,
+};
 mod service_outcomes;
 use service_outcomes::ServiceOutcomeState;
 pub use service_outcomes::{
@@ -1160,6 +1181,8 @@ impl Eq for AttachedOperationalInfrastructure {}
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct OperationalTrain {
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub passenger_stops: Option<OperationalPassengerStopProgress>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub service_outcome: Option<ServiceOutcomeProgress>,
     pub id: String,
     pub train_number: String,
@@ -1185,6 +1208,8 @@ pub struct OperationalTrain {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct TrainMaterialization {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stop_plan: Option<OperationalPassengerStopPlan>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub service_outcome: Option<ServiceOutcomeBinding>,
     pub id: String,
@@ -1534,6 +1559,8 @@ pub struct OperationalProjection {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct RegionHandover {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fare_control: Option<FareControlHandoverV1>,
     pub id: String,
     pub world_id: String,
     pub infra_release_id: String,
@@ -1572,6 +1599,19 @@ impl RegionHandover {
     }
 }
 
+/// Dauerhafter Abschlussbeleg; der Zielcheckpoint muss denselben Payload quittieren.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct FinishedHandoverReceiptV1 {
+    pub handover_id: String,
+    pub train_run_id: String,
+    pub world_id: String,
+    pub source_region_id: String,
+    pub target_region_id: String,
+    pub at_ms: SimMillis,
+    pub payload_hash: String,
+}
+
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Ord, PartialOrd, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct ScheduledMotionEnd {
@@ -1607,6 +1647,10 @@ pub struct OperationalCheckpoint {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct OperationalWorld {
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    infrastructure_disruption_stops: BTreeMap<String, InfrastructureDisruptionStop>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    fare_control_state: Option<FareControlState>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     service_outcome_state: Option<ServiceOutcomeState>,
     pub world_id: String,
@@ -1629,6 +1673,8 @@ pub struct OperationalWorld {
     #[serde(skip)]
     infra: Option<AttachedOperationalInfrastructure>,
     scheduled_motion_ends: BTreeSet<ScheduledMotionEnd>,
+    #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
+    scheduled_passenger_departures: BTreeSet<ScheduledPassengerDeparture>,
     scheduled_continuation_due: BTreeSet<ScheduledContinuationDue>,
     waiting_by_resource: BTreeMap<String, BTreeSet<String>>,
     continuations_waiting_by_resource: BTreeMap<String, BTreeSet<String>>,
@@ -1642,6 +1688,8 @@ pub struct OperationalWorld {
     accepted_handovers: BTreeMap<String, String>,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     finished_handovers: BTreeMap<String, String>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    finished_handover_receipts: BTreeMap<String, FinishedHandoverReceiptV1>,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     handover_protection_by_train: BTreeMap<String, BTreeSet<String>>,
 }
@@ -2025,6 +2073,7 @@ impl OperationalWorld {
             processed_command_ids: BTreeSet::new(),
             infra: Some(AttachedOperationalInfrastructure(infra)),
             scheduled_motion_ends: BTreeSet::new(),
+            scheduled_passenger_departures: BTreeSet::new(),
             scheduled_continuation_due: BTreeSet::new(),
             waiting_by_resource: BTreeMap::new(),
             continuations_waiting_by_resource: BTreeMap::new(),
@@ -2033,9 +2082,12 @@ impl OperationalWorld {
             completed_movement_continuations: BTreeMap::new(),
             route_completed_at_ms: BTreeMap::new(),
             service_outcome_state: None,
+            infrastructure_disruption_stops: BTreeMap::new(),
+            fare_control_state: None,
             prepared_handovers: BTreeMap::new(),
             accepted_handovers: BTreeMap::new(),
             finished_handovers: BTreeMap::new(),
+            finished_handover_receipts: BTreeMap::new(),
             handover_protection_by_train: BTreeMap::new(),
         })
     }
@@ -2503,6 +2555,7 @@ impl OperationalWorld {
         selection_policy: &str,
         selection_runs: &[ProtectionModeSelectionRun],
     ) -> Result<OperationalProgramTemplatePredicates, OperationalError> {
+        self.validate_passenger_stop_plan(train)?;
         if train.id.is_empty()
             || operational_train_number_numeric_part(&train.train_number).is_none()
             || train.operator_id.is_empty()
@@ -2604,8 +2657,10 @@ impl OperationalWorld {
         if self.trains.contains_key(&input.id) {
             return Err(OperationalError::DuplicateId(input.id));
         }
+        self.validate_passenger_stop_plan(&input)?;
         let service_input = input.clone();
         let TrainMaterialization {
+            stop_plan,
             service_outcome: _,
             id,
             train_number,
@@ -2654,6 +2709,7 @@ impl OperationalWorld {
         let service_outcome =
             self.start_service_outcome(&service_input, &service_input.formation_version_id)?;
         let train = OperationalTrain {
+            passenger_stops: stop_plan.map(OperationalPassengerStopProgress::new),
             service_outcome,
             id: id.clone(),
             train_number,
@@ -2682,6 +2738,7 @@ impl OperationalWorld {
                 .insert(block, ResourceLifecycle::OccupiedByFormation);
         }
         self.record("movement-materialized", &id, "exact-route-and-formation")?;
+        self.record_passenger_arrival(&id)?;
         self.refresh_route_completion(&id)?;
         self.progress_movement_continuations()?;
         Ok(())
@@ -2706,6 +2763,7 @@ impl OperationalWorld {
         public_passenger_stop: bool,
     ) -> Result<(), OperationalError> {
         self.materialize(TrainMaterialization {
+            stop_plan: None,
             service_outcome: None,
             id: id.into(),
             train_number: train_number.into(),
@@ -2724,6 +2782,12 @@ impl OperationalWorld {
     /// strikt abgelehnt; die Runtime kann dadurch den gesamten Tagesgrenzen-
     /// Batch atomar verwerfen.
     pub fn retire_train(&mut self, train_id: &str) -> Result<(), OperationalError> {
+        if self
+            .fare_control_hold(train_id)
+            .is_some_and(|hold| hold.status != FareControlHoldStatusV1::Released)
+        {
+            return Err(OperationalError::TrainNotRetirable(train_id.to_owned()));
+        }
         if !self.prepared_handovers.is_empty() {
             return Err(OperationalError::InvalidHandover);
         }
@@ -2787,6 +2851,13 @@ impl OperationalWorld {
             self.signal_aspects.remove(signal_id);
         }
         self.trains.remove(train_id);
+        self.infrastructure_disruption_stops.remove(train_id);
+        if let Some(state) = &mut self.fare_control_state {
+            state.resume_requests.remove(train_id);
+            state.revoked_authorities.remove(train_id);
+        }
+        self.scheduled_passenger_departures
+            .retain(|entry| entry.train_id != train_id);
         self.handover_protection_by_train.remove(train_id);
         self.scheduled_motion_ends
             .retain(|scheduled| scheduled.train_id != train_id);
@@ -3289,6 +3360,12 @@ impl OperationalWorld {
         let mut scheduled = BTreeSet::new();
         for continuation in self.pending_movement_continuations.values() {
             if self
+                .fare_control_hold(&continuation.predecessor_train_id)
+                .is_some_and(|h| h.status != FareControlHoldStatusV1::Released)
+            {
+                continue;
+            }
+            if self
                 .continuations_waiting_by_resource
                 .values()
                 .any(|waiting| waiting.contains(&continuation.id))
@@ -3385,6 +3462,9 @@ impl OperationalWorld {
             return Ok(false);
         };
         if !self.physical_route_complete(&predecessor.id)?
+            || self
+                .fare_control_hold(&predecessor.id)
+                .is_some_and(|h| h.status != FareControlHoldStatusV1::Released)
             || !matches!(predecessor.motion_state, MotionState::Standing)
         {
             return Ok(false);
@@ -3504,6 +3584,11 @@ impl OperationalWorld {
         let service_outcome =
             self.start_service_outcome(&continuation.successor, &predecessor.formation_version_id)?;
         let successor = OperationalTrain {
+            passenger_stops: continuation
+                .successor
+                .stop_plan
+                .clone()
+                .map(OperationalPassengerStopProgress::new),
             service_outcome,
             id: continuation.successor.id.clone(),
             train_number: continuation.successor.train_number.clone(),
@@ -3571,6 +3656,7 @@ impl OperationalWorld {
                 continuation.continuity.contract_name()
             ),
         )?;
+        self.record_passenger_arrival(&continuation.successor.id)?;
         self.rebuild_resource_lifecycle();
         self.rebuild_signal_aspects()?;
         self.wake_movement_continuations_for_resources(&released_resources)?;
@@ -3629,6 +3715,9 @@ impl OperationalWorld {
         continuation: bool,
         register_wait: bool,
     ) -> Result<MovementAuthority, OperationalError> {
+        if self.fare_control_blocks_departure(train_id) {
+            return Err(OperationalError::UnsafeRoute(template_id.to_owned()));
+        }
         let train = self
             .trains
             .get(train_id)
@@ -3663,7 +3752,12 @@ impl OperationalWorld {
             .leg_at(expected_start)
             .ok_or_else(|| OperationalError::IncompleteRoute(route.id.clone()))?;
         if route.template_id != template.route_template_id
-            || template.authority_start_route_mm != expected_start
+            || (template.authority_start_route_mm != expected_start
+                && (continuation
+                    || self
+                        .fare_control_remaining_template(train_id)?
+                        .or(self.infrastructure_remaining_template(train_id)?)
+                        .is_none_or(|retained| retained.id != template.id)))
             || template.authority_end_route_mm <= expected_start
             || template.authority_end_route_mm > route.length_mm()
             || train.speed_mmps != 0
@@ -3750,6 +3844,7 @@ impl OperationalWorld {
             issued_at_ms: self.now_ms,
             source_route_lock_id: lock_id.clone(),
         };
+        self.fare_control_authority_reissued(train_id);
         self.route_locks.insert(lock_id, lock);
         self.trains
             .get_mut(train_id)
@@ -3898,7 +3993,11 @@ impl OperationalWorld {
                 .route_version(&train.route_version_id)?
                 .ok_or_else(|| OperationalError::UnknownRoute(train.route_version_id.clone()))?;
             if template.route_template_id != route.template_id
-                || template.authority_start_route_mm != train.head_route_mm
+                || (template.authority_start_route_mm != train.head_route_mm
+                    && self
+                        .fare_control_remaining_template(&request.train_id)?
+                        .or(self.infrastructure_remaining_template(&request.train_id)?)
+                        .is_none_or(|retained| retained.id != template.id))
                 || train.head_route_mm == route.length_mm()
             {
                 return Err(OperationalError::InvalidDispatchRequest(
@@ -3907,8 +4006,11 @@ impl OperationalWorld {
             }
             if train.movement_kind == MovementKind::Train
                 && self
-                    .infrastructure()?
-                    .train_interlocking_route(&route.template_id, train.head_route_mm)?
+                    .departure_interlocking_route(
+                        &request.train_id,
+                        &route.template_id,
+                        train.head_route_mm,
+                    )?
                     .is_none_or(|indexed| indexed.id != request.interlocking_route_id)
             {
                 return Err(OperationalError::InvalidDispatchRequest(
@@ -3977,6 +4079,9 @@ impl OperationalWorld {
                 completed.push(train.id.clone());
                 continue;
             }
+            if self.passenger_stop_waiting(&request.train_id) {
+                continue;
+            }
             if train.speed_mmps != 0
                 || !matches!(train.motion_state, MotionState::Standing)
                 || train.motion_segment.is_some()
@@ -3985,8 +4090,11 @@ impl OperationalWorld {
                 continue;
             }
             let template = if train.movement_kind == MovementKind::Train {
-                self.infrastructure()?
-                    .train_interlocking_route(&route.template_id, train.head_route_mm)?
+                self.departure_interlocking_route(
+                    &request.train_id,
+                    &route.template_id,
+                    train.head_route_mm,
+                )?
             } else {
                 self.infrastructure()?
                     .interlocking_route(&request.interlocking_route_id)?
@@ -4036,6 +4144,7 @@ impl OperationalWorld {
             if self.trains[&train_id].movement_kind == MovementKind::Train {
                 self.extend_available_train_authority(&train_id)?;
             }
+            self.finish_infrastructure_authority_reissue(&train_id);
             self.plan_motion(&train_id)?;
             dispatched.push(train_id);
         }
@@ -4050,6 +4159,9 @@ impl OperationalWorld {
             .any(|handover| handover.train.id == train_id)
         {
             return Err(OperationalError::InvalidHandover);
+        }
+        if self.passenger_stop_waiting(train_id) {
+            return Err(OperationalError::PassengerDepartureTooEarly);
         }
         let train = self
             .trains
@@ -4069,6 +4181,14 @@ impl OperationalWorld {
             .authority
             .as_ref()
             .ok_or(OperationalError::NoAuthority)?;
+        if train.passenger_stops.is_some() && train.motion_segment.is_some() {
+            return Err(OperationalError::UnsafeState);
+        }
+        let motion_end_route_mm = self
+            .passenger_braking_target(train)
+            .map_or(authority.end_route_mm, |stop| {
+                stop.min(authority.end_route_mm)
+            });
         if authority.route_version_id != train.route_version_id
             || authority.end_route_mm < train.head_route_mm
             || !formation.performance.mobile
@@ -4152,11 +4272,11 @@ impl OperationalWorld {
         let brake = u32::try_from(brake).map_err(|_| OperationalError::ArithmeticOverflow)?;
         // Jede folgende Vmax bildet ein Bremsziel. Der aequivalente Weg bis
         // Geschwindigkeit null erlaubt dieselbe Integer-Huellkurve wie ein Halt.
-        let mut remaining = authority.end_route_mm.saturating_sub(train.head_route_mm);
+        let mut remaining = motion_end_route_mm.saturating_sub(train.head_route_mm);
         let mut target_speed = 0;
         for profile in &route.legs {
             if profile.route_start_mm > train.head_route_mm
-                && profile.route_start_mm < authority.end_route_mm
+                && profile.route_start_mm < motion_end_route_mm
             {
                 let target_limit = leg_limit(profile);
                 let equivalent = profile
@@ -4192,6 +4312,7 @@ impl OperationalWorld {
         // Ereignisgrenze ist Geschwindigkeitswechsel, Kantenende oder Fahrberechtigungsende.
         let infrastructure_boundary = authority
             .end_route_mm
+            .min(motion_end_route_mm)
             .min(leg.route_end_mm())
             .min(next_tail_boundary)
             .saturating_sub(train.head_route_mm)
@@ -4278,6 +4399,7 @@ impl OperationalWorld {
             train_id: train_id.to_owned(),
             segment_started_at_ms: self.now_ms,
         });
+        self.record_passenger_departure(train_id)?;
         self.record(
             "motion-segment-started",
             train_id,
@@ -4288,6 +4410,14 @@ impl OperationalWorld {
 
     /// Verarbeitet ausschliesslich faellige Ereignisse; kein Zug-Vollscan.
     pub fn advance_to(&mut self, target_ms: SimMillis) -> Result<(), OperationalError> {
+        if target_ms > passenger_stops::MAX_STOP_CONTRACT_INTEGER
+            && self
+                .trains
+                .values()
+                .any(|train| train.passenger_stops.is_some())
+        {
+            return Err(OperationalError::InvalidPassengerStopPlan);
+        }
         // Prepare friert den regionalen Writer bis zum bestaetigten Commit ein.
         // Der Zielwriter ist ab Accept die einzige bewegliche Autoritaet.
         if !self.prepared_handovers.is_empty() && target_ms != self.now_ms {
@@ -4306,10 +4436,20 @@ impl OperationalWorld {
                 .scheduled_continuation_due
                 .first()
                 .map(|scheduled| scheduled.at_ms);
-            let next_at_ms = match (next_motion_ms, next_continuation_ms) {
-                (Some(left), Some(right)) => left.min(right),
-                (Some(at_ms), None) | (None, Some(at_ms)) => at_ms,
-                (None, None) => break,
+            let next_passenger_ms = self
+                .scheduled_passenger_departures
+                .first()
+                .map(|scheduled| scheduled.at_ms);
+            let Some(next_at_ms) = [
+                next_motion_ms,
+                next_continuation_ms,
+                next_passenger_ms,
+                self.fare_control_next_at(),
+            ]
+            .into_iter()
+            .flatten()
+            .min() else {
+                break;
             };
             if next_at_ms > target_ms {
                 break;
@@ -4332,9 +4472,12 @@ impl OperationalWorld {
                     self.finish_motion_segment(&next.train_id)?;
                 }
             }
+            self.progress_fare_control_holds()?;
+            self.progress_passenger_departures()?;
             self.progress_movement_continuations()?;
         }
         self.now_ms = target_ms;
+        self.progress_fare_control_holds()?;
         self.progress_movement_continuations()?;
         Ok(())
     }
@@ -4435,6 +4578,7 @@ impl OperationalWorld {
             train_id,
             format!("head={head};tail={tail}"),
         )?;
+        self.record_passenger_arrival(train_id)?;
         let (authority_remaining, residual_speed) = {
             let train = self.trains.get(train_id).expect("train exists");
             (
@@ -4445,8 +4589,10 @@ impl OperationalWorld {
                 train.speed_mmps,
             )
         };
-        if authority_remaining {
+        if authority_remaining && !self.passenger_stop_waiting(train_id) {
             self.plan_motion(train_id)?;
+            self.dispatch_waiting_for_resources(&released_resources)?;
+        } else if authority_remaining {
             self.dispatch_waiting_for_resources(&released_resources)?;
         } else if residual_speed > 0 {
             self.safe_stop(train_id, "authority-ended-with-residual-speed")?;
@@ -4617,7 +4763,10 @@ impl OperationalWorld {
             let Some(train) = self.trains.get(&lock.train_id) else {
                 return Err(OperationalError::UnsafeState);
             };
-            if matches!(train.motion_state, MotionState::SafeStop { .. }) {
+            if matches!(train.motion_state, MotionState::SafeStop { .. })
+                || self.fare_control_blocks_departure(&train.id)
+                || self.fare_control_authority_revoked(&train.id)
+            {
                 continue;
             }
             let template = self
@@ -4626,6 +4775,9 @@ impl OperationalWorld {
                 .ok_or_else(|| {
                     OperationalError::UnknownInterlockingRoute(lock.template_id.clone())
                 })?;
+            if self.infrastructure_signal_withheld(&train.id, template.authority_end_route_mm) {
+                continue;
+            }
             let expected = if template.movement_kind == MovementKind::Train {
                 SignalAspect::Proceed
             } else {
@@ -4648,6 +4800,7 @@ impl OperationalWorld {
         if !self.prepared_handovers.is_empty() {
             return Err(OperationalError::InvalidHandover);
         }
+        self.infrastructure_disruption_stops.remove(train_id);
         let train = self
             .trains
             .get_mut(train_id)
@@ -4660,6 +4813,8 @@ impl OperationalWorld {
         train.waiting_reason = Some(reason.to_owned());
         train.authority = None;
         self.scheduled_motion_ends
+            .retain(|scheduled| scheduled.train_id != train_id);
+        self.scheduled_passenger_departures
             .retain(|scheduled| scheduled.train_id != train_id);
         self.pending_dispatch_requests.remove(train_id);
         self.waiting_by_resource.retain(|_, waiting| {
@@ -4707,6 +4862,13 @@ impl OperationalWorld {
         self.ensure_vehicles_available(train_id, &vehicle_ids)?;
         let formation =
             self.derive_formation(new_formation_id.into(), Some(predecessor), vehicle_ids)?;
+        if let Some(progress) = &train.passenger_stops {
+            self.validate_stop_geometry_for_formation(
+                &progress.plan,
+                &formation,
+                progress.next_stop_index,
+            )?;
+        }
         let route = self
             .infrastructure()?
             .route_version(&route_id)?
@@ -4750,6 +4912,11 @@ impl OperationalWorld {
             .trains
             .get(train_id)
             .ok_or_else(|| OperationalError::UnknownTrain(train_id.to_owned()))?;
+        // Ein anderer Laufweg benoetigt einen neu zertifizierten Haltplan.
+        // Das bisherige Reroute-Kommando darf seine Anker nicht still umdeuten.
+        if train.passenger_stops.is_some() {
+            return Err(OperationalError::InvalidPassengerStopPlan);
+        }
         if train.speed_mmps != 0 || train.motion_segment.is_some() {
             return Err(OperationalError::RouteChangeWhileMoving);
         }
@@ -4959,7 +5126,7 @@ impl OperationalWorld {
             .map(|train| train.id.clone())
             .collect();
         for train_id in infrastructure_affected {
-            self.safe_stop(&train_id, "infrastructure-disruption")?;
+            self.stop_for_infrastructure_disruption(&train_id, &disruption_id)?;
         }
         if let OperationalDisruption::VehicleRestricted {
             vehicle_id,
@@ -5054,6 +5221,7 @@ impl OperationalWorld {
             }
         }
         self.active_disruptions.remove(disruption_id);
+        self.release_infrastructure_disruption_stops(disruption_id)?;
         self.rebuild_signal_aspects()?;
         self.record("disruption-cleared", disruption_id, release_reference)?;
         self.dispatch_pending()?;
@@ -5241,6 +5409,7 @@ impl OperationalWorld {
             || target_region_id == self.region_id
             || self.finished_handovers.contains_key(&id)
             || !self.prepared_handovers.is_empty()
+            || self.infrastructure_disruption_stops.contains_key(train_id)
             || self
                 .pending_movement_continuations
                 .values()
@@ -5303,6 +5472,7 @@ impl OperationalWorld {
             return Err(OperationalError::UnprotectedHandover);
         }
         let mut handover = RegionHandover {
+            fare_control: self.fare_control_handover(train_id),
             id,
             world_id: self.world_id.clone(),
             infra_release_id: self.infra_release_id.clone(),
@@ -5446,6 +5616,9 @@ impl OperationalWorld {
             .trains
             .insert(handover.train.id.clone(), handover.train.clone());
         candidate
+            .adopt_fare_control_handover(&handover.train.id, handover.fare_control.as_ref())?;
+        candidate.schedule_passenger_departure(&handover.train.id);
+        candidate
             .trains
             .get_mut(&handover.train.id)
             .expect("transferred train")
@@ -5521,6 +5694,7 @@ impl OperationalWorld {
         }
         let mut candidate = self.clone();
         candidate.trains.remove(&handover.train.id);
+        candidate.remove_fare_control_handover(&handover.train.id);
         candidate
             .handover_protection_by_train
             .remove(&handover.train.id);
@@ -5529,6 +5703,9 @@ impl OperationalWorld {
             .retain(|_, lock| lock.train_id != handover.train.id);
         candidate
             .scheduled_motion_ends
+            .retain(|event| event.train_id != handover.train.id);
+        candidate
+            .scheduled_passenger_departures
             .retain(|event| event.train_id != handover.train.id);
         candidate
             .pending_dispatch_requests
@@ -5555,6 +5732,18 @@ impl OperationalWorld {
         candidate
             .finished_handovers
             .insert(handover.id.clone(), handover.payload_hash.clone());
+        candidate.finished_handover_receipts.insert(
+            handover.id.clone(),
+            FinishedHandoverReceiptV1 {
+                handover_id: handover.id.clone(),
+                train_run_id: handover.train.id.clone(),
+                world_id: handover.world_id.clone(),
+                source_region_id: handover.source_region_id.clone(),
+                target_region_id: handover.target_region_id.clone(),
+                at_ms: handover.at_ms,
+                payload_hash: handover.payload_hash.clone(),
+            },
+        );
         candidate.rebuild_resource_lifecycle();
         candidate.rebuild_signal_aspects()?;
         candidate.record(
@@ -5568,6 +5757,23 @@ impl OperationalWorld {
     }
 
     pub fn verify_invariants(&self) -> Result<(), OperationalError> {
+        self.verify_infrastructure_disruption_stops()?;
+        for (id, receipt) in &self.finished_handover_receipts {
+            if id != &receipt.handover_id
+                || receipt.train_run_id.is_empty()
+                || receipt.world_id != self.world_id
+                || receipt.source_region_id != self.region_id
+                || receipt.target_region_id.is_empty()
+                || receipt.target_region_id == self.region_id
+                || receipt.at_ms < 0
+                || receipt.at_ms > self.now_ms
+                || self.finished_handovers.get(id) != Some(&receipt.payload_hash)
+            {
+                return Err(OperationalError::InvalidHandover);
+            }
+        }
+        self.verify_fare_control()?;
+        self.verify_passenger_stops()?;
         self.verify_service_outcomes()?;
         for (id, handover) in &self.prepared_handovers {
             if id != &handover.id
@@ -5680,8 +5886,11 @@ impl OperationalWorld {
                             OperationalError::UnknownRoute(train.route_version_id.clone())
                         })?;
                     let template = if train.movement_kind == MovementKind::Train {
-                        self.infrastructure()?
-                            .train_interlocking_route(&route.template_id, train.head_route_mm)?
+                        self.departure_interlocking_route(
+                            train_id,
+                            &route.template_id,
+                            train.head_route_mm,
+                        )?
                     } else {
                         self.infrastructure()?.interlocking_route(
                             &self.pending_dispatch_requests[train_id].interlocking_route_id,
@@ -5816,6 +6025,12 @@ impl OperationalWorld {
         let mut expected_continuation_due = BTreeSet::new();
         for continuation in self.pending_movement_continuations.values() {
             if self
+                .fare_control_hold(&continuation.predecessor_train_id)
+                .is_some_and(|h| h.status != FareControlHoldStatusV1::Released)
+            {
+                continue;
+            }
+            if self
                 .continuations_waiting_by_resource
                 .values()
                 .any(|waiting| waiting.contains(&continuation.id))
@@ -5925,9 +6140,22 @@ impl OperationalWorld {
                     || template.movement_kind != train.movement_kind
                     || (!matches!(train.motion_state, MotionState::SafeStop { .. })
                         && template.authority_start_route_mm > train.head_route_mm
-                        && train.authority.as_ref().is_none_or(|authority| {
-                            authority.end_route_mm < template.authority_end_route_mm
-                        }))
+                        && train
+                            .authority
+                            .as_ref()
+                            .or_else(|| {
+                                self.fare_control_state
+                                    .as_ref()
+                                    .and_then(|s| s.revoked_authorities.get(&train.id))
+                            })
+                            .or_else(|| {
+                                self.infrastructure_disruption_stops
+                                    .get(&train.id)
+                                    .and_then(|evidence| evidence.revoked_authority.as_ref())
+                            })
+                            .is_none_or(|authority| {
+                                authority.end_route_mm < template.authority_end_route_mm
+                            }))
                     || lock.resources != template.all_resources()
                     || lock.release_after_tail_route_mm != template.release_after_tail_route_mm
                 {
@@ -5939,13 +6167,20 @@ impl OperationalWorld {
                 }) {
                     return Err(OperationalError::UnsafeState);
                 }
-                backed_signals.insert((template.signal_id.clone(), template.movement_kind));
+                let withheld = self.fare_control_blocks_departure(&train.id)
+                    || self.fare_control_authority_revoked(&train.id)
+                    || self
+                        .infrastructure_signal_withheld(&train.id, template.authority_end_route_mm);
+                if !withheld {
+                    backed_signals.insert((template.signal_id.clone(), template.movement_kind));
+                }
                 let expected_aspect = if template.movement_kind == MovementKind::Train {
                     SignalAspect::Proceed
                 } else {
                     SignalAspect::ShuntingProceed
                 };
                 if !matches!(train.motion_state, MotionState::SafeStop { .. })
+                    && !withheld
                     && self.signal_aspects.get(&template.signal_id) != Some(&expected_aspect)
                 {
                     return Err(OperationalError::UnsafeState);
@@ -6116,6 +6351,13 @@ fn route_geometry_for(
     start_route_mm: i64,
     end_route_mm: i64,
 ) -> Result<Vec<OperationalRouteGeometryPoint>, OperationalError> {
+    if start_route_mm == end_route_mm {
+        // Ein zeitlicher Bremsrest am erreichten Fahrgasthalt besitzt keinen
+        // weiteren Millimeterweg, aber weiterhin genau diesen realen Ort.
+        return route_geometry_position(infra, route, start_route_mm)?
+            .map(|point| vec![point])
+            .ok_or(OperationalError::UnsafeState);
+    }
     let mut result = Vec::new();
     for leg in &route.legs {
         let start = start_route_mm.max(leg.route_start_mm);
@@ -6350,6 +6592,7 @@ fn first_boundary_or_event_ms(
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum OperationalError {
+    InvalidPassengerStopPlan,
     InvalidServiceOutcome,
     ArithmeticOverflow,
     EventBudgetExceeded,
@@ -6388,6 +6631,7 @@ pub enum OperationalError {
     NoAuthority,
     UnsafeState,
     PassengerDepartureTooEarly,
+    InvalidFareControl(&'static str),
     TimeRegression,
     AuthorityExceeded,
     FormationChangeWhileMoving,
@@ -6494,6 +6738,7 @@ mod invariant_tests {
         occupied_intervals: Vec<TrackInterval>,
     ) -> OperationalTrain {
         OperationalTrain {
+            passenger_stops: None,
             service_outcome: None,
             id: id.to_owned(),
             train_number: train_number.to_owned(),
@@ -6558,10 +6803,14 @@ mod invariant_tests {
             infra: None,
             handover_protection_by_train: BTreeMap::new(),
             service_outcome_state: None,
+            fare_control_state: None,
+            infrastructure_disruption_stops: BTreeMap::new(),
             prepared_handovers: BTreeMap::new(),
             accepted_handovers: BTreeMap::new(),
             finished_handovers: BTreeMap::new(),
+            finished_handover_receipts: BTreeMap::new(),
             scheduled_motion_ends: BTreeSet::new(),
+            scheduled_passenger_departures: BTreeSet::new(),
             scheduled_continuation_due: BTreeSet::new(),
             waiting_by_resource: BTreeMap::new(),
             continuations_waiting_by_resource: BTreeMap::new(),

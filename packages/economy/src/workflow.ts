@@ -19,6 +19,7 @@ import type {
 import { deriveGtfsServiceSpecifications, lotsFromGtfsPlanning } from "./service-planning.js";
 import { TENDER_GENERATION_TIMING, validateTenderGenerationPolicy, type TenderGenerationPolicy } from "./tender-generation-policy.js";
 import { compareUtf8 } from "./utf8.js";
+import { buildFareContractRevenueEvidence, type FareContractRevenueEvidenceV1 } from "./fare-revenue.js";
 
 export interface EconomyNotice {
   /** Stabiler fachlicher Effekt-Identifier für persistente Deduplizierung. */
@@ -38,6 +39,7 @@ export interface EconomyJournalEntry {
   readonly description: string;
   readonly postings: readonly ClassifiedPosting[];
   readonly revenueCents: bigint;
+  readonly contractRevenueEvidence?: FareContractRevenueEvidenceV1;
 }
 
 export interface EconomyEffects {
@@ -654,7 +656,14 @@ export function settleContractPeriod(state: EconomyWorldState, input: { readonly
   }];
   const settlement = settleContract(contract, input.performance);
   const result = calculateProfitAndLoss(settlement.netCents, costs);
-  const journal: EconomyJournalEntry = { worldId: state.worldId, operatorId: contract.operatorId, idempotencyKey: `${input.commandId}:settlement`, at: input.at, description: `Vertragsabrechnung Periode ${input.period}`, postings: costs, revenueCents: settlement.netCents };
+  const journalEffectId = `${input.commandId}:settlement`;
+  const contractRevenueEvidence = state.release.fareInspection === undefined ? undefined : buildFareContractRevenueEvidence({ worldId: state.worldId, operatorId: contract.operatorId,
+    contractId: contract.id, journalEffectId, economyReleaseHash: state.releasePin.releaseChecksum,
+    serviceStartMs: periodStart * 1000, serviceEndMs: periodEnd * 1000, settledAtMs: input.at * 1000,
+    orderingFeeCents: settlement.orderingFeeCents.toString(), bonusCents: settlement.bonusCents.toString(), penaltyCents: settlement.penaltyCents.toString() });
+  const journal: EconomyJournalEntry = { worldId: state.worldId, operatorId: contract.operatorId, idempotencyKey: journalEffectId,
+    at: input.at, description: `Vertragsabrechnung Periode ${input.period}`, postings: costs, revenueCents: settlement.netCents,
+    ...(contractRevenueEvidence === undefined ? {} : { contractRevenueEvidence }) };
   const settledPeriods = new Set(state.settledPeriods);
   settledPeriods.add(settlementKey);
   return { state: withCommand(state, input.commandId, { settledPeriods }), effects: { notices: [], journal: [journal] }, result };

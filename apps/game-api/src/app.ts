@@ -202,6 +202,8 @@ import type { InfraPackageStaging, InfraUploadSigningKey } from "./infra-package
 import { registerLivemapReadRoutes } from "./livemap-read-routes.js";
 import { registerDemandRoutes, type DemandReadService } from "./demand-routes.js";
 import { registerConductorInteriorRoutes, type ConductorInteriorService } from "./conductor-interior.js";
+import { registerConductorSessionRoutes } from "./conductor-session-routes.js";
+import type { ConductorSessionService } from "./conductor-session-service.js";
 import type { SpfvService } from "./spfv-service.js";
 import { ApiObservability, requestCorrelationId, type PrometheusMetricSource } from "./observability.js";
 import { PlanningAuthorityError, resolveAuthoritativePlanningPathRequest } from "./planning-authority.js";
@@ -237,6 +239,7 @@ export interface AppDependencies {
   readonly livemapReadModel?: LivemapReadModel;
   readonly demand?: DemandReadService;
   readonly conductorInterior?: Pick<ConductorInteriorService, "layout">;
+  readonly conductorSessions?: ConductorSessionService;
   readonly spfv?: Pick<SpfvService, "catalog" | "preview" | "confirm">;
   /** Authentifizierter, je EVU getrennter Betriebsereignis-Fanout (M7.5/M7.6). */
   readonly operations?: OperationsRegistry;
@@ -418,6 +421,10 @@ const fleetCommandBody = {
 
 const RESERVED_SINGLE_WRITER_EVENT_TYPES = new Set([
   "demand.evaluated",
+  "demand.pool-initialized",
+  "demand.pool-progressed",
+  "operations.passenger-stop-arrival",
+  "operations.passenger-stop-departure",
   "spfv.preview",
   "spfv.submitted",
   "planning.runtime-state",
@@ -1520,6 +1527,7 @@ export function buildApp(deps: AppDependencies): FastifyInstance {
     authenticate,
   });
   registerConductorInteriorRoutes(app, { authenticate, conductorInterior: deps.conductorInterior });
+  registerConductorSessionRoutes(app, { authenticate, conductorSessions: deps.conductorSessions });
   registerDemandRoutes(app, { db: deps.db, authenticate, demand: deps.demand, spfv: deps.spfv,
     guardPlanning: (request, worldId, target, replayKey) => guardSensitiveAction(request, request.identity!.keycloakSubject, worldId, "path-window", target, replayKey),
   });
@@ -1557,6 +1565,7 @@ export function buildApp(deps: AppDependencies): FastifyInstance {
   app.post<{ Body: OdooWebhookEnvelope }>(
     "/integrations/odoo/webhooks",
     {
+      bodyLimit: 16 * 1024 * 1024,
       schema: {
         body: {
           type: "object",

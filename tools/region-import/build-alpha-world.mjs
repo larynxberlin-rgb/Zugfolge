@@ -24,7 +24,8 @@ import {
   deriveDailyCirculationPlan,
   dailyServiceLotIdentifiers,
 } from "./daily-circulation-v2.mjs";
-import { allocateMovementRoutePlanV2 } from "./movement-route-allocation-v2.mjs";
+import { allocateMovementRoutePlanV2, bindMovementPassengerStopPlansV1 } from "./movement-route-allocation-v2.mjs";
+import { bindPassengerStopPlan, streamPassengerStopInfrastructure, validatePassengerStopAnchors } from "./passenger-stop-binding-v1.mjs";
 import { validateMovementRouteTemplatesV2 } from "./movement-route-templates-v2.mjs";
 import {
   assertNormalizedScheduleTimeContract,
@@ -697,6 +698,7 @@ function timetableRouteSummary(value, requiredPlayableLegIds, seen) {
     }
   }
   invariant(routeLengthMm > 0, `Timetable-Route fuer '${playableLegId}' ist leer.`);
+  const passengerStopAnchors = validatePassengerStopAnchors(route);
   const dispatchInterlockingRouteId = germanyOperationalStableId(
     "interlocking:synthetic-segment:",
     [route.routeVersionId, "0"],
@@ -711,6 +713,7 @@ function timetableRouteSummary(value, requiredPlayableLegIds, seen) {
     edgeIds: Object.freeze([...new Set(route.legs.map((leg) => leg.edgeId))]),
     routeLegCount: route.legs.length,
     protectionContractRuns: Object.freeze(protectionContractRuns.map((run) => Object.freeze(run))),
+    ...(passengerStopAnchors === undefined ? {} : {passengerStopAnchors, legs: Object.freeze(route.legs)}),
   });
 }
 
@@ -1047,6 +1050,8 @@ const [
   vehicleCompiledCatalogBytes,
   timetableTransferDemandsBytes,
   movementRouteTemplatesBytes,
+  passengerStopBinderBytes,
+  movementAllocatorBytes,
 ] = await Promise.all([
   readFile(gtfsPath),
   readFile(fleetCatalogPath),
@@ -1062,6 +1067,8 @@ const [
   vehicleCompiledCatalogPath === undefined ? undefined : readFile(vehicleCompiledCatalogPath),
   readFile(timetableTransferDemandsPath),
   readFile(movementRouteTemplatesPath),
+  readFile(new URL("./passenger-stop-binding-v1.mjs", import.meta.url)),
+  readFile(new URL("./movement-route-allocation-v2.mjs", import.meta.url)),
 ]);
 const gtfsEnvelope = JSON.parse(gtfsBytes);
 const fleetCatalog = JSON.parse(fleetBytes);
@@ -1211,6 +1218,7 @@ const formations = [];
 const personnelDuties = [];
 const pathReservations = [];
 const regionalTrains = [];
+const passengerStopInputs = new Map();
 const blueprintLots = [];
 const publicVehiclePoolByLot = {};
 let numericPersonnelId = 20_000;
@@ -1239,6 +1247,10 @@ function routeForLeg(leg, timetableRoute) {
   const routeLengthMm = safePositiveInteger(timetableRoute?.routeLengthMm, `Timetable-Route ${leg.legId}.routeLengthMm`);
   return leg.stops.map((stop, index) => {
     if (!stationById.has(stop.stopId)) throw new Error(`Haltestelle ${stop.stopId} fehlt im signierten GTFS-Betriebsstellenkorpus.`);
+    const anchor = timetableRoute.passengerStopAnchors?.[index];
+    if (timetableRoute.passengerStopAnchors !== undefined)
+      invariant(timetableRoute.passengerStopAnchors.length === leg.stops.length && anchor?.stationId === stop.stopId
+        && anchor.stopSequence === stop.stopSequence, `Halteanker ${leg.legId} widerspricht den geordneten Fahrplanhalten.`);
     const operatingPoint = index === 0 && leg.entryPortalId !== null
       ? leg.entryPortalId
       : index === leg.stops.length - 1 && leg.exitPortalId !== null
@@ -1246,7 +1258,7 @@ function routeForLeg(leg, timetableRoute) {
         : stop.stopId;
     return {
       operatingPoint,
-      positionMm: leg.stops.length === 1 ? 0 : Math.floor(routeLengthMm * index / (leg.stops.length - 1)),
+      positionMm: anchor?.routeMm ?? (leg.stops.length === 1 ? 0 : Math.floor(routeLengthMm * index / (leg.stops.length - 1))),
       arrivalS: stop.arrivalS,
       minimumDwellSeconds: stop.departureS - stop.arrivalS,
       departureS: stop.departureS,
@@ -1379,6 +1391,7 @@ for (const [lotIndex, lot] of lotRecords.entries()) {
       const trainNumber = publicRegionalTrainNumber(chain.routeShortName, trainRunId, publicTrainNumbers);
       const scheduledDepartureS = leg.stops[0].departureS % NORMALIZED_SCHEDULE_REPEAT_EVERY_S;
       if (!Number.isSafeInteger(scheduledDepartureS) || scheduledDepartureS < 0) throw new Error(`Fahrtkette '${chain.journeyChainId}' besitzt keine normalisierbare Tagesabfahrt.`);
+      if (timetableRoute.passengerStopAnchors !== undefined) passengerStopInputs.set(trainRunId, {timetableRoute, timetableStops: leg.stops});
       regionalTrains.push({
         trainRunId,
         journeyChainId: chain.journeyChainId,
@@ -1473,7 +1486,7 @@ const dailyContinuities = dailyMovementContinuities({
   journeyChains: chains,
 });
 const rolloverCycles = dailyRolloverCycles(timetableTransferPlan.dailyPlan);
-const movementAllocation = allocateMovementRoutePlanV2({
+let movementAllocation = allocateMovementRoutePlanV2({
   dailyPlan: timetableTransferPlan.dailyPlan,
   continuities: dailyContinuities,
   passengerTrains: regionalTrains,
@@ -1481,6 +1494,22 @@ const movementAllocation = allocateMovementRoutePlanV2({
   repeatEveryMs,
   selectProtectionModeRuns,
 });
+if (passengerStopInputs.size > 0) {
+  const infrastructure = await streamPassengerStopInfrastructure(operationalV2Path, operationalInfrastructureBinding,
+    new Set(movementAllocation.programTrains.filter((train) => passengerStopInputs.has(train.id)).map((train) => train.routeVersionId)),
+    new Set([...passengerStopInputs.values()].flatMap(({timetableRoute}) => timetableRoute.passengerStopAnchors.map((anchor) => anchor.edgeId))));
+  movementAllocation = bindMovementPassengerStopPlansV1(movementAllocation, regionalTrains, ({passenger, materialization}) => {
+    const input = passengerStopInputs.get(passenger.trainRunId);
+    if (input === undefined) return undefined;
+    return bindPassengerStopPlan({...input, passenger, materialization, infrastructure,
+      worldId: WORLD_ID, infrastructureReleaseId: infraRelease.releaseId, timetableReleaseId: gtfsReleaseBinding.releaseId,
+      sourcePins: {gtfsSnapshotSha256: gtfsEnvelope.snapshotHash, timetableRoutesSha256: buildConfiguration.timetableRoutes.sha256,
+        infrastructureStateHash: operationalInfrastructureBinding.stateHash, movementRouteStateHash: movementRoutePlan.stateHash}});
+  });
+  console.error(JSON.stringify({passengerStopPlans: movementAllocation.programTrains.filter((train) => train.stopPlan !== undefined).length,
+    passengerRoutesWithAnchors: passengerStopInputs.size, passengerRoutesWithoutCompleteStopEvidence:
+      passengerStopInputs.size - movementAllocation.programTrains.filter((train) => train.stopPlan !== undefined).length}));
+}
 invariant(
   movementAllocation.metrics.passengerTrainCount === regionalTrains.length
     && movementAllocation.metrics.dailyBoundaryCount === timetableTransferPlan.dailyPlan.circulations.length
@@ -1659,6 +1688,7 @@ function assertOperationalV2Initialization(value, receipt) {
       || train.publicPassengerStop !== expected.publicPassengerStop
       || alphaCanonicalJson(train.protectionModeSelectionRuns) !== alphaCanonicalJson(expected.protectionModeSelectionRuns)
       || alphaCanonicalJson(train.serviceOutcome ?? null) !== alphaCanonicalJson(expected.serviceOutcome ?? null)
+      || alphaCanonicalJson(train.stopPlan ?? null) !== alphaCanonicalJson(expected.stopPlan ?? null)
     ) throw new Error("Operatives v2-Artefakt verletzt Fahrt-, Betreiber- oder Laufwegbindung.");
     seen.add(train.id);
   }
@@ -1746,7 +1776,7 @@ const deployment = {
     gtfsSnapshotHash: gtfsEnvelope.snapshotHash,
     fleetSourceSha256: sha256(fleetBytes),
     operationalSimulationSourceSha256,
-    generationScriptSha256: alphaWorldGenerationSourcesSha256(generatorBytes, vehicleBinderBytes, vehicleMigrationBytes),
+    generationScriptSha256: alphaWorldGenerationSourcesSha256(generatorBytes, vehicleBinderBytes, vehicleMigrationBytes, passengerStopBinderBytes, movementAllocatorBytes),
   },
 };
 assertEmbeddedWorldIds(deployment, WORLD_ID);

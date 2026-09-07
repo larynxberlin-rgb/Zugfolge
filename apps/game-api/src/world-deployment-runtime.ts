@@ -477,6 +477,42 @@ function deploymentOperationalProgram(
   });
 }
 
+/** Instanziiert nur signierte Haltbindungen; erzeugt keinerlei Ist-Zeitpunkte. */
+export function instantiateOperationalPassengerStopPlan(
+  train: OperationalTrainInitialization,
+  instanceDay: number,
+  repeatEveryMs: number,
+  serviceRunId?: string,
+): NonNullable<OperationalTrainInitialization["stopPlan"]> {
+  const plan = train.stopPlan;
+  if (plan === undefined || plan.trainRunId !== train.id
+    || !Number.isSafeInteger(instanceDay) || instanceDay < 0
+    || !Number.isSafeInteger(repeatEveryMs) || repeatEveryMs <= 0) {
+    throw new RangeError("Tagesfahrt besitzt keinen eindeutig gebundenen Haltplan.");
+  }
+  const shiftMs = instanceDay * repeatEveryMs;
+  const shifted = (atMs: number): number => {
+    const result = atMs + shiftMs;
+    if (!Number.isSafeInteger(shiftMs) || !Number.isSafeInteger(atMs) || atMs < 0
+      || !Number.isSafeInteger(result) || result < 0) {
+      throw new RangeError("Tageshalt liegt ausserhalb des sicheren Zeitbereichs.");
+    }
+    return result;
+  };
+  const trainRunId = recurringTrainId(train.id, instanceDay);
+  return {
+    ...structuredClone(plan), trainRunId,
+    serviceRunId: serviceRunId ?? recurringTrainId(plan.serviceRunId, instanceDay),
+    stops: plan.stops.map((stop) => ({
+      ...structuredClone(stop),
+      stopId: instanceDay === 0 ? stop.stopId : stop.stopId.startsWith(`${train.id}:`)
+        ? `${trainRunId}:${stop.stopId.slice(train.id.length + 1)}` : recurringTrainId(stop.stopId, instanceDay),
+      scheduledArrivalMs: shifted(stop.scheduledArrivalMs),
+      scheduledDepartureMs: shifted(stop.scheduledDepartureMs),
+    })),
+  };
+}
+
 function recurringTrainId(baseId: string, day: number): string {
   return day === 0 ? baseId : `${baseId}:day-${day}`;
 }
@@ -564,6 +600,11 @@ function boundaryCommands(
       scheduledArrivalMs,
     } };
   };
+  const stopPlanFor = (train: OperationalTrainInitialization, instanceDay: number) => {
+    if (train.stopPlan === undefined) return {};
+    return { stopPlan: instantiateOperationalPassengerStopPlan(train, instanceDay, program.repeatEveryMs,
+      serviceOutcomeFor(train, instanceDay).serviceOutcome?.serviceRunId) };
+  };
   for (const train of dayZeroRoots) {
     commands.push(Object.freeze({
       commandId: `${prefix}:materialize:${train.train.id}`,
@@ -573,6 +614,7 @@ function boundaryCommands(
         train: Object.freeze({
           ...structuredClone(train.train),
           ...serviceOutcomeFor(train.train, day),
+          ...stopPlanFor(train.train, day),
           id: recurringTrainId(train.train.id, day),
           scheduledDepartureMs: atMs,
         }),
@@ -621,6 +663,7 @@ function boundaryCommands(
         predecessorBaseRouteVersionId: continuation.template.predecessorBaseRouteVersionId,
         successor: Object.freeze({
           ...serviceOutcomeFor(continuation.successor.train, successorDay),
+          ...stopPlanFor(continuation.successor.train, successorDay),
           id: successorTrainId,
           trainNumber: continuation.successor.train.trainNumber,
           operatorId: continuation.successor.train.operatorId,

@@ -84,6 +84,7 @@ nicht prüfen, ob ein Eintrag stimmt — dafür steht die Quelle daneben.
 | Durchrutschweg | `OverlapPath` | Weg hinter dem Zielsignal, der bei Bremsversagen frei bleiben muss | `infrastruktur.md` 1 |
 | Eigenbetrieb | `PublicOperator` | Ausfallsicherung des Aufgabenträgers; fährt die Mindestbedienung, bewusst mittelmäßig, sichtbar gekennzeichnet | `wirtschaft.md` 4 |
 | Einspruchsfenster | `ObjectionWindow` | Frist nach der Koordinierung, in der ein Trassenangebot beanstandet werden kann | `infrastruktur.md` 10 |
+| Einwohnerbasiertes Stationsnachfragemodell | `StationPopulationDemandV1` | optionaler, gepinnter Releaseblock mit amtlichen Ortsbevölkerungen, erhaltenen Stationsanteilen und gerichteten Referenzpräferenzen; bleibt eine Modellannahme | `m10-populationsnachfrage.md` |
 | Eisenbahnverkehrsunternehmen (EVU) | `Operator` | das Unternehmen eines Spielers; Träger von Fahrzeugen, Personal, Trassen und Verträgen | `wirtschaft.md` 5, `weltgeruest.md` 7 |
 | Elektrifizierung | `Electrification` | Bauart der Fahrstromversorgung — Oberleitung, Stromschiene oder keine — samt Bahnstromsystem; als Bandprofil je Gleis geführt | `betriebsgraph.md` 2 |
 | Entitlement | `EntitlementRecord` | revisionssicherer Game-Zustand für Laufzeit und Umfang eines kaufmännisch ausgelösten Produkts; enthält keine Spielwerte oder Plannerrechte | `odoo-betrieb.md` |
@@ -94,6 +95,8 @@ nicht prüfen, ob ein Eintrag stimmt — dafür steht die Quelle daneben.
 | Fahrberechtigungsmodell | `FareCompliancePolicyV1` | Gepinnte beobachtete oder ausdrücklich balancierte Verteilung verdeckter Fahrberechtigungen, unabhängig von Komfort und Platzbedarf | `personenverkehr.md`, `spfv-planung.md` |
 | Fahrgastbelegung | `CapacityAllocationV1` | Ganzzahlige Abschnittsbelegung mit Sitz-, Steh-, Sonder- und Reservierungsplätzen sowie prognostizierten Erlösen | `personenverkehr.md`, `spfv-planung.md` |
 | Fahrgastbetriebsbeleg | `DemandOperationalProgressV1` | Expliziter weltgebundener Beleg tatsächlicher Ankunft und Abfahrt; schützt bereits gereiste Reiseabschnitte | `personenverkehr.md`, `spfv-planung.md` |
+| Fahrgasthaltbeleg | `OperationalPassengerStopReceipt` | einmaliger nativer Ankunfts- oder Abfahrtsbeleg eines signiert gebundenen Haltvorkommens mit tatsächlicher Zeit, Planhash und Zug-/Formationsbezug; ein Signalhalt genügt nicht | `m10-haltbelege.md` 3, `betriebsengine.md` 10 |
+| Fahrgasthaltplan | `OperationalPassengerStopPlan` | optionaler signierter Plan mit zwei bis 100 geordneten Haltvorkommen, exakten gerichteten Positionen, Plattformbindung und Mindestaufenthalt | `m10-haltbelege.md` 2, `betriebsengine.md` 10 |
 | Fahrgastinformationsanzeige | `PassengerInformationDisplay` | öffentliche, zuggebundene Projektion von Ziel, nächstem Halt, Folgehalten, Verspätung und Meldungen; Grundlage des generischen FIS-Monitors | `adr/0026-karte-als-spielzentrum.md` |
 | Fahrgastkontrollfall | `FareInspectionCaseV1` | persistenter, pseudonymer Kontrollvorgang eines materialisierten Manifestfahrgasts mit Dialog-, Feststellungs- und Forderungszustand | `schaffnermodus.md` 3.1, 8 |
 | Fahrgastmanifest | `PassengerManifestV1` | revisionierte M10-Projektion der tatsächlich reisenden Fahrgäste eines Zuglaufabschnitts einschließlich Ein-/Ausstieg und verdecktem Fahrberechtigungsstatus | `schaffnermodus.md` 3.1 |
@@ -106,6 +109,7 @@ nicht prüfen, ob ein Eintrag stimmt — dafür steht die Quelle daneben.
 | Fahrstraßenauflösezeit | `RouteReleaseTime` | letzter Anteil der Sperrzeit: das Auflösen des Fahrwegs, nachdem der Zug geräumt hat | `infrastruktur.md` 1 |
 | Fahrstraßenausschluss | `RouteExclusion` | Belegungskonflikt zweier Fahrstraßen desselben Bahnhofskopfs, die sich ein Fahrwegelement oder eine Weiche teilen | `infrastruktur.md` 8 |
 | Fahrstraßenbildezeit | `RouteSettingTime` | erster Anteil der Sperrzeit: Stellen und Festlegen des Fahrwegs, bevor das Signal Fahrt zeigen kann | `infrastruktur.md` 1 |
+| Fahrtpreisbeleg | `FareJourneyEvidenceV1` | welt-, perioden- und abschnittsgebundene Tarif- und Erwerbsmöglichkeitsquelle; fehlende Belege erlauben keine erfundene Kontrollforderung | `fare-inspection-cases.md` |
 | Fahrweg | `RunPath` | lückenlose Folge von Segmenten mit Länge, zulässiger Geschwindigkeit und Neigung, aus der die Fahrdynamik eine Fahrzeit rechnet — anders als der `Laufweg` bereits auf konstante Werte geschnitten | `betriebsgraph.md` 16 |
 | Fahrzeitrechner | `derive_running_time_table` | Verfahren, das über einen Fahrweg und eine Zugcharakteristik eine ganzzahlige Fahrzeittabelle rechnet — der einzige Ort mit Gleitkommarechnung in der Infra-Release-Pipeline | `betriebsgraph.md` 16 |
 | Fahrzeittabelle | `RunningTimeTable` | vorberechnete, ganzzahlige Folge von Fahrzeiten und erreichten Geschwindigkeiten an den Segmentgrenzen eines Fahrwegs | `betriebsgraph.md` 16 |
@@ -117,6 +121,7 @@ nicht prüfen, ob ein Eintrag stimmt — dafür steht die Quelle daneben.
 | Fahrzeugmarktstatus | `VehicleMarketStatus` | autoritativer Zustand eines konkreten Fahrzeugs: Eigentum, Leasing, serverseitiges Leasingangebot, Gebrauchtangebot oder Ausmusterung | `betrieb.md` 3.6 |
 | Fahrzeugzustand | `VehicleCondition` | mehrdimensionaler, ganzzahliger Zustand für Mechanik, Antrieb, Bremsen, Betrieb und Innenraum; wird im Lebenslauf fortgeschrieben | `betrieb.md` 3.6 |
 | Fernverkehrslinienentwurf | `SpfvDraft` | Spielerabsicht für Linie, Halte, Formation, Takt, Abschnittspreis und begrenzte Gültigkeit | `personenverkehr.md`, `spfv-planung.md` |
+| Feststellungsbeleg | `DialogueEvidenceV1` | ausschließlich bestätigter Dokument-, Identitäts- und Gefährdungsstand für öffentliche Gesprächsoptionen; vom verdeckten Fahrscheinstatus getrennt | `conductor-dialogue.md`, `fare-inspection-cases.md` |
 | Flankenschutz | `flank_resources` | zusätzlich zum Fahrweg verriegelte Ressourcen, die unbeabsichtigte seitliche Einfahrten in eine eingestellte Fahrstraße verhindern | `betriebsengine.md` 4 |
 | Formation | `Formation` | konkrete Zusammenstellung von Fahrzeugen für eine Zugfahrt | `betrieb.md` 2 |
 | Frist | `deadlineAt` | Zeitpunkt, bis zu dem eine Reaktion auf eine Postfach-Nachricht erwartet wird; optional, nicht jede Nachricht trägt eine | `weltgeruest.md` 9 |
@@ -133,6 +138,7 @@ nicht prüfen, ob ein Eintrag stimmt — dafür steht die Quelle daneben.
 | Herkunft | `Provenance` | Quelle und Vertrauensgrad eines importierten Attributwertes; hängt am einzelnen Band, nicht am Gleis | `daten.md` 2 |
 | Höhenstichprobe | `ElevationSample` | Position-Höhe-Paar eines Höhenmodells entlang der Gleisgeometrie; Eingabe der Neigungsableitung | `betriebsgraph.md` 10 |
 | Infrastruktur-Release | `InfraRelease` | unveränderliches, versioniertes Netz- und Betriebsartefakt mit Graph, gerichteten Kanten, Sicherungselementen, Laufwegvorlagen, RZÜ-Layout, Herkunft, Lizenz, Prüfsumme und Confidence | `betriebsengine.md` 2 |
+| Infrastruktursperrenstopp | `InfrastructureDisruptionStop` | native Ursachenbindung eines durch tatsächliche Infrastruktursperren ausgelösten sicheren Halts; technische Freigabe ersetzt keine neue Fahrdienstleiterzustimmung und hebt andere Haltgründe nicht auf | `betriebsengine.md` |
 | Innenraumgeometriepolicy | `InteriorGeometryPolicyV1` | releasegebundene generische Kasten-, Deck-, Tür-, Gang- und Treppengeometrie zur unveränderten M5-Konfiguration; keine Maße aus Grafikdateien | `conductor-interior.md` 4 |
 | Innenraumlayout | `InteriorLayoutV1` | welt- und formationsgebundene Millimetergeometrie mit zusammenhängendem Passagiernetz, Kollisionen und exaktem M5-Platzinventar; keine erfundene Zuglaufzuordnung | `conductor-interior.md` |
 | Innenraumplatzinventar | `InteriorPassengerPlacesV1` | gepinnte welt- und zuggebundene Liste belegter Sitz-, Steh- und Sonderplätze mit stabilen Kennungen und Millimeterpositionen; M15.2-Eingang aus dem M15.4-Layout | `schaffnermodus.md` 3.3 |
@@ -147,6 +153,7 @@ nicht prüfen, ob ein Eintrag stimmt — dafür steht die Quelle daneben.
 | Konfliktressource | `ConflictResource` | alles, worum zwei Zugfahrten konkurrieren können — Block, Fahrstraße, Bahnsteig, Anlage | `infrastruktur.md` 1 |
 | Konto | `Account` | Spielkonto, das ein Keycloak-Subject aus einem Weltzugang heraus in genau einer Welt führt; Anzeigename ist eine Angabe des Spielsystems, nicht der Identität bei Keycloak | `weltgeruest.md` 2 |
 | Kontrollbedingter Betriebshalt | `FareControlHoldV1` | bindender zusätzlicher Aufenthalt am nächsten planmäßigen Fahrgasthalt nach Polizeianforderung; verlängert reale Ressourcenbelegungen und verlangt anschließend ein neues Abfahrtsrecht | `schaffnermodus.md` 9 |
+| Kontrollfolgenquittung | `ConductorSessionControlReceiptV1` | native Bindung eines angenommenen Sitzungseffekts an einen tatsächlich committed Forderungs- oder Haltebeleg | `conductor-session-platform.md` |
 | Kontrollhaltpolicy | `FareControlPolicyV1` | welt- und periodenverbindliche Regeln für zulässige Polizeigründe, Zielhalt, Zuständigkeit, einmalige Anforderung und maximale zusätzliche Wartezeit | `schaffnermodus.md` 9.0 |
 | Kündigungsvormerkung | `termination-pending` | serverautoritiver Zwischenzustand eines EVU-Vertrags: Die Kündigung ist angenommen, Leistung und Fahrzeughaltung bleiben aber bis zum berechneten Fristende wirksam | `wirtschaft.md` 6 |
 | Längsneigung | `Gradient` | Steigung oder Gefälle eines Gleisabschnitts in Zehntel Promille, bezogen auf die Kilometrierung; kehrt sich in der Gegenrichtung um | `betriebsgraph.md` 4 |
@@ -163,8 +170,12 @@ nicht prüfen, ob ein Eintrag stimmt — dafür steht die Quelle daneben.
 | Marktverfügbarkeit | `MarketAvailability` | dokumentiertes oder ausdrücklich geschätztes Zeitfenster, in dem ein Fahrzeugtyp als Neubau, Leasing- oder Gebrauchtfahrzeug angeboten wird | `betrieb.md` 2.1 |
 | Mindestzugfolgezeit | `MinimumHeadway` | kleinster zeitlicher Abstand zweier Zugfahrten derselben Richtung; folgt aus den Sperrzeiten, ist kein eigener Parameter | `infrastruktur.md` 1 |
 | Mobilisierungsphase | `MobilisationPhase` | Zeit zwischen Zuschlag und Betriebsaufnahme; nachweispflichtig auf Fahrzeuge, Personal und Trassen | `wirtschaft.md` 3 |
+| Nachfrageanfangspool | `DemandPoolSeed` | vor Betriebsfortschritt persistierte private Anfangsauswertung eines freigegebenen Pools mit vollständigen Eingaben, nativer Ergebnisprüfung und gebundener Journal-/Regionsgrenze | `m10-haltbelege.md` 4, `personenverkehr.md` 1 |
+| Nachfrageangebotsrevision | `DemandOfferRevision` | bestätigter historischer Angebotsstand mit Welt-/Periodenbindung, wirksamer Zeit und Planungssequenz; beeinflusst keine zuvor abgefahrene Reise rückwirkend | `m10-haltbelege.md` 4, `personenverkehr.md` 1 |
 | Nachfrageauswertung | `DemandEvaluationV1` | Kanonisches Ergebnis des gemeinsamen SPNV-/SPFV-Kerns mit Wahlbegründungen, Belegungen und privaten Manifesten | `personenverkehr.md`, `spfv-planung.md` |
+| Nachfragedatenkorrektur | `PopulationRevision` | automatisch übernommener Zahlenstand der direkt gepflegten Odoo-Datenbankinhalte; schützt bereits entstandene Reisewünsche und begonnene Fahrten über Restore | `m10-populationsnachfrage.md`, `odoo-betrieb.md` |
 | Nachfragefensterpool | `DemandGenerationWindowV1` | Zeitlich begrenzte Kohortenerzeugung innerhalb eines gemeinsamen Kapazitätspools | `personenverkehr.md`, `spfv-planung.md` |
+| Nachfragefortschrittscursor | `DemandProgressCursor` | persistierter kausaler Verarbeitungsstand mit Journalgrenze, Regionspins sowie bestätigten und noch wartenden nativen Haltbelegen | `m10-haltbelege.md` 4, `personenverkehr.md` 1 |
 | Nachfragefreigabe | `DemandReleaseV1` | Versionierter Quellen-, Zonen-, Profil-, Tagesgang- und Regelkorpus einer Fahrplanperiode | `personenverkehr.md`, `spfv-planung.md` |
 | Nachricht (Postfach) | `MailboxMessage` | generischer Postfach-Eintrag mit `messageType` und `payload`; trägt später Trassenangebote, Ausschreibungen, Störungsmeldungen | `weltgeruest.md` 9 |
 | Nächster Anzeige-Freeze | `nextTrainFreezeAt` | nächster Gültigkeitsablauf eines Zuges für eine einmalige Aktualisierung ohne kontinuierliche Animation | `zugkartenprojektion.md` |
@@ -194,6 +205,7 @@ nicht prüfen, ob ein Eintrag stimmt — dafür steht die Quelle daneben.
 | Referenzlauf | `ReferenceRun` | ein Fahrweg mit Zugcharakteristik und explizit benannter Vergleichsgröße — technische Laufzeit oder Fahrplanzeit dürfen nicht vermischt werden | `betriebsgraph.md` 18 |
 | Regelgrenze | `LimitKind` | konkrete betriebliche Zulässigkeitsprüfung einer Dispositionsmaßnahme, etwa Kapazität, Streckenkenntnis, Fahrzeug, Personal, Vertrag oder Kosten | `betriebsprogramm.md` 2 |
 | Regionsübergabe | `RegionHandover` | Übergang einer Zugfahrt zwischen zwei regionalen Single-Writer-Prozessen, mit Bestätigung | `architektur.md` 3 |
+| Regionsübergabequittung | `FinishedHandoverReceiptV1` | native Abschlussbindung von Zug, Quell-/Zielregion, Zeitpunkt und Payloadhash; gilt für Sitzungen nur zusammen mit der passenden Zielquittung und beiden Initialisierungspins | `conductor-session-platform.md` |
 | Reisenachfragekohorte | `JourneyDemandV1` | Deterministisch erzeugte Reisen mit stabilem Gebiet-, Anlass-, Fenster- und Profilbezug | `personenverkehr.md`, `spfv-planung.md` |
 | Reise- oder Fahrtkette | `JourneyChain` | Ein Zuglauf; neue Spielangebote enthalten genau einen zusammenhängenden Innenabschnitt, historische Replays können Außenabschnitte enthalten | `adr/0034-spielgenerierte-fahrplaene-im-spielgebiet.md` |
 | Reisezugwagen | `VehicleRole::Coach` | nicht angetriebenes Fahrzeug für Fahrgäste; kann Teil eines Wagenparks sein, aber keine eigene Zugfahrt bilden | `betrieb.md` 2.3 |
@@ -203,6 +215,7 @@ nicht prüfen, ob ein Eintrag stimmt — dafür steht die Quelle daneben.
 | Rolle | `Role` | `player` oder `world_admin`; ein Konto kann mehrere Rollen innerhalb derselben Welt gleichzeitig tragen | `weltgeruest.md` 3 |
 | Rücktest | `BacktestResult` | hypothetische Auswertung einer Betriebsprogramm-Version gegen historische Ereignisfakten ohne Änderung von Event-Log oder Simulationszustand | `betriebsprogramm.md` 2 |
 | Schaffnersitzung | `ConductorSessionV1` | exklusive autorisierte Sitzung eines Spielers in einem eigenen aktiven SPNV-Zug; projiziert den Weltzustand und nimmt typisierte Kontrollkommandos an | `schaffnermodus.md` 4 |
+| Schaffnerszenenrelease | `ConductorSceneReleaseV1` | unveränderliche Umgebungs-, Kalender- und Stationsmetadaten, an ursprüngliche Operational-Infrastruktur gebunden | `conductor-scenes.md` |
 | Schichtentrennung | `LayerSeparation` | Trennung von Code, Daten und Marke; die proprietären Schichten bleiben aus dem öffentlichen Repositorium | `rechteschutz.md` 3 |
 | Schienenersatzverkehr | `RailReplacementService` | vertragliche Ersatzleistung bei Sperrung; Kostenposten und Bewertungsfaktor, kein eigener Fuhrpark | `betrieb.md` 6 |
 | Server-Leasingangebot | `ServerLeaseQuote` | deterministisches Angebot eines fiktiven servereigenen Vermieters für ein konkretes Fahrzeug; der Preis liegt strikt über dem vergleichbaren Marktpreis | `betrieb.md` 3.6 |
@@ -220,6 +233,7 @@ nicht prüfen, ob ein Eintrag stimmt — dafür steht die Quelle daneben.
 | Starting-Capital-Policy | `StartingCapitalPolicy` | im signierten Weltentwurf festgelegtes Startkapital einer öffentlichen Welt: endliche Integer-Cent, null oder explizit `unlimited`; niemals eine Startausstattung | `produkt.md` 3 |
 | Stationsanreicherung | `StationEnrichment` | je Betriebsstelle mit Fahrgastwechsel angereicherter Datensatz aus Bahnhofskategorie und Stationsausstattung, mit eigener Herkunft je Feld | `betriebsgraph.md` 13 |
 | Stationsausstattung | `StationAmenities` | Menge der an einer Betriebsstelle vorhandenen Ausstattungsmerkmale — Barrierefreiheit, Wetterschutz, Fahrgastinformation und mehr | `betriebsgraph.md` 13 |
+| Stationsnachfrageklasse | `StationDemandClass` | eigene Größenklasse 0 bis 10 aus zugeteilter Bevölkerung; keine Infrastrukturkategorie und kein zusätzlicher Einwohnerfaktor | `m10-populationsnachfrage.md` |
 | Stellwerksbauart | `InterlockingKind` | mechanisch, elektromechanisch, Relais-, elektronisches oder digitales Stellwerk; entscheidet Fahrstraßenbilde- und Fahrstraßenauflösezeit | `infrastruktur.md` 6 |
 | Steuerwagen | `VehicleRole::ControlCar` | nicht angetriebener Reisezugwagen mit einem oder zwei Steuerständen; ermöglicht bei passender Endlage den Wendezugbetrieb | `betrieb.md` 2.3 |
 | Störung | `Disruption` | ungeplantes Ereignis mit Wirkung auf den Betrieb; Entstehung und Fortpflanzung sind getrennt modelliert | `betrieb.md` 5 |

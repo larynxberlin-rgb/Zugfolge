@@ -262,8 +262,17 @@
       "goal": "Ein gemeinsames SPNV-/SPFV-Nachfragemodell mit Reiseketten, Zugwahl, Auslastung und autoritativen SPNV-Fahrgastmanifesten liefern.",
       "area": "area:economy",
       "dependsOn": ["M9"],
-      "status": { "core": "verified", "integration": "in_progress", "operations": "blocked", "acceptance": "blocked" },
-      "evidence": [{ "label": "M10 Implementierung und Abnahmegrenzen", "url": "docs/m10-abnahme.md" }, { "label": "Issue-Anforderungen, Code und PR-Zuordnung", "url": "docs/m10-issue-verknuepfung.md" }, { "label": "Freie Kalibrierungsquellen und Holdout", "url": "docs/m10-kalibrierungsquellen.md" }],
+      "status": { "core": "verified", "integration": "verified", "operations": "blocked", "acceptance": "verified" },
+      "evidence": [
+        {"label": "M10 Implementierung und Abnahmegrenzen", "url": "docs/m10-abnahme.md"},
+        {"label": "Issue-Anforderungen, Code und PR-Zuordnung", "url": "docs/m10-issue-verknuepfung.md"},
+        {"label": "Historische freie Kalibrierungsquellen und Holdout-Diagnose", "url": "docs/m10-kalibrierungsquellen.md"},
+        {"label": "Native Haltbelege und kausale Manifestfortschreibung", "url": "docs/m10-haltbelege.md"},
+        {"label": "Einwohnernachfrage, Stationsklassen und direkte Odoo-Datenpflege", "url": "docs/m10-populationsnachfrage.md"},
+        {"label": "Freigegebene BKG- und GTFS-Quellen mit Namensnennung", "url": "docs/m10-populationsquellen.md"},
+        {"label": "Reproduzierbarer Bevölkerungskorpus und echter Rust-Nachweis", "url": "tools/population-demand/README.md"},
+        {"label": "Odoo-19-ORM/HTTP-Nachweis und native Datenübernahme", "url": "docs/m10-abnahme.md#reproduzieren"}
+      ],
       "items": [
         { "number": 169, "kind": "issue", "labels": ["area:economy", "type:enhancement", "priority:p1"] },
         { "number": 170, "kind": "issue", "labels": ["area:economy", "area:planning", "type:enhancement", "priority:p1"] },
@@ -275,7 +284,8 @@
         { "number": 379, "kind": "issue", "labels": ["area:livemap", "type:enhancement", "priority:p1"] },
         { "number": 532, "kind": "pull_request" },
         { "number": 533, "kind": "pull_request" },
-        { "number": 534, "kind": "pull_request" }
+        { "number": 534, "kind": "pull_request" },
+        { "number": 537, "kind": "pull_request" }
       ]
     },
     {
@@ -330,7 +340,7 @@
       "goal": "Eigene aktive SPNV-Züge mit tatsächlichen M10-Fahrgästen begehbar machen und Kontrollentscheidungen vollständig in Betrieb, Konflikte und Wirtschaft integrieren.",
       "area": "area:simulation",
       "dependsOn": ["M4", "M5", "M6", "M8", "M10"],
-      "status": { "core": "in_progress", "integration": "in_progress", "operations": "not_started", "acceptance": "not_started" },
+      "status": { "core": "in_progress", "integration": "in_progress", "operations": "blocked", "acceptance": "in_progress" },
       "evidence": [
         { "label": "E29 und Autoritätsentscheidung", "url": "docs/adr/0029-schaffnermodus-als-serverautoritative-betriebsvertiefung.md" },
         { "label": "Versionierter Fachvertrag", "url": "docs/schaffnermodus.md" },
@@ -338,7 +348,8 @@
         { "label": "M15.3 Grafikatlas, Pflichtkatalog und Freigabevertrag", "url": "docs/art-atlas.md" },
         { "label": "M15.3 Freigabe, Korpusprüfung und Browsernachweise", "url": "docs/art-atlas/README.md" },
         { "label": "M15.4 Innenraum-, Konfigurations- und Bewegungsvertrag", "url": "docs/conductor-interior.md" },
-        { "label": "M15.4 Native Plattformintegration und begehbarer Browsernachweis", "url": "docs/conductor-interior/README.md" }
+        { "label": "M15.4 Native Plattformintegration und begehbarer Browsernachweis", "url": "docs/conductor-interior/README.md" },
+        { "label": "M15.5–M15.12: integrierte Implementierung und tatsächliche Abnahmegrenzen", "url": "docs/m15-integration.md" }
       ],
       "items": [
         { "number": 211, "kind": "issue", "labels": ["area:roadmap", "type:documentation", "priority:p1"] },
@@ -353,9 +364,12 @@
         { "number": 220, "kind": "issue", "labels": ["area:operations", "area:simulation", "type:enhancement", "priority:p1"] },
         { "number": 221, "kind": "issue", "labels": ["area:economy", "type:enhancement", "priority:p1"] },
         { "number": 222, "kind": "issue", "labels": ["area:ci", "area:simulation", "type:enhancement", "priority:p1"] },
+        { "number": 366, "kind": "issue", "labels": ["area:livemap", "type:enhancement", "priority:p1"] },
+        { "number": 383, "kind": "issue", "labels": ["area:livemap", "type:enhancement", "priority:p1"] },
         { "number": 535, "kind": "pull_request" },
         { "number": 536, "kind": "pull_request" },
-        { "number": 538, "kind": "pull_request" }
+        { "number": 538, "kind": "pull_request" },
+        { "number": 539, "kind": "pull_request" }
       ]
     }
   ]

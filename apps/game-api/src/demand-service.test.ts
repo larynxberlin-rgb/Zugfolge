@@ -4,6 +4,7 @@ import * as schema from "@zugfolge/db/schema";
 import { requestWorldAccess } from "@zugfolge/identity";
 import { LivemapRegistry, type LivemapReadModel } from "@zugfolge/livemap-stream";
 import { demandRuntimeFromAddon, loadDemandRuntime, type DemandRuntime } from "@zugfolge/runtime-native";
+import type { PlanningInfrastructureRelease } from "@zugfolge/planning-worker";
 import { eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/pglite";
 import { migrate } from "drizzle-orm/pglite/migrator";
@@ -78,6 +79,58 @@ describe("Nachfrage: Persistenz, Replay und Zugriff", () => {
 
 // Die reguläre Native-ABI-CI setzt den echten Addonpfad. Kein JS-Ersatz für Fachnachweise.
 describe.skipIf(process.env["ZUGFOLGE_RUNTIME_NATIVE_PATH"] === undefined && process.env["ZUGFOLGE_DEMAND_TEST_BINARY"] === undefined)("Nachfrage: echter Rust → Journal → Spielerprojektion", () => {
+  it("verknüpft Einwohner, Klassen und Wunschziele mit der Spielkarte und restauriert unbediente Stationen", async () => {
+    const binary = process.env["ZUGFOLGE_DEMAND_TEST_BINARY"];
+    const runtime = binary === undefined ? loadDemandRuntime() : demandRuntimeFromAddon({ evaluatePassengerDemand(input) {
+      const result = spawnSync(binary, [], { input, encoding: "utf8", maxBuffer: 16 * 1024 * 1024 });
+      if (result.status !== 0) throw new Error(result.stderr);
+      return result.stdout;
+    } });
+    // Ausdrücklich synthetischer Vertragstest mit demselben nativen Erzeuger.
+    const input = JSON.parse(readFileSync(new URL("../../../crates/zugfolge-demand/examples/evaluation.json", import.meta.url), "utf8"));
+    input.worldId = WORLD; input.services = []; input.alternatives = [];
+    input.release.sources = [{ id: "fixture", url: "https://example.org/synthetic", license: "CC0-1.0", artifactSha256: "a".repeat(64), rightsApproved: true }];
+    input.release.populationModel = {
+      schemaVersion: "zugfolge-station-population-demand/v1",
+      settlements: input.release.zones.map((zone: any) => ({ id: zone.id, name: zone.id, population: zone.population, sourceId: "fixture" })),
+      stationAreas: input.release.zones.map((zone: any) => ({ zoneId: zone.id, stationId: zone.stations[0].stationId,
+        demandClass: 1, populationAllocations: [{ settlementId: zone.id, population: zone.population }] })),
+      referenceTimetable: { id: "fixture-reference", artifactSha256: "b".repeat(64), sourceIds: ["fixture"],
+        serviceDates: Array.from({ length: 7 }, (_, day) => `2026-09-${String(day + 7).padStart(2, "0")}`) },
+      destinationPreferences: [{ originZoneId: "leipzig", destinationZoneId: "erfurt", referenceConnections: 120 }],
+    };
+    const infrastructure = { worldId: WORLD, releaseId: "infra", stations: input.release.zones.map((zone: any) => ({
+      id: zone.stations[0].stationId, name: `Station ${zone.id}`, latitudeE7: 510000000, longitudeE7: 120000000,
+    })) } as PlanningInfrastructureRelease;
+    const client = new PGlite(), db = drizzle(client, { schema });
+    try {
+      await migrate(db, { migrationsFolder: MIGRATIONS_FOLDER });
+      await db.insert(worlds).values({ id: WORLD, name: "Einwohnerfixture", schedulePeriodWeeks: 3, epoch: new Date(0) });
+      const livemap = new LivemapRegistry(); livemap.initializeWorld(WORLD, { at: 0, trains: [] });
+      const readModel = { async getConfig() { return { infrastructureReleaseId: "infra" }; }, async getScheduledCall() { return undefined; } } as unknown as LivemapReadModel;
+      const deployment: DemandDeployment = { schemaVersion: "zugfolge-demand-deployment/v1", worldId: WORLD, infrastructureReleaseId: "infra", windows: [input] };
+      const staleInfrastructure = { ...infrastructure, releaseId: "old-infra", stations: infrastructure.stations.map((station) => ({ ...station, name: "Veraltete Station", latitudeE7: 520000000 })) };
+      const deps = { db, runtime, deployment, deploymentHash: "population-pin", readModel, livemap, infrastructure: [infrastructure, staleInfrastructure] };
+      const service = new DemandService(deps);
+      await service.refresh(120000, new Date(120000));
+      const overview = await service.overview(WORLD);
+      expect(overview.source).toBe("assumption"); expect(overview.items).toHaveLength(3);
+      expect(overview.items.every((station) => station.servedPassengers === 0)).toBe(true);
+      expect(overview.items.reduce((sum, station) => sum + station.populationDemand!.catchmentPopulation, 0)).toBe(160);
+      expect(overview.items.reduce((sum, station) => sum + station.populationDemand!.requestedPassengers, 0)).toBe(40);
+      const leipzig = overview.items.find((station) => station.stationId === "leipzig-hbf")!;
+      expect(leipzig.label).toBe("Station leipzig"); expect(leipzig.latitudeE7).toBe(510000000);
+      expect(leipzig.populationDemand).toMatchObject({ demandClass: 1, catchmentPopulation: 80, requestedPassengers: 20,
+        topDestinations: [{ stationId: "erfurt-hbf", label: "Station erfurt", passengers: 16, referenceConnections: 120 },
+          { stationId: "halle-hbf", label: "Station halle", passengers: 4, referenceConnections: 0 }] });
+      expect(overview.populationBasis?.referenceEndDate).toBe("2026-09-13");
+      const restarted = new DemandService(deps); await restarted.refresh(120000, new Date(120000));
+      expect(await restarted.overview(WORLD)).toEqual(overview);
+      const missingStation = new DemandService({ ...deps, infrastructure: [{ ...infrastructure, stations: infrastructure.stations.slice(1) }] });
+      await expect(missingStation.refresh(120000, new Date(120000))).rejects.toThrow("gepinnten Spielkarte");
+      expect(JSON.stringify(overview)).not.toMatch(/fareFact|passengerKey|seed|populationAllocations|artifactSha256/);
+    } finally { await client.close(); }
+  }, 30_000);
   it("verwendet nur gepinnte Referenzen, auch wenn bestätigter Spieler-SPFV im Nachfragecheckpoint steht", async () => {
     const binary = process.env["ZUGFOLGE_DEMAND_TEST_BINARY"];
     const native = binary === undefined ? loadDemandRuntime() : demandRuntimeFromAddon({ evaluatePassengerDemand(input) {

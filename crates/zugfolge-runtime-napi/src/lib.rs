@@ -63,13 +63,28 @@ pub fn check_conductor_interior_movement(input_json: String) -> napi::Result<Str
 use napi_derive::napi;
 
 #[cfg(feature = "node-addon")]
+mod conductor_session;
+#[cfg(feature = "node-addon")]
+pub use conductor_session::*;
+#[cfg(feature = "node-addon")]
+mod conductor_content;
+#[cfg(feature = "node-addon")]
+pub use conductor_content::*;
+
+#[cfg(feature = "node-addon")]
+mod fare_control;
+#[cfg(feature = "node-addon")]
+pub use fare_control::*;
+
+#[cfg(feature = "node-addon")]
 mod regional_simulation;
 
 #[cfg(feature = "node-addon")]
 pub use regional_simulation::{
     apply_operational_simulation_command, apply_operational_simulation_command_async,
     apply_operational_simulation_command_batch, apply_operational_simulation_command_batch_async,
-    initialize_operational_simulation, restore_operational_simulation,
+    handover_operational_simulation, initialize_operational_simulation,
+    restore_operational_simulation,
 };
 
 /// Initializes the authoritative, revisioned M5 fleet state.

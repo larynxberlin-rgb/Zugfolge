@@ -18,6 +18,7 @@ const AUTHORITATIVE_HEAD_SCHEMA = "zugfolge-database-authoritative-head/v1";
 const WORLD_HISTORY_SEAL_SCHEMA = "zugfolge-world-final-history-seal/v1";
 const WORLD_HISTORY_SEAL_SCHEMA_34 = "zugfolge-world-final-history-seal/v2";
 const WORLD_HISTORY_SEAL_SCHEMA_35 = "zugfolge-world-final-history-seal/v3";
+const WORLD_HISTORY_SEAL_SCHEMA_36 = "zugfolge-world-final-history-seal/v4";
 const HISTORY_COLUMNS_ADDED_IN_SCHEMA_34 = Object.freeze({
   abuse_observations: Object.freeze(["observation_key", "facts_hash"]),
   mailbox_messages: Object.freeze(["content_hash", "purged_at"]),
@@ -325,9 +326,10 @@ export async function worldFinalHistorySeal(sql, worldId, { schemaVersion } = {}
   const [migrationHead] = await sql.unsafe("select count(*)::int as migration_count from drizzle.__drizzle_migrations");
   const migrationCount = migrationHead?.migration_count;
   databaseAuthoritativeCatalog(migrationCount);
-  const selectedSchema = schemaVersion ?? (migrationCount === 35 ? WORLD_HISTORY_SEAL_SCHEMA_35 : migrationCount === 34 ? WORLD_HISTORY_SEAL_SCHEMA_34 : WORLD_HISTORY_SEAL_SCHEMA);
-  invariant([WORLD_HISTORY_SEAL_SCHEMA, WORLD_HISTORY_SEAL_SCHEMA_34, WORLD_HISTORY_SEAL_SCHEMA_35].includes(selectedSchema)
-    && (selectedSchema !== WORLD_HISTORY_SEAL_SCHEMA_35 || migrationCount === 35)
+  const selectedSchema = schemaVersion ?? (migrationCount === 36 ? WORLD_HISTORY_SEAL_SCHEMA_36 : migrationCount === 35 ? WORLD_HISTORY_SEAL_SCHEMA_35 : migrationCount === 34 ? WORLD_HISTORY_SEAL_SCHEMA_34 : WORLD_HISTORY_SEAL_SCHEMA);
+  invariant([WORLD_HISTORY_SEAL_SCHEMA, WORLD_HISTORY_SEAL_SCHEMA_34, WORLD_HISTORY_SEAL_SCHEMA_35, WORLD_HISTORY_SEAL_SCHEMA_36].includes(selectedSchema)
+    && (selectedSchema !== WORLD_HISTORY_SEAL_SCHEMA_36 || migrationCount === 36)
+    && (selectedSchema !== WORLD_HISTORY_SEAL_SCHEMA_35 || migrationCount >= 35)
     && (selectedSchema !== WORLD_HISTORY_SEAL_SCHEMA_34 || migrationCount >= 34), "Welt-Historienseal besitzt keine passende Schema-/Spaltenversion.");
   const worldBindingRows = await sql.unsafe(`
     select columns.table_name, columns.column_name
@@ -352,7 +354,12 @@ export async function worldFinalHistorySeal(sql, worldId, { schemaVersion } = {}
   );
   const tableStates = [];
   const liveBindings = databaseWorldHistoryBindings(migrationCount);
-  const historicalBindings = selectedSchema === WORLD_HISTORY_SEAL_SCHEMA_35 ? liveBindings : databaseWorldHistoryBindings(34);
+  const historicalBindings = selectedSchema === WORLD_HISTORY_SEAL_SCHEMA_36 ? liveBindings
+    : selectedSchema === WORLD_HISTORY_SEAL_SCHEMA_35 ? databaseWorldHistoryBindings(35) : databaseWorldHistoryBindings(34);
+  for (const binding of liveBindings.filter(({ table }) => !historicalBindings.some((historical) => historical.table === table))) {
+    const added = await tableFingerprint(sql, binding.table, binding.columns, [worldId]);
+    invariant(added.rowCount === "0", "Historisches Siegel darf keine nichtleeren Schema-36-Fakten ausblenden.");
+  }
   for (const binding of historicalBindings) {
     if (!liveBindings.some(({ table }) => table === binding.table)) {
       // Ein historisches Siegel bleibt nur vergleichbar, wenn die entfernte
@@ -445,5 +452,6 @@ export const DATABASE_ROLLBACK_BINDING_SCHEMAS = Object.freeze({
   worldHistorySeal: WORLD_HISTORY_SEAL_SCHEMA,
   worldHistorySealSchema34: WORLD_HISTORY_SEAL_SCHEMA_34,
   worldHistorySealSchema35: WORLD_HISTORY_SEAL_SCHEMA_35,
+  worldHistorySealSchema36: WORLD_HISTORY_SEAL_SCHEMA_36,
   cutoverReceipt: CUTOVER_RECEIPT_SCHEMA,
 });

@@ -408,6 +408,12 @@ pub struct EconomyReleaseDocument {
     pub rates: EconomyReleaseRates,
     pub rules: EconomyReleaseRules,
     pub tender_profiles: Vec<EconomyTenderProfile>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "crate::deserialize_optional_fare_inspection"
+    )]
+    pub fare_inspection: Option<crate::FareInspectionEconomyV1>,
     pub checksum: String,
 }
 
@@ -2747,6 +2753,8 @@ struct EconomyReleaseChecksumBody<'a> {
     rates: &'a EconomyReleaseRates,
     rules: &'a EconomyReleaseRules,
     tender_profiles: &'a [EconomyTenderProfile],
+    #[serde(skip_serializing_if = "Option::is_none")]
+    fare_inspection: Option<&'a crate::FareInspectionEconomyV1>,
 }
 
 #[derive(Serialize)]
@@ -2770,6 +2778,7 @@ pub fn recompute_economy_release_checksum(
         rates: &release.rates,
         rules: &release.rules,
         tender_profiles: &tender_profiles,
+        fare_inspection: release.fare_inspection.as_ref(),
     };
     let value = serde_json::to_value(body)?;
     let canonical = canonical_economy_json(&value)?;
@@ -2895,11 +2904,18 @@ fn validate_economy_special_condition(
     Ok(())
 }
 
-fn validate_economy_release_document(
+pub fn validate_economy_release_document(
     release: &EconomyReleaseDocument,
 ) -> Result<(), CatalogCompileError> {
     require_schema(&release.schema, ECONOMY_RELEASE_SCHEMA, "EconomyRelease")?;
     require_identifier(&release.version, "economy.release.version")?;
+    if release
+        .fare_inspection
+        .as_ref()
+        .is_some_and(|rules| !rules.validate())
+    {
+        return invalid("EconomyRelease enthält ungültige Fahrkartenkontrollregeln");
+    }
     validate_sha256(&release.checksum, "economy.release.checksum")?;
     for (field, value) in [
         (

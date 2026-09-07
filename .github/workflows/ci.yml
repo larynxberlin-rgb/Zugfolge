@@ -39,10 +39,20 @@ jobs:
         run: cargo clippy --workspace --all-targets --locked -- -D warnings
 
       - name: Tests und Golden-Master
-        run: cargo test --workspace --locked
+        run: |
+          cargo test --workspace --locked
+          cargo test --locked --offline -p zugfolge-sim-runtime --example operational_json
 
       - name: Freie Nachfragequellen und Holdout-Trennung
         run: python3 -m unittest discover -s tools/demand-calibration -p 'test_*.py'
+
+      - name: Einwohnerimport und Stationsnachfrage mit echtem Rust-Kern
+        run: |
+          cargo build --locked -p zugfolge-demand --example evaluate_json
+          ZUGFOLGE_DEMAND_TEST_BINARY="$GITHUB_WORKSPACE/target/debug/examples/evaluate_json" python3 -m unittest discover -s tools/population-demand -p 'test_*.py'
+
+      - name: Direkte Odoo-Nachfragedaten ohne Odoo-Laufzeit pruefen
+        run: python3 odoo/addons/zugfolge_admin/tests/test_demand_data_contract.py
 
       - name: Rust-Abhaengigkeiten pruefen
         uses: EmbarkStudios/cargo-deny-action@v2.1.1
@@ -85,10 +95,13 @@ jobs:
       - name: Echten Pixelart-Korpus gegen Manifest und Belegbytes prüfen
         run: pnpm --filter @zugfolge/conductor-art check:release
 
+      - name: Szenenquellen, Compilerbindungen und Browser-Evidenzpaket prüfen
+        run: node --test tools/conductor-scenes/source-compiler.test.mjs tools/conductor-session/package-evidence.test.mjs tools/conductor-session/browser-driver.test.mjs
+
   native-runtime-smoke:
     name: Native Runtime ABI (Linux, echtes NAPI)
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 45
     services:
       postgres:
         image: postgres:16.14-trixie
@@ -150,6 +163,15 @@ jobs:
           printf 'ZUGFOLGE_VEHICLE_CATALOG_TEST_BINARY=%s/target/release/zugfolge-vehicle-catalog\n' "$GITHUB_WORKSPACE" >> "$GITHUB_ENV"
           printf 'ZUGFOLGE_INTERIOR_TEST_BINARY=%s/target/release/examples/interior_json\n' "$GITHUB_WORKSPACE" >> "$GITHUB_ENV"
 
+      - name: M15-Sitzungsquelle aus den echten M5-, M10- und Betriebskernen bauen
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo build --release --locked -p zugfolge-conductor-session --example session_fixture
+          cargo build --release --locked -p zugfolge-conductor-dialogue --example dialogue_json
+          printf 'ZUGFOLGE_SESSION_FIXTURE_BINARY=%s/target/release/examples/session_fixture\n' "$GITHUB_WORKSPACE" >> "$GITHUB_ENV"
+          printf 'ZUGFOLGE_DIALOGUE_TEST_BINARY=%s/target/release/examples/dialogue_json\n' "$GITHUB_WORKSPACE" >> "$GITHUB_ENV"
+
       - name: M3-Planning-Worker und TypeScript-Grenzen bauen
         run: pnpm --filter @zugfolge/planning-worker... build
 
@@ -184,6 +206,22 @@ jobs:
           pnpm --filter @zugfolge/game-api exec vitest run --no-file-parallelism src/operations-browser.e2e.test.ts src/game-hints.browser.test.ts src/demand-browser.e2e.test.ts
           # Echter Alpha-Builder -> serialisierter Compact-v2-Vertrag -> Serverstart-Registry.
           node --test tools/region-import/build-alpha-world-runtime.integration.test.mjs
+
+      - name: Direkte Odoo-Nachfragedaten mit echtem Rust, PGlite und Restore
+        run: pnpm --filter @zugfolge/game-api exec vitest run --no-file-parallelism src/demand-population-data.integration.test.ts src/demand-population-initialization.test.ts
+
+      - name: M10-Haltbelege, Journalcursor und native Fahrgastfortschreibung
+        run: pnpm --filter @zugfolge/game-api exec vitest run --no-file-parallelism src/demand-progress.test.ts src/demand-pool-seeds.test.ts src/demand-pool-lifecycle.test.ts src/demand-offer-history.test.ts src/demand-operational-native.integration.test.ts
+
+      - name: M15-Sitzungen, private Persistenz, Releasepins und tatsächliche Szenenprojektion
+        env:
+          ZUGFOLGE_DIALOGUE_SCENARIOS_REPORT_PATH: ${{ runner.temp }}/conductor-session/dialogue-http-report.json
+        run: |
+          pnpm --filter @zugfolge/runtime-native exec vitest run --no-file-parallelism src/scenes.test.ts src/operational-fare-control.test.ts
+          pnpm --filter @zugfolge/game-api exec vitest run --no-file-parallelism src/conductor-session.native.integration.test.ts src/conductor-session.handover.native.integration.test.ts src/conductor-session-configuration.test.ts src/conductor-scene-configuration.test.ts src/operational-fare-control-event.test.ts
+          pnpm --filter @zugfolge/game-api exec vitest run --no-file-parallelism src/conductor-control.native.integration.test.ts src/conductor-control-penalty.native.integration.test.ts
+          pnpm --filter @zugfolge/game-api exec vitest run --no-file-parallelism src/conductor-network.native.integration.test.ts src/conductor-acceptance.native.integration.test.ts
+          pnpm --filter @zugfolge/game-api exec vitest run --no-file-parallelism src/conductor-dialogue-scenarios.native.integration.test.ts
 
       - name: PostgreSQL-Migration, Weltisolation und Autorisierung
         env:
@@ -239,6 +277,47 @@ jobs:
           done
           test -n "${PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH:-}"
           node --test tools/conductor-interior/server.test.mjs tools/conductor-interior/preview.test.mjs
+
+      - name: M15-Sitzung im tatsächlichen Desktop- und Touchbrowser
+        shell: bash
+        env:
+          CONDUCTOR_SESSION_BROWSER_TEST: "1"
+          CONDUCTOR_CONTROL_BROWSER_TEST: "1"
+          CONDUCTOR_CAPACITY_BROWSER_TEST: "1"
+          CONDUCTOR_MANIFEST_BROWSER_TEST: "1"
+          CONDUCTOR_ACCEPTANCE_BROWSER_TEST: "1"
+          CONDUCTOR_ENTRY_BROWSER_TEST: "1"
+          CONDUCTOR_SESSION_SCREENSHOT_DIR: ${{ runner.temp }}/conductor-session/screenshots
+          CONDUCTOR_SESSION_REPORT_PATH: ${{ runner.temp }}/conductor-session/browser-report.json
+          CONDUCTOR_CONTROL_REPORT_PATH: ${{ runner.temp }}/conductor-session/control-browser-report.json
+          CONDUCTOR_CAPACITY_REPORT_PATH: ${{ runner.temp }}/conductor-session/capacity-browser-report.json
+          CONDUCTOR_MANIFEST_REPORT_PATH: ${{ runner.temp }}/conductor-session/manifest-browser-report.json
+          CONDUCTOR_ACCEPTANCE_REPORT_PATH: ${{ runner.temp }}/conductor-session/acceptance-browser-report.json
+          CONDUCTOR_ENTRY_REPORT_PATH: ${{ runner.temp }}/conductor-session/entry-browser-report.json
+        run: |
+          set -euo pipefail
+          for conductor_browser in "${ZUGFOLGE_BROWSER_EXECUTABLE:-}" /usr/bin/google-chrome /usr/bin/chromium; do
+            if [[ -n "${conductor_browser}" && -x "${conductor_browser}" ]]; then
+              export PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH="${conductor_browser}"
+              break
+            fi
+          done
+          test -n "${PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH:-}"
+          node --test tools/conductor-session/browser-proof.mjs
+          node --test tools/conductor-session/control-browser-proof.mjs
+          node --test tools/conductor-session/capacity-browser-proof.mjs
+          node --test tools/conductor-session/manifest-browser-proof.mjs
+          node --test tools/conductor-session/acceptance-browser-proof.mjs
+          node --test tools/conductor-session/entry-browser-proof.mjs
+          node tools/conductor-session/package-evidence.mjs "$RUNNER_TEMP/conductor-session" "$GITHUB_SHA" "https://github.com/larynxberlin-rgb/Zugfolge/actions/runs/$GITHUB_RUN_ID"
+
+      - name: M15-Browserbelege aufbewahren
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: conductor-session-browser-evidence
+          path: ${{ runner.temp }}/conductor-session
+          if-no-files-found: ignore
 
   guards:
     # ASCII-only: GitHub branch protection compares this check name byte-for-byte.

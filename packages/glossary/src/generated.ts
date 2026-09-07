@@ -261,6 +261,11 @@ export const GENERATED_GLOSSARY_ENTRIES = Object.freeze([
     "definition": "Frist nach der Koordinierung, in der ein Trassenangebot beanstandet werden kann"
   },
   {
+    "term": "Einwohnerbasiertes Stationsnachfragemodell",
+    "code": "StationPopulationDemandV1",
+    "definition": "optionaler, gepinnter Releaseblock mit amtlichen Ortsbevölkerungen, erhaltenen Stationsanteilen und gerichteten Referenzpräferenzen; bleibt eine Modellannahme"
+  },
+  {
     "term": "Eisenbahnverkehrsunternehmen (EVU)",
     "code": "Operator",
     "definition": "das Unternehmen eines Spielers; Träger von Fahrzeugen, Personal, Trassen und Verträgen"
@@ -309,6 +314,16 @@ export const GENERATED_GLOSSARY_ENTRIES = Object.freeze([
     "term": "Fahrgastbetriebsbeleg",
     "code": "DemandOperationalProgressV1",
     "definition": "Expliziter weltgebundener Beleg tatsächlicher Ankunft und Abfahrt; schützt bereits gereiste Reiseabschnitte"
+  },
+  {
+    "term": "Fahrgasthaltbeleg",
+    "code": "OperationalPassengerStopReceipt",
+    "definition": "einmaliger nativer Ankunfts- oder Abfahrtsbeleg eines signiert gebundenen Haltvorkommens mit tatsächlicher Zeit, Planhash und Zug-/Formationsbezug; ein Signalhalt genügt nicht"
+  },
+  {
+    "term": "Fahrgasthaltplan",
+    "code": "OperationalPassengerStopPlan",
+    "definition": "optionaler signierter Plan mit zwei bis 100 geordneten Haltvorkommen, exakten gerichteten Positionen, Plattformbindung und Mindestaufenthalt"
   },
   {
     "term": "Fahrgastinformationsanzeige",
@@ -371,6 +386,11 @@ export const GENERATED_GLOSSARY_ENTRIES = Object.freeze([
     "definition": "erster Anteil der Sperrzeit: Stellen und Festlegen des Fahrwegs, bevor das Signal Fahrt zeigen kann"
   },
   {
+    "term": "Fahrtpreisbeleg",
+    "code": "FareJourneyEvidenceV1",
+    "definition": "welt-, perioden- und abschnittsgebundene Tarif- und Erwerbsmöglichkeitsquelle; fehlende Belege erlauben keine erfundene Kontrollforderung"
+  },
+  {
     "term": "Fahrweg",
     "code": "RunPath",
     "definition": "lückenlose Folge von Segmenten mit Länge, zulässiger Geschwindigkeit und Neigung, aus der die Fahrdynamik eine Fahrzeit rechnet — anders als der Laufweg bereits auf konstante Werte geschnitten"
@@ -424,6 +444,11 @@ export const GENERATED_GLOSSARY_ENTRIES = Object.freeze([
     "term": "Fernverkehrslinienentwurf",
     "code": "SpfvDraft",
     "definition": "Spielerabsicht für Linie, Halte, Formation, Takt, Abschnittspreis und begrenzte Gültigkeit"
+  },
+  {
+    "term": "Feststellungsbeleg",
+    "code": "DialogueEvidenceV1",
+    "definition": "ausschließlich bestätigter Dokument-, Identitäts- und Gefährdungsstand für öffentliche Gesprächsoptionen; vom verdeckten Fahrscheinstatus getrennt"
   },
   {
     "term": "Flankenschutz",
@@ -506,6 +531,11 @@ export const GENERATED_GLOSSARY_ENTRIES = Object.freeze([
     "definition": "unveränderliches, versioniertes Netz- und Betriebsartefakt mit Graph, gerichteten Kanten, Sicherungselementen, Laufwegvorlagen, RZÜ-Layout, Herkunft, Lizenz, Prüfsumme und Confidence"
   },
   {
+    "term": "Infrastruktursperrenstopp",
+    "code": "InfrastructureDisruptionStop",
+    "definition": "native Ursachenbindung eines durch tatsächliche Infrastruktursperren ausgelösten sicheren Halts; technische Freigabe ersetzt keine neue Fahrdienstleiterzustimmung und hebt andere Haltgründe nicht auf"
+  },
+  {
     "term": "Innenraumgeometriepolicy",
     "code": "InteriorGeometryPolicyV1",
     "definition": "releasegebundene generische Kasten-, Deck-, Tür-, Gang- und Treppengeometrie zur unveränderten M5-Konfiguration; keine Maße aus Grafikdateien"
@@ -574,6 +604,11 @@ export const GENERATED_GLOSSARY_ENTRIES = Object.freeze([
     "term": "Kontrollbedingter Betriebshalt",
     "code": "FareControlHoldV1",
     "definition": "bindender zusätzlicher Aufenthalt am nächsten planmäßigen Fahrgasthalt nach Polizeianforderung; verlängert reale Ressourcenbelegungen und verlangt anschließend ein neues Abfahrtsrecht"
+  },
+  {
+    "term": "Kontrollfolgenquittung",
+    "code": "ConductorSessionControlReceiptV1",
+    "definition": "native Bindung eines angenommenen Sitzungseffekts an einen tatsächlich committed Forderungs- oder Haltebeleg"
   },
   {
     "term": "Kontrollhaltpolicy",
@@ -656,14 +691,34 @@ export const GENERATED_GLOSSARY_ENTRIES = Object.freeze([
     "definition": "Zeit zwischen Zuschlag und Betriebsaufnahme; nachweispflichtig auf Fahrzeuge, Personal und Trassen"
   },
   {
+    "term": "Nachfrageanfangspool",
+    "code": "DemandPoolSeed",
+    "definition": "vor Betriebsfortschritt persistierte private Anfangsauswertung eines freigegebenen Pools mit vollständigen Eingaben, nativer Ergebnisprüfung und gebundener Journal-/Regionsgrenze"
+  },
+  {
+    "term": "Nachfrageangebotsrevision",
+    "code": "DemandOfferRevision",
+    "definition": "bestätigter historischer Angebotsstand mit Welt-/Periodenbindung, wirksamer Zeit und Planungssequenz; beeinflusst keine zuvor abgefahrene Reise rückwirkend"
+  },
+  {
     "term": "Nachfrageauswertung",
     "code": "DemandEvaluationV1",
     "definition": "Kanonisches Ergebnis des gemeinsamen SPNV-/SPFV-Kerns mit Wahlbegründungen, Belegungen und privaten Manifesten"
   },
   {
+    "term": "Nachfragedatenkorrektur",
+    "code": "PopulationRevision",
+    "definition": "automatisch übernommener Zahlenstand der direkt gepflegten Odoo-Datenbankinhalte; schützt bereits entstandene Reisewünsche und begonnene Fahrten über Restore"
+  },
+  {
     "term": "Nachfragefensterpool",
     "code": "DemandGenerationWindowV1",
     "definition": "Zeitlich begrenzte Kohortenerzeugung innerhalb eines gemeinsamen Kapazitätspools"
+  },
+  {
+    "term": "Nachfragefortschrittscursor",
+    "code": "DemandProgressCursor",
+    "definition": "persistierter kausaler Verarbeitungsstand mit Journalgrenze, Regionspins sowie bestätigten und noch wartenden nativen Haltbelegen"
   },
   {
     "term": "Nachfragefreigabe",
@@ -811,6 +866,11 @@ export const GENERATED_GLOSSARY_ENTRIES = Object.freeze([
     "definition": "Übergang einer Zugfahrt zwischen zwei regionalen Single-Writer-Prozessen, mit Bestätigung"
   },
   {
+    "term": "Regionsübergabequittung",
+    "code": "FinishedHandoverReceiptV1",
+    "definition": "native Abschlussbindung von Zug, Quell-/Zielregion, Zeitpunkt und Payloadhash; gilt für Sitzungen nur zusammen mit der passenden Zielquittung und beiden Initialisierungspins"
+  },
+  {
     "term": "Reisenachfragekohorte",
     "code": "JourneyDemandV1",
     "definition": "Deterministisch erzeugte Reisen mit stabilem Gebiet-, Anlass-, Fenster- und Profilbezug"
@@ -854,6 +914,11 @@ export const GENERATED_GLOSSARY_ENTRIES = Object.freeze([
     "term": "Schaffnersitzung",
     "code": "ConductorSessionV1",
     "definition": "exklusive autorisierte Sitzung eines Spielers in einem eigenen aktiven SPNV-Zug; projiziert den Weltzustand und nimmt typisierte Kontrollkommandos an"
+  },
+  {
+    "term": "Schaffnerszenenrelease",
+    "code": "ConductorSceneReleaseV1",
+    "definition": "unveränderliche Umgebungs-, Kalender- und Stationsmetadaten, an ursprüngliche Operational-Infrastruktur gebunden"
   },
   {
     "term": "Schichtentrennung",
@@ -939,6 +1004,11 @@ export const GENERATED_GLOSSARY_ENTRIES = Object.freeze([
     "term": "Stationsausstattung",
     "code": "StationAmenities",
     "definition": "Menge der an einer Betriebsstelle vorhandenen Ausstattungsmerkmale — Barrierefreiheit, Wetterschutz, Fahrgastinformation und mehr"
+  },
+  {
+    "term": "Stationsnachfrageklasse",
+    "code": "StationDemandClass",
+    "definition": "eigene Größenklasse 0 bis 10 aus zugeteilter Bevölkerung; keine Infrastrukturkategorie und kein zusätzlicher Einwohnerfaktor"
   },
   {
     "term": "Stellwerksbauart",

@@ -103,7 +103,7 @@ class ZugfolgeProjectionController(http.Controller):
             return {"accepted": False, "code": "invalid_signature"}
         message_id = payload.get("messageId")
         if (payload.get("schemaVersion") != "zugfolge-odoo/v1"
-                or payload.get("messageType") not in ("world.projection", "public.world.snapshot", "world.participation.result", "alpha.feedback.projection", "admin.command.result", "admin.capability.projection", "reconciliation.task")
+                or payload.get("messageType") not in ("world.projection", "public.world.snapshot", "world.participation.result", "alpha.feedback.projection", "admin.command.result", "admin.capability.projection", "reconciliation.task", "demand.data.result")
                 or not isinstance(message_id, str) or not message_id):
             return {"accepted": False, "code": "invalid_schema"}
         body = payload.get("payload", {})
@@ -129,6 +129,20 @@ class ZugfolgeProjectionController(http.Controller):
         result_world_id = None
         global_admin_result = False
         result_request = None
+        demand_event = None
+        if payload["messageType"] == "demand.data.result":
+            if (not isinstance(body, dict) or set(body) - {"baseReleaseId", "sourceRevision", "outcome", "code", "detail"}
+                    or body.get("outcome") not in ("accepted", "rejected")
+                    or type(body.get("sourceRevision")) is not int or body["sourceRevision"] < 1
+                    or not isinstance(body.get("baseReleaseId"), str)
+                    or any(key in body and (not isinstance(body[key], str) or len(body[key]) > 2000) for key in ("code", "detail"))):
+                return {"accepted": False, "code": "invalid_schema"}
+            demand_event = request.env["zugfolge.demand.data.event"].sudo().search([
+                ("correlation_id", "=", payload.get("correlationId")), ("data_id.world_id", "=", payload.get("worldId")),
+                ("data_id.base_release_id", "=", body["baseReleaseId"]), ("source_revision", "=", body["sourceRevision"]),
+            ], limit=1)
+            if not demand_event:
+                return {"accepted": False, "code": "missing_target"}
         if payload["messageType"] == "admin.command.result":
             result_world_id = _admin_result_target_world_id(payload)
             if result_world_id is None:
@@ -160,6 +174,8 @@ class ZugfolgeProjectionController(http.Controller):
         model = request.env["zugfolge.world.projection"].sudo().with_context(zugfolge_game_projection=True)
         if payload["messageType"] == "world.projection":
             model.upsert_game_projection(payload)
+        if demand_event:
+            demand_event._apply_game_result(body)
         if payload["messageType"] == "public.world.snapshot":
             model.upsert_public_snapshot(payload)
         if payload["messageType"] == "admin.capability.projection":

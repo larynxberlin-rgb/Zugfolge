@@ -945,12 +945,12 @@ Fahrgäste, die M15 später im Schaffnermodus 1:1 projiziert.
 
 | # | Teilabschnitt | Größe | Status |
 |---|---------------|-------|--------|
-| 10.1 | Gemeinsames Zonen- und Reisenachfragemodell für SPNV und SPFV aus Bevölkerung, Arbeitsplätzen, POIs, Reiseanlässen, Saison und Tageszeit; **ÖPNV-Anbindung je Station als statisches Attribut** | **XL** | in Arbeit |
-| 10.2 | Verkehrsmittel-, Verbindungs- und Zugwahl für beide Personenverkehrsarten: Preis, Reisezeit, Umstiege, Takt, Zuverlässigkeit, Komfort und verfügbare Kapazität | **XL** | in Arbeit |
-| 10.3 | Tarif-, Vertriebs-, Kapazitäts- und Komfortmodell einschließlich SPNV-Fahrberechtigungen, Überbelegung, zurückbleibender Fahrgäste, Reservierungen und Komfortklassen | L | in Arbeit |
-| 10.3a | **Autoritative SPNV-Fahrgastmanifeste** je Zuglaufabschnitt mit stabilen pseudonymen Fahrgastschlüsseln, Reise-/Umstiegskette, Ein- und Ausstieg, exakter Belegung sowie deterministischem Fahrberechtigungsstatus mit Herkunft `observed` oder `balanced` | L | in Arbeit |
-| 10.4 | SPFV-spezifische Linien-, Halte- und Taktplanung als Spielerwerkzeug | M | in Arbeit |
-| 10.5 | Gemeinsame Kalibrierung von SPNV und SPFV gegen freigegebene öffentliche Größenordnungen | M | in Arbeit |
+| 10.1 | Gemeinsames Zonen- und Reisenachfragemodell für SPNV und SPFV aus Bevölkerung, Arbeitsplätzen, POIs, Reiseanlässen, Saison und Tageszeit; **ÖPNV-Anbindung je Station als statisches Attribut** | **XL** | erledigt |
+| 10.2 | Verkehrsmittel-, Verbindungs- und Zugwahl für beide Personenverkehrsarten: Preis, Reisezeit, Umstiege, Takt, Zuverlässigkeit, Komfort und verfügbare Kapazität | **XL** | erledigt |
+| 10.3 | Tarif-, Vertriebs-, Kapazitäts- und Komfortmodell einschließlich SPNV-Fahrberechtigungen, Überbelegung, zurückbleibender Fahrgäste, Reservierungen und Komfortklassen | L | erledigt |
+| 10.3a | **Autoritative SPNV-Fahrgastmanifeste** je Zuglaufabschnitt mit stabilen pseudonymen Fahrgastschlüsseln, Reise-/Umstiegskette, Ein- und Ausstieg, exakter Belegung sowie deterministischem Fahrberechtigungsstatus mit Herkunft `observed` oder `balanced` | L | erledigt |
+| 10.4 | SPFV-spezifische Linien-, Halte- und Taktplanung als Spielerwerkzeug | M | erledigt |
+| 10.5 | Einwohnerbasierte Stationsklassen und gemeinsame SPNV-/SPFV-Nachfrage; ungefähre Wunschziele aus frei nutzbaren Referenzverbindungen und direkte Datenpflege durch normales Speichern in Odoo | M | erledigt |
 
 > **Beweis:** Ein SPNV-Zug erhält über mehrere Halte reproduzierbare Ein- und
 > Aussteiger, Auslastung und Fahrgastmanifeste; Ausfall und Anschlussverlust
@@ -959,8 +959,19 @@ Fahrgäste, die M15 später im Schaffnermodus 1:1 projiziert.
 > sinnvoll reagieren.
 
 Der [Implementierungs- und Abnahmebericht](m10-abnahme.md) trennt den
-getesteten Rust-Kern und die Spielerintegration von der noch offenen
-Produktions- und gemeinsamen SPNV-/SPFV-Kalibrierungsabnahme.
+getesteten Rust-Kern und die Spielerintegration von der gesonderten
+Produktionsabnahme. Auf Nutzerauftrag vom 06.09.2026 ersetzt die
+[einwohnerbasierte Näherung](m10-populationsnachfrage.md) die zuvor für 10.5
+geforderte gemeinsame Messdatenkalibrierung; ihr Schätzcharakter bleibt sichtbar.
+
+**Fachlicher Abschluss vom 06.09.2026:** Die Teilpunkte 10.1–10.5 einschließlich
+10.3a sind umgesetzt, integriert und im geänderten Umfang abgenommen. Der
+Nutzer hat das Zusammenführen der vier M10-PRs #532, #533, #534 und #537
+beauftragt. Der [Abnahmebericht](m10-abnahme.md) bindet die technischen
+Nachweise an ihre geprüften Commits; der finale Merge setzt weiterhin die
+vier regulären grünen CI-Jobs voraus. Die Produktionsreife bleibt wegen
+der offenen M9-/Betriebsabnahmen blockiert. Deshalb bleibt der GitHub-
+Milestone auch nach dem Abschluss seiner acht Issues und vier PRs offen.
 
 ---
 
@@ -1079,14 +1090,14 @@ Alpha-Schnitt. Vollständiger Fachvertrag:
 | 15.2 | **M10-Fahrgastmanifeste und deterministische 1:1-Projektion**: jeder tatsächlich reisende Fahrgast wird logisch materialisiert, stabil platziert und kontrollierbar; Rendering darf nur optisch degradieren | L | in Arbeit |
 | 15.3 | **Eigene Pixelart-Designsprache und freigegebener Asset-Korpus**: finale erzeugte Figuren-, Innenraum-, Bahnhof- und Umgebungsassets mit `ArtAtlasManifestV1`, Herkunft, Hash und Rechtegates | **XL** | in Arbeit |
 | 15.4 | **Konfigurationsgetreue begehbare Fahrzeuginnenräume**: `InteriorLayoutV1` aus Formation und Fahrzeugkonfiguration, Begehbarkeits-, Kollisions- und Kapazitätsnachweis | **XL** | erledigt |
-| 15.5 | **Fließende Umgebung und modulare Bahnhofsszenen**: Umland/Vorstadt/Stadt, Tageszeit, tatsächliche Geschwindigkeit, Signal-/Bahnhofshalte, kleine/mittlere/große Stationen und dynamische Namen | **XL** | offen |
-| 15.6 | **Versionierter Sprechblasen-Dialogkorpus**: mindestens 150 geprüfte Dialogbäume und 600 Fahrgastäußerungen, verdeckter Sachverhalt, mindestens zwölf Situationsfamilien, kein Laufzeit-Sprachmodell | L | offen |
-| 15.7 | **Autoritative Schaffnersitzung**: Eigentümerberechtigung, Exklusivität, Kommandorevision, Idempotenz, Reconnect, Restore und bitgleiches Replay | L | offen |
-| 15.8 | **Browserintegration**: Bewegung, Interaktion, Sprechblasen, Pixi/WebGL-Projektion, Desktop, Touch, Tastatur, Screenreader und reduzierte Bewegung | **XL** | offen |
-| 15.9 | **Kontrollhalt über Konfliktengine und virtuelle Fahrdienstleiter**: `FareControlHoldV1`, tatsächliche Ressourcenweiterbelegung, Höchstwartezeit, erneute Abfahrtsprüfung und Netzfolgen für alle Zugarten | **XL** | offen |
-| 15.10 | **Polizeireaktion, EBE-Fallabschluss und Verspätungsursache**: deterministische Verfügbarkeit, Bündelung höchstens eines Polizeihalts je Zuglauf, Feststellung, vorläufige/reguläre EBE und `authority.police.fare-control` | L | offen |
-| 15.11 | **Forderungen, Ausfälle und gedeckelte Kontrollprämie**: offene EBE, spätere Zahlung/Reduzierung/Abschreibung, Integer-Cent-Ledger, höchstens vierfache Prämie und 0,5-Prozent-Tagesdeckel | M | offen |
-| 15.12 | **Performance-, Determinismus- und Gesamtannahme**: voller SPNV-Verband, Mehrzug-Golden-Master, Property-Tests für Invariante 1, Browser-/Barrierefreiheitsabnahme und zusammenhängender Spielbeweis | L | offen |
+| 15.5 | **Fließende Umgebung und modulare Bahnhofsszenen**: Umland/Vorstadt/Stadt, Tageszeit, tatsächliche Geschwindigkeit, Signal-/Bahnhofshalte, kleine/mittlere/große Stationen und dynamische Namen | **XL** | in Arbeit |
+| 15.6 | **Versionierter Sprechblasen-Dialogkorpus**: mindestens 150 geprüfte Dialogbäume und 600 Fahrgastäußerungen, verdeckter Sachverhalt, mindestens zwölf Situationsfamilien, kein Laufzeit-Sprachmodell | L | in Arbeit |
+| 15.7 | **Autoritative Schaffnersitzung**: Eigentümerberechtigung, Exklusivität, Kommandorevision, Idempotenz, Reconnect, Restore und bitgleiches Replay | L | in Arbeit |
+| 15.8 | **Browserintegration**: Bewegung, Interaktion, Sprechblasen, Pixi/WebGL-Projektion, Desktop, Touch, Tastatur, Screenreader und reduzierte Bewegung | **XL** | in Arbeit |
+| 15.9 | **Kontrollhalt über Konfliktengine und virtuelle Fahrdienstleiter**: `FareControlHoldV1`, tatsächliche Ressourcenweiterbelegung, Höchstwartezeit, erneute Abfahrtsprüfung und Netzfolgen für alle Zugarten | **XL** | in Arbeit |
+| 15.10 | **Polizeireaktion, EBE-Fallabschluss und Verspätungsursache**: deterministische Verfügbarkeit, Bündelung höchstens eines Polizeihalts je Zuglauf, Feststellung, vorläufige/reguläre EBE und `authority.police.fare-control` | L | in Arbeit |
+| 15.11 | **Forderungen, Ausfälle und gedeckelte Kontrollprämie**: offene EBE, spätere Zahlung/Reduzierung/Abschreibung, Integer-Cent-Ledger, höchstens vierfache Prämie und 0,5-Prozent-Tagesdeckel | M | in Arbeit |
+| 15.12 | **Performance-, Determinismus- und Gesamtannahme**: voller SPNV-Verband, Mehrzug-Golden-Master, Property-Tests für Invariante 1, Browser-/Barrierefreiheitsabnahme und zusammenhängender Spielbeweis | L | in Arbeit |
 
 **Teilabhängigkeiten:** M15.1 ist der Einstieg. M15.2 folgt M10.3a und M15.1.
 M15.3 und M15.6 können danach parallel beginnen. M15.4 folgt M15.3 und M5;
@@ -1098,10 +1109,11 @@ M15.11 folgt M15.10 und M6; M15.12 schließt alle Teile zusammen.
 Aktions-/Autoritätsmatrix sind vollständig dokumentiert. E28 ist mit #530
 auf `main` veröffentlicht. M15.2 liefert den Rust-Projektionskern und eine
 autorisierte interne Plattformgrenze. M15.4 liefert inzwischen belegte
-Innenraumlayouts und deckgebundene V2-Plätze. Produktive M10-Haltquittungen
-und die zusammenhängende spielbare Browserabnahme bleiben offen;
-M15.2 und M15 insgesamt werden dadurch nicht geschlossen. Reproduzierbare
-Prüfungen, Issue-/PR-Abgleich und Grenzen: [Teilabnahme](m15-abnahme.md).
+Innenraumlayouts und deckgebundene V2-Plätze. Die aktuelle Integration verbindet
+diese mit dem tatsächlichen Operational-Haltproducer, M10 und der privaten
+Schaffnersitzung. Der [integrierte Prüfstand](m15-integration.md) dokumentiert
+Browser, Kontrollfolgen und die verbleibenden Gesamtannahmebedingungen. Die
+[ursprüngliche Teilabnahme](m15-abnahme.md) bleibt historisch nachvollziehbar.
 
 **M15.3-Stand:** [Atlasvertrag](art-atlas.md) und Pflichtkatalog v2 umfassen
 186 Motive (120 Figurenframes und 66 statische Motive), sieben Atlanten und

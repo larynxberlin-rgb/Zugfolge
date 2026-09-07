@@ -1,6 +1,7 @@
 # M10.5 — Frei nutzbare Kalibrierungsquellen
 
-Recherche und tatsächlicher Datenabruf: **5. September 2026**. Das
+Erster tatsächlicher Datenabruf: **5. September 2026**; ergänzende Suche und
+Korrektur der Vergleichszeitachse: **6. September 2026**. Das
 [Quellenpaket](../tools/demand-calibration/README.md) enthält echte SPNV-Zählwerte,
 Originaldateien, Lizenzbelege und einen reproduzierbaren Vergleich mit dem
 Rust-Kern. Eine vollständige Abnahme von #173 wird damit nicht behauptet:
@@ -136,12 +137,44 @@ Die volle M10.5-Abnahme bleibt offen, bis alle sechs Kombinationen aus
 SPNV/SPFV und Tagesprofil/Querschnitt/echtem Umstieg unabhängig beobachtet
 und innerhalb begründeter Toleranzen durch den gemeinsamen Kern belegt sind.
 
+## Ergänzende Suche am 6. September 2026
+
+Die weitere Suche konzentrierte sich auf amtliche Erhebungsantworten,
+beobachtete Fernverkehrsmengen und veröffentlichte Umsteigedaten. Die zuvor
+ausgeschlossenen NC-Quellen werden dadurch nicht freigegeben. Die folgenden
+neuen Fundstellen sind Recherchebelege, keine zusätzlichen importierten
+Holdouts:
+
+| Primärquelle | Tatsächlich belegter Umfang und Nutzbarkeit | Grenze für #173 |
+|---|---|---|
+| [Bundestag 19/22668, 17.09.2020, Antworten 16, 23 und 24–30](https://dserver.bundestag.de/btd/19/226/1922668.pdf) | Die öffentliche Antwort nennt für DB Fernverkehr in Baden-Württemberg 2019 rund 80.000 tägliche Fahrgäste in den zusammengefassten werktäglichen Spitzenzeiten. Detaillierte Streckenlasten wurden dagegen als vertrauliche Anlage übermittelt; eine Auswertung der Bahnhofszahlen nach Umsteigeranteil war laut Antwort nicht möglich. | Ein historischer öffentlicher Summenwert liefert weder Stundenverteilung noch zugbezogene Abschnitte oder tatsächliche Umsteigeketten. Die vertrauliche Anlage ist kein frei nutzbarer Datenbestand. |
+| [Bundestag 19/7577, Antwort 1](https://dserver.bundestag.de/btd/19/075/1907577.pdf) | Amtlich mitgeteilte Jahreswerte: 4,9 Millionen DB-Fernverkehrsreisende über VDE 8.1 im Jahr 2018; 8,9 Millionen auf den Verbindungen Frankfurt–Berlin über Braunschweig und Erfurt zusammen. | Die Antwort liefert keine Stunden-/Messfahrtenmaske und keine Aufteilung der zweiten Summe auf einen eindeutigen Abschnitt. Nur zitierter Größenordnungsbeleg, kein importierter Kalibrierkorpus. |
+| [Britisches DfT: RAI02, Stand 28.07.2026](https://www.gov.uk/government/statistical-data-sets/rai02-capacity-and-overcrowding) | OGL v3.0 ist auf der amtlichen Datenseite ausgewiesen. RAI0202/0203 enthalten Zeitbänder je Stadt beziehungsweise Londoner Bahnhof; RAI0214/0215 ergänzen Spitzenlasten nach Betreiber. | Die [Methodik](https://www.gov.uk/government/statistics/rail-passenger-numbers-and-crowding-on-weekdays-in-major-cities-in-england-and-wales-2025/rail-passenger-numbers-and-crowding-statistics-notes-and-definitions) zählt Fahrgäste an Stadtgrenzen, einschließlich Durchfahrender, nicht nur Einsteiger. Zeitbänder mischen Regional- und Fernverkehr; ausnahmsweise werden fehlende Zählungen modelliert. Das wäre ein eigenständiger britischer Vergleich, kein deutscher SPFV-/Umsteige-Holdout. |
+| [Comunidad de Madrid: Fernverkehrs-OD-Jahreswerte](https://datos.comunidad.madrid/dataset/1917981) | [CKAN-Metadatum](https://datos.comunidad.madrid/api/3/action/package_show?id=1917981) weist ausdrücklich [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) aus. Die tatsächlich gelesene CSV enthält 640 Datensätze, Jahre 1993–2024, 61.224 Bytes; SHA-256 `bed1a188c36b98db76d7998d0e1a3a4e52aa46af2a36c33af5f12432669bf954`. Quelle ist das spanische Verkehrsministerium. | Werte summieren beide Reiserichtungen zwischen benannten Städten. Jahres-ODs sind keine stündlichen Belegungen konkreter Abschnitte und keine Umsteigerzählungen. Frei nutzbar mit Namensnennung, aber fachlich kein Ersatz für die fehlenden Messgrößen. |
+| [NS-Anfrage 2018-1699 im niederländischen Regierungsportal](https://data.overheid.nl/en/community/datarequest/ns-in-en-uitstappers), [weitere Anfrage 4354](https://data.overheid.nl/community/datarequest/ns-nieuwere-in-en-uitstapdata) | Das Portal verweist auf jährliche NS-Dashboardzahlen zu Ein-/Aussteigern, Umsteigern und Tagesverteilung. Die Antwort von 2018 erklärt feinere Daten wegen Wettbewerb, Datenschutz und Vertraulichkeit für nicht öffentlich; die neuere Anfrage ist als „Geen overheidsdata“ abgeschlossen. | Keine ausdrücklich freie Lizenz des zugrunde liegenden NS-Messkorpus und keine getrennten SPFV-Umsteigehalte nachgewiesen. Ein öffentlich lesbares Dashboard allein ist keine Importfreigabe. |
+| [ARE/Zenodo: NPVM 2023, Version 2](https://zenodo.org/records/18486217) | Der [tatsächlich abgefragte Metadatensatz](https://zenodo.org/api/records/18486217) nennt `cc-by-4.0`. Angebotene Dateien sind unter anderem modellierte Bahnlasten, Wegematrizen und VISUM-Umlegungen. | Eine freie Lizenz macht Modellergebnisse nicht zu Beobachtungen. Ein separat nachvollziehbarer, ungeänderter Messkorpus für die erforderlichen Halte/Umstiege wurde dort nicht nachgewiesen; daher keine Übernahme als Holdout. |
+
+Die Rechtsbedingungen von [OGL v3.0](https://www.nationalarchives.gov.uk/doc/open-government-licence/version/3/)
+und [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) erlauben
+kommerzielle Wiederverwendung mit den jeweiligen Quellen-/Änderungshinweisen.
+Diese Lizenzen gelten für die jeweils damit ausgezeichneten Daten, nicht
+pauschal für andere DB-, NS- oder Drittanbieterbestände.
+
+Für den bestehenden Vergleich fehlt weiterhin ein frei weiterverwendbarer
+Messkorpus mit getrenntem SPNV/SPFV-Bezug, eindeutigen Erhebungszeiten,
+Stations-/Abschnitts- beziehungsweise tatsächlichen Umsteigezuordnungen und
+einer vor dem Vergleich festgelegten unabhängigen Auswahl. Die neuen
+Fundstellen schließen diese vier konkreten Datenlücken nicht. Sie belegen
+keine allgemeine Aussage, dass solche Daten nirgends existieren. Es wurde
+keine Anfrage an Betreiber verschickt und keine geschützte Anlage abgerufen.
+
 ## Tatsächlich ausgeführter nativer Vergleich
 
 Der [native Bericht](../tools/demand-calibration/native-report.json) enthält
 den vollständigen RE7-Ausschnitt mit 48 Stationen und 40 beziehungsweise
 42 Fahrten. Das Trainingsmodell enthält 29.577 tägliche Einheiten effektiver
-Zonenmasse, verteilt über 24 ausschließlich aus Training gewichtete Stunden.
+Zonenmasse, verteilt nach 24 ausschließlich aus Training bestimmten
+Uhrzeitgewichten auf die 22 im Training belegten Betriebsstunden 4 bis 25.
 Nach der ganzzahligen Erzeugung pro Zone und Stunde entstehen im Kern
 je Tag 29.166 Reisende; diese Modellwerte sind keine beobachteten Tageszählungen.
 Alle Stunden teilen sich eine einzige native Kapazitätsvergabe. Zwei
@@ -150,10 +183,10 @@ Quellartefakte, Evaluator-Binary und Ergebniszustände sind durch Hashes gebunde
 
 | Datensatz | Metrik | innerhalb der Diagnosegrenze | gewichteter absoluter Fehler |
 |---|---|---:|---:|
-| Training | Stundenweise Einsteiger | 7 / 21 | 39,94 % |
-| Training | gerichtete Abschnittsbesetzung | 40 / 115 | 48,90 % |
-| Holdout | Stundenweise Einsteiger | 6 / 21 | 52,20 % |
-| Holdout | gerichtete Abschnittsbesetzung | 31 / 105 | 45,06 % |
+| Training | Stundenweise Einsteiger | 7 / 21 | 40,12 % |
+| Training | gerichtete Abschnittsbesetzung | 40 / 115 | 48,50 % |
+| Holdout | Stundenweise Einsteiger | 6 / 21 | 52,38 % |
+| Holdout | gerichtete Abschnittsbesetzung | 31 / 105 | 45,34 % |
 
 Der gewichtete absolute Fehler ist `Summe absoluter Fehler / Summe der
 Beobachtungswerte`, im Bericht auf ganze Basispunkte abgerundet. Die Summe
@@ -166,6 +199,17 @@ vereinfachten Annahmen zu Tarif, Stehplätzen und Haltezeiten erklären weitere
 Modellgrenzen. Der Bericht setzt `spnvMeasuredSubsetAccepted=false` und
 `fullM10CalibrationAccepted=false`. Es wurde kein Holdout-Zielwert als
 Modellvorhersage übernommen und keine Toleranz nachträglich erweitert.
+
+Vergleichsversion `nvbw-re7-native-comparison/v2` korrigiert einen am
+6. September gefundenen Fehler: Betriebsstunden 24 und 25 wurden zuvor
+bei der Nachfragematerialisierung auf 0 und 1 desselben Tages vorverlegt.
+Die 26 beziehungsweise eine Angebotszeile dieser Stunden gehören zum
+Folgetag. Das Modell verwendet jetzt die gleiche Zeitachse wie die Fahrten
+und unveränderten Beobachtungen. Release, Zonenparameter, Uhrzeitgewichte
+und Binary sind gegenüber v1 identisch; ein Regressionstest belegt die
+Zuordnung ohne Holdout-Einfluss. Die frühere Holdout-WAPE lag bei 52,20 %
+und 45,06 %: Die Korrektur ist sachlich notwendig, verbessert diese Werte
+aber nicht. Weitere Modellparameter wurden nicht auf diese Ergebnisse optimiert.
 
 Der erste vollständige Rechenversuch erreichte die feste Suchgrenze.
 Eine durch Äquivalenztests abgesicherte Kernoptimierung überspringt jetzt

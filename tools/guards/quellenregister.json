@@ -10,6 +10,36 @@
   },
   "quellen": [
     {
+      "id": "bkg-vg250-ew-2024",
+      "titel": "BKG / Statistisches Bundesamt – Verwaltungsgebiete mit Einwohnerzahlen 31.12.2024",
+      "status": "freigegeben",
+      "lizenz": "dl-de/by-2-0",
+      "bereitstellung": "https://daten.gdz.bkg.bund.de/produkte/vg/vg250-ew_ebenen_1231/2024/vg250-ew_12-31.ee.excel.ebenen.zip; unveränderter Excel-ZIP-Stand 31.12.2024, abgerufen am 2026-09-06, SHA-256 d5564af137d2dde65c23ceb8336f6c35fdf67260ba48058ced9004a2c5c000b3. VGTB_ATT_VG (ADE=6) liefert Einwohner und AGS/ARS; VG250_PK liefert zugehörige Ortskernkoordinaten.",
+      "attribution": "© BKG 2026 dl-de/by-2-0 (https://www.govdata.de/dl-de/by-2-0), https://www.bkg.bund.de, Datenquellen: https://sgx.geodatenzentrum.de/web_public/gdz/datenquellen/datenquellen_vg_nuts.pdf; Auswahl, Normalisierung und einwohnerbasierte Modellableitung durch Zugfolge.",
+      "nutzung": "Offline-Import amtlicher Gemeinde-Einwohnerzahlen und Ortskernkoordinaten für den eigenständigen M10.5-Nachfragedatensatz. Vollständiger Quellenbestand bleibt von Stationszuordnung, Einzugsgebieten, Nachfrageklassen und Reiseannahmen getrennt; keine externe Laufzeitabhängigkeit.",
+      "entscheidung": {
+        "datum": "2026-09-06",
+        "pruefer": "Codex – Quellenprüfung im ausdrücklichen Nutzerauftrag, ausschließlich frei nutzbare Daten"
+      },
+      "hinweis": "Produktseite und dem unveränderten ZIP beiliegende Nutzungsbedingungen weisen dl-de/by-2-0 ausdrücklich für VG250-EW ab Produktstand 31.12.2023 aus. Kommerzielle Nutzung und Bearbeitung sind mit Quellen-/Lizenzangabe und Änderungsvermerk erlaubt. Die konkrete Attribution, Lizenzdatei-Hashes und Quellenprüfung stehen in docs/m10-populationsquellen.md. Gemeinde-Ortskerne sind keine feinräumige Bevölkerungsverteilung oder territorial genaue Stationszuordnung. Die Freigabe erlaubt keine Umdeklaration anderer Daten.",
+      "milestone": "M10.5"
+    },
+    {
+      "id": "gtfs-de-fv",
+      "titel": "GTFS.DE / DELFI – freier Schienenfernverkehr Deutschland",
+      "status": "freigegeben",
+      "lizenz": "CC BY 4.0",
+      "bereitstellung": "Offiziell frei bereitgestellter statischer GTFS-Feed https://download.gtfs.de/germany/fv_free/latest.zip; Produkt-/Lizenzseite https://gtfs.de/de/feeds/de_fv/. Der am 2026-09-06 geladene Snapshot hat SHA-256 5e3efe3b3be69fb4bbbed0efc3fd8c2d8a0481c6a102a901ab1dc68219e45d40. Feedtabellen, Abrufzeit, ZIP-Hashes, aktive Verkehrstage und Transformationskonfiguration werden im Nachfragedatenpaket gepinnt.",
+      "attribution": "Datenquelle: DELFI e.V. / GTFS.DE, https://gtfs.de/de/feeds/de_fv/, CC BY 4.0 (https://creativecommons.org/licenses/by/4.0/); durch Zugfolge gefiltert, normalisiert und für ungefähre Zielpräferenzen ausgewertet.",
+      "nutzung": "Offline-Referenz bestehender Bahnverbindungen für M10.5 aus stops.txt, stop_times.txt, trips.txt, routes.txt und Kalenderdateien. Ein gerichtetes Stationspaar zählt pro eindeutiger Quellfahrt und Verkehrstag höchstens einmal. Sollverbindungen gewichten ausschließlich die ungefähre Wunschzielverteilung; keine beobachteten Fahrgäste oder Umstiegsströme.",
+      "entscheidung": {
+        "datum": "2026-09-06",
+        "pruefer": "Codex – Quellenprüfung im ausdrücklichen Nutzerauftrag, ausschließlich frei nutzbare Daten"
+      },
+      "hinweis": "Die offizielle Feedseite verlinkt ausdrücklich CC BY 4.0; diese erlaubt auch kommerzielle Speicherung, Bearbeitung und Weitergabe mit Attribution und Änderungskennzeichnung. Die Feedrolle ist ein Herkunftshinweis und kein Beweis der Verkehrskategorie jeder einzelnen Fahrt. Keine Ableitung technischer Zugmerkmale aus route_type oder Liniennamen. Keine fremden oder gesperrten Fahrplandaten werden als freie GTFS-Fakten umetikettiert.",
+      "milestone": "M10.5"
+    },
+    {
       "id": "maplibre-demotiles-noto-browserfixture",
       "titel": "Noto Sans Regular Glyphen aus MapLibre demotiles für Browserprüfungen",
       "status": "freigegeben",
@@ -232,7 +262,7 @@
       "lizenz": "CC BY 4.0",
       "bereitstellung": "Kostenfreier, tagesaktuell erzeugter statischer GTFS-Feed 'Schienenregionalverkehr Deutschland' unter https://download.gtfs.de/germany/rv_free/latest.zip. Der Feed deckt laut Anbieter die nächsten 30 Tage ab. ZIP, GTFS-Tabellen, Abrufzeit, Konfiguration und SHA-256-Prüfsummen werden in einem Capture-Manifest versioniert.",
       "attribution": "Datenquelle: DELFI e.V. / GTFS.DE, lizenziert unter CC BY 4.0 (https://creativecommons.org/licenses/by/4.0/). Durch Zugfolge gefiltert, gruppiert und statistisch ausgewertet; Änderungen werden als solche gekennzeichnet.",
-      "nutzung": "Offline-Fahrplan-Holdout für M1.13 aus stop_times.txt, trips.txt, routes.txt, stops.txt und Kalenderdateien. P20, Median und Mittelwert beschreiben ausschließlich veröffentlichte Sollfahrzeiten; Zwischenhalte werden separat ausgewiesen. GTFS ist keine technische Fahrzeitreferenz und keine Laufzeitabhängigkeit des Spiels.",
+      "nutzung": "Offline-Fahrplan-Holdout für M1.13 aus stop_times.txt, trips.txt, routes.txt, stops.txt und Kalenderdateien. P20, Median und Mittelwert beschreiben ausschließlich veröffentlichte Sollfahrzeiten; Zwischenhalte werden separat ausgewiesen. GTFS ist keine technische Fahrzeitreferenz und keine Laufzeitabhängigkeit des Spiels. Zusätzlich seit 2026-09-06 im ausdrücklichen Nutzerauftrag freigegeben: offline gepinnte bestehende Direktverbindungen und Stationskoordinaten für die ungefähre M10.5-Wunschzielverteilung. Einwohnerbudget und reale Fahrgastbeobachtungen werden nicht aus GTFS abgeleitet; aktive Verkehrstage und gerichtete Verbindungszählung bleiben nachvollziehbar.",
       "entscheidung": { "datum": "2026-08-09", "pruefer": "Sebastian Barowski" },
       "hinweis": "CC BY 4.0 erlaubt Speicherung, Bearbeitung und Weitergabe mit Namensnennung und Änderungskennzeichnung. Das Projekt bewahrt Attribution, Feed-URL, Abrufzeit, ZIP-/Tabellen-Hashes und Transformationskonfiguration. Die Zuordnung auf eine TrainCharacteristics ist eine eigene, geprüfte Projektentscheidung und wird nicht aus route_type oder Linienname geraten. Fahrplanreserve und technische Mindestlaufzeit dürfen nicht gleichgesetzt werden.",
       "milestone": "M1.13"

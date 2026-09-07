@@ -79,6 +79,23 @@ Zugspitze, Wendezugfähigkeit und wirksame Zugsicherung. Ein ausschließlich aus
 nicht angetriebenen Fahrzeugen bestehender Wagenpark bleibt als immobile
 Formation zulässig.
 
+### Lebensdauer temporärer CLI-Indizes
+
+Der native Operational-v2-Cache hält validierte Infrastrukturindizes während
+eines Serverprozesses warm. Kurzlebige Prüf-CLIs geben ihre Cacheeinträge nach
+Abwicklung des Aufrufs ausdrücklich frei, sowohl bei Erfolg als auch bei einer
+fachlichen Ablehnung nach Restore. Statische Rust-Werte besitzen beim
+Prozessende keinen automatischen Destruktorlauf. Erst die Freigabe des letzten
+Handles schließt die redb-Datei; anschließend wird ausschließlich das vom Store
+selbst angelegte temporäre Verzeichnis entfernt. Fremde oder noch benutzte
+Verzeichnisse werden nicht gesucht oder gelöscht. Ein Prozessabbruch ohne
+Abwicklung ist von dieser normalen Aufräumgarantie ausgenommen.
+
+Diese Ressourcenfreigabe ändert weder Quell-, Zustands- oder Kommandobelege noch
+den warmen NAPI-Pfad. Der Prozessnachweis für `operational_json` prüft echte
+Initialisierung und eine Ablehnung nach tatsächlichem Wiederanbinden des
+Zustands jeweils mit isoliertem Temp-Verzeichnis.
+
 ## 3. Weltzustand und Einheiten
 
 `OperationalWorld` ist je Welt und Region der einzige Writer. Er enthält:
@@ -90,6 +107,8 @@ Formation zulässig.
 - belegte Blöcke, Fahrstraßenlocks, Weichen- und Signalzustände;
 - Fahrberechtigungen, analytische Bewegungsabschnitte und Wartegründe;
 - konkrete Infrastruktur-/Fahrzeugstörungen;
+- optional gebundene Fahrgasthaltpläne, tatsächliche Ankunfts-/Abfahrtszeiten
+  und fällige Abfahrten nach Mindestaufenthalt;
 - Ereigniswarteschlange, Commit-Sequenz und idempotente Befehlskennungen.
 
 Einheiten: `i64` Millisekunden seit Weltepoche, `i64` Millimeter, `u32`
@@ -102,7 +121,8 @@ Analytische Position für `dt` Millisekunden:
 `s = s0 + round_half_away(v0 * dt / 1000 + a * dt² / 2_000_000)`
 
 Zwischenwerte verwenden mindestens 128 Bit. Exakte Halben werden vom Nullpunkt
-weg gerundet. Das Ergebnis wird hart am Fahrberechtigungsende begrenzt. Neue
+weg gerundet. Das Ergebnis wird hart am Fahrberechtigungsende und gegebenenfalls
+am davorliegenden gebundenen Fahrgasthalt begrenzt. Neue
 Abschnitte entstehen nur bei Geschwindigkeits-/Kantengrenze, Halt,
 Fahrberechtigungs-, Fahrstraßen-, Störungs-, Formations- oder Regionsänderung.
 Es gibt weder Sekundentick noch periodischen Vollscan.
@@ -113,9 +133,18 @@ am Start, das Abschnittsende aber exakt einen Millimeter dahinter, wird dieser
 Millimeter ausschließlich bei `valid_until` erreicht. Nullzeitabschnitte und
 groessere positive Nullfortschritte springen nicht und werden beim Abschluss
 fail-closed abgewiesen. An internen Abschnittsenden bleibt die analytische
-Geschwindigkeit erhalten; nur am erreichten Fahrberechtigungsende wird sie auf
+Geschwindigkeit erhalten; am erreichten Fahrberechtigungsende wird sie auf
 null geklemmt. Rust-Kern und TypeScript-Kartenprojektion wenden diese Regel
-identisch an.
+identisch an. Am gebundenen Fahrgasthalt kann nach Erreichen des ganzzahligen
+Zielmillimeters ein zeitlich positiver Bremsrest ohne weiteren darstellbaren
+Weg verbleiben. Er bleibt ein echter Bewegungsabschnitt mit gleicher Start-
+und Endposition; der Ankunftsbeleg entsteht erst bei Geschwindigkeit null.
+Seine Projektion enthält genau einen tatsächlichen Gleisgeometriepunkt an der
+committed Zugspitze. Zeitlich leere Abschnitte oder fehlende, fremde oder mehrere
+Punkte sind hierfür unzulässig. Räumlich fortschreitende Abschnitte benötigen
+weiterhin mindestens zwei lückenlos verbundene Punkte. LiveMap und RZÜ halten
+beim Einpunktabschnitt dieselbe Position, werten den Geschwindigkeitsrest bis
+zur Zeitgrenze aus und extrapolieren danach nicht.
 
 ## 4. Belegung und Stellwerk
 
@@ -313,7 +342,10 @@ exakte Laufweg- und Stellwerksvorlagen, Quellzeit, Quellcommit, Eventsequenz,
 Quellhash sowie einen kanonischen Payloadhash. Übertragen werden Zug,
 Formation, ihre physischen Fahrzeuge und Typen, Fahrstraßenlocks,
 Weichenlagen, aktiver Störungskontext, Dispatchauftrag und das verbleibende
-Bewegungsende. Accept setzt dieselbe Weltzeit und denselben fachlichen
+Bewegungsende. Bei haltgebundenen Fahrten gehören Planhash, nächster Haltindex,
+bestätigte Haltzeiten und fällige Abfahrt ebenfalls zum übertragenen Zustand;
+der Zielwriter führt dieselben Belegidentitäten fort. Accept setzt dieselbe
+Weltzeit und denselben fachlichen
 Infrastruktur-/Störungsstand voraus. Fremde Inventar-IDs werden nicht
 überschrieben; identische Typdefinitionen dürfen geteilt werden.
 
@@ -402,6 +434,80 @@ Datenblocker und dürfen nicht durch Laufzeitannahmen verdeckt werden.
 Der reproduzierbare Kernlauf und seine bewusst getrennten offenen Systemgates
 stehen in `betriebsengine-lastnachweis.md`.
 
+
+### Native Fahrgasthaltbelege (PassengerStop v1)
+
+Der optionale signierte `stopPlan` einer Personenfahrt trägt zwei bis 100
+geordnete Halte mit eindeutigen Vorkommen, Station, gerichteter Laufwegposition,
+Plattform, Sollankunft/-abfahrt und Mindestaufenthalt. Seine Kopfbindung umfasst
+Welt, Infrastruktur- und Fahrplanrelease, Service, Tagesfahrt, Zuglauf, Route
+und Quellenhash. Der Routencompiler bewahrt die tatsächlich gewählten
+gerichteten GTFS-Anker über das Zusammenführen der Route; der Weltcompiler
+bindet sie nach der Bewegungszuweisung an die konkrete Dispatchroute.
+Gleichmäßig verteilte Stationspositionen und geometrische Näherungen sind
+dafür unzulässig. Fehlende oder mehrdeutige Plattformbelege ergeben keinen Plan.
+
+Die native Prüfung verlangt den ersten Halt an der initialen Spitze, den
+letzten am Laufwegende und die vollständige Formation an jedem Halt innerhalb
+eines gleichgerichteten Plattformintervalls. `stopPlanHash` entsteht nativ.
+Die Runtime bindet normalisierte Vorlagen aus der vollständigen signierten
+Initialisierung in `passengerStopTemplates`; spätere Materialisierungen und
+Fortsetzungen dürfen nur exakt erlaubte Tagesinstanzen und Zeitverschiebungen
+verwenden. Halte, Route, Quelle, Plattform und Mindestaufenthalt bleiben fest.
+Alte Initialisierungen ohne diesen optionalen Vertrag bleiben kompatibel und
+erzeugen keine erfundenen Zwischenhaltbelege.
+
+`plan_motion` benutzt den nächsten Fahrgasthalt als zusätzliches Bremsziel
+innerhalb der bestehenden Fahrberechtigung. Ankunft entsteht ausschließlich
+an der exakten gebundenen Spitze bei Geschwindigkeit null ohne laufenden
+Bewegungsabschnitt. Die native Anfangslage erzeugt ebenfalls einen Ankunftsbeleg.
+Die früheste Abfahrt ist
+`max(actualArrivalMs + minimumDwellMs, scheduledDepartureMs)` und setzt
+weiterhin eine reale Fahrberechtigung voraus. Erst der Beginn eines positiven
+Bewegungsabschnitts erzeugt den Abfahrtsbeleg. Ein Signalhalt, Dispatchauftrag,
+SafeStop oder Erreichen einer Sollzeit ist kein Fahrgastwechsel. Der Endhalt
+erzeugt keine weitere Abfahrt.
+
+Die technische Aufhebung einer Infrastruktursperre darf ausschließlich den
+durch genau diese Aktivierung belegten Sicherheitsstopp lösen. Der native
+Checkpoint hält dafür die noch wirksamen Sperrenkennungen und die entzogene
+Fahrberechtigung als Schutzbeleg fest; leere Zustände lassen dieses Feld aus.
+Mehrere überlagerte Sperren müssen alle aufgehoben sein. Ein anderer
+Sicherheitsstopp, ein abgebrochener Haltplan oder ein aktiver Kontrollhalt
+bleibt wirksam. Alte Checkpoints ohne Ursachenbeleg erhalten keine abgeleitete
+Freigabe. Der aufgehobene Sperrenstopp wird nur zum gesicherten Stillstand:
+Fahrstraßen und Belegungen bleiben geschützt, die Fahrberechtigung bleibt
+entzogen und Signale bleiben bis zur erneuten regulären FDL-Prüfung auf Halt.
+Der FDL darf dabei die belegte verbleibende Teilfahrstraße erneut prüfen;
+keine Position und kein Haltbeleg wird beim Wiederanlauf erfunden. Eine
+Regionsübergabe mit noch offenem Wiederanlaufbeleg wird abgewiesen.
+
+`OperationalPassengerStopReceipt` verwendet das Schema
+`zugfolge-operational-passenger-stop-receipt/v1`. Es bindet Welt, Tagesfahrt,
+Zuglauf, Haltkennung/-folge, Planhash, Route, Formation, Art, tatsächliche Zeit
+und deterministische Belegkennung. Die Ereignisse `passenger-stop-arrival`
+und `passenger-stop-departure` werden mit dem Regionszustand atomar als
+`operations.passenger-stop-arrival` beziehungsweise
+`operations.passenger-stop-departure` gespeichert. Der strikte Decoder prüft
+Ereignisart, Subjekt, Zeit und Welt; Commit und native Ereignissequenz bleiben
+erhalten. Diese Belege enthalten keine Fahrgastschlüssel oder FareFacts.
+
+Restore und Regionsübergabe prüfen und bewahren Haltfortschritt samt fälliger
+Abfahrt. Formationänderungen müssen weiterhin belegte aktuelle und zukünftige
+Haltlagen einhalten; bereits passierte Plattformen begrenzen die neue Formation
+nicht rückwirkend. Ungeprüfte Reroutes haltgebundener Fahrten werden abgelehnt.
+Die vollständigen Verträge und Nachweise stehen in
+[M10-Haltbelege](m10-haltbelege.md). Der lokale echte Rust-Drei-Halt-Lauf mit
+Signalstörung, Anschlussverlust, Restore und HTTP ist bestanden. Maßgeblicher
+Integrationsabschluss sind die [Linux-NAPI-Checks von PR #534](https://github.com/larynxberlin-rgb/Zugfolge/pull/534/checks).
+Das ist keine Kalibrierungsabnahme.
+
+Der Nachfrageconsumer liest ausschließlich bestätigte Haltfakten. Vor dem
+ersten Regional-Advance pinnt er private Anfangspools; danach verarbeitet er
+den begrenzten Journaltail unter Weltmutex mit einem persistenten Cursor.
+Seine sichere Zeit liegt strikt vor dem kleinsten bestätigten Regionszeitpunkt.
+Zugwahl, Belegung und verdeckte Manifeste entstehen weiterhin ausschließlich
+im Rust-Nachfragekern; eine Kartenprojektion ersetzt keine Betriebsquittung.
 
 ### Native Tagesfahrt-Abschlussbelege (ServiceOutcome v1)
 

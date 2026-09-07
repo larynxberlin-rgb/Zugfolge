@@ -84,15 +84,19 @@ export interface PublicRouteGeometryPoint {
   readonly bearingMilliDegrees?: number;
 }
 
-/** Gleiswechsel behalten beide Offsets am selben, exakt verbundenen Punkt. */
-export function isContinuousRouteGeometry(geometry: readonly PublicRouteGeometryPoint[]): boolean {
-  return geometry.length >= 2 && geometry.every((point, index) => {
-    if (!Number.isSafeInteger(point.routeMm) || point.routeMm < 0
+function validRouteGeometryPoint(point: PublicRouteGeometryPoint): boolean {
+  return !(!Number.isSafeInteger(point.routeMm) || point.routeMm < 0
       || !Number.isSafeInteger(point.offsetMm) || point.offsetMm < 0 || point.trackId.length === 0
       || !Number.isSafeInteger(point.latitudeE7) || Math.abs(point.latitudeE7) > 900_000_000
       || !Number.isSafeInteger(point.longitudeE7) || Math.abs(point.longitudeE7) > 1_800_000_000
       || (point.bearingMilliDegrees !== undefined && (!Number.isSafeInteger(point.bearingMilliDegrees)
-        || point.bearingMilliDegrees < 0 || point.bearingMilliDegrees >= 360_000))) return false;
+        || point.bearingMilliDegrees < 0 || point.bearingMilliDegrees >= 360_000)));
+}
+
+/** Gleiswechsel behalten beide Offsets am selben, exakt verbundenen Punkt. */
+export function isContinuousRouteGeometry(geometry: readonly PublicRouteGeometryPoint[]): boolean {
+  return geometry.length >= 2 && geometry.every((point, index) => {
+    if (!validRouteGeometryPoint(point)) return false;
     const previous = geometry[index - 1];
     if (previous === undefined) return true;
     if (point.routeMm > previous.routeMm) return point.trackId === previous.trackId;
@@ -112,6 +116,19 @@ export interface PublicMotionSegment {
   readonly authorityEndRouteMm: number;
   readonly segmentEndRouteMm: number;
   readonly geometry: readonly PublicRouteGeometryPoint[];
+}
+
+/** Ein räumlich leerer Bremsrest braucht genau einen gebundenen Ort. */
+export function isMotionSegmentGeometry(segment: Pick<PublicMotionSegment,
+  "geometry" | "startRouteMm" | "segmentEndRouteMm" | "startedAtMs" | "validUntilMs">): boolean {
+  const point = segment.geometry[0];
+  if (segment.startRouteMm === segment.segmentEndRouteMm) {
+    return segment.validUntilMs > segment.startedAtMs && segment.geometry.length === 1
+      && point !== undefined && validRouteGeometryPoint(point) && point.routeMm === segment.startRouteMm;
+  }
+  return isContinuousRouteGeometry(segment.geometry)
+    && point!.routeMm <= segment.startRouteMm
+    && segment.geometry.at(-1)!.routeMm >= segment.segmentEndRouteMm;
 }
 
 /** Exakte betriebliche v2-Sicht; LiveMap und RZUE verwenden dieselbe Instanz. */
@@ -356,9 +373,7 @@ function validateOperationalState(train: PublicTrain): void {
     segment.startRouteMm > segment.authorityEndRouteMm ||
     segment.startRouteMm > segment.segmentEndRouteMm ||
     segment.segmentEndRouteMm > segment.authorityEndRouteMm ||
-    !isContinuousRouteGeometry(segment.geometry) ||
-    segment.geometry[0]!.routeMm > segment.startRouteMm ||
-    segment.geometry.at(-1)!.routeMm < segment.segmentEndRouteMm
+    !isMotionSegmentGeometry(segment)
   ) {
     throw new RangeError(`Zug '${train.id}' besitzt keinen gueltigen autorisierten Bewegungsabschnitt.`);
   }

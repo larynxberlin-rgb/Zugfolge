@@ -1,0 +1,4890 @@
+{
+  "actualStopReceipts": {
+    "regional-1": {
+      "nextStopIndex": 2,
+      "plan": {
+        "infrastructureReleaseId": "infra:operational:v2",
+        "routeVersionId": "route:v1",
+        "schemaVersion": "zugfolge-operational-passenger-stop-plan/v1",
+        "serviceId": "regional-1",
+        "serviceRunId": "service:stops:day-0",
+        "sourceBindingHash": "1111111111111111111111111111111111111111111111111111111111111111",
+        "stops": [
+          {
+            "minimumDwellMs": 0,
+            "platformId": "platform:a",
+            "routeMm": 100000,
+            "scheduledArrivalMs": 600000,
+            "scheduledDepartureMs": 600000,
+            "stationId": "leipzig-hbf",
+            "stopId": "regional-leipzig",
+            "stopSequence": 0
+          },
+          {
+            "minimumDwellMs": 120000,
+            "platformId": "platform:b",
+            "routeMm": 400000,
+            "scheduledArrivalMs": 1800000,
+            "scheduledDepartureMs": 1920000,
+            "stationId": "halle-hbf",
+            "stopId": "regional-halle",
+            "stopSequence": 1
+          },
+          {
+            "minimumDwellMs": 0,
+            "platformId": "platform:c",
+            "routeMm": 1200000,
+            "scheduledArrivalMs": 5400000,
+            "scheduledDepartureMs": 5400000,
+            "stationId": "erfurt-hbf",
+            "stopId": "regional-erfurt",
+            "stopSequence": 2
+          }
+        ],
+        "timetableReleaseId": "timetable:fixture",
+        "trainRunId": "regional-1",
+        "worldId": "00000000-0000-4000-8000-000000000387"
+      },
+      "planHash": "99637fba67ff96c124b83ce398b8c3130aa2a16ec6359f51fcaa6cf773303883",
+      "receipts": [
+        {
+          "actualArrivalMs": 0,
+          "actualDepartureMs": 600000
+        },
+        {
+          "actualArrivalMs": 648112,
+          "actualDepartureMs": 2520000
+        },
+        {
+          "actualArrivalMs": 2579602,
+          "actualDepartureMs": null
+        }
+      ]
+    },
+    "regional-follow": {
+      "nextStopIndex": 2,
+      "plan": {
+        "infrastructureReleaseId": "infra:operational:v2",
+        "routeVersionId": "route:v1",
+        "schemaVersion": "zugfolge-operational-passenger-stop-plan/v1",
+        "serviceId": "regional-follow",
+        "serviceRunId": "test-follow-service",
+        "sourceBindingHash": "1111111111111111111111111111111111111111111111111111111111111111",
+        "stops": [
+          {
+            "minimumDwellMs": 0,
+            "platformId": "platform:a",
+            "routeMm": 100000,
+            "scheduledArrivalMs": 600000,
+            "scheduledDepartureMs": 600000,
+            "stationId": "leipzig-hbf",
+            "stopId": "follow-regional-leipzig",
+            "stopSequence": 0
+          },
+          {
+            "minimumDwellMs": 120000,
+            "platformId": "platform:b",
+            "routeMm": 400000,
+            "scheduledArrivalMs": 1800000,
+            "scheduledDepartureMs": 1920000,
+            "stationId": "halle-hbf",
+            "stopId": "follow-regional-halle",
+            "stopSequence": 1
+          },
+          {
+            "minimumDwellMs": 0,
+            "platformId": "platform:c",
+            "routeMm": 1200000,
+            "scheduledArrivalMs": 5400000,
+            "scheduledDepartureMs": 5400000,
+            "stationId": "erfurt-hbf",
+            "stopId": "follow-regional-erfurt",
+            "stopSequence": 2
+          }
+        ],
+        "timetableReleaseId": "timetable:fixture",
+        "trainRunId": "regional-follow",
+        "worldId": "00000000-0000-4000-8000-000000000387"
+      },
+      "planHash": "f6cec950093c008edc4485c33333980a85b06c1ebe008037ac858ec55d89c990",
+      "receipts": [
+        {
+          "actualArrivalMs": 648112,
+          "actualDepartureMs": 2579602
+        },
+        {
+          "actualArrivalMs": 2614246,
+          "actualDepartureMs": 2734246
+        },
+        {
+          "actualArrivalMs": 2793848,
+          "actualDepartureMs": null
+        }
+      ]
+    }
+  },
+  "baselineOperationalHash": "1f3510e1d5e177477b1a2b52e4f3595675ea9f1aecc2f33310f87bb9063fbfc5",
+  "demand": {
+    "actualHash": "cb88ae062c843f8d490535a99e9d95e8025f1e7bcbe422bc579fd37a846d5c47",
+    "actualPrefixUnchanged": true,
+    "forecastHash": "d3dca4a8367d8ba0b408e48c2e8885e45dfe0f17a4c1b311bd3241015aeb16c9",
+    "rail": 20,
+    "remainingConnection": "test-later",
+    "remainingConnectionStatus": "forecast",
+    "reroutedPassengers": 20,
+    "stranded": 0
+  },
+  "followerDelayMs": 600000,
+  "heldOperationalHash": "80977da4c8d3b464847c1ca5c3aab3e4d2718e494f9ca2d987cdd2cd31c1b75d",
+  "holdMs": 600000,
+  "leaderDelayMs": 600000,
+  "nativeEvents": [
+    {
+      "atMs": 0,
+      "commitSequence": 0,
+      "detail": "atomically-derived",
+      "eventSequence": 1,
+      "kind": "formation-version-created",
+      "subjectId": "formation:1"
+    },
+    {
+      "atMs": 0,
+      "commitSequence": 0,
+      "detail": "exact-route-and-formation",
+      "eventSequence": 2,
+      "kind": "movement-materialized",
+      "subjectId": "regional-1"
+    },
+    {
+      "atMs": 0,
+      "commitSequence": 0,
+      "detail": "{\"schemaVersion\":\"zugfolge-operational-passenger-stop-receipt/v1\",\"worldId\":\"00000000-0000-4000-8000-000000000387\",\"serviceRunId\":\"service:stops:day-0\",\"trainRunId\":\"regional-1\",\"stopId\":\"regional-leipzig\",\"stopSequence\":0,\"stopPlanHash\":\"99637fba67ff96c124b83ce398b8c3130aa2a16ec6359f51fcaa6cf773303883\",\"routeVersionId\":\"route:v1\",\"formationVersionId\":\"formation:1\",\"kind\":\"arrival\",\"actualTimeMs\":0,\"receiptId\":\"a169e8aec01a4983e723730ae57738952be3b2f2532b28f5d348d0cfd7dfe795\"}",
+      "eventSequence": 3,
+      "kind": "passenger-stop-arrival",
+      "subjectId": "regional-1"
+    },
+    {
+      "atMs": 0,
+      "commitSequence": 0,
+      "detail": "interlocking:train",
+      "eventSequence": 4,
+      "kind": "route-locked",
+      "subjectId": "regional-1"
+    },
+    {
+      "atMs": 600000,
+      "commitSequence": 0,
+      "detail": "{\"schemaVersion\":\"zugfolge-operational-passenger-stop-receipt/v1\",\"worldId\":\"00000000-0000-4000-8000-000000000387\",\"serviceRunId\":\"service:stops:day-0\",\"trainRunId\":\"regional-1\",\"stopId\":\"regional-leipzig\",\"stopSequence\":0,\"stopPlanHash\":\"99637fba67ff96c124b83ce398b8c3130aa2a16ec6359f51fcaa6cf773303883\",\"routeVersionId\":\"route:v1\",\"formationVersionId\":\"formation:1\",\"kind\":\"departure\",\"actualTimeMs\":600000,\"receiptId\":\"0f854d7de1b2586489c622d04547f30df31eb056515af8ceabe0f792e996c277\"}",
+      "eventSequence": 5,
+      "kind": "passenger-stop-departure",
+      "subjectId": "regional-1"
+    },
+    {
+      "atMs": 600000,
+      "commitSequence": 0,
+      "detail": "valid-until=611833",
+      "eventSequence": 6,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-1"
+    },
+    {
+      "atMs": 600001,
+      "commitSequence": 0,
+      "detail": "b22fec75a5a43b5d6c517fa6d535efe40bbc84a609a9de7a0b21cab46cb4dee4",
+      "eventSequence": 7,
+      "kind": "fare-control-policy-bound",
+      "subjectId": "00000000-0000-4000-8000-000000000387"
+    },
+    {
+      "atMs": 600001,
+      "commitSequence": 0,
+      "detail": "{\"schemaVersion\":\"zugfolge-fare-control-hold-event/v1\",\"worldId\":\"00000000-0000-4000-8000-000000000387\",\"trainRunId\":\"regional-1\",\"holdId\":\"333a7d95f1080ca5f1e34709489b0e542ab807105491b2a0b1470fd7dc087fc0\",\"targetStopId\":\"regional-halle\",\"atMs\":600001,\"status\":\"requested\",\"outcome\":null,\"revision\":1,\"cause\":\"authority.police.fare-control\",\"causalityId\":\"test-control-cause\"}",
+      "eventSequence": 8,
+      "kind": "fare-control-hold-requested",
+      "subjectId": "regional-1"
+    },
+    {
+      "atMs": 611833,
+      "commitSequence": 0,
+      "detail": "head=170000;tail=100000",
+      "eventSequence": 9,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-1"
+    },
+    {
+      "atMs": 611833,
+      "commitSequence": 0,
+      "detail": "valid-until=614143",
+      "eventSequence": 10,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-1"
+    },
+    {
+      "atMs": 614143,
+      "commitSequence": 0,
+      "detail": "head=200002;tail=130002",
+      "eventSequence": 11,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-1"
+    },
+    {
+      "atMs": 614143,
+      "commitSequence": 0,
+      "detail": "valid-until=628112",
+      "eventSequence": 12,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-1"
+    },
+    {
+      "atMs": 628112,
+      "commitSequence": 0,
+      "detail": "head=300000;tail=230000",
+      "eventSequence": 13,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-1"
+    },
+    {
+      "atMs": 628112,
+      "commitSequence": 0,
+      "detail": "interlocking:train:b",
+      "eventSequence": 14,
+      "kind": "route-locked",
+      "subjectId": "regional-1"
+    },
+    {
+      "atMs": 628112,
+      "commitSequence": 0,
+      "detail": "route=interlocking:train:b;lexicographic=v1",
+      "eventSequence": 15,
+      "kind": "dispatcher-decision",
+      "subjectId": "regional-1"
+    },
+    {
+      "atMs": 628112,
+      "commitSequence": 0,
+      "detail": "interlocking:train:c",
+      "eventSequence": 16,
+      "kind": "route-locked",
+      "subjectId": "regional-1"
+    },
+    {
+      "atMs": 628112,
+      "commitSequence": 0,
+      "detail": "valid-until=638112",
+      "eventSequence": 17,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-1"
+    },
+    {
+      "atMs": 638112,
+      "commitSequence": 0,
+      "detail": "head=350000;tail=280000",
+      "eventSequence": 18,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-1"
+    },
+    {
+      "atMs": 638112,
+      "commitSequence": 0,
+      "detail": "valid-until=640366",
+      "eventSequence": 19,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-1"
+    },
+    {
+      "atMs": 640366,
+      "commitSequence": 0,
+      "detail": "interlocking:train",
+      "eventSequence": 20,
+      "kind": "route-released-after-tail",
+      "subjectId": "regional-1"
+    },
+    {
+      "atMs": 640366,
+      "commitSequence": 0,
+      "detail": "head=370000;tail=300000",
+      "eventSequence": 21,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-1"
+    },
+    {
+      "atMs": 640366,
+      "commitSequence": 0,
+      "detail": "valid-until=648075",
+      "eventSequence": 22,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-1"
+    },
+    {
+      "atMs": 648075,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 23,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-1"
+    },
+    {
+      "atMs": 648075,
+      "commitSequence": 0,
+      "detail": "valid-until=648076",
+      "eventSequence": 24,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-1"
+    },
+    {
+      "atMs": 648076,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 25,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-1"
+    },
+    {
+      "atMs": 648076,
+      "commitSequence": 0,
+      "detail": "valid-until=648077",
+      "eventSequence": 26,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-1"
+    },
+    {
+      "atMs": 648077,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 27,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-1"
+    },
+    {
+      "atMs": 648077,
+      "commitSequence": 0,
+      "detail": "valid-until=648078",
+      "eventSequence": 28,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-1"
+    },
+    {
+      "atMs": 648078,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 29,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-1"
+    },
+    {
+      "atMs": 648078,
+      "commitSequence": 0,
+      "detail": "valid-until=648079",
+      "eventSequence": 30,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-1"
+    },
+    {
+      "atMs": 648079,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 31,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-1"
+    },
+    {
+      "atMs": 648079,
+      "commitSequence": 0,
+      "detail": "valid-until=648080",
+      "eventSequence": 32,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-1"
+    },
+    {
+      "atMs": 648080,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 33,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-1"
+    },
+    {
+      "atMs": 648080,
+      "commitSequence": 0,
+      "detail": "valid-until=648081",
+      "eventSequence": 34,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-1"
+    },
+    {
+      "atMs": 648081,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 35,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-1"
+    },
+    {
+      "atMs": 648081,
+      "commitSequence": 0,
+      "detail": "valid-until=648082",
+      "eventSequence": 36,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-1"
+    },
+    {
+      "atMs": 648082,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 37,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-1"
+    },
+    {
+      "atMs": 648082,
+      "commitSequence": 0,
+      "detail": "valid-until=648083",
+      "eventSequence": 38,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-1"
+    },
+    {
+      "atMs": 648083,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 39,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-1"
+    },
+    {
+      "atMs": 648083,
+      "commitSequence": 0,
+      "detail": "valid-until=648084",
+      "eventSequence": 40,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-1"
+    },
+    {
+      "atMs": 648084,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 41,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-1"
+    },
+    {
+      "atMs": 648084,
+      "commitSequence": 0,
+      "detail": "valid-until=648085",
+      "eventSequence": 42,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-1"
+    },
+    {
+      "atMs": 648085,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 43,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-1"
+    },
+    {
+      "atMs": 648085,
+      "commitSequence": 0,
+      "detail": "valid-until=648086",
+      "eventSequence": 44,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-1"
+    },
+    {
+      "atMs": 648086,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 45,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-1"
+    },
+    {
+      "atMs": 648086,
+      "commitSequence": 0,
+      "detail": "valid-until=648087",
+      "eventSequence": 46,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-1"
+    },
+    {
+      "atMs": 648087,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 47,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-1"
+    },
+    {
+      "atMs": 648087,
+      "commitSequence": 0,
+      "detail": "valid-until=648088",
+      "eventSequence": 48,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-1"
+    },
+    {
+      "atMs": 648088,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 49,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-1"
+    },
+    {
+      "atMs": 648088,
+      "commitSequence": 0,
+      "detail": "valid-until=648089",
+      "eventSequence": 50,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-1"
+    },
+    {
+      "atMs": 648089,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 51,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-1"
+    },
+    {
+      "atMs": 648089,
+      "commitSequence": 0,
+      "detail": "valid-until=648090",
+      "eventSequence": 52,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-1"
+    },
+    {
+      "atMs": 648090,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 53,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-1"
+    },
+    {
+      "atMs": 648090,
+      "commitSequence": 0,
+      "detail": "valid-until=648091",
+      "eventSequence": 54,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-1"
+    },
+    {
+      "atMs": 648091,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 55,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-1"
+    },
+    {
+      "atMs": 648091,
+      "commitSequence": 0,
+      "detail": "valid-until=648092",
+      "eventSequence": 56,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-1"
+    },
+    {
+      "atMs": 648092,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 57,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-1"
+    },
+    {
+      "atMs": 648092,
+      "commitSequence": 0,
+      "detail": "valid-until=648093",
+      "eventSequence": 58,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-1"
+    },
+    {
+      "atMs": 648093,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 59,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-1"
+    },
+    {
+      "atMs": 648093,
+      "commitSequence": 0,
+      "detail": "valid-until=648094",
+      "eventSequence": 60,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-1"
+    },
+    {
+      "atMs": 648094,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 61,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-1"
+    },
+    {
+      "atMs": 648094,
+      "commitSequence": 0,
+      "detail": "valid-until=648095",
+      "eventSequence": 62,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-1"
+    },
+    {
+      "atMs": 648095,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 63,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-1"
+    },
+    {
+      "atMs": 648095,
+      "commitSequence": 0,
+      "detail": "valid-until=648096",
+      "eventSequence": 64,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-1"
+    },
+    {
+      "atMs": 648096,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 65,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-1"
+    },
+    {
+      "atMs": 648096,
+      "commitSequence": 0,
+      "detail": "valid-until=648097",
+      "eventSequence": 66,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-1"
+    },
+    {
+      "atMs": 648097,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 67,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-1"
+    },
+    {
+      "atMs": 648097,
+      "commitSequence": 0,
+      "detail": "valid-until=648098",
+      "eventSequence": 68,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-1"
+    },
+    {
+      "atMs": 648098,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 69,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-1"
+    },
+    {
+      "atMs": 648098,
+      "commitSequence": 0,
+      "detail": "valid-until=648099",
+      "eventSequence": 70,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-1"
+    },
+    {
+      "atMs": 648099,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 71,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-1"
+    },
+    {
+      "atMs": 648099,
+      "commitSequence": 0,
+      "detail": "valid-until=648100",
+      "eventSequence": 72,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-1"
+    },
+    {
+      "atMs": 648100,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 73,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-1"
+    },
+    {
+      "atMs": 648100,
+      "commitSequence": 0,
+      "detail": "valid-until=648101",
+      "eventSequence": 74,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-1"
+    },
+    {
+      "atMs": 648101,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 75,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-1"
+    },
+    {
+      "atMs": 648101,
+      "commitSequence": 0,
+      "detail": "valid-until=648102",
+      "eventSequence": 76,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-1"
+    },
+    {
+      "atMs": 648102,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 77,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-1"
+    },
+    {
+      "atMs": 648102,
+      "commitSequence": 0,
+      "detail": "valid-until=648103",
+      "eventSequence": 78,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-1"
+    },
+    {
+      "atMs": 648103,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 79,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-1"
+    },
+    {
+      "atMs": 648103,
+      "commitSequence": 0,
+      "detail": "valid-until=648104",
+      "eventSequence": 80,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-1"
+    },
+    {
+      "atMs": 648104,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 81,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-1"
+    },
+    {
+      "atMs": 648104,
+      "commitSequence": 0,
+      "detail": "valid-until=648105",
+      "eventSequence": 82,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-1"
+    },
+    {
+      "atMs": 648105,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 83,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-1"
+    },
+    {
+      "atMs": 648105,
+      "commitSequence": 0,
+      "detail": "valid-until=648106",
+      "eventSequence": 84,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-1"
+    },
+    {
+      "atMs": 648106,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 85,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-1"
+    },
+    {
+      "atMs": 648106,
+      "commitSequence": 0,
+      "detail": "valid-until=648107",
+      "eventSequence": 86,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-1"
+    },
+    {
+      "atMs": 648107,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 87,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-1"
+    },
+    {
+      "atMs": 648107,
+      "commitSequence": 0,
+      "detail": "valid-until=648108",
+      "eventSequence": 88,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-1"
+    },
+    {
+      "atMs": 648108,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 89,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-1"
+    },
+    {
+      "atMs": 648108,
+      "commitSequence": 0,
+      "detail": "valid-until=648109",
+      "eventSequence": 90,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-1"
+    },
+    {
+      "atMs": 648109,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 91,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-1"
+    },
+    {
+      "atMs": 648109,
+      "commitSequence": 0,
+      "detail": "valid-until=648110",
+      "eventSequence": 92,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-1"
+    },
+    {
+      "atMs": 648110,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 93,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-1"
+    },
+    {
+      "atMs": 648110,
+      "commitSequence": 0,
+      "detail": "valid-until=648111",
+      "eventSequence": 94,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-1"
+    },
+    {
+      "atMs": 648111,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 95,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-1"
+    },
+    {
+      "atMs": 648111,
+      "commitSequence": 0,
+      "detail": "valid-until=648112",
+      "eventSequence": 96,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-1"
+    },
+    {
+      "atMs": 648112,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 97,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-1"
+    },
+    {
+      "atMs": 648112,
+      "commitSequence": 0,
+      "detail": "{\"schemaVersion\":\"zugfolge-operational-passenger-stop-receipt/v1\",\"worldId\":\"00000000-0000-4000-8000-000000000387\",\"serviceRunId\":\"service:stops:day-0\",\"trainRunId\":\"regional-1\",\"stopId\":\"regional-halle\",\"stopSequence\":1,\"stopPlanHash\":\"99637fba67ff96c124b83ce398b8c3130aa2a16ec6359f51fcaa6cf773303883\",\"routeVersionId\":\"route:v1\",\"formationVersionId\":\"formation:1\",\"kind\":\"arrival\",\"actualTimeMs\":648112,\"receiptId\":\"01d396f236c89649aa99369991c971f71ed5ef08eb0c9d24e64a2ecf602b2994\"}",
+      "eventSequence": 98,
+      "kind": "passenger-stop-arrival",
+      "subjectId": "regional-1"
+    },
+    {
+      "atMs": 648112,
+      "commitSequence": 0,
+      "detail": "atomically-derived",
+      "eventSequence": 99,
+      "kind": "formation-version-created",
+      "subjectId": "test-follow-formation"
+    },
+    {
+      "atMs": 648112,
+      "commitSequence": 0,
+      "detail": "exact-route-and-formation",
+      "eventSequence": 100,
+      "kind": "movement-materialized",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 648112,
+      "commitSequence": 0,
+      "detail": "{\"schemaVersion\":\"zugfolge-operational-passenger-stop-receipt/v1\",\"worldId\":\"00000000-0000-4000-8000-000000000387\",\"serviceRunId\":\"test-follow-service\",\"trainRunId\":\"regional-follow\",\"stopId\":\"follow-regional-leipzig\",\"stopSequence\":0,\"stopPlanHash\":\"f6cec950093c008edc4485c33333980a85b06c1ebe008037ac858ec55d89c990\",\"routeVersionId\":\"route:v1\",\"formationVersionId\":\"test-follow-formation\",\"kind\":\"arrival\",\"actualTimeMs\":648112,\"receiptId\":\"7b2074b4a3ac4d7f4a39239306db4a8067419af0061324a6e508e98f8304fd47\"}",
+      "eventSequence": 101,
+      "kind": "passenger-stop-arrival",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 1920000,
+      "commitSequence": 0,
+      "detail": "{\"schemaVersion\":\"zugfolge-fare-control-hold-event/v1\",\"worldId\":\"00000000-0000-4000-8000-000000000387\",\"trainRunId\":\"regional-1\",\"holdId\":\"333a7d95f1080ca5f1e34709489b0e542ab807105491b2a0b1470fd7dc087fc0\",\"targetStopId\":\"regional-halle\",\"atMs\":1920000,\"status\":\"active\",\"outcome\":null,\"revision\":2,\"cause\":\"authority.police.fare-control\",\"causalityId\":\"test-control-cause\"}",
+      "eventSequence": 102,
+      "kind": "fare-control-hold-activated",
+      "subjectId": "regional-1"
+    },
+    {
+      "atMs": 1920000,
+      "commitSequence": 0,
+      "detail": "authority.police.fare-control",
+      "eventSequence": 103,
+      "kind": "departure-authority-withheld",
+      "subjectId": "regional-1"
+    },
+    {
+      "atMs": 2520000,
+      "commitSequence": 0,
+      "detail": "{\"schemaVersion\":\"zugfolge-fare-control-hold-event/v1\",\"worldId\":\"00000000-0000-4000-8000-000000000387\",\"trainRunId\":\"regional-1\",\"holdId\":\"333a7d95f1080ca5f1e34709489b0e542ab807105491b2a0b1470fd7dc087fc0\",\"targetStopId\":\"regional-halle\",\"atMs\":2520000,\"status\":\"released\",\"outcome\":\"timeout\",\"revision\":3,\"cause\":\"authority.police.fare-control\",\"causalityId\":\"fare-control-deadline\"}",
+      "eventSequence": 104,
+      "kind": "fare-control-hold-released",
+      "subjectId": "regional-1"
+    },
+    {
+      "atMs": 2520000,
+      "commitSequence": 0,
+      "detail": "authority.police.fare-control",
+      "eventSequence": 105,
+      "kind": "departure-authority-requested",
+      "subjectId": "regional-1"
+    },
+    {
+      "atMs": 2520000,
+      "commitSequence": 0,
+      "detail": "interlocking:train:b",
+      "eventSequence": 106,
+      "kind": "route-locked",
+      "subjectId": "regional-1"
+    },
+    {
+      "atMs": 2520000,
+      "commitSequence": 0,
+      "detail": "route=interlocking:train:b;lexicographic=v1",
+      "eventSequence": 107,
+      "kind": "dispatcher-decision",
+      "subjectId": "regional-1"
+    },
+    {
+      "atMs": 2520000,
+      "commitSequence": 0,
+      "detail": "interlocking:train:c",
+      "eventSequence": 108,
+      "kind": "route-locked",
+      "subjectId": "regional-1"
+    },
+    {
+      "atMs": 2520000,
+      "commitSequence": 0,
+      "detail": "{\"schemaVersion\":\"zugfolge-operational-passenger-stop-receipt/v1\",\"worldId\":\"00000000-0000-4000-8000-000000000387\",\"serviceRunId\":\"service:stops:day-0\",\"trainRunId\":\"regional-1\",\"stopId\":\"regional-halle\",\"stopSequence\":1,\"stopPlanHash\":\"99637fba67ff96c124b83ce398b8c3130aa2a16ec6359f51fcaa6cf773303883\",\"routeVersionId\":\"route:v1\",\"formationVersionId\":\"formation:1\",\"kind\":\"departure\",\"actualTimeMs\":2520000,\"receiptId\":\"2712ce06488a8c53026caa703a89ce0e72d9073299865b8a1ff216207cdaa3e5\"}",
+      "eventSequence": 109,
+      "kind": "passenger-stop-departure",
+      "subjectId": "regional-1"
+    },
+    {
+      "atMs": 2520000,
+      "commitSequence": 0,
+      "detail": "valid-until=2540000",
+      "eventSequence": 110,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-1"
+    },
+    {
+      "atMs": 2540000,
+      "commitSequence": 0,
+      "detail": "head=600000;tail=530000",
+      "eventSequence": 111,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-1"
+    },
+    {
+      "atMs": 2540000,
+      "commitSequence": 0,
+      "detail": "valid-until=2543500",
+      "eventSequence": 112,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-1"
+    },
+    {
+      "atMs": 2543500,
+      "commitSequence": 0,
+      "detail": "interlocking:train:b",
+      "eventSequence": 113,
+      "kind": "route-released-after-tail",
+      "subjectId": "regional-1"
+    },
+    {
+      "atMs": 2543500,
+      "commitSequence": 0,
+      "detail": "interlocking:train:b",
+      "eventSequence": 114,
+      "kind": "route-released-after-tail",
+      "subjectId": "regional-1"
+    },
+    {
+      "atMs": 2543500,
+      "commitSequence": 0,
+      "detail": "head=670000;tail=600000",
+      "eventSequence": 115,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-1"
+    },
+    {
+      "atMs": 2543500,
+      "commitSequence": 0,
+      "detail": "valid-until=2560376",
+      "eventSequence": 116,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-1"
+    },
+    {
+      "atMs": 2560376,
+      "commitSequence": 0,
+      "detail": "head=1007507;tail=937507",
+      "eventSequence": 117,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-1"
+    },
+    {
+      "atMs": 2560376,
+      "commitSequence": 0,
+      "detail": "valid-until=2579602",
+      "eventSequence": 118,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-1"
+    },
+    {
+      "atMs": 2579602,
+      "commitSequence": 0,
+      "detail": "interlocking:train:c",
+      "eventSequence": 119,
+      "kind": "route-released-at-terminal",
+      "subjectId": "regional-1"
+    },
+    {
+      "atMs": 2579602,
+      "commitSequence": 0,
+      "detail": "interlocking:train:c",
+      "eventSequence": 120,
+      "kind": "route-released-at-terminal",
+      "subjectId": "regional-1"
+    },
+    {
+      "atMs": 2579602,
+      "commitSequence": 0,
+      "detail": "head=1200000;tail=1130000",
+      "eventSequence": 121,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-1"
+    },
+    {
+      "atMs": 2579602,
+      "commitSequence": 0,
+      "detail": "{\"schemaVersion\":\"zugfolge-operational-passenger-stop-receipt/v1\",\"worldId\":\"00000000-0000-4000-8000-000000000387\",\"serviceRunId\":\"service:stops:day-0\",\"trainRunId\":\"regional-1\",\"stopId\":\"regional-erfurt\",\"stopSequence\":2,\"stopPlanHash\":\"99637fba67ff96c124b83ce398b8c3130aa2a16ec6359f51fcaa6cf773303883\",\"routeVersionId\":\"route:v1\",\"formationVersionId\":\"formation:1\",\"kind\":\"arrival\",\"actualTimeMs\":2579602,\"receiptId\":\"6c7143da50f81b1274cbe1836fc3b318f1f94210aeda5358feee02333bed4115\"}",
+      "eventSequence": 122,
+      "kind": "passenger-stop-arrival",
+      "subjectId": "regional-1"
+    },
+    {
+      "atMs": 2579602,
+      "commitSequence": 0,
+      "detail": "route-complete-and-released",
+      "eventSequence": 123,
+      "kind": "movement-retired",
+      "subjectId": "regional-1"
+    },
+    {
+      "atMs": 2579602,
+      "commitSequence": 0,
+      "detail": "interlocking:train",
+      "eventSequence": 124,
+      "kind": "route-locked",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2579602,
+      "commitSequence": 0,
+      "detail": "route=interlocking:train;lexicographic=v1",
+      "eventSequence": 125,
+      "kind": "dispatcher-decision",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2579602,
+      "commitSequence": 0,
+      "detail": "interlocking:train:b",
+      "eventSequence": 126,
+      "kind": "route-locked",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2579602,
+      "commitSequence": 0,
+      "detail": "interlocking:train:c",
+      "eventSequence": 127,
+      "kind": "route-locked",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2579602,
+      "commitSequence": 0,
+      "detail": "{\"schemaVersion\":\"zugfolge-operational-passenger-stop-receipt/v1\",\"worldId\":\"00000000-0000-4000-8000-000000000387\",\"serviceRunId\":\"test-follow-service\",\"trainRunId\":\"regional-follow\",\"stopId\":\"follow-regional-leipzig\",\"stopSequence\":0,\"stopPlanHash\":\"f6cec950093c008edc4485c33333980a85b06c1ebe008037ac858ec55d89c990\",\"routeVersionId\":\"route:v1\",\"formationVersionId\":\"test-follow-formation\",\"kind\":\"departure\",\"actualTimeMs\":2579602,\"receiptId\":\"596d2c2ae47a0839b59e79b458c20e7d8ea035aae1787e3113775026103f0279\"}",
+      "eventSequence": 128,
+      "kind": "passenger-stop-departure",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2579602,
+      "commitSequence": 0,
+      "detail": "valid-until=2591435",
+      "eventSequence": 129,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2591435,
+      "commitSequence": 0,
+      "detail": "head=170000;tail=100000",
+      "eventSequence": 130,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2591435,
+      "commitSequence": 0,
+      "detail": "valid-until=2596923",
+      "eventSequence": 131,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2596923,
+      "commitSequence": 0,
+      "detail": "head=249999;tail=179999",
+      "eventSequence": 132,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2596923,
+      "commitSequence": 0,
+      "detail": "valid-until=2600102",
+      "eventSequence": 133,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2600102,
+      "commitSequence": 0,
+      "detail": "head=300000;tail=230000",
+      "eventSequence": 134,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2600102,
+      "commitSequence": 0,
+      "detail": "valid-until=2600103",
+      "eventSequence": 135,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2600103,
+      "commitSequence": 0,
+      "detail": "head=300014;tail=230014",
+      "eventSequence": 136,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2600103,
+      "commitSequence": 0,
+      "detail": "valid-until=2606497",
+      "eventSequence": 137,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2606497,
+      "commitSequence": 0,
+      "detail": "interlocking:train",
+      "eventSequence": 138,
+      "kind": "route-released-after-tail",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2606497,
+      "commitSequence": 0,
+      "detail": "head=370000;tail=300000",
+      "eventSequence": 139,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2606497,
+      "commitSequence": 0,
+      "detail": "valid-until=2614027",
+      "eventSequence": 140,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614027,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 141,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614027,
+      "commitSequence": 0,
+      "detail": "valid-until=2614028",
+      "eventSequence": 142,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614028,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 143,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614028,
+      "commitSequence": 0,
+      "detail": "valid-until=2614029",
+      "eventSequence": 144,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614029,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 145,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614029,
+      "commitSequence": 0,
+      "detail": "valid-until=2614030",
+      "eventSequence": 146,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614030,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 147,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614030,
+      "commitSequence": 0,
+      "detail": "valid-until=2614031",
+      "eventSequence": 148,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614031,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 149,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614031,
+      "commitSequence": 0,
+      "detail": "valid-until=2614032",
+      "eventSequence": 150,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614032,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 151,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614032,
+      "commitSequence": 0,
+      "detail": "valid-until=2614033",
+      "eventSequence": 152,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614033,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 153,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614033,
+      "commitSequence": 0,
+      "detail": "valid-until=2614034",
+      "eventSequence": 154,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614034,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 155,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614034,
+      "commitSequence": 0,
+      "detail": "valid-until=2614035",
+      "eventSequence": 156,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614035,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 157,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614035,
+      "commitSequence": 0,
+      "detail": "valid-until=2614036",
+      "eventSequence": 158,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614036,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 159,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614036,
+      "commitSequence": 0,
+      "detail": "valid-until=2614037",
+      "eventSequence": 160,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614037,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 161,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614037,
+      "commitSequence": 0,
+      "detail": "valid-until=2614038",
+      "eventSequence": 162,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614038,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 163,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614038,
+      "commitSequence": 0,
+      "detail": "valid-until=2614039",
+      "eventSequence": 164,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614039,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 165,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614039,
+      "commitSequence": 0,
+      "detail": "valid-until=2614040",
+      "eventSequence": 166,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614040,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 167,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614040,
+      "commitSequence": 0,
+      "detail": "valid-until=2614041",
+      "eventSequence": 168,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614041,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 169,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614041,
+      "commitSequence": 0,
+      "detail": "valid-until=2614042",
+      "eventSequence": 170,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614042,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 171,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614042,
+      "commitSequence": 0,
+      "detail": "valid-until=2614043",
+      "eventSequence": 172,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614043,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 173,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614043,
+      "commitSequence": 0,
+      "detail": "valid-until=2614044",
+      "eventSequence": 174,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614044,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 175,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614044,
+      "commitSequence": 0,
+      "detail": "valid-until=2614045",
+      "eventSequence": 176,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614045,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 177,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614045,
+      "commitSequence": 0,
+      "detail": "valid-until=2614046",
+      "eventSequence": 178,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614046,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 179,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614046,
+      "commitSequence": 0,
+      "detail": "valid-until=2614047",
+      "eventSequence": 180,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614047,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 181,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614047,
+      "commitSequence": 0,
+      "detail": "valid-until=2614048",
+      "eventSequence": 182,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614048,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 183,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614048,
+      "commitSequence": 0,
+      "detail": "valid-until=2614049",
+      "eventSequence": 184,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614049,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 185,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614049,
+      "commitSequence": 0,
+      "detail": "valid-until=2614050",
+      "eventSequence": 186,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614050,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 187,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614050,
+      "commitSequence": 0,
+      "detail": "valid-until=2614051",
+      "eventSequence": 188,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614051,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 189,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614051,
+      "commitSequence": 0,
+      "detail": "valid-until=2614052",
+      "eventSequence": 190,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614052,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 191,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614052,
+      "commitSequence": 0,
+      "detail": "valid-until=2614053",
+      "eventSequence": 192,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614053,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 193,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614053,
+      "commitSequence": 0,
+      "detail": "valid-until=2614054",
+      "eventSequence": 194,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614054,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 195,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614054,
+      "commitSequence": 0,
+      "detail": "valid-until=2614055",
+      "eventSequence": 196,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614055,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 197,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614055,
+      "commitSequence": 0,
+      "detail": "valid-until=2614056",
+      "eventSequence": 198,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614056,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 199,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614056,
+      "commitSequence": 0,
+      "detail": "valid-until=2614057",
+      "eventSequence": 200,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614057,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 201,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614057,
+      "commitSequence": 0,
+      "detail": "valid-until=2614058",
+      "eventSequence": 202,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614058,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 203,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614058,
+      "commitSequence": 0,
+      "detail": "valid-until=2614059",
+      "eventSequence": 204,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614059,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 205,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614059,
+      "commitSequence": 0,
+      "detail": "valid-until=2614060",
+      "eventSequence": 206,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614060,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 207,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614060,
+      "commitSequence": 0,
+      "detail": "valid-until=2614061",
+      "eventSequence": 208,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614061,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 209,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614061,
+      "commitSequence": 0,
+      "detail": "valid-until=2614062",
+      "eventSequence": 210,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614062,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 211,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614062,
+      "commitSequence": 0,
+      "detail": "valid-until=2614063",
+      "eventSequence": 212,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614063,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 213,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614063,
+      "commitSequence": 0,
+      "detail": "valid-until=2614064",
+      "eventSequence": 214,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614064,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 215,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614064,
+      "commitSequence": 0,
+      "detail": "valid-until=2614065",
+      "eventSequence": 216,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614065,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 217,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614065,
+      "commitSequence": 0,
+      "detail": "valid-until=2614066",
+      "eventSequence": 218,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614066,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 219,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614066,
+      "commitSequence": 0,
+      "detail": "valid-until=2614067",
+      "eventSequence": 220,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614067,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 221,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614067,
+      "commitSequence": 0,
+      "detail": "valid-until=2614068",
+      "eventSequence": 222,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614068,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 223,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614068,
+      "commitSequence": 0,
+      "detail": "valid-until=2614069",
+      "eventSequence": 224,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614069,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 225,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614069,
+      "commitSequence": 0,
+      "detail": "valid-until=2614070",
+      "eventSequence": 226,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614070,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 227,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614070,
+      "commitSequence": 0,
+      "detail": "valid-until=2614071",
+      "eventSequence": 228,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614071,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 229,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614071,
+      "commitSequence": 0,
+      "detail": "valid-until=2614072",
+      "eventSequence": 230,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614072,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 231,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614072,
+      "commitSequence": 0,
+      "detail": "valid-until=2614073",
+      "eventSequence": 232,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614073,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 233,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614073,
+      "commitSequence": 0,
+      "detail": "valid-until=2614074",
+      "eventSequence": 234,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614074,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 235,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614074,
+      "commitSequence": 0,
+      "detail": "valid-until=2614075",
+      "eventSequence": 236,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614075,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 237,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614075,
+      "commitSequence": 0,
+      "detail": "valid-until=2614076",
+      "eventSequence": 238,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614076,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 239,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614076,
+      "commitSequence": 0,
+      "detail": "valid-until=2614077",
+      "eventSequence": 240,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614077,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 241,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614077,
+      "commitSequence": 0,
+      "detail": "valid-until=2614078",
+      "eventSequence": 242,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614078,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 243,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614078,
+      "commitSequence": 0,
+      "detail": "valid-until=2614079",
+      "eventSequence": 244,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614079,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 245,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614079,
+      "commitSequence": 0,
+      "detail": "valid-until=2614080",
+      "eventSequence": 246,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614080,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 247,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614080,
+      "commitSequence": 0,
+      "detail": "valid-until=2614081",
+      "eventSequence": 248,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614081,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 249,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614081,
+      "commitSequence": 0,
+      "detail": "valid-until=2614082",
+      "eventSequence": 250,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614082,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 251,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614082,
+      "commitSequence": 0,
+      "detail": "valid-until=2614083",
+      "eventSequence": 252,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614083,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 253,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614083,
+      "commitSequence": 0,
+      "detail": "valid-until=2614084",
+      "eventSequence": 254,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614084,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 255,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614084,
+      "commitSequence": 0,
+      "detail": "valid-until=2614085",
+      "eventSequence": 256,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614085,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 257,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614085,
+      "commitSequence": 0,
+      "detail": "valid-until=2614086",
+      "eventSequence": 258,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614086,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 259,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614086,
+      "commitSequence": 0,
+      "detail": "valid-until=2614087",
+      "eventSequence": 260,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614087,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 261,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614087,
+      "commitSequence": 0,
+      "detail": "valid-until=2614088",
+      "eventSequence": 262,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614088,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 263,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614088,
+      "commitSequence": 0,
+      "detail": "valid-until=2614089",
+      "eventSequence": 264,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614089,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 265,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614089,
+      "commitSequence": 0,
+      "detail": "valid-until=2614090",
+      "eventSequence": 266,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614090,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 267,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614090,
+      "commitSequence": 0,
+      "detail": "valid-until=2614091",
+      "eventSequence": 268,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614091,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 269,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614091,
+      "commitSequence": 0,
+      "detail": "valid-until=2614092",
+      "eventSequence": 270,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614092,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 271,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614092,
+      "commitSequence": 0,
+      "detail": "valid-until=2614093",
+      "eventSequence": 272,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614093,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 273,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614093,
+      "commitSequence": 0,
+      "detail": "valid-until=2614094",
+      "eventSequence": 274,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614094,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 275,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614094,
+      "commitSequence": 0,
+      "detail": "valid-until=2614095",
+      "eventSequence": 276,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614095,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 277,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614095,
+      "commitSequence": 0,
+      "detail": "valid-until=2614096",
+      "eventSequence": 278,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614096,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 279,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614096,
+      "commitSequence": 0,
+      "detail": "valid-until=2614097",
+      "eventSequence": 280,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614097,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 281,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614097,
+      "commitSequence": 0,
+      "detail": "valid-until=2614098",
+      "eventSequence": 282,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614098,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 283,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614098,
+      "commitSequence": 0,
+      "detail": "valid-until=2614099",
+      "eventSequence": 284,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614099,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 285,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614099,
+      "commitSequence": 0,
+      "detail": "valid-until=2614100",
+      "eventSequence": 286,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614100,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 287,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614100,
+      "commitSequence": 0,
+      "detail": "valid-until=2614101",
+      "eventSequence": 288,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614101,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 289,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614101,
+      "commitSequence": 0,
+      "detail": "valid-until=2614102",
+      "eventSequence": 290,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614102,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 291,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614102,
+      "commitSequence": 0,
+      "detail": "valid-until=2614103",
+      "eventSequence": 292,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614103,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 293,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614103,
+      "commitSequence": 0,
+      "detail": "valid-until=2614104",
+      "eventSequence": 294,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614104,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 295,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614104,
+      "commitSequence": 0,
+      "detail": "valid-until=2614105",
+      "eventSequence": 296,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614105,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 297,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614105,
+      "commitSequence": 0,
+      "detail": "valid-until=2614106",
+      "eventSequence": 298,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614106,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 299,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614106,
+      "commitSequence": 0,
+      "detail": "valid-until=2614107",
+      "eventSequence": 300,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614107,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 301,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614107,
+      "commitSequence": 0,
+      "detail": "valid-until=2614108",
+      "eventSequence": 302,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614108,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 303,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614108,
+      "commitSequence": 0,
+      "detail": "valid-until=2614109",
+      "eventSequence": 304,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614109,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 305,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614109,
+      "commitSequence": 0,
+      "detail": "valid-until=2614110",
+      "eventSequence": 306,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614110,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 307,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614110,
+      "commitSequence": 0,
+      "detail": "valid-until=2614111",
+      "eventSequence": 308,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614111,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 309,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614111,
+      "commitSequence": 0,
+      "detail": "valid-until=2614112",
+      "eventSequence": 310,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614112,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 311,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614112,
+      "commitSequence": 0,
+      "detail": "valid-until=2614113",
+      "eventSequence": 312,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614113,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 313,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614113,
+      "commitSequence": 0,
+      "detail": "valid-until=2614114",
+      "eventSequence": 314,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614114,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 315,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614114,
+      "commitSequence": 0,
+      "detail": "valid-until=2614115",
+      "eventSequence": 316,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614115,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 317,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614115,
+      "commitSequence": 0,
+      "detail": "valid-until=2614116",
+      "eventSequence": 318,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614116,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 319,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614116,
+      "commitSequence": 0,
+      "detail": "valid-until=2614117",
+      "eventSequence": 320,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614117,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 321,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614117,
+      "commitSequence": 0,
+      "detail": "valid-until=2614118",
+      "eventSequence": 322,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614118,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 323,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614118,
+      "commitSequence": 0,
+      "detail": "valid-until=2614119",
+      "eventSequence": 324,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614119,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 325,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614119,
+      "commitSequence": 0,
+      "detail": "valid-until=2614120",
+      "eventSequence": 326,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614120,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 327,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614120,
+      "commitSequence": 0,
+      "detail": "valid-until=2614121",
+      "eventSequence": 328,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614121,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 329,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614121,
+      "commitSequence": 0,
+      "detail": "valid-until=2614122",
+      "eventSequence": 330,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614122,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 331,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614122,
+      "commitSequence": 0,
+      "detail": "valid-until=2614123",
+      "eventSequence": 332,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614123,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 333,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614123,
+      "commitSequence": 0,
+      "detail": "valid-until=2614124",
+      "eventSequence": 334,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614124,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 335,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614124,
+      "commitSequence": 0,
+      "detail": "valid-until=2614125",
+      "eventSequence": 336,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614125,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 337,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614125,
+      "commitSequence": 0,
+      "detail": "valid-until=2614126",
+      "eventSequence": 338,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614126,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 339,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614126,
+      "commitSequence": 0,
+      "detail": "valid-until=2614127",
+      "eventSequence": 340,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614127,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 341,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614127,
+      "commitSequence": 0,
+      "detail": "valid-until=2614128",
+      "eventSequence": 342,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614128,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 343,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614128,
+      "commitSequence": 0,
+      "detail": "valid-until=2614129",
+      "eventSequence": 344,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614129,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 345,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614129,
+      "commitSequence": 0,
+      "detail": "valid-until=2614130",
+      "eventSequence": 346,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614130,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 347,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614130,
+      "commitSequence": 0,
+      "detail": "valid-until=2614131",
+      "eventSequence": 348,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614131,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 349,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614131,
+      "commitSequence": 0,
+      "detail": "valid-until=2614132",
+      "eventSequence": 350,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614132,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 351,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614132,
+      "commitSequence": 0,
+      "detail": "valid-until=2614133",
+      "eventSequence": 352,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614133,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 353,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614133,
+      "commitSequence": 0,
+      "detail": "valid-until=2614134",
+      "eventSequence": 354,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614134,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 355,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614134,
+      "commitSequence": 0,
+      "detail": "valid-until=2614135",
+      "eventSequence": 356,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614135,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 357,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614135,
+      "commitSequence": 0,
+      "detail": "valid-until=2614136",
+      "eventSequence": 358,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614136,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 359,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614136,
+      "commitSequence": 0,
+      "detail": "valid-until=2614137",
+      "eventSequence": 360,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614137,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 361,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614137,
+      "commitSequence": 0,
+      "detail": "valid-until=2614138",
+      "eventSequence": 362,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614138,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 363,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614138,
+      "commitSequence": 0,
+      "detail": "valid-until=2614139",
+      "eventSequence": 364,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614139,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 365,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614139,
+      "commitSequence": 0,
+      "detail": "valid-until=2614140",
+      "eventSequence": 366,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614140,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 367,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614140,
+      "commitSequence": 0,
+      "detail": "valid-until=2614141",
+      "eventSequence": 368,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614141,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 369,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614141,
+      "commitSequence": 0,
+      "detail": "valid-until=2614142",
+      "eventSequence": 370,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614142,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 371,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614142,
+      "commitSequence": 0,
+      "detail": "valid-until=2614143",
+      "eventSequence": 372,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614143,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 373,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614143,
+      "commitSequence": 0,
+      "detail": "valid-until=2614144",
+      "eventSequence": 374,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614144,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 375,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614144,
+      "commitSequence": 0,
+      "detail": "valid-until=2614145",
+      "eventSequence": 376,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614145,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 377,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614145,
+      "commitSequence": 0,
+      "detail": "valid-until=2614146",
+      "eventSequence": 378,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614146,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 379,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614146,
+      "commitSequence": 0,
+      "detail": "valid-until=2614147",
+      "eventSequence": 380,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614147,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 381,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614147,
+      "commitSequence": 0,
+      "detail": "valid-until=2614148",
+      "eventSequence": 382,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614148,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 383,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614148,
+      "commitSequence": 0,
+      "detail": "valid-until=2614149",
+      "eventSequence": 384,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614149,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 385,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614149,
+      "commitSequence": 0,
+      "detail": "valid-until=2614150",
+      "eventSequence": 386,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614150,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 387,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614150,
+      "commitSequence": 0,
+      "detail": "valid-until=2614151",
+      "eventSequence": 388,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614151,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 389,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614151,
+      "commitSequence": 0,
+      "detail": "valid-until=2614152",
+      "eventSequence": 390,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614152,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 391,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614152,
+      "commitSequence": 0,
+      "detail": "valid-until=2614153",
+      "eventSequence": 392,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614153,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 393,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614153,
+      "commitSequence": 0,
+      "detail": "valid-until=2614154",
+      "eventSequence": 394,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614154,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 395,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614154,
+      "commitSequence": 0,
+      "detail": "valid-until=2614155",
+      "eventSequence": 396,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614155,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 397,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614155,
+      "commitSequence": 0,
+      "detail": "valid-until=2614156",
+      "eventSequence": 398,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614156,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 399,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614156,
+      "commitSequence": 0,
+      "detail": "valid-until=2614157",
+      "eventSequence": 400,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614157,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 401,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614157,
+      "commitSequence": 0,
+      "detail": "valid-until=2614158",
+      "eventSequence": 402,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614158,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 403,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614158,
+      "commitSequence": 0,
+      "detail": "valid-until=2614159",
+      "eventSequence": 404,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614159,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 405,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614159,
+      "commitSequence": 0,
+      "detail": "valid-until=2614160",
+      "eventSequence": 406,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614160,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 407,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614160,
+      "commitSequence": 0,
+      "detail": "valid-until=2614161",
+      "eventSequence": 408,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614161,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 409,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614161,
+      "commitSequence": 0,
+      "detail": "valid-until=2614162",
+      "eventSequence": 410,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614162,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 411,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614162,
+      "commitSequence": 0,
+      "detail": "valid-until=2614163",
+      "eventSequence": 412,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614163,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 413,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614163,
+      "commitSequence": 0,
+      "detail": "valid-until=2614164",
+      "eventSequence": 414,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614164,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 415,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614164,
+      "commitSequence": 0,
+      "detail": "valid-until=2614165",
+      "eventSequence": 416,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614165,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 417,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614165,
+      "commitSequence": 0,
+      "detail": "valid-until=2614166",
+      "eventSequence": 418,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614166,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 419,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614166,
+      "commitSequence": 0,
+      "detail": "valid-until=2614167",
+      "eventSequence": 420,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614167,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 421,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614167,
+      "commitSequence": 0,
+      "detail": "valid-until=2614168",
+      "eventSequence": 422,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614168,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 423,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614168,
+      "commitSequence": 0,
+      "detail": "valid-until=2614169",
+      "eventSequence": 424,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614169,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 425,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614169,
+      "commitSequence": 0,
+      "detail": "valid-until=2614170",
+      "eventSequence": 426,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614170,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 427,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614170,
+      "commitSequence": 0,
+      "detail": "valid-until=2614171",
+      "eventSequence": 428,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614171,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 429,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614171,
+      "commitSequence": 0,
+      "detail": "valid-until=2614172",
+      "eventSequence": 430,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614172,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 431,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614172,
+      "commitSequence": 0,
+      "detail": "valid-until=2614173",
+      "eventSequence": 432,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614173,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 433,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614173,
+      "commitSequence": 0,
+      "detail": "valid-until=2614174",
+      "eventSequence": 434,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614174,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 435,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614174,
+      "commitSequence": 0,
+      "detail": "valid-until=2614175",
+      "eventSequence": 436,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614175,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 437,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614175,
+      "commitSequence": 0,
+      "detail": "valid-until=2614176",
+      "eventSequence": 438,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614176,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 439,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614176,
+      "commitSequence": 0,
+      "detail": "valid-until=2614177",
+      "eventSequence": 440,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614177,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 441,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614177,
+      "commitSequence": 0,
+      "detail": "valid-until=2614178",
+      "eventSequence": 442,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614178,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 443,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614178,
+      "commitSequence": 0,
+      "detail": "valid-until=2614179",
+      "eventSequence": 444,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614179,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 445,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614179,
+      "commitSequence": 0,
+      "detail": "valid-until=2614180",
+      "eventSequence": 446,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614180,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 447,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614180,
+      "commitSequence": 0,
+      "detail": "valid-until=2614181",
+      "eventSequence": 448,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614181,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 449,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614181,
+      "commitSequence": 0,
+      "detail": "valid-until=2614182",
+      "eventSequence": 450,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614182,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 451,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614182,
+      "commitSequence": 0,
+      "detail": "valid-until=2614183",
+      "eventSequence": 452,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614183,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 453,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614183,
+      "commitSequence": 0,
+      "detail": "valid-until=2614184",
+      "eventSequence": 454,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614184,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 455,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614184,
+      "commitSequence": 0,
+      "detail": "valid-until=2614185",
+      "eventSequence": 456,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614185,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 457,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614185,
+      "commitSequence": 0,
+      "detail": "valid-until=2614186",
+      "eventSequence": 458,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614186,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 459,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614186,
+      "commitSequence": 0,
+      "detail": "valid-until=2614187",
+      "eventSequence": 460,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614187,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 461,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614187,
+      "commitSequence": 0,
+      "detail": "valid-until=2614188",
+      "eventSequence": 462,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614188,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 463,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614188,
+      "commitSequence": 0,
+      "detail": "valid-until=2614189",
+      "eventSequence": 464,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614189,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 465,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614189,
+      "commitSequence": 0,
+      "detail": "valid-until=2614190",
+      "eventSequence": 466,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614190,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 467,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614190,
+      "commitSequence": 0,
+      "detail": "valid-until=2614191",
+      "eventSequence": 468,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614191,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 469,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614191,
+      "commitSequence": 0,
+      "detail": "valid-until=2614192",
+      "eventSequence": 470,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614192,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 471,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614192,
+      "commitSequence": 0,
+      "detail": "valid-until=2614193",
+      "eventSequence": 472,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614193,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 473,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614193,
+      "commitSequence": 0,
+      "detail": "valid-until=2614194",
+      "eventSequence": 474,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614194,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 475,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614194,
+      "commitSequence": 0,
+      "detail": "valid-until=2614195",
+      "eventSequence": 476,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614195,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 477,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614195,
+      "commitSequence": 0,
+      "detail": "valid-until=2614196",
+      "eventSequence": 478,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614196,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 479,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614196,
+      "commitSequence": 0,
+      "detail": "valid-until=2614197",
+      "eventSequence": 480,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614197,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 481,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614197,
+      "commitSequence": 0,
+      "detail": "valid-until=2614198",
+      "eventSequence": 482,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614198,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 483,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614198,
+      "commitSequence": 0,
+      "detail": "valid-until=2614199",
+      "eventSequence": 484,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614199,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 485,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614199,
+      "commitSequence": 0,
+      "detail": "valid-until=2614200",
+      "eventSequence": 486,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614200,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 487,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614200,
+      "commitSequence": 0,
+      "detail": "valid-until=2614201",
+      "eventSequence": 488,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614201,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 489,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614201,
+      "commitSequence": 0,
+      "detail": "valid-until=2614202",
+      "eventSequence": 490,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614202,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 491,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614202,
+      "commitSequence": 0,
+      "detail": "valid-until=2614203",
+      "eventSequence": 492,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614203,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 493,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614203,
+      "commitSequence": 0,
+      "detail": "valid-until=2614204",
+      "eventSequence": 494,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614204,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 495,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614204,
+      "commitSequence": 0,
+      "detail": "valid-until=2614205",
+      "eventSequence": 496,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614205,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 497,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614205,
+      "commitSequence": 0,
+      "detail": "valid-until=2614206",
+      "eventSequence": 498,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614206,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 499,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614206,
+      "commitSequence": 0,
+      "detail": "valid-until=2614207",
+      "eventSequence": 500,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614207,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 501,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614207,
+      "commitSequence": 0,
+      "detail": "valid-until=2614208",
+      "eventSequence": 502,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614208,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 503,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614208,
+      "commitSequence": 0,
+      "detail": "valid-until=2614209",
+      "eventSequence": 504,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614209,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 505,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614209,
+      "commitSequence": 0,
+      "detail": "valid-until=2614210",
+      "eventSequence": 506,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614210,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 507,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614210,
+      "commitSequence": 0,
+      "detail": "valid-until=2614211",
+      "eventSequence": 508,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614211,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 509,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614211,
+      "commitSequence": 0,
+      "detail": "valid-until=2614212",
+      "eventSequence": 510,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614212,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 511,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614212,
+      "commitSequence": 0,
+      "detail": "valid-until=2614213",
+      "eventSequence": 512,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614213,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 513,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614213,
+      "commitSequence": 0,
+      "detail": "valid-until=2614214",
+      "eventSequence": 514,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614214,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 515,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614214,
+      "commitSequence": 0,
+      "detail": "valid-until=2614215",
+      "eventSequence": 516,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614215,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 517,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614215,
+      "commitSequence": 0,
+      "detail": "valid-until=2614216",
+      "eventSequence": 518,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614216,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 519,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614216,
+      "commitSequence": 0,
+      "detail": "valid-until=2614217",
+      "eventSequence": 520,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614217,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 521,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614217,
+      "commitSequence": 0,
+      "detail": "valid-until=2614218",
+      "eventSequence": 522,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614218,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 523,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614218,
+      "commitSequence": 0,
+      "detail": "valid-until=2614219",
+      "eventSequence": 524,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614219,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 525,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614219,
+      "commitSequence": 0,
+      "detail": "valid-until=2614220",
+      "eventSequence": 526,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614220,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 527,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614220,
+      "commitSequence": 0,
+      "detail": "valid-until=2614221",
+      "eventSequence": 528,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614221,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 529,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614221,
+      "commitSequence": 0,
+      "detail": "valid-until=2614222",
+      "eventSequence": 530,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614222,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 531,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614222,
+      "commitSequence": 0,
+      "detail": "valid-until=2614223",
+      "eventSequence": 532,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614223,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 533,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614223,
+      "commitSequence": 0,
+      "detail": "valid-until=2614224",
+      "eventSequence": 534,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614224,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 535,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614224,
+      "commitSequence": 0,
+      "detail": "valid-until=2614225",
+      "eventSequence": 536,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614225,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 537,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614225,
+      "commitSequence": 0,
+      "detail": "valid-until=2614226",
+      "eventSequence": 538,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614226,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 539,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614226,
+      "commitSequence": 0,
+      "detail": "valid-until=2614227",
+      "eventSequence": 540,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614227,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 541,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614227,
+      "commitSequence": 0,
+      "detail": "valid-until=2614228",
+      "eventSequence": 542,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614228,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 543,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614228,
+      "commitSequence": 0,
+      "detail": "valid-until=2614229",
+      "eventSequence": 544,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614229,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 545,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614229,
+      "commitSequence": 0,
+      "detail": "valid-until=2614230",
+      "eventSequence": 546,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614230,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 547,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614230,
+      "commitSequence": 0,
+      "detail": "valid-until=2614231",
+      "eventSequence": 548,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614231,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 549,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614231,
+      "commitSequence": 0,
+      "detail": "valid-until=2614232",
+      "eventSequence": 550,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614232,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 551,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614232,
+      "commitSequence": 0,
+      "detail": "valid-until=2614233",
+      "eventSequence": 552,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614233,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 553,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614233,
+      "commitSequence": 0,
+      "detail": "valid-until=2614234",
+      "eventSequence": 554,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614234,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 555,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614234,
+      "commitSequence": 0,
+      "detail": "valid-until=2614235",
+      "eventSequence": 556,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614235,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 557,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614235,
+      "commitSequence": 0,
+      "detail": "valid-until=2614236",
+      "eventSequence": 558,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614236,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 559,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614236,
+      "commitSequence": 0,
+      "detail": "valid-until=2614237",
+      "eventSequence": 560,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614237,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 561,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614237,
+      "commitSequence": 0,
+      "detail": "valid-until=2614238",
+      "eventSequence": 562,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614238,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 563,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614238,
+      "commitSequence": 0,
+      "detail": "valid-until=2614239",
+      "eventSequence": 564,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614239,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 565,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614239,
+      "commitSequence": 0,
+      "detail": "valid-until=2614240",
+      "eventSequence": 566,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614240,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 567,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614240,
+      "commitSequence": 0,
+      "detail": "valid-until=2614241",
+      "eventSequence": 568,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614241,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 569,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614241,
+      "commitSequence": 0,
+      "detail": "valid-until=2614242",
+      "eventSequence": 570,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614242,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 571,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614242,
+      "commitSequence": 0,
+      "detail": "valid-until=2614243",
+      "eventSequence": 572,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614243,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 573,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614243,
+      "commitSequence": 0,
+      "detail": "valid-until=2614244",
+      "eventSequence": 574,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614244,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 575,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614244,
+      "commitSequence": 0,
+      "detail": "valid-until=2614245",
+      "eventSequence": 576,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614245,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 577,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614245,
+      "commitSequence": 0,
+      "detail": "valid-until=2614246",
+      "eventSequence": 578,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614246,
+      "commitSequence": 0,
+      "detail": "head=400000;tail=330000",
+      "eventSequence": 579,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2614246,
+      "commitSequence": 0,
+      "detail": "{\"schemaVersion\":\"zugfolge-operational-passenger-stop-receipt/v1\",\"worldId\":\"00000000-0000-4000-8000-000000000387\",\"serviceRunId\":\"test-follow-service\",\"trainRunId\":\"regional-follow\",\"stopId\":\"follow-regional-halle\",\"stopSequence\":1,\"stopPlanHash\":\"f6cec950093c008edc4485c33333980a85b06c1ebe008037ac858ec55d89c990\",\"routeVersionId\":\"route:v1\",\"formationVersionId\":\"test-follow-formation\",\"kind\":\"arrival\",\"actualTimeMs\":2614246,\"receiptId\":\"803f2dd532240f261eb691acee8db03fca938e861863da49653ad960557b0e66\"}",
+      "eventSequence": 580,
+      "kind": "passenger-stop-arrival",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2734246,
+      "commitSequence": 0,
+      "detail": "{\"schemaVersion\":\"zugfolge-operational-passenger-stop-receipt/v1\",\"worldId\":\"00000000-0000-4000-8000-000000000387\",\"serviceRunId\":\"test-follow-service\",\"trainRunId\":\"regional-follow\",\"stopId\":\"follow-regional-halle\",\"stopSequence\":1,\"stopPlanHash\":\"f6cec950093c008edc4485c33333980a85b06c1ebe008037ac858ec55d89c990\",\"routeVersionId\":\"route:v1\",\"formationVersionId\":\"test-follow-formation\",\"kind\":\"departure\",\"actualTimeMs\":2734246,\"receiptId\":\"2b6ee7d247e093a573fd4a70e19fd6a2c82137fa9b7e5d20b9704d48dba5e8ce\"}",
+      "eventSequence": 581,
+      "kind": "passenger-stop-departure",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2734246,
+      "commitSequence": 0,
+      "detail": "valid-until=2754246",
+      "eventSequence": 582,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2754246,
+      "commitSequence": 0,
+      "detail": "head=600000;tail=530000",
+      "eventSequence": 583,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2754246,
+      "commitSequence": 0,
+      "detail": "valid-until=2757746",
+      "eventSequence": 584,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2757746,
+      "commitSequence": 0,
+      "detail": "interlocking:train:b",
+      "eventSequence": 585,
+      "kind": "route-released-after-tail",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2757746,
+      "commitSequence": 0,
+      "detail": "head=670000;tail=600000",
+      "eventSequence": 586,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2757746,
+      "commitSequence": 0,
+      "detail": "valid-until=2774622",
+      "eventSequence": 587,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2774622,
+      "commitSequence": 0,
+      "detail": "head=1007507;tail=937507",
+      "eventSequence": 588,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2774622,
+      "commitSequence": 0,
+      "detail": "valid-until=2793848",
+      "eventSequence": 589,
+      "kind": "motion-segment-started",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2793848,
+      "commitSequence": 0,
+      "detail": "interlocking:train:c",
+      "eventSequence": 590,
+      "kind": "route-released-at-terminal",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2793848,
+      "commitSequence": 0,
+      "detail": "head=1200000;tail=1130000",
+      "eventSequence": 591,
+      "kind": "motion-segment-ended",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2793848,
+      "commitSequence": 0,
+      "detail": "{\"schemaVersion\":\"zugfolge-operational-passenger-stop-receipt/v1\",\"worldId\":\"00000000-0000-4000-8000-000000000387\",\"serviceRunId\":\"test-follow-service\",\"trainRunId\":\"regional-follow\",\"stopId\":\"follow-regional-erfurt\",\"stopSequence\":2,\"stopPlanHash\":\"f6cec950093c008edc4485c33333980a85b06c1ebe008037ac858ec55d89c990\",\"routeVersionId\":\"route:v1\",\"formationVersionId\":\"test-follow-formation\",\"kind\":\"arrival\",\"actualTimeMs\":2793848,\"receiptId\":\"24d82a86df539d83e7781922cb894dc1eb6dd91df8bbc6cb19e7bd4dcfb2f54e\"}",
+      "eventSequence": 592,
+      "kind": "passenger-stop-arrival",
+      "subjectId": "regional-follow"
+    },
+    {
+      "atMs": 2793848,
+      "commitSequence": 0,
+      "detail": "route-complete-and-released",
+      "eventSequence": 593,
+      "kind": "movement-retired",
+      "subjectId": "regional-follow"
+    }
+  ],
+  "replayOperationalHash": "80977da4c8d3b464847c1ca5c3aab3e4d2718e494f9ca2d987cdd2cd31c1b75d",
+  "testOnly": true,
+  "trains": 2
+}

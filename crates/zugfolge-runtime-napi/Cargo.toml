@@ -23,6 +23,10 @@ zugfolge-sim-runtime = { path = "../zugfolge-sim-runtime", version = "0.0.0" }
 zugfolge-rules = { path = "../zugfolge-rules", version = "0.0.0" }
 zugfolge-demand = { path = "../zugfolge-demand", version = "0.0.0" }
 zugfolge-conductor = { path = "../zugfolge-conductor", version = "0.0.0" }
+zugfolge-conductor-session = { path = "../zugfolge-conductor-session", version = "0.0.0" }
+zugfolge-conductor-dialogue = { path = "../zugfolge-conductor-dialogue", version = "0.0.0" }
+zugfolge-conductor-scenes = { path = "../zugfolge-conductor-scenes", version = "0.0.0" }
+zugfolge-fare-control = { path = "../zugfolge-fare-control", version = "0.0.0" }
 serde_json.workspace = true
 
 [build-dependencies]

@@ -23,6 +23,7 @@ export {
   type OperatorStartingCapitalInitialization,
 } from "./ledger.js";
 export * from "./release.js";
+export * from "./fare-revenue.js";
 export * from "./world.js";
 export * from "./tender.js";
 export * from "./contracts.js";

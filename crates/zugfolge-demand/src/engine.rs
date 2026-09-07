@@ -3,7 +3,14 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use sha2::{Digest, Sha256};
 
-use crate::{DemandError, ensure, types::*};
+use crate::{
+    DemandError, ensure,
+    population::{
+        canonicalize_population_model, canonicalize_population_revision,
+        release_with_population_revision, validate_population_model,
+    },
+    types::*,
+};
 
 const DAY_MS: i64 = 86_400_000;
 const SAFE_INTEGER: i64 = 9_007_199_254_740_991;
@@ -142,6 +149,7 @@ fn validate_release(release: &DemandReleaseV1) -> Result<(), DemandError> {
             )?;
         }
     }
+    validate_population_model(release)?;
     for profile in &release.profiles {
         ensure(
             id(&profile.purpose)
@@ -161,10 +169,11 @@ fn validate_release(release: &DemandReleaseV1) -> Result<(), DemandError> {
         )?;
         for origin in &release.zones {
             ensure(
-                release
-                    .zones
-                    .iter()
-                    .any(|zone| zone.id != origin.id && attraction(zone, profile) > 0),
+                release.population_model.is_some()
+                    || release
+                        .zones
+                        .iter()
+                        .any(|zone| zone.id != origin.id && attraction(zone, profile) > 0),
                 "no_attractive_destination",
             )?;
         }
@@ -202,6 +211,7 @@ fn canonical_release(release: &DemandReleaseV1) -> DemandReleaseV1 {
         .day_slices
         .sort_by_key(|slice| slice.start_offset_ms);
     release.fare_compliance.source_ids.sort();
+    canonicalize_population_model(&mut release);
     release
 }
 
@@ -249,6 +259,9 @@ fn validate_input(input: &DemandEvaluationInputV1) -> Result<(), DemandError> {
         "invalid_demand_time_or_revision",
     )?;
     validate_release(&input.release)?;
+    if input.population_revision.is_some() {
+        release_with_population_revision(input)?;
+    }
     let windows = generation_windows(input);
     ensure(
         (1..=256).contains(&windows.len())
@@ -388,6 +401,7 @@ fn attraction(zone: &DemandZoneV1, profile: &DemandProfileV1) -> u64 {
 fn cohorts_for_window(
     input: &DemandEvaluationInputV1,
     generation: &DemandGenerationWindowV1,
+    preferences: &BTreeMap<(&str, &str), u32>,
 ) -> Result<Vec<JourneyDemandV1>, DemandError> {
     let slice = input
         .release
@@ -421,16 +435,29 @@ fn cohorts_for_window(
                 .release
                 .zones
                 .iter()
-                .filter(|zone| zone.id != origin.id && attraction(zone, profile) > 0)
+                .filter(|zone| zone.id != origin.id)
+                .map(|zone| {
+                    let base = u128::from(attraction(zone, profile));
+                    let weight = if input.release.population_model.is_some() {
+                        let count = preferences
+                            .get(&(origin.id.as_str(), zone.id.as_str()))
+                            .copied()
+                            .unwrap_or(0);
+                        base.max(1) * (10_000 + (u128::from(count) * 250).min(30_000))
+                    } else {
+                        base
+                    };
+                    (zone, weight)
+                })
+                .filter(|(_, weight)| *weight > 0)
                 .collect();
-            let weight_sum: u64 = targets.iter().map(|zone| attraction(zone, profile)).sum();
+            let weight_sum: u128 = targets.iter().map(|(_, weight)| *weight).sum();
             let mut apportioned: Vec<_> = targets
                 .into_iter()
-                .map(|zone| {
-                    let numerator = u128::from(total) * u128::from(attraction(zone, profile));
-                    let count = u32::try_from(numerator / u128::from(weight_sum))
-                        .expect("bounded by total");
-                    let remainder = numerator % u128::from(weight_sum);
+                .map(|(zone, weight)| {
+                    let numerator = u128::from(total) * weight;
+                    let count = u32::try_from(numerator / weight_sum).expect("bounded by total");
+                    let remainder = numerator % weight_sum;
                     let tie = digest(&[
                         "demand_apportionment",
                         &input.world_id,
@@ -460,7 +487,7 @@ fn cohorts_for_window(
                 if passengers == 0 {
                     continue;
                 }
-                let cohort_id = digest(&[
+                let base_cohort_id = digest(&[
                     "demand_cohort",
                     &input.world_id,
                     &input.period_id,
@@ -471,9 +498,19 @@ fn cohorts_for_window(
                     &profile.id,
                 ]);
                 let offset = draw(
-                    &["departure_time", &input.seed, &cohort_id],
+                    &["departure_time", &input.seed, &base_cohort_id],
                     u64::try_from(generation.window_end_ms - generation.window_start_ms)
                         .expect("positive duration"),
+                );
+                let cohort_id = input.population_revision.as_ref().map_or_else(
+                    || base_cohort_id.clone(),
+                    |revision| {
+                        digest(&[
+                            "population_revision_cohort",
+                            &base_cohort_id,
+                            &revision.revision.to_string(),
+                        ])
+                    },
                 );
                 result.push(JourneyDemandV1 {
                     world_id: input.world_id.clone(),
@@ -496,8 +533,23 @@ fn cohorts_for_window(
 fn cohorts(input: &DemandEvaluationInputV1) -> Result<Vec<JourneyDemandV1>, DemandError> {
     let mut cohorts = Vec::new();
     let mut count = 0_u32;
+    let preferences: BTreeMap<_, _> = input
+        .release
+        .population_model
+        .iter()
+        .flat_map(|model| model.destination_preferences.iter())
+        .map(|preference| {
+            (
+                (
+                    preference.origin_zone_id.as_str(),
+                    preference.destination_zone_id.as_str(),
+                ),
+                preference.reference_connections,
+            )
+        })
+        .collect();
     for window in generation_windows(input) {
-        let generated = cohorts_for_window(input, &window)?;
+        let generated = cohorts_for_window(input, &window, &preferences)?;
         for cohort in &generated {
             count = count
                 .checked_add(cohort.passengers)
@@ -511,6 +563,111 @@ fn cohorts(input: &DemandEvaluationInputV1) -> Result<Vec<JourneyDemandV1>, Dema
     }
     cohorts.sort_by(|a, b| a.cohort_id.cmp(&b.cohort_id));
     Ok(cohorts)
+}
+
+fn revised_population_cohorts(
+    input: &DemandEvaluationInputV1,
+) -> Result<Vec<JourneyDemandV1>, DemandError> {
+    let generated = cohorts(input)?;
+    let Some(previous) = &input.previous_evaluation else {
+        return Ok(generated);
+    };
+    let before = &previous.result;
+    let Some(revision) = &input.population_revision else {
+        ensure(
+            before.population_revision.is_none(),
+            "population_revision_removed",
+        )?;
+        return Ok(generated);
+    };
+    let unchanged = if let Some(old) = &before.population_revision {
+        let mut old_input = input.clone();
+        old_input.population_revision = Some(old.clone());
+        old_input.now_ms = before.now_ms;
+        release_with_population_revision(&old_input)?;
+        ensure(
+            revision.revision >= old.revision,
+            "population_revision_regressed",
+        )?;
+        if revision.revision == old.revision {
+            ensure(revision == old, "population_revision_content_changed")?;
+            true
+        } else {
+            false
+        }
+    } else {
+        false
+    };
+    validate_population_cohorts(input, &before.cohorts)?;
+    let mut result = if unchanged {
+        before.cohorts.clone()
+    } else {
+        ensure(
+            revision.effective_at_ms >= before.now_ms,
+            "population_revision_effective_time_regressed",
+        )?;
+        before
+            .cohorts
+            .iter()
+            .filter(|cohort| cohort.desired_departure_ms <= revision.effective_at_ms)
+            .cloned()
+            .chain(
+                generated
+                    .into_iter()
+                    .filter(|cohort| cohort.desired_departure_ms > revision.effective_at_ms),
+            )
+            .collect()
+    };
+    result.sort_by(|a, b| a.cohort_id.cmp(&b.cohort_id));
+    validate_population_cohorts(input, &result)?;
+    Ok(result)
+}
+
+fn validate_population_cohorts(
+    input: &DemandEvaluationInputV1,
+    cohorts: &[JourneyDemandV1],
+) -> Result<(), DemandError> {
+    let mut total = 0_u32;
+    let windows = generation_windows(input);
+    ensure(
+        cohorts.len()
+            <= usize::try_from(input.release.max_generated_passengers).expect("bounded count")
+            && unique(cohorts.iter().map(|cohort| cohort.cohort_id.as_str())),
+        "invalid_population_revision_cohorts",
+    )?;
+    for cohort in cohorts {
+        total = total
+            .checked_add(cohort.passengers)
+            .ok_or_else(|| DemandError("generated_passenger_limit".into()))?;
+        ensure(
+            total <= input.release.max_generated_passengers,
+            "generated_passenger_limit",
+        )?;
+        ensure(
+            cohort.world_id == input.world_id
+                && cohort.passengers > 0
+                && input.release.profiles.iter().any(|profile| {
+                    profile.id == cohort.profile_id && profile.purpose == cohort.purpose
+                })
+                && cohort.origin_zone_id != cohort.destination_zone_id
+                && input
+                    .release
+                    .zones
+                    .iter()
+                    .any(|zone| zone.id == cohort.origin_zone_id)
+                && input
+                    .release
+                    .zones
+                    .iter()
+                    .any(|zone| zone.id == cohort.destination_zone_id)
+                && windows.iter().any(|window| {
+                    (window.window_start_ms..window.window_end_ms)
+                        .contains(&cohort.desired_departure_ms)
+                }),
+            "invalid_population_revision_cohorts",
+        )?;
+    }
+    Ok(())
 }
 
 #[derive(Clone)]
@@ -1041,6 +1198,7 @@ fn progress_stop<'a>(
 fn validate_progress(
     input: &DemandEvaluationInputV1,
     cohorts: &[JourneyDemandV1],
+    base_release_hash: &str,
 ) -> Result<(), DemandError> {
     let Some(progress) = &input.operational_progress else {
         return ensure(
@@ -1114,7 +1272,7 @@ fn validate_progress(
             && before.world_id == input.world_id
             && before.period_id == input.period_id
             && before.demand_release_id == input.release.id
-            && before.release_hash == release_hash(&input.release)?
+            && before.release_hash == base_release_hash
             && before.seed_hash
                 == digest(&["world_seed", &input.world_id, &input.period_id, &input.seed])
             && before.window_start_ms == input.window_start_ms
@@ -1122,7 +1280,8 @@ fn validate_progress(
             && before.generation_windows == generation_windows(input)
             && before.revision < input.revision
             && before.now_ms <= input.now_ms
-            && before.cohorts == cohorts,
+            && (input.population_revision != before.population_revision
+                || before.cohorts == cohorts),
         "previous_evaluation_scope_mismatch",
     )?;
     let mut unhashed = before.clone();
@@ -1201,7 +1360,9 @@ fn frozen_journeys(
         if choice.trains.is_empty() {
             continue;
         }
-        let cohort = cohorts
+        let cohort = previous
+            .result
+            .cohorts
             .iter()
             .find(|cohort| cohort.cohort_id == choice.cohort_id)
             .ok_or_else(|| DemandError("previous_choice_unknown_cohort".into()))?;
@@ -1316,6 +1477,10 @@ fn frozen_journeys(
         if legs.is_empty() {
             continue;
         }
+        ensure(
+            cohorts.iter().any(|current| current == cohort),
+            "population_revision_changed_started_journey",
+        )?;
         let must_continue = !destination
             .stations
             .iter()
@@ -1615,6 +1780,30 @@ pub fn evaluate_demand(input: &DemandEvaluationInputV1) -> Result<DemandEvaluati
     validate_input(input)?;
     let mut input = input.clone();
     input.release = canonical_release(&input.release);
+    let base_release_hash = release_hash(&input.release)?;
+    if input.population_revision.is_some()
+        && input
+            .previous_evaluation
+            .as_ref()
+            .is_some_and(|previous| previous.result.population_revision.is_none())
+    {
+        let mut base_input = input.clone();
+        base_input.population_revision = None;
+        ensure(
+            input
+                .previous_evaluation
+                .as_ref()
+                .expect("previous checked")
+                .result
+                .cohorts
+                == cohorts(&base_input)?,
+            "previous_evaluation_scope_mismatch",
+        )?;
+    }
+    if let Some(revision) = &mut input.population_revision {
+        canonicalize_population_revision(revision);
+    }
+    input.release = release_with_population_revision(&input)?;
     input
         .services
         .sort_by(|a, b| a.train_run_id.cmp(&b.train_run_id));
@@ -1631,14 +1820,14 @@ pub fn evaluate_demand(input: &DemandEvaluationInputV1) -> Result<DemandEvaluati
         }
     }
     let input = &input;
-    let cohorts = cohorts(input)?;
-    validate_progress(input, &cohorts)?;
+    let cohorts = revised_population_cohorts(input)?;
+    validate_progress(input, &cohorts, &base_release_hash)?;
     let mut result = DemandEvaluationV1 {
         schema_version: RESULT_SCHEMA.into(),
         world_id: input.world_id.clone(),
         period_id: input.period_id.clone(),
         demand_release_id: input.release.id.clone(),
-        release_hash: release_hash(&input.release)?,
+        release_hash: base_release_hash,
         seed_hash: digest(&["world_seed", &input.world_id, &input.period_id, &input.seed]),
         now_ms: input.now_ms,
         revision: input.revision,
@@ -1652,6 +1841,7 @@ pub fn evaluate_demand(input: &DemandEvaluationInputV1) -> Result<DemandEvaluati
         }
         .into(),
         operational_progress: input.operational_progress.clone(),
+        population_revision: input.population_revision.clone(),
         cohorts: cohorts.clone(),
         choices: Vec::new(),
         unserved: Vec::new(),

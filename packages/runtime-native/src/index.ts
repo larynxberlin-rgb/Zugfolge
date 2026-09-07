@@ -8,6 +8,10 @@ export * from "./conductor.js";
 export * from "./vehicle-configuration.js";
 export * from "./interior-types.js";
 export * from "./interior.js";
+export * from "./session-types.js";
+export * from "./session.js";
+export * from "./scene-types.js";
+export * from "./scenes.js";
 import { validateM5VehicleConfiguration, type M5VehicleConfigurationV1 } from "./vehicle-configuration.js";
 
 export const OPERATING_INITIALIZE_SCHEMA = "zugfolge-operating-world-initialize/v1" as const;

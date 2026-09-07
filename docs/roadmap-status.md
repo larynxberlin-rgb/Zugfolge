@@ -20,12 +20,12 @@ Kalendertermine gesetzt.
 | M7 | nachgewiesen | nachgewiesen | nachgewiesen | nachgewiesen | 7 / 0 | M4, M5, M6 |
 | M8 | nachgewiesen | nachgewiesen | blockiert | nachgewiesen | 12 / 0 | M4, M7 |
 | M9 | in Arbeit | in Arbeit | blockiert | blockiert | 19 / 2 | M0, M4, M6, M7, M8 |
-| M10 | nachgewiesen | in Arbeit | blockiert | blockiert | 14 / 3 | M9 |
+| M10 | nachgewiesen | nachgewiesen | blockiert | nachgewiesen | 14 / 4 | M9 |
 | M11 | offen | offen | offen | offen | 5 / 0 | M9 |
 | M12 | in Arbeit | in Arbeit | offen | blockiert | 5 / 0 | M6, M10, M11 |
 | M13 | in Arbeit | in Arbeit | offen | offen | 9 / 0 | M9, M12 |
 | M14 | in Arbeit | in Arbeit | blockiert | blockiert | 4 / 0 | M9 |
-| M15 | in Arbeit | in Arbeit | offen | offen | 24 / 3 | M4, M5, M6, M8, M10 |
+| M15 | in Arbeit | in Arbeit | blockiert | in Arbeit | 26 / 4 | M4, M5, M6, M8, M10 |
 
 Die Issue-Zahl kombiniert explizite Manifestzuordnungen mit den automatisch anhand
 ihres `[Roadmap x.y]`-Vertrags erkannten Roadmap-Issues. PRs werden separat gezählt.

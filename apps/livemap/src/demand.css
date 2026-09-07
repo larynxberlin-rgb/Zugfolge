@@ -1,6 +1,22 @@
 .demand-view { color: var(--zf-text, #f5f7fa); min-width: 0; }
 .demand-view h1 { font-size: 24px; }
 .demand-view h2 { font-size: 18px; }
+.population-stations { list-style: none; padding: 0; display: grid; gap: 14px; }
+.population-stations > li { border: 1px solid #465360; border-radius: 6px; padding: 12px; min-width: 0; }
+.population-stations h3, .population-stations h4 { margin: 0 0 10px; font-size: 13px; }
+.population-stations h4 { margin-top: 16px; }
+.population-stations h3 button { background: transparent; border: 0; padding: 4px 0; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.population-stations p, .population-stations ol { font-size: 12px; color: #b5c0cc; }
+.population-stations ol { padding-left: 20px; }
+.population-stations ol li { padding: 6px 0; }
+.population-stations ol strong { float: right; padding-left: 8px; color: #f5f7fa; }
+.population-stations small { display: block; margin-top: 4px; }
+.population-class { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; font-size: 12px; }
+.population-bars { display: flex; gap: 3px; }
+.population-bars i { width: 9px; height: 17px; background: #303b46; border: 1px solid #687783; border-radius: 2px; }
+.population-bars i.filled { background: #75d4ef; border-color: #75d4ef; }
+.population-demand details { font-size: 12px; overflow-wrap: anywhere; }
+.population-demand a { color: #75d4ef; }
 .demand-provenance { border-left: 3px solid #a9a1ff; padding: 8px 12px; background: #242338; font-size: 12px; line-height: 1.65; }
 .demand-provenance--observed { border-color: #75d4ef; background: #172b36; }
 .demand-provenance--assumption { border-style: dashed; }

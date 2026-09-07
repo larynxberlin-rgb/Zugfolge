@@ -22,7 +22,42 @@ die den echten Datenbankdienst benötigen; der native Teil aktiviert gezielt
 die Fälle mit echten Addons und Browsern. Referenzkorpus und Betriebswerkzeuge
 gehören zum erweiterten Prüflauf.
 
+M15 ergänzt den vorhandenen nativen Job um die originale M5-/M10-/Betriebsquelle,
+private Sitzungs-/Releaseintegration und die tatsächliche PixiJS-Oberfläche
+mit Desktop, Touch, Verbindungsverlust und Wiederaufnahme. Er benötigt das
+wirklich gebaute NAPI-Addon; die Fixture erzeugt fachliche Testdaten mit
+denselben Rust-Kernen. Testsignaturen autorisieren ausschließlich diesen
+gekennzeichneten Korpus. Die vier regulären Jobs bleiben erhalten; ein grüner
+Testkorpus ersetzt keine produktive Release- oder Deutschlandabnahme.
+Der native Job erhält für die zusammenhängenden Browserfahrten und die
+zusätzlichen Regionswechsel-/Ledgernachweise eine Höchstdauer von 45 Minuten.
+Der gemessene Zwischenlauf benötigte bereits 27 Minuten bis zur verbundenen
+Abnahmefahrt; deren vollständiger Netzabschluss und der anschließende
+Einstiegsnachweis müssen innerhalb desselben Jobs ausgeführt werden können.
+Die dateibasierten Szenen-/Evidenzpackerprüfungen und die Regression für den
+nativen Ereigniskalender des Browsertreibers laufen im TypeScript-Job;
+sie benötigen keinen zusätzlichen Browser oder Job.
+Die nativen Browserfahrten prüfen zusätzlich Dokumentkontrolle, spätere
+Nachweise, Zahlungen, Polizei und Tagesbericht sowie den vollständigen
+220-Personen-Doppelstockkorpus. Die Manifestfahrt prüft tatsächlichen
+Fahrgastwechsel über mehrere Halte und eine Infrastruktursperre. Die gemeinsame
+Abnahmefahrt verbindet Originaldialoge, Polizeihalt, Netz- und Vertragsfolgen;
+ihre Quelle und der einzelne Abnahmevertrag bleiben ausdrücklich fiktiv.
+Der gesonderte Einstiegsbeleg verwendet dieselbe Zugdetailkomponente wie die
+LiveMap mit tatsächlichen Verfügbarkeits-, Berechtigungs- und Resume-Antworten.
+Der Evidenzpacker bindet sämtliche sieben positiven Browserberichte, den
+separaten Originaldialog-HTTP-Beleg und die zugehörigen
+Screenshots an den tatsächlichen CI-Commit. Die zusätzliche
+Dialog-CLI liefert ausschließlich private Auswahlbelege aus Originaldialogen;
+die Sitzungs- und Kontrollkommandos verwenden unter Linux das echte NAPI-Addon.
+
 ## Lokal arbeiten
+
+Der Rust-Job führt außerdem den tatsächlichen `operational_json`-CLI-Einstieg
+in isolierten Kindprozessen aus. Erfolg und fachliche Ablehnung nach Restore
+müssen den temporären Infrastrukturindex beim Prozessende freigeben. Dieser
+Ressourcentest verändert keine Betriebs- oder Replayregeln und benötigt keinen
+zusätzlichen CI-Job.
 
 Die Toolchain steht in [`monorepo.md`](monorepo.md#2-werkzeugkette).
 Einmal installieren und den Workspace bauen:

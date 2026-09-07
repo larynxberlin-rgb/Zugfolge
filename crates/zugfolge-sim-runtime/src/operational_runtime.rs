@@ -22,6 +22,9 @@ use zugfolge_sim::operational::{
 
 use crate::initialization_hash::operational_initialization_hash;
 
+mod handover;
+pub use handover::handover_operational_simulation;
+
 pub const INITIALIZE_SCHEMA: &str = "zugfolge-operational-simulation-initialize/v2";
 pub const COMMAND_SCHEMA: &str = "zugfolge-operational-simulation-command/v2";
 pub const COMMAND_BATCH_SCHEMA: &str = "zugfolge-operational-simulation-command-batch/v1";
@@ -53,6 +56,21 @@ pub const PROTECTION_MODE_SELECTION_EVIDENCE_SCHEMA: &str =
 type InfrastructureHandle = Arc<dyn OperationalInfrastructure>;
 static INFRASTRUCTURE_CACHE: OnceLock<Mutex<BTreeMap<String, InfrastructureHandle>>> =
     OnceLock::new();
+
+/// Gibt die Cache-Handles nach dem letzten Aufruf eines kurzlebigen CLI frei.
+///
+/// Der warme NAPI-Pfad ruft diese Funktion nicht auf. Bereits ausgeliehene
+/// Handles bleiben gültig; der letzte Handle schließt den Index vor dem
+/// Entfernen seines eigenen Verzeichnisses. Auch ein vergifteter Cache muss
+/// beim geordneten CLI-Abschluss seine Ressourcen freigeben können.
+pub fn release_operational_infrastructure_cache() {
+    if let Some(cache) = INFRASTRUCTURE_CACHE.get() {
+        cache
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clear();
+    }
+}
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct OperationalRuntimeError {
@@ -95,6 +113,8 @@ struct FormationInput {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct TrainInput {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    stop_plan: Option<zugfolge_sim::operational::OperationalPassengerStopPlan>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     service_outcome: Option<zugfolge_sim::operational::ServiceOutcomeBinding>,
     id: String,
@@ -182,6 +202,8 @@ struct InitializationValidationReceipt {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct Initialization {
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    fare_control_policy: Option<zugfolge_sim::operational::FareControlPolicyV1>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     service_outcome_policy: Option<zugfolge_sim::operational::ServiceOutcomePolicy>,
     schema_version: String,
     world_id: String,
@@ -206,6 +228,18 @@ struct Initialization {
     deny_unknown_fields
 )]
 enum CommandPayload {
+    CancelPassengerStopPlan {
+        cancellation: zugfolge_sim::operational::CancelPassengerStopPlanInputV1,
+    },
+    SetFareControlPolicy {
+        policy: zugfolge_sim::operational::FareControlPolicyV1,
+    },
+    RequestFareControlHold {
+        request: zugfolge_sim::operational::RequestFareControlHoldInputV1,
+    },
+    ResolveFareControlHold {
+        resolution: zugfolge_sim::operational::ResolveFareControlHoldInputV1,
+    },
     Materialize {
         train: TrainInput,
     },
@@ -300,6 +334,8 @@ struct CommandReceipt {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct RuntimeState {
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    passenger_stop_templates: BTreeMap<String, PassengerStopTemplateBinding>,
     schema_version: String,
     initialization_hash: String,
     infra_release: InfrastructureBinding,
@@ -308,6 +344,205 @@ struct RuntimeState {
     publisher_sequence: u64,
     state_hash: String,
     command_receipts: BTreeMap<String, CommandReceipt>,
+}
+
+/// Kompakter Index ausschliesslich der im signierten Programm vorgeprueften Plaene.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct PassengerStopTemplateBinding {
+    base_train_run_id: String,
+    base_service_run_id: String,
+    base_departure_ms: i64,
+    base_service_day_ordinal: Option<i64>,
+    repeat_every_ms: Option<i64>,
+    structure_hash: String,
+}
+
+fn stop_binding_rejection() -> OperationalRuntimeError {
+    OperationalRuntimeError::new(
+        "unbound_passenger_stop_plan",
+        "Haltplan entspricht keiner signierten Programmvorlage",
+    )
+}
+
+fn service_day_ordinal(day: &str) -> Result<i64, OperationalRuntimeError> {
+    if day.len() != 10 || day.as_bytes()[4] != b'-' || day.as_bytes()[7] != b'-' || !day.is_ascii()
+    {
+        return Err(stop_binding_rejection());
+    }
+    let mut year = day[..4]
+        .parse::<i64>()
+        .map_err(|_| stop_binding_rejection())?;
+    let month = day[5..7]
+        .parse::<i64>()
+        .map_err(|_| stop_binding_rejection())?;
+    let date = day[8..]
+        .parse::<i64>()
+        .map_err(|_| stop_binding_rejection())?;
+    let leap = year % 4 == 0 && (year % 100 != 0 || year % 400 == 0);
+    let length = match month {
+        1 | 3 | 5 | 7 | 8 | 10 | 12 => 31,
+        4 | 6 | 9 | 11 => 30,
+        2 => 28 + i64::from(leap),
+        _ => 0,
+    };
+    if year < 1 || date < 1 || date > length {
+        return Err(stop_binding_rejection());
+    }
+    year -= i64::from(month <= 2);
+    let era = year.div_euclid(400);
+    let yoe = year - era * 400;
+    let shifted_month = month + if month > 2 { -3 } else { 9 };
+    Ok(era * 146_097 + yoe * 365 + yoe / 4 - yoe / 100 + (153 * shifted_month + 2) / 5 + date - 1)
+}
+
+fn stop_plan_structure_hash(
+    plan: &zugfolge_sim::operational::OperationalPassengerStopPlan,
+) -> Result<String, OperationalRuntimeError> {
+    let first = plan
+        .stops
+        .first()
+        .ok_or_else(stop_binding_rejection)?
+        .scheduled_departure_ms;
+    let mut normalized = plan.clone();
+    normalized.train_run_id.clear();
+    normalized.service_run_id.clear();
+    for stop in &mut normalized.stops {
+        stop.stop_id.clear();
+        stop.scheduled_arrival_ms = stop
+            .scheduled_arrival_ms
+            .checked_sub(first)
+            .ok_or_else(stop_binding_rejection)?;
+        stop.scheduled_departure_ms = stop
+            .scheduled_departure_ms
+            .checked_sub(first)
+            .ok_or_else(stop_binding_rejection)?;
+    }
+    Ok(normalized.hash())
+}
+
+fn passenger_stop_template_bindings(
+    trains: &[TrainInput],
+    repeat_every_ms: Option<i64>,
+) -> Result<BTreeMap<String, PassengerStopTemplateBinding>, OperationalRuntimeError> {
+    let mut bindings = BTreeMap::new();
+    for train in trains {
+        let Some(plan) = &train.stop_plan else {
+            continue;
+        };
+        if plan
+            .stops
+            .iter()
+            .enumerate()
+            .any(|(index, stop)| stop.stop_id != format!("{}:{index}", train.id))
+        {
+            return Err(stop_binding_rejection());
+        }
+        let binding = PassengerStopTemplateBinding {
+            base_train_run_id: train.id.clone(),
+            base_service_run_id: plan.service_run_id.clone(),
+            base_departure_ms: plan
+                .stops
+                .first()
+                .ok_or_else(stop_binding_rejection)?
+                .scheduled_departure_ms,
+            base_service_day_ordinal: train
+                .service_outcome
+                .as_ref()
+                .map(|binding| service_day_ordinal(&binding.service_day))
+                .transpose()?,
+            repeat_every_ms,
+            structure_hash: stop_plan_structure_hash(plan)?,
+        };
+        if bindings.insert(plan.service_id.clone(), binding).is_some() {
+            return Err(stop_binding_rejection());
+        }
+    }
+    Ok(bindings)
+}
+
+fn validate_stop_plan_instance(
+    templates: &BTreeMap<String, PassengerStopTemplateBinding>,
+    train: &TrainMaterialization,
+) -> Result<(), OperationalRuntimeError> {
+    let Some(plan) = &train.stop_plan else {
+        if templates.values().any(|binding| {
+            train.id == binding.base_train_run_id
+                || train
+                    .id
+                    .starts_with(&format!("{}:day-", binding.base_train_run_id))
+        }) {
+            return Err(stop_binding_rejection());
+        }
+        return Ok(());
+    };
+    let binding = templates
+        .get(&plan.service_id)
+        .ok_or_else(stop_binding_rejection)?;
+    let departure = plan
+        .stops
+        .first()
+        .ok_or_else(stop_binding_rejection)?
+        .scheduled_departure_ms;
+    let shift = departure
+        .checked_sub(binding.base_departure_ms)
+        .filter(|shift| *shift >= 0)
+        .ok_or_else(stop_binding_rejection)?;
+    let day = match binding.repeat_every_ms {
+        Some(repeat) if repeat > 0 && shift % repeat == 0 => shift / repeat,
+        None if shift == 0 => 0,
+        _ => return Err(stop_binding_rejection()),
+    };
+    let expected_id = if day == 0 {
+        binding.base_train_run_id.clone()
+    } else {
+        format!("{}:day-{day}", binding.base_train_run_id)
+    };
+    if plan.train_run_id != expected_id
+        || train.id != expected_id
+        || plan
+            .stops
+            .iter()
+            .enumerate()
+            .any(|(index, stop)| stop.stop_id != format!("{expected_id}:{index}"))
+        || stop_plan_structure_hash(plan)? != binding.structure_hash
+    {
+        return Err(stop_binding_rejection());
+    }
+    match (
+        binding.base_service_day_ordinal,
+        train.service_outcome.as_ref(),
+    ) {
+        (Some(base), Some(outcome))
+            if shift % 86_400_000 == 0
+                && service_day_ordinal(&outcome.service_day)? - base == shift / 86_400_000
+                && outcome.service_run_id == plan.service_run_id => {}
+        (None, None)
+            if plan.service_run_id
+                == if day == 0 {
+                    binding.base_service_run_id.clone()
+                } else {
+                    format!("{}:day-{day}", binding.base_service_run_id)
+                } => {}
+        _ => return Err(stop_binding_rejection()),
+    }
+    Ok(())
+}
+
+fn validate_stop_plan_command(
+    state: &RuntimeState,
+    command: &CommandPayload,
+) -> Result<(), OperationalRuntimeError> {
+    match command {
+        CommandPayload::Materialize { train } => validate_stop_plan_instance(
+            &state.passenger_stop_templates,
+            &materialization_from_train_input(train),
+        ),
+        CommandPayload::QueueMovementContinuation { continuation } => {
+            validate_stop_plan_instance(&state.passenger_stop_templates, &continuation.successor)
+        }
+        _ => Ok(()),
+    }
 }
 
 #[derive(Debug, Serialize)]
@@ -783,6 +1018,7 @@ fn movement_continuation_evidence(
 
 fn materialization_from_train_input(train: &TrainInput) -> TrainMaterialization {
     TrainMaterialization {
+        stop_plan: train.stop_plan.clone(),
         service_outcome: train.service_outcome.clone(),
         id: train.id.clone(),
         train_number: train.train_number.clone(),
@@ -1085,6 +1321,24 @@ pub fn hash_operational_simulation_command(
     command_hash(&command)
 }
 
+/// Berechnet die kompakte typisierte Prüfsumme der gepinnten Kontrollhaltpolicy.
+pub fn hash_fare_control_policy(input_json: &str) -> Result<String, OperationalRuntimeError> {
+    if input_json.len() > MAX_COMMAND_JSON_BYTES {
+        return Err(OperationalRuntimeError::new(
+            "fare_control_policy_size_limit",
+            "Kontrollhaltpolicy überschreitet die Prüfgrenze",
+        ));
+    }
+    let policy: zugfolge_sim::operational::FareControlPolicyV1 = serde_json::from_str(input_json)
+        .map_err(|_| {
+        OperationalRuntimeError::new(
+            "invalid_fare_control_policy_json",
+            "Kontrollhaltpolicy ist kein gültiger typisierter Vertrag",
+        )
+    })?;
+    Ok(zugfolge_sim::operational::fare_control_policy_hash(&policy))
+}
+
 fn state_hash(
     initialization_hash: &str,
     infra_release: &InfrastructureBinding,
@@ -1092,6 +1346,7 @@ fn state_hash(
     revision: u64,
     publisher_sequence: u64,
     command_receipts: &BTreeMap<String, CommandReceipt>,
+    passenger_stop_templates: &BTreeMap<String, PassengerStopTemplateBinding>,
 ) -> String {
     let mut hash = Sha256::new();
     hash.update(b"zugfolge-operational-runtime-state/v2\0");
@@ -1104,6 +1359,10 @@ fn state_hash(
     hash.update(revision.to_be_bytes());
     hash.update(publisher_sequence.to_be_bytes());
     hash.update(serde_json::to_vec(command_receipts).expect("BTreeMap serialization cannot fail"));
+    if !passenger_stop_templates.is_empty() {
+        hash.update(b"\0passenger-stop-templates/v1\0");
+        hash.update(serde_json::to_vec(passenger_stop_templates).expect("bound stop templates"));
+    }
     hash.finalize()
         .iter()
         .map(|byte| format!("{byte:02x}"))
@@ -1178,6 +1437,35 @@ fn validate_state(state: &RuntimeState) -> Result<(), OperationalRuntimeError> {
     state.world.verify_invariants().map_err(|error| {
         OperationalRuntimeError::new("unsafe_persisted_state", error.to_string())
     })?;
+    for train in state
+        .world
+        .trains
+        .values()
+        .filter(|train| train.passenger_stops.is_some())
+    {
+        validate_stop_plan_instance(
+            &state.passenger_stop_templates,
+            &TrainMaterialization {
+                stop_plan: train
+                    .passenger_stops
+                    .as_ref()
+                    .map(|progress| progress.plan.clone()),
+                service_outcome: train
+                    .service_outcome
+                    .as_ref()
+                    .map(|progress| progress.binding.clone()),
+                id: train.id.clone(),
+                train_number: train.train_number.clone(),
+                operator_id: train.operator_id.clone(),
+                movement_kind: train.movement_kind,
+                route_version_id: train.route_version_id.clone(),
+                formation_version_id: train.formation_version_id.clone(),
+                head_route_mm: train.head_route_mm,
+                scheduled_departure_ms: train.scheduled_departure_ms,
+                public_passenger_stop: train.public_passenger_stop,
+            },
+        )?;
+    }
     if state_hash(
         &state.initialization_hash,
         &state.infra_release,
@@ -1185,6 +1473,7 @@ fn validate_state(state: &RuntimeState) -> Result<(), OperationalRuntimeError> {
         state.revision,
         state.publisher_sequence,
         &state.command_receipts,
+        &state.passenger_stop_templates,
     ) != state.state_hash
     {
         return Err(OperationalRuntimeError::new(
@@ -1263,6 +1552,7 @@ fn materialize(
     train: TrainInput,
 ) -> Result<(), OperationalRuntimeError> {
     let TrainInput {
+        stop_plan,
         service_outcome,
         id,
         train_number,
@@ -1277,6 +1567,7 @@ fn materialize(
         protection_mode_selection_runs,
     } = train;
     let materialization = TrainMaterialization {
+        stop_plan,
         service_outcome,
         id,
         train_number,
@@ -1328,6 +1619,21 @@ fn execute(
 ) -> Result<(), OperationalRuntimeError> {
     let rejected = operational_command_rejection;
     match command {
+        CommandPayload::CancelPassengerStopPlan { cancellation } => world
+            .cancel_passenger_stop_plan(&cancellation)
+            .map(|_| ())
+            .map_err(rejected),
+        CommandPayload::SetFareControlPolicy { policy } => {
+            world.set_fare_control_policy(policy).map_err(rejected)
+        }
+        CommandPayload::RequestFareControlHold { request } => world
+            .request_fare_control_hold(&request)
+            .map(|_| ())
+            .map_err(rejected),
+        CommandPayload::ResolveFareControlHold { resolution } => world
+            .resolve_fare_control_hold(&resolution)
+            .map(|_| ())
+            .map_err(rejected),
         CommandPayload::Materialize { train } => materialize(world, train),
         CommandPayload::Retire { train_id } => world.retire_train(&train_id).map_err(rejected),
         CommandPayload::AdvanceTo { at_ms } => world.advance_to(at_ms).map_err(rejected),
@@ -1382,6 +1688,7 @@ fn inspect_program_template(
     protection_mode_selection_policy: &str,
 ) -> Result<OperationalProgramTemplatePredicates, OperationalRuntimeError> {
     let materialization = TrainMaterialization {
+        stop_plan: train.stop_plan.clone(),
         service_outcome: train.service_outcome.clone(),
         id: train.id.clone(),
         train_number: train.train_number.clone(),
@@ -1469,6 +1776,14 @@ pub fn initialize_operational_simulation(
             .map_err(|error| {
                 OperationalRuntimeError::new("invalid_formation", error.to_string())
             })?;
+    }
+    if let Some(policy) = input.fare_control_policy {
+        world.set_fare_control_policy(policy).map_err(|_| {
+            OperationalRuntimeError::new(
+                "invalid_fare_control_policy",
+                "Gepinnte Kontrollhaltpolicy ist ungueltig",
+            )
+        })?;
     }
     if let Some(policy) = input.service_outcome_policy {
         world.configure_service_outcomes(policy).map_err(|error| {
@@ -1575,6 +1890,8 @@ pub fn initialize_operational_simulation(
         .map_err(|error| OperationalRuntimeError::new("unsafe_initial_state", error.to_string()))?;
     let events = std::mem::take(&mut world.events);
     let command_receipts = BTreeMap::new();
+    let passenger_stop_templates =
+        passenger_stop_template_bindings(&input.trains, input.repeat_every_ms)?;
     let hash = state_hash(
         &initialization_hash,
         &infrastructure_binding,
@@ -1582,8 +1899,10 @@ pub fn initialize_operational_simulation(
         0,
         0,
         &command_receipts,
+        &passenger_stop_templates,
     );
     let state = RuntimeState {
+        passenger_stop_templates,
         schema_version: STATE_SCHEMA.to_owned(),
         initialization_hash: initialization_hash.clone(),
         infra_release: infrastructure_binding,
@@ -1780,6 +2099,7 @@ pub fn apply_operational_simulation_command(
             "Hash, Revision oder Publishersequenz ist veraltet",
         ));
     }
+    validate_stop_plan_command(&state, &envelope.command)?;
     execute(&mut state.world, envelope.command)?;
     state.world.commit_runtime_command().map_err(|error| {
         OperationalRuntimeError::new("commit_sequence_exhausted", error.to_string())
@@ -1810,6 +2130,7 @@ pub fn apply_operational_simulation_command(
         state.revision,
         state.publisher_sequence,
         &state.command_receipts,
+        &state.passenger_stop_templates,
     );
     let events = std::mem::take(&mut state.world.events);
     ensure_encoded_within_budget(
@@ -2025,6 +2346,8 @@ pub fn apply_operational_simulation_command_batch(
             }
             _ => None,
         };
+        validate_stop_plan_command(&state, &item.command)
+            .map_err(|error| command_batch_failure(command_index, &item.command_id, error))?;
         execute(&mut state.world, item.command.clone())
             .map_err(|error| command_batch_failure(command_index, &item.command_id, error))?;
         state.world.commit_runtime_command().map_err(|error| {
@@ -2102,6 +2425,7 @@ pub fn apply_operational_simulation_command_batch(
         state.revision,
         state.publisher_sequence,
         &state.command_receipts,
+        &state.passenger_stop_templates,
     );
     validate_state(&state)?;
     ensure_encoded_within_budget(
@@ -2272,6 +2596,7 @@ mod tests {
         };
         Initialization {
             service_outcome_policy: None,
+            fare_control_policy: None,
             schema_version: INITIALIZE_SCHEMA.to_owned(),
             world_id: "world:1".to_owned(),
             region_id: "region:1".to_owned(),
@@ -2358,6 +2683,7 @@ mod tests {
                 vehicle_ids: vec!["vehicle:1".to_owned()],
             }],
             trains: vec![TrainInput {
+                stop_plan: None,
                 service_outcome: None,
                 id: "train:1".to_owned(),
                 train_number: "RB 1".to_owned(),
@@ -2603,6 +2929,7 @@ mod tests {
                      dispatch_interlocking_route_id: &str,
                      scheduled_departure_ms: i64,
                      public_passenger_stop: bool| TrainInput {
+            stop_plan: None,
             service_outcome: None,
             id: id.to_owned(),
             train_number: train_number.to_owned(),
@@ -3424,6 +3751,266 @@ mod tests {
     }
 
     #[test]
+    fn native_passenger_stop_contract_three_halt_receipts_and_replay() {
+        let mut input = initialization();
+        let mut infra: OperationalInfraRelease =
+            serde_json::from_slice(&std::fs::read(infrastructure_path()).unwrap()).unwrap();
+        infra
+            .platform_intervals
+            .get_mut("platform:1")
+            .unwrap()
+            .from_mm = 0;
+        infra
+            .platform_intervals
+            .get_mut("platform:1")
+            .unwrap()
+            .to_mm = 100_000;
+        let route = infra.route_versions.get_mut("route:v1").unwrap();
+        let mut seed = route.legs[0].clone();
+        seed.edge_exit_mm = 10_000;
+        route.legs[0].edge_entry_mm = 10_000;
+        route.legs[0].route_start_mm = 10_000;
+        route.legs.insert(0, seed);
+        let mut seed_lock = infra.interlocking_routes["interlocking:1"].clone();
+        seed_lock.id = "interlocking:seed".to_owned();
+        seed_lock.authority_end_route_mm = 10_000;
+        seed_lock.release_after_tail_route_mm = 10_000;
+        infra
+            .interlocking_routes
+            .get_mut("interlocking:1")
+            .unwrap()
+            .authority_start_route_mm = 10_000;
+        infra
+            .interlocking_routes
+            .insert(seed_lock.id.clone(), seed_lock);
+        let (binding, path) = materialize_infrastructure_fixture(&infra);
+        input.infra_release = binding;
+        input.trains[0].head_route_mm = 10_000;
+        input.trains[0].scheduled_departure_ms = Some(1_000);
+        input.trains[0].public_passenger_stop = true;
+        input.trains[0].protection_mode_selection_runs[0].through_route_leg_index = 1;
+        let mut input = serde_json::to_value(input).unwrap();
+        input["trains"][0]["stopPlan"] = json!({
+            "schemaVersion":"zugfolge-operational-passenger-stop-plan/v1", "worldId":"world:1",
+            "infrastructureReleaseId":"infra:v2", "timetableReleaseId":"timetable:test", "serviceId":"service:1",
+            "serviceRunId":"service:1:day:0", "trainRunId":"train:1", "routeVersionId":"route:v1", "sourceBindingHash":"a".repeat(64),
+            "stops":[
+                {"stopId":"train:1:0","stationId":"station:a","stopSequence":0,"routeMm":10000,"platformId":"platform:1","scheduledArrivalMs":0,"scheduledDepartureMs":1000,"minimumDwellMs":1000},
+                {"stopId":"train:1:1","stationId":"station:b","stopSequence":1,"routeMm":40000,"platformId":"platform:1","scheduledArrivalMs":10000,"scheduledDepartureMs":15000,"minimumDwellMs":5000},
+                {"stopId":"train:1:2","stationId":"station:c","stopSequence":2,"routeMm":100000,"platformId":"platform:1","scheduledArrivalMs":30000,"scheduledDepartureMs":30000,"minimumDwellMs":0}
+            ]
+        });
+        for field in ["worldId", "sourceBindingHash", "unexpected"] {
+            let mut invalid = input.clone();
+            invalid["trains"][0]["stopPlan"][field] = json!("invalid");
+            assert!(super::initialize_operational_simulation(&invalid.to_string(), &path).is_err());
+        }
+        let template: TrainInput = serde_json::from_value(input["trains"][0].clone()).unwrap();
+        let templates =
+            passenger_stop_template_bindings(std::slice::from_ref(&template), Some(86_400_000))
+                .unwrap();
+        let mut next_day = materialization_from_train_input(&template);
+        next_day.id = "train:1:day-1".to_owned();
+        next_day.scheduled_departure_ms = Some(86_401_000);
+        let plan = next_day.stop_plan.as_mut().unwrap();
+        plan.train_run_id = next_day.id.clone();
+        plan.service_run_id.push_str(":day-1");
+        for stop in &mut plan.stops {
+            stop.stop_id = format!("{}:{}", next_day.id, stop.stop_sequence);
+            stop.scheduled_arrival_ms += 86_400_000;
+            stop.scheduled_departure_ms += 86_400_000;
+        }
+        validate_stop_plan_instance(&templates, &next_day).unwrap();
+        for variant in 0..5 {
+            let mut forged = next_day.clone();
+            let plan = forged.stop_plan.as_mut().unwrap();
+            match variant {
+                0 => plan.stops[1].station_id = "other-station".to_owned(),
+                1 => plan.source_binding_hash = "b".repeat(64),
+                2 => plan.stops[1].minimum_dwell_ms -= 1,
+                3 => plan.stops[1].scheduled_departure_ms += 1,
+                _ => plan.service_run_id = "arbitrary-service-day".to_owned(),
+            }
+            assert!(validate_stop_plan_instance(&templates, &forged).is_err());
+        }
+        let mut stripped = next_day.clone();
+        stripped.stop_plan = None;
+        assert!(validate_stop_plan_instance(&templates, &stripped).is_err());
+        assert_eq!(
+            service_day_ordinal("2024-03-01").unwrap() - service_day_ordinal("2024-02-28").unwrap(),
+            2
+        );
+        assert!(service_day_ordinal("2026-02-29").is_err());
+        let initialized: Value = serde_json::from_str(
+            &super::initialize_operational_simulation(&input.to_string(), &path).unwrap(),
+        )
+        .unwrap();
+        let mut forged = input["trains"][0].clone();
+        forged["stopPlan"]["stops"][1]["stationId"] = json!("untrusted-station");
+        let mut envelope = json!({"schemaVersion":COMMAND_SCHEMA,"worldId":"world:1","regionId":"region:1",
+            "commandId":"forged-stop-plan","expectedStateHash":initialized["stateHash"],"expectedRevision":0,
+            "expectedPublisherSequence":0,"command":{"type":"materialize","train":forged}});
+        assert_eq!(
+            super::apply_operational_simulation_command(
+                &initialized["state"].to_string(),
+                &envelope.to_string(),
+                &path
+            )
+            .unwrap_err()
+            .code,
+            "unbound_passenger_stop_plan"
+        );
+        let mut old_input = input.clone();
+        old_input["trains"][0]
+            .as_object_mut()
+            .unwrap()
+            .remove("stopPlan");
+        let old: Value = serde_json::from_str(
+            &super::initialize_operational_simulation(&old_input.to_string(), &path).unwrap(),
+        )
+        .unwrap();
+        envelope["expectedStateHash"] = old["stateHash"].clone();
+        envelope["command"]["train"] = input["trains"][0].clone();
+        assert_eq!(
+            super::apply_operational_simulation_command(
+                &old["state"].to_string(),
+                &envelope.to_string(),
+                &path
+            )
+            .unwrap_err()
+            .code,
+            "unbound_passenger_stop_plan"
+        );
+        let apply = |state: &Value, command_id: &str, command: Value| -> Value {
+            let envelope = json!({"schemaVersion":COMMAND_SCHEMA,"worldId":"world:1","regionId":"region:1",
+                "commandId":command_id,"expectedStateHash":state["stateHash"],"expectedRevision":state["revision"],
+                "expectedPublisherSequence":state["publisherSequence"],"command":command});
+            serde_json::from_str(
+                &super::apply_operational_simulation_command(
+                    &state.to_string(),
+                    &envelope.to_string(),
+                    &path,
+                )
+                .unwrap(),
+            )
+            .unwrap()
+        };
+        let materialized = apply(
+            &initialized["state"],
+            "stops:materialize",
+            json!({"type":"materialize","train":input["trains"][0]}),
+        );
+        let origin = materialized["events"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|event| event["kind"] == "passenger-stop-arrival")
+            .collect::<Vec<_>>();
+        assert_eq!(origin.len(), 1);
+        let origin_fact: Value =
+            serde_json::from_str(origin[0]["detail"].as_str().unwrap()).unwrap();
+        assert_eq!(origin_fact["actualTimeMs"], 0);
+        // Kontrollhalt und Abbruch durchlaufen dieselbe reale Runtime-/Restoregrenze.
+        let mut policy: zugfolge_sim::operational::FareControlPolicyV1 = serde_json::from_value(json!({
+            "schema":"zugfolge-fare-control-policy/v1", "policyId":"test-only-control", "revision":1,
+            "worldId":"world:1", "schedulePeriodId":"test-period", "contentHash":"",
+            "maxPoliceHoldsPerTrainRun":1, "eligibleReasons":["identity_refusal","concrete_danger"],
+            "targetRule":"next_unreached_scheduled_passenger_stop",
+            "providerByStopId":{"train:1:1":"test-provider","train:1:2":"test-provider"},
+            "maxWaitMs":10000,"policeResponseModelId":"test-model","policeResponseModelHash":"b".repeat(64),
+            "publicCause":"authority.police.fare-control"
+        })).unwrap();
+        policy.content_hash =
+            super::hash_fare_control_policy(&serde_json::to_string(&policy).unwrap()).unwrap();
+        let policy_bound = apply(
+            &materialized["state"],
+            "control:policy",
+            json!({"type":"set-fare-control-policy","policy":policy}),
+        );
+        let requested = apply(
+            &policy_bound["state"],
+            "control:request",
+            json!({"type":"request-fare-control-hold","request":{"trainId":"train:1","caseId":"test-case","reason":"identity_refusal","causalityId":"test-request"}}),
+        );
+        assert_eq!(
+            requested["state"]["world"]["fareControlState"]["holds"]["train:1"]["status"],
+            "requested"
+        );
+        let dispatched_hold = apply(
+            &requested["state"],
+            "control:dispatch",
+            json!({"type":"dispatch","requests":[{
+                "trainId":"train:1","interlockingRouteId":"interlocking:1","committedRank":0,"timetableDeviationMs":0,
+                "passengerImpact":0,"contractualImpact":0,"networkImpact":0,"resourceConsequence":0,"recoveryRank":0,"waitingSinceMs":0
+            }]}),
+        );
+        let held_finished = apply(
+            &dispatched_hold["state"],
+            "control:advance",
+            json!({"type":"advance-to","atMs":100000}),
+        );
+        assert_eq!(
+            held_finished["state"]["world"]["fareControlState"]["holds"]["train:1"]["outcome"],
+            "timeout"
+        );
+        let restored_hold:Value=serde_json::from_str(&super::restore_operational_simulation(&json!({"schemaVersion":RESTORE_SCHEMA,"expectedInitializationHash":initialized["initializationHash"],"state":held_finished["state"]}).to_string(),&path).unwrap()).unwrap();
+        assert_eq!(restored_hold["stateHash"], held_finished["stateHash"]);
+        let cancellation = json!({"type":"cancel-passenger-stop-plan","cancellation":{"trainId":"train:1","expectedStopPlanHash":requested["state"]["world"]["trains"]["train:1"]["passengerStops"]["planHash"],"causalityId":"test-disposition"}});
+        let cancelled = apply(&requested["state"], "control:cancel", cancellation.clone());
+        assert_eq!(
+            cancelled["state"]["world"]["fareControlState"]["holds"]["train:1"]["outcome"],
+            "target_unavailable"
+        );
+        let duplicate_cancel = apply(&cancelled["state"], "control:cancel", cancellation);
+        assert_eq!(duplicate_cancel["stateHash"], cancelled["stateHash"]);
+        assert_eq!(duplicate_cancel["events"], json!([]));
+        super::restore_operational_simulation(&json!({"schemaVersion":RESTORE_SCHEMA,"expectedInitializationHash":initialized["initializationHash"],"state":cancelled["state"]}).to_string(),&path).unwrap();
+        let dispatched = apply(
+            &materialized["state"],
+            "stops:dispatch",
+            json!({"type":"dispatch","requests":[{
+                "trainId":"train:1","interlockingRouteId":"interlocking:1","committedRank":0,"timetableDeviationMs":0,
+                "passengerImpact":0,"contractualImpact":0,"networkImpact":0,"resourceConsequence":0,"recoveryRank":0,"waitingSinceMs":0
+            }]}),
+        );
+        // The queued train waits for actual origin dwell, then produces all real stop transitions.
+        assert!(dispatched["events"].as_array().unwrap().is_empty());
+        let restore_envelope = json!({"schemaVersion":RESTORE_SCHEMA,"expectedInitializationHash":initialized["initializationHash"],"state":dispatched["state"]});
+        let restored: Value = serde_json::from_str(
+            &super::restore_operational_simulation(&restore_envelope.to_string(), &path).unwrap(),
+        )
+        .unwrap();
+        let command = json!({"type":"advance-to","atMs":100000});
+        let finished = apply(&dispatched["state"], "stops:advance", command.clone());
+        let replay = apply(&restored["state"], "stops:advance", command.clone());
+        assert_eq!(finished, replay);
+        let duplicate = apply(&finished["state"], "stops:advance", command);
+        assert_eq!(duplicate["stateHash"], finished["stateHash"]);
+        assert_eq!(duplicate["events"], json!([]));
+        let receipts = finished["events"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|event| {
+                event["kind"]
+                    .as_str()
+                    .unwrap()
+                    .starts_with("passenger-stop-")
+            })
+            .map(|event| serde_json::from_str::<Value>(event["detail"].as_str().unwrap()).unwrap())
+            .collect::<Vec<_>>();
+        assert_eq!(receipts.len(), 4);
+        assert_eq!(receipts[0]["kind"], "departure");
+        assert_eq!(receipts[0]["actualTimeMs"], 1000);
+        assert_eq!(receipts[3]["stopSequence"], 2);
+        assert_eq!(receipts[3]["kind"], "arrival");
+        assert_eq!(
+            finished["state"]["world"]["trains"]["train:1"]["passengerStops"]["nextStopIndex"],
+            2
+        );
+    }
+
+    #[test]
     fn native_service_outcome_is_atomic_restorable_and_retry_idempotent() {
         let mut input = serde_json::to_value(initialization()).unwrap();
         input["serviceOutcomePolicy"] = json!({
@@ -4045,6 +4632,7 @@ mod tests {
             vehicle_ids: vec!["vehicle:2".to_owned()],
         });
         input.trains.push(TrainInput {
+            stop_plan: None,
             service_outcome: None,
             id: "train:standing".to_owned(),
             train_number: "RB 2".to_owned(),

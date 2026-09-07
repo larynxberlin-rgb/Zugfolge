@@ -71,6 +71,9 @@ import {
   loadOperatingRuntime,
   loadDemandRuntime,
   loadConductorInteriorRuntime,
+  loadConductorSessionRuntime,
+  loadConductorDialogueValidator,
+  loadConductorSceneRuntime,
   loadOperationalSimulationRuntime,
   type OperatingRuntimeEvent,
 } from "@zugfolge/runtime-native";
@@ -80,6 +83,14 @@ import { buildApp } from "./app.js";
 import { DemandService, loadDemandDeployment } from "./demand-service.js";
 import { committedInteriorTime, loadConductorInteriorDeployment } from "./conductor-interior-configuration.js";
 import { ConductorInteriorService } from "./conductor-interior.js";
+import { ConductorSessionService } from "./conductor-session-service.js";
+import { loadConductorSessionDeployment } from "./conductor-session-configuration.js";
+import { loadConductorSceneDeployment } from "./conductor-scene-configuration.js";
+import { loadFareControlRuntime } from "./conductor-control-runtime.js";
+import { loadConductorControlDeployment } from "./conductor-control-configuration.js";
+import { createConductorControlIntegration } from "./conductor-control.js";
+import { createConductorPoliceAdapter } from "./conductor-police.js";
+import { advanceConductorControlWorld } from "./conductor-session-scheduler.js";
 import { SpfvService } from "./spfv-service.js";
 import {
   createDisruptionProviderHealthCheck,
@@ -655,9 +666,11 @@ const demandInfrastructure = demandConfiguration === undefined ? undefined : pla
   worldScope.worldId, demandConfiguration.deployment.infrastructureReleaseId,
 );
 if (demandConfiguration !== undefined && demandInfrastructure === undefined) throw new Error("Nachfrage benötigt die exakt freigegebene Planungsinfrastruktur.");
+const demandRuntime = demandConfiguration === undefined ? undefined : loadDemandRuntime();
 const demand = demandConfiguration === undefined ? undefined : new DemandService({
-  db, runtime: loadDemandRuntime(), deployment: demandConfiguration.deployment, deploymentHash: demandConfiguration.hash,
+  db, runtime: demandRuntime!, deployment: demandConfiguration.deployment, deploymentHash: demandConfiguration.hash,
   readModel: livemapReadModel, livemap, infrastructure: demandInfrastructure === undefined ? [] : [demandInfrastructure],
+  operationalRegions: () => deploymentRuntime.realtimeRegions().filter((region) => region.worldId === worldScope.worldId),
 });
 const spfv = demand === undefined ? undefined : new SpfvService({
   db, fleetRuntime: operatingRuntime,
@@ -675,11 +688,40 @@ const interiorTrustedKeysPath = optionalEnv("ZUGFOLGE_CONDUCTOR_ART_TRUSTED_KEYS
 const interiorConfigured = [interiorDeploymentPath, interiorDeploymentHash, interiorTrustedKeysPath].some((value) => value !== undefined);
 if (interiorConfigured && [interiorDeploymentPath, interiorDeploymentHash, interiorTrustedKeysPath].some((value) => value === undefined))
   throw new Error("Innenraumdeployment benötigt gemeinsam Pfad, SHA-256-Pin und unabhängigen öffentlichen Schlüsselring.");
-const conductorInterior = !interiorConfigured ? undefined : new ConductorInteriorService({
-  db, fleetRuntime: operatingRuntime, interiorRuntime: loadConductorInteriorRuntime(),
-  deployment: await loadConductorInteriorDeployment({ path: interiorDeploymentPath!, expectedSha256: interiorDeploymentHash!,
-    trustedKeysPath: interiorTrustedKeysPath!, worldId: worldScope.worldId }),
+const interiorRuntime = !interiorConfigured ? undefined : loadConductorInteriorRuntime();
+const interiorDeployment = !interiorConfigured ? undefined : await loadConductorInteriorDeployment({
+  path: interiorDeploymentPath!, expectedSha256: interiorDeploymentHash!, trustedKeysPath: interiorTrustedKeysPath!, worldId: worldScope.worldId });
+const conductorInterior = interiorDeployment === undefined ? undefined : new ConductorInteriorService({
+  db, fleetRuntime: operatingRuntime, interiorRuntime: interiorRuntime!, deployment: interiorDeployment,
   committedTimeForWorld: (worldId) => committedInteriorTime(worldId, deploymentRuntime.realtimeRegions(), regionalSimulation.readyRegions()),
+});
+const conductorConfigurationKeys = ["ZUGFOLGE_CONDUCTOR_SESSION_DEPLOYMENT_PATH", "ZUGFOLGE_CONDUCTOR_SESSION_DEPLOYMENT_SHA256",
+  "ZUGFOLGE_CONDUCTOR_DIALOGUE_TRUSTED_KEYS_PATH", "ZUGFOLGE_CONDUCTOR_SCENE_DEPLOYMENT_PATH", "ZUGFOLGE_CONDUCTOR_SCENE_DEPLOYMENT_SHA256",
+  "ZUGFOLGE_CONDUCTOR_CONTROL_DEPLOYMENT_PATH", "ZUGFOLGE_CONDUCTOR_CONTROL_DEPLOYMENT_SHA256"] as const;
+const conductorConfigured = conductorConfigurationKeys.some((key) => optionalEnv(key) !== undefined);
+if (conductorConfigured && (conductorConfigurationKeys.some((key) => optionalEnv(key) === undefined)
+  || interiorDeployment === undefined || demandRuntime === undefined))
+  throw new Error("Schaffnersitzungen benötigen gemeinsam M10, freigegebenen Innenraum, Sitzungs-, Szenen- und Kontrollpins sowie den unabhängigen Dialogschlüsselring.");
+const conductorRegionBindings = (worldId: string) => deploymentRuntime.realtimeRegions().filter((row) => row.worldId === worldId);
+const conductorRuntime = !conductorConfigured ? undefined : loadConductorSessionRuntime();
+const conductorControlRuntime = !conductorConfigured ? undefined : loadFareControlRuntime();
+const conductorControl = conductorControlRuntime === undefined ? undefined : createConductorControlIntegration({
+  runtime: conductorControlRuntime,
+  releases: await loadConductorControlDeployment({ path: requireEnv("ZUGFOLGE_CONDUCTOR_CONTROL_DEPLOYMENT_PATH"),
+    expectedSha256: requireEnv("ZUGFOLGE_CONDUCTOR_CONTROL_DEPLOYMENT_SHA256"), worldId: worldScope.worldId, runtime: conductorControlRuntime }),
+  police: createConductorPoliceAdapter({ runtime: operationalSimulationRuntime, regionBindings: conductorRegionBindings, controlRuntime: conductorControlRuntime }),
+});
+const conductorSceneRuntime = !conductorConfigured ? undefined : loadConductorSceneRuntime();
+const conductorSessions = conductorRuntime === undefined ? undefined : new ConductorSessionService({
+  db, fleetRuntime: operatingRuntime, demandRuntime: demandRuntime!, operationalRuntime: operationalSimulationRuntime,
+  interiorRuntime: interiorRuntime!, interiorDeployment: interiorDeployment!, regionBindings: conductorRegionBindings,
+  sessionRuntime: conductorRuntime, control: conductorControl!,
+  sessionReleases: await loadConductorSessionDeployment({ path: requireEnv("ZUGFOLGE_CONDUCTOR_SESSION_DEPLOYMENT_PATH"),
+    expectedSha256: requireEnv("ZUGFOLGE_CONDUCTOR_SESSION_DEPLOYMENT_SHA256"), trustedKeysPath: requireEnv("ZUGFOLGE_CONDUCTOR_DIALOGUE_TRUSTED_KEYS_PATH"),
+    worldId: worldScope.worldId, runtime: conductorRuntime, validator: loadConductorDialogueValidator() }),
+  scenes: { runtime: conductorSceneRuntime!, deployment: await loadConductorSceneDeployment({
+    path: requireEnv("ZUGFOLGE_CONDUCTOR_SCENE_DEPLOYMENT_PATH"), expectedSha256: requireEnv("ZUGFOLGE_CONDUCTOR_SCENE_DEPLOYMENT_SHA256"),
+    worldId: worldScope.worldId, runtime: conductorSceneRuntime! }) },
 });
 const app = buildApp({
   worldScope,
@@ -690,6 +732,7 @@ const app = buildApp({
   livemapReadModel,
   demand,
   conductorInterior,
+  conductorSessions,
   spfv,
   operations,
   simulationIngestToken: requireEnv("SIMULATION_INGEST_TOKEN"),
@@ -939,23 +982,22 @@ const regionalAdvanceCoordinator = new RegionalSimulationCycleCoordinator({
       return source;
     }));
     await manualDisruptionCatalog.refresh();
-    return advanceRegionalSimulations(regionalSimulation, regions, worldEpochs, at, manualDisruptionCatalog, reportProgress);
+    await demand?.prepareOperationalCycle(at);
+    const advanced = await advanceRegionalSimulations(regionalSimulation, regions, worldEpochs, at, manualDisruptionCatalog, reportProgress);
+    await demand?.prepareOperationalCycle(at);
+    if (conductorControl !== undefined) {
+      await advanceConductorControlWorld({ db, worldId: worldScope.worldId, regions: conductorRegionBindings(worldScope.worldId),
+        runtime: operationalSimulationRuntime, control: conductorControl });
+      await demand?.prepareOperationalCycle(at);
+      await conductorSessions!.sweepWorld(worldScope.worldId);
+    }
+    return advanced;
   }),
 });
-let nextDemandRefreshAtMs = 0;
 const runRegionalAdvance = () => {
   void regionalAdvanceCoordinator.run(new Date()).then((result) => {
     if (result.status === "completed") {
       regionalSimulationStartupReady = true;
-      const epoch = worldEpochs.get(worldScope.worldId);
-      if (demand !== undefined && epoch !== undefined) {
-        const at = new Date();
-        if (at.getTime() >= nextDemandRefreshAtMs) {
-          nextDemandRefreshAtMs = at.getTime() + 30_000;
-          void demand.refresh(Math.max(0, at.getTime() - epoch.getTime()), at)
-            .catch(() => app.log.warn({ failure: "demand_refresh_failed" }, "Nachfrage wartet auf konsistente Betriebsdaten"));
-        }
-      }
     }
   }).catch(() => undefined);
 };
@@ -978,6 +1020,8 @@ const runCommerce = () => {
   commerceCycle = (async () => {
     while (await processNextOdooCommand(db, new Date(), {
       assertWorldScope: assertCommerceWorldScope,
+      ...(demand === undefined ? {} : { demandDataHandler: (context: import("@zugfolge/commerce").DemandDataCommandContext) =>
+        demand.updateData(context.payload, context.db, context.now) }),
       participationHandler: worldParticipationHandler,
       adminHandlers: {
         manual_disruption_create: manualDisruptionAdminHandler,
