@@ -36,7 +36,7 @@ export function mountPlanningAdjustmentsPreview(root: HTMLElement): void {
       occupations: [],
       conflicts: proposed ? [{ id: "sample-conflict", kind: "opposing-move", resource, window: { startS: 29_500, endS: 29_620 }, trainIds: ["sample-own", "sample-other"],
         explanation: "Beide Beispiel-Züge beanspruchen den eingleisigen Abschnitt zur gleichen Zeit.", alternative: { alternativeId: "sample-alternative", trainId: "sample-own",
-          departureShiftS: 120, explanation: "Die folgende Anpassung wurde für diese synthetischen Beispieldaten als konfliktfreie Alternative hinterlegt.",
+          departureShiftS: 120, explanation: "Mit diesen Anpassungen kann dein Zug den Abschnitt ohne Konflikt mit der Gegenfahrt befahren.",
           planning: { status: "proposed", requestedDepartureS, plannedDepartureS: requestedDepartureS + 120, adjustments } } }] : [],
     });
     root.innerHTML = renderProjection(projection, { density: "control", showBlockingTimes: false, selectedTrainId,
@@ -44,7 +44,7 @@ export function mountPlanningAdjustmentsPreview(root: HTMLElement): void {
     const controls = document.createElement("div");
     controls.className = "demo-banner";
     controls.style.flexWrap = "wrap";
-    controls.setAttribute("aria-label", "Synthetischen Planungsstand wählen");
+    controls.setAttribute("aria-label", "Beispiel für die Trassenplanung wählen");
     for (const [value, label] of [["allocated", "Zugeteilte Anpassungen"], ["proposed", "Noch nicht übernommener Vorschlag"], ["rejected", "Ablehnung"], ["legacy", "Historische Daten"]]) {
       const button = document.createElement("button"); button.type = "button"; button.className = "zf-button";
       button.textContent = label!; button.setAttribute("aria-pressed", String(status === value));

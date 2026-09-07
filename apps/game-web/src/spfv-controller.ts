@@ -76,7 +76,7 @@ export async function mountSpfv(app: HTMLElement): Promise<void> {
     const changeStops = (action: () => void): void => {
       const endpoints = JSON.stringify([stopIds[0], stopIds.at(-1)]);
       retainedFields = capture(); invalidate(); action();
-      if (endpoints !== JSON.stringify([stopIds[0], stopIds.at(-1)]) && (viaStationIds !== undefined || routeImport.candidate || routeImport.busy)) {
+      if (endpoints !== JSON.stringify([stopIds[0], stopIds.at(-1)]) && (viaStationIds !== undefined || routeImport.candidate || routeImport.pendingMapping || routeImport.busy)) {
         viaStationIds = undefined; routeImport.clear("Start oder Ziel wurde geändert. Übernimm den Fahrweg erneut.");
       }
       render(); app.querySelector<HTMLElement>("#spfv-stop-option")?.focus();

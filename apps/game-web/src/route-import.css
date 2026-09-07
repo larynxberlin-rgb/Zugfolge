@@ -12,3 +12,7 @@
 .planning-flexibility { min-width: 0; padding: .8rem; border: 1px solid #303b46; border-radius: .5rem; }
 .planning-flexibility legend { max-width: 100%; padding: 0 .25rem; overflow-wrap: anywhere; }
 .planning-flexibility .m12-field + .m12-field { margin-top: .75rem; }
+.route-mapping { min-width: 0; border-top: 1px solid #303b46; margin-top: .75rem; padding-top: .75rem; }
+.route-mapping h4 { margin: 0; font-size: .95rem; }
+.route-mapping select { width: 100%; min-width: 0; max-width: 100%; margin: .25rem 0; padding: .5rem; background: #202830; color: #f5f7fa; border: 1px solid #465360; font: inherit; }
+.route-mapping-source { display: block; margin: .25rem 0; }

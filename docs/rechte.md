@@ -314,7 +314,11 @@ ein Formatbeleg, keine veröffentlichte Lizenz oder neue Betreiberfreigabe.
 
 Der Browser liest die Rohdatei nur lokal. Er übernimmt ausschließlich die
 geordnete Betriebsstellenfolge als Spielereingabe und ordnet sie vollständig
-und eindeutig nativen Stationen des gepinnten Weltreleases zu. Der normale
+nativen Stationen des gepinnten Weltreleases zu. Nur ein eindeutiger exakter
+Katalogcode wird automatisch zugeordnet; bei unbekannten oder mehrdeutigen
+Kürzeln muss der Spieler jeden Punkt ausdrücklich auswählen. Diese Auswahl
+gilt nur für den lokalen Importvorgang, wird nicht als Alias gespeichert und
+behauptet keine amtliche Kürzelidentität. Der normale
 Spielantrag enthält danach eigene Stationskennungen und Durchfahrtvorgaben.
 Fremde Infrastruktur, Physik, Fahr- und Haltezeiten, Preise und Energiewerte
 werden nicht übernommen. Die Rohdatei wird weder zum Server übertragen noch

@@ -335,7 +335,7 @@ function bindJourneyRouteImports(): void {
     const origin = form.querySelector<HTMLInputElement>('[name="originStationId"]')!;
     const destination = form.querySelector<HTMLInputElement>('[name="destinationStationId"]')!;
     if (current.applied && !routeMatchesEndpoints(current.applied, origin.value.trim(), destination.value.trim())) current.clear("Start oder Ziel wurde geändert. Übernimm den Fahrweg erneut.");
-    const invalidate = (): void => { if (current.applied || current.candidate || current.busy) current.clear("Start oder Ziel wurde geändert. Übernimm den Fahrweg erneut."); };
+    const invalidate = (): void => { if (current.applied || current.candidate || current.pendingMapping || current.busy) current.clear("Start oder Ziel wurde geändert. Übernimm den Fahrweg erneut."); };
     for (const input of [origin, destination]) {
       input.addEventListener("input", invalidate);
       input.addEventListener("change", invalidate);

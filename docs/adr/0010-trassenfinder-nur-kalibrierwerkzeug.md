@@ -27,7 +27,13 @@ deren „CSV-Export des Laufwegs“ lokal in Zugfolge aus.
 Der Browser liest nur die geordnete Betriebsstellenfolge als Fahrwegwunsch.
 Die Rohdatei bleibt lokal und wird weder hochgeladen noch im Repository,
 Browserarchiv oder Spieljournal aufbewahrt. Die gewählten Kennungen müssen
-vollständig und eindeutig auf Stationen des gepinnten Weltreleases passen.
+vollständig auf Stationen des gepinnten Weltreleases aufgelöst werden.
+Automatisch erfolgt das nur bei einem eindeutigen exakten Katalogcode.
+Unbekannte oder mehrdeutige Kürzel erfordern für jeden Punkt eine ausdrückliche
+Auswahl durch den Spieler, ohne Namensheuristik, Vorgabewert oder Auslassen.
+Diese lokale Auswahl ist ein Fahrwegwunsch, kein dauerhafter Alias und kein
+Nachweis einer RIL-100-Identität. Eine deutschlandweite automatische
+Kürzelzuordnung ist nicht Bestandteil dieser Erweiterung.
 Erst diese nativen Stationskennungen gelangen in den normalen Planungsantrag.
 Zwischenpunkte sind Durchfahrtvorgaben; Halte bleiben getrennte Entscheidungen.
 
@@ -58,7 +64,10 @@ Die bisherigen Quellen- und Rechte-Gates bleiben für diese Nutzungen bestehen.
   des externen Angebots blockieren das Spiel nicht.
 - Der lokale CSV-Importer besitzt einen engen, belegten Formatvertrag und
   meldet unverständliche Dateien oder unbekannte Betriebsstellen ausdrücklich.
-  Er darf keine Teilroute oder ähnlich benannte Station stillschweigend wählen.
+  Der Spieler löst jeden nicht automatisch eindeutigen Punkt ausdrücklich auf.
+  Danach wird die gesamte Stationsfolge einschließlich ihrer Verbindungen
+  erneut geprüft. Der Importer darf keine Teilroute oder ähnlich benannte
+  Station stillschweigend wählen und speichert keine Kürzelzuordnungen.
 - Der Planungsantrag speichert native Stationskennungen und Durchfahrtvorgaben.
   Spielinfrastruktur, Fahrdynamik, Verfügbarkeit, Konflikte, Nachfrage und
   Entgelte bleiben an die eigenen Releases und Autoritäten gebunden.

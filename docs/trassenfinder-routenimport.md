@@ -13,11 +13,14 @@ sämtliche Betriebsberechnungen bleiben in Zugfolge.
    **„CSV-Export des Laufwegs“**. Andere Exportarten, insbesondere der Export
    für DB-Transport, gehören nicht zu diesem Vertrag.
 3. In Zugfolge wählt er die heruntergeladene CSV-Datei lokal aus. Der Browser
-   liest deren Betriebsstellenfolge und ordnet sie dem aktuellen Stationskatalog
-   der gewählten Spielwelt zu. Die Datei wird nicht an den Server übertragen.
-4. Die vollständig erkannte Reihenfolge füllt Start, Durchfahrtpunkte und Ziel
-   des Fahrwegentwurfs. Der Spieler prüft den Entwurf und legt gewünschte Halte,
-   Zeitlage und Zugverband in Zugfolge fest.
+   liest deren Betriebsstellenfolge. Eindeutige exakte Katalogkennungen werden
+   automatisch zugeordnet; für jeden übrigen Punkt wählt der Spieler
+   ausdrücklich eine Betriebsstelle der gewählten Spielwelt. Die Datei wird
+   nicht an den Server übertragen.
+4. Erst die vollständig zugeordnete und zusammenhängend geprüfte Reihenfolge
+   kann der Spieler als Start, Durchfahrtpunkte und Ziel des Fahrwegentwurfs
+   übernehmen. Er prüft den Entwurf und legt gewünschte Halte, Zeitlage und
+   Zugverband in Zugfolge fest.
 5. Erst die normale Planungsprüfung und Einreichung verarbeiten den Entwurf.
    Die Übernahme einer Datei erzeugt keinen Trassenantrag und keine Zuteilung.
 
@@ -36,8 +39,8 @@ die fremde Rohdatei wird nicht im Repository abgelegt.
 
 | Spalte | Bedeutung für Zugfolge |
 | --- | --- |
-| `Betriebsstelle (kurz)` | Geordnete Betriebsstellenkürzel; Grundlage der Zuordnung zu nativen Stationskennungen |
-| `Betriebsstelle` | Lesbarer Ortsname als Eingabekontext; keine ungeprüfte Ersetzung einer nicht passenden Kennung |
+| `Betriebsstelle (kurz)` | Geordnete Betriebsstellenkürzel; exakter Katalogvergleich oder ausdrückliche Zuordnung durch den Spieler |
+| `Betriebsstelle` | Lesbarer Ortsname als Auswahlhilfe; keine automatische Zuordnung anhand ähnlich klingender Namen |
 | `Lfd. km` | Wird nicht als spielinterne Entfernung übernommen |
 | `Bundesland`, `Nachfolgende Streckennr.` | Werden nicht als Infrastruktur oder exakte Kantenbindung übernommen |
 | `Ankunftszeit`, `Abfahrtszeit`, `Haltart`, `Haltedauer (in min)` | Werden nicht als Fahrplan oder Haltanforderung übernommen |
@@ -53,15 +56,36 @@ Laufweg ausgegeben.
 ## Zuordnung zum gepinnten Spielnetz
 
 Der Server stellt einen welt- und releasegebundenen Katalog nativer Stationen
-mit ihren verfügbaren Betriebsstellenkürzeln bereit. Jede Betriebsstelle der
-CSV muss vollständig und eindeutig zu genau einer Station dieses Katalogs
-passen. Namensähnlichkeit, geografische Nähe und externe IDs ersetzen diesen
-Beleg nicht.
+mit ihren Katalogkennungen (`code`) bereit. Der aktuelle
+[Weltbuilder](../tools/region-import/build-alpha-world.mjs) setzt sowohl `id`
+als auch `code` auf `station.stopId` aus der Fahrplandatenbasis. Dieses Feld
+ist daher kein durchgehend belegtes RIL-100-Kürzel. Eine gepinnte,
+deutschlandweit vollständige RIL-100-Zuordnung auf diese Weltstationen ist mit
+der Importfunktion nicht hergestellt.
 
-Unbekannte oder mehrdeutige Kürzel sowie nicht im freigegebenen Spielnetz
-enthaltene Punkte verhindern die gesamte Übernahme. Die Oberfläche benennt
-die betroffenen Punkte. Sie lässt sie nicht aus, verkürzt keine Route und
-bestellt keinen automatisch vereinfachten Ersatzlaufweg. Die übrigen
+Automatisch zugeordnet wird nur ein Kürzel, das nach Entfernen äußerer
+Leerzeichen und Vereinheitlichen der Großschreibung exakt einem einzigen
+Katalogcode entspricht. Bei unbekanntem Kürzel zeigt die Oberfläche die
+Betriebsstellen dieser Welt zur ausdrücklichen Auswahl. Bei mehreren exakten
+Treffern stehen nur diese Treffer zur Auswahl. Jeder ungeklärte Punkt braucht
+eine eigene Auswahl; es gibt weder eine vorausgewählte Station noch eine
+Namensheuristik, Nähevermutung oder automatisch gespeicherte Ersatzkennung.
+
+Die manuelle Auswahl bezeichnet den Fahrwegwunsch des Spielers für diesen
+Punkt. Sie beweist keine Identität zwischen dem externen Kürzel und der
+Spielstation und wird nicht als RIL-100-Datenquelle ausgegeben. Die
+Zuordnungen gelten nur für den aktuellen Import im Browser. Neuer Import,
+Kontextwechsel oder Entfernen löschen sie; der Server erhält nur die native
+Stationsfolge, keinen Aliasbestand.
+
+Solange ein Punkt ungeklärt ist, bleibt die Übernahme gesperrt. Nach allen
+Zuordnungen werden sämtliche Zeilen in ihrer Originalreihenfolge erneut
+geprüft: gültige Weltstationen, unterschiedliche Punkte und direkte
+Verbindungen zwischen je zwei aufeinanderfolgenden Stationen. Wiederholte
+Quellkürzel sowie mehrere Zeilen mit derselben gewählten Spielstation werden
+abgelehnt. Ein unverbundener oder nicht vollständig zugeordneter Laufweg wird
+nicht teilweise übernommen. Die Oberfläche überspringt keine Punkte,
+verkürzt keine Route und bestellt keinen vereinfachten Ersatzlaufweg. Die übrigen
 Formularwerte bleiben sichtbar. Ein neuer Dateiversuch verwirft jedoch einen
 zuvor übernommenen Importfahrweg. Bei einem Importfehler bleibt die Einreichung
 gesperrt, bis der Spieler einen gültigen Fahrweg übernimmt oder den Import
@@ -172,8 +196,11 @@ die unveränderte Grenze der Infrastruktur-API stehen im
 ## Verhaltenstests
 
 Gezielte Tests prüfen das synthetisch nachgebildete CSV-Format, Zeichencodierung
-und Feldbegrenzung, vollständige Zuordnung, unbekannte und mehrdeutige Kürzel,
-Schleifen und Eingabegrenzen. Die Fahrtplanung weist nach, dass Via-Punkte die
+und Feldbegrenzung, automatische eindeutige Zuordnung, ausdrückliche Auswahl
+für unbekannte und mehrdeutige Kürzel, fehlende Auswahl, mehrfach gewählte
+native Stationen, Zusammenhang, Schleifen und Eingabegrenzen. Neue Importe,
+Kontextwechsel und Entfernen dürfen keine vorherigen Zuordnungen weiterverwenden.
+Die Fahrtplanung weist nach, dass Via-Punkte die
 Route in Reihenfolge binden und keinen Aufenthalt erzeugen, unmögliche
 Reihenfolgen scheitern und vorhandene Anträge ohne Via-Punkte unverändert
 bleiben. Fehler dürfen weder einen Teilentwurf übernehmen noch einen

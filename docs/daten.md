@@ -113,8 +113,14 @@ anschließende lokale Verarbeitung seines „CSV-Exports des Laufwegs“. Nur di
 geordnete Betriebsstellenfolge wird als Fahrwegwunsch gegen native Stationen
 des gepinnten Weltreleases geprüft. Die Rohdatei bleibt im Browser, wird nicht
 hochgeladen oder archiviert und wird keine Infrastruktur- oder Referenzquelle.
-Unbekannte, mehrdeutige und außerhalb des Spielnetzes liegende Punkte verhindern
-die gesamte Übernahme. Zwischenpunkte bedeuten Durchfahrt; gewünschte Halte
+Automatisch aufgelöst werden nur eindeutige exakte Katalogcodes. Weil der
+aktuelle Weltkatalog auch interne Fahrplan-Stationskennungen als `code`
+verwendet, muss der Spieler jeden unbekannten oder mehrdeutigen Punkt
+ausdrücklich einer Weltstation zuordnen. Diese nur lokal gültige Eingabe
+erzeugt weder einen persistenten Alias noch eine belegte deutschlandweite
+RIL-100-Zuordnung. Ungeklärte Punkte oder eine nach der Zuordnung nicht
+zusammenhängende Stationsfolge verhindern die gesamte Übernahme.
+Zwischenpunkte bedeuten Durchfahrt; gewünschte Halte
 bleiben eigene Eingaben. Fremde Zeiten, Kosten, Physik und Infrastruktur werden
 nicht übernommen. Format, Ablauf und Grenzen stehen in
 [Trassenfinder-Routenimport](trassenfinder-routenimport.md); die getrennte

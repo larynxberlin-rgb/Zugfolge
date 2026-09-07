@@ -13,6 +13,68 @@ const encode = (text: string): ArrayBuffer => new TextEncoder().encode(text).buf
 const file = (text = csv) => ({ size: encode(text).byteLength, arrayBuffer: async () => encode(text) });
 
 describe("Lokaler Trassenfinder-Laufwegimport", () => {
+  it("bleibt ohne Zuordnung strikt und löst fremde Kürzel nur nach ausdrücklicher Spielerwahl auf", () => {
+    const legacy = { ...catalog, stations: catalog.stations.map((station) => ({ ...station, code: `gtfs:${station.id}` })) };
+    expect(() => parseTrassenfinderCsv(encode(csv), legacy)).toThrow("nicht eindeutig zugeordnet");
+    const route = parseTrassenfinderCsv(encode(csv), legacy, new Map([["AA", "a"], ["BB X", "b"], ["CC", "c"]]));
+    expect(route.stations).toEqual(legacy.stations);
+    expect(route.manualMappings).toEqual([{ sourceName: "Ährenfeld", sourceCode: "AA", stationId: "a" }, { sourceName: "Bogen; West", sourceCode: "BB X", stationId: "b" }, { sourceName: "Zielstadt", sourceCode: "CC", stationId: "c" }]);
+    expect(routeViaStationIds(route)).toEqual(["b"]);
+  });
+  it("blockiert offene Zuordnungen bis zur vollständigen Prüfung und danach bis zur Übernahme", async () => {
+    const session = new RouteImportSession("world/operator");
+    await session.read(file(csv.replace('"BB X"', '"UNBEKANNT"')), async () => catalog);
+    expect(session.pendingMapping?.choices.size).toBe(0);
+    expect(session.pendingMapping?.requirements.map((point) => point.code)).toEqual(["UNBEKANNT"]);
+    expect(session.candidate).toBeUndefined(); expect(session.applied).toBeUndefined();
+    expect(() => session.assertReady()).toThrow("Ordne zuerst");
+    expect(() => session.reviewMappings()).toThrow("jede CSV-Betriebsstelle");
+    expect(() => session.setMapping("UNBEKANNT", "outside-world")).toThrow("Spielwelt");
+    session.setMapping("UNBEKANNT", "b");
+    expect(() => session.assertReady()).toThrow("Ordne zuerst");
+    session.reviewMappings();
+    expect(session.pendingMapping).toBeUndefined(); expect(session.applied).toBeUndefined();
+    expect(() => session.assertReady()).toThrow("vorgemerkten Fahrweg");
+    expect(routeImportMarkup(session)).toContain("Deine Zuordnung aus CSV: Bogen; West (UNBEKANNT) → Bogen; West (BB X)");
+    session.apply(); expect(() => session.assertReady()).not.toThrow();
+    expect(routeViaStationIds(session.applied!)).toEqual(["b"]);
+  });
+  it("verbietet Überschreiben eindeutiger Kürzel, fremde Zuordnungsschlüssel und beliebige Auswahl bei Mehrdeutigkeit", () => {
+    expect(() => parseTrassenfinderCsv(encode(csv), catalog, new Map([["AA", "b"]]))).toThrow("nicht überschrieben");
+    expect(() => parseTrassenfinderCsv(encode(csv), catalog, new Map([["FREMD", "b"]]))).toThrow("nicht zu diesem CSV");
+    const ambiguous = { ...catalog, stations: [...catalog.stations, { id: "b2", code: "BB X", name: "Weiterer Bogen" }] };
+    expect(() => parseTrassenfinderCsv(encode(csv), ambiguous, new Map([["BB X", "c"]]))).toThrow("Katalogtreffer");
+    expect(parseTrassenfinderCsv(encode(csv), ambiguous, new Map([["BB X", "b"]])).stations).toEqual(catalog.stations);
+  });
+  it("verwirft mehrfach zugeordnete Betriebsstellen und unterbrochene Laufwege nach manueller Auswahl", () => {
+    const unknown = csv.replace('"BB X"', '"UNBEKANNT"');
+    expect(() => parseTrassenfinderCsv(encode(unknown), catalog, new Map([["UNBEKANNT", "a"]]))).toThrow("mehrfach");
+    expect(() => parseTrassenfinderCsv(encode(unknown), { ...catalog, stations: [...catalog.stations, { id: "d", code: "DD", name: "Anderes Gleis" }] }, new Map([["UNBEKANNT", "d"]]))).toThrow("direkte Verbindung");
+  });
+  it("löscht offene Zuordnungen beim Entfernen und ignoriert danach verspätete Dateilesungen", async () => {
+    const session = new RouteImportSession("world/operator");
+    const unknown = csv.replace('"BB X"', '"UNBEKANNT"');
+    await session.read(file(unknown), async () => catalog);
+    session.setMapping("UNBEKANNT", "b");
+    session.clear(); expect(session.pendingMapping).toBeUndefined(); expect(() => session.assertReady()).not.toThrow();
+    let resolve!: (value: RouteCatalog) => void;
+    const delayed = session.read(file(unknown), () => new Promise<RouteCatalog>((done) => { resolve = done; }));
+    session.clear(); resolve(catalog); await delayed;
+    expect(session.pendingMapping).toBeUndefined(); expect(session.candidate).toBeUndefined();
+    await session.read(file(unknown), async () => catalog);
+    expect(session.pendingMapping?.choices.size).toBe(0);
+  });
+  it("rendert auch bei vielen unbekannten Kürzeln den Weltkatalog nur einmal und wählt keine Zuordnung vor", async () => {
+    const session = new RouteImportSession("world/operator");
+    const legacy = { ...catalog, stations: catalog.stations.map((station) => ({ ...station, code: `gtfs:${station.id}` })) };
+    await session.read(file(), async () => legacy);
+    const html = routeImportMarkup(session);
+    expect((html.match(/data-route-map-station/g) ?? []).length).toBe(1);
+    expect((html.match(/<option /g) ?? []).length).toBe(7);
+    expect(html).toContain('<option value="">Betriebsstelle auswählen</option>');
+    expect(html).toContain("0 von 3 zugeordnet");
+    expect(html).toContain("Fahrweg entfernen");
+  });
   it("ordnet UTF-8 mit BOM und Semikolon in Feldern vollständig zu, ohne Halte oder Zeiten zu übernehmen", () => {
     const route = parseTrassenfinderCsv(encode(`\uFEFF${csv}`), catalog);
     expect(route).toEqual({ worldId: catalog.worldId, releaseId: catalog.releaseId, stations: catalog.stations });
@@ -113,11 +175,13 @@ describe("Lokaler Trassenfinder-Laufwegimport", () => {
       requests.push({ url: String(url), body: init?.body ? JSON.parse(String(init.body)) : undefined });
       return new Response(JSON.stringify(String(url).endsWith("route-catalog") ? catalog : { payload: { trainNumber: 123 } }));
     });
-    const imported = parseTrassenfinderCsv(encode(csv), await api.loadRouteCatalog(catalog.worldId));
+    const imported = parseTrassenfinderCsv(encode(csv.replace('"BB X"', '"UNBEKANNT"')), await api.loadRouteCatalog(catalog.worldId), new Map([["UNBEKANNT", "b"]]));
     await api.submitPlanningPathRequest(catalog.worldId, { schemaVersion: "planning.player-path-request/v2", requestId: "test", formationId: "f", trainCategory: "supplementary", originStationId: "a", destinationStationId: "c", viaStationIds: routeViaStationIds(imported), desiredDepartureS: 300, operatingDays: "daily", stops: [], earlierS: 120, laterS: 300, stepS: 60, extraRunningTimeS: 60, maxOperationalStops: 4 });
     expect(requests[0]).toEqual({ url: "/api/worlds/fixture-world/planning/route-catalog", body: undefined });
     expect(requests[1]?.body).toMatchObject({ viaStationIds: ["b"], stops: [] });
     expect(JSON.stringify(requests)).not.toContain("Bogen");
     expect(JSON.stringify(requests)).not.toContain("Verkehrshalt");
+    expect(JSON.stringify(requests)).not.toContain("UNBEKANNT");
+    expect(JSON.stringify(requests)).not.toContain("manualMappings");
   });
 });

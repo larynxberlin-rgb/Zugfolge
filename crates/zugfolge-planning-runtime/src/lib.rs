@@ -3297,10 +3297,16 @@ mod tests {
     #[test]
     fn nichtverkehrstage_zeigen_die_tatsaechliche_erste_abfahrt_in_beiden_vertraegen() {
         for mut input in [coordinate_input(false), coordinate_input_v2()] {
-            input["requests"].as_array_mut().unwrap().truncate(1);
             input["requests"][0]["operatingDays"] = json!("weekend");
+            input["requests"][1]["operatingDays"] = json!("weekend");
+            input["requests"][1]["desiredDepartureS"] = json!(64_800);
             let result = evaluate_json(&input);
-            let train = &result["projection"]["trains"][0];
+            let train = result["projection"]["trains"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|train| train["id"] == "train-east")
+                .unwrap();
             assert_eq!(train["planning"]["status"], "allocated");
             assert_eq!(
                 train["planning"]["plannedDepartureS"],
@@ -3322,7 +3328,9 @@ mod tests {
         shortcut["trackNumericId"] = json!(9999);
         shortcut["id"] = json!("slow-shortcut");
         shortcut["toStationId"] = json!("point-3");
-        shortcut["lengthMm"] = json!(1_000_000);
+        // Der direkte Abschnitt deckt dieselben 10 km Korridor ab. Der schnellere
+        // Weg über Punkt 2 enthält zusätzlich dessen 400 m langes Bahnhofsgleis.
+        shortcut["lengthMm"] = json!(10_000_000);
         shortcut["maximumSpeedKph"] = json!(1);
         shortcut["mainSignalPositionsMm"] = json!([]);
         input["segments"].as_array_mut().unwrap().push(shortcut);
