@@ -15,13 +15,13 @@
     "@zugfolge/livemap-stream": "workspace:*",
     "@zugfolge/player-context": "workspace:*",
     "@zugfolge/runtime-native": "workspace:*",
-    "maplibre-gl": "6.7.0",
+    "maplibre-gl": "6.9.0",
     "pixi.js": "^8.20.1",
     "pmtiles": "4.5.0"
   },
   "devDependencies": {
     "typescript": "7.0.2",
-    "vite": "8.2.2",
+    "vite": "8.3.0",
     "vitest": "5.0.0"
   }
 }

@@ -39,11 +39,11 @@
   },
   "devDependencies": {
     "@electric-sql/pglite": "^0.5.8",
-    "@types/node": "26.4.1",
+    "@types/node": "26.5.1",
     "@zugfolge/gtfs": "workspace:*",
     "drizzle-orm": "^0.45.2",
     "jose": "^6.2.11",
-    "playwright-core": "1.62.1",
+    "playwright-core": "1.63.0",
     "postgres": "^3.4.9",
     "typescript": "^7.0.2",
     "vitest": "^5.0.0"
