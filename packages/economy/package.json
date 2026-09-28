@@ -20,14 +20,14 @@
     "@zugfolge/mailbox": "workspace:*",
     "@zugfolge/operators": "workspace:*",
     "@zugfolge/runtime-native": "workspace:*",
-    "drizzle-orm": "^0.45.2"
+    "drizzle-orm": "^0.45.3"
   },
   "devDependencies": {
     "@electric-sql/pglite": "^0.5.8",
-    "@types/node": "26.4.1",
+    "@types/node": "26.6.2",
     "@zugfolge/identity": "workspace:*",
-    "fast-check": "^4.9.0",
+    "fast-check": "^4.10.2",
     "typescript": "^7.0.2",
-    "vitest": "^5.0.0"
+    "vitest": "^5.0.1"
   }
 }

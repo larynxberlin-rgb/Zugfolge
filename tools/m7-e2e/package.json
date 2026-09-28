@@ -13,7 +13,7 @@
     "@zugfolge/dispatch": "workspace:*",
     "@zugfolge/economy": "workspace:*",
     "@zugfolge/game-api": "workspace:*",
-    "drizzle-orm": "^0.45.2"
+    "drizzle-orm": "^0.45.3"
   },
-  "devDependencies": { "@types/node": "^26.4.1", "typescript": "^7.0.2" }
+  "devDependencies": { "@types/node": "^26.6.2", "typescript": "^7.0.2" }
 }
