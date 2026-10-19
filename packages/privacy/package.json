@@ -17,13 +17,13 @@
     "@zugfolge/db": "workspace:*",
     "@zugfolge/identity": "workspace:*",
     "@zugfolge/mailbox": "workspace:*",
-    "drizzle-orm": "^0.45.2"
+    "drizzle-orm": "^0.45.4"
   },
   "devDependencies": {
-    "@electric-sql/pglite": "^0.5.8",
-    "@types/node": "26.4.1",
+    "@electric-sql/pglite": "^0.5.10",
+    "@types/node": "26.6.5",
     "@zugfolge/operators": "workspace:*",
     "typescript": "^7.0.2",
-    "vitest": "^5.0.0"
+    "vitest": "^5.0.5"
   }
 }

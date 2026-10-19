@@ -7,13 +7,13 @@
   "license": "LicenseRef-PolyForm-Shield-1.0.0",
   "scripts": { "build": "tsc", "typecheck": "tsc --noEmit", "test:e2e": "node dist/run.js" },
   "dependencies": {
-    "@electric-sql/pglite": "^0.5.8",
+    "@electric-sql/pglite": "^0.5.10",
     "@zugfolge/alpha": "workspace:*",
     "@zugfolge/db": "workspace:*",
     "@zugfolge/dispatch": "workspace:*",
     "@zugfolge/economy": "workspace:*",
     "@zugfolge/game-api": "workspace:*",
-    "drizzle-orm": "^0.45.2"
+    "drizzle-orm": "^0.45.4"
   },
-  "devDependencies": { "@types/node": "^26.4.1", "typescript": "^7.0.2" }
+  "devDependencies": { "@types/node": "^26.6.5", "typescript": "^7.0.2" }
 }
