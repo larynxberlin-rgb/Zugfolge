@@ -36,7 +36,7 @@ jobs:
           toolchain: 1.94.1
           components: rustfmt, clippy
 
-      - uses: Swatinem/rust-cache@v2.9.2
+      - uses: Swatinem/rust-cache@v2.9.3
         with:
           shared-key: typescript-reference-corpus
 
@@ -44,7 +44,7 @@ jobs:
         with:
           version: 11
 
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@v7.1.0
         with:
           node-version: 24
           cache: pnpm
@@ -80,7 +80,7 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@stable
 
-      - uses: Swatinem/rust-cache@v2.9.2
+      - uses: Swatinem/rust-cache@v2.9.3
         with:
           shared-key: m7-acceptance
 
@@ -88,7 +88,7 @@ jobs:
         with:
           version: 11
 
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@v7.1.0
         with:
           node-version: 24
           cache: pnpm
@@ -109,7 +109,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2.9.2
+      - uses: Swatinem/rust-cache@v2.9.3
       - name: 180.000 Zugläufe und mindestens 2 Mio. Ereignisse
         run: cargo run --release --locked -p zugfolge-load
 
@@ -244,7 +244,7 @@ jobs:
       - uses: pnpm/action-setup@v6
         with:
           version: 11
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@v7.1.0
         with:
           node-version: 24
           cache: pnpm
